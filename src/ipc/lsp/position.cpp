@@ -1,5 +1,7 @@
 #include "kota/ipc/lsp/position.h"
 
+#include "locate.h"
+
 namespace kota::ipc::lsp {
 
 protocol::Position detail::position_in(std::string_view content,

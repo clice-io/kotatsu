@@ -1,5 +1,6 @@
-// kota::ipc::lsp's positions against VS Code's (vscode-languageserver-textdocument),
-// through lsp_probe, in UTF-16 code units as LSP counts by default:
+// kotatsu's positions (kota/ipc/lsp/position.h) against VS Code's
+// (vscode-languageserver-textdocument), through lsp_probe, in UTF-16 code
+// units as LSP counts by default:
 //
 // - the position of every code point boundary of a text;
 // - the offset of any position, in or past the text, by to_offset and by

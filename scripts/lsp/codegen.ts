@@ -43,6 +43,7 @@ import {
   type BaseTypes,
   type Enumeration,
   type EnumerationEntry,
+  type MetaModel,
   type Property,
   type Structure,
   type Type,
@@ -56,7 +57,8 @@ const TABLE = "tests/ipc/lsp/harness/protocol_types.inc";
 
 // The structures range.h holds apart from protocol.h, so that the position
 // conversions (kota/ipc/lsp/position.h) take them without the whole model.
-// ts.h is out of its reach, so it spells their base types itself.
+// range.h does not include ts.h, which pulls in the codec, so it spells their
+// base types itself.
 const RANGE_STRUCTURES = new Set(["Position", "Range"]);
 const RANGE_BASE_TYPES = new Map([["uinteger", "std::uint32_t"]]);
 
@@ -167,8 +169,17 @@ class Generator extends Schema {
   // The TRI_STATE_BOOLEANS met, each of which must be.
   readonly #triState = new Set<string>();
 
-  // How base types are spelled where the aliases of ts.h are out of reach.
-  #baseSpellings = new Map<string, string>();
+  // How base types are spelled where ts.h, which aliases them, is not
+  // included; elsewhere by their names.
+  readonly #baseSpellings: ReadonlyMap<string, string>;
+
+  constructor(
+    model: MetaModel,
+    baseSpellings: ReadonlyMap<string, string> = new Map(),
+  ) {
+    super(model);
+    this.#baseSpellings = baseSpellings;
+  }
 
   render(t: Type): string {
     switch (t.kind) {
@@ -477,13 +488,14 @@ class Generator extends Schema {
     ].join("\n");
   }
 
-  /** range.h: the RANGE_STRUCTURES, in dependency order. */
+  /**
+   * range.h: the RANGE_STRUCTURES, in dependency order, from a generator
+   * spelling base types as RANGE_BASE_TYPES does.
+   */
   generateRange(): string {
-    this.#baseSpellings = RANGE_BASE_TYPES;
     const blocks = this.declarationOrder()
       .filter((name) => RANGE_STRUCTURES.has(name))
       .map((name) => this.emitStructure(this.structure(name)));
-    this.#baseSpellings = new Map();
     return [
       "#pragma once",
       "",
@@ -527,10 +539,11 @@ class Generator extends Schema {
 const { values: options } = parseArgs({
   options: { check: { type: "boolean" } },
 });
-const generator = new Generator(await loadMetaModel());
+const model = await loadMetaModel();
+const generator = new Generator(model);
 for (const [path, text] of [
   [HEADER, generator.generate()],
-  [RANGE_HEADER, generator.generateRange()],
+  [RANGE_HEADER, new Generator(model, RANGE_BASE_TYPES).generateRange()],
   [TABLE, generator.table()],
 ]) {
   if (!options.check) {

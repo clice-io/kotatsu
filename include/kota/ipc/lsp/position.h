@@ -8,19 +8,19 @@
 #include <ranges>
 #include <span>
 #include <string_view>
-#include <utility>
 
 #include "kota/ipc/lsp/range.h"
 #include "kota/ipc/lsp/text.h"
 
 // Conversions between byte offsets and LSP positions, in three forms:
 //
-// - over a text and its line starts, which the caller keeps: what the caller
-//   knows of which lines hold only ASCII spares reading them;
+// - over a text and its line starts, which the caller keeps: lines the
+//   caller knows to hold only ASCII are not read;
 // - over a text alone, finding its line starts for one conversion;
 // - over a text known only by its size and line starts, every line ASCII,
 //   such as an index that keeps no text: the caller says which lines end in
-//   "\r\n", and the encodings all count bytes.
+//   "\r\n", asked only of a line with text and a line after it, and the
+//   encodings all count bytes.
 //
 // A line ends at '\n', and a '\r' just before it belongs to the line's end,
 // not its text. A lone '\r' is text: line starts stay those line_starts()
@@ -56,11 +56,6 @@ constexpr inline auto all_ascii = [](std::uint32_t) {
     return true;
 };
 
-/// Nothing is known: a line is read when the encoding needs it.
-constexpr inline auto unknown_ascii = [](std::uint32_t) {
-    return false;
-};
-
 /// The line holding byte `offset`, its line end included: the last line
 /// starting at or before it.
 template <line_table Lines>
@@ -72,6 +67,12 @@ std::uint32_t line_of(const Lines& lines, std::uint32_t offset) {
 }
 
 namespace detail {
+
+/// What the conversions know when the caller says nothing: no line is known
+/// to hold only ASCII, so every line converted is read.
+constexpr inline auto unknown_ascii = [](std::uint32_t) {
+    return false;
+};
 
 /// One line of a text: its number, where it starts, where its text ends (at
 /// its "\n" or "\r\n", or at the end of the text), and whether it is known to
@@ -109,18 +110,26 @@ bool known_ascii(const ASCII& ascii, std::uint32_t line) {
 
 /// Line `number` of a text of `size` bytes; `crlf(number, newline)` says
 /// whether a '\r' precedes the '\n' at `newline` that ends it.
-template <line_table Lines, typename CRLF>
-Line line_at(const Lines& lines, std::uint32_t number, std::uint32_t size, bool ascii, CRLF crlf) {
+template <line_table Lines, ascii_lines ASCII, typename CRLF>
+Line line_at(const Lines& lines,
+             std::uint32_t number,
+             std::uint32_t size,
+             const ASCII& ascii,
+             CRLF crlf) {
     auto starts = std::ranges::begin(lines);
-    auto start = static_cast<std::uint32_t>(starts[number]);
-    if(number + 1 >= std::ranges::size(lines)) {
-        return {.number = number, .start = start, .end = size, .ascii = ascii};
+    Line line{
+        .number = number,
+        .start = static_cast<std::uint32_t>(starts[number]),
+        .end = size,
+        .ascii = detail::known_ascii(ascii, number),
+    };
+    if(number + 1 < std::ranges::size(lines)) {
+        line.end = static_cast<std::uint32_t>(starts[number + 1]) - 1;
+        if(line.end > line.start && crlf(number, line.end)) {
+            --line.end;
+        }
     }
-    auto end = static_cast<std::uint32_t>(starts[number + 1]) - 1;
-    if(end > start && crlf(number, end)) {
-        --end;
-    }
-    return {.number = number, .start = start, .end = end, .ascii = ascii};
+    return line;
 }
 
 /// What says whether a line of `content` ends in "\r\n": its bytes.
@@ -150,9 +159,8 @@ std::optional<protocol::Position> position_of(std::string_view content,
     if(offset > size) [[unlikely]] {
         return std::nullopt;
     }
-    auto number = line_of(lines, offset);
-    auto line = line_at(lines, number, size, known_ascii(ascii, number), crlf);
-    return position_in(content, line, offset, encoding);
+    auto line = detail::line_at(lines, lsp::line_of(lines, offset), size, ascii, crlf);
+    return detail::position_in(content, line, offset, encoding);
 }
 
 template <line_table Lines, ascii_lines ASCII, typename CRLF>
@@ -166,8 +174,8 @@ Located offset_of(std::string_view content,
     if(position.line >= std::ranges::size(lines)) [[unlikely]] {
         return {.offset = size, .exact = false};
     }
-    auto line = line_at(lines, position.line, size, known_ascii(ascii, position.line), crlf);
-    return offset_in(content, line, position.character, encoding);
+    auto line = detail::line_at(lines, position.line, size, ascii, crlf);
+    return detail::offset_in(content, line, position.character, encoding);
 }
 
 template <line_table Lines, ascii_lines ASCII, typename CRLF>
@@ -182,12 +190,15 @@ std::optional<protocol::Range> range_of(std::string_view content,
     if(begin > end) [[unlikely]] {
         return std::nullopt;
     }
-    auto start = position_of(content, size, lines, begin, encoding, ascii, crlf);
-    auto stop = position_of(content, size, lines, end, encoding, ascii, crlf);
-    if(!start || !stop) {
+    // The start is in the text if the end is.
+    auto stop = detail::position_of(content, size, lines, end, encoding, ascii, crlf);
+    if(!stop) {
         return std::nullopt;
     }
-    return protocol::Range{.start = *start, .end = *stop};
+    return protocol::Range{
+        .start = *detail::position_of(content, size, lines, begin, encoding, ascii, crlf),
+        .end = *stop,
+    };
 }
 
 template <line_table Lines, ascii_lines ASCII, typename CRLF>
@@ -198,8 +209,8 @@ OffsetRange offset_range_of(std::string_view content,
                             PositionEncoding encoding,
                             const ASCII& ascii,
                             CRLF crlf) {
-    auto begin = offset_of(content, size, lines, range.start, encoding, ascii, crlf).offset;
-    auto end = offset_of(content, size, lines, range.end, encoding, ascii, crlf).offset;
+    auto begin = detail::offset_of(content, size, lines, range.start, encoding, ascii, crlf).offset;
+    auto end = detail::offset_of(content, size, lines, range.end, encoding, ascii, crlf).offset;
     // Clamping keeps the order of positions, so this is their order too.
     return {.begin = std::min(begin, end), .end = std::max(begin, end)};
 }
@@ -209,7 +220,7 @@ OffsetRange offset_range_of(std::string_view content,
 /// Convert a byte offset of `content` to a position. Every offset up to the
 /// content's size has one: an offset inside a line's end is at the end, and
 /// one inside a code point at the code point's start.
-template <line_table Lines, ascii_lines ASCII = decltype(unknown_ascii)>
+template <line_table Lines, ascii_lines ASCII = decltype(detail::unknown_ascii)>
 std::optional<protocol::Position> to_position(std::string_view content,
                                               const Lines& lines,
                                               std::uint32_t offset,
@@ -228,7 +239,7 @@ std::optional<protocol::Position> to_position(std::string_view content,
 /// line's end is its end, as LSP asks; a line past the last one has no
 /// offset, nor has a unit inside a code point: a UTF-16 unit inside a
 /// surrogate pair, or a UTF-8 byte inside a multi-byte sequence.
-template <line_table Lines, ascii_lines ASCII = decltype(unknown_ascii)>
+template <line_table Lines, ascii_lines ASCII = decltype(detail::unknown_ascii)>
 std::optional<std::uint32_t> to_offset(std::string_view content,
                                        const Lines& lines,
                                        protocol::Position position,
@@ -251,7 +262,7 @@ std::optional<std::uint32_t> to_offset(std::string_view content,
 /// one: a line past the last one is the end of the content, as VS Code
 /// answers; a character past the line's end is its end, as LSP asks; and a
 /// unit inside a code point is the code point's start.
-template <line_table Lines, ascii_lines ASCII = decltype(unknown_ascii)>
+template <line_table Lines, ascii_lines ASCII = decltype(detail::unknown_ascii)>
 std::uint32_t to_offset_clamped(std::string_view content,
                                 const Lines& lines,
                                 protocol::Position position,
@@ -269,7 +280,7 @@ std::uint32_t to_offset_clamped(std::string_view content,
 
 /// Convert the bytes of `content` from `begin` up to `end` to a range, as
 /// to_position() converts each end; none when `begin` is past `end`.
-template <line_table Lines, ascii_lines ASCII = decltype(unknown_ascii)>
+template <line_table Lines, ascii_lines ASCII = decltype(detail::unknown_ascii)>
 std::optional<protocol::Range> to_range(std::string_view content,
                                         const Lines& lines,
                                         std::uint32_t begin,
@@ -290,7 +301,7 @@ std::optional<protocol::Range> to_range(std::string_view content,
 /// to_offset_clamped() converts it; a range whose start is past its end
 /// covers the bytes between them, as vscode-languageserver-textdocument reads
 /// it.
-template <line_table Lines, ascii_lines ASCII = decltype(unknown_ascii)>
+template <line_table Lines, ascii_lines ASCII = decltype(detail::unknown_ascii)>
 OffsetRange to_offset_range(std::string_view content,
                             const Lines& lines,
                             protocol::Range range,
@@ -345,7 +356,8 @@ inline OffsetRange to_offset_range(std::string_view content,
 /// to_position() for a text of `size` bytes known by its line starts alone,
 /// every line ASCII, in any encoding; `crlf(line)` says whether a line ends
 /// in "\r\n".
-template <line_table Lines, std::predicate<std::uint32_t> CRLF>
+template <line_table Lines, typename CRLF>
+    requires std::predicate<const CRLF&, std::uint32_t>
 std::optional<protocol::Position>
     to_position(std::uint32_t size, const Lines& lines, std::uint32_t offset, const CRLF& crlf) {
     return detail::position_of({},
@@ -358,7 +370,8 @@ std::optional<protocol::Position>
 }
 
 /// to_offset() for a text of `size` bytes known by its line starts alone.
-template <line_table Lines, std::predicate<std::uint32_t> CRLF>
+template <line_table Lines, typename CRLF>
+    requires std::predicate<const CRLF&, std::uint32_t>
 std::optional<std::uint32_t> to_offset(std::uint32_t size,
                                        const Lines& lines,
                                        protocol::Position position,
@@ -378,7 +391,8 @@ std::optional<std::uint32_t> to_offset(std::uint32_t size,
 
 /// to_offset_clamped() for a text of `size` bytes known by its line starts
 /// alone.
-template <line_table Lines, std::predicate<std::uint32_t> CRLF>
+template <line_table Lines, typename CRLF>
+    requires std::predicate<const CRLF&, std::uint32_t>
 std::uint32_t to_offset_clamped(std::uint32_t size,
                                 const Lines& lines,
                                 protocol::Position position,
@@ -394,7 +408,8 @@ std::uint32_t to_offset_clamped(std::uint32_t size,
 }
 
 /// to_range() for a text of `size` bytes known by its line starts alone.
-template <line_table Lines, std::predicate<std::uint32_t> CRLF>
+template <line_table Lines, typename CRLF>
+    requires std::predicate<const CRLF&, std::uint32_t>
 std::optional<protocol::Range> to_range(std::uint32_t size,
                                         const Lines& lines,
                                         std::uint32_t begin,
@@ -412,7 +427,8 @@ std::optional<protocol::Range> to_range(std::uint32_t size,
 
 /// to_offset_range() for a text of `size` bytes known by its line starts
 /// alone.
-template <line_table Lines, std::predicate<std::uint32_t> CRLF>
+template <line_table Lines, typename CRLF>
+    requires std::predicate<const CRLF&, std::uint32_t>
 OffsetRange to_offset_range(std::uint32_t size,
                             const Lines& lines,
                             protocol::Range range,

@@ -142,7 +142,10 @@ kota_library(
 
 kota_library(
     name = "ipc_lsp",
-    srcs = glob(["src/ipc/lsp/*.cpp"]),
+    srcs = glob([
+        "src/ipc/lsp/*.cpp",
+        "src/ipc/lsp/*.h",
+    ]),
     hdrs = glob(["include/kota/ipc/lsp/**"]),
     deps = [
         ":codec",

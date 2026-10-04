@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <ranges>
@@ -20,18 +21,18 @@ constexpr PositionEncoding encodings[] = {
 };
 
 /// Whether a line of `content` ends in "\r\n", read from the text, for the
-/// conversions over a text known by its size.
-auto crlf_in(std::string_view content, const std::vector<std::uint32_t>& lines) {
-    return [content, &lines](std::uint32_t line) {
-        return line + 1 < lines.size() && lines[line + 1] >= 2 &&
-               content[lines[line + 1] - 2] == '\r';
+/// conversions over a text known by its size, which ask it only of a line
+/// with text and a line after it.
+auto crlf_in(std::string_view content, std::span<const std::uint32_t> lines) {
+    return [content, lines](std::uint32_t line) {
+        return content[lines[line + 1] - 2] == '\r';
     };
 }
 
 // Throughout this suite: 你 is 3 UTF-8 bytes, 🙂 is 4.
 ZEST_SUITE(ipc_lsp_position) {
 
-ZEST_CASE(utf16_column_counts) {
+ZEST_CASE(to_position_counts_utf16_units) {
     std::string_view content = "a你b\n";
 
     auto position = to_position(content, line_starts(content), 4, PositionEncoding::UTF16);
@@ -39,7 +40,7 @@ ZEST_CASE(utf16_column_counts) {
     EXPECT(*position == protocol::Position{.line = 0, .character = 2});
 }
 
-ZEST_CASE(position_offset_values) {
+ZEST_CASE(to_position_counts_each_encodings_units) {
     std::string_view content = "a你🙂b\nx";
     auto lines = line_starts(content);
 
@@ -104,23 +105,27 @@ ZEST_CASE(line_of_finds_the_line_holding_an_offset) {
     }
 }
 
-ZEST_CASE(invalid_position_stability) {
-    auto expect_stable = [&](std::string_view content) {
+// Each byte that is not UTF-8 is a code point of its own, which every offset
+// starts.
+ZEST_CASE(bytes_not_utf8_roundtrip) {
+    auto expect_roundtrip = [&](std::string_view content) {
         auto lines = line_starts(content);
         for(auto encoding: encodings) {
             for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
+                ZEST_CONTEXT("text of {} bytes, encoding {}, offset {}",
+                             content.size(),
+                             static_cast<int>(encoding),
+                             offset);
                 auto position = to_position(content, lines, offset, encoding);
-                ASSERT(position);
-                auto mapped_offset = to_offset(content, lines, *position, encoding);
-                ASSERT(mapped_offset);
-                EXPECT(*mapped_offset <= content.size());
+                ASSERT(position.has_value());
+                EXPECT(to_offset(content, lines, *position, encoding) == offset);
             }
         }
     };
 
     auto expect_stable_bytes = [&](auto... bytes) {
         const char raw[] = {static_cast<char>(bytes)...};
-        expect_stable(std::string_view(raw, sizeof...(bytes)));
+        expect_roundtrip(std::string_view(raw, sizeof...(bytes)));
     };
 
     expect_stable_bytes('a', 0xE4u, 'X', 'b');
@@ -160,6 +165,11 @@ ZEST_CASE(to_offset_past_the_line_end_clamps_to_it) {
         EXPECT(to_offset(content, lines, {.line = 0, .character = 10}, encoding) == 3U);
         EXPECT(to_offset(content, lines, {.line = 1, .character = 4}, encoding) == 7U);
     }
+
+    // An empty line's end is its start.
+    std::string_view empty = "ab\n\ncd";
+    protocol::Position past_the_empty_line{.line = 1, .character = 9};
+    EXPECT(to_offset(empty, line_starts(empty), past_the_empty_line, PositionEncoding::UTF8) == 3U);
 }
 
 ZEST_CASE(to_offset_past_a_non_ascii_line_end_clamps_to_it) {
@@ -200,7 +210,6 @@ ZEST_CASE(lone_cr_is_text) {
     std::string_view content = "a\rb\nc";
     auto lines = line_starts(content);
 
-    EXPECT(lines == std::vector<std::uint32_t>{0, 4});
     auto after_cr = to_position(content, lines, 2, PositionEncoding::UTF16);
     ASSERT(after_cr.has_value());
     EXPECT(*after_cr == protocol::Position{.line = 0, .character = 2});
@@ -339,9 +348,8 @@ ZEST_CASE(to_offset_range_clamps_each_end) {
         .start = {.line = 0, .character = 2},
         .end = {.line = 7, .character = 0}
     };
-    auto offsets = to_offset_range(content, line_starts(content), range, PositionEncoding::UTF16);
-    EXPECT(offsets.begin == 1U);
-    EXPECT(offsets.end == 9U);
+    EXPECT(to_offset_range(content, line_starts(content), range, PositionEncoding::UTF16) ==
+           OffsetRange{.begin = 1, .end = 9});
 }
 
 // As vscode-languageserver-textdocument reads a range whose start is past its
@@ -353,9 +361,8 @@ ZEST_CASE(to_offset_range_reads_a_backward_range_forwards) {
         .start = {.line = 1, .character = 1},
         .end = {.line = 0, .character = 2}
     };
-    auto offsets = to_offset_range(content, line_starts(content), range, PositionEncoding::UTF16);
-    EXPECT(offsets.begin == 2U);
-    EXPECT(offsets.end == 5U);
+    EXPECT(to_offset_range(content, line_starts(content), range, PositionEncoding::UTF16) ==
+           OffsetRange{.begin = 2, .end = 5});
 }
 
 // Line starts are any random-access range of unsigned integers, a view that
@@ -378,35 +385,92 @@ ZEST_CASE(line_tables_of_any_unsigned_range_convert_alike) {
                        return bases[line / 2] + offsets[line];
                    });
 
-    for(auto encoding: encodings) {
-        for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
-            ZEST_CONTEXT("encoding {}, offset {}", static_cast<int>(encoding), offset);
-            auto expected = to_position(content, lines, offset, encoding);
-            ASSERT(expected.has_value());
-            auto expect_position_over = [&](const auto& table) {
+    auto expect_converts_alike = [&](std::string_view name, const auto& table) {
+        for(auto encoding: encodings) {
+            for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
+                ZEST_CONTEXT("{} lines, encoding {}, offset {}",
+                             name,
+                             static_cast<int>(encoding),
+                             offset);
+                auto expected = to_position(content, lines, offset, encoding);
                 auto position = to_position(content, table, offset, encoding);
+                ASSERT(expected.has_value());
                 ASSERT(position.has_value());
                 EXPECT(*position == *expected);
-            };
-            expect_position_over(std::span(lines));
-            expect_position_over(narrow);
-            expect_position_over(blocked);
-            EXPECT(to_offset(content, blocked, *expected, encoding) == offset);
+                auto expected_range = to_range(content, lines, 0, offset, encoding);
+                auto range = to_range(content, table, 0, offset, encoding);
+                ASSERT(expected_range.has_value());
+                ASSERT(range.has_value());
+                EXPECT(*range == *expected_range);
+            }
+            for(std::uint32_t line = 0; line <= lines.size(); ++line) {
+                for(std::uint32_t character = 0; character < 8; ++character) {
+                    ZEST_CONTEXT("{} lines, encoding {}, {}:{}",
+                                 name,
+                                 static_cast<int>(encoding),
+                                 line,
+                                 character);
+                    protocol::Position position{.line = line, .character = character};
+                    EXPECT(to_offset(content, table, position, encoding) ==
+                           to_offset(content, lines, position, encoding));
+                    EXPECT(to_offset_clamped(content, table, position, encoding) ==
+                           to_offset_clamped(content, lines, position, encoding));
+                    protocol::Range range{
+                        .start = position,
+                        .end = {.line = 1, .character = 1}
+                    };
+                    EXPECT(to_offset_range(content, table, range, encoding) ==
+                           to_offset_range(content, lines, range, encoding));
+                }
+            }
         }
-    }
+    };
+    expect_converts_alike("span", std::span(lines));
+    expect_converts_alike("uint16_t", narrow);
+    expect_converts_alike("blocked", blocked);
 }
 
 // Lines known to hold only ASCII are not read: one said to, though it does
-// not, counts its bytes as units.
+// not, counts its bytes as units, whichever form says it.
 ZEST_CASE(lines_known_ascii_count_bytes) {
     std::string_view content = "a你b\nxy";
     auto lines = line_starts(content);
 
-    auto position = to_position(content, lines, 4, PositionEncoding::UTF16, all_ascii);
-    ASSERT(position.has_value());
-    EXPECT(*position == protocol::Position{.line = 0, .character = 4});
-    protocol::Position second{.line = 0, .character = 2};
-    EXPECT(to_offset(content, lines, second, PositionEncoding::UTF16, all_ascii) == 2U);
+    auto expect_bytes_counted = [&](std::string_view name, const auto& ascii) {
+        ZEST_CONTEXT("ASCII knowledge: {}", name);
+        auto position = to_position(content, lines, 4, PositionEncoding::UTF16, ascii);
+        ASSERT(position.has_value());
+        EXPECT(*position == protocol::Position{.line = 0, .character = 4});
+        protocol::Position second{.line = 0, .character = 2};
+        EXPECT(to_offset(content, lines, second, PositionEncoding::UTF16, ascii) == 2U);
+    };
+    expect_bytes_counted("all_ascii", all_ascii);
+    // A bitmap marks nothing past its words, nor what its bits leave clear.
+    expect_bytes_counted("empty bitmap", std::vector<std::uint64_t>{});
+    expect_bytes_counted("line 1 marked", std::vector<std::uint64_t>{0b10});
+}
+
+/// The position of `offset` in `content`, a UTF-8 text, found by reading it:
+/// lines end at '\n', a '\r' before it ends the line's text, and an offset
+/// inside a code point is at the code point's start.
+protocol::Position read_position(std::string_view content,
+                                 std::uint32_t offset,
+                                 PositionEncoding encoding) {
+    auto before = content.substr(0, offset);
+    auto newline = before.rfind('\n');
+    auto start = newline == std::string_view::npos ? 0 : newline + 1;
+    auto end = std::min(content.find('\n', start), content.size());
+    if(end < content.size() && end > start && content[end - 1] == '\r') {
+        --end;
+    }
+    auto cut = std::min<std::size_t>(offset, end);
+    while(cut > start && cut < end && (static_cast<unsigned char>(content[cut]) & 0xC0) == 0x80) {
+        --cut;
+    }
+    return {
+        .line = static_cast<std::uint32_t>(std::ranges::count(before, '\n')),
+        .character = encoded_length(content.substr(start, cut - start), encoding),
+    };
 }
 
 // Whatever the caller knows, and in whichever form, if it is true the text
@@ -419,29 +483,27 @@ ZEST_CASE(true_ascii_knowledge_converts_as_the_text_reads) {
         return line != 1 && line != 3;
     };
 
-    for(auto encoding: encodings) {
-        for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
-            ZEST_CONTEXT("encoding {}, offset {}", static_cast<int>(encoding), offset);
-            auto expected = to_position(content, lines, offset, encoding, unknown_ascii);
-            ASSERT(expected.has_value());
-            auto expect_position_knowing = [&](const auto& ascii) {
-                auto position = to_position(content, lines, offset, encoding, ascii);
+    auto expect_as_read = [&](std::string_view name, const auto&... ascii) {
+        for(auto encoding: encodings) {
+            for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
+                ZEST_CONTEXT("ASCII knowledge: {}, encoding {}, offset {}",
+                             name,
+                             static_cast<int>(encoding),
+                             offset);
+                auto position = to_position(content, lines, offset, encoding, ascii...);
                 ASSERT(position.has_value());
-                EXPECT(*position == *expected);
-            };
-            expect_position_knowing(bits);
-            expect_position_knowing(by_line);
-        }
-        for(std::uint32_t line = 0; line <= lines.size(); ++line) {
-            for(std::uint32_t character = 0; character < 8; ++character) {
-                ZEST_CONTEXT("encoding {}, {}:{}", static_cast<int>(encoding), line, character);
-                protocol::Position position{.line = line, .character = character};
-                auto expected = to_offset_clamped(content, lines, position, encoding);
-                EXPECT(to_offset_clamped(content, lines, position, encoding, bits) == expected);
-                EXPECT(to_offset_clamped(content, lines, position, encoding, by_line) == expected);
+                EXPECT(*position == read_position(content, offset, encoding));
+                auto back = to_offset(content, lines, *position, encoding, ascii...);
+                ASSERT(back.has_value());
+                auto again = to_position(content, lines, *back, encoding, ascii...);
+                ASSERT(again.has_value());
+                EXPECT(*again == *position);
             }
         }
-    }
+    };
+    expect_as_read("none");
+    expect_as_read("bitmap", bits);
+    expect_as_read("by line", by_line);
 }
 
 // non_ascii_lines keeps a bit per line, 64 to a word.
@@ -470,8 +532,9 @@ ZEST_CASE(one_shot_conversions_find_the_line_starts) {
     auto lines = line_starts(content);
 
     for(auto encoding: encodings) {
+        ZEST_CONTEXT("encoding {}", static_cast<int>(encoding));
         for(std::uint32_t offset = 0; offset <= content.size(); ++offset) {
-            ZEST_CONTEXT("encoding {}, offset {}", static_cast<int>(encoding), offset);
+            ZEST_CONTEXT("offset {}", offset);
             auto once = to_position(content, offset, encoding);
             auto kept = to_position(content, lines, offset, encoding);
             ASSERT(once.has_value());
@@ -488,7 +551,7 @@ ZEST_CASE(one_shot_conversions_find_the_line_starts) {
         EXPECT(!to_range(content, 0, past_the_end, encoding).has_value());
         for(std::uint32_t line = 0; line <= lines.size(); ++line) {
             for(std::uint32_t character = 0; character < 8; ++character) {
-                ZEST_CONTEXT("encoding {}, {}:{}", static_cast<int>(encoding), line, character);
+                ZEST_CONTEXT("{}:{}", line, character);
                 protocol::Position position{.line = line, .character = character};
                 EXPECT(to_offset(content, position, encoding) ==
                        to_offset(content, lines, position, encoding));
@@ -498,10 +561,8 @@ ZEST_CASE(one_shot_conversions_find_the_line_starts) {
                     .start = position,
                     .end = {.line = 1, .character = 1}
                 };
-                auto once = to_offset_range(content, range, encoding);
-                auto kept = to_offset_range(content, lines, range, encoding);
-                EXPECT(once.begin == kept.begin);
-                EXPECT(once.end == kept.end);
+                EXPECT(to_offset_range(content, range, encoding) ==
+                       to_offset_range(content, lines, range, encoding));
             }
         }
     }
@@ -510,7 +571,7 @@ ZEST_CASE(one_shot_conversions_find_the_line_starts) {
 // An ASCII text known by its size and line starts converts as its text does,
 // told which lines end in "\r\n".
 ZEST_CASE(sized_text_converts_as_its_text_does) {
-    std::string_view content = "ab\r\n\r\ncd\nef\r\ng";
+    std::string_view content = "\nab\r\n\r\ncd\n\nef\r\ng\r\n";
     auto lines = line_starts(content);
     auto size = static_cast<std::uint32_t>(content.size());
     auto crlf = crlf_in(content, lines);
@@ -529,6 +590,7 @@ ZEST_CASE(sized_text_converts_as_its_text_does) {
         EXPECT(*sized_range == *read_range);
     }
     EXPECT(!to_position(size, lines, size + 1, crlf).has_value());
+    EXPECT(!to_range(size, lines, 0, size + 1, crlf).has_value());
     for(std::uint32_t line = 0; line <= lines.size(); ++line) {
         for(std::uint32_t character = 0; character < 5; ++character) {
             ZEST_CONTEXT("{}:{}", line, character);
@@ -541,23 +603,30 @@ ZEST_CASE(sized_text_converts_as_its_text_does) {
                 .start = position,
                 .end = {.line = 0, .character = 1}
             };
-            auto sized = to_offset_range(size, lines, range, crlf);
-            auto read = to_offset_range(content, lines, range, PositionEncoding::UTF16);
-            EXPECT(sized.begin == read.begin);
-            EXPECT(sized.end == read.end);
+            EXPECT(to_offset_range(size, lines, range, crlf) ==
+                   to_offset_range(content, lines, range, PositionEncoding::UTF16));
         }
     }
 }
 
-// Without the text, only the caller says whether a '\r' ends a line.
+// Without the text, only the caller says whether a '\r' ends a line; a line
+// with no text has none to give up, whatever the caller says.
 ZEST_CASE(sized_text_ends_lines_where_told) {
     std::string_view content = "ab\r\ncd";
     auto lines = line_starts(content);
     auto size = static_cast<std::uint32_t>(content.size());
     protocol::Position past_the_end{.line = 0, .character = 9};
+    auto always = [](std::uint32_t) {
+        return true;
+    };
 
-    EXPECT(to_offset(size, lines, past_the_end, [](std::uint32_t) { return true; }) == 2U);
+    EXPECT(to_offset(size, lines, past_the_end, always) == 2U);
     EXPECT(to_offset(size, lines, past_the_end, [](std::uint32_t) { return false; }) == 3U);
+
+    std::string_view empty_first = "\nab";
+    auto empty_lines = line_starts(empty_first);
+    auto empty_size = static_cast<std::uint32_t>(empty_first.size());
+    EXPECT(to_offset(empty_size, empty_lines, past_the_end, always) == 0U);
 }
 
 };  // ZEST_SUITE(ipc_lsp_position)

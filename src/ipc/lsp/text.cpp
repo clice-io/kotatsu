@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <utility>
 
+#include "locate.h"
+
 namespace {
 
 /// Whether `byte` continues a UTF-8 sequence, being 10xxxxxx.

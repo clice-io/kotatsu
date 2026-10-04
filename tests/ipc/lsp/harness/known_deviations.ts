@@ -1,7 +1,7 @@
 // Where kota::ipc::lsp answers other than the spec, or than VS Code, says:
 // protocol.h reading and writing the metaModel's types (protocol_values.ts),
-// and position.h converting positions (position.test.ts). The tests consult this
-// list: what a deviation would change is not generated, and what it lets
+// and position.h converting positions (position.test.ts). The tests consult
+// this list: what a deviation would change is not generated, and what it lets
 // through is taken as read.
 //
 // An entry marked "bug" is one: the change that fixes it deletes its entry,
