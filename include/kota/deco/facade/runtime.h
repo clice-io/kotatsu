@@ -888,6 +888,8 @@ public:
         return *this;
     }
 
+    /// Runs `handler` on the invocation of every argv that parses, unless it gives the help
+    /// option.
     template <typename Handler>
         requires (std::is_invocable_v<std::remove_cvref_t<Handler>&, invocation_t&> ||
                   std::is_invocable_v<std::remove_cvref_t<Handler>&, const invocation_t&>)
@@ -990,8 +992,11 @@ public:
 
         res->resolved_renderer = std::move(renderer);
         bind_runtime(*res, nullptr);
-        for(auto& finalize: finalizers) {
-            finalize(*res);
+        // The help option stopped the parse before the options were checked.
+        if(!detail::help_requested(res->options)) {
+            for(auto& finalize: finalizers) {
+                finalize(*res);
+            }
         }
         return res;
     }

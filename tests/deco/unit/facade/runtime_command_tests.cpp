@@ -436,6 +436,20 @@ ZEST_CASE(help_option_counts_at_any_depth) {
     EXPECT(!ran);
 }
 
+// The finalizers would see options never checked: the required --name unset.
+ZEST_CASE(help_option_runs_no_finalizer) {
+    auto command = cli::command<Helped>("helped [OPTIONS]");
+    bool finalized = false;
+    command.finalize([&](const cli::Invocation<Helped>&) { finalized = true; });
+    auto argv = test::split("--help");
+    auto printed = test::printed_by([&] {
+        EXPECT(command.invoke(argv).has_value());
+        EXPECT(command(argv) == 0);
+    });
+    EXPECT(!finalized);
+    EXPECT(printed == usage_of(command));
+}
+
 // An option it does not know, before the help option, fails the parse first.
 ZEST_CASE(help_option_after_a_bad_option_fails) {
     auto command = cli::command<Helped>("helped [OPTIONS]");

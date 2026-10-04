@@ -993,8 +993,8 @@ constexpr inline std::array<std::string_view, 2> help_names = {"-h", "--help"};
 /// Given, it stops parsing where it stands, so that no required option is missed, and
 /// cli::Command's operator() prints the usage to stdout and returns 0 without running a
 /// handler; invoke() and parse() leave that to their caller, which finds it set. Stopping
-/// skips the options' checks, but not cli::Command's finalize() handlers, which run on
-/// options never checked; the `after<>` hooks of the help option itself never run.
+/// skips the options' checks, so cli::Command's finalize() handlers do not run either; nor
+/// do the `after<>` hooks of the help option itself.
 struct HelpOption : FlagOption<bool> {
     // What DecoFlag would declare, written without it: deco's headers leave its macros out.
     struct __deco_field_ty : OptionDeclaration<FlagFields, bool> {
