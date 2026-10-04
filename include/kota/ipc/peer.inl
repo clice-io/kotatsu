@@ -661,11 +661,6 @@ struct Peer<CodecT>::Self {
                        RequestCallback callback,
                        std::string params,
                        cancellation_token token) {
-        // The handler starts once the loop has come round: what was read
-        // with this request, or meanwhile, is dispatched first, so a
-        // $/cancelRequest or a change behind it reaches the handler before it
-        // starts, and a handler cancelled meanwhile never starts.
-        co_await yield(loop);
         outcome<std::string, Error, cancellation> guarded_result = outcome_error(Error());
         // A handler that throws is answered InternalError; the exception
         // does not reach the other handlers, nor run().

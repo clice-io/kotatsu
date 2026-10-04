@@ -72,10 +72,11 @@ struct request_options {
 ///
 /// A handler returns RequestResult<Params> or, for a result it has encoded
 /// itself, task<codec::RawValue, Error>; a request whose result type is
-/// codec::RawValue gets the result as the codec wrote it. Request handlers
-/// start in the order their requests were read, once the loop has come
-/// round: what was read with a request, or meanwhile, such as a
-/// $/cancelRequest for it or a change behind it, is dispatched first.
+/// codec::RawValue gets the result as the codec wrote it. A request handler
+/// starts as its request is dispatched and runs until it first suspends
+/// before the peer reads on, so what it does up to then sees no message read
+/// after its request; one that should see them, a $/cancelRequest for it or
+/// a change behind it, yields first.
 template <typename Codec>
 class Peer {
 public:

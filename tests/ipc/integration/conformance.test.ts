@@ -219,20 +219,18 @@ test("close_output_ends_the_output", async (t) => {
   const first = session.expect(1);
   session.channel.send(echo(1));
   assert.deepEqual(resultOf(await first), [1]);
-  session.start("test/closeOutput");
+  session.notify("test/closeOutput");
   await session.ended;
   await session.finish(driver);
 });
 
-// Handlers start in the order their requests were read: the answers to the
-// requests before test/closeOutput are queued when it closes the output.
 test("answers_queued_before_close_output_are_delivered", async (t) => {
   const [driver, session] = await spawn(t);
   const answers = [1, 2, 3].map((id) => session.expect(id));
   await session.channel.write(
     Buffer.concat([
       ...[1, 2, 3].map((id) => frame(echo(id))),
-      frame({ jsonrpc: "2.0", id: 4, method: "test/closeOutput" }),
+      frame({ jsonrpc: "2.0", method: "test/closeOutput" }),
     ]),
   );
   assert.deepEqual((await Promise.all(answers)).map(resultOf), [[1], [2], [3]]);
