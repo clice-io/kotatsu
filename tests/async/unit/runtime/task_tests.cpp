@@ -1,6 +1,8 @@
+#include <concepts>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -138,6 +140,30 @@ ZEST_CASE(await_of_a_failing_child_hands_its_error_to_the_parent) {
     ASSERT(result.has_value());
     ASSERT(result->has_error());
     EXPECT(result->error() == error::connection_refused);
+}
+
+// The error is made as the task is, from a view of text gone by the time the
+// task starts; nothing else happens until then, and the task ends with it.
+ZEST_CASE(task_made_from_an_outcome_error_fails) {
+    auto make = []() -> task<void, std::string, cancellation> {
+        std::string text = "bad input";
+        return outcome_error(std::string_view(text));
+    };
+    auto failing = make();
+    EXPECT(!failing.done());
+
+    auto [result] = run(std::move(failing));
+    ASSERT(result.has_error());
+    EXPECT(result.error() == "bad input");
+}
+
+// Made from an error its error type takes, not from a value, and only with an
+// error channel.
+ZEST_CASE(task_converts_from_an_outcome_error_only) {
+    STATIC_EXPECT(std::convertible_to<outcome_error_t<error>, task<int, error>>);
+    STATIC_EXPECT(!std::convertible_to<outcome_error_t<std::string>, task<int, error>>);
+    STATIC_EXPECT(!std::convertible_to<outcome_error_t<error>, task<int>>);
+    STATIC_EXPECT(!std::convertible_to<int, task<int, error>>);
 }
 
 ZEST_CASE(or_fail_unwraps_a_successful_outcome) {

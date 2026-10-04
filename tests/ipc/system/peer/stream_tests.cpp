@@ -1,6 +1,7 @@
 #include <array>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -163,6 +164,41 @@ ZEST_CASE(peer_destroyed_as_close_ends_run) {
     EXPECT(owned.has_value());
     EXPECT(done.has_value());
     EXPECT(peer == nullptr);
+}
+
+// A request and a notification written at once come in one read: the handler
+// is called before the notification is dispatched, and its task starts after.
+ZEST_CASE(task_starts_after_the_messages_read_with_its_request) {
+    auto input = pipe_ends(loop);
+    auto output = pipe_ends(loop);
+    ASSERT(input.has_value());
+    ASSERT(output.has_value());
+    JSONPeer peer(
+        loop,
+        std::make_unique<StreamTransport>(std::move(input->reader), std::move(output->writer)));
+    std::vector<std::string> order;
+    auto answer = [&]() -> RequestResult<AddParams> {
+        order.emplace_back("task");
+        peer.close();
+        co_return AddResult{};
+    };
+    peer.on_request([&](JSONPeer::RequestContext&, const AddParams&) -> RequestResult<AddParams> {
+        order.emplace_back("handler");
+        return answer();
+    });
+    peer.on_notification([&](const NoteParams& params) { order.push_back(params.text); });
+    auto remote = [&]() -> task<void, error> {
+        auto messages =
+            frame(R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})") +
+            frame(R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"note"}})");
+        co_await input->writer.write(std::span<const char>(messages.data(), messages.size()))
+            .or_fail();
+    };
+
+    auto [ran, written] = run(peer.run(), remote());
+    EXPECT(ran.has_value());
+    EXPECT(written.has_value());
+    EXPECT(order == std::vector<std::string>{"handler", "note", "task"});
 }
 
 // One TCP stream both ways: close_output() shuts its write side down. The

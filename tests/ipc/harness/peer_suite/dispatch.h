@@ -95,9 +95,38 @@ void peer_dispatch(const PeerKit<A>& kit) {
         EXPECT(f.written().empty());
     });
 
-    // A handler runs until it first suspends before the peer reads on, so
-    // handlers start in the order their messages arrived.
-    kit.add("handlers_start_in_arrival_order", [](Fixture& f) {
+    // The handler is called before the notifications read with its request
+    // are dispatched, and the task it returns starts after them.
+    kit.add("handler_is_called_at_dispatch_and_its_task_after_the_messages_read_with_it",
+            [](Fixture& f) {
+                std::vector<std::string> order;
+                auto answer = [&](const AddParams& params) -> ipc::RequestResult<AddParams> {
+                    order.emplace_back("task");
+                    co_return AddResult{.sum = params.a + params.b};
+                };
+                f.peer.on_request(
+                    [&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
+                        order.emplace_back("handler");
+                        return answer(params);
+                    });
+                f.peer.on_notification(
+                    [&](const NoteParams& params) { order.push_back(params.text); });
+                f.remote.send(request<A>(1, "test/add", AddParams{.a = 2, .b = 3}));
+                f.remote.send(notification<A>("test/note", NoteParams{.text = "first"}));
+                f.remote.send(notification<A>("test/note", NoteParams{.text = "second"}));
+                f.remote.end_input();
+
+                auto [ran] = f.run(f.peer.run());
+                EXPECT(ran.has_value());
+                EXPECT(order == std::vector<std::string>{"handler", "first", "second", "task"});
+                const auto& written = f.written();
+                ASSERT(written.size() == 1U);
+                EXPECT(sum_of<A>(written[0]) == 5);
+            });
+
+    // A coroutine handler does nothing as it is called: all of it runs after
+    // the notifications read with its request.
+    kit.add("coroutine_handler_runs_after_the_messages_read_with_its_request", [](Fixture& f) {
         std::vector<std::string> order;
         f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
             order.emplace_back("request");
@@ -111,19 +140,18 @@ void peer_dispatch(const PeerKit<A>& kit) {
 
         auto [ran] = f.run(f.peer.run());
         EXPECT(ran.has_value());
-        EXPECT(order == std::vector<std::string>{"request", "first", "second"});
+        EXPECT(order == std::vector<std::string>{"first", "second", "request"});
         const auto& written = f.written();
         ASSERT(written.size() == 1U);
         EXPECT(sum_of<A>(written[0]) == 5);
     });
 
-    // Each handler records its request before it suspends: they start in
-    // the order the requests were read.
-    kit.add("handlers_start_in_the_order_their_requests_were_read", [](Fixture& f) {
+    // Each task records its request as it starts: they start in the order
+    // the requests were read.
+    kit.add("tasks_start_in_the_order_their_requests_were_read", [](Fixture& f) {
         std::vector<std::int64_t> order;
         f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
             order.push_back(params.a);
-            co_await yield();
             co_return AddResult{.sum = params.a};
         });
         for(std::int64_t a = 1; a <= 3; ++a) {
@@ -395,16 +423,44 @@ void peer_dispatch(const PeerKit<A>& kit) {
         EXPECT(sum_of<A>(written[2]) == 3);
     });
 
+    // The test/add handler throws as it is called, before it has a task to
+    // return; the peer reads on and answers test/ping.
+    kit.add("handler_throwing_as_it_is_called_is_answered_with_internal_error", [](Fixture& f) {
+        f.peer.on_request([](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
+            throw std::runtime_error("boom");
+        });
+        f.peer.on_request("test/ping",
+                          [](Context&, const EmptyParams&) -> ipc::RequestResult<AddParams> {
+                              co_return AddResult{.sum = 1};
+                          });
+        f.remote.send(request<A>(1, "test/add", AddParams{}));
+        f.remote.send(request<A>(2, "test/ping", EmptyParams{}));
+        f.remote.end_input();
+
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        const auto& written = f.written();
+        ASSERT(written.size() == 2U);
+        EXPECT(written[0].id == RequestID(1));
+        EXPECT(written[0].kind == Message::Kind::Error);
+        EXPECT(code_of(written[0].error) == ErrorCode::InternalError);
+        EXPECT(written[1].id == RequestID(2));
+        EXPECT(sum_of<A>(written[1]) == 1);
+    });
+
     // The notification's handler throws while a request's is running.
     kit.add("throwing_notification_handler_leaves_the_peer_serving", [](Fixture& f) {
+        event started;
         event release;
         f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
+            started.set();
             co_await release.wait();
             co_return AddResult{.sum = params.a + params.b};
         });
         f.peer.on_notification([](const NoteParams&) { throw std::runtime_error("boom"); });
         auto remote = [&]() -> task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
+            co_await started.wait();
             f.remote.send(notification<A>("test/note", NoteParams{.text = "throw"}));
             release.set();
             co_await f.next();

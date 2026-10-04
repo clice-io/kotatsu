@@ -72,11 +72,19 @@ struct request_options {
 ///
 /// A handler returns RequestResult<Params> or, for a result it has encoded
 /// itself, task<codec::RawValue, Error>; a request whose result type is
-/// codec::RawValue gets the result as the codec wrote it. A request handler
-/// starts as its request is dispatched and runs until it first suspends
-/// before the peer reads on, so what it does up to then sees no message read
-/// after its request; one that should see them, a $/cancelRequest for it or
-/// a change behind it, yields first.
+/// codec::RawValue gets the result as the codec wrote it.
+///
+/// A request is handled in two steps. First the peer calls the handler as it
+/// dispatches the request, in the order the messages were read, notifications
+/// included: what the handler does before it returns sees no message read
+/// after the request, so that is where it takes what its answer should
+/// reflect, such as the version of a document. Then the task it returned
+/// starts, once the messages read together with the request are dispatched,
+/// in the order the requests were read. The task sees a change read with its
+/// request, and a $/cancelRequest read with it, or close(), keeps it from
+/// starting; a message read later may come once the task has started. A
+/// coroutine handler returns before any of its body runs, so all of it runs
+/// in the second step.
 template <typename Codec>
 class Peer {
 public:
@@ -130,7 +138,13 @@ public:
     Result<void> send_notification(std::string_view method, const Params& params);
 
     /// Handles the requests RequestTraits of the callback's params names;
-    /// the callback is `(RequestContext&, const Params&) -> RequestResult<Params>`.
+    /// the callback is `(RequestContext&, const Params&) -> RequestResult<Params>`,
+    /// called and its task started in the two steps the class comment
+    /// describes. The task may refer to the context and the params, which
+    /// outlive it, but not to the callback's locals: a capturing lambda
+    /// coroutine made in the callback is returned as `co_invoke(lambda)`, not
+    /// `lambda()`. A callback that is no coroutine fails with
+    /// `return outcome_error(...)`.
     template <typename Callback>
     void on_request(Callback&& callback);
 

@@ -919,7 +919,14 @@ void Peer<CodecT>::on_request_impl(std::string_view method, Callback&& callback)
         }
 
         RequestContext context(*peer, method_name, request_id, std::move(token));
-        auto result = co_await std::invoke(cb, context, *parsed_params).or_fail();
+        // The callback runs as the request is dispatched; the task it returns
+        // starts once the loop has come round, after what was read with the
+        // request. A cancel meanwhile, a $/cancelRequest read with the request
+        // or close(), ends this coroutine at the yield, and the task never
+        // starts.
+        auto answering = std::invoke(cb, context, *parsed_params);
+        co_await yield(state.loop);
+        auto result = co_await std::move(answering).or_fail();
         // A RawValue result is already in the codec's encoding; read_result
         // takes it back as it is.
         if constexpr(std::is_same_v<decltype(result), codec::RawValue>) {

@@ -167,6 +167,11 @@ struct task_return_object {
     }
 };
 
+/// The coroutine of a task made from an error. Not a member of task: GCC
+/// takes task's own coroutine_handle for the one its coroutines need.
+template <typename T, typename E, typename C>
+task<T, E, C> failing(E error);
+
 /// The promise of every task<T, E, C>, whatever its cancel channel.
 template <typename T, typename E>
 struct task_promise : task_frame, promise_result<T, E> {
@@ -372,6 +377,15 @@ public:
 
     task() noexcept = default;
 
+    /// A task that fails once it starts, with the error made from `failure`
+    /// as the task is made, so that what `failure` refers to may go first. A
+    /// function that is no coroutine fails through it with
+    /// `return outcome_error(...)`, as a coroutine does with `co_await fail(...)`.
+    template <typename U>
+        requires (!std::is_void_v<E>) && std::constructible_from<E, U>
+    task(outcome_error_t<U> failure) :
+        task(detail::failing<T, E, C>(E(std::move(failure.value)))) {}
+
     task(const task&) = delete;
     task& operator=(const task&) = delete;
 
@@ -522,6 +536,11 @@ private:
 };
 
 namespace detail {
+
+template <typename T, typename E, typename C>
+task<T, E, C> failing(E error) {
+    co_await fail(std::move(error));
+}
 
 /// What calling `Fn` with `Args` gives.
 template <typename Fn, typename... Args>

@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <cstdint>
 #include <print>
 #include <string>
@@ -21,6 +22,21 @@ struct LogParams {
     std::string text;
 };
 
+struct EditParams {
+    std::string text;
+};
+
+struct LengthParams {};
+
+struct LengthResult {
+    std::size_t length = 0;
+};
+
+/// Answers with the length of `text`, the copy its handler took.
+ipc::RequestResult<LengthParams, LengthResult> length_of(std::string text) {
+    co_return LengthResult{.length = text.size()};
+}
+
 }  // namespace
 
 int main() {
@@ -43,9 +59,27 @@ int main() {
         std::println(stderr, "[example/log] {}", params.text);
     });
 
+    // The text example/length is about; example/edit replaces it.
+    std::string document = "hello";
+    peer.on_notification("example/edit",
+                         [&document](const EditParams& params) { document = params.text; });
+
+    // Not a coroutine: it runs as the request is dispatched, before any message
+    // read behind it, so it copies the text as the request found it; the task
+    // of length_of() answers from that copy whatever example/edit does before
+    // it starts.
+    peer.on_request("example/length",
+                    [&document](ipc::JSONPeer::RequestContext&, const LengthParams&)
+                        -> ipc::RequestResult<LengthParams, LengthResult> {
+                        if(document.empty()) {
+                            return kota::outcome_error(ipc::Error("the document is empty"));
+                        }
+                        return length_of(document);
+                    });
+
     std::println(stderr, "JSON-RPC stdio example is ready.");
-    std::println(stderr, "Request method: {}", "example/add");
-    std::println(stderr, "Notification method: {}", "example/log");
+    std::println(stderr, "Request methods: {}, {}", "example/add", "example/length");
+    std::println(stderr, "Notification methods: {}, {}", "example/log", "example/edit");
 
     loop.schedule(peer.run());
     return loop.run();
