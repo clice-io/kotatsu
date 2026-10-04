@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -6,6 +7,7 @@
 #include <vector>
 
 #include "deco/harness/argv.h"
+#include "deco/harness/stdout.h"
 #include "deco/harness/text.h"
 #include "deco/harness/web_cli.h"
 #include "kota/deco/deco.h"
@@ -92,12 +94,30 @@ struct Launcher {
     std::vector<std::string> script_args;
 };
 
-/// Runs `command` on the argv `line` writes.
+/// Runs `command` on the argv `line` writes, and returns its exit code.
 template <typename T>
-void run(cli::Command<T>& command, std::string_view line) {
+int run(cli::Command<T>& command, std::string_view line) {
     auto argv = test::split(line);
-    command(argv);
+    return command(argv);
 }
+
+/// A command's options that hold the standard help option beside a required one.
+struct Helped {
+    decl::HelpOption help;
+    DecoKV(names = {"--name"};)
+    <std::string> name;
+};
+
+/// The help option deeper down.
+struct HelpedDeep {
+    struct Common {
+        decl::HelpOption help;
+    };
+
+    Common common;
+    DecoKV(names = {"--name"};)
+    <std::string> name;
+};
 
 /// The usage `command` prints.
 template <typename T>
@@ -324,8 +344,25 @@ ZEST_CASE(nothing_runs_when_nothing_matches) {
     auto command = cli::command<WebCli>("webcli");
     bool ran = false;
     command.match(WebCli::version_category, [&](WebCli) { ran = true; });
-    run(command, "-h");
+    EXPECT(run(command, "-h") == 0);
     EXPECT(!ran);
+}
+
+ZEST_CASE(handler_exit_code_is_the_command_exit_code) {
+    auto command = cli::command<WebCli>("webcli");
+    command.match(WebCli::version_category, [](WebCli) { return 4; }).match_all([](WebCli) {
+        return 3;
+    });
+    EXPECT(run(command, "-v") == 4);
+    EXPECT(run(command, "-X GET --url https://example.com") == 3);
+}
+
+ZEST_CASE(handler_returning_nothing_exits_0) {
+    auto command = cli::command<Flow>("flow");
+    bool ran = false;
+    command.match_all([&](Flow) { ran = true; });
+    EXPECT(run(command, "main.lua") == 0);
+    EXPECT(ran);
 }
 
 ZEST_CASE(execute_of_a_bad_argv_fails) {
@@ -335,10 +372,17 @@ ZEST_CASE(execute_of_a_bad_argv_fails) {
     command.match_all([&](WebCli) { matched = true; }).on_error([&](cli::ParseError err) {
         error = std::move(err);
     });
-    run(command, "--nope");
+    // The usual exit status of a usage error.
+    EXPECT(run(command, "--nope") == 2);
     ASSERT(error.has_value());
     EXPECT(error->type == cli::ParseError::Type::BackendParsing);
     EXPECT(!matched);
+}
+
+ZEST_CASE(execute_of_a_bad_argv_returns_what_the_error_handler_does) {
+    auto command = cli::command<WebCli>("webcli");
+    command.on_error([](const cli::ParseError&) { return 5; });
+    EXPECT(run(command, "--nope") == 5);
 }
 
 ZEST_CASE(execute_of_a_bad_argv_to_a_stream_fails) {
@@ -346,8 +390,48 @@ ZEST_CASE(execute_of_a_bad_argv_to_a_stream_fails) {
     std::ostringstream errors;
     command.on_error(errors).render_with(test::tagged_renderer());
     auto argv = test::split("--nope");
-    command.execute(argv);
+    EXPECT(command.execute(argv) == 2);
     EXPECT(errors.str() == "ERR<0:unknown option '--nope'>\n");
+}
+
+// Given, the help option stops the parse, so the required --name is not
+// missed, and prints the usage instead of running a handler.
+ZEST_CASE(help_option_prints_the_usage_and_runs_no_handler) {
+    auto command = cli::command<Helped>("helped [OPTIONS]");
+    bool ran = false;
+    command.match_all([&](Helped) { ran = true; });
+    for(auto line: {"--help", "-h", "-h --name"}) {
+        ZEST_CONTEXT("argv `{}`", line);
+        int code = -1;
+        auto printed = test::printed_by([&] { return run(command, line); }, code);
+        EXPECT(code == 0);
+        EXPECT(printed == usage_of(command));
+    }
+    EXPECT(!ran);
+    EXPECT(zest::contains(usage_of(command), "--help"));
+}
+
+ZEST_CASE(help_option_counts_at_any_depth) {
+    auto command = cli::command<HelpedDeep>("deep");
+    bool ran = false;
+    command.match_all([&](HelpedDeep) { ran = true; });
+    int code = -1;
+    auto printed = test::printed_by([&] { return run(command, "--help"); }, code);
+    EXPECT(code == 0);
+    EXPECT(printed == usage_of(command));
+    EXPECT(!ran);
+}
+
+// invoke() leaves the help option to its caller, which finds it given.
+ZEST_CASE(help_option_after_invoke_is_the_caller_s) {
+    auto command = cli::command<Helped>("helped");
+    auto argv = test::split("--help");
+    std::optional<std::expected<cli::Invocation<Helped>, cli::ParseError>> parsed;
+    auto printed = test::printed_by([&] { return command.invoke(argv); }, parsed);
+    ASSERT(parsed.has_value());
+    ASSERT(parsed->has_value());
+    EXPECT((*parsed)->options.help.has_value());
+    EXPECT(printed.empty());
 }
 
 ZEST_CASE(invocation_renders_the_same_once_moved) {
