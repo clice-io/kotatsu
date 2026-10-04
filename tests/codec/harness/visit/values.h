@@ -236,12 +236,12 @@ void values(const Kit<B>& kit) {
                     "c_string_not_utf8_fails",
                     [] { return Field<const char*>{"caf\xE9"}; },
                     {.message = "invalid UTF-8 in a string", .path = "value"});
-        encodes_as<ReplaceUtf8Config>(
+        encodes_as<ReplaceUTF8Config>(
             kit,
             "map_key_not_utf8_replaced_encodes_as_replacement_character",
             [] { return Field<std::map<std::string, int>>{{{"caf\xE9", 1}}}; },
             [] { return Field<std::map<std::string, int>>{{{"caf\xEF\xBF\xBD", 1}}}; });
-        encodes_as<ReplaceUtf8Config>(
+        encodes_as<ReplaceUTF8Config>(
             kit,
             "string_not_utf8_replaced_encodes_as_replacement_character",
             [] { return Field<std::string>{"caf\xE9!"}; },

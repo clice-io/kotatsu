@@ -37,7 +37,7 @@ struct DefaultedConfig {
     constexpr static bool defaulted_fields = true;
 };
 
-struct ReplaceUtf8Config {
+struct ReplaceUTF8Config {
     constexpr static auto invalid_utf8 = codec::invalid_utf8::Replace;
 };
 

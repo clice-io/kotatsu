@@ -13,7 +13,7 @@ namespace kota {
 /// they do not. An ill-formed sequence is its maximal subpart, the longest
 /// prefix of a code point it starts with and at least one byte, which a
 /// decoder replaces with one U+FFFD.
-struct Utf8Sequence {
+struct UTF8Sequence {
     char32_t code_point;
     std::size_t length;
     bool valid;
@@ -21,7 +21,7 @@ struct Utf8Sequence {
 
 /// The sequence at the start of text, which is not empty. A code point is
 /// none overlong, a surrogate or past U+10FFFF.
-constexpr Utf8Sequence decode_utf8(std::string_view text) {
+constexpr UTF8Sequence decode_utf8(std::string_view text) {
     constexpr char32_t replacement = 0xFFFD;
     auto lead = static_cast<unsigned char>(text[0]);
     if(lead < 0x80) {
