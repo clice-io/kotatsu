@@ -3,6 +3,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -72,6 +73,15 @@ public:
     /// Drops the first `n` buffered bytes; `n` must not exceed what
     /// read_chunk() showed.
     void consume(std::size_t n);
+
+    /// Reads until the end of the stream. A cancel loses what was read.
+    task<std::string, error> read_to_end();
+
+    /// Reads a line, without its "\n" or "\r\n"; at the end of the stream,
+    /// what follows the last line break if anything does, then nothing. A
+    /// cancel loses the part of the line read so far: the next read starts
+    /// inside the line.
+    task<std::optional<std::string>, error> read_line();
 
     /// Stops reading ahead and ends a pending read with
     /// error::operation_aborted. What is buffered stays; the next read

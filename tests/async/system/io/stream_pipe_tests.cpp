@@ -64,8 +64,6 @@ result<Ends> pipe_ends(event_loop& loop) {
     return Ends{.reader = std::move(*reader), .writer = std::move(*writer)};
 }
 
-using test::read_to_end;
-
 ZEST_SUITE(async_io_stream_pipe, test::LoopFixture) {
 
 ZEST_CASE(read_returns_what_was_written_then_eof) {
@@ -84,6 +82,38 @@ ZEST_CASE(read_returns_what_was_written_then_eof) {
     EXPECT(*first == "kotatsu-pipe");
     ASSERT(second.has_error());
     EXPECT(second.error() == error::end_of_file);
+}
+
+// A line ends with "\n" or "\r\n"; what follows the last line break is a
+// line of its own.
+ZEST_CASE(read_line_splits_the_stream_into_lines) {
+    auto reader = pipe_holding("first\r\nsecond\n\nlast", loop);
+    ASSERT(reader.has_value());
+    auto read_lines = [&]() -> task<std::vector<std::string>, error> {
+        std::vector<std::string> lines;
+        while(auto line = co_await reader->read_line().or_fail()) {
+            lines.push_back(std::move(*line));
+        }
+        co_return lines;
+    };
+
+    auto [lines] = run(read_lines());
+    ASSERT(lines.has_value());
+    EXPECT(*lines == std::vector<std::string>{"first", "second", "", "last"});
+}
+
+ZEST_CASE(read_line_after_the_last_line_break_reads_nothing) {
+    auto reader = pipe_holding("line\n", loop);
+    ASSERT(reader.has_value());
+    auto read_twice = [&]() -> task<std::vector<std::optional<std::string>>, error> {
+        auto first = co_await reader->read_line().or_fail();
+        auto second = co_await reader->read_line().or_fail();
+        co_return std::vector{std::move(first), std::move(second)};
+    };
+
+    auto [lines] = run(read_twice());
+    ASSERT(lines.has_value());
+    EXPECT(*lines == std::vector<std::optional<std::string>>{"line", std::nullopt});
 }
 
 // An empty buffer reads nothing without waiting; then read_some reads four
@@ -354,7 +384,7 @@ ZEST_CASE(write_reaches_the_reader) {
         ends->writer = pipe{};
     };
 
-    auto [sent, received] = run(send(), read_to_end(ends->reader));
+    auto [sent, received] = run(send(), ends->reader.read_to_end());
     EXPECT(sent.has_value());
     ASSERT(received.has_value());
     EXPECT(*received == "kotatsu-write");
@@ -372,7 +402,7 @@ ZEST_CASE(overlapping_writes_arrive_in_order) {
         ends->writer = pipe{};
     };
 
-    auto [sent, received] = run(send(), read_to_end(ends->reader));
+    auto [sent, received] = run(send(), ends->reader.read_to_end());
     EXPECT(sent.has_value());
     ASSERT(received.has_value());
     EXPECT(*received == first + second);
@@ -833,14 +863,14 @@ ZEST_CASE(shutdown_lets_the_peer_read_to_the_end) {
     ASSERT(listener.has_value());
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->accept().or_fail();
-        co_return co_await read_to_end(connection).or_fail();
+        co_return co_await connection.read_to_end().or_fail();
     };
     auto client = [&]() -> task<std::string, error> {
         auto connection = co_await pipe::connect(name, loop).or_fail();
         co_await or_fail(co_await when_all(connection.write(std::string_view("first")),
                                            connection.write(std::string_view("second")),
                                            connection.shutdown()));
-        co_return co_await read_to_end(connection).or_fail();
+        co_return co_await connection.read_to_end().or_fail();
     };
 
     auto [served, left] = run(serve(), client());
@@ -861,14 +891,14 @@ ZEST_CASE(shutdown_leaves_the_peer_free_to_answer) {
     ASSERT(listener.has_value());
     auto serve = [&]() -> task<void, error> {
         auto connection = co_await listener->accept().or_fail();
-        auto request = co_await read_to_end(connection).or_fail();
+        auto request = co_await connection.read_to_end().or_fail();
         co_await connection.write(request + "-answered").or_fail();
     };
     auto client = [&]() -> task<std::string, error> {
         auto connection = co_await pipe::connect(name, loop).or_fail();
         co_await connection.write(std::string_view("asked")).or_fail();
         co_await connection.shutdown().or_fail();
-        co_return co_await read_to_end(connection).or_fail();
+        co_return co_await connection.read_to_end().or_fail();
     };
 
     auto [served, answer] = run(serve(), client());

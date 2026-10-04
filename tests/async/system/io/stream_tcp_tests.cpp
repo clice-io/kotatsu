@@ -5,7 +5,6 @@
 #include <string_view>
 #include <utility>
 
-#include "async/harness/io.h"
 #include "async/harness/loop_fixture.h"
 #include "async/harness/socket.h"
 #include "kota/zest/macro.h"
@@ -39,7 +38,6 @@ using test::close_socket;
 using test::connect_raw;
 using test::invalid_socket;
 using test::RawSocket;
-using test::read_to_end;
 using test::reset_socket;
 using test::socket_t;
 
@@ -156,7 +154,7 @@ ZEST_CASE(shutdown_lets_the_peer_read_to_the_end_and_answer) {
     ASSERT(listener.has_value());
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->acceptor.accept().or_fail();
-        auto request = co_await read_to_end(connection).or_fail();
+        auto request = co_await connection.read_to_end().or_fail();
         co_await connection.write(request + "-answered").or_fail();
         co_return request;
     };
@@ -165,7 +163,7 @@ ZEST_CASE(shutdown_lets_the_peer_read_to_the_end_and_answer) {
         co_await or_fail(co_await when_all(connection.write(std::string_view("first")),
                                            connection.write(std::string_view("second")),
                                            connection.shutdown()));
-        co_return co_await read_to_end(connection).or_fail();
+        co_return co_await connection.read_to_end().or_fail();
     };
 
     auto [served, answer] = run(serve(), client());
@@ -212,7 +210,7 @@ ZEST_CASE(write_or_shutdown_after_a_shutdown_fails) {
     ASSERT(listener.has_value());
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->acceptor.accept().or_fail();
-        co_return co_await read_to_end(connection).or_fail();
+        co_return co_await connection.read_to_end().or_fail();
     };
     auto client = [&]() -> task<std::pair<error, error>, error> {
         auto connection = co_await tcp::connect("127.0.0.1", listener->port).or_fail();
