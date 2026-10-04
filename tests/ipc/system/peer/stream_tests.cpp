@@ -83,7 +83,7 @@ void talk_over_pipes(test::LoopFixture& fixture) {
 ZEST_SUITE(ipc_peer_stream, test::LoopFixture) {
 
 ZEST_CASE(json_peers_talk_over_pipes) {
-    talk_over_pipes<JsonCodec>(*this);
+    talk_over_pipes<JSONCodec>(*this);
 }
 
 ZEST_CASE(bincode_peers_talk_over_pipes) {

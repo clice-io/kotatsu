@@ -15,7 +15,7 @@ namespace kota::ipc {
 
 namespace {
 
-using Fixture = test::PeerFixture<test::JsonAdapter>;
+using Fixture = test::PeerFixture<test::JSONAdapter>;
 using test::AddParams;
 using test::NoteParams;
 
@@ -55,7 +55,7 @@ ZEST_SUITE(ipc_peer_logger, Logged) {
 ZEST_CASE(trace_shows_each_message_read_and_written) {
     log_from(LogLevel::trace);
     serve_add();
-    auto received = test::request<test::JsonAdapter>(1, "test/add", AddParams{.a = 1, .b = 2});
+    auto received = test::request<test::JSONAdapter>(1, "test/add", AddParams{.a = 1, .b = 2});
     remote.send(received);
     remote.end_input();
 
@@ -70,8 +70,8 @@ ZEST_CASE(trace_shows_each_message_read_and_written) {
 ZEST_CASE(entries_below_the_level_are_left_out) {
     log_from(LogLevel::warn);
     serve_add();
-    remote.send(test::request<test::JsonAdapter>(1, "test/add", AddParams{.a = 1, .b = 2}));
-    remote.send(test::notification<test::JsonAdapter>("unknown/note", NoteParams{}));
+    remote.send(test::request<test::JSONAdapter>(1, "test/add", AddParams{.a = 1, .b = 2}));
+    remote.send(test::notification<test::JSONAdapter>("unknown/note", NoteParams{}));
     remote.end_input();
 
     auto [ran] = run(peer.run());
@@ -99,7 +99,7 @@ ZEST_CASE(params_that_do_not_decode_are_a_warning) {
 
 ZEST_CASE(unhandled_notification_is_a_warning) {
     log_from(LogLevel::warn);
-    remote.send(test::notification<test::JsonAdapter>("unknown/note", NoteParams{}));
+    remote.send(test::notification<test::JSONAdapter>("unknown/note", NoteParams{}));
     remote.end_input();
 
     auto [ran] = run(peer.run());
@@ -124,8 +124,8 @@ ZEST_CASE(notification_that_is_not_jsonrpc_2_0_is_dropped_with_a_warning) {
 // A string id is logged quoted, so that it stays apart from a number.
 ZEST_CASE(orphan_response_logs_its_id_as_written) {
     log_from(LogLevel::warn);
-    remote.send(test::response<test::JsonAdapter>(protocol::RequestID("7"), test::AddResult{}));
-    remote.send(test::response<test::JsonAdapter>(protocol::RequestID(7), test::AddResult{}));
+    remote.send(test::response<test::JSONAdapter>(protocol::RequestID("7"), test::AddResult{}));
+    remote.send(test::response<test::JSONAdapter>(protocol::RequestID(7), test::AddResult{}));
     remote.end_input();
 
     auto [ran] = run(peer.run());
@@ -144,7 +144,7 @@ ZEST_CASE(close_tells_the_remote_nothing_of_a_handlers_request) {
             ->send_request<test::AddResult>("client/add", params, {.token = context.cancellation})
             .or_fail();
     });
-    remote.send(test::request<test::JsonAdapter>(1, "test/add", AddParams{}));
+    remote.send(test::request<test::JSONAdapter>(1, "test/add", AddParams{}));
     auto closer = [&]() -> task<> {
         co_await next();
         peer.close();

@@ -13,7 +13,7 @@ namespace kota::ipc {
 
 using Error = protocol::Error;
 
-/// LSP's member names: lower camel case, as JsonCodec writes them.
+/// LSP's member names: lower camel case, as JSONCodec writes them.
 struct lsp_config {
     using field_rename = naming::rename_policy::lower_camel;
 };

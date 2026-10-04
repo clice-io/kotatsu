@@ -217,7 +217,7 @@ ZEST_CASE(parameterless_methods) {
 
 // Clients send the params of shutdown and exit as null, or leave them out.
 ZEST_CASE(parameterless_methods_read_null_params) {
-    JsonCodec codec;
+    JSONCodec codec;
     for(std::string_view payload: {
             R"({"jsonrpc":"2.0","id":1,"method":"shutdown","params":null})",
             R"({"jsonrpc":"2.0","id":1,"method":"shutdown"})",
@@ -286,7 +286,7 @@ ZEST_CASE(required_nullable_member_absent_fails) {
 // Real LSP payloads nest up to about 130 levels: a SelectionRange parent
 // chain, say.
 ZEST_CASE(nesting_of_real_payloads_is_read) {
-    JsonCodec codec;
+    JSONCodec codec;
     std::string chain;
     for(int level = 0; level < 125; ++level) {
         chain += R"({"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}})";

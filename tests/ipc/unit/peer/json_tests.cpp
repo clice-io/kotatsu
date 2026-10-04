@@ -19,8 +19,8 @@ namespace kota::ipc {
 
 namespace {
 
-using Fixture = test::PeerFixture<test::JsonAdapter>;
-using Kit = test::PeerKit<test::JsonAdapter>;
+using Fixture = test::PeerFixture<test::JSONAdapter>;
+using Kit = test::PeerKit<test::JSONAdapter>;
 using protocol::ErrorCode;
 using test::AddParams;
 using test::AddResult;
@@ -62,7 +62,7 @@ ZEST_CASE_GROUP(unreadable) {
 }
 
 ZEST_CASE(error_data_crosses_between_peers) {
-    test::error_data_crosses_between_peers<test::JsonAdapter>();
+    test::error_data_crosses_between_peers<test::JSONAdapter>();
 }
 
 ZEST_CASE(object_without_method_or_id_is_answered_with_invalid_request) {

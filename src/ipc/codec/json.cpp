@@ -166,7 +166,7 @@ struct PrefixReader {
 /// how deeply the value nests. A number of any size is JSON, where simdjson
 /// refuses integers past 64 bits. It keeps its own stack rather than
 /// recursing, however deep the value.
-struct JsonChecker {
+struct JSONChecker {
     std::string_view text;
     std::size_t at = 0;
     /// The deepest the arrays and objects nest.
@@ -430,11 +430,11 @@ IncomingMessage read_malformed(std::string_view payload, std::string reason) {
 
 }  // namespace
 
-IncomingMessage JsonCodec::parse_message(std::string_view payload) {
+IncomingMessage JSONCodec::parse_message(std::string_view payload) {
     // simdjson does not check the members it skips, so the grammar is checked
     // first, in a pass that also measures the nesting: text that is no JSON
     // is a parse error wherever it breaks.
-    JsonChecker checker{.text = payload};
+    JSONChecker checker{.text = payload};
     if(!checker.check()) {
         return IncomingParseError{
             .id = std::nullopt,
@@ -516,11 +516,11 @@ IncomingMessage JsonCodec::parse_message(std::string_view payload) {
 /// request's id after its method, past the prefix, reads as a notification,
 /// and a response's id after its result as Unknown. kotatsu, like
 /// vscode-jsonrpc, writes the id first.
-MessageHead JsonCodec::peek(std::string_view prefix) {
+MessageHead JSONCodec::peek(std::string_view prefix) {
     return read_head(prefix).head();
 }
 
-Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,
+Result<std::string> JSONCodec::encode_request(const protocol::RequestID& id,
                                               std::string_view method,
                                               std::string_view params) {
     return serialize_value(outgoing_request_message{
@@ -530,7 +530,7 @@ Result<std::string> JsonCodec::encode_request(const protocol::RequestID& id,
     });
 }
 
-Result<std::string> JsonCodec::encode_notification(std::string_view method,
+Result<std::string> JSONCodec::encode_notification(std::string_view method,
                                                    std::string_view params) {
     return serialize_value(outgoing_notification_message{
         .method = std::string(method),
@@ -538,7 +538,7 @@ Result<std::string> JsonCodec::encode_notification(std::string_view method,
     });
 }
 
-Result<std::string> JsonCodec::encode_success_response(const protocol::RequestID& id,
+Result<std::string> JSONCodec::encode_success_response(const protocol::RequestID& id,
                                                        std::string_view result) {
     return serialize_value(outgoing_success_response_message{
         .id = id,
@@ -546,7 +546,7 @@ Result<std::string> JsonCodec::encode_success_response(const protocol::RequestID
     });
 }
 
-Result<std::string> JsonCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
+Result<std::string> JSONCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
                                                      const Error& error) {
     return serialize_value(outgoing_error_response_message{
         .id = id,
@@ -554,6 +554,6 @@ Result<std::string> JsonCodec::encode_error_response(const std::optional<protoco
     });
 }
 
-template class Peer<JsonCodec>;
+template class Peer<JSONCodec>;
 
 }  // namespace kota::ipc

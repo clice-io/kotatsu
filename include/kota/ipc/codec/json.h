@@ -8,7 +8,7 @@
 
 namespace kota::ipc {
 
-struct JsonCodec {
+struct JSONCodec {
     IncomingMessage parse_message(std::string_view payload);
 
     /// Reads what it can from `prefix`, the first bytes of a message too
@@ -59,8 +59,8 @@ struct JsonCodec {
     }
 };
 
-using JSONPeer = Peer<JsonCodec>;
+using JSONPeer = Peer<JSONCodec>;
 
-extern template class Peer<JsonCodec>;
+extern template class Peer<JSONCodec>;
 
 }  // namespace kota::ipc
