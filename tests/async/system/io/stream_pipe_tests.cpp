@@ -102,6 +102,26 @@ ZEST_CASE(read_line_splits_the_stream_into_lines) {
     EXPECT(*lines == std::vector<std::string>{"first", "second", "", "last"});
 }
 
+// The "\r" of a "\r\n" is buffered before its "\n" is written, so the two
+// come in different chunks; the line still ends without it.
+ZEST_CASE(read_line_drops_a_carriage_return_read_before_its_newline) {
+    int fds[2] = {-1, -1};
+    ASSERT(test::create_pipe(fds) == 0);
+    auto reader = pipe::open(fds[0], loop);
+    ASSERT(reader.has_value());
+    ASSERT(test::write_fd(fds[1], "first\r", 6) == 6);
+    auto read_split = [&]() -> task<std::optional<std::string>, error> {
+        co_await reader->read_chunk().or_fail();
+        test::write_fd(fds[1], "\n", 1);
+        test::close_fd(fds[1]);
+        co_return co_await reader->read_line().or_fail();
+    };
+
+    auto [line] = run(read_split());
+    ASSERT(line.has_value());
+    EXPECT(*line == std::optional<std::string>("first"));
+}
+
 ZEST_CASE(read_line_after_the_last_line_break_reads_nothing) {
     auto reader = pipe_holding("line\n", loop);
     ASSERT(reader.has_value());
@@ -659,27 +679,45 @@ ZEST_CASE(read_of_a_file_fails) {
     EXPECT(!fs::sync::close(*file));
 #else
     ASSERT(opened.has_value());
-    auto [read] = run(opened->read());
-    ASSERT(read.has_error());
-    EXPECT(read.error() == error::socket_operation_on_non_socket);
+    auto read_each_way = [&]() -> task<std::vector<error>> {
+        auto read = co_await opened->read();
+        auto rest = co_await opened->read_to_end();
+        auto line = co_await opened->read_line();
+        co_return std::vector{read.has_error() ? read.error() : error(),
+                              rest.has_error() ? rest.error() : error(),
+                              line.has_error() ? line.error() : error()};
+    };
+
+    auto [errors] = run(read_each_way());
+    ASSERT(errors.has_value());
+    EXPECT(*errors == std::vector<error>(3, error::socket_operation_on_non_socket));
 #endif
 }
 
 #ifndef _WIN32
 // The null device as a child's ignored stdout is open for reading and
-// writing: writes to it go out, whether or not the loop could wait to read.
-ZEST_CASE(null_device_open_to_read_and_write_takes_writes) {
+// writing: writes to it go out, whether or not the loop can wait to read it.
+ZEST_CASE(open_of_the_null_device_to_read_and_write_writes_to_it) {
     auto file = fs::sync::open("/dev/null", O_RDWR, 0);
     ASSERT(file.has_value());
     auto opened = pipe::open(*file, loop);
     ASSERT(opened.has_value());
-    auto writer = [&]() -> task<void, error> {
+    auto write_then_read = [&]() -> task<error, error> {
         std::string_view text = "text";
         co_await opened->write(std::span(text.data(), text.size())).or_fail();
+        auto read = co_await opened->read();
+        co_return read.has_error() ? read.error() : error();
     };
 
-    auto [written] = run(writer());
-    EXPECT(written.has_value());
+    auto [read] = run(write_then_read());
+    ASSERT(read.has_value());
+#ifdef __linux__
+    // epoll refuses the null device.
+    EXPECT(*read == error::socket_operation_on_non_socket);
+#else
+    // kqueue reads it to its end.
+    EXPECT(*read == error::end_of_file);
+#endif
 }
 
 // Writes to a regular file never wait, so the loop never watches one open

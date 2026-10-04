@@ -35,8 +35,9 @@ handle_type guess_handle(int fd);
 /// it. The end of the stream or a read error is reported once the bytes
 /// read before it are consumed, and from then on to every read. One read
 /// may be pending at a time; a second fails with
-/// error::resource_busy_or_locked. Cancelling a read only withdraws it: what
-/// arrives stays buffered for the next one.
+/// error::resource_busy_or_locked. Cancelling read(), read_some() or
+/// read_chunk() only withdraws it: what arrives stays buffered for the next
+/// one.
 ///
 /// Writes may overlap: libuv sends them in the order they were made.
 ///
@@ -112,7 +113,9 @@ public:
     /// answer after that.
     task<void, error> shutdown();
 
-    /// Whether the stream can be read from; false for an inert one.
+    /// Whether the stream was opened for reading; false for an inert one. A
+    /// pipe over a descriptor the loop cannot wait on was, though its reads
+    /// fail.
     bool readable() const noexcept;
 
     /// Whether the stream can be written to; false for an inert one, and

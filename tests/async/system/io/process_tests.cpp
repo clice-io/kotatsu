@@ -513,16 +513,34 @@ ZEST_CASE(capture_of_a_missing_file_fails) {
 }
 
 #ifndef _WIN32
-// The child writes its pid to a FIFO, then sleeps. Once the pid is read the
-// capture is cancelled, and it ends only once the child is gone: no process
-// has that pid any more. The FIFO is opened for writing too, so that it
-// never reads as ended before the child writes. mkfifo is POSIX.
+// The child fills stderr before it writes to stdout: reading one pipe after
+// the other, the capture would wait on it for good. The command is POSIX.
+ZEST_CASE(capture_reads_both_pipes_while_the_child_runs) {
+    auto opts = shell("head -c 1048576 /dev/zero >&2; head -c 1048576 /dev/zero");
+
+    auto [captured] = run(process::capture(opts, loop));
+    ASSERT(captured.has_value());
+    EXPECT(captured->status.success());
+    EXPECT(captured->stdout_data.size() == 1048576U);
+    EXPECT(captured->stderr_data.size() == 1048576U);
+}
+
+// The child writes its pid to one FIFO, then reads another that never ends,
+// so only a kill ends it. Once the pid is read the capture is cancelled, and
+// it ends only once the child is gone: no process has that pid any more.
+// Both FIFOs are opened for writing too, so that neither reads as ended.
+// mkfifo is POSIX.
 ZEST_CASE(cancelled_capture_kills_the_child) {
     test::TempDir dir;
     ASSERT(::mkfifo(dir.file("pid").c_str(), 0600) == 0);
-    auto reader = pipe::open(::open(dir.file("pid").c_str(), O_RDWR), loop);
+    ASSERT(::mkfifo(dir.file("hold").c_str(), 0600) == 0);
+    auto pid_fifo = fs::sync::open(dir.file("pid"), O_RDWR, 0);
+    ASSERT(pid_fifo.has_value());
+    auto hold = fs::sync::open(dir.file("hold"), O_RDWR, 0);
+    ASSERT(hold.has_value());
+    auto reader = pipe::open(*pid_fifo, loop);
     ASSERT(reader.has_value());
-    auto opts = shell("echo $$ > pid; exec sleep 60");
+    auto opts = shell("echo $$ > pid; exec cat < hold");
     opts.cwd = dir.path.string();
     cancellation_source source;
     auto canceller = [&]() -> task<std::optional<std::string>, error> {
@@ -540,6 +558,7 @@ ZEST_CASE(cancelled_capture_kills_the_child) {
     const int why = errno;
     EXPECT(found == -1);
     EXPECT(why == ESRCH);
+    EXPECT(!fs::sync::close(*hold));
 }
 #endif
 

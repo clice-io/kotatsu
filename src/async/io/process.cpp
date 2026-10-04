@@ -35,23 +35,27 @@ struct process::Self : uv::owned_handle<Self> {
     static void on_exit(uv_process_t* handle, std::int64_t status, int term_signal);
 };
 
-/// Waits for the child to exit; a cancel kills it, and the wait goes on
-/// until it has exited.
+/// Waits for the child, started that same turn, to exit; a cancel kills it,
+/// and the wait goes on until it has exited. A child the caller may not
+/// signal is left running instead, as a cancelled wait() leaves it.
 struct process::Self::ExitWait : uv::uv_op<ExitWait> {
     Self& self;
 
     explicit ExitWait(Self& self) noexcept : self(self) {}
 
     bool start() noexcept {
-        if(self.exited) {
-            return false;
-        }
         self.exit_wait = this;
         return true;
     }
 
     void cancel() noexcept {
-        ::uv_process_kill(&self.process, SIGKILL);
+        // Fails with no_such_process only for a child reaped already, whose
+        // exit callback completes this.
+        auto killed = error(::uv_process_kill(&self.process, SIGKILL));
+        if(killed && killed != error::no_such_process) {
+            self.exit_wait = nullptr;
+            this->complete();
+        }
     }
 
     exit_status await_resume() const noexcept {
@@ -339,15 +343,12 @@ task<process::capture_result, error> process::capture(options opts, event_loop& 
     if(!spawned) {
         co_await fail(spawned.error());
     }
-    auto reap = [](Self& self) -> task<exit_status, error> {
-        co_return co_await Self::ExitWait(self);
-    };
     // Both pipes are read while the child runs: one that fills a pipe waits
     // for it to be read before it can exit.
     auto [stdout_data, stderr_data, status] =
         co_await or_fail(co_await when_all(spawned->stdout_pipe.read_to_end(),
                                            spawned->stderr_pipe.read_to_end(),
-                                           reap(*spawned->proc.self)));
+                                           Self::ExitWait(*spawned->proc.self)));
     co_return capture_result{
         .status = status,
         .stdout_data = std::move(stdout_data),

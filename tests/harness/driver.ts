@@ -53,7 +53,6 @@ type Stdio = "pipe" | "ignore" | number;
 export class Driver {
   readonly name: string;
   readonly #child: ChildProcess;
-  readonly #stdout: Readable | null;
   readonly #exited: Promise<Exit>;
   readonly #stderrEnded: Promise<unknown>;
   readonly #allowances: Allowance[] = [];
@@ -64,7 +63,6 @@ export class Driver {
     assert.ok(child.stderr !== null);
     this.name = name;
     this.#child = child;
-    this.#stdout = child.stdout;
     this.#exited = new Promise((resolve) =>
       child.once("exit", (code, signal) => resolve({ code, signal })),
     );
@@ -104,8 +102,8 @@ export class Driver {
 
   /** The driver's output, for a channel in its protocol. */
   get stdout(): Readable {
-    assert.ok(this.#stdout !== null, "the driver's stdout is no pipe");
-    return this.#stdout;
+    assert.ok(this.#child.stdout !== null, "the driver's stdout is no pipe");
+    return this.#child.stdout;
   }
 
   jsonLines(): JsonLines {
