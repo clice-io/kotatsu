@@ -103,10 +103,7 @@ cc_library(
         "//:zest_async",
     ], []),
     ("ipc", "unit", [":ipc_harness"], []),
-    ("ipc", "system", [
-        ":ipc_harness",
-        "//:zest_async",
-    ], []),
+    ("ipc", "system", [":ipc_harness"], []),
     ("ipc/lsp", "unit", [
         ":ipc_harness",
         ":ipc_lsp_harness",
@@ -118,7 +115,6 @@ cc_library(
     # zest's EXPECT_SNAPSHOT_JSON cases need the JSON codec.
     ("zest", "system", ["//:codec_json"], ["KOTA_TEST_HAS_JSON=1"]),
     ("examples/async", "unit", [
-        ":async_harness",
         "//:zest_async",
         "//examples:build_system_graph",
     ], []),

@@ -154,12 +154,21 @@ ZEST_CASE(missing_command_fails) {
     EXPECT(zest::ends_with(match.error().message, "subcommand is required"));
 }
 
-ZEST_CASE(missing_command_returns_what_the_error_handler_does) {
+ZEST_CASE(missing_command_to_an_exit_code_handler_fails) {
     cli::SubCommander commander("tool <command>");
     commander.add(decl::SubCommand{.name = "run", .description = ""}, [](std::span<std::string>) {})
-        .when_err([](const cli::SubCommandError&) { return 0; });
+        .when_err([](const cli::SubCommandError&) { return 5; });
     std::vector<std::string> argv;
-    EXPECT(commander(argv) == 0);
+    EXPECT(commander(argv) == 5);
+}
+
+// The default error handler prints the error to stderr.
+ZEST_CASE(missing_command_to_the_default_handler_fails) {
+    cli::SubCommander commander("tool <command>");
+    commander.add(decl::SubCommand{.name = "run", .description = ""},
+                  [](std::span<std::string>) {});
+    std::vector<std::string> argv;
+    EXPECT(commander(argv) == 2);
 }
 
 ZEST_CASE(adding_a_command_without_a_name_fails) {
@@ -237,12 +246,15 @@ ZEST_CASE(handler_exit_code_is_the_commander_exit_code) {
 ZEST_CASE(command_object_can_be_handed_over) {
     std::string seen;
     auto web = cli::command<WebCli>("web [OPTIONS]");
-    web.match_all([&](WebCli) { seen = "web"; });
+    web.match_all([&](WebCli) {
+        seen = "web";
+        return 3;
+    });
 
     cli::SubCommander commander("tool <command>");
     commander.add(decl::SubCommand{.name = "web", .description = ""}, std::move(web));
     auto argv = test::split("web -v");
-    commander(argv);
+    EXPECT(commander(argv) == 3);
     EXPECT(seen == "web");
 }
 
@@ -264,19 +276,21 @@ ZEST_CASE(enabled_help_prints_the_commands) {
         ZEST_CONTEXT("argv `{}`", line);
         auto argv = test::split(line);
         int code = -1;
-        auto printed = test::printed_by([&] { return tool.commander(argv); }, code);
+        auto printed = test::printed_by([&] { code = tool.commander(argv); });
         EXPECT(code == 0);
         EXPECT(printed == usage_of(tool.commander));
     }
     EXPECT(tool.ran.empty());
 }
 
-// Without enable_help(), a help flag is an argument like any other.
-ZEST_CASE(help_flag_without_enable_help_takes_the_default_route) {
+// Only the first argument asks the commander for help; after a command, it is the command's.
+ZEST_CASE(enabled_help_leaves_a_command_s_help_to_it) {
     Tool tool;
-    tool("--help");
-    EXPECT(tool.ran == "default");
+    tool.commander.enable_help();
+    auto printed = test::printed_by([&] { tool("run --help"); });
+    EXPECT(tool.ran == "run");
     EXPECT(tool.args == (strings{"--help"}));
+    EXPECT(printed.empty());
 }
 
 ZEST_CASE(usage_lists_the_commands) {

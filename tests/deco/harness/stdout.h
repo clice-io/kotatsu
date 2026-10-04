@@ -6,15 +6,21 @@
 
 namespace kota::test {
 
-/// What `body` prints to std::cout, which it prints to while it runs; the
-/// result of `body` goes to `result`.
-template <typename Body, typename Result>
-std::string printed_by(Body&& body, Result& result) {
-    std::ostringstream out;
-    auto* previous = std::cout.rdbuf(out.rdbuf());
-    result = body();
-    std::cout.rdbuf(previous);
-    return out.str();
+/// What `body` prints to std::cout while it runs. std::cout is given back its
+/// own buffer however `body` ends.
+template <typename Body>
+std::string printed_by(Body&& body) {
+    struct Capture {
+        std::ostringstream out;
+        std::streambuf* previous = std::cout.rdbuf(out.rdbuf());
+
+        ~Capture() {
+            std::cout.rdbuf(previous);
+        }
+    } capture;
+
+    body();
+    return capture.out.str();
 }
 
 }  // namespace kota::test

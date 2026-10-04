@@ -62,15 +62,25 @@ ZEST_CASE(split_root_resolves_the_directory_escapes) {
     expect_split(R"(a/b\*c/d*)", "a/b*c/", "d*");
 }
 
+// The escapes create() rejects end the root, as a wildcard does.
+ZEST_CASE(split_root_ends_at_an_escape_create_rejects) {
+    expect_split(R"(a\/b/c*)", "", R"(a\/b/c*)");
+    expect_split(R"(a/b\)", "a/", R"(b\)");
+    expect_split(R"(\)", "", R"(\)");
+}
+
 // The use split_root() is for: the directory resolved on its own, then escaped
 // back in front of the rest, gives a pattern that matches as the first did.
 ZEST_CASE(split_root_rebuilds_a_pattern_matching_alike) {
-    auto root = GlobPattern::split_root(R"(src/a\[1\]/**/*.cpp)");
+    auto pattern = std::string_view(R"(src/a\[1\]/**/*.cpp)");
+    auto root = GlobPattern::split_root(pattern);
     EXPECT(root.directory == "src/a[1]/");
     auto rebuilt = GlobPattern::escape(root.directory) + std::string(root.rest);
-    test::expect_glob(rebuilt,
-                      {"src/a[1]/x.cpp", "src/a[1]/b/c/y.cpp"},
-                      {"src/a1/x.cpp", "src/a[1]/x.h"});
+    for(std::string_view each: {pattern, std::string_view(rebuilt)}) {
+        test::expect_glob(each,
+                          {"src/a[1]/x.cpp", "src/a[1]/b/c/y.cpp"},
+                          {"src/a1/x.cpp", "src/a[1]/x.h"});
+    }
 }
 
 };  // ZEST_SUITE(support_glob_pattern_root)

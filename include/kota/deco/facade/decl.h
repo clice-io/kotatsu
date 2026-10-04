@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cctype>
 #include <cerrno>
@@ -984,15 +985,21 @@ struct VectorOption : DecoOption<ResTy> {
     }
 };
 
+/// The names help is asked for by: HelpOption's, and the first argument
+/// cli::SubCommander::enable_help() answers.
+constexpr inline std::array<std::string_view, 2> help_names = {"-h", "--help"};
+
 /// The standard help option, `-h` and `--help`, for an options struct to hold, at any depth.
 /// Given, it stops parsing where it stands, so that no required option is missed, and
 /// cli::Command's operator() prints the usage to stdout and returns 0 without running a
-/// handler; invoke() and parse() leave that to their caller, which finds it set.
+/// handler; invoke() and parse() leave that to their caller, which finds it set. Stopping
+/// skips the options' checks, but not cli::Command's finalize() handlers, which run on
+/// options never checked; the `after<>` hooks of the help option itself never run.
 struct HelpOption : FlagOption<bool> {
     // What DecoFlag would declare, written without it: deco's headers leave its macros out.
     struct __deco_field_ty : OptionDeclaration<FlagFields, bool> {
         constexpr __deco_field_ty() {
-            names = {"-h", "--help"};
+            names = {help_names.begin(), help_names.end()};
             help = "display this help and exit";
             required = false;
             after_parsed = Action::stop;

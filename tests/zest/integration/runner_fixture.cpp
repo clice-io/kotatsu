@@ -157,9 +157,11 @@ ZEST_CASE(throws_nothing) {
 
 };  // ZEST_SUITE(fixture_report)
 
-// A task that waits for ever outlasts the watchdog the test sets: the watchdog
-// cancels it, which ends the run, and fails the test.
+// run() of tasks that do not end as they should: each case fails, and the task
+// is cancelled, which ends the run.
 ZEST_SUITE(fixture_loop, LoopFixture) {
+
+// A task that waits for ever outlasts the watchdog the test sets.
 
 ZEST_CASE(outlasts_the_watchdog) {
     watchdog = std::chrono::milliseconds(50);
@@ -169,6 +171,17 @@ ZEST_CASE(outlasts_the_watchdog) {
     };
     auto [waited] = run(waits());
     EXPECT(waited.is_cancelled());
+}
+
+// A task stops the loop under run(), then waits for ever.
+ZEST_CASE(stopped_under_run) {
+    event never;
+    auto stops = [&]() -> task<> {
+        loop.stop();
+        co_await never.wait();
+    };
+    auto [stopped] = run(stops());
+    EXPECT(stopped.is_cancelled());
 }
 
 };  // ZEST_SUITE(fixture_loop)

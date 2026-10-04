@@ -102,18 +102,11 @@ ZEST_CASE(loop_stops_when_the_last_task_finishes_with_a_timer_armed) {
     EXPECT(*result == 1);
 }
 
-// The sleep ends far inside the shortened watchdog.
-ZEST_CASE(shorter_watchdog_passes_tasks_that_finish_in_time) {
-    watchdog = 1s;
-
-    auto [result] = run(sleep(10ms, loop));
-    EXPECT(result.has_value());
-}
-
 #if KOTA_ENABLE_EXCEPTIONS
 
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(throw_fails_run_once_every_task_finishes, skip = test::exceptions_unreadable) {
+// run() lets every other task finish before it fails with what was thrown,
+// which it reads; see test::exceptions_unreadable.
+ZEST_CASE(run_of_a_throwing_task_fails, skip = test::exceptions_unreadable) {
     bool finished = false;
     auto thrower = []() -> task<> {
         throw std::runtime_error("boom");

@@ -272,12 +272,12 @@ endif()
 #   1. zest_bootstrap_*: the tests of what zest itself relies on run in this
 #      process, without the pool.
 #   2. zest_runner: the pool itself, end to end, against tests that crash,
-#      hang or exit early.
+#      hang or exit early; LoopFixture's watchdog; run_cli's command line.
 #   3. unit_tests, system_tests: everything, through the pool.
 add_test(NAME zest_bootstrap_unit
     COMMAND unit_tests
         --no-isolation
-        "--test-filter={support_*,meta_compare,meta_name,meta_spelling,codec_debug_*,deco_*,async_vocab_outcome,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_watcher}.*"
+        "--test-filter={support_*,meta_compare,meta_name,meta_spelling,codec_debug_*,deco_*,async_vocab_outcome,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_watcher,zest_async}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )
@@ -289,7 +289,7 @@ add_test(NAME zest_bootstrap_system
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )
 set_tests_properties(zest_bootstrap_unit zest_bootstrap_system PROPERTIES
-    FIXTURES_SETUP zest_async
+    FIXTURES_SETUP zest_bootstrap
     LABELS bootstrap
 )
 
@@ -301,7 +301,7 @@ add_test(NAME zest_runner
         -P "${CMAKE_CURRENT_SOURCE_DIR}/zest/integration/check_runner.cmake"
 )
 set_tests_properties(zest_runner PROPERTIES
-    FIXTURES_REQUIRED zest_async
+    FIXTURES_REQUIRED zest_bootstrap
     FIXTURES_SETUP zest_pool
     LABELS bootstrap
 )
@@ -313,7 +313,7 @@ foreach(binary IN LISTS kota_test_binaries)
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
     )
     set_tests_properties(${binary} PROPERTIES
-        FIXTURES_REQUIRED "zest_async;zest_pool"
+        FIXTURES_REQUIRED "zest_bootstrap;zest_pool"
         LABELS ${level}
     )
 endforeach()

@@ -82,7 +82,7 @@ Rules:
 zest decides pass or fail with meta's comparisons, prints operands with the debug codec, matches test filters with support's glob patterns, parses its options with deco and drives its worker processes with kota::async. ctest therefore runs in stages, each needing the one before:
 
 1. `zest_bootstrap_unit`, `zest_bootstrap_system`: the tests of what zest relies on, in this process, without the worker pool. Their filters are in `tests/CMakeLists.txt`.
-2. `zest_runner`: the worker pool end to end.
+2. `zest_runner`: the worker pool end to end, LoopFixture's watchdog, and `run_cli`'s command line.
 3. `unit_tests`, `system_tests`: everything.
 
 A test in a bootstrap suite must not judge itself with what it tests: meta's comparison tests use unary checks (`EXPECT(eq(a, b))`) or parenthesized plain bools (`EXPECT((a.x == 1))`), never a split comparison. A new suite covering something zest relies on joins a bootstrap filter; a renamed one updates it.

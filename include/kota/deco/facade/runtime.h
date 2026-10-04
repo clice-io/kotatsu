@@ -778,7 +778,7 @@ class Command {
     static auto adapt_match_handler(Handler&& handler) -> match_handler_t {
         using HandlerTy = std::remove_cvref_t<Handler>;
         return match_handler_t(
-            [handler = std::forward<Handler>(handler)](invocation_t& invocation) mutable -> int {
+            [handler = std::forward<Handler>(handler)](invocation_t& invocation) mutable {
                 if constexpr(std::is_invocable_v<HandlerTy&, T>) {
                     return detail::exit_code_of(0, handler, std::move(invocation.options));
                 } else if constexpr(std::is_invocable_v<HandlerTy&, invocation_t>) {
@@ -1155,7 +1155,9 @@ public:
     }
 
     /// Hands a missing or unknown subcommand to `handler`, which returns nothing, so that the
-    /// commander returns parse_error_exit_code, or the exit code to return.
+    /// commander returns parse_error_exit_code, or the exit code to return. It is handed too
+    /// the Internal error of an add() given a subcommand with no name; what it returns for
+    /// that is dropped, as add() has no exit code to give.
     template <typename Handler>
         requires std::is_invocable_v<std::remove_cvref_t<Handler>&, SubCommandError>
     auto when_err(Handler&& handler) -> SubCommander& {

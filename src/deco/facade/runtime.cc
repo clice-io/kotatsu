@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 #include <utility>
 
@@ -152,7 +153,8 @@ auto SubCommander::match(std::span<std::string> argv) const
 }
 
 auto SubCommander::parse(std::span<std::string> argv) -> int {
-    if(help_enabled && !argv.empty() && (argv.front() == "-h" || argv.front() == "--help")) {
+    if(help_enabled && !argv.empty() &&
+       std::ranges::find(decl::help_names, argv.front()) != decl::help_names.end()) {
         usage(std::cout);
         return 0;
     }

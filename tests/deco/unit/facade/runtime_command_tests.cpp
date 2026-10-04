@@ -316,18 +316,25 @@ ZEST_CASE(match_handler_may_take_the_invocation) {
     auto command = cli::command<WebCli>("webcli");
     std::size_t traced = 0;
     command
-        .match(
-            WebCli::request_category,
-            [&](const cli::Invocation<WebCli>& invocation) { traced = invocation.trace().size(); })
+        .match(WebCli::request_category,
+               [&](const cli::Invocation<WebCli>& invocation) {
+                   traced = invocation.trace().size();
+                   return 3;
+               })
         .match(WebCli::version_category,
-               [&](cli::Invocation<WebCli>& invocation) { traced = invocation.trace().size(); })
-        .match(WebCli::help_category,
-               [&](cli::Invocation<WebCli> invocation) { traced = invocation.trace().size(); });
-    run(command, "-X GET --url https://example.com");
+               [&](cli::Invocation<WebCli>& invocation) {
+                   traced = invocation.trace().size();
+                   return 4;
+               })
+        .match(WebCli::help_category, [&](cli::Invocation<WebCli> invocation) {
+            traced = invocation.trace().size();
+            return 5;
+        });
+    EXPECT(run(command, "-X GET --url https://example.com") == 3);
     EXPECT(traced == 2U);
-    run(command, "-v");
+    EXPECT(run(command, "-v") == 4);
     EXPECT(traced == 1U);
-    run(command, "-h");
+    EXPECT(run(command, "-h") == 5);
     EXPECT(traced == 1U);
 }
 
@@ -379,10 +386,16 @@ ZEST_CASE(execute_of_a_bad_argv_fails) {
     EXPECT(!matched);
 }
 
-ZEST_CASE(execute_of_a_bad_argv_returns_what_the_error_handler_does) {
+ZEST_CASE(execute_of_a_bad_argv_to_an_exit_code_handler_fails) {
     auto command = cli::command<WebCli>("webcli");
     command.on_error([](const cli::ParseError&) { return 5; });
     EXPECT(run(command, "--nope") == 5);
+}
+
+// The default error handler prints the error to stderr.
+ZEST_CASE(execute_of_a_bad_argv_to_the_default_handler_fails) {
+    auto command = cli::command<WebCli>("webcli");
+    EXPECT(run(command, "--nope") == 2);
 }
 
 ZEST_CASE(execute_of_a_bad_argv_to_a_stream_fails) {
@@ -400,10 +413,11 @@ ZEST_CASE(help_option_prints_the_usage_and_runs_no_handler) {
     auto command = cli::command<Helped>("helped [OPTIONS]");
     bool ran = false;
     command.match_all([&](Helped) { ran = true; });
-    for(auto line: {"--help", "-h", "-h --name"}) {
+    // Parsing stops at the help option, before an option it does not know.
+    for(auto line: {"--help", "-h", "-h --name", "-h --nope"}) {
         ZEST_CONTEXT("argv `{}`", line);
         int code = -1;
-        auto printed = test::printed_by([&] { return run(command, line); }, code);
+        auto printed = test::printed_by([&] { code = run(command, line); });
         EXPECT(code == 0);
         EXPECT(printed == usage_of(command));
     }
@@ -416,21 +430,39 @@ ZEST_CASE(help_option_counts_at_any_depth) {
     bool ran = false;
     command.match_all([&](HelpedDeep) { ran = true; });
     int code = -1;
-    auto printed = test::printed_by([&] { return run(command, "--help"); }, code);
+    auto printed = test::printed_by([&] { code = run(command, "--help"); });
     EXPECT(code == 0);
     EXPECT(printed == usage_of(command));
     EXPECT(!ran);
 }
 
-// invoke() leaves the help option to its caller, which finds it given.
-ZEST_CASE(help_option_after_invoke_is_the_caller_s) {
+// An option it does not know, before the help option, fails the parse first.
+ZEST_CASE(help_option_after_a_bad_option_fails) {
+    auto command = cli::command<Helped>("helped [OPTIONS]");
+    std::optional<cli::ParseError> error;
+    command.on_error([&](cli::ParseError err) { error = std::move(err); });
+    int code = -1;
+    auto printed = test::printed_by([&] { code = run(command, "--nope --help"); });
+    EXPECT(code == 2);
+    ASSERT(error.has_value());
+    EXPECT(error->type == cli::ParseError::Type::BackendParsing);
+    EXPECT(printed.empty());
+}
+
+// invoke() and cli::parse() leave the help option to their caller, which finds it given.
+ZEST_CASE(invoke_leaves_the_help_option_to_its_caller) {
     auto command = cli::command<Helped>("helped");
     auto argv = test::split("--help");
-    std::optional<std::expected<cli::Invocation<Helped>, cli::ParseError>> parsed;
-    auto printed = test::printed_by([&] { return command.invoke(argv); }, parsed);
+    std::expected<cli::Invocation<Helped>, cli::ParseError> invoked;
+    std::expected<cli::Invocation<Helped>, cli::ParseError> parsed;
+    auto printed = test::printed_by([&] {
+        invoked = command.invoke(argv);
+        parsed = cli::parse<Helped>(argv);
+    });
+    ASSERT(invoked.has_value());
+    EXPECT(invoked->options.help.has_value());
     ASSERT(parsed.has_value());
-    ASSERT(parsed->has_value());
-    EXPECT((*parsed)->options.help.has_value());
+    EXPECT(parsed->options.help.has_value());
     EXPECT(printed.empty());
 }
 
