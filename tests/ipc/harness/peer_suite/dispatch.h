@@ -3,6 +3,7 @@
 // Dispatch: what the peer does with each message it reads, requests and
 // notifications to their handlers, and what it answers.
 
+#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -114,6 +115,26 @@ void peer_dispatch(const PeerKit<A>& kit) {
         const auto& written = f.written();
         ASSERT(written.size() == 1U);
         EXPECT(sum_of<A>(written[0]) == 5);
+    });
+
+    // Each handler records its request before it suspends: they start in
+    // the order the requests were read.
+    kit.add("handlers_start_in_the_order_their_requests_were_read", [](Fixture& f) {
+        std::vector<std::int64_t> order;
+        f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
+            order.push_back(params.a);
+            co_await yield();
+            co_return AddResult{.sum = params.a};
+        });
+        for(std::int64_t a = 1; a <= 3; ++a) {
+            f.remote.send(request<A>(a, "test/add", AddParams{.a = a}));
+        }
+        f.remote.end_input();
+
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        EXPECT(order == std::vector<std::int64_t>{1, 2, 3});
+        EXPECT(f.written().size() == 3U);
     });
 
     // The handler wrote its result itself; the requester gets it as it is.

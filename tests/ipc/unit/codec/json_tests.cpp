@@ -268,10 +268,18 @@ ZEST_CASE(request_without_jsonrpc_2_0_is_an_invalid_request) {
 
 ZEST_CASE(notification_without_jsonrpc_2_0_is_never_answered) {
     JsonCodec codec;
-    auto parsed = codec.parse_message(R"({"jsonrpc":"1.0","method":"test/note","params":{}})");
-    const auto* failure = std::get_if<IncomingParseError>(&parsed);
-    ASSERT(failure != nullptr);
-    EXPECT(failure->notification);
+    for(std::string_view payload: {
+            R"({"method":"test/note","params":{}})",
+            R"({"jsonrpc":"1.0","method":"test/note","params":{}})",
+            R"({"jsonrpc":2,"method":"test/note","params":{}})",
+        }) {
+        ZEST_CONTEXT("payload: {}", payload);
+        auto parsed = codec.parse_message(payload);
+        const auto* failure = std::get_if<IncomingParseError>(&parsed);
+        ASSERT(failure != nullptr);
+        EXPECT(failure->notification);
+        EXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+    }
 }
 
 ZEST_CASE(response_without_jsonrpc_2_0_fails_its_request) {

@@ -72,11 +72,29 @@ void peer_limit(const PeerKit<A>& kit) {
         EXPECT(code_of(written[0].error) == ErrorCode::MessageTooLarge);
     });
 
+    kit.add("error_answer_over_the_limit_is_message_too_large", [=](Fixture& f) {
+        f.remote.limit_payload(limit);
+        f.peer.on_request([](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
+            co_await fail(-32001, std::string(limit, 'x'));
+        });
+        f.remote.send(request<A>(3, "test/add", AddParams{}));
+        f.remote.end_input();
+
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        const auto& written = f.written();
+        ASSERT(written.size() == 1U);
+        EXPECT(written[0].id == RequestID(3));
+        EXPECT(code_of(written[0].error) == ErrorCode::MessageTooLarge);
+    });
+
     // A limit too small even for the error leaves the request unanswered.
     kit.add("answer_without_room_for_its_error_is_dropped", [=](Fixture& f) {
         f.remote.limit_payload(16);
+        bool handled = false;
         f.peer.on_request("test/echo",
-                          [](Context&, const NoteParams& note) -> task<NoteParams, ipc::Error> {
+                          [&](Context&, const NoteParams& note) -> task<NoteParams, ipc::Error> {
+                              handled = true;
                               co_return note;
                           });
         f.remote.send(request<A>(3, "test/echo", long_note));
@@ -84,7 +102,33 @@ void peer_limit(const PeerKit<A>& kit) {
 
         auto [ran] = f.run(f.peer.run());
         EXPECT(ran.has_value());
+        EXPECT(handled);
         EXPECT(f.written().empty());
+    });
+
+    // The limit drops below the $/cancelRequest once the request is out:
+    // the remote cannot be told, so the request ends at once.
+    kit.add("cancel_request_over_the_limit_ends_the_request_at_once", [](Fixture& f) {
+        cancellation_source source;
+        event done;
+        auto ask = [&]() -> task<ipc::Error> {
+            auto asked = co_await f.peer.send_request(AddParams{}, {.token = source.token()});
+            done.set();
+            co_return asked.has_error() ? asked.error() : ipc::Error("answered");
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            f.remote.limit_payload(1);
+            source.cancel();
+            co_await done.wait();
+            f.remote.end_input();
+        };
+
+        auto [ran, failure, scripted] = f.run(f.peer.run(), ask(), remote());
+        EXPECT(ran.has_value());
+        ASSERT(failure.has_value());
+        EXPECT(code_of(*failure) == ErrorCode::RequestCancelled);
+        EXPECT(f.written().size() == 1U);
     });
 }
 

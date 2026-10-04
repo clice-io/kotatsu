@@ -75,6 +75,38 @@ void peer_timeout(const PeerKit<A>& kit) {
         EXPECT(asked->sum == 5);
     });
 
+    // Deadlines expire in order, not as requests were sent: the later one
+    // with the shorter timeout expires while the first still waits.
+    kit.add("shorter_timeout_sent_later_expires_first", [](Fixture& f) {
+        auto first = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer.send_request(AddParams{.a = 2, .b = 3}, {.timeout = 1min})
+                .or_fail();
+        };
+        auto second = [&]() -> task<AddResult, ipc::Error> {
+            co_return co_await f.peer.send_request(AddParams{}, {.timeout = 10ms}).or_fail();
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            co_await f.next();
+            co_await f.next();
+            f.remote.send(response<A>(1, AddResult{.sum = 5}));
+            f.remote.end_input();
+        };
+
+        auto [ran, answered, timed_out, scripted] =
+            f.run(f.peer.run(), first(), second(), remote());
+        EXPECT(ran.has_value());
+        ASSERT(answered.has_value());
+        EXPECT(answered->sum == 5);
+        ASSERT(timed_out.has_error());
+        EXPECT(timed_out.error().message == "request timed out");
+        const auto& written = f.written();
+        ASSERT(written.size() == 3U);
+        auto cancelled = decoded<CancelRequestParams, A>(written[2].body);
+        ASSERT(cancelled.has_value());
+        EXPECT(cancelled->id == RequestID(2));
+    });
+
     // A cancelled request goes on waiting for its answer, but no longer than
     // its timeout: the remote is told once.
     kit.add("timeout_ends_a_cancelled_request_the_remote_never_answers", [](Fixture& f) {

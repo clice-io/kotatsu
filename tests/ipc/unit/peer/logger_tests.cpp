@@ -107,6 +107,33 @@ ZEST_CASE(unhandled_notification_is_a_warning) {
     EXPECT(has(LogLevel::warn, "unhandled notification: unknown/note"));
 }
 
+ZEST_CASE(notification_that_is_not_jsonrpc_2_0_is_dropped_with_a_warning) {
+    log_from(LogLevel::warn);
+    bool called = false;
+    peer.on_notification([&](const NoteParams&) { called = true; });
+    remote.send(R"({"jsonrpc":"1.0","method":"test/note","params":{"text":"x"}})");
+    remote.end_input();
+
+    auto [ran] = run(peer.run());
+    EXPECT(ran.has_value());
+    EXPECT(!called);
+    EXPECT(written().empty());
+    EXPECT(has(LogLevel::warn, "dropped a notification"));
+}
+
+// A string id is logged quoted, so that it stays apart from a number.
+ZEST_CASE(orphan_response_logs_its_id_as_written) {
+    log_from(LogLevel::warn);
+    remote.send(test::response<test::JsonAdapter>(protocol::RequestID("7"), test::AddResult{}));
+    remote.send(test::response<test::JsonAdapter>(protocol::RequestID(7), test::AddResult{}));
+    remote.end_input();
+
+    auto [ran] = run(peer.run());
+    EXPECT(ran.has_value());
+    EXPECT(has(LogLevel::warn, R"(orphan response for id="7")"));
+    EXPECT(has(LogLevel::warn, "orphan response for id=7"));
+}
+
 ZEST_CASE(run_logs_where_its_read_loop_starts_and_ends) {
     log_from(LogLevel::info);
     remote.end_input();
