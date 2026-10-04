@@ -151,6 +151,15 @@ struct EnumStringStruct {
     int count;
 };
 
+/// An enum reaching behavior::enum_string through a representation chain.
+struct EnumStringThroughAs {
+    meta::annotation<
+        Color,
+        meta::behavior::as<
+            meta::annotation<Color, meta::behavior::enum_string<naming::rename_policy::identity>>>>
+        color_field;
+};
+
 struct DefaultedUnlessNone {
     constexpr static auto spec =
         meta::make_spec(meta::dsl::defaulted = true,

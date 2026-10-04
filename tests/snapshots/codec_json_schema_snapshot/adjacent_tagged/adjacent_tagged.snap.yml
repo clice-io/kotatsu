@@ -20,8 +20,7 @@ created_at: 2026-05-18
             "required": [
                 "type",
                 "value"
-            ],
-            "additionalProperties": false
+            ]
         },
         {
             "type": "object",
@@ -36,8 +35,7 @@ created_at: 2026-05-18
             "required": [
                 "type",
                 "value"
-            ],
-            "additionalProperties": false
+            ]
         }
     ]
 }

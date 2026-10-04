@@ -64,8 +64,10 @@ ZEST_CASE(with_adapter_type_info) {
 ZEST_CASE(enum_string) {
     constexpr auto& fields = virtual_schema<fx::EnumStringStruct>::fields;
 
-    // enum_string encodes through a non-owning view
-    STATIC_EXPECT(fields[0].type().kind == type_kind::string);
+    // enum_string encodes through a non-owning view; the field's type_info
+    // keeps the members, spelled through the policy.
+    STATIC_EXPECT(fields[0].type().kind == type_kind::enumeration);
+    EXPECT(static_cast<const enum_type_info&>(fields[0].type()).rename != nullptr);
     STATIC_EXPECT(fields[0].has_behavior);
     EXPECT(zest::type_eq<resolved_repr_t<decltype(fx::EnumStringStruct::color_field)>,
                          std::string_view>());
@@ -78,6 +80,13 @@ ZEST_CASE(enum_string) {
     // plain int is unaffected
     STATIC_EXPECT(fields[1].type().kind == type_kind::int32);
     STATIC_EXPECT(!fields[1].has_behavior);
+}
+
+ZEST_CASE(enum_string_through_a_chain) {
+    // The members survive an as<> that resolves to the annotated enum.
+    constexpr auto& fields = virtual_schema<fx::EnumStringThroughAs>::fields;
+    STATIC_EXPECT(fields[0].type().kind == type_kind::enumeration);
+    EXPECT(static_cast<const enum_type_info&>(fields[0].type()).rename != nullptr);
 }
 
 ZEST_CASE(tagged_variant) {

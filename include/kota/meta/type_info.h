@@ -96,6 +96,10 @@ struct enum_type_info : type_info {
     std::span<const std::string_view> member_names;
     const void* member_values;
     type_kind underlying_kind;
+    /// The policy of the behavior::enum_string an annotated enum travels
+    /// through: its members are strings, spelled as it says, whatever the
+    /// config's enum_repr. Null for a plain enum.
+    std::string (*rename)(bool is_serialize, std::string_view name) = nullptr;
 };
 
 struct tuple_type_info : type_info {
@@ -108,6 +112,9 @@ struct variant_type_info : type_info {
     std::string_view tag_field;
     std::string_view content_field;
     std::span<const std::string_view> alt_names;
+    /// Under adjacent tagging, keys beside the tag and the content are
+    /// denied, as a struct's unknown fields, rather than passed over.
+    bool deny_unknown = false;
 };
 
 struct optional_type_info : type_info {
@@ -137,6 +144,14 @@ struct field_info {
 
     /// Documentation text from the annotation, empty when absent.
     std::string_view description = {};
+
+    /// What a schema states beyond the type, from the annotation (see
+    /// field_spec): whether it states the default, the bounds of a number,
+    /// the values of a string.
+    bool schema_default = true;
+    schema_number minimum = {};
+    schema_number maximum = {};
+    std::span<const std::string_view> choices = {};
 };
 
 struct struct_type_info : type_info {
@@ -222,7 +237,8 @@ constexpr bool is_runtime_spec_attr_v<attrs::spec<Tag>> =
 
 /// A struct spec whose values matter at encode/decode dispatch: the tagged
 /// variant paths read the tagging mode and names from the slot attrs, and a
-/// rename_all/deny_unknown spec on a field merges into the config there.
+/// rename_all / deny_unknown_fields / defaulted_fields spec on a field merges
+/// into the config there.
 template <typename Attr>
 constexpr bool is_runtime_struct_spec_attr_v = false;
 
@@ -230,7 +246,8 @@ template <typename Tag>
 constexpr bool is_runtime_struct_spec_attr_v<attrs::struct_spec<Tag>> =
     attrs::struct_spec<Tag>::value.tagging != tag_mode::none ||
     attrs::struct_spec<Tag>::value.rename_all != naming::Casing::Identity ||
-    attrs::struct_spec<Tag>::value.deny_unknown_fields;
+    attrs::struct_spec<Tag>::value.deny_unknown_fields ||
+    attrs::struct_spec<Tag>::value.defaulted_fields;
 
 template <typename Tuple>
 struct filter_runtime_attrs;
@@ -267,15 +284,40 @@ struct unwrap_annotated<T> {
     using attrs = typename T::attrs;
 };
 
+/// The info of enum E, its members spelled through Rename when it travels as
+/// a behavior::enum_string's names.
+template <typename E, std::string (*Rename)(bool, std::string_view) = nullptr>
+struct enum_info_node {
+    constexpr static auto& names = meta::reflection<E>::member_names;
+    constexpr static auto& values = meta::reflection<E>::member_values;
+
+    constexpr inline static enum_type_info value = {
+        {type_kind::enumeration, meta::type_name<E>()},
+        {names.data(),           names.size()        },
+        static_cast<const void*>(values.data()),
+        kind_of<std::underlying_type_t<E>>(),
+        Rename,
+    };
+};
+
+/// Policy's spelling of an enumerator's name, as a plain function.
+template <typename Policy>
+std::string rename_with(bool is_serialize, std::string_view name) {
+    return Policy{}(is_serialize, name);
+}
+
 /// A resolved representation: the type the codec ultimately reads and writes
 /// for T, the tagging spec attr accompanying a tagged variant (an empty tuple
-/// otherwise), and the config after merging every rename_all /
-/// deny_unknown_fields crossed on the way.
-template <typename T, typename TagAttrs, typename Config>
+/// otherwise), the config after merging every rename_all /
+/// deny_unknown_fields / defaulted_fields crossed on the way, and, for an enum
+/// a behavior::enum_string turned into text, the info of its members (void
+/// otherwise), which a schema lists.
+template <typename T, typename TagAttrs, typename Config, typename SpelledEnum = void>
 struct resolved_repr {
     using type = T;
     using tag_attrs = TagAttrs;
     using config = Config;
+    using spelled_enum = SpelledEnum;
 };
 
 /// Precedence mirrors the codec dispatch (encode_with_attrs /
@@ -288,12 +330,12 @@ struct resolved_repr {
 /// Every chosen representation re-enters the resolver, so chained reprs and
 /// annotations nested inside representation types resolve to the final type,
 /// matching the codec's recursive re-dispatch on the converted value. The
-/// rename_all / deny_unknown_fields of annotated nodes merge into the carried
-/// config through node_config_t, the alias the dispatch uses, so the
-/// resulting type_info describes the documents the codec reads and writes. A
-/// tagged variant keeps its tagging spec attr; the spec's own rename_all /
-/// deny stay inert for the alternatives, as in the codec, where the tagging
-/// branch is taken before the config merge.
+/// rename_all / deny_unknown_fields / defaulted_fields of annotated nodes
+/// merge into the carried config through node_config_t, the alias the
+/// dispatch uses, so the resulting type_info describes the documents the codec
+/// reads and writes. A tagged variant keeps its tagging spec attr; the spec's
+/// own policies stay inert for the alternatives, as in the codec, where the
+/// tagging branch is taken before the config merge.
 template <typename T, typename Config = default_config>
 constexpr auto resolve_repr();
 
@@ -311,7 +353,11 @@ constexpr auto resolve_node() {
         using target = typename tuple_find_spec_t<attrs_t, behavior::as>::target;
         return resolve_repr<target, Config>();
     } else if constexpr(tuple_has_spec_v<attrs_t, behavior::enum_string>) {
-        return resolved_repr<std::string_view, std::tuple<>, Config>{};
+        using policy = typename tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
+        return resolved_repr<std::string_view,
+                             std::tuple<>,
+                             Config,
+                             enum_info_node<raw_t, &rename_with<policy>>>{};
     } else if constexpr(is_specialization_of<std::variant, raw_t> &&
                         struct_spec_of<attrs_t>.tagging != tag_mode::none) {
         return resolved_repr<raw_t,
@@ -346,9 +392,11 @@ template <typename T,
           typename Config = default_config,
           typename Resolved = decltype(resolve_repr<std::remove_cv_t<T>, Config>())>
 struct type_instance :
-    type_instance_impl<typename Resolved::type,
-                       typename Resolved::tag_attrs,
-                       typename Resolved::config> {};
+    std::conditional_t<std::is_void_v<typename Resolved::spelled_enum>,
+                       type_instance_impl<typename Resolved::type,
+                                          typename Resolved::tag_attrs,
+                                          typename Resolved::config>,
+                       typename Resolved::spelled_enum> {};
 
 template <typename T, std::size_t I>
 constexpr std::size_t single_field_count();
@@ -406,6 +454,16 @@ constexpr bool config_denies_unknown() {
     }
 }
 
+/// Defaulted policy carried by the config itself, as config_denies_unknown.
+template <typename Config>
+constexpr bool config_defaults_fields() {
+    if constexpr(requires { Config::defaulted_fields; }) {
+        return Config::defaulted_fields;
+    } else {
+        return false;
+    }
+}
+
 template <typename Variant, typename Config, typename AttrsTuple>
 struct variant_info_node;
 
@@ -436,6 +494,7 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
         spec.tag,
         spec.content,
         {alt_names.data(),    has_tag ? alt_names.size() : 0},
+        config_denies_unknown<Config>(),
     };
 };
 
@@ -543,18 +602,7 @@ struct type_instance_impl<T, AttrsT, Config, type_kind::structure> {
 };
 
 template <typename T, typename AttrsT, typename Config>
-struct type_instance_impl<T, AttrsT, Config, type_kind::enumeration> {
-    constexpr static auto& names = meta::reflection<T>::member_names;
-    constexpr static auto& values = meta::reflection<T>::member_values;
-    using underlying_t = std::underlying_type_t<T>;
-
-    constexpr inline static enum_type_info value = {
-        {type_kind::enumeration, meta::type_name<T>()},
-        {names.data(),           names.size()        },
-        static_cast<const void*>(values.data()),
-        kind_of<underlying_t>(),
-    };
-};
+struct type_instance_impl<T, AttrsT, Config, type_kind::enumeration> : enum_info_node<T> {};
 
 template <typename T, typename Config, std::size_t I>
 constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offset);
@@ -572,7 +620,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
         .offset = base_offset + meta::field_offset<T>(I),
         .physical_index = I,
         .type = type_info_of<field_t, Config>,
-        .has_default = spec.defaulted,
+        .has_default = spec.defaulted || config_defaults_fields<Config>(),
         .has_skip_if =
             spec.skip_if != skip_when::never || tuple_has_spec_v<attrs_t, behavior::skip_if>,
         .has_behavior = tuple_any_of_v<attrs_t, is_behavior_provider>,
@@ -580,6 +628,10 @@ constexpr field_info make_field_info(std::size_t base_offset) {
                     raw_kind == type_kind::null,
         .idx = spec.idx,
         .description = spec.description,
+        .schema_default = spec.schema_default,
+        .minimum = spec.minimum,
+        .maximum = spec.maximum,
+        .choices = spec.choices.names(),
     };
 }
 
@@ -627,11 +679,11 @@ template <typename T, typename Format = void>
 using resolved_repr_t =
     typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, format_config<Format>>())::type;
 
-/// The config T's resolution ends with: every rename_all / deny_unknown_fields
-/// spec crossed on the way — a structural annotation on T itself included —
-/// merged onto Config, exactly as the codec dispatch layers them while
-/// reading or writing a T. Config is a codec config (as for type_info_of),
-/// not a bare format tag; its format selects format-scoped reprs.
+/// The config T's resolution ends with: every rename_all /
+/// deny_unknown_fields / defaulted_fields spec crossed on the way — a
+/// structural annotation on T itself included — merged onto Config, exactly
+/// as the codec dispatch layers them while reading or writing a T. Config is a codec config (as for
+/// type_info_of), not a bare format tag; its format selects format-scoped reprs.
 template <typename T, typename Config>
 using resolved_config_t =
     typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, Config>())::config;

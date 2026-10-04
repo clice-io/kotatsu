@@ -6,20 +6,44 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/attrs.h"
 #include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
 #include "kota/zest/zest.h"
+#include "kota/meta/compare.h"
 #include "kota/codec/toml/toml.h"
 
 namespace kota::codec {
 
 namespace {
 
+/// Whether the value-returning overload takes T.
+template <typename T>
+concept decodes_by_value = requires(std::string_view text) { toml::from_string<T>(text); };
+
 ZEST_SUITE(codec_toml_decode) {
+
+ZEST_CASE(value_overload_value_initializes) {
+    // `T value{}` would copy-list-initialize the explicit list from `{}`.
+    auto result = toml::from_string<test::HoldsExplicit>(R"(
+count = 2
+list = [1, 2]
+)");
+    ASSERT(result);
+    const test::HoldsExplicit expected{
+        .list = {1, 2},
+        .count = 2
+    };
+    EXPECT(meta::eq(*result, expected));
+    STATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
+    // A type with no default constructor has no value to decode into.
+    STATIC_EXPECT(!decodes_by_value<test::NoDefault>);
+}
 
 ZEST_CASE(value_overload_takes_config) {
     auto result = toml::from_string<test::RenameAllTarget, test::CamelConfig>(R"(
@@ -80,7 +104,7 @@ zip = "wrong"
            "invalid type: expected integer, got string at addr.zip (line 6, column 7)");
 }
 
-ZEST_CASE(unknown_field_fails_at_its_value) {
+ZEST_CASE(unknown_field_fails_at_its_key) {
     test::Point out{};
     auto status = toml::from_string<test::StrictConfig>(R"(
 x = 1
@@ -92,7 +116,58 @@ extra = true
     EXPECT(status.error().message == "unknown field 'extra'");
     ASSERT(status.error().location);
     EXPECT(status.error().location->line == 4U);
-    EXPECT(status.error().location->column == 9U);
+    EXPECT(status.error().location->column == 1U);
+}
+
+ZEST_CASE(unknown_fields_reported_at_their_keys) {
+    UnknownFields unknown;
+    scoped_context<UnknownFields> scope(unknown);
+    test::Person out{};
+    auto status = toml::from_string(R"(
+name = "alice"
+nick = "al"
+age = 30
+
+[addr]
+city = "NY"
+zip = 10001
+floor = 3
+)",
+                                    out);
+    ASSERT(status);
+    EXPECT(out.addr.zip == 10001);
+    // A table's keys are read in order of their names: addr before nick.
+    ASSERT(unknown.entries.size() == 2U);
+    EXPECT(unknown.entries[0].to_string() == "unknown field 'floor' at addr (line 9, column 1)");
+    EXPECT(unknown.entries[1].to_string() == "unknown field 'nick' (line 3, column 1)");
+}
+
+ZEST_CASE(unknown_fields_in_arrays_of_tables_and_dotted_keys_reported_at_their_keys) {
+    UnknownFields unknown;
+    scoped_context<UnknownFields> scope(unknown);
+    test::Layout out{};
+    auto status = toml::from_string(R"(
+id = 1
+origin.x = 1
+origin.y = 2
+origin.z = 0
+
+[[points]]
+x = 3
+y = 4
+
+[[points]]
+x = 5
+w = 0
+y = 6
+
+[named]
+)",
+                                    out);
+    ASSERT(status);
+    ASSERT(unknown.entries.size() == 2U);
+    EXPECT(unknown.entries[0].to_string() == "unknown field 'z' at origin (line 5, column 8)");
+    EXPECT(unknown.entries[1].to_string() == "unknown field 'w' at points[1] (line 13, column 1)");
 }
 
 ZEST_CASE(integer_out_of_range_fails) {

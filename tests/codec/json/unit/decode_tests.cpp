@@ -6,11 +6,14 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
 #include "kota/zest/zest.h"
+#include "kota/meta/compare.h"
 #include "kota/codec/dyn/dyn.h"
 #include "kota/codec/json/json.h"
 
@@ -21,7 +24,25 @@ namespace {
 constexpr std::string_view incorrect_type =
     "INCORRECT_TYPE: The JSON element does not have the requested type.";
 
+/// Whether the value-returning overload takes T.
+template <typename T>
+concept decodes_by_value = requires(std::string_view text) { json::from_string<T>(text); };
+
 ZEST_SUITE(codec_json_decode) {
+
+ZEST_CASE(value_overload_value_initializes) {
+    // `T value{}` would copy-list-initialize the explicit list from `{}`.
+    auto result = json::from_string<test::HoldsExplicit>(R"({"list":[1,2],"count":2})");
+    ASSERT(result);
+    const test::HoldsExplicit expected{
+        .list = {1, 2},
+        .count = 2
+    };
+    EXPECT(meta::eq(*result, expected));
+    STATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
+    // A type with no default constructor has no value to decode into.
+    STATIC_EXPECT(!decodes_by_value<test::NoDefault>);
+}
 
 ZEST_CASE(value_overload_takes_config) {
     auto result = json::from_string<test::RenameAllTarget, test::CamelConfig>(
@@ -228,6 +249,67 @@ ZEST_CASE(located_type_mismatch_fails) {
     EXPECT(status.error().location->line == 3U);
     EXPECT(status.error().location->column == 10U);
     EXPECT(status.error().location->byte_offset == 30U);
+}
+
+ZEST_CASE(unknown_field_fails_at_its_key) {
+    test::Point out{};
+    auto status = json::from_string<test::StrictConfig>(R"({
+  "x": 1,
+  "extra": true,
+  "y": 2
+})",
+                                                        out);
+    ASSERT(!status);
+    EXPECT(status.error().message == "unknown field 'extra'");
+    ASSERT(status.error().location);
+    EXPECT(status.error().location->line == 3U);
+    EXPECT(status.error().location->column == 3U);
+}
+
+ZEST_CASE(unknown_fields_reported_at_their_keys) {
+    UnknownFields unknown;
+    scoped_context<UnknownFields> scope(unknown);
+    test::Person out{};
+    auto status = json::from_string(R"({
+  "name": "alice",
+  "nick": "al",
+  "age": 30,
+  "addr": {"city": "NY", "zip": 10001, "floor": 3}
+})",
+                                    out);
+    ASSERT(status);
+    EXPECT(out.addr.zip == 10001);
+    ASSERT(unknown.entries.size() == 2U);
+    EXPECT(unknown.entries[0].to_string() == "unknown field 'nick' (line 3, column 3)");
+    EXPECT(unknown.entries[1].to_string() == "unknown field 'floor' at addr (line 5, column 40)");
+}
+
+ZEST_CASE(unknown_field_in_an_element_reported_at_its_key) {
+    UnknownFields unknown;
+    scoped_context<UnknownFields> scope(unknown);
+    std::vector<test::Point> out;
+    auto status = json::from_string(R"([
+  {"x": 1, "y": 2},
+  {"x": 3, "z": 0, "y": 4}
+])",
+                                    out);
+    ASSERT(status);
+    ASSERT(unknown.entries.size() == 1U);
+    EXPECT(unknown.entries[0].to_string() == "unknown field 'z' at [1] (line 3, column 12)");
+}
+
+ZEST_CASE(unknown_fields_of_two_decodes_keep_their_locations) {
+    // One collector over two documents: each decode counts the lines of what
+    // it reported in its own text.
+    UnknownFields unknown;
+    scoped_context<UnknownFields> scope(unknown);
+    test::Point first{};
+    ASSERT(json::from_string("{\n\n\"x\": 1, \"y\": 2, \"a\": 0}", first));
+    test::Point second{};
+    ASSERT(json::from_string(R"({"b": 0, "x": 1, "y": 2})", second));
+    ASSERT(unknown.entries.size() == 2U);
+    EXPECT(unknown.entries[0].to_string() == "unknown field 'a' (line 3, column 17)");
+    EXPECT(unknown.entries[1].to_string() == "unknown field 'b' (line 1, column 2)");
 }
 
 ZEST_CASE(nested_type_mismatch_text_fails) {

@@ -6,12 +6,15 @@
 // names them (hence names such as `userName`).
 
 #include <charconv>
+#include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/attrs.h"
@@ -157,6 +160,98 @@ struct MixedRenameStructCamel {
     std::string itemName;
 };
 
+/// Point with a key Point has no field for.
+struct PointWithExtra {
+    std::int32_t x;
+    std::int32_t y;
+    bool extra;
+};
+
+/// Unknown keys at each depth of a keyed document: a struct, a struct inside
+/// it, a sequence element and a map value.
+struct Layout {
+    int id;
+    Point origin;
+    std::vector<Point> points;
+    std::map<std::string, Point> named;
+};
+
+struct LayoutWithExtrasPlain {
+    int id;
+    PointWithExtra origin;
+    std::vector<PointWithExtra> points;
+    std::map<std::string, PointWithExtra> named;
+    bool stray;
+};
+
+/// An unknown key, then a field the document gives a text where Point has a
+/// number.
+struct ExtraBeforeTextPlain {
+    bool extra;
+    std::string x;
+    std::int32_t y;
+};
+
+struct AliasAnchor {
+    constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"anchor"});
+};
+
+/// A field the document may name by an alias.
+struct AliasedOrigin {
+    meta::annotate<AliasAnchor>::type<Point> origin;
+};
+
+template <typename T>
+struct AnchorPlain {
+    T anchor;
+};
+
+/// An alternative probed before Point that the same keys and a third make.
+struct Measured {
+    std::int32_t x;
+    std::int32_t y;
+    std::int32_t length;
+
+    auto operator==(const Measured&) const -> bool = default;
+};
+
+/// Fields with initializers, one of them a struct with its own.
+struct Limits {
+    int low = 1;
+    int high = 9;
+
+    auto operator==(const Limits&) const -> bool = default;
+};
+
+struct Tunables {
+    int threads = 4;
+    std::string name = "worker";
+    Limits limits;
+
+    auto operator==(const Tunables&) const -> bool = default;
+};
+
+struct DefaultedFieldsTag {
+    constexpr static auto spec = meta::make_struct_spec(meta::dsl::defaulted_fields = true);
+};
+
+/// defaulted_fields on a field reaches the struct below it, not the one
+/// holding it.
+struct TunablesHolder {
+    meta::annotate<DefaultedFieldsTag>::type<Tunables> tunables;
+    int count;
+};
+
+/// A field whose default a schema leaves unstated.
+struct UnstatedDefault {
+    constexpr static auto spec = meta::make_spec(meta::dsl::schema_default = false);
+};
+
+struct WithUnstated {
+    int id;
+    meta::annotate<UnstatedDefault>::type<int> seed;
+};
+
 /// Two fields answering to one name.
 struct AliasDup {
     constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"dup"});
@@ -247,6 +342,27 @@ struct GridIndex {
     auto operator==(const GridIndex&) const -> bool = default;
 };
 
+/// Travels as HoldsExplicit (behavior::as), a target only value-initialization
+/// makes.
+struct Tally {
+    std::vector<int> marks;
+
+    Tally() = default;
+
+    Tally(std::vector<int> list) : marks(std::move(list)) {}
+
+    Tally(const HoldsExplicit& held) : marks(held.list.begin(), held.list.end()) {}
+
+    operator HoldsExplicit() const {
+        return {.list = ExplicitList(marks.begin(), marks.end()),
+                .count = static_cast<int>(marks.size())};
+    }
+
+    auto operator==(const Tally&) const -> bool = default;
+};
+
+using TallyAsHeld = meta::annotation<Tally, meta::behavior::as<HoldsExplicit>>;
+
 struct AsTargets {
     meta::annotation<UserId, meta::behavior::as<std::string>> owner;
     meta::annotation<Samples, meta::behavior::as<std::vector<int>>> samples;
@@ -277,6 +393,25 @@ struct CellSkippedOnDecode {
 
 struct CellSkippedOnDecodePlain {
     Point cell;
+    int after;
+};
+
+/// Skips its field on decode only, whatever the value.
+struct SkipHeldOnDecode {
+    bool operator()(const HoldsExplicit& /*held*/, bool is_serialize) const {
+        return !is_serialize;
+    }
+};
+
+/// A field skipped on decode whose type only value-initialization makes: a
+/// positional decode reads past it into a value of its own.
+struct HeldSkippedOnDecode {
+    meta::annotation<HoldsExplicit, meta::behavior::skip_if<SkipHeldOnDecode>> held;
+    int after = 0;
+};
+
+struct HeldSkippedOnDecodePlain {
+    HoldsExplicit held;
     int after;
 };
 

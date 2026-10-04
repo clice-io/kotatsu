@@ -50,7 +50,7 @@ ZEST_CASE(to_string_adds_the_path) {
 
 ZEST_CASE(to_string_adds_the_location) {
     auto error = unwound("broken");
-    error.set_location({.line = 3, .column = 10, .byte_offset = 30});
+    error.location = {.line = 3, .column = 10, .byte_offset = 30};
     EXPECT(error.to_string() == "broken at a.b[3] (line 3, column 10)");
 }
 

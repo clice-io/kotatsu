@@ -12,6 +12,9 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/attrs.h"
+#include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/repr.h"
@@ -598,6 +601,122 @@ struct set_of_struct {
 };
 
 // ---------------------------------------------------------------------------
+// fixtures of what an annotation states for a schema alone
+// ---------------------------------------------------------------------------
+
+struct bounded_fields {
+    KOTATSU_ANNOTATE(minimum = 1, maximum = 64)
+    <std::uint32_t> workers;
+    /// Looser than its type, whose bound stays.
+    KOTATSU_ANNOTATE(minimum = -1000)
+    <std::int8_t> offset;
+    KOTATSU_ANNOTATE(minimum = 0.5)
+    <double> ratio;
+    KOTATSU_ANNOTATE(maximum = 10)
+    <std::optional<std::int32_t>> limit;
+    /// Nullable twice over: its own null, and nan_repr's.
+    KOTATSU_ANNOTATE(minimum = 0.25)
+    <std::optional<double>> share;
+};
+
+struct bounded_text {
+    KOTATSU_ANNOTATE(minimum = 1)
+    <std::string> name;
+};
+
+struct fractional_bound_on_integer {
+    KOTATSU_ANNOTATE(maximum = 2.5)
+    <std::int32_t> count;
+};
+
+struct chosen_fields {
+    KOTATSU_ANNOTATE(choices = {"off", "on", "auto"})
+    <std::string> readonly;
+    KOTATSU_ANNOTATE(choices = {"a", "b"})
+    <std::optional<std::string>> mode;
+};
+
+struct chosen_number {
+    KOTATSU_ANNOTATE(choices = {"1"})
+    <std::int32_t> count;
+};
+
+struct machine_section {
+    KOTATSU_ANNOTATE(defaulted = true, schema_default = false)
+    <std::uint32_t> workers = 8;
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::uint32_t> retries = 3;
+};
+
+struct machine_root {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <machine_section> section;
+    KOTATSU_ANNOTATE(defaulted = true, schema_default = false)
+    <std::uint32_t> jobs = 8;
+};
+
+enum class level_kind : std::uint8_t {
+    low_level,
+    high_level,
+};
+
+/// Sections in an array, which carries their encoded objects as its default.
+struct machine_sections {
+    KOTATSU_ANNOTATE(defaulted = true)
+    <std::vector<machine_section>> sections = {machine_section{}};
+};
+
+struct bounded_enum {
+    KOTATSU_ANNOTATE(maximum = 1)
+    <level_kind> level;
+};
+
+struct wide_bounds {
+    KOTATSU_ANNOTATE(minimum = -1, maximum = ~0ULL)
+    <std::uint64_t> count;
+};
+
+struct aliased_required {
+    KOTATSU_ANNOTATE(alias = {"legacy"})
+    <std::int32_t> value;
+};
+
+/// A required field whose default a schema would leave unstated.
+struct unstated_required {
+    KOTATSU_ANNOTATE(schema_default = false)
+    <std::uint32_t> seed = 1;
+};
+
+/// Two fields answering to "dup", and an alias taking another field's name.
+struct shared_alias {
+    KOTATSU_ANNOTATE(alias = {"dup"})
+    <std::int32_t> left;
+    KOTATSU_ANNOTATE(alias = {"dup"})
+    <std::int32_t> right;
+};
+
+struct alias_on_a_name {
+    KOTATSU_ANNOTATE(alias = {"right"})
+    <std::int32_t> left;
+    std::int32_t right;
+};
+
+struct enum_string_field {
+    KOTATSU_ANNOTATE(enum_string = type<naming::rename_policy::lower_camel>)
+    <level_kind> level;
+};
+
+struct keyed_maps {
+    std::map<std::int32_t, std::int32_t> by_id;
+    std::map<std::uint8_t, std::int32_t> by_byte;
+    std::map<level_kind, std::int32_t> by_level;
+};
+
+struct char_field {
+    char letter;
+};
+
+// ---------------------------------------------------------------------------
 // description fixtures
 // ---------------------------------------------------------------------------
 
@@ -668,6 +787,16 @@ struct defaults_leaf {
 
     KOTATSU_ANNOTATE(defaulted = true)
     <std::string> name = "worker";
+};
+
+/// A member only value-initialization makes, beside one with a default.
+struct defaults_explicit_member {
+    test::ExplicitList list;
+    std::optional<std::int32_t> count = 3;
+};
+
+struct defaults_explicit_holder {
+    defaults_explicit_member inner;
 };
 
 struct defaults_root {
@@ -894,7 +1023,7 @@ ZEST_CASE(root_floats) {
 ZEST_CASE(root_char) {
     const auto result = json::schema_string<char>().value();
     EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-                     R"("type":"string"})");
+                     R"("type":"string","pattern":"^[\\u0000-\\u00FF]$"})");
 }
 
 ZEST_CASE(root_string) {
@@ -939,7 +1068,7 @@ ZEST_CASE(scalar_wrapper_char) {
     EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                      R"("type":"object",)"
                      R"("properties":{)"
-                     R"("v":{"type":"string"}},)"
+                     R"("v":{"type":"string","pattern":"^[\\u0000-\\u00FF]$"}},)"
                      R"("required":["v"]})");
 }
 
@@ -1024,8 +1153,7 @@ ZEST_CASE(container_set_i32) {
                      R"("v":{"type":"array",)"
                      R"("items":{"type":"integer",)"
                      R"("minimum":-2147483648,)"
-                     R"("maximum":2147483647},)"
-                     R"("uniqueItems":true}},)"
+                     R"("maximum":2147483647}}},)"
                      R"("required":["v"]})");
 }
 
@@ -1698,14 +1826,12 @@ ZEST_CASE(variant_adjacent_tag) {
                      R"("c":{"type":"integer",)"
                      R"("minimum":-2147483648,)"
                      R"("maximum":2147483647}},)"
-                     R"("required":["t","c"],)"
-                     R"("additionalProperties":false},)"
+                     R"("required":["t","c"]},)"
                      R"({"type":"object",)"
                      R"("properties":{)"
                      R"("t":{"const":"text"},)"
                      R"("c":{"type":"string"}},)"
-                     R"("required":["t","c"],)"
-                     R"("additionalProperties":false}]}},)"
+                     R"("required":["t","c"]}]}},)"
                      R"("required":["v"]})");
 }
 
@@ -1745,7 +1871,27 @@ ZEST_CASE(root_internal_variant) {
 }
 
 ZEST_CASE(root_adjacent_variant) {
+    // Keys beside the tag and the content are passed over, so allowed.
     const auto result = json::schema_string<root_adjacent_variant>().value();
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("oneOf":[)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("type":{"const":"integer"},)"
+                     R"("value":{"type":"integer",)"
+                     R"("minimum":-2147483648,)"
+                     R"("maximum":2147483647}},)"
+                     R"("required":["type","value"]},)"
+                     R"({"type":"object",)"
+                     R"("properties":{)"
+                     R"("type":{"const":"text"},)"
+                     R"("value":{"type":"string"}},)"
+                     R"("required":["type","value"]}]})");
+}
+
+ZEST_CASE(root_adjacent_variant_denies_other_keys) {
+    // ...unless unknown fields are denied, as the decoder then does.
+    const auto result = json::schema_string<root_adjacent_variant, test::StrictConfig>().value();
     EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                      R"("oneOf":[)"
                      R"({"type":"object",)"
@@ -1871,8 +2017,7 @@ ZEST_CASE(set_of_string) {
                      R"("type":"object",)"
                      R"("properties":{)"
                      R"("tags":{"type":"array",)"
-                     R"("items":{"type":"string"},)"
-                     R"("uniqueItems":true}},)"
+                     R"("items":{"type":"string"}}},)"
                      R"("required":["tags"]})");
 }
 
@@ -2237,8 +2382,7 @@ ZEST_CASE(combo_set_of_struct) {
                      R"("ids":{"type":"array",)"
                      R"("items":{"type":"integer",)"
                      R"("minimum":-2147483648,)"
-                     R"("maximum":2147483647},)"
-                     R"("uniqueItems":true},)"
+                     R"("maximum":2147483647}},)"
                      R"("name":{"type":"string"}},)"
                      R"("required":["ids","name"]})");
 }
@@ -2484,6 +2628,146 @@ ZEST_CASE(bytes_field) {
                      R"("minimum":0,)"
                      R"("maximum":255}}},)"
                      R"("required":["data"]})");
+}
+
+// ---------------------------------------------------------------------------
+// what an annotation states for a schema alone
+// ---------------------------------------------------------------------------
+
+ZEST_CASE(bounds_join_the_number_schema) {
+    const auto result = json::schema_string<bounded_fields>().value();
+    // Tighter than the type's, they replace its bounds.
+    EXPECT(zest::contains(result, R"("workers":{"type":"integer","minimum":1,"maximum":64})"));
+    // Looser, they leave them.
+    EXPECT(zest::contains(result, R"("offset":{"type":"integer","minimum":-128,"maximum":127})"));
+    // A float or a nullable takes them in its number branch.
+    EXPECT(zest::contains(result, R"("ratio":{"anyOf":[{"type":"number","minimum":0.5},)"));
+    EXPECT(zest::contains(result, R"("minimum":-2147483648,"maximum":10},{"type":"null"}])"));
+    EXPECT(zest::contains(
+        result,
+        R"("share":{"anyOf":[{"anyOf":[{"type":"number","minimum":0.25},{"type":"null"}]},)"));
+}
+
+ZEST_CASE(bound_on_a_field_that_is_no_number_fails) {
+    auto text = json::schema_string<bounded_text>();
+    ASSERT(!text);
+    EXPECT(text.error().message == "minimum or maximum on field 'name', which is not a number");
+    auto fractional = json::schema_string<fractional_bound_on_integer>();
+    ASSERT(!fractional);
+    EXPECT(fractional.error().message == "floating-point maximum on integer field 'count'");
+}
+
+ZEST_CASE(choices_join_the_string_schema) {
+    const auto result = json::schema_string<chosen_fields>().value();
+    EXPECT(zest::contains(result, R"("readonly":{"type":"string","enum":["off","on","auto"]})"));
+    EXPECT(
+        zest::contains(result,
+                       R"("mode":{"anyOf":[{"type":"string","enum":["a","b"]},{"type":"null"}])"));
+}
+
+ZEST_CASE(choices_on_a_field_that_is_no_string_fails) {
+    auto result = json::schema_string<chosen_number>();
+    ASSERT(!result);
+    EXPECT(result.error().message == "choices on field 'count', which is not a string");
+}
+
+ZEST_CASE(unstated_default_leaves_the_document_alone) {
+    // Only the schema's default documents leave the field out.
+    auto text = json::to_string(machine_root{});
+    ASSERT(text);
+    EXPECT(*text == R"({"section":{"workers":8,"retries":3},"jobs":8})");
+}
+
+ZEST_CASE(unstated_default_leaves_element_defaults_out) {
+    const auto result = json::schema_string<machine_sections>().value();
+    EXPECT(zest::contains(result, R"("default":[{"retries":3}])"));
+    EXPECT(!zest::contains(result, R"("workers":8)"));
+}
+
+ZEST_CASE(bounds_on_an_enum_join_its_integer) {
+    const auto result = json::schema_string<bounded_enum>().value();
+    EXPECT(zest::contains(result, R"("level":{"type":"integer","minimum":0,"maximum":1})"));
+    // Spelled by name, it is not a number.
+    auto named = json::schema_string<bounded_enum, test::EnumStringConfig>();
+    ASSERT(!named);
+    EXPECT(named.error().message == "minimum or maximum on field 'level', which is not a number");
+}
+
+ZEST_CASE(bounds_looser_than_uint64_keep_its_own) {
+    const auto result = json::schema_string<wide_bounds>().value();
+    EXPECT(
+        zest::contains(result,
+                       R"("count":{"type":"integer","minimum":0,"maximum":18446744073709551615})"));
+}
+
+ZEST_CASE(unstated_default_appears_nowhere) {
+    // Neither its own property, its $def, nor a whole-object default holding
+    // it states the default.
+    const auto result = json::schema_string<machine_root>().value();
+    EXPECT(zest::contains(result, R"("jobs":{"type":"integer","minimum":0,"maximum":4294967295})"));
+    EXPECT(zest::contains(result, R"("default":{"retries":3})"));
+    EXPECT(
+        zest::contains(result, R"("workers":{"type":"integer","minimum":0,"maximum":4294967295})"));
+    EXPECT(!zest::contains(result, R"("default":8)"));
+}
+
+ZEST_CASE(unstated_default_on_a_required_field_fails) {
+    // A default holding the field could not leave it out.
+    auto result = json::schema_string<unstated_required>();
+    ASSERT(!result);
+    EXPECT(result.error().message == "schema_default = false on field 'seed', which is required");
+}
+
+ZEST_CASE(a_name_two_fields_answer_to_fails) {
+    // The decoder gives the key to the first field answering to it.
+    auto shared = json::schema_string<shared_alias>();
+    ASSERT(!shared);
+    EXPECT(shared.error().message == "field 'right' answers to 'dup', as another field does");
+    auto taken = json::schema_string<alias_on_a_name>();
+    ASSERT(!taken);
+    EXPECT(taken.error().message == "field 'right' answers to 'right', as another field does");
+}
+
+ZEST_CASE(alias_is_allowed_where_unknown_fields_are_denied) {
+    const auto result = json::schema_string<aliased_required, test::StrictConfig>().value();
+    EXPECT(zest::contains(result, R"("legacy":{"type":"integer")"));
+    EXPECT(zest::contains(result, R"("additionalProperties":false)"));
+}
+
+ZEST_CASE(alias_is_a_property_and_satisfies_required) {
+    const auto result = json::schema_string<aliased_required>().value();
+    EXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                     R"("type":"object",)"
+                     R"("properties":{)"
+                     R"("value":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
+                     R"("legacy":{"type":"integer","minimum":-2147483648,"maximum":2147483647}},)"
+                     R"("allOf":[{"anyOf":[{"required":["value"]},{"required":["legacy"]}]}]})");
+}
+
+ZEST_CASE(field_enum_string_lists_its_members) {
+    const auto result = json::schema_string<enum_string_field>().value();
+    EXPECT(zest::contains(result, R"("level":{"enum":["lowLevel","highLevel"]})"));
+}
+
+ZEST_CASE(map_keys_spell_what_they_decode_from) {
+    const auto result = json::schema_string<keyed_maps>().value();
+    EXPECT(zest::contains(
+        result,
+        R"("by_id":{"type":"object","additionalProperties":{"type":"integer","minimum":-2147483648,"maximum":2147483647},"propertyNames":{"pattern":"^-?[0-9]+$"}})"));
+    EXPECT(zest::contains(
+        result,
+        R"("by_byte":{"type":"object","additionalProperties":{"type":"integer","minimum":-2147483648,"maximum":2147483647},"propertyNames":{"pattern":"^[0-9]+$"}})"));
+    // An enum key spells its number, or its name under enum_repr::String.
+    EXPECT(zest::contains(
+        result,
+        R"("by_level":{"type":"object","additionalProperties":{"type":"integer","minimum":-2147483648,"maximum":2147483647},"propertyNames":{"pattern":"^[0-9]+$"}})"));
+    const auto named = json::schema_string<keyed_maps, test::EnumStringConfig>().value();
+    EXPECT(zest::contains(named, R"("propertyNames":{"enum":["low_level","high_level"]})"));
+}
+
+ZEST_CASE(char_is_one_code_point_up_to_ff) {
+    const auto result = json::schema_string<char_field>().value();
+    EXPECT(zest::contains(result, R"("letter":{"type":"string","pattern":"^[\\u0000-\\u00FF]$"})"));
 }
 
 // ---------------------------------------------------------------------------
@@ -2814,6 +3098,30 @@ ZEST_CASE(defaults_annotated) {
     EXPECT(zest::contains(result, R"("mirror":{"$ref":"#/$defs/defaults_leaf"})"));
     EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
     EXPECT(zest::contains(result, R"("name":{"type":"string","default":"worker"})"));
+}
+
+ZEST_CASE(defaults_value_initialize) {
+    // The fresh instance is value-initialized: `{}` would copy-list-initialize
+    // the explicit list. So is a $def's.
+    const auto result = json::schema_string<defaults_explicit_member>().value();
+    EXPECT(zest::contains(result, R"({"type":"null"}],"default":3})"));
+    const auto nested = json::schema_string<defaults_explicit_holder>().value();
+    EXPECT(zest::contains(nested, R"({"type":"null"}],"default":3})"));
+}
+
+ZEST_CASE(defaulted_fields_requires_nothing) {
+    // Every property may be absent and carries its default, nested ones too.
+    const auto result = json::schema_string<test::Tunables, test::DefaultedConfig>().value();
+    EXPECT(!zest::contains(result, R"("required")"));
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
+    EXPECT(zest::contains(result, R"("maximum":2147483647,"default":9})"));
+}
+
+ZEST_CASE(defaulted_fields_on_a_field_leaves_its_holder_required) {
+    const auto result = json::schema_string<test::TunablesHolder>().value();
+    // The field itself is the holder's to require.
+    EXPECT(zest::contains(result, R"("required":["tunables","count"])"));
+    EXPECT(!zest::contains(result, R"("required":["threads")"));
 }
 
 ZEST_CASE(defaults_skip_condition) {

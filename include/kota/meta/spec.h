@@ -1,18 +1,22 @@
 #pragma once
 
 #include <array>
+#include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <limits>
 #include <span>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "kota/support/config.h"
 #include "kota/support/naming.h"
+#include "kota/support/numeric.h"
 
 namespace kota::meta {
 
@@ -24,7 +28,7 @@ enum class skip_when : std::uint8_t {
     none,
     /// Container whose .empty() returns true.
     empty,
-    /// Value that compares equal to a default-constructed one.
+    /// Value that compares equal to a value-initialized one.
     default_value,
 };
 
@@ -39,6 +43,34 @@ struct name_list {
         return {items.data(), count};
     }
 };
+
+/// A number a schema states, exact whatever its type: an integer of either
+/// sign, or a floating-point value; monostate when unset.
+using schema_number = std::variant<std::monostate, std::int64_t, std::uint64_t, double>;
+
+/// a <=> b exactly, whatever their types; unordered when either is unset or
+/// NaN.
+constexpr std::partial_ordering compare_numbers(const schema_number& a, const schema_number& b) {
+    return std::visit(
+        []<typename X, typename Y>(X x, Y y) -> std::partial_ordering {
+            if constexpr(std::same_as<X, std::monostate> || std::same_as<Y, std::monostate>) {
+                return std::partial_ordering::unordered;
+            } else if constexpr(std::same_as<X, double> && std::same_as<Y, double>) {
+                return x <=> y;
+            } else if constexpr(std::same_as<Y, double>) {
+                return compare_exact(x, y);
+            } else if constexpr(std::same_as<X, double>) {
+                // y against x, turned around.
+                return 0 <=> compare_exact(y, x);
+            } else {
+                return std::cmp_less(x, y)      ? std::partial_ordering::less
+                       : std::cmp_greater(x, y) ? std::partial_ordering::greater
+                                                : std::partial_ordering::equivalent;
+            }
+        },
+        a,
+        b);
+}
 
 /// The value part of a field annotation. One non-template type, built by
 /// KOTATSU_ANNOTATE at compile time; downstream code reads it through
@@ -63,9 +95,24 @@ struct field_spec {
     bool skip = false;
     /// Inline the fields of a nested struct into the parent.
     bool flatten = false;
-    /// Allow the field to be absent during deserialization (keeps its
-    /// default-constructed value). Equivalent to Rust's #[serde(default)].
+    /// Allow the field to be absent during deserialization: it keeps the value
+    /// it had, the one its initializer gives in a value decoded fresh.
+    /// Equivalent to Rust's #[serde(default)].
     bool defaulted = false;
+
+    // What a schema states beyond the type, for its readers: the decoder
+    // checks none of it.
+
+    /// Whether a schema states the field's default value; false for one that
+    /// differs between machines or runs. Whether the field is required does
+    /// not change.
+    bool schema_default = true;
+    /// The least and the greatest value of a number field, beside the bounds
+    /// of its type.
+    schema_number minimum = {};
+    schema_number maximum = {};
+    /// The values a string field takes.
+    name_list choices = {};
 };
 
 /// How a variant is tagged in serialized form.
@@ -87,6 +134,10 @@ struct struct_spec {
     naming::Casing rename_all = naming::Casing::Identity;
     /// Reject unknown keys during deserialization.
     bool deny_unknown_fields = false;
+    /// Allow every field to be absent during deserialization, as if each
+    /// were `defaulted`. An entry of its own, since `defaulted` alone makes a
+    /// field annotation.
+    bool defaulted_fields = false;
     /// Variant tagging mode; derived from tagged/tag/content by make_struct_spec.
     tag_mode tagging = tag_mode::none;
     /// Tag field name (internal and adjacent tagging).
@@ -118,9 +169,14 @@ enum class aspect : std::uint8_t {
     as,
     with,
     enum_string,
+    schema_default,
+    minimum,
+    maximum,
+    choices,
     // struct_spec
     rename_all,
     deny_unknown_fields,
+    defaulted_fields,
     tagged,
     tag,
     content,
@@ -186,6 +242,24 @@ struct value_proxy {
     }
 };
 
+/// `minimum = 1`: any integer or floating-point value, kept exactly.
+template <aspect A, auto Member>
+struct number_proxy {
+    template <typename T>
+        requires (std::is_arithmetic_v<T> && !std::same_as<T, bool>)
+    constexpr auto operator=(T value) const {
+        schema_number number;
+        if constexpr(std::is_floating_point_v<T>) {
+            number = static_cast<double>(value);
+        } else if constexpr(std::is_signed_v<T>) {
+            number = static_cast<std::int64_t>(value);
+        } else {
+            number = static_cast<std::uint64_t>(value);
+        }
+        return value_component<A, Member, schema_number>{number};
+    }
+};
+
 template <aspect A, auto Member>
 struct name_list_proxy {
     constexpr auto operator=(std::initializer_list<std::string_view> names) const {
@@ -243,6 +317,12 @@ struct type_proxy {
 [[maybe_unused]] constexpr inline type_proxy<aspect::as> as{};
 [[maybe_unused]] constexpr inline type_proxy<aspect::with> with{};
 [[maybe_unused]] constexpr inline type_proxy<aspect::enum_string> enum_string{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::schema_default,
+                                              &field_spec::schema_default,
+                                              bool> schema_default{};
+[[maybe_unused]] constexpr inline number_proxy<aspect::minimum, &field_spec::minimum> minimum{};
+[[maybe_unused]] constexpr inline number_proxy<aspect::maximum, &field_spec::maximum> maximum{};
+[[maybe_unused]] constexpr inline name_list_proxy<aspect::choices, &field_spec::choices> choices{};
 
 [[maybe_unused]] constexpr inline value_proxy<aspect::rename_all,
                                               &struct_spec::rename_all,
@@ -250,6 +330,9 @@ struct type_proxy {
 [[maybe_unused]] constexpr inline value_proxy<aspect::deny_unknown_fields,
                                               &struct_spec::deny_unknown_fields,
                                               bool> deny_unknown_fields{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::defaulted_fields,
+                                              &struct_spec::defaulted_fields,
+                                              bool> defaulted_fields{};
 [[maybe_unused]] constexpr inline tagged_proxy tagged{};
 [[maybe_unused]] constexpr inline value_proxy<aspect::tag, &struct_spec::tag, std::string_view>
     tag{};
@@ -310,6 +393,26 @@ constexpr void validate_spec(const field_spec& spec) {
             }
         }
     }
+    if(compare_numbers(spec.minimum, spec.maximum) == std::partial_ordering::greater) {
+        KOTA_THROW("annotation: minimum exceeds maximum");
+    }
+    // JSON has no number for NaN or an infinity; an unbounded side is left
+    // unstated.
+    constexpr double largest = std::numeric_limits<double>::max();
+    for(auto bound: {spec.minimum, spec.maximum}) {
+        if(auto* number = std::get_if<double>(&bound);
+           number && !(*number >= -largest && *number <= largest)) {
+            KOTA_THROW("annotation: a bound that is not finite");
+        }
+    }
+    auto choices = spec.choices.names();
+    for(std::size_t i = 0; i < choices.size(); ++i) {
+        for(std::size_t j = i + 1; j < choices.size(); ++j) {
+            if(choices[i] == choices[j]) {
+                KOTA_THROW("annotation: duplicate choice");
+            }
+        }
+    }
 }
 
 /// Derive the tagging mode from the tag/content field names and check the
@@ -353,9 +456,10 @@ template <typename... Cs>
 constexpr auto make_spec(const Cs&... components) {
     static_assert((detail::any_component<Cs> && ...),
                   "annotation entries must be assignments, e.g. skip = true");
-    static_assert((dsl::spec_component<Cs, field_spec> && ...),
-                  "struct-level entries (rename_all/deny_unknown_fields/tagged/...) cannot be "
-                  "mixed with field-level entries in one annotation");
+    static_assert(
+        (dsl::spec_component<Cs, field_spec> && ...),
+        "struct-level entries (rename_all/deny_unknown_fields/defaulted_fields/tagged/...) "
+        "cannot be mixed with field-level entries in one annotation");
     static_assert(detail::component_kinds_unique<Cs...>(),
                   "annotation: the same attribute appears twice");
 
