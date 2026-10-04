@@ -77,22 +77,20 @@
 // than arithmetic, so `a + 1 == b` splits into `a + 1` and `b` — and the whole
 // check runs in one full-expression, so temporaries in the operands live until
 // it is reported.
-#define ZEST_CHECK(on_failure, ...)                                                                \
+#define ZEST_CHECK(checker, ...)                                                                   \
     do {                                                                                           \
         ZEST_SPLIT_BEGIN                                                                           \
-        if(!::kota::zest::detail::check(::kota::zest::detail::Decomposer{} << __VA_ARGS__,         \
-                                        #__VA_ARGS__)) [[unlikely]] {                              \
-            on_failure;                                                                            \
-        }                                                                                          \
+        ::kota::zest::detail::checker(::kota::zest::detail::Decomposer{} << __VA_ARGS__,           \
+                                      #__VA_ARGS__);                                               \
         ZEST_SPLIT_END                                                                             \
     } while(0)
 
-#define ZEXPECT(...) ZEST_CHECK((void)0, __VA_ARGS__)
+#define ZEXPECT(...) ZEST_CHECK(check, __VA_ARGS__)
 
 // A failed ZASSERT does not return: it ends the process, in a coroutine, a
 // helper or any thread alike, without unwinding the stack. Cleanup that must
 // happen anyway goes in a ::kota::zest::FatalHook.
-#define ZASSERT(...) ZEST_CHECK(::kota::zest::detail::end_fatally(), __VA_ARGS__)
+#define ZASSERT(...) ZEST_CHECK(check_fatal, __VA_ARGS__)
 
 // Evaluates the check at compile time and reports it at run time, so one wrong
 // constant fails its test instead of the build. To show the operands, the

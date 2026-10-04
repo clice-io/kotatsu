@@ -78,7 +78,18 @@ Hooks& hooks() {
     return instance;
 }
 
+/// This thread has started ending the process.
+thread_local bool ending_here = false;
+
+/// This thread runs the fatal hooks.
+thread_local bool running_hooks = false;
+
 }  // namespace
+
+std::recursive_mutex& reply_mutex() {
+    static std::recursive_mutex mutex;
+    return mutex;
+}
 
 void flush_output() {
     // std::cout buffers on its own once sync_with_stdio(false) is set.
@@ -106,8 +117,8 @@ FatalHook::FatalHook(function<void()> hook) {
     registry.alive.push_back({.id = id, .run = std::move(hook)});
 }
 
-// Gone already if it ran, or if the process is ending on another thread,
-// which then never lets go of the mutex.
+// Its entry is gone already if the hook ran. While another thread ends the
+// process, this waits on the mutex until the process is gone.
 FatalHook::~FatalHook() {
     auto& registry = hooks();
     std::lock_guard lock(registry.mutex);
@@ -127,15 +138,16 @@ void report_failure(std::string_view expression,
     print_line("at", std::format("{}:{}", location.file_name(), location.line()));
     print_trace(location);
     failure();
+    if(failures_are_fatal) {
+        end_fatally();
+    }
 }
 
-void end_fatally() {
-    thread_local bool ending_here = false;
+void begin_fatal() {
     static std::atomic<bool> ending = false;
-    // A hook's own ZASSERT: the runner knows already.
+    // Begun already by this ZASSERT's check, or by the one whose hooks run.
     if(ending_here) {
-        flush_output();
-        std::_Exit(fatal_exit_code);
+        return;
     }
     if(ending.exchange(true)) {
         // Another thread ends the process, and this one with it.
@@ -144,8 +156,19 @@ void end_fatally() {
         }
     }
     ending_here = true;
-    if(fatal_notice != nullptr) {
-        fatal_notice();
+    reply_mutex().lock();
+}
+
+void end_fatally() {
+    begin_fatal();
+    // A hook's own ZASSERT: the runner knows already.
+    if(running_hooks) {
+        flush_output();
+        std::_Exit(fatal_exit_code);
+    }
+    running_hooks = true;
+    if(auto notice = fatal_notice.load()) {
+        notice();
     }
 
     auto& registry = hooks();

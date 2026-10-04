@@ -63,14 +63,10 @@ struct LoopFixture {
             }
             expired = true;
             cancel_running();
-            // Still here once more: a cancellation that cannot complete, such
-            // as work stuck on a pool thread.
+            // Still running a period later: a cancellation that cannot
+            // complete, such as work stuck on a pool thread, ends the process.
             co_await sleep(watchdog, loop);
-            if(remaining == 0) {
-                co_return;
-            }
             ZEST_CONTEXT("tasks still running {} after the watchdog cancelled them", watchdog);
-            // Fails, as remaining is not 0 here, and ends the process.
             ZASSERT(remaining == 0U);
         };
         auto guard = watch();

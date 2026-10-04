@@ -77,10 +77,9 @@ struct Worker {
         co_return std::move(*line);
     }
 
-    /// The reply for the running test, counting the snapshots it checked as
+    /// The reply for the running test, counting the snapshots it checks as
     /// checked here; nothing if the worker goes before replying.
     task<std::optional<Reply>> read_reply() {
-        bool fatal = false;
         while(auto line = co_await read_line()) {
             std::string_view text = *line;
             if(text.starts_with(protocol::snapshot)) {
@@ -88,17 +87,14 @@ struct Worker {
                 continue;
             }
             if(text == protocol::fatal) {
-                fatal = true;
-                continue;
+                co_return Reply{.state = TestState::Failed, .fatal = true};
             }
             // Test code runs in the worker and can garble the channel; any
             // other line counts as the worker failing.
             if(text.starts_with(protocol::done)) {
-                auto state = protocol::parse_state(text.substr(protocol::done.size()));
-                if(!state) {
-                    break;
+                if(auto state = protocol::parse_state(text.substr(protocol::done.size()))) {
+                    co_return Reply{.state = *state};
                 }
-                co_return Reply{.state = *state, .fatal = fatal};
             }
             break;
         }
@@ -310,7 +306,7 @@ struct Pool {
                 auto started = co_await start();
                 if(!started) {
                     broken = std::move(started.error());
-                    co_return;
+                    break;
                 }
                 runner.emplace(std::move(*started));
             }

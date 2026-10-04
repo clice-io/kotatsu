@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <expected>
 #include <format>
 #include <functional>
 #include <optional>
@@ -26,7 +27,8 @@ namespace detail {
 /// like the test's state, so the test's other threads take them too.
 void reset_snapshot_context(std::string_view suite, std::string_view test);
 
-void set_update_snapshots(bool enabled);
+/// Turns --update-snapshots on or off; returns what it was.
+bool set_update_snapshots(bool enabled);
 
 void set_snapshot_dir(std::string_view dir);
 
@@ -35,19 +37,26 @@ void set_snapshot_dir(std::string_view dir);
 std::size_t cleanup_unused_snapshots();
 
 /// Checks `text` against the running test's snapshot `name`, or its one
-/// unnamed snapshot; returns the report if the check fails.
-std::optional<std::string> check_snapshot(std::string_view text,
-                                          std::string_view name,
-                                          std::source_location location);
+/// unnamed snapshot.
+Match check_snapshot(std::string_view text, std::string_view name, std::source_location location);
 
-std::optional<std::string>
-    check_snapshot_glob(std::string_view dir,
-                        std::string_view pattern,
-                        const std::function<std::string(std::string_view)>& transform,
-                        std::source_location location);
-
-/// A check that held if it reported nothing.
-Match snapshot_match(std::optional<std::string> report);
+/// What `value` is snapshotted as, or why it cannot be.
+template <typename T>
+std::expected<std::string, std::string> snapshot_text(const T& value) {
+    if constexpr(meta::str_like<T>) {
+        if(auto text = as_text(value)) {
+            return std::string(*text);
+        }
+        return std::unexpected("got a null pointer, not text");
+    } else {
+        auto text = codec::debug::to_string(value, true);
+        if(!text) {
+            return std::unexpected(
+                std::format("cannot render the value: {}", text.error().to_string()));
+        }
+        return std::move(*text);
+    }
+}
 
 }  // namespace detail
 
@@ -59,31 +68,20 @@ template <typename T>
 Match snapshot(const T& value,
                std::string_view name = {},
                std::source_location location = std::source_location::current()) {
-    if constexpr(meta::str_like<T>) {
-        auto text = detail::as_text(value);
-        if(!text) {
-            return detail::snapshot_match("got a null pointer, not text");
-        }
-        return detail::snapshot_match(detail::check_snapshot(*text, name, location));
-    } else {
-        auto text = codec::debug::to_string(value, true);
-        if(!text) {
-            return detail::snapshot_match(
-                std::format("cannot render the value: {}", text.error().to_string()));
-        }
-        return detail::snapshot_match(detail::check_snapshot(*text, name, location));
+    auto text = detail::snapshot_text(value);
+    if(!text) {
+        return Match{.held = false, .explain = [error = std::move(text.error())] { return error; }};
     }
+    return detail::check_snapshot(*text, name, location);
 }
 
 /// Each file under `dir` whose path relative to it matches the glob `pattern`
 /// matches the running test's snapshot `<suite>/<test>/<relative path>.snap.yml`
 /// of `transform(path)`, `path` being `dir` joined with the relative path. At
 /// least one file must match.
-inline Match snapshot_glob(std::string_view dir,
-                           std::string_view pattern,
-                           const std::function<std::string(std::string_view)>& transform,
-                           std::source_location location = std::source_location::current()) {
-    return detail::snapshot_match(detail::check_snapshot_glob(dir, pattern, transform, location));
-}
+Match snapshot_glob(std::string_view dir,
+                    std::string_view pattern,
+                    const std::function<std::string(std::string_view)>& transform,
+                    std::source_location location = std::source_location::current());
 
 }  // namespace kota::zest

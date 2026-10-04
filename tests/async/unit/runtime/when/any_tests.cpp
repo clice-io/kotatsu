@@ -6,7 +6,6 @@
 #include <variant>
 #include <vector>
 
-#include "async/harness/exceptions.h"
 #include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -185,11 +184,9 @@ ZEST_CASE(range_of_awaiters_that_are_not_tasks) {
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(empty_range_fails, skip = test::exceptions_unreadable) {
+ZEST_CASE(empty_range_fails) {
     small_vector<task<int>> tasks;
-    ZEXPECT(
-        test::thrown<std::invalid_argument>([&] { (void)when_any(std::move(tasks)); }).has_value());
+    ZEXPECT(zest::throws<std::invalid_argument>([&] { (void)when_any(std::move(tasks)); }));
 }
 #endif
 

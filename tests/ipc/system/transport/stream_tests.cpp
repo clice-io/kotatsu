@@ -74,12 +74,7 @@ struct StreamFixture : zest::LoopFixture {
     std::expected<std::string, ReadError>
         read_after(std::string_view text, std::size_t max_payload = default_max_payload) {
         auto input = feed(loop, max_payload);
-        if(!input) {
-            ZEST_CONTEXT("cannot make a pipe");
-            // Reports the failure: there is no pipe here.
-            ZEXPECT(input.has_value());
-            return std::unexpected(ReadError{});
-        }
+        ZASSERT(input.has_value());
         auto written = test::write_fd(input->writer, text.data(), text.size());
         test::close_fd(input->writer);
         ZEXPECT(written == static_cast<ssize_t>(text.size()));

@@ -50,6 +50,9 @@ constexpr std::string_view yellow = "\033[33m";
 constexpr std::string_view red = "\033[31m";
 constexpr std::string_view clear = "\033[0m";
 
+/// The test running in this process, under --no-isolation.
+const Entry* running = nullptr;
+
 struct CliOptions {
     Options zest;
 
@@ -71,9 +74,6 @@ struct FailedTest {
     std::size_t line;
     std::string reason;
 };
-
-/// The test running in this process, under --no-isolation.
-const Entry* running = nullptr;
 
 struct RunSummary {
     std::uint32_t tests = 0;
@@ -448,6 +448,7 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
         fatal_notice = [] {
             flush_output();
             std::println("{}[    FATAL ] {} ended the run{}", red, running->name, clear);
+            flush_output();
         };
         for(const auto* entry: runnable) {
             if(entry->test_case.attrs.crashes) {
@@ -468,6 +469,7 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
             reporter.record(*entry,
                             Outcome{.verdict = verdict, .duration = elapsed_since(test_begin)});
         }
+        fatal_notice = nullptr;
     } else {
         PoolOptions pool{
             .args = program_args(argc, argv),

@@ -173,9 +173,10 @@ ZEST_CASE(throws_explains_what_was_thrown, skip = test::exceptions_unreadable) {
     auto boom = [] {
         throw std::runtime_error("boom");
     };
-    ZEXPECT(starts_with(throws<std::logic_error>(boom).explain(), "expected: "));
-    ZEXPECT(contains(throws<std::logic_error>(boom).explain(), "logic_error"));
-    ZEXPECT(contains(throws<std::logic_error>(boom).explain(), "\nthrown: "));
+    auto wrong = throws<std::logic_error>(boom).explain();
+    ZEXPECT(starts_with(wrong, "expected: "));
+    ZEXPECT(contains(wrong, "logic_error"));
+    ZEXPECT(contains(wrong, "\nthrown: "));
     ZEXPECT(ends_with(throws(boom).explain(), ": boom"));
     ZEXPECT(starts_with(throws([] { throw 42; }).explain(), "thrown: "));
     ZEXPECT(throws([] {}).explain() == "nothing was thrown");
@@ -188,7 +189,6 @@ ZEST_CASE(fatal_hooks_do_not_run_on_their_own) {
     bool ran = false;
     {
         FatalHook hook{[&] { ran = true; }};
-        ZEXPECT(1 == 1);
     }
     ZEXPECT(!ran);
 }

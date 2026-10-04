@@ -106,7 +106,7 @@ A test in a bootstrap suite must not judge itself with what it tests: meta's com
 
 - One expression per check. `ZEXPECT(a == b)` reports both operands; `ZEXPECT(x)` and `ZEXPECT(!x)` report `x`. Split `a && b` into two checks.
 - `ZASSERT` before anything that relies on the check: dereferencing an optional, expected or pointer, indexing, `.value()`. A failed `ZASSERT` ends the test's process without unwinding, so it serves alike in a coroutine, a helper that returns a value, a callback or another thread.
-- What a failed `ZASSERT` would leave behind outside the process (a temporary directory, a child process) is cleaned up by a `zest::FatalHook`, declared after what it cleans up: a member of the owning type, as `test::TempDir` has, or a local beside a resource the test cannot change. A suite's constructor and destructor are its setup and teardown, and do not run after a failed `ZASSERT`.
+- What a failed `ZASSERT` would leave behind outside the process (a temporary directory, a child process) is cleaned up by a `zest::FatalHook`, declared after what it cleans up: a member of the owning type, as `test::TempDir` has, or a local beside a resource the test cannot change. A suite's constructor and destructor are its setup and teardown; a failed `ZASSERT` skips the destructor.
 - An expected error is checked for what it is, not only that it happened: `ZASSERT(!result); ZEXPECT(result.error().kind == ...)`.
 - Predicates: `contains`, `starts_with`, `ends_with` for text and ranges, `type_eq<A, B>()` for types, `throws(fn)` / `throws<E>(fn)` and `!throws(fn)` for exceptions.
 - `ZEST_CONTEXT` in helpers and loops, naming the input a failing check was about.
@@ -118,7 +118,6 @@ A test in a bootstrap suite must not judge itself with what it tests: meta's com
 ## Determinism
 
 - Cases are independent. Each case runs on a fresh instance of its suite, so a case never clears or resets suite members, at its start or its end. Cases run in no set order, spread over worker processes that run at once, so a case never relies on another having run, or on its leftovers. A worker does run several cases one after another, so its process-wide state (globals and singletons, the environment, the current directory) is not fresh: a case that changes it restores it with an RAII guard such as `test::ScopedVariable`.
-
 - Unit tests never order events by sleeping; they use events, latches or the loop's own ordering. A timer is fine as the subject of a test.
 - System tests order events the same way wherever they can: wait for the event, a relay or a semaphore that says the other side is ready. A wait is left only to show that something does not happen, with a comment saying so.
 - System tests bind port 0 and read the port back. A case that needs a port twice (a second bind to share it, or to find it in use) binds port 0 first and reuses the port it read back.

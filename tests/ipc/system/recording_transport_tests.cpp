@@ -46,10 +46,8 @@ struct Recording : zest::LoopFixture {
             rest = end == std::string_view::npos ? std::string_view() : rest.substr(end + 1);
             auto record = codec::json::from_string<Record>(line);
             ZEST_CONTEXT("line: {}", line);
-            ZEXPECT(record.has_value());
-            if(record) {
-                lines.push_back(std::move(*record));
-            }
+            ZASSERT(record.has_value());
+            lines.push_back(std::move(*record));
         }
         return lines;
     }

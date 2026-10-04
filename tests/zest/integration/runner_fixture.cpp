@@ -143,6 +143,13 @@ ZEST_CASE(stops_at_assert) {
     std::println("printed after a failed assert");
 }
 
+// A failed ZEXPECT goes on with the test and runs no fatal hook.
+ZEST_CASE(continues_after_expect) {
+    FatalHook hook{[] { std::println("hook ran after an expect"); }};
+    ZEXPECT(1 == 2);
+    std::println("printed after a failed expect");
+}
+
 // Run without --snapshot-dir, which fails the snapshot.
 ZEST_CASE(snapshot_in_context) {
     ZEST_CONTEXT("while taking a snapshot");
@@ -192,9 +199,10 @@ ZEST_CASE(stopped_under_run) {
 
 // Work running on a pool thread cannot be cancelled, so the task awaiting it
 // is still running a watchdog period after the watchdog cancelled it, which
-// ends the worker as a failed ZASSERT does.
+// ends the worker as a failed ZASSERT does. The period gives the pool time to
+// take the work: work still queued would be cancelled.
 ZEST_CASE(outlives_its_cancel) {
-    watchdog = std::chrono::milliseconds(50);
+    watchdog = std::chrono::milliseconds(500);
     auto stuck = []() -> task<> {
         co_await queue([] { std::this_thread::sleep_for(std::chrono::seconds(10)); });
     };
@@ -214,6 +222,8 @@ int half(int number) {
 // worker runs the next test.
 ZEST_SUITE(fixture_fatal) {
 
+// First in the suite: check_runner.cmake runs the suite without isolation,
+// where this case ends the run.
 ZEST_CASE(in_body) {
     FatalHook first{[] { std::println("first hook ran"); }};
     FatalHook second{[] { std::println("second hook ran"); }};
@@ -233,6 +243,22 @@ ZEST_CASE(on_thread) {
 
 ZEST_CASE(hook_crashes) {
     FatalHook crash{[] { std::abort(); }};
+    ZASSERT(1 == 2);
+}
+
+#if defined(__cpp_exceptions) && !defined(ZEST_FIXTURE_BROKEN_CATCH)
+// What a hook throws is printed, and the older hooks still run.
+ZEST_CASE(hook_throws) {
+    FatalHook older{[] { std::println("hook older than the throw ran"); }};
+    FatalHook throws{[] { throw std::runtime_error("thrown by a hook"); }};
+    ZASSERT(1 == 2);
+}
+#endif
+
+// A hook's own failed ZASSERT ends the worker at once.
+ZEST_CASE(hook_asserts) {
+    FatalHook older{[] { std::println("hook older than the assert ran"); }};
+    FatalHook asserts{[] { ZASSERT(2 == 3); }};
     ZASSERT(1 == 2);
 }
 
@@ -263,6 +289,20 @@ ZEST_CASE(in_coroutine) {
 
 };  // ZEST_SUITE(fixture_fatal_loop)
 
+// A fatal hook that never returns, which the runner gives up on after
+// --timeout.
+ZEST_SUITE(fixture_hook_hang) {
+
+ZEST_CASE(hangs) {
+    FatalHook hangs{[] { std::this_thread::sleep_for(std::chrono::hours(1)); }};
+    ZASSERT(1 == 2);
+}
+
+};  // ZEST_SUITE(fixture_hook_hang)
+
+// Set by a test, to tell whether a later one shares its worker.
+bool marked = false;
+
 // Crash tests: they pass by killing their worker.
 ZEST_SUITE(fixture_crash) {
 
@@ -290,9 +330,27 @@ ZEST_CASE(skips, crashes = true) {
     skip();
 }
 
+// A failed check before the crash fails the test: the crash cannot report it.
+ZEST_CASE(expects_then_crashes, crashes = true) {
+    ZEXPECT(1 == 2);
+    std::abort();
+}
+
+ZEST_CASE(marks_the_worker) {
+    marked = true;
+}
+
+// Crashes only in a worker that ran no other test.
+ZEST_CASE(aborts_in_a_fresh_worker, crashes = true) {
+    if(!marked) {
+        std::abort();
+    }
+}
+
 };  // ZEST_SUITE(fixture_crash)
 
-// Two workers each check one snapshot; the runner must count both as checked.
+// Workers each check one snapshot, one of them before crashing; the runner
+// must count all of them as checked.
 ZEST_SUITE(fixture_snapshot) {
 
 ZEST_CASE(checked) {
@@ -301,6 +359,11 @@ ZEST_CASE(checked) {
 
 ZEST_CASE(also_checked) {
     ZEXPECT(snapshot("fresh"));
+}
+
+ZEST_CASE(checked_before_crashing, crashes = true) {
+    ZEXPECT(snapshot("fresh"));
+    std::abort();
 }
 
 };  // ZEST_SUITE(fixture_snapshot)

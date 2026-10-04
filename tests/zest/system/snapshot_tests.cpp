@@ -15,6 +15,20 @@ std::string fixtures_dir() {
     return "tests/zest/system/fixtures";
 }
 
+/// Turns --update-snapshots on for as long as it lives.
+struct UpdatingSnapshots {
+    UpdatingSnapshots() : was(detail::set_update_snapshots(true)) {}
+
+    UpdatingSnapshots(const UpdatingSnapshots&) = delete;
+    UpdatingSnapshots& operator=(const UpdatingSnapshots&) = delete;
+
+    ~UpdatingSnapshots() {
+        detail::set_update_snapshots(was);
+    }
+
+    const bool was;
+};
+
 std::string read_file(std::string_view path) {
     std::ifstream file(std::string(path), std::ios::binary);
     if(!file) {
@@ -26,30 +40,30 @@ std::string read_file(std::string_view path) {
 ZEST_SUITE(zest_snapshot) {
 
 ZEST_CASE(basic_named) {
-    ZASSERT(snapshot("hello snapshot", "basic_named"));
+    ZEXPECT(snapshot("hello snapshot", "basic_named"));
 }
 
 ZEST_CASE(unnamed) {
-    ZASSERT(snapshot("auto-named snapshot content"));
+    ZEXPECT(snapshot("auto-named snapshot content"));
 }
 
 ZEST_CASE(multiple_named) {
-    ZASSERT(snapshot("first value", "multi_first"));
-    ZASSERT(snapshot("second value", "multi_second"));
-    ZASSERT(snapshot("third value", "multi_third"));
+    ZEXPECT(snapshot("first value", "multi_first"));
+    ZEXPECT(snapshot("second value", "multi_second"));
+    ZEXPECT(snapshot("third value", "multi_third"));
 }
 
 ZEST_CASE(multiline) {
     std::string content = "line one\nline two\nline three";
-    ZASSERT(snapshot(content, "multiline"));
+    ZEXPECT(snapshot(content, "multiline"));
 }
 
 ZEST_CASE(empty_string) {
-    ZASSERT(snapshot("", "empty_string"));
+    ZEXPECT(snapshot("", "empty_string"));
 }
 
 ZEST_CASE(special_chars) {
-    ZASSERT(snapshot("tabs\there\nnewlines\nand \"quotes\"", "special_chars"));
+    ZEXPECT(snapshot("tabs\there\nnewlines\nand \"quotes\"", "special_chars"));
 }
 
 ZEST_CASE(values_render_as_debug_text) {
@@ -58,12 +72,12 @@ ZEST_CASE(values_render_as_debug_text) {
         {"alpha", 1},
         {"beta",  2},
     };
-    ZASSERT(snapshot(vector, "vector"));
-    ZASSERT(snapshot(map, "map"));
+    ZEXPECT(snapshot(vector, "vector"));
+    ZEXPECT(snapshot(map, "map"));
 }
 
 ZEST_CASE(glob_fixtures) {
-    ZASSERT(snapshot_glob(fixtures_dir(), "**/*.txt", read_file));
+    ZEXPECT(snapshot_glob(fixtures_dir(), "**/*.txt", read_file));
 }
 
 ZEST_CASE(mismatch_detection) {
@@ -77,36 +91,51 @@ ZEST_CASE(mismatch_detection) {
 
 ZEST_CASE(update_mode) {
     ZEXPECT(snapshot("version_a", "update_mode_v"));
-    detail::set_update_snapshots(true);
+    {
+        UpdatingSnapshots updating;
+        ZEXPECT(snapshot("version_b", "update_mode_v"));
+    }
     ZEXPECT(snapshot("version_b", "update_mode_v"));
-    detail::set_update_snapshots(false);
-    ZEXPECT(snapshot("version_b", "update_mode_v"));
-    detail::set_update_snapshots(true);
+    UpdatingSnapshots updating;
     ZEXPECT(snapshot("version_a", "update_mode_v"));
-    detail::set_update_snapshots(false);
 }
 
-ZEST_CASE(duplicate_unnamed_error) {
+ZEST_CASE(second_unnamed_snapshot_fails) {
     ZEXPECT(snapshot("first unnamed value"));
     auto second = snapshot("second unnamed attempt");
     ZEXPECT(!second.held);
     ZEXPECT(contains(second.explain(), "one unnamed snapshot"));
 }
 
-ZEST_CASE(missing_context_error) {
+ZEST_CASE(snapshot_without_a_test_fails) {
     detail::reset_snapshot_context("", "");
     auto taken = snapshot("value", "no_context");
     ZEXPECT(!taken.held);
     ZEXPECT(contains(taken.explain(), "no running test"));
 }
 
-ZEST_CASE(invalid_glob_error) {
+ZEST_CASE(invalid_glob_fails) {
     auto taken = snapshot_glob(".", "[unclosed", [](std::string_view) { return std::string{}; });
     ZEXPECT(!taken.held);
     ZEXPECT(contains(taken.explain(), "invalid glob pattern"));
 }
 
-ZEST_CASE(glob_no_matches) {
+ZEST_CASE(glob_of_a_missing_directory_fails) {
+    auto taken = snapshot_glob("tests/zest/system/missing", "**/*.txt", [](std::string_view) {
+        return std::string{};
+    });
+    ZEXPECT(!taken.held);
+    ZEXPECT(contains(taken.explain(), "cannot list"));
+}
+
+ZEST_CASE(null_text_fails) {
+    const char* null = nullptr;
+    auto taken = snapshot(null, "null");
+    ZEXPECT(!taken.held);
+    ZEXPECT(contains(taken.explain(), "null pointer"));
+}
+
+ZEST_CASE(glob_without_matches_fails) {
     auto taken =
         snapshot_glob(fixtures_dir(), "**/*.xyz", [](std::string_view) { return std::string{}; });
     ZEXPECT(!taken.held);
@@ -115,23 +144,28 @@ ZEST_CASE(glob_no_matches) {
 
 ZEST_CASE(body_with_separator) {
     std::string content = "before\n---\nafter";
-    ZASSERT(snapshot(content, "body_with_separator"));
+    ZEXPECT(snapshot(content, "body_with_separator"));
 }
 
-ZEST_CASE(unsafe_name_chars) {
-    ZEXPECT(!snapshot("value", "bad/name"));
-    ZEXPECT(!snapshot("value", "bad:name"));
+ZEST_CASE(unsafe_name_fails) {
+    for(auto name: {"bad/name", "bad:name"}) {
+        ZEST_CONTEXT("name {}", name);
+        auto taken = snapshot("value", name);
+        ZEXPECT(!taken.held);
+        ZEXPECT(contains(taken.explain(), "holds a character file names cannot"));
+    }
 }
 
-ZEST_CASE(glob_empty_context) {
+ZEST_CASE(glob_without_a_test_fails) {
     detail::reset_snapshot_context("", "");
     auto taken =
         snapshot_glob(fixtures_dir(), "**/*.txt", [](std::string_view) { return std::string{}; });
     ZEXPECT(!taken.held);
+    ZEXPECT(contains(taken.explain(), "no running test"));
 }
 
 // Snapshots are the running test's, whichever thread takes them.
-ZEST_CASE(taken_on_another_thread) {
+ZEST_CASE(other_thread_takes_snapshots) {
     std::thread([] { ZEXPECT(snapshot("from a thread", "thread")); }).join();
 }
 

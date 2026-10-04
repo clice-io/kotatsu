@@ -29,16 +29,16 @@ struct NestedContainers {
 ZEST_SUITE(codec_json_schema_snapshot) {
 
 ZEST_CASE(person) {
-    ZASSERT(zest::snapshot(json::schema_string<test::Person>(true).value(), "person"));
+    ZEXPECT(zest::snapshot(json::schema_string<test::Person>(true).value(), "person"));
 }
 
 ZEST_CASE(person_with_scores) {
-    ZASSERT(zest::snapshot(json::schema_string<test::PersonWithScores>(true).value(),
+    ZEXPECT(zest::snapshot(json::schema_string<test::PersonWithScores>(true).value(),
                            "person_with_scores"));
 }
 
 ZEST_CASE(combo_struct) {
-    ZASSERT(zest::snapshot(json::schema_string<ComboStruct>(true).value(), "combo_struct"));
+    ZEXPECT(zest::snapshot(json::schema_string<ComboStruct>(true).value(), "combo_struct"));
 }
 
 ZEST_CASE(nested_containers) {
@@ -62,7 +62,7 @@ ZEST_CASE(adjacent_tagged) {
 }
 
 ZEST_CASE(tagged_field_struct) {
-    ZASSERT(zest::snapshot(json::schema_string<test::TaggedFieldStruct>(true).value(),
+    ZEXPECT(zest::snapshot(json::schema_string<test::TaggedFieldStruct>(true).value(),
                            "tagged_field_struct"));
 }
 

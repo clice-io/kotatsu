@@ -67,26 +67,19 @@ void print_trace(std::source_location location) {
 #ifdef __cpp_exceptions
 
 bool trace_exception(function<void()> cb) {
-    bool ret = false;
-
     CPPTRACE_TRY {
-        CPPTRACE_TRY {
-            cb();
-        }
-        CPPTRACE_CATCH(const std::exception& e) {
-            std::println("[ exception ] {}", e.what());
-            println_trace(cpptrace::from_current_exception());
-            ret = true;
-        }
+        cb();
     }
     CPPTRACE_CATCH(...) {
-        std::println("[ exception ] <non-std exception>");
+        std::println("[ exception ] {}", describe_exception(std::current_exception()));
         println_trace(cpptrace::from_current_exception());
-        ret = true;
+        return true;
     }
-    return ret;
+    return false;
 }
 
+// Plain try and catch, as in predicates.h: built only with exceptions, and
+// catching by type has no KOTA_ macro.
 std::string describe_exception(std::exception_ptr exception) {
     try {
         std::rethrow_exception(exception);

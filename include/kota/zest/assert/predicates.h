@@ -90,6 +90,8 @@ Match type_eq() {
     };
 }
 
+// Plain try and catch: these exist only where exceptions do, and catching by
+// type has no KOTA_ macro.
 #ifdef __cpp_exceptions
 
 /// Calling `body` throws, an `E` if `E` is given; `!throws(body)` is that it

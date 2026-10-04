@@ -31,10 +31,8 @@ using CaseRegistrar = std::function<void(std::string, std::function<void()>)>;
 
 /// The base ZEST_SUITE gives a suite. Each ZEST_CASE runs on an instance of its
 /// own: the suite's constructor sets up for the case and its destructor tears
-/// down after it, a throw included. A failed ZASSERT runs neither; what must
-/// be cleaned up then goes in a FatalHook member. Cases share no instance and
-/// no order, and may run at once in different processes; a process runs
-/// several in a row, so what one changes in the process it restores.
+/// down after it, a throw included. A failed ZASSERT skips the destructor;
+/// what must be cleaned up then goes in a FatalHook member.
 template <typename Derived>
 struct TestSuiteDef {
     using Self = Derived;

@@ -152,7 +152,8 @@ kota_binary(
 )
 
 # zest's runner end to end, against tests that crash, hang, exit early or fail
-# a ZASSERT, and crash tests, and run_cli()'s command line on zest's unit tests.
+# a ZASSERT and against crash tests; run_cli()'s command line on zest's unit
+# tests.
 command_test(
     name = "zest_runner_test",
     command = [

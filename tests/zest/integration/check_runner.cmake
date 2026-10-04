@@ -51,6 +51,45 @@ function(expect_output_of status text)
     endif()
 endfunction()
 
+# `detail` is on the line after the status line starting with `status`.
+function(expect_detail_of status detail)
+    string(FIND "${output}" "${status}" status_at)
+    if(status_at EQUAL -1)
+        message(FATAL_ERROR "expected `${status}` in the output:\n${output}")
+    endif()
+    string(SUBSTRING "${output}" ${status_at} -1 rest)
+    string(FIND "${rest}" "\n" end)
+    math(EXPR next "${end} + 1")
+    string(SUBSTRING "${rest}" ${next} -1 rest)
+    string(FIND "${rest}" "\n" end)
+    string(SUBSTRING "${rest}" 0 ${end} line)
+    string(FIND "${line}" "${detail}" at)
+    if(at EQUAL -1)
+        message(FATAL_ERROR "expected `${detail}` under `${status}`:\n${output}")
+    endif()
+endfunction()
+
+# Some part of the output matches the regular expression `pattern`.
+function(expect_match pattern)
+    string(REGEX MATCH "${pattern}" found "${output}")
+    if(found STREQUAL "")
+        message(FATAL_ERROR "expected a match of `${pattern}` in the output:\n${output}")
+    endif()
+endfunction()
+
+# Each text is in the output after the one before it.
+function(expect_in_order)
+    set(from 0)
+    foreach(text IN LISTS ARGN)
+        string(SUBSTRING "${output}" ${from} -1 rest)
+        string(FIND "${rest}" "${text}" at)
+        if(at EQUAL -1)
+            message(FATAL_ERROR "expected `${text}` after the text before it:\n${output}")
+        endif()
+        math(EXPR from "${from} + ${at}")
+    endforeach()
+endfunction()
+
 string(ASCII 27 escape)
 set(ok "${escape}[32m[       OK ]")
 set(snapshots "${WORK_DIR}/snapshots")
@@ -127,51 +166,75 @@ expect_output("context: tasks still running after 50ms were cancelled by the wat
 expect_output("[   FAILED ] fixture_loop.stopped_under_run (")
 expect_output("context: run(): the loop was stopped with 1 tasks running")
 expect_output("[   FAILED ] fixture_loop.outlives_its_cancel (")
-expect_output("context: tasks still running 50ms after the watchdog cancelled them")
+expect_output("context: tasks still running 500ms after the watchdog cancelled them")
 expect_no_output("printed after the watchdog ended the worker")
 expect_no_output("CRASHED")
 
 # A failed ZASSERT, in a test's body, a helper, another thread or a coroutine,
 # fails its test and ends the worker after running the fatal hooks alive,
 # newest first; the runner counts no crash and goes on with a fresh worker.
+run_fixture("${FIXTURE}" --list-tests --test-filter=fixture_fatal*)
+set(fatal_failures 7)
+string(FIND "${output}" "fixture_fatal.hook_throws" hook_throws)
+if(NOT hook_throws EQUAL -1)
+    math(EXPR fatal_failures "${fatal_failures} + 1")
+endif()
 run_fixture("${FIXTURE}" --test-filter=fixture_fatal* --jobs=1)
 expect_code(1)
 expect_output_of("[   FAILED ] fixture_fatal.in_body (" "second hook ran\nfirst hook ran")
 expect_output("[   FAILED ] fixture_fatal.in_helper (")
 expect_output("[   FAILED ] fixture_fatal.on_thread (")
-expect_output("[   FAILED ] fixture_fatal.hook_crashes (")
-expect_output("the fatal hooks ended the worker with ")
+expect_detail_of("[   FAILED ] fixture_fatal.hook_crashes (" "the fatal hooks ended the worker with ")
+if(NOT hook_throws EQUAL -1)
+    expect_output_of("[   FAILED ] fixture_fatal.hook_throws (" "hook older than the throw ran")
+    expect_output("thrown by a hook")
+endif()
+expect_output("[   FAILED ] fixture_fatal.hook_asserts (")
+expect_output("[ expect ] 2 == 3")
 expect_output("[   FAILED ] fixture_fatal.hook_out_of_scope (")
 expect_output("[   FAILED ] fixture_fatal_loop.in_coroutine (")
 expect_output("[  PASSED  ] 1 tests.")
-expect_output("[  FAILED  ] 6 tests, listed below:")
+expect_output("[  FAILED  ] ${fatal_failures} tests, listed below:")
 expect_no_output("printed after a fatal")
+expect_no_output("hook older than the assert ran")
 expect_no_output("hook out of scope ran")
 expect_no_output("CRASHED")
 expect_no_output("[   WORKER ]")
 
+# A fatal hook that does not return is given --timeout, then the worker is
+# killed; the test still fails as its ZASSERT did.
+run_fixture("${FIXTURE}" --test-filter=fixture_hook_hang.* --timeout=10)
+expect_code(1)
+expect_detail_of("[   FAILED ] fixture_hook_hang.hangs ("
+    "the fatal hooks did not finish within --timeout")
+
 # Without isolation, a failed ZASSERT ends the whole run once its hooks ran.
 run_fixture("${FIXTURE}" --no-isolation --test-filter=fixture_fatal.* --verbose)
-expect_code(1)
-expect_output("[    FATAL ] fixture_fatal.in_body ended the run")
-expect_output("second hook ran\nfirst hook ran")
+expect_code(86)
+expect_in_order("[ expect ] 1 == 2" "[    FATAL ] fixture_fatal.in_body ended the run"
+    "second hook ran\nfirst hook ran")
 expect_no_output("fixture_fatal.in_helper")
+expect_no_output("Global test environment tear-down")
 
 # A crash test passes by killing its worker, a signal or a nonzero exit code
-# alike, and fails if it finishes, exits cleanly or fails a ZASSERT first.
-run_fixture("${FIXTURE}" --test-filter=fixture_crash.* --jobs=2 --verbose)
+# alike, on a worker of its own, and fails if it finishes, exits cleanly or
+# fails a check first.
+run_fixture("${FIXTURE}" --test-filter=fixture_crash.* --jobs=1 --verbose)
 expect_code(1)
 expect_output_of("${ok} fixture_crash.aborts (" "printed by fixture_crash.aborts")
-expect_output("${ok} fixture_crash.exits_with_an_error (")
-expect_output("crashed as expected: exit code 4")
+expect_detail_of("${ok} fixture_crash.exits_with_an_error (" "crashed as expected: exit code 4")
 expect_output("[   FAILED ] fixture_crash.finishes (")
 expect_output("fixture_crash.finishes (expected a crash)")
 expect_output("[  CRASHED ] fixture_crash.exits_cleanly (")
 expect_output("[   FAILED ] fixture_crash.asserts_first (")
 expect_output("[ SKIPPED  ] fixture_crash.skips")
-expect_output("[  PASSED  ] 2 tests.")
-expect_output("[  FAILED  ] 3 tests, listed below:")
+expect_output("[   FAILED ] fixture_crash.expects_then_crashes (")
+expect_output("${ok} fixture_crash.marks_the_worker (")
+expect_output("${ok} fixture_crash.aborts_in_a_fresh_worker (")
+expect_output("[  PASSED  ] 4 tests.")
+expect_output("[  FAILED  ] 4 tests, listed below:")
 expect_output("[  SKIPPED ] 1 tests.")
+expect_no_output("[   WORKER ]")
 
 # Without isolation, crash tests are skipped.
 run_fixture("${FIXTURE}" --no-isolation --test-filter=fixture_crash.aborts --verbose)
@@ -179,8 +242,9 @@ expect_code(0)
 expect_output("[ SKIPPED  ] fixture_crash.aborts")
 expect_output("a crash test runs only in a worker")
 
-# Snapshots checked by different workers are all counted as checked: the
-# stale one is rewritten, and only the orphan is cleaned up.
+# Snapshots checked by different workers, a crash test's included, are all
+# counted as checked: the stale one is rewritten, and only the orphan is
+# cleaned up.
 file(WRITE "${snapshots}/fixture_snapshot/checked.snap.yml" "stale")
 file(WRITE "${snapshots}/fixture_snapshot/orphan.snap.yml" "orphan")
 run_fixture("${FIXTURE}" --test-filter=fixture_snapshot.* --jobs=2 "--snapshot-dir=${snapshots}"
@@ -190,6 +254,7 @@ expect_output("[snapshot] cleaned up 1 orphaned file")
 file(READ "${snapshots}/fixture_snapshot/checked.snap.yml" checked)
 string(FIND "${checked}" "fresh" fresh_at)
 if(fresh_at EQUAL -1 OR NOT EXISTS "${snapshots}/fixture_snapshot/also_checked.snap.yml"
+   OR NOT EXISTS "${snapshots}/fixture_snapshot/checked_before_crashing.snap.yml"
    OR EXISTS "${snapshots}/fixture_snapshot/orphan.snap.yml")
     message(FATAL_ERROR "snapshots not updated and cleaned up as expected:\n${output}")
 endif()
@@ -199,7 +264,7 @@ endif()
 # test, a failed ZSTATIC_EXPECT is reported like any other check, a failed
 # snapshot shows its contexts too, and throws() names what was thrown.
 run_fixture("${FIXTURE}" --list-tests --test-filter=fixture_report.*)
-set(report_failures 8)
+set(report_failures 9)
 string(FIND "${output}" "fixture_report.throws_nothing" throws_nothing)
 if(NOT throws_nothing EQUAL -1)
     math(EXPR report_failures "${report_failures} + 1")
@@ -222,6 +287,9 @@ expect_output("needle: \"hay\"")
 expect_output("[ expect ] 1 + 1 == 3")
 expect_output("lhs: 2")
 expect_no_output("printed after a failed assert")
+expect_output_of("[   FAILED ] fixture_report.continues_after_expect ("
+    "printed after a failed expect")
+expect_no_output("hook ran after an expect")
 expect_output("[ expect ] snapshot(\"unchecked\")")
 expect_output("no snapshot directory: run with --snapshot-dir")
 expect_output("context: while taking a snapshot")
@@ -230,8 +298,7 @@ if(NOT throws_nothing EQUAL -1)
     expect_output("nothing was thrown")
 endif()
 if(NOT throws_unexpectedly EQUAL -1)
-    expect_output("thrown: ")
-    expect_output(": thrown on purpose")
+    expect_match("thrown: [^\n]*: thrown on purpose")
 endif()
 expect_output("[  FAILED  ] ${report_failures} tests, listed below:")
 

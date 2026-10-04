@@ -116,26 +116,14 @@ struct Channel {
     }
 };
 
-/// The runner's channel, which a failed ZASSERT on any thread replies on too.
+/// The runner's channel, which the test's threads send on too.
 std::optional<Channel> channel;
 
-/// Taken for each reply. A failed ZASSERT keeps it to the end, so that the
-/// test it ends, finishing meanwhile on another thread, sends no reply.
-std::mutex reply_mutex;
-
-/// Replies for the test that ran, with the snapshots it checked; everything it
-/// printed is in the log by then.
-void reply(TestState state, bool fatal) {
+/// Sends `line` to the runner, once all the test printed is in the log.
+void send(std::string_view line) {
+    std::lock_guard lock(reply_mutex());
     flush_output();
-    std::string text;
-    for(const auto& path: take_accessed_snapshots()) {
-        text += std::format("{}{}\n", protocol::snapshot, path);
-    }
-    if(fatal) {
-        text += std::format("{}\n", protocol::fatal);
-    }
-    text += std::format("{}{}\n", protocol::done, protocol::state_name(state));
-    channel->write(text);
+    channel->write(std::format("{}\n", line));
 }
 
 }  // namespace
@@ -165,8 +153,10 @@ std::optional<TestState> parse_state(std::string_view name) {
 void serve(std::span<const Entry> entries) {
     channel = Channel::take_stdin();
     fatal_notice = [] {
-        reply_mutex.lock();
-        reply(TestState::Failed, true);
+        send(protocol::fatal);
+    };
+    snapshot_notice = [](std::string_view path) {
+        send(std::format("{}{}", protocol::snapshot, path));
     };
 
     // Output goes to a file the runner reads after each test. Unbuffered, all
@@ -187,10 +177,12 @@ void serve(std::span<const Entry> entries) {
         auto test = tests.find(name);
         assert(test != tests.end());
 
+        failures_are_fatal = test->second->test_case.attrs.crashes;
         auto state = run_in_process(*test->second);
-        std::lock_guard lock(reply_mutex);
-        reply(state, false);
+        send(std::format("{}{}", protocol::done, protocol::state_name(state)));
     }
+    fatal_notice = nullptr;
+    snapshot_notice = nullptr;
 }
 
 }  // namespace kota::zest

@@ -28,8 +28,8 @@ strings rendered(std::string_view line, ParseOptions options = {}) {
     const auto parse = test::parse_table(kinds_table(), line, options);
     ZEST_CONTEXT("rendering {}", line);
     ZEXPECT(parse.errors.empty());
-    ZEXPECT(parse.args.size() == 1U);
-    return parse.args.empty() ? strings{} : rendered(parse.args[0]);
+    ZASSERT(parse.args.size() == 1U);
+    return rendered(parse.args[0]);
 }
 
 ZEST_SUITE(deco_option_table_render) {

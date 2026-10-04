@@ -42,8 +42,12 @@ std::set<std::string> accessed_snap_paths;
 std::set<std::string> accessed_snap_dirs;
 
 void record_access(const fs::path& snap_path) {
+    auto path = snap_path.lexically_normal().string();
+    if(auto notice = snapshot_notice.load()) {
+        notice(path);
+    }
     std::lock_guard lock(accessed_mutex);
-    accessed_snap_paths.insert(snap_path.lexically_normal().string());
+    accessed_snap_paths.insert(std::move(path));
     auto dir = snap_path.parent_path().lexically_normal();
     auto root = fs::path(global_snapshot_dir).lexically_normal();
     while(!dir.empty() && dir != root && dir.has_relative_path()) {
@@ -266,6 +270,14 @@ std::optional<std::string> check_impl(const fs::path& snap_path,
     return report;
 }
 
+/// A check that held if it reported nothing.
+Match matched(std::optional<std::string> report) {
+    return Match{
+        .held = !report,
+        .explain = [report = std::move(report)] { return report.value_or(""); },
+    };
+}
+
 /// Where the running test's snapshots go, or why they cannot.
 std::expected<SnapshotContext, std::string> current_context() {
     if(global_snapshot_dir.empty()) {
@@ -290,20 +302,18 @@ void reset_snapshot_context(std::string_view suite, std::string_view test) {
     };
 }
 
-void set_update_snapshots(bool enabled) {
-    update_snapshots_flag.store(enabled, std::memory_order_release);
+bool set_update_snapshots(bool enabled) {
+    return update_snapshots_flag.exchange(enabled, std::memory_order_acq_rel);
 }
 
 void set_snapshot_dir(std::string_view dir) {
     global_snapshot_dir = dir;
 }
 
-std::optional<std::string> check_snapshot(std::string_view text,
-                                          std::string_view name,
-                                          std::source_location location) {
+Match check_snapshot(std::string_view text, std::string_view name, std::source_location location) {
     auto context = current_context();
     if(!context) {
-        return std::move(context.error());
+        return matched(std::move(context.error()));
     }
     auto suite_dir = snap_dir() / context->suite_name;
 
@@ -311,82 +321,22 @@ std::optional<std::string> check_snapshot(std::string_view text,
         {
             std::lock_guard lock(context_mutex);
             if(std::exchange(snapshot_context.unnamed_used, true)) {
-                return R"(a test has one unnamed snapshot: name this one, as in snapshot(value, "name"))";
+                return matched(
+                    R"(a test has one unnamed snapshot: name this one, as in snapshot(value, "name"))");
             }
         }
-        return check_impl(suite_dir / (context->test_name + ".snap.yml"), text, "", location);
+        return matched(
+            check_impl(suite_dir / (context->test_name + ".snap.yml"), text, "", location));
     }
 
     if(name.find_first_of(R"(/\:*?"<>|)") != std::string_view::npos) {
-        return std::format("the snapshot name `{}` holds a character file names cannot", name);
+        return matched(
+            std::format("the snapshot name `{}` holds a character file names cannot", name));
     }
-    return check_impl(suite_dir / context->test_name / (std::string(name) + ".snap.yml"),
-                      text,
-                      "",
-                      location);
-}
-
-std::optional<std::string>
-    check_snapshot_glob(std::string_view dir,
-                        std::string_view pattern,
-                        const std::function<std::string(std::string_view)>& transform,
-                        std::source_location location) {
-    auto context = current_context();
-    if(!context) {
-        return std::move(context.error());
-    }
-
-    auto glob = GlobPattern::create(pattern);
-    if(!glob) {
-        return std::format("invalid glob pattern `{}`: {}", pattern, glob.error().message);
-    }
-
-    auto scan_dir = fs::path(dir);
-    std::error_code ec;
-    auto iter = fs::recursive_directory_iterator(scan_dir, ec);
-    if(ec) {
-        return std::format("cannot list `{}`: {}", scan_dir.string(), ec.message());
-    }
-
-    std::vector<fs::path> matched;
-    for(auto& entry: iter) {
-        if(entry.is_directory() &&
-           entry.path().lexically_normal() == snap_dir().lexically_normal()) {
-            iter.disable_recursion_pending();
-            continue;
-        }
-        if(!entry.is_regular_file()) {
-            continue;
-        }
-        // Lexically: fs::relative resolves symlinks, so a file linked from
-        // elsewhere (as in Bazel's runfiles) would be named by its target.
-        auto rel = entry.path().lexically_relative(scan_dir);
-        if(glob->match(rel.generic_string())) {
-            matched.emplace_back(rel);
-        }
-    }
-    if(matched.empty()) {
-        return std::format("no file under `{}` matches `{}`", scan_dir.string(), pattern);
-    }
-    std::ranges::sort(matched);
-
-    auto test_dir = snap_dir() / context->suite_name / context->test_name;
-    std::optional<std::string> report;
-    for(auto& rel: matched) {
-        auto value = transform((scan_dir / rel).string());
-        auto snap_path = test_dir / (rel.generic_string() + ".snap.yml");
-        if(auto failed = check_impl(snap_path, value, rel.generic_string(), location)) {
-            report = report ? std::format("{}\n{}", *report, *failed) : std::move(*failed);
-        }
-    }
-    return report;
-}
-
-Match snapshot_match(std::optional<std::string> report) {
-    return Match{
-        .held = !report,
-        .explain = [report = std::move(report)] { return report.value_or(""); },
-    };
+    return matched(check_impl(suite_dir / context->test_name / (std::string(name) + ".snap.yml"),
+                              text,
+                              "",
+                              location));
 }
 
 std::size_t cleanup_unused_snapshots() {
@@ -429,11 +379,59 @@ std::size_t cleanup_unused_snapshots() {
 
 }  // namespace detail
 
-std::vector<std::string> take_accessed_snapshots() {
-    std::lock_guard lock(accessed_mutex);
-    std::vector<std::string> paths(accessed_snap_paths.begin(), accessed_snap_paths.end());
-    accessed_snap_paths.clear();
-    return paths;
+Match snapshot_glob(std::string_view dir,
+                    std::string_view pattern,
+                    const std::function<std::string(std::string_view)>& transform,
+                    std::source_location location) {
+    auto context = current_context();
+    if(!context) {
+        return matched(std::move(context.error()));
+    }
+
+    auto glob = GlobPattern::create(pattern);
+    if(!glob) {
+        return matched(std::format("invalid glob pattern `{}`: {}", pattern, glob.error().message));
+    }
+
+    auto scan_dir = fs::path(dir);
+    std::error_code ec;
+    auto iter = fs::recursive_directory_iterator(scan_dir, ec);
+    if(ec) {
+        return matched(std::format("cannot list `{}`: {}", scan_dir.string(), ec.message()));
+    }
+
+    std::vector<fs::path> files;
+    for(auto& entry: iter) {
+        if(entry.is_directory() &&
+           entry.path().lexically_normal() == snap_dir().lexically_normal()) {
+            iter.disable_recursion_pending();
+            continue;
+        }
+        if(!entry.is_regular_file()) {
+            continue;
+        }
+        // Lexically: fs::relative resolves symlinks, so a file linked from
+        // elsewhere (as in Bazel's runfiles) would be named by its target.
+        auto rel = entry.path().lexically_relative(scan_dir);
+        if(glob->match(rel.generic_string())) {
+            files.emplace_back(rel);
+        }
+    }
+    if(files.empty()) {
+        return matched(std::format("no file under `{}` matches `{}`", scan_dir.string(), pattern));
+    }
+    std::ranges::sort(files);
+
+    auto test_dir = snap_dir() / context->suite_name / context->test_name;
+    std::optional<std::string> report;
+    for(auto& rel: files) {
+        auto value = transform((scan_dir / rel).string());
+        auto snap_path = test_dir / (rel.generic_string() + ".snap.yml");
+        if(auto failed = check_impl(snap_path, value, rel.generic_string(), location)) {
+            report = report ? std::format("{}\n{}", *report, *failed) : std::move(*failed);
+        }
+    }
+    return matched(std::move(report));
 }
 
 void record_snapshot_access(std::string_view path) {
