@@ -74,7 +74,7 @@ void peer_limit(const PeerKit<A>& kit) {
 
     kit.add("error_answer_over_the_limit_is_message_too_large", [=](Fixture& f) {
         f.remote.limit_payload(limit);
-        f.peer.on_request([](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
+        f.peer.on_request([=](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             co_await fail(-32001, std::string(limit, 'x'));
         });
         f.remote.send(request<A>(3, "test/add", AddParams{}));
