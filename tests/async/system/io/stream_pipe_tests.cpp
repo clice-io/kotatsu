@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "async/harness/io.h"
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -66,7 +66,7 @@ result<Ends> pipe_ends(event_loop& loop) {
 
 using test::read_to_end;
 
-ZEST_SUITE(async_io_stream_pipe, test::LoopFixture) {
+ZEST_SUITE(async_io_stream_pipe, zest::LoopFixture) {
 
 ZEST_CASE(read_returns_what_was_written_then_eof) {
     auto reader = pipe_holding("kotatsu-pipe", loop);

@@ -1,4 +1,4 @@
-kota_add_module_tests(LIBS kota::zest)
+kota_add_module_tests(LIBS kota::zest kota::zest::async)
 
 # zest's own runner, checked end to end by integration/check_runner.cmake.
 add_executable(zest_runner_fixture integration/runner_fixture.cpp)

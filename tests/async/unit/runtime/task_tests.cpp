@@ -5,8 +5,9 @@
 #include <variant>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "async/harness/exceptions.h"
 #include "async/harness/pending_op.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/support/config.h"
@@ -23,7 +24,7 @@ struct AppError {
     AppError(int code, std::string detail) : code(code), detail(std::move(detail)) {}
 };
 
-ZEST_SUITE(async_runtime_task, test::LoopFixture) {
+ZEST_SUITE(async_runtime_task, zest::LoopFixture) {
 
 ZEST_CASE(await_returns_the_child_value) {
     auto one = []() -> task<int> {

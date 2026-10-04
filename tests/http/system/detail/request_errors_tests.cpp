@@ -1,6 +1,6 @@
-#include "async/harness/loop_fixture.h"
 #include "http/harness/server.h"
 #include "kota/http/http.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -12,7 +12,7 @@ namespace kota::http {
 
 namespace {
 
-ZEST_SUITE(http_detail_request_errors, test::LoopFixture) {
+ZEST_SUITE(http_detail_request_errors, zest::LoopFixture) {
 
 ZEST_CASE(refused_connection_fails) {
     auto nowhere = test::refusing_url();

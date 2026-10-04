@@ -6,8 +6,8 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -34,7 +34,7 @@ std::ptrdiff_t open_descriptors() {
 }
 #endif
 
-ZEST_SUITE(async_io_fs_dir, test::LoopFixture) {
+ZEST_SUITE(async_io_fs_dir, zest::LoopFixture) {
 
 ZEST_CASE(mkdir_makes_and_rmdir_removes_a_directory) {
     test::TempDir dir;

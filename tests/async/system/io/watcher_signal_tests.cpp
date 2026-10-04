@@ -4,7 +4,7 @@
 #include <utility>
 
 #include "async/harness/io.h"
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -16,7 +16,7 @@ namespace {
 // Raising a signal to this process and catching it back is POSIX only.
 #ifndef _WIN32
 
-ZEST_SUITE(async_io_watcher_signal, test::LoopFixture) {
+ZEST_SUITE(async_io_watcher_signal, zest::LoopFixture) {
 
 ZEST_CASE(every_raised_signal_wakes_one_wait) {
     auto sig = signal::create(loop);

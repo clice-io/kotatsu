@@ -6,8 +6,8 @@
 #include <utility>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
 #include "kota/http/http.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -54,7 +54,7 @@ namespace kota::http {
 
 namespace {
 
-struct RequestFixture : test::LoopFixture {
+struct RequestFixture : zest::LoopFixture {
     http::client client;
 
     /// The error sending `built` fails with, if it fails.

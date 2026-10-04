@@ -59,7 +59,7 @@ What each module's headers include, and so what its tests may use:
 
 Rules:
 
-- A module's tests include only what their module depends on, plus the harnesses of those modules: `#include "async/harness/loop_fixture.h"`, rooted at `tests/`. Shared fixtures in `tests/fixtures/` follow the same rule for the lowest module that uses them. The build does not enforce this; review does.
+- A module's tests include only what their module depends on, plus the harnesses of those modules: `#include "async/harness/exceptions.h"`, rooted at `tests/`. Shared fixtures in `tests/fixtures/` follow the same rule for the lowest module that uses them. The build does not enforce this; review does.
 - Tests use the public API: `include/kota/`, never a header from `src/`, nor anything from `examples/` outside `tests/examples/`.
 - Behaviour defined once in the library is tested once. Backends of one protocol share one suite through the module's harness; a backend's own files test only what is specific to that backend.
 

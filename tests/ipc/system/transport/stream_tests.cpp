@@ -10,9 +10,9 @@
 #include <vector>
 
 #include "async/harness/io.h"
-#include "async/harness/loop_fixture.h"
 #include "async/harness/os.h"
 #include "kota/ipc/transport.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -68,7 +68,7 @@ std::optional<Feed> feed(event_loop& loop, std::size_t max_payload = default_max
     };
 }
 
-struct StreamFixture : test::LoopFixture {
+struct StreamFixture : zest::LoopFixture {
     /// What one read_message() returns from a pipe that holds `text` and was
     /// closed after it.
     std::expected<std::string, ReadError>

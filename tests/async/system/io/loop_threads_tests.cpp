@@ -5,7 +5,7 @@
 #include <thread>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
@@ -14,7 +14,7 @@ namespace kota {
 
 namespace {
 
-ZEST_SUITE(async_io_loop_threads, test::LoopFixture) {
+ZEST_SUITE(async_io_loop_threads, zest::LoopFixture) {
 
 ZEST_CASE(callback_sent_from_another_thread_runs_on_the_loop) {
     const auto loop_thread = std::this_thread::get_id();

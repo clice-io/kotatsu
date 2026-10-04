@@ -2,7 +2,8 @@
 #include <tuple>
 #include <vector>
 
-#include "async/harness/loop_fixture.h"
+#include "async/harness/exceptions.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/support/config.h"
@@ -14,7 +15,7 @@ namespace {
 
 #if KOTA_ENABLE_EXCEPTIONS
 
-ZEST_SUITE(async_runtime_when_exceptions, test::LoopFixture) {
+ZEST_SUITE(async_runtime_when_exceptions, zest::LoopFixture) {
 
 // Reads what was thrown; see test::exceptions_unreadable.
 ZEST_CASE(all_exception_cancels_the_rest_and_rethrows, skip = test::exceptions_unreadable) {
