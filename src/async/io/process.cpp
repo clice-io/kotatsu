@@ -2,6 +2,7 @@
 
 #include <csignal>
 #include <cstdint>
+#include <cstdlib>
 #include <format>
 #include <mutex>
 #include <optional>
@@ -36,8 +37,7 @@ struct process::Self : uv::owned_handle<Self> {
 };
 
 /// Waits for the child, started that same turn, to exit; a cancel kills it,
-/// and the wait goes on until it has exited. A child the caller may not
-/// signal is left running instead, as a cancelled wait() leaves it.
+/// and the wait goes on until it has exited.
 struct process::Self::ExitWait : uv::uv_op<ExitWait> {
     Self& self;
 
@@ -49,12 +49,12 @@ struct process::Self::ExitWait : uv::uv_op<ExitWait> {
     }
 
     void cancel() noexcept {
-        // Fails with no_such_process only for a child reaped already, whose
-        // exit callback completes this.
+        // no_such_process only means a child reaped already, whose exit
+        // callback completes this. A child the caller may not signal would
+        // keep the cancel waiting for good.
         auto killed = error(::uv_process_kill(&self.process, SIGKILL));
         if(killed && killed != error::no_such_process) {
-            self.exit_wait = nullptr;
-            this->complete();
+            std::abort();
         }
     }
 

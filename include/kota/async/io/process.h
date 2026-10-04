@@ -160,7 +160,8 @@ public:
     /// reads nothing, and its stdout and stderr are read while it runs,
     /// whatever `opts` asks for them. A cancel kills the child, as kill()
     /// does, and the task ends once the child has exited: it leaves no child
-    /// behind, but one the caller may not signal, which it leaves running.
+    /// behind. The child must be one the caller may signal: a cancel that
+    /// cannot kill it aborts the program.
     static task<capture_result, error> capture(options opts,
                                                event_loop& loop = event_loop::current());
 
