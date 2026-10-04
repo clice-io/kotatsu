@@ -23,6 +23,34 @@ test("jsonrpc_server_serves_its_methods", async (t) => {
   );
 });
 
+// example/length answers about the text as its request found it: the edit
+// sent right behind the request does not reach that answer.
+test("jsonrpc_server_answers_about_the_text_its_request_found", async (t) => {
+  const example = await Driver.spawn(t, "jsonrpc_server");
+  const connection = connect(example);
+  connection.listen();
+  const length = connection.sendRequest("example/length", {});
+  await connection.sendNotification("example/edit", { text: "hello, world" });
+  assert.deepEqual(await length, { length: 5 });
+  assert.deepEqual(await connection.sendRequest("example/length", {}), {
+    length: 12,
+  });
+  connection.end();
+  await example.expectExit(0);
+});
+
+test("jsonrpc_server_length_of_an_empty_document_fails", async (t) => {
+  const example = await Driver.spawn(t, "jsonrpc_server");
+  const connection = connect(example);
+  connection.listen();
+  await connection.sendNotification("example/edit", { text: "" });
+  await assert.rejects(connection.sendRequest("example/length", {}), {
+    message: "the document is empty",
+  });
+  connection.end();
+  await example.expectExit(0);
+});
+
 test("jsonrpc_roundtrip_writes_its_script", async (t) => {
   const example = await Driver.spawn(t, "jsonrpc_roundtrip");
   const output = await example.output();

@@ -207,6 +207,31 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(f.written().empty());
     });
 
+    // The notification read with the request closes the peer after the
+    // request's handler is called; the task that handler returned never
+    // starts.
+    kit.add("close_before_a_task_starts_never_starts_it", [](Fixture& f) {
+        bool called = false;
+        bool started = false;
+        auto answer = [&]() -> ipc::RequestResult<AddParams> {
+            started = true;
+            co_return AddResult{};
+        };
+        f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
+            called = true;
+            return answer();
+        });
+        f.peer.on_notification([&](const NoteParams&) { f.peer.close(); });
+        f.remote.send(request<A>(1, "test/add", AddParams{}));
+        f.remote.send(notification<A>("test/note", NoteParams{.text = "close"}));
+
+        auto [ran] = f.run(f.peer.run());
+        EXPECT(ran.has_value());
+        EXPECT(called);
+        EXPECT(!started);
+        EXPECT(f.written().empty());
+    });
+
     kit.add("send_after_close_fails", [](Fixture& f) {
         ASSERT(f.peer.close().has_value());
         auto sent = f.peer.send_notification(NoteParams{.text = "late"});
@@ -414,6 +439,35 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         EXPECT(!completed);
         ASSERT(asked.has_error());
         EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+    });
+
+    // The notification read with the request cancels run() after the
+    // request's handler is called; the task that handler returned never
+    // starts.
+    kit.add("cancelling_run_before_a_task_starts_never_starts_it", [](Fixture& f) {
+        bool called = false;
+        bool started = false;
+        cancellation_source source;
+        auto answer = [&]() -> ipc::RequestResult<AddParams> {
+            started = true;
+            co_return AddResult{};
+        };
+        f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
+            called = true;
+            return answer();
+        });
+        f.peer.on_notification([&](const NoteParams&) { source.cancel(); });
+        f.remote.send(request<A>(1, "test/add", AddParams{}));
+        f.remote.send(notification<A>("test/note", NoteParams{.text = "cancel"}));
+
+        auto [ran] = f.run(with_token(f.peer.run(), source.token()));
+        EXPECT(ran.is_cancelled());
+        EXPECT(called);
+        EXPECT(!started);
+        // At most the cancelled request's answer.
+        for(const auto& message: f.written()) {
+            EXPECT(message.id == RequestID(1));
+        }
     });
 
     // Nothing can use the peer again once run() is cancelled, so its
