@@ -15,16 +15,16 @@ ZEST_SUITE(ipc_lsp_protocol_enum) {
 ZEST_CASE(unknown_string_enum_value) {
     auto content =
         from_string<protocol::MarkupContent, lsp_config>(R"({"kind":"asciidoc","value":"body"})");
-    ASSERT(content);
-    EXPECT(content->kind == "asciidoc");
-    EXPECT(content->value == "body");
+    ZASSERT(content);
+    ZEXPECT(content->kind == "asciidoc");
+    ZEXPECT(content->value == "body");
 }
 
 ZEST_CASE(known_string_enum_value) {
     auto content =
         from_string<protocol::MarkupContent, lsp_config>(R"({"kind":"markdown","value":"body"})");
-    ASSERT(content);
-    EXPECT(content->kind == protocol::MarkupKind::Markdown);
+    ZASSERT(content);
+    ZEXPECT(content->kind == protocol::MarkupKind::Markdown);
 }
 
 ZEST_CASE(string_enum_roundtrip) {
@@ -33,17 +33,17 @@ ZEST_CASE(string_enum_roundtrip) {
         .value = "body",
     };
     auto serialized = codec::json::to_string<lsp_config>(content);
-    ASSERT(serialized);
-    EXPECT(*serialized == R"({"kind":"markdown","value":"body"})");
+    ZASSERT(serialized);
+    ZEXPECT(*serialized == R"({"kind":"markdown","value":"body"})");
 }
 
 ZEST_CASE(unknown_value_roundtrip) {
     constexpr std::string_view payload = R"({"kind":"asciidoc","value":"body"})";
     auto content = from_string<protocol::MarkupContent, lsp_config>(payload);
-    ASSERT(content);
+    ZASSERT(content);
     auto serialized = codec::json::to_string<lsp_config>(*content);
-    ASSERT(serialized);
-    EXPECT(*serialized == payload);
+    ZASSERT(serialized);
+    ZEXPECT(*serialized == payload);
 }
 
 ZEST_CASE(int_enum_unknown_encode) {
@@ -51,14 +51,14 @@ ZEST_CASE(int_enum_unknown_encode) {
         .value_set = std::vector{protocol::SymbolKind::File, protocol::SymbolKind(9999)},
     };
     auto serialized = codec::json::to_string<lsp_config>(options);
-    ASSERT(serialized);
-    EXPECT(*serialized == R"({"valueSet":[1,9999]})");
+    ZASSERT(serialized);
+    ZEXPECT(*serialized == R"({"valueSet":[1,9999]})");
 }
 
 ZEST_CASE(string_literal_field_default) {
     auto serialized = codec::json::to_string<lsp_config>(protocol::FullDocumentDiagnosticReport{});
-    ASSERT(serialized);
-    EXPECT(*serialized == R"({"kind":"full","items":[]})");
+    ZASSERT(serialized);
+    ZEXPECT(*serialized == R"({"kind":"full","items":[]})");
 }
 
 ZEST_CASE(initialize_unknown_enum_values) {
@@ -84,38 +84,38 @@ ZEST_CASE(initialize_unknown_enum_values) {
     })";
 
     auto params = from_string<protocol::InitializeParams, lsp_config>(payload);
-    ASSERT(params);
+    ZASSERT(params);
 
     auto& init = *params;
     auto& caps = init.capabilities;
 
-    ASSERT(caps.workspace);
-    ASSERT(caps.workspace->workspace_edit);
+    ZASSERT(caps.workspace);
+    ZASSERT(caps.workspace->workspace_edit);
     auto& edit = *caps.workspace->workspace_edit;
-    ASSERT(edit.resource_operations);
-    ASSERT(edit.resource_operations->size() == 4U);
-    EXPECT((*edit.resource_operations)[0] == protocol::ResourceOperationKind::Create);
-    EXPECT((*edit.resource_operations)[3] == "futureOperation");
-    ASSERT(edit.failure_handling);
-    EXPECT(*edit.failure_handling == "futureFailureMode");
+    ZASSERT(edit.resource_operations);
+    ZASSERT(edit.resource_operations->size() == 4U);
+    ZEXPECT((*edit.resource_operations)[0] == protocol::ResourceOperationKind::Create);
+    ZEXPECT((*edit.resource_operations)[3] == "futureOperation");
+    ZASSERT(edit.failure_handling);
+    ZEXPECT(*edit.failure_handling == "futureFailureMode");
 
-    ASSERT(caps.workspace->symbol);
-    ASSERT(caps.workspace->symbol->symbol_kind);
+    ZASSERT(caps.workspace->symbol);
+    ZASSERT(caps.workspace->symbol->symbol_kind);
     auto& kinds = caps.workspace->symbol->symbol_kind->value_set;
-    ASSERT(kinds);
-    ASSERT(kinds->size() == 3U);
-    EXPECT((*kinds)[0] == protocol::SymbolKind::File);
-    EXPECT(static_cast<std::uint32_t>((*kinds)[1]) == 9999U);
-    EXPECT(static_cast<std::uint32_t>((*kinds)[2]) == 4000000000U);
+    ZASSERT(kinds);
+    ZASSERT(kinds->size() == 3U);
+    ZEXPECT((*kinds)[0] == protocol::SymbolKind::File);
+    ZEXPECT(static_cast<std::uint32_t>((*kinds)[1]) == 9999U);
+    ZEXPECT(static_cast<std::uint32_t>((*kinds)[2]) == 4000000000U);
 
-    ASSERT(caps.text_document);
-    ASSERT(caps.text_document->hover);
+    ZASSERT(caps.text_document);
+    ZASSERT(caps.text_document->hover);
     auto& formats = caps.text_document->hover->content_format;
-    ASSERT(formats);
-    EXPECT((*formats)[1] == "asciidoc");
+    ZASSERT(formats);
+    ZEXPECT((*formats)[1] == "asciidoc");
 
-    ASSERT(init.trace);
-    EXPECT(*init.trace == "compact");
+    ZASSERT(init.trace);
+    ZEXPECT(*init.trace == "compact");
 }
 
 };  // ZEST_SUITE(ipc_lsp_protocol_enum)

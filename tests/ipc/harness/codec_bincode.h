@@ -65,7 +65,7 @@ struct BincodeAdapter {
     static std::string encode(const T& value) {
         auto bytes = codec::bincode::to_bytes(value);
         ZEST_CONTEXT("BincodeAdapter::encode");
-        EXPECT(bytes.has_value());
+        ZEXPECT(bytes.has_value());
         if(!bytes) {
             return {};
         }

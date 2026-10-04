@@ -32,10 +32,10 @@ void peer_limit(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked] = f.run(f.peer.run(), ask());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::MessageTooLarge);
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::MessageTooLarge);
+        ZEXPECT(f.written().empty());
     });
 
     kit.add("notification_over_the_limit_fails_unsent", [=](Fixture& f) {
@@ -45,13 +45,13 @@ void peer_limit(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        ASSERT(sent.has_error());
-        EXPECT(code_of(sent.error()) == ErrorCode::MessageTooLarge);
-        EXPECT(short_sent.has_value());
+        ZEXPECT(ran.has_value());
+        ZASSERT(sent.has_error());
+        ZEXPECT(code_of(sent.error()) == ErrorCode::MessageTooLarge);
+        ZEXPECT(short_sent.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(written[0].method == "test/note");
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(written[0].method == "test/note");
     });
 
     kit.add("answer_over_the_limit_is_message_too_large", [=](Fixture& f) {
@@ -64,12 +64,12 @@ void peer_limit(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
+        ZEXPECT(ran.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(written[0].kind == Message::Kind::Error);
-        EXPECT(written[0].id == RequestID(3));
-        EXPECT(code_of(written[0].error) == ErrorCode::MessageTooLarge);
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(written[0].kind == Message::Kind::Error);
+        ZEXPECT(written[0].id == RequestID(3));
+        ZEXPECT(code_of(written[0].error) == ErrorCode::MessageTooLarge);
     });
 
     kit.add("error_answer_over_the_limit_is_message_too_large", [=](Fixture& f) {
@@ -81,11 +81,11 @@ void peer_limit(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
+        ZEXPECT(ran.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(written[0].id == RequestID(3));
-        EXPECT(code_of(written[0].error) == ErrorCode::MessageTooLarge);
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(written[0].id == RequestID(3));
+        ZEXPECT(code_of(written[0].error) == ErrorCode::MessageTooLarge);
     });
 
     // A limit too small even for the error leaves the request unanswered.
@@ -101,9 +101,9 @@ void peer_limit(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        EXPECT(handled);
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(handled);
+        ZEXPECT(f.written().empty());
     });
 
     // The limit drops below the $/cancelRequest once the request is out:
@@ -125,10 +125,10 @@ void peer_limit(const PeerKit<A>& kit) {
         };
 
         auto [ran, failure, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(failure.has_value());
-        EXPECT(code_of(*failure) == ErrorCode::RequestCancelled);
-        EXPECT(f.written().size() == 1U);
+        ZEXPECT(ran.has_value());
+        ZASSERT(failure.has_value());
+        ZEXPECT(code_of(*failure) == ErrorCode::RequestCancelled);
+        ZEXPECT(f.written().size() == 1U);
     });
 }
 

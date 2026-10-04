@@ -176,109 +176,109 @@ constexpr auto full_nested = type_name<nested_t>(true);
 ZEST_SUITE(meta_name) {
 
 ZEST_CASE(type_name) {
-    EXPECT(type_name<int>() == "int");
+    ZEXPECT(type_name<int>() == "int");
 
-    EXPECT(type_name<struct_x>() == "struct_x");
-    EXPECT(type_name<class_x>() == "class_x");
-    EXPECT(type_name<enum_x>() == "enum_x");
-    EXPECT(type_name<union_x>() == "union_x");
+    ZEXPECT(type_name<struct_x>() == "struct_x");
+    ZEXPECT(type_name<class_x>() == "class_x");
+    ZEXPECT(type_name<enum_x>() == "enum_x");
+    ZEXPECT(type_name<union_x>() == "union_x");
 
     struct struct_y;
     class class_y;
     enum class enum_y;
     union union_y;
-    EXPECT(type_name<struct_y>() == "struct_y");
-    EXPECT(type_name<class_y>() == "class_y");
-    EXPECT(type_name<enum_y>() == "enum_y");
-    EXPECT(type_name<union_y>() == "union_y");
+    ZEXPECT(type_name<struct_y>() == "struct_y");
+    ZEXPECT(type_name<class_y>() == "class_y");
+    ZEXPECT(type_name<enum_y>() == "enum_y");
+    ZEXPECT(type_name<union_y>() == "union_y");
 
-    EXPECT(type_name<local_types::struct_z>() == "struct_z");
-    EXPECT(type_name<local_types::class_z>() == "class_z");
-    EXPECT(type_name<local_types::enum_z>() == "enum_z");
-    EXPECT(type_name<local_types::union_z>() == "union_z");
+    ZEXPECT(type_name<local_types::struct_z>() == "struct_z");
+    ZEXPECT(type_name<local_types::class_z>() == "class_z");
+    ZEXPECT(type_name<local_types::enum_z>() == "enum_z");
+    ZEXPECT(type_name<local_types::union_z>() == "union_z");
 }
 
 ZEST_CASE(qualified_type_name) {
-    EXPECT(short_outer == "Outer");
-    EXPECT(zest::ends_with(full_outer, "qualified_types::Outer"));
-    EXPECT(short_inner == "Inner");
-    EXPECT(zest::ends_with(full_inner, "qualified_types::Outer::Inner"));
+    ZEXPECT(short_outer == "Outer");
+    ZEXPECT(zest::ends_with(full_outer, "qualified_types::Outer"));
+    ZEXPECT(short_inner == "Inner");
+    ZEXPECT(zest::ends_with(full_inner, "qualified_types::Outer::Inner"));
 }
 
 ZEST_CASE(type_name_combinations) {
-    EXPECT(zest::starts_with(short_templ, "box<"));
-    EXPECT(zest::contains(short_templ, "Inner"));
-    EXPECT(zest::contains(full_templ, "type_cases::box<"));
-    EXPECT(zest::contains(full_templ, "qualified_types::Outer::Inner"));
+    ZEXPECT(zest::starts_with(short_templ, "box<"));
+    ZEXPECT(zest::contains(short_templ, "Inner"));
+    ZEXPECT(zest::contains(full_templ, "type_cases::box<"));
+    ZEXPECT(zest::contains(full_templ, "qualified_types::Outer::Inner"));
 
-    EXPECT(zest::starts_with(short_nested, "pair_box<"));
-    EXPECT(zest::contains(short_nested, "box<"));
-    EXPECT(zest::contains(full_nested, "type_cases::pair_box<"));
-    EXPECT(zest::contains(full_nested, "qualified_types::Outer"));
+    ZEXPECT(zest::starts_with(short_nested, "pair_box<"));
+    ZEXPECT(zest::contains(short_nested, "box<"));
+    ZEXPECT(zest::contains(full_nested, "type_cases::pair_box<"));
+    ZEXPECT(zest::contains(full_nested, "qualified_types::Outer"));
 }
 
 ZEST_CASE(pointer_name) {
-    EXPECT(pointer_name<&ins_y.x>() == "x");
-    EXPECT(pointer_name<&ins_y.y>() == "y");
+    ZEXPECT(pointer_name<&ins_y.x>() == "x");
+    ZEXPECT(pointer_name<&ins_y.y>() == "y");
 
-    EXPECT(pointer_name<&ins_y2.x>() == "x");
-    EXPECT(pointer_name<&ins_y2.y>() == "y");
+    ZEXPECT(pointer_name<&ins_y2.x>() == "x");
+    ZEXPECT(pointer_name<&ins_y2.y>() == "y");
 }
 
 ZEST_CASE(nested_member_pointer_name) {
-    EXPECT(pointer_name<&nested.value.field>() == "field");
+    ZEXPECT(pointer_name<&nested.value.field>() == "field");
 }
 
 ZEST_CASE(pointer_name_combinations) {
-    EXPECT(pointer_name<&global_value>() == "global_value");
-    EXPECT(pointer_name<(&global_value)>() == "global_value");
-    EXPECT(pointer_name<&global_fn>() == "global_fn");
-    EXPECT(pointer_name<&global_array>() == "global_array");
-    EXPECT(pointer_name<static_cast<int (*)(int)>(&global_overload)>() == "global_overload");
-    EXPECT(pointer_name<&global_tpl<int>>() == "global_tpl");
-    EXPECT(pointer_name<&global_tpl<std::vector<int>>>() == "global_tpl");
+    ZEXPECT(pointer_name<&global_value>() == "global_value");
+    ZEXPECT(pointer_name<(&global_value)>() == "global_value");
+    ZEXPECT(pointer_name<&global_fn>() == "global_fn");
+    ZEXPECT(pointer_name<&global_array>() == "global_array");
+    ZEXPECT(pointer_name<static_cast<int (*)(int)>(&global_overload)>() == "global_overload");
+    ZEXPECT(pointer_name<&global_tpl<int>>() == "global_tpl");
+    ZEXPECT(pointer_name<&global_tpl<std::vector<int>>>() == "global_tpl");
 
-    EXPECT(pointer_name<&pointer_cases::namespaced_value>() == "namespaced_value");
-    EXPECT(pointer_name<(&pointer_cases::namespaced_value)>() == "namespaced_value");
-    EXPECT(pointer_name<&pointer_cases::namespaced_fn>() == "namespaced_fn");
-    EXPECT(pointer_name<&pointer_cases::namespaced_array>() == "namespaced_array");
-    EXPECT(pointer_name<static_cast<long (*)(double)>(&pointer_cases::overloaded_fn)>() ==
-           "overloaded_fn");
-    EXPECT(pointer_name<&pointer_cases::namespaced_tpl<long>>() == "namespaced_tpl");
+    ZEXPECT(pointer_name<&pointer_cases::namespaced_value>() == "namespaced_value");
+    ZEXPECT(pointer_name<(&pointer_cases::namespaced_value)>() == "namespaced_value");
+    ZEXPECT(pointer_name<&pointer_cases::namespaced_fn>() == "namespaced_fn");
+    ZEXPECT(pointer_name<&pointer_cases::namespaced_array>() == "namespaced_array");
+    ZEXPECT(pointer_name<static_cast<long (*)(double)>(&pointer_cases::overloaded_fn)>() ==
+            "overloaded_fn");
+    ZEXPECT(pointer_name<&pointer_cases::namespaced_tpl<long>>() == "namespaced_tpl");
 
-    EXPECT(pointer_name<&struct_y::static_data>() == "static_data");
-    EXPECT(pointer_name<&struct_y::static_fn>() == "static_fn");
+    ZEXPECT(pointer_name<&struct_y::static_data>() == "static_data");
+    ZEXPECT(pointer_name<&struct_y::static_fn>() == "static_fn");
 }
 
 ZEST_CASE(basic_member_name) {
-    EXPECT(member_name<&struct_y::x>() == "x");
-    EXPECT(member_name<&struct_y::y>() == "y");
-    EXPECT(member_name<&struct_y::clear_x>() == "clear_x");
-    EXPECT(member_name<&struct_y::size>() == "size");
-    EXPECT(member_name<&struct_y::size_lref>() == "size_lref");
-    EXPECT(member_name<&struct_y::size_rref>() == "size_rref");
-    EXPECT(member_name<&struct_y::size_noexcept>() == "size_noexcept");
-    EXPECT(member_name<static_cast<int (struct_y::*)(int)>(&struct_y::overloaded)>() ==
-           "overloaded");
-    EXPECT(member_name<static_cast<int (struct_y::*)(double) const>(&struct_y::overloaded)>() ==
-           "overloaded");
-    EXPECT(member_name<&struct_y::cast_size<int>>() == "cast_size");
-    EXPECT(member_name<&nested_holder::value>() == "value");
-    EXPECT(member_name<&nested_holder::leaf::field>() == "field");
+    ZEXPECT(member_name<&struct_y::x>() == "x");
+    ZEXPECT(member_name<&struct_y::y>() == "y");
+    ZEXPECT(member_name<&struct_y::clear_x>() == "clear_x");
+    ZEXPECT(member_name<&struct_y::size>() == "size");
+    ZEXPECT(member_name<&struct_y::size_lref>() == "size_lref");
+    ZEXPECT(member_name<&struct_y::size_rref>() == "size_rref");
+    ZEXPECT(member_name<&struct_y::size_noexcept>() == "size_noexcept");
+    ZEXPECT(member_name<static_cast<int (struct_y::*)(int)>(&struct_y::overloaded)>() ==
+            "overloaded");
+    ZEXPECT(member_name<static_cast<int (struct_y::*)(double) const>(&struct_y::overloaded)>() ==
+            "overloaded");
+    ZEXPECT(member_name<&struct_y::cast_size<int>>() == "cast_size");
+    ZEXPECT(member_name<&nested_holder::value>() == "value");
+    ZEXPECT(member_name<&nested_holder::leaf::field>() == "field");
 }
 
 ZEST_CASE(enum_name) {
-    EXPECT(enum_name<enum_y::RED>() == "RED");
-    EXPECT(enum_name<enum_y::YELLOW>() == "YELLOW");
+    ZEXPECT(enum_name<enum_y::RED>() == "RED");
+    ZEXPECT(enum_name<enum_y::YELLOW>() == "YELLOW");
 }
 
 ZEST_CASE(enum_name_sparse_values) {
-    EXPECT(enum_name<sparse_enum::RED>() == "RED");
-    EXPECT(enum_name<sparse_enum::GREEN>() == "GREEN");
-    EXPECT(enum_name<sparse_enum::BLUE>() == "BLUE");
-    EXPECT(enum_name<Up>() == "Up");
-    EXPECT(enum_name<Down>() == "Down");
-    EXPECT(enum_name<Left>() == "Left");
+    ZEXPECT(enum_name<sparse_enum::RED>() == "RED");
+    ZEXPECT(enum_name<sparse_enum::GREEN>() == "GREEN");
+    ZEXPECT(enum_name<sparse_enum::BLUE>() == "BLUE");
+    ZEXPECT(enum_name<Up>() == "Up");
+    ZEXPECT(enum_name<Down>() == "Down");
+    ZEXPECT(enum_name<Left>() == "Left");
 }
 
 };  // ZEST_SUITE(meta_name)

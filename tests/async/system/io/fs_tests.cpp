@@ -66,11 +66,11 @@ ZEST_CASE(write_then_read_back) {
     };
 
     auto [result] = run(roundtrip());
-    ASSERT(result.has_value());
-    EXPECT(result->written == 10U);
-    EXPECT(result->read == "kotatsu-fs");
-    EXPECT(result->read_at_end == 0U);
-    EXPECT(test::read_file(path) == "kotatsu-fs");
+    ZASSERT(result.has_value());
+    ZEXPECT(result->written == 10U);
+    ZEXPECT(result->read == "kotatsu-fs");
+    ZEXPECT(result->read_at_end == 0U);
+    ZEXPECT(test::read_file(path) == "kotatsu-fs");
 }
 
 ZEST_CASE(read_and_write_at_an_offset) {
@@ -87,16 +87,16 @@ ZEST_CASE(read_and_write_at_an_offset) {
     };
 
     auto [result] = run(patch());
-    ASSERT(result.has_value());
-    EXPECT(*result == "WORLD");
-    EXPECT(test::read_file(path) == "hello WORLD");
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == "WORLD");
+    ZEXPECT(test::read_file(path) == "hello WORLD");
 }
 
 ZEST_CASE(open_of_a_missing_file_fails) {
     test::TempDir dir;
     auto [result] = run(fs::open(dir.file("missing"), O_RDONLY, 0, loop));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::no_such_file_or_directory);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
 
 ZEST_CASE(stat_and_fstat_describe_a_file) {
@@ -112,22 +112,22 @@ ZEST_CASE(stat_and_fstat_describe_a_file) {
     };
 
     auto [result] = run(describe());
-    ASSERT(result.has_value());
+    ZASSERT(result.has_value());
     auto& [by_path, by_fd] = *result;
-    EXPECT(by_path.size == 5U);
-    EXPECT(by_path.nlink == 1U);
-    EXPECT(by_fd.size == 5U);
-    EXPECT(by_fd.ino == by_path.ino);
+    ZEXPECT(by_path.size == 5U);
+    ZEXPECT(by_path.nlink == 1U);
+    ZEXPECT(by_fd.size == 5U);
+    ZEXPECT(by_fd.ino == by_path.ino);
 #ifndef _WIN32
-    EXPECT((by_path.mode & S_IFMT) == S_IFREG);
+    ZEXPECT((by_path.mode & S_IFMT) == S_IFREG);
 #endif
 }
 
 ZEST_CASE(stat_of_a_missing_file_fails) {
     test::TempDir dir;
     auto [result] = run(fs::stat(dir.file("missing"), loop));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::no_such_file_or_directory);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
 
 ZEST_CASE(unlink_removes_a_file) {
@@ -135,15 +135,15 @@ ZEST_CASE(unlink_removes_a_file) {
     test::write_file(dir.path / "data.txt", "x");
 
     auto [result] = run(fs::unlink(dir.file("data.txt"), loop));
-    EXPECT(result.has_value());
-    EXPECT(!std::filesystem::exists(dir.path / "data.txt"));
+    ZEXPECT(result.has_value());
+    ZEXPECT(!std::filesystem::exists(dir.path / "data.txt"));
 }
 
 ZEST_CASE(unlink_of_a_missing_file_fails) {
     test::TempDir dir;
     auto [result] = run(fs::unlink(dir.file("missing"), loop));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::no_such_file_or_directory);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
 
 ZEST_CASE(rename_moves_a_file) {
@@ -151,16 +151,16 @@ ZEST_CASE(rename_moves_a_file) {
     test::write_file(dir.path / "from.txt", "moved");
 
     auto [result] = run(fs::rename(dir.file("from.txt"), dir.file("to.txt"), loop));
-    EXPECT(result.has_value());
-    EXPECT(!std::filesystem::exists(dir.path / "from.txt"));
-    EXPECT(test::read_file(dir.path / "to.txt") == "moved");
+    ZEXPECT(result.has_value());
+    ZEXPECT(!std::filesystem::exists(dir.path / "from.txt"));
+    ZEXPECT(test::read_file(dir.path / "to.txt") == "moved");
 }
 
 ZEST_CASE(rename_of_a_missing_file_fails) {
     test::TempDir dir;
     auto [result] = run(fs::rename(dir.file("missing"), dir.file("other"), loop));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::no_such_file_or_directory);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
 
 // A clone falls back to a copy where the filesystem cannot share blocks.
@@ -171,10 +171,10 @@ ZEST_CASE(copyfile_copies_the_contents) {
     auto [copied, cloned] =
         run(fs::copyfile(dir.file("source.txt"), dir.file("copy.txt"), {}, loop),
             fs::copyfile(dir.file("source.txt"), dir.file("clone.txt"), {.clone = true}, loop));
-    EXPECT(copied.has_value());
-    EXPECT(test::read_file(dir.path / "copy.txt") == "copied");
-    EXPECT(cloned.has_value());
-    EXPECT(test::read_file(dir.path / "clone.txt") == "copied");
+    ZEXPECT(copied.has_value());
+    ZEXPECT(test::read_file(dir.path / "copy.txt") == "copied");
+    ZEXPECT(cloned.has_value());
+    ZEXPECT(test::read_file(dir.path / "clone.txt") == "copied");
 }
 
 ZEST_CASE(copyfile_onto_a_file_with_excl_fails) {
@@ -184,9 +184,9 @@ ZEST_CASE(copyfile_onto_a_file_with_excl_fails) {
 
     auto [result] =
         run(fs::copyfile(dir.file("source.txt"), dir.file("taken.txt"), {.excl = true}, loop));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::file_already_exists);
-    EXPECT(test::read_file(dir.path / "taken.txt") == "keep");
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::file_already_exists);
+    ZEXPECT(test::read_file(dir.path / "taken.txt") == "keep");
 }
 
 ZEST_CASE(mkstemp_creates_and_opens_a_new_file) {
@@ -198,17 +198,17 @@ ZEST_CASE(mkstemp_creates_and_opens_a_new_file) {
     };
 
     auto [created] = run(make());
-    ASSERT(created.has_value());
-    EXPECT(created->fd >= 0);
-    EXPECT(std::filesystem::is_regular_file(created->path));
-    EXPECT(zest::starts_with(created->path, dir.file("file-")));
+    ZASSERT(created.has_value());
+    ZEXPECT(created->fd >= 0);
+    ZEXPECT(std::filesystem::is_regular_file(created->path));
+    ZEXPECT(zest::starts_with(created->path, dir.file("file-")));
 }
 
 ZEST_CASE(mkstemp_without_a_template_fails) {
     test::TempDir dir;
     auto [result] = run(fs::mkstemp(dir.file("no-template"), loop));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::invalid_argument);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::invalid_argument);
 }
 
 ZEST_CASE(ftruncate_fsync_and_fdatasync_act_on_a_descriptor) {
@@ -224,8 +224,8 @@ ZEST_CASE(ftruncate_fsync_and_fdatasync_act_on_a_descriptor) {
     };
 
     auto [result] = run(shrink());
-    EXPECT(result.has_value());
-    EXPECT(test::read_file(path) == "0123");
+    ZEXPECT(result.has_value());
+    ZEXPECT(test::read_file(path) == "0123");
 }
 
 ZEST_CASE(sendfile_copies_between_descriptors) {
@@ -241,9 +241,9 @@ ZEST_CASE(sendfile_copies_between_descriptors) {
     };
 
     auto [result] = run(send());
-    ASSERT(result.has_value());
-    EXPECT(*result == 5);
-    EXPECT(test::read_file(dir.path / "target.txt") == "bytes");
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 5);
+    ZEXPECT(test::read_file(dir.path / "target.txt") == "bytes");
 }
 
 ZEST_CASE(access_checks_that_a_file_exists) {
@@ -251,14 +251,14 @@ ZEST_CASE(access_checks_that_a_file_exists) {
     test::write_file(dir.path / "data.txt", "x");
 
     auto [result] = run(fs::access(dir.file("data.txt"), 0, loop));
-    EXPECT(result.has_value());
+    ZEXPECT(result.has_value());
 }
 
 ZEST_CASE(access_to_a_missing_file_fails) {
     test::TempDir dir;
     auto [result] = run(fs::access(dir.file("missing"), 0, loop));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::no_such_file_or_directory);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
 
 // futime needs a descriptor that may write attributes, which Windows does
@@ -279,9 +279,9 @@ ZEST_CASE(utime_and_futime_set_the_times) {
     };
 
     auto [result] = run(touch());
-    ASSERT(result.has_value());
-    EXPECT(result->first.mtime == fs::file_time(seconds(1'000'000'000)));
-    EXPECT(result->second.mtime == fs::file_time(seconds(1'500'000'000)));
+    ZASSERT(result.has_value());
+    ZEXPECT(result->first.mtime == fs::file_time(seconds(1'000'000'000)));
+    ZEXPECT(result->second.mtime == fs::file_time(seconds(1'500'000'000)));
 }
 
 ZEST_CASE(link_adds_a_name_for_the_same_file) {
@@ -289,33 +289,33 @@ ZEST_CASE(link_adds_a_name_for_the_same_file) {
     test::write_file(dir.path / "data.txt", "linked");
 
     auto [result] = run(fs::link(dir.file("data.txt"), dir.file("alias.txt"), loop));
-    EXPECT(result.has_value());
-    EXPECT(test::read_file(dir.path / "alias.txt") == "linked");
-    EXPECT(std::filesystem::hard_link_count(dir.path / "data.txt") == 2U);
+    ZEXPECT(result.has_value());
+    ZEXPECT(test::read_file(dir.path / "alias.txt") == "linked");
+    ZEXPECT(std::filesystem::hard_link_count(dir.path / "data.txt") == 2U);
 }
 
 ZEST_CASE(link_to_a_missing_file_fails) {
     test::TempDir dir;
     auto [result] = run(fs::link(dir.file("missing"), dir.file("other"), loop));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::no_such_file_or_directory);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
 
 ZEST_CASE(statfs_reports_the_filesystem) {
     test::TempDir dir;
     auto [result] = run(fs::statfs(dir.path.string(), loop));
-    ASSERT(result.has_value());
-    EXPECT(result->bsize > 0U);
-    EXPECT(result->blocks > 0U);
+    ZASSERT(result.has_value());
+    ZEXPECT(result->bsize > 0U);
+    ZEXPECT(result->blocks > 0U);
 }
 
 ZEST_CASE(bad_descriptor_fails) {
     std::array<char, 8> buffer{};
     auto [stat_result, read_result] = run(fs::fstat(-1, loop), fs::read(-1, buffer, -1, loop));
-    ASSERT(stat_result.has_error());
-    EXPECT(stat_result.error() == error::bad_file_descriptor);
-    ASSERT(read_result.has_error());
-    EXPECT(read_result.error() == error::bad_file_descriptor);
+    ZASSERT(stat_result.has_error());
+    ZEXPECT(stat_result.error() == error::bad_file_descriptor);
+    ZASSERT(read_result.has_error());
+    ZEXPECT(read_result.error() == error::bad_file_descriptor);
 }
 
 // With every pool thread busy the request waits in the queue; cancelling it
@@ -340,10 +340,10 @@ ZEST_CASE(cancel_while_queued_drops_the_request) {
     };
 
     auto [held, raced] = run(pool.hold(busy), cancel_queued());
-    EXPECT(held.has_value());
-    ASSERT(raced.has_value());
-    EXPECT(*raced == 1U);
-    EXPECT(!std::filesystem::exists(dir.path / "never"));
+    ZEXPECT(held.has_value());
+    ZASSERT(raced.has_value());
+    ZEXPECT(*raced == 1U);
+    ZEXPECT(!std::filesystem::exists(dir.path / "never"));
 }
 
 #ifndef _WIN32
@@ -356,7 +356,7 @@ ZEST_CASE(cancel_while_queued_drops_the_request) {
 ZEST_CASE(open_cancelled_too_late_closes_what_it_opened) {
     test::TempDir dir;
     const auto fifo = dir.file("fifo");
-    ASSERT(::mkfifo(fifo.c_str(), 0600) == 0);
+    ZASSERT(::mkfifo(fifo.c_str(), 0600) == 0);
     int writer = -1;
     auto open_writer = [&]() -> task<> {
         while((writer = ::open(fifo.c_str(), O_WRONLY | O_NONBLOCK)) < 0) {
@@ -369,14 +369,14 @@ ZEST_CASE(open_cancelled_too_late_closes_what_it_opened) {
     };
 
     auto [raced] = run(race());
-    ASSERT(raced.has_value());
-    EXPECT(*raced == 1U);
-    ASSERT(writer >= 0);
-    EXPECT(::close(writer) == 0);
+    ZASSERT(raced.has_value());
+    ZEXPECT(*raced == 1U);
+    ZASSERT(writer >= 0);
+    ZEXPECT(::close(writer) == 0);
     const int again = ::open(fifo.c_str(), O_WRONLY | O_NONBLOCK);
     const int reason = errno;
-    EXPECT(again == -1);
-    EXPECT(reason == ENXIO);
+    ZEXPECT(again == -1);
+    ZEXPECT(reason == ENXIO);
     if(again >= 0) {
         ::close(again);
     }
@@ -400,10 +400,10 @@ ZEST_CASE(mkstemp_cancelled_too_late_removes_what_it_made) {
     };
 
     auto [raced] = run(race());
-    ASSERT(raced.has_value());
-    EXPECT(*raced == 1U);
-    EXPECT(made);
-    EXPECT(std::filesystem::is_empty(dir.path));
+    ZASSERT(raced.has_value());
+    ZEXPECT(*raced == 1U);
+    ZEXPECT(made);
+    ZEXPECT(std::filesystem::is_empty(dir.path));
 }
 
 // As for mkstemp: mkdtemp removes the directory it made.
@@ -421,10 +421,10 @@ ZEST_CASE(mkdtemp_cancelled_too_late_removes_what_it_made) {
     };
 
     auto [raced] = run(race());
-    ASSERT(raced.has_value());
-    EXPECT(*raced == 1U);
-    EXPECT(made);
-    EXPECT(std::filesystem::is_empty(dir.path));
+    ZASSERT(raced.has_value());
+    ZEXPECT(*raced == 1U);
+    ZEXPECT(made);
+    ZEXPECT(std::filesystem::is_empty(dir.path));
 }
 
 #ifndef _WIN32
@@ -454,19 +454,19 @@ ZEST_CASE(symlink_is_read_resolved_and_described_as_a_link) {
     };
 
     auto [result] = run(follow());
-    ASSERT(result.has_value());
-    EXPECT(result->target == target);
-    EXPECT(result->resolved == std::filesystem::canonical(dir.path / "target.txt").string());
-    EXPECT((result->link.mode & S_IFMT) == S_IFLNK);
-    EXPECT(result->link.mtime == fs::file_time(std::chrono::seconds(1'000'000'000)));
-    EXPECT((result->file.mode & S_IFMT) == S_IFREG);
+    ZASSERT(result.has_value());
+    ZEXPECT(result->target == target);
+    ZEXPECT(result->resolved == std::filesystem::canonical(dir.path / "target.txt").string());
+    ZEXPECT((result->link.mode & S_IFMT) == S_IFLNK);
+    ZEXPECT(result->link.mtime == fs::file_time(std::chrono::seconds(1'000'000'000)));
+    ZEXPECT((result->file.mode & S_IFMT) == S_IFREG);
 }
 
 ZEST_CASE(readlink_of_a_missing_link_fails) {
     test::TempDir dir;
     auto [result] = run(fs::readlink(dir.file("missing"), loop));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::no_such_file_or_directory);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
 
 ZEST_CASE(chmod_and_fchmod_set_the_mode) {
@@ -484,9 +484,9 @@ ZEST_CASE(chmod_and_fchmod_set_the_mode) {
     };
 
     auto [result] = run(change());
-    ASSERT(result.has_value());
-    EXPECT(result->first == 0600U);
-    EXPECT(result->second == 0640U);
+    ZASSERT(result.has_value());
+    ZEXPECT(result->first == 0600U);
+    ZEXPECT(result->second == 0640U);
 }
 
 // Handing a file to its own owner needs no privilege.
@@ -508,14 +508,14 @@ ZEST_CASE(chown_fchown_and_lchown_to_the_owner_succeed) {
     };
 
     auto [result] = run(keep_owner());
-    EXPECT(result.has_value());
+    ZEXPECT(result.has_value());
 }
 
 ZEST_CASE(chown_of_a_missing_file_fails) {
     test::TempDir dir;
     auto [result] = run(fs::chown(dir.file("missing"), 0, 0, loop));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::no_such_file_or_directory);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
 
 #endif  // !_WIN32

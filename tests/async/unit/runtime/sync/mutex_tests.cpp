@@ -13,10 +13,10 @@ ZEST_SUITE(async_runtime_sync_mutex, zest::LoopFixture) {
 
 ZEST_CASE(try_lock_takes_a_free_mutex_only) {
     mutex m;
-    EXPECT(m.try_lock());
-    EXPECT(!m.try_lock());
+    ZEXPECT(m.try_lock());
+    ZEXPECT(!m.try_lock());
     m.unlock();
-    EXPECT(m.try_lock());
+    ZEXPECT(m.try_lock());
     m.unlock();
 }
 
@@ -34,9 +34,9 @@ ZEST_CASE(lock_on_a_free_mutex_does_not_suspend) {
     };
 
     auto [locked, ran] = run(locker(), other());
-    EXPECT(locked.has_value());
-    EXPECT(ran.has_value());
-    EXPECT(order == std::vector{1, 2});
+    ZEXPECT(locked.has_value());
+    ZEXPECT(ran.has_value());
+    ZEXPECT(order == std::vector{1, 2});
 }
 
 ZEST_CASE(unlock_hands_the_mutex_to_waiters_in_order) {
@@ -56,15 +56,15 @@ ZEST_CASE(unlock_hands_the_mutex_to_waiters_in_order) {
     };
 
     auto [held, first, second, third] = run(holder(), waiter(1), waiter(2), waiter(3));
-    EXPECT(held.has_value());
-    EXPECT(third.has_value());
-    EXPECT(order == std::vector{0, 1, 2, 3});
-    EXPECT(m.try_lock());
+    ZEXPECT(held.has_value());
+    ZEXPECT(third.has_value());
+    ZEXPECT(order == std::vector{0, 1, 2, 3});
+    ZEXPECT(m.try_lock());
 }
 
 ZEST_CASE(cancelled_waiter_leaves_the_queue) {
     mutex m;
-    ASSERT(m.try_lock());
+    ZASSERT(m.try_lock());
     bool acquired = false;
     auto waiter = [&]() -> task<> {
         co_await m.lock();
@@ -80,18 +80,18 @@ ZEST_CASE(cancelled_waiter_leaves_the_queue) {
     };
 
     auto [waited, queue_empty] = run(target, cancel_it());
-    EXPECT(waited.is_cancelled());
-    EXPECT(!acquired);
-    ASSERT(queue_empty.has_value());
-    EXPECT(*queue_empty);
-    EXPECT(m.try_lock());
+    ZEXPECT(waited.is_cancelled());
+    ZEXPECT(!acquired);
+    ZASSERT(queue_empty.has_value());
+    ZEXPECT(*queue_empty);
+    ZEXPECT(m.try_lock());
 }
 
 // unlock() hands the mutex to the first waiter before that waiter runs. A
 // waiter cancelled in between passes the mutex on instead of keeping it.
 ZEST_CASE(cancelled_waiter_passes_on_a_handed_over_lock) {
     mutex m;
-    ASSERT(m.try_lock());
+    ZASSERT(m.try_lock());
     std::vector<int> acquired;
     auto waiter = [&](int id) -> task<> {
         co_await m.lock();
@@ -106,10 +106,10 @@ ZEST_CASE(cancelled_waiter_passes_on_a_handed_over_lock) {
     };
 
     auto [cancelled, second, driver] = run(first, waiter(2), hand_over());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(second.has_value());
-    EXPECT(acquired == std::vector{2});
-    EXPECT(m.try_lock());
+    ZEXPECT(cancelled.is_cancelled());
+    ZEXPECT(second.has_value());
+    ZEXPECT(acquired == std::vector{2});
+    ZEXPECT(m.try_lock());
 }
 
 // The unlock hands the lock to the waiter and the token's cancel wakes
@@ -117,7 +117,7 @@ ZEST_CASE(cancelled_waiter_passes_on_a_handed_over_lock) {
 // mutex is free afterwards either way.
 ZEST_CASE(unlock_and_token_cancel_in_one_turn_leave_the_mutex_free) {
     mutex m;
-    ASSERT(m.try_lock());
+    ZASSERT(m.try_lock());
     cancellation_source source;
     auto waiter = [&]() -> task<int> {
         co_await m.lock();
@@ -131,9 +131,9 @@ ZEST_CASE(unlock_and_token_cancel_in_one_turn_leave_the_mutex_free) {
     };
 
     auto [guarded, driver] = run(with_token(waiter(), source.token()), release());
-    ASSERT(guarded.has_value());
-    EXPECT(*guarded == 1);
-    EXPECT(m.try_lock());
+    ZASSERT(guarded.has_value());
+    ZEXPECT(*guarded == 1);
+    ZEXPECT(m.try_lock());
 }
 
 ZEST_CASE(scoped_lock_guard_unlocks_when_it_goes) {
@@ -149,8 +149,8 @@ ZEST_CASE(scoped_lock_guard_unlocks_when_it_goes) {
     };
 
     auto [result] = run(locker());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector{false, true});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector{false, true});
     m.unlock();
 }
 
@@ -165,9 +165,9 @@ ZEST_CASE(scoped_lock_guard_unlocks_once) {
     };
 
     auto [result] = run(locker());
-    ASSERT(result.has_value());
-    EXPECT(*result);
-    EXPECT(!m.try_lock());
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
+    ZEXPECT(!m.try_lock());
     m.unlock();
 }
 
@@ -183,10 +183,10 @@ ZEST_CASE(scoped_lock_guard_assigned_over_unlocks_what_it_held) {
     };
 
     auto [result] = run(locker());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector{true, false});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector{true, false});
     first.unlock();
-    EXPECT(second.try_lock());
+    ZEXPECT(second.try_lock());
     second.unlock();
 }
 
@@ -211,9 +211,9 @@ ZEST_CASE(scoped_lock_cancelled_while_waiting_takes_nothing) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    EXPECT(*result);
-    EXPECT(!waiter_locked);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
+    ZEXPECT(!waiter_locked);
     m.unlock();
 }
 
@@ -241,8 +241,8 @@ ZEST_CASE(scoped_lock_guard_unlocks_when_its_task_is_cancelled) {
     };
 
     auto [result] = run(driver());
-    EXPECT(result.has_value());
-    EXPECT(waiter_locked);
+    ZEXPECT(result.has_value());
+    ZEXPECT(waiter_locked);
 }
 
 };  // ZEST_SUITE(async_runtime_sync_mutex)

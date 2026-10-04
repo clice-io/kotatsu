@@ -2,7 +2,7 @@
 #include <cstdio>
 #include <fcntl.h>
 #include <format>
-#include <iostream>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -116,6 +116,28 @@ struct Channel {
     }
 };
 
+/// The runner's channel, which a failed ZASSERT on any thread replies on too.
+std::optional<Channel> channel;
+
+/// Taken for each reply. A failed ZASSERT keeps it to the end, so that the
+/// test it ends, finishing meanwhile on another thread, sends no reply.
+std::mutex reply_mutex;
+
+/// Replies for the test that ran, with the snapshots it checked; everything it
+/// printed is in the log by then.
+void reply(TestState state, bool fatal) {
+    flush_output();
+    std::string text;
+    for(const auto& path: take_accessed_snapshots()) {
+        text += std::format("{}{}\n", protocol::snapshot, path);
+    }
+    if(fatal) {
+        text += std::format("{}\n", protocol::fatal);
+    }
+    text += std::format("{}{}\n", protocol::done, protocol::state_name(state));
+    channel->write(text);
+}
+
 }  // namespace
 
 namespace protocol {
@@ -141,7 +163,11 @@ std::optional<TestState> parse_state(std::string_view name) {
 }  // namespace protocol
 
 void serve(std::span<const Entry> entries) {
-    auto channel = Channel::take_stdin();
+    channel = Channel::take_stdin();
+    fatal_notice = [] {
+        reply_mutex.lock();
+        reply(TestState::Failed, true);
+    };
 
     // Output goes to a file the runner reads after each test. Unbuffered, all
     // of it is there by the time the test is reported, even after a crash.
@@ -152,9 +178,9 @@ void serve(std::span<const Entry> entries) {
     for(const auto& entry: entries) {
         tests.emplace(entry.name, &entry);
     }
-    channel.write(std::format("{}\n", protocol::ready));
+    channel->write(std::format("{}\n", protocol::ready));
 
-    while(auto line = channel.read_line()) {
+    while(auto line = channel->read_line()) {
         assert(line->starts_with(protocol::run));
         auto name = std::string_view(*line).substr(protocol::run.size());
         // The runner names only tests it collected from this same program.
@@ -162,18 +188,8 @@ void serve(std::span<const Entry> entries) {
         assert(test != tests.end());
 
         auto state = run_in_process(*test->second);
-        // All the test printed must be in the log before the runner reads it.
-        // std::cout buffers on its own once sync_with_stdio(false) is set.
-        std::cout.flush();
-        std::clog.flush();
-        std::fflush(nullptr);
-
-        std::string reply;
-        for(const auto& path: take_accessed_snapshots()) {
-            reply += std::format("{}{}\n", protocol::snapshot, path);
-        }
-        reply += std::format("{}{}\n", protocol::done, protocol::state_name(state));
-        channel.write(reply);
+        std::lock_guard lock(reply_mutex);
+        reply(state, false);
     }
 }
 

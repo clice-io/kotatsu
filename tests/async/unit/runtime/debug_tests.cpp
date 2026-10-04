@@ -21,12 +21,12 @@ ZEST_CASE(dump_dot_draws_a_task_that_has_not_started) {
     auto pending = make();
 
     auto dot = dump_dot(pending);
-    EXPECT(zest::starts_with(dot, "digraph async_graph {\n"));
-    EXPECT(zest::contains(dot, "Task\nPending"));
-    EXPECT(zest::ends_with(dot, "}\n"));
+    ZEXPECT(zest::starts_with(dot, "digraph async_graph {\n"));
+    ZEXPECT(zest::contains(dot, "Task\nPending"));
+    ZEXPECT(zest::ends_with(dot, "}\n"));
 
     pending.cancel();
-    EXPECT(zest::contains(dump_dot(pending), "Task\nPending"));
+    ZEXPECT(zest::contains(dump_dot(pending), "Task\nPending"));
 }
 
 ZEST_CASE(dump_dot_follows_a_blocked_task_to_its_resource) {
@@ -42,13 +42,13 @@ ZEST_CASE(dump_dot_follows_a_blocked_task_to_its_resource) {
     };
 
     auto [waited, dot] = run(target, inspect());
-    EXPECT(waited.has_value());
-    ASSERT(dot.has_value());
-    EXPECT(zest::contains(*dot, "Task\nRunning"));
-    EXPECT(zest::contains(*dot, "Waiter"));
-    EXPECT(zest::contains(*dot, R"(label="Event)"));
-    EXPECT(zest::contains(*dot, "debug_tests.cpp:"));
-    EXPECT(zest::contains(*dot, "->"));
+    ZEXPECT(waited.has_value());
+    ZASSERT(dot.has_value());
+    ZEXPECT(zest::contains(*dot, "Task\nRunning"));
+    ZEXPECT(zest::contains(*dot, "Waiter"));
+    ZEXPECT(zest::contains(*dot, R"(label="Event)"));
+    ZEXPECT(zest::contains(*dot, "debug_tests.cpp:"));
+    ZEXPECT(zest::contains(*dot, "->"));
 }
 
 // A root the test owns outlives its cancellation, so it can be drawn after:
@@ -72,9 +72,9 @@ ZEST_CASE(dump_dot_drops_the_wait_of_a_cancelled_task) {
     loop.schedule(root);
     loop.schedule(inspector);
     loop.run();
-    EXPECT(zest::contains(blocked, "Waiter"));
-    EXPECT(zest::contains(cancelled, "Task\nCancelled"));
-    EXPECT(!zest::contains(cancelled, "Waiter"));
+    ZEXPECT(zest::contains(blocked, "Waiter"));
+    ZEXPECT(zest::contains(cancelled, "Task\nCancelled"));
+    ZEXPECT(!zest::contains(cancelled, "Waiter"));
 }
 
 ZEST_CASE(dump_dot_labels_aggregates_and_io) {
@@ -101,12 +101,12 @@ ZEST_CASE(dump_dot_labels_aggregates_and_io) {
     };
 
     auto [combined_result, dot] = run(target, inspect());
-    EXPECT(combined_result.has_value());
-    ASSERT(dot.has_value());
-    EXPECT(zest::contains(*dot, "WhenAll"));
-    EXPECT(zest::contains(*dot, "WhenAny"));
-    EXPECT(zest::contains(*dot, "TaskGroup"));
-    EXPECT(zest::contains(*dot, "SystemIO"));
+    ZEXPECT(combined_result.has_value());
+    ZASSERT(dot.has_value());
+    ZEXPECT(zest::contains(*dot, "WhenAll"));
+    ZEXPECT(zest::contains(*dot, "WhenAny"));
+    ZEXPECT(zest::contains(*dot, "TaskGroup"));
+    ZEXPECT(zest::contains(*dot, "SystemIO"));
 }
 
 };  // ZEST_SUITE(async_runtime_debug)

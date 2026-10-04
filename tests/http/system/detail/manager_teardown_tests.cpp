@@ -67,14 +67,14 @@ ZEST_CASE(request_that_outlives_its_loop_ends_when_cancelled) {
         kept.emplace(client.on(*dying).get(std::move(url)).send());
         dying->schedule(*kept);
     });
-    ASSERT(kept.has_value());
-    EXPECT(manager::for_loop(*dying).pending_requests() == 1U);
+    ZASSERT(kept.has_value());
+    ZEXPECT(manager::for_loop(*dying).pending_requests() == 1U);
 
     dying.reset();
-    ASSERT(!kept->done());
+    ZASSERT(!kept->done());
     kept->cancel();
-    EXPECT(kept->done());
-    EXPECT(kept->is_cancelled());
+    ZEXPECT(kept->done());
+    ZEXPECT(kept->is_cancelled());
 }
 
 ZEST_CASE(request_cancelled_while_its_loop_is_destroyed_ends) {
@@ -96,15 +96,15 @@ ZEST_CASE(request_cancelled_while_its_loop_is_destroyed_ends) {
         kept.emplace(both(std::move(url)));
         dying->schedule(*kept);
     });
-    ASSERT(kept.has_value());
-    EXPECT(manager::for_loop(*dying).pending_requests() == 1U);
+    ZASSERT(kept.has_value());
+    ZEXPECT(manager::for_loop(*dying).pending_requests() == 1U);
 
     gate.count_down();
     dying.reset();
-    ASSERT(kept->done());
+    ZASSERT(kept->done());
     auto ended = kept->result();
-    ASSERT(ended.has_error());
-    EXPECT(ended.error().message() == "held back");
+    ZASSERT(ended.has_error());
+    ZEXPECT(ended.error().message() == "held back");
 }
 
 ZEST_CASE(request_sent_while_its_loop_is_destroyed_fails) {
@@ -123,10 +123,10 @@ ZEST_CASE(request_sent_while_its_loop_is_destroyed_fails) {
 
     gate.count_down();
     dying.reset();
-    ASSERT(sent.has_value());
-    ASSERT(sent->has_error());
-    EXPECT(sent->error().kind == error_kind::aborted);
-    EXPECT(sent->error().message() == "the event loop is being destroyed");
+    ZASSERT(sent.has_value());
+    ZASSERT(sent->has_error());
+    ZEXPECT(sent->error().kind == error_kind::aborted);
+    ZEXPECT(sent->error().message() == "the event loop is being destroyed");
 }
 
 // emplace() makes the new loop in the old one's storage, at its address:
@@ -139,7 +139,7 @@ ZEST_CASE(loop_made_where_one_was_destroyed_gets_a_new_manager) {
         bool answered = false;
         {
             test::HttpServer server(*loop);
-            ASSERT(server.listening());
+            ZASSERT(server.listening());
             auto send = [&]() -> task<> {
                 auto reply = co_await client.on(*loop).get(server.url("/")).send();
                 answered = reply.has_value();
@@ -149,7 +149,7 @@ ZEST_CASE(loop_made_where_one_was_destroyed_gets_a_new_manager) {
             loop->schedule(sending);
             loop->run();
         }
-        EXPECT(answered);
+        ZEXPECT(answered);
         loop.emplace();
     }
 }

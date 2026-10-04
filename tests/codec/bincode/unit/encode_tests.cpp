@@ -17,8 +17,8 @@ ZEST_CASE(everything_lowering) {
     // How each kind lowers into bincode's bytes, in one document: the byte
     // layout is the format.
     auto document = bincode::to_bytes(test::Everything::typical());
-    ASSERT(document);
-    EXPECT_SNAPSHOT(test::Bincode::render(*document));
+    ZASSERT(document);
+    ZEXPECT(zest::snapshot(test::Bincode::render(*document)));
 }
 
 ZEST_CASE(weak_ptr_writes_like_shared_ptr) {
@@ -30,15 +30,15 @@ ZEST_CASE(weak_ptr_writes_like_shared_ptr) {
 
     auto live_bytes = bincode::to_bytes(live);
     auto owner_bytes = bincode::to_bytes(owner);
-    ASSERT(live_bytes);
-    ASSERT(owner_bytes);
-    EXPECT(*live_bytes == *owner_bytes);
-    ASSERT(!live_bytes->empty());
-    EXPECT(live_bytes->front() == std::byte{0x01});
+    ZASSERT(live_bytes);
+    ZASSERT(owner_bytes);
+    ZEXPECT(*live_bytes == *owner_bytes);
+    ZASSERT(!live_bytes->empty());
+    ZEXPECT(live_bytes->front() == std::byte{0x01});
 
     auto expired_bytes = bincode::to_bytes(expired);
-    ASSERT(expired_bytes);
-    EXPECT(*expired_bytes == std::vector<std::byte>{std::byte{0x00}});
+    ZASSERT(expired_bytes);
+    ZEXPECT(*expired_bytes == std::vector<std::byte>{std::byte{0x00}});
 }
 
 };  // ZEST_SUITE(codec_bincode_encode)

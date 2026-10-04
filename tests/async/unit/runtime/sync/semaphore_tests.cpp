@@ -14,20 +14,20 @@ ZEST_SUITE(async_runtime_sync_semaphore, zest::LoopFixture) {
 
 ZEST_CASE(try_acquire_takes_available_units) {
     semaphore sem(2);
-    EXPECT(sem.try_acquire());
-    EXPECT(sem.try_acquire());
-    EXPECT(!sem.try_acquire());
+    ZEXPECT(sem.try_acquire());
+    ZEXPECT(sem.try_acquire());
+    ZEXPECT(!sem.try_acquire());
     sem.release();
-    EXPECT(sem.try_acquire());
+    ZEXPECT(sem.try_acquire());
 }
 
 ZEST_CASE(release_without_waiters_adds_units) {
     semaphore sem;
     sem.release(3);
-    EXPECT(sem.try_acquire());
-    EXPECT(sem.try_acquire());
-    EXPECT(sem.try_acquire());
-    EXPECT(!sem.try_acquire());
+    ZEXPECT(sem.try_acquire());
+    ZEXPECT(sem.try_acquire());
+    ZEXPECT(sem.try_acquire());
+    ZEXPECT(!sem.try_acquire());
 }
 
 ZEST_CASE(acquire_with_units_left_does_not_suspend) {
@@ -43,10 +43,10 @@ ZEST_CASE(acquire_with_units_left_does_not_suspend) {
     };
 
     auto [acquired, ran] = run(acquirer(), other());
-    EXPECT(acquired.has_value());
-    EXPECT(ran.has_value());
-    EXPECT(order == std::vector{1, 2});
-    EXPECT(!sem.try_acquire());
+    ZEXPECT(acquired.has_value());
+    ZEXPECT(ran.has_value());
+    ZEXPECT(order == std::vector{1, 2});
+    ZEXPECT(!sem.try_acquire());
 }
 
 ZEST_CASE(release_wakes_waiters_in_order) {
@@ -65,11 +65,11 @@ ZEST_CASE(release_wakes_waiters_in_order) {
     };
 
     auto [first, second, third, woken_by_two] = run(waiter(1), waiter(2), waiter(3), releaser());
-    EXPECT(third.has_value());
-    ASSERT(woken_by_two.has_value());
-    EXPECT(*woken_by_two == 2U);
-    EXPECT(order == std::vector{1, 2, 3});
-    EXPECT(!sem.try_acquire());
+    ZEXPECT(third.has_value());
+    ZASSERT(woken_by_two.has_value());
+    ZEXPECT(*woken_by_two == 2U);
+    ZEXPECT(order == std::vector{1, 2, 3});
+    ZEXPECT(!sem.try_acquire());
 }
 
 ZEST_CASE(cancelled_waiter_leaves_the_queue) {
@@ -88,11 +88,11 @@ ZEST_CASE(cancelled_waiter_leaves_the_queue) {
     };
 
     auto [waited, queue_empty] = run(target, cancel_it());
-    EXPECT(waited.is_cancelled());
-    EXPECT(!acquired);
-    ASSERT(queue_empty.has_value());
-    EXPECT(*queue_empty);
-    EXPECT(sem.try_acquire());
+    ZEXPECT(waited.is_cancelled());
+    ZEXPECT(!acquired);
+    ZASSERT(queue_empty.has_value());
+    ZEXPECT(*queue_empty);
+    ZEXPECT(sem.try_acquire());
 }
 
 // release() hands a unit to the first waiter before that waiter runs. A
@@ -112,10 +112,10 @@ ZEST_CASE(cancelled_waiter_passes_on_a_handed_over_unit) {
     };
 
     auto [cancelled, second, driver] = run(first, waiter(2), hand_over());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(second.has_value());
-    EXPECT(acquired == std::vector{2});
-    EXPECT(!sem.try_acquire());
+    ZEXPECT(cancelled.is_cancelled());
+    ZEXPECT(second.has_value());
+    ZEXPECT(acquired == std::vector{2});
+    ZEXPECT(!sem.try_acquire());
 }
 
 ZEST_CASE(cancelled_last_waiter_returns_a_handed_over_unit) {
@@ -131,9 +131,9 @@ ZEST_CASE(cancelled_last_waiter_returns_a_handed_over_unit) {
     };
 
     auto [cancelled, driver] = run(target, hand_over());
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(sem.try_acquire());
-    EXPECT(!sem.try_acquire());
+    ZEXPECT(cancelled.is_cancelled());
+    ZEXPECT(sem.try_acquire());
+    ZEXPECT(!sem.try_acquire());
 }
 
 ZEST_CASE(scoped_acquire_guard_releases_when_it_goes) {
@@ -149,8 +149,8 @@ ZEST_CASE(scoped_acquire_guard_releases_when_it_goes) {
     };
 
     auto [result] = run(acquirer());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector{false, true});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector{false, true});
 }
 
 ZEST_CASE(scoped_acquire_guard_releases_once) {
@@ -163,9 +163,9 @@ ZEST_CASE(scoped_acquire_guard_releases_once) {
     };
 
     auto [result] = run(acquirer());
-    EXPECT(result.has_value());
-    EXPECT(s.try_acquire());
-    EXPECT(!s.try_acquire());
+    ZEXPECT(result.has_value());
+    ZEXPECT(s.try_acquire());
+    ZEXPECT(!s.try_acquire());
 }
 
 // A task cancelled while it holds the guard releases the unit once its frame
@@ -192,8 +192,8 @@ ZEST_CASE(scoped_acquire_guard_releases_when_its_task_is_cancelled) {
     };
 
     auto [result] = run(driver());
-    EXPECT(result.has_value());
-    EXPECT(waiter_acquired);
+    ZEXPECT(result.has_value());
+    ZEXPECT(waiter_acquired);
 }
 
 };  // ZEST_SUITE(async_runtime_sync_semaphore)

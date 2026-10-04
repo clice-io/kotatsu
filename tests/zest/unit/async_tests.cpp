@@ -24,12 +24,12 @@ ZEST_CASE(value_comes_back_as_an_outcome) {
     auto kept = one();
 
     auto [owned, borrowed] = run(one(), kept);
-    EXPECT(type_eq<decltype(owned), outcome<int, void, cancellation>>());
-    EXPECT(type_eq<decltype(borrowed), outcome<int, void, cancellation>>());
-    ASSERT(owned.has_value());
-    EXPECT(*owned == 1);
-    ASSERT(borrowed.has_value());
-    EXPECT(*borrowed == 1);
+    ZEXPECT(type_eq<decltype(owned), outcome<int, void, cancellation>>());
+    ZEXPECT(type_eq<decltype(borrowed), outcome<int, void, cancellation>>());
+    ZASSERT(owned.has_value());
+    ZEXPECT(*owned == 1);
+    ZASSERT(borrowed.has_value());
+    ZEXPECT(*borrowed == 1);
 }
 
 ZEST_CASE(error_comes_back_as_an_outcome) {
@@ -42,10 +42,10 @@ ZEST_CASE(error_comes_back_as_an_outcome) {
     auto kept = aborted();
 
     auto [owned, borrowed] = run(refused(), kept);
-    ASSERT(owned.has_error());
-    EXPECT(owned.error() == error::connection_refused);
-    ASSERT(borrowed.has_error());
-    EXPECT(borrowed.error() == error::operation_aborted);
+    ZASSERT(owned.has_error());
+    ZEXPECT(owned.error() == error::connection_refused);
+    ZASSERT(borrowed.has_error());
+    ZEXPECT(borrowed.error() == error::operation_aborted);
 }
 
 ZEST_CASE(cancellation_comes_back_as_an_outcome) {
@@ -55,7 +55,7 @@ ZEST_CASE(cancellation_comes_back_as_an_outcome) {
     };
 
     auto [result] = run(quit());
-    EXPECT(result.is_cancelled());
+    ZEXPECT(result.is_cancelled());
 }
 
 // The gate is never set, so only the test's cancel() can end the kept task.
@@ -71,9 +71,9 @@ ZEST_CASE(kept_task_can_be_cancelled_while_it_runs) {
     };
 
     auto [result, cancelled] = run(kept, canceller());
-    EXPECT(result.is_cancelled());
-    EXPECT(kept.is_cancelled());
-    EXPECT(cancelled.has_value());
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(kept.is_cancelled());
+    ZEXPECT(cancelled.has_value());
 }
 
 ZEST_CASE(tasks_start_in_the_order_given) {
@@ -85,21 +85,21 @@ ZEST_CASE(tasks_start_in_the_order_given) {
     auto kept = step(2);
 
     run(step(1), kept, step(3));
-    EXPECT(started == std::vector{1, 2, 3});
+    ZEXPECT(started == std::vector{1, 2, 3});
 }
 
 // The timer is armed for an hour, so only the last task finishing can end
 // run().
 ZEST_CASE(loop_stops_when_the_last_task_finishes_with_a_timer_armed) {
     auto armed = timer::create(loop);
-    ASSERT(!armed.start(1h));
+    ZASSERT(!armed.start(1h));
     auto quick = []() -> task<int> {
         co_return 1;
     };
 
     auto [result] = run(quick());
-    ASSERT(result.has_value());
-    EXPECT(*result == 1);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 1);
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -117,8 +117,8 @@ ZEST_CASE(run_of_a_throwing_task_fails, skip = test::exceptions_unreadable) {
         finished = true;
     };
 
-    EXPECT(test::thrown([&] { run(thrower(), later()); }) == "boom");
-    EXPECT(finished);
+    ZEXPECT(test::thrown([&] { run(thrower(), later()); }) == "boom");
+    ZEXPECT(finished);
 }
 
 #endif  // KOTA_ENABLE_EXCEPTIONS

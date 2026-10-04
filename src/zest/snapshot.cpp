@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <expected>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -11,6 +12,7 @@
 #include <print>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "execution.h"
@@ -25,12 +27,15 @@ namespace {
 struct SnapshotContext {
     std::string suite_name;
     std::string test_name;
-    std::string source_file;
     bool unnamed_used = false;
 };
 
 std::atomic<bool> update_snapshots_flag{false};
 std::string global_snapshot_dir;
+
+/// The running test's, whichever thread checks a snapshot.
+std::mutex context_mutex;
+SnapshotContext snapshot_context;
 
 std::mutex accessed_mutex;
 std::set<std::string> accessed_snap_paths;
@@ -46,11 +51,6 @@ void record_access(const fs::path& snap_path) {
         dir = dir.parent_path();
     }
     accessed_snap_dirs.insert(root.string());
-}
-
-SnapshotContext& context() {
-    thread_local SnapshotContext ctx;
-    return ctx;
 }
 
 struct SnapData {
@@ -95,7 +95,6 @@ std::optional<SnapData> read_snap(const fs::path& path) {
 
 std::string format_snap(std::string_view source,
                         std::string_view input_file,
-                        std::string_view expression,
                         std::string_view content,
                         std::string_view created_at = {}) {
     std::string date_str;
@@ -110,19 +109,6 @@ std::string format_snap(std::string_view source,
     std::string result = "---\n";
     result += std::format("source: {}\n", source);
     result += std::format("created_at: {}\n", date_str);
-    if(!expression.empty()) {
-        if(expression.find_first_of(":#{}[]|>&*!?,'\"") != std::string_view::npos) {
-            std::string escaped(expression);
-            std::string::size_type pos = 0;
-            while((pos = escaped.find('\'', pos)) != std::string::npos) {
-                escaped.replace(pos, 1, "''");
-                pos += 2;
-            }
-            result += std::format("expression: '{}'\n", escaped);
-        } else {
-            result += std::format("expression: {}\n", expression);
-        }
-    }
     if(!input_file.empty()) {
         result += std::format("input_file: {}\n", input_file);
     }
@@ -150,15 +136,6 @@ fs::path snap_dir() {
     return fs::path(global_snapshot_dir);
 }
 
-fs::path snap_suite_dir() {
-    return snap_dir() / context().suite_name;
-}
-
-fs::path snap_test_dir() {
-    auto& ctx = context();
-    return snap_dir() / ctx.suite_name / ctx.test_name;
-}
-
 std::string normalize_newlines(std::string_view s) {
     std::string result(s);
     std::erase(result, '\r');
@@ -180,13 +157,15 @@ std::vector<std::string_view> split_lines(std::string_view s) {
     return lines;
 }
 
-void print_diff(std::string_view expected, std::string_view actual) {
+/// The lines that differ, as many as a report has room for.
+std::string diff(std::string_view expected, std::string_view actual) {
     auto old_lines = split_lines(expected);
     auto new_lines = split_lines(actual);
 
     auto max_lines = (std::max)(old_lines.size(), new_lines.size());
     constexpr std::size_t max_diff_lines = 30;
 
+    std::string text;
     std::size_t printed = 0;
     std::size_t i = 0;
     while(i < max_lines && printed < max_diff_lines) {
@@ -198,23 +177,21 @@ void print_diff(std::string_view expected, std::string_view actual) {
             continue;
         }
 
-        if(have_old && have_new) {
-            std::println("           \033[31m-  {}\033[0m", old_lines[i]);
-            std::println("           \033[32m+  {}\033[0m", new_lines[i]);
-            printed += 2;
-        } else if(have_old) {
-            std::println("           \033[31m-  {}\033[0m", old_lines[i]);
+        if(have_old) {
+            text += std::format("\033[31m-  {}\033[0m\n", old_lines[i]);
             ++printed;
-        } else {
-            std::println("           \033[32m+  {}\033[0m", new_lines[i]);
+        }
+        if(have_new) {
+            text += std::format("\033[32m+  {}\033[0m\n", new_lines[i]);
             ++printed;
         }
         ++i;
     }
 
     if(i < max_lines) {
-        std::println("           ... ({} more differing lines)", max_lines - i);
+        text += std::format("... ({} more differing lines)\n", max_lines - i);
     }
+    return text;
 }
 
 void migrate_snap_extension(const fs::path& target) {
@@ -241,11 +218,12 @@ void migrate_snap_extension(const fs::path& target) {
     }
 }
 
-bool check_impl(const fs::path& snap_path,
-                std::string_view value,
-                std::string_view input_file,
-                std::string_view expression,
-                std::source_location loc) {
+/// Checks `value` against the file `snap_path`; returns the report if the
+/// check fails.
+std::optional<std::string> check_impl(const fs::path& snap_path,
+                                      std::string_view value,
+                                      std::string_view input_file,
+                                      std::source_location loc) {
     migrate_snap_extension(snap_path);
     record_access(snap_path);
 
@@ -254,56 +232,62 @@ bool check_impl(const fs::path& snap_path,
     auto normalized = normalize_newlines(value);
 
     if(!existing) {
-        auto formatted = format_snap(source, input_file, expression, normalized);
-        if(!write_snap(snap_path, formatted)) {
-            std::println("[snapshot] failed to write {}", snap_path.string());
-            return true;
+        if(!write_snap(snap_path, format_snap(source, input_file, normalized))) {
+            return std::format("cannot write {}", snap_path.string());
         }
         std::println("[snapshot] created {}", snap_path.string());
-        return false;
+        return std::nullopt;
     }
 
     if(existing->body == normalized) {
         std::error_code ec;
         fs::remove(fs::path(snap_path.string() + ".new"), ec);
-        return false;
+        return std::nullopt;
     }
 
     if(update_snapshots_flag.load(std::memory_order_acquire)) {
-        auto formatted =
-            format_snap(source, input_file, expression, normalized, existing->created_at);
+        auto formatted = format_snap(source, input_file, normalized, existing->created_at);
         if(!write_snap(snap_path, formatted)) {
-            std::println("[snapshot] failed to write {}", snap_path.string());
-            return true;
+            return std::format("cannot write {}", snap_path.string());
         }
         std::println("[snapshot] updated {}", snap_path.string());
-        return false;
+        return std::nullopt;
     }
 
     auto new_path = fs::path(snap_path.string() + ".new");
-    auto formatted = format_snap(source, input_file, expression, normalized);
-    bool wrote_new = write_snap(new_path, formatted);
-
-    std::println("[snapshot] mismatch: {}", snap_path.string());
-    if(wrote_new) {
-        std::println("           new result: {}", new_path.string());
+    auto report = std::format("mismatch: {}\n", snap_path.string());
+    if(write_snap(new_path, format_snap(source, input_file, normalized))) {
+        report += std::format("new result: {}\n", new_path.string());
     } else {
-        std::println("           failed to write new result file");
+        report += std::format("cannot write the new result to {}\n", new_path.string());
     }
-    print_diff(existing->body, normalized);
-    std::println("           run with --update-snapshots to accept");
-    std::println("           at {}:{}", loc.file_name(), loc.line());
-    return true;
+    report += diff(existing->body, normalized);
+    report += "run with --update-snapshots to accept";
+    return report;
+}
+
+/// Where the running test's snapshots go, or why they cannot.
+std::expected<SnapshotContext, std::string> current_context() {
+    if(global_snapshot_dir.empty()) {
+        return std::unexpected("no snapshot directory: run with --snapshot-dir");
+    }
+    std::lock_guard lock(context_mutex);
+    if(snapshot_context.suite_name.empty()) {
+        return std::unexpected("no running test to take the snapshot of");
+    }
+    return snapshot_context;
 }
 
 }  // namespace
 
-void reset_snapshot_context(std::string_view suite, std::string_view test, std::string_view file) {
-    auto& ctx = context();
-    ctx.suite_name = suite;
-    ctx.test_name = test;
-    ctx.source_file = file;
-    ctx.unnamed_used = false;
+namespace detail {
+
+void reset_snapshot_context(std::string_view suite, std::string_view test) {
+    std::lock_guard lock(context_mutex);
+    snapshot_context = {
+        .suite_name = std::string(suite),
+        .test_name = std::string(test),
+    };
 }
 
 void set_update_snapshots(bool enabled) {
@@ -314,122 +298,55 @@ void set_snapshot_dir(std::string_view dir) {
     global_snapshot_dir = dir;
 }
 
-bool check_snapshot(std::string_view value, std::string_view name, std::source_location loc) {
-    auto& ctx = context();
-
-    if(global_snapshot_dir.empty()) {
-        std::println("[snapshot] error: no snapshot directory configured (use --snapshot-dir)");
-        std::println("           at {}:{}", loc.file_name(), loc.line());
-        return true;
+std::optional<std::string> check_snapshot(std::string_view text,
+                                          std::string_view name,
+                                          std::source_location location) {
+    auto context = current_context();
+    if(!context) {
+        return std::move(context.error());
     }
-
-    if(ctx.suite_name.empty()) {
-        std::println("[snapshot] error: no snapshot context (used outside ZEST_CASE?)");
-        std::println("           at {}:{}", loc.file_name(), loc.line());
-        return true;
-    }
+    auto suite_dir = snap_dir() / context->suite_name;
 
     if(name.empty()) {
-        if(ctx.unnamed_used) {
-            std::println("[snapshot] error: duplicate unnamed snapshot in same ZEST_CASE");
-            std::println(
-                "           use ASSERT_SNAPSHOT(value, \"name\") for additional snapshots");
-            std::println("           at {}:{}", loc.file_name(), loc.line());
-            return true;
+        {
+            std::lock_guard lock(context_mutex);
+            if(std::exchange(snapshot_context.unnamed_used, true)) {
+                return R"(a test has one unnamed snapshot: name this one, as in snapshot(value, "name"))";
+            }
         }
-        ctx.unnamed_used = true;
-        auto path = snap_suite_dir() / (ctx.test_name + ".snap.yml");
-        return check_impl(path, value, "", "", loc);
+        return check_impl(suite_dir / (context->test_name + ".snap.yml"), text, "", location);
     }
 
-    if(name.find_first_of("/\\:*?\"<>|") != std::string_view::npos) {
-        std::println("[snapshot] error: snapshot name contains unsafe characters: `{}`", name);
-        std::println("           at {}:{}", loc.file_name(), loc.line());
-        return true;
+    if(name.find_first_of(R"(/\:*?"<>|)") != std::string_view::npos) {
+        return std::format("the snapshot name `{}` holds a character file names cannot", name);
     }
-
-    auto path = snap_test_dir() / (std::string(name) + ".snap.yml");
-    return check_impl(path, value, "", "", loc);
+    return check_impl(suite_dir / context->test_name / (std::string(name) + ".snap.yml"),
+                      text,
+                      "",
+                      location);
 }
 
-bool check_snapshot_expr(std::string_view value,
-                         std::string_view expression,
-                         std::string_view name,
-                         std::source_location loc) {
-    auto& ctx = context();
-
-    if(global_snapshot_dir.empty()) {
-        std::println("[snapshot] error: no snapshot directory configured (use --snapshot-dir)");
-        std::println("           at {}:{}", loc.file_name(), loc.line());
-        return true;
-    }
-
-    if(ctx.suite_name.empty()) {
-        std::println("[snapshot] error: no snapshot context (used outside ZEST_CASE?)");
-        std::println("           at {}:{}", loc.file_name(), loc.line());
-        return true;
-    }
-
-    if(name.empty()) {
-        if(ctx.unnamed_used) {
-            std::println("[snapshot] error: duplicate unnamed snapshot in same ZEST_CASE");
-            std::println(
-                "           use ASSERT_SNAPSHOT(value, \"name\") for additional snapshots");
-            std::println("           at {}:{}", loc.file_name(), loc.line());
-            return true;
-        }
-        ctx.unnamed_used = true;
-        auto path = snap_suite_dir() / (ctx.test_name + ".snap.yml");
-        return check_impl(path, value, "", expression, loc);
-    }
-
-    if(name.find_first_of("/\\:*?\"<>|") != std::string_view::npos) {
-        std::println("[snapshot] error: snapshot name contains unsafe characters: `{}`", name);
-        std::println("           at {}:{}", loc.file_name(), loc.line());
-        return true;
-    }
-
-    auto path = snap_test_dir() / (std::string(name) + ".snap.yml");
-    return check_impl(path, value, "", expression, loc);
-}
-
-bool check_snapshot_glob(std::string_view base_dir_str,
-                         std::string_view pattern,
-                         const std::function<std::string(std::string_view)>& transform,
-                         std::source_location loc) {
-    auto& ctx = context();
-
-    if(global_snapshot_dir.empty()) {
-        std::println("[snapshot] error: no snapshot directory configured (use --snapshot-dir)");
-        std::println("           at {}:{}", loc.file_name(), loc.line());
-        return true;
-    }
-
-    if(ctx.suite_name.empty()) {
-        std::println("[snapshot] error: no snapshot context (used outside ZEST_CASE?)");
-        std::println("           at {}:{}", loc.file_name(), loc.line());
-        return true;
+std::optional<std::string>
+    check_snapshot_glob(std::string_view dir,
+                        std::string_view pattern,
+                        const std::function<std::string(std::string_view)>& transform,
+                        std::source_location location) {
+    auto context = current_context();
+    if(!context) {
+        return std::move(context.error());
     }
 
     auto glob = GlobPattern::create(pattern);
     if(!glob) {
-        std::println("[snapshot] error: invalid glob pattern `{}`", pattern);
-        std::println("           {}", glob.error().message);
-        std::println("           at {}:{}", loc.file_name(), loc.line());
-        return true;
+        return std::format("invalid glob pattern `{}`: {}", pattern, glob.error().message);
     }
 
-    auto scan_dir = fs::path(base_dir_str);
-
+    auto scan_dir = fs::path(dir);
     std::error_code ec;
     auto iter = fs::recursive_directory_iterator(scan_dir, ec);
     if(ec) {
-        std::println("[snapshot] error: cannot iterate `{}`", scan_dir.string());
-        std::println("           at {}:{}", loc.file_name(), loc.line());
-        return true;
+        return std::format("cannot list `{}`: {}", scan_dir.string(), ec.message());
     }
-
-    auto snap_base = snap_test_dir();
 
     std::vector<fs::path> matched;
     for(auto& entry: iter) {
@@ -448,37 +365,28 @@ bool check_snapshot_glob(std::string_view base_dir_str,
             matched.emplace_back(rel);
         }
     }
-
+    if(matched.empty()) {
+        return std::format("no file under `{}` matches `{}`", scan_dir.string(), pattern);
+    }
     std::ranges::sort(matched);
 
-    if(matched.empty()) {
-        std::println("[snapshot] error: no files matched pattern `{}`", pattern);
-        std::println("           scan dir: {}", scan_dir.string());
-        std::println("           at {}:{}", loc.file_name(), loc.line());
-        return true;
-    }
-
-    bool failed = false;
+    auto test_dir = snap_dir() / context->suite_name / context->test_name;
+    std::optional<std::string> report;
     for(auto& rel: matched) {
-        auto full_path = (scan_dir / rel).string();
-        auto value = transform(full_path);
-        auto snap_path = snap_base / (rel.generic_string() + ".snap.yml");
-        if(check_impl(snap_path, value, rel.generic_string(), "", loc)) {
-            failed = true;
+        auto value = transform((scan_dir / rel).string());
+        auto snap_path = test_dir / (rel.generic_string() + ".snap.yml");
+        if(auto failed = check_impl(snap_path, value, rel.generic_string(), location)) {
+            report = report ? std::format("{}\n{}", *report, *failed) : std::move(*failed);
         }
     }
-    return failed;
+    return report;
 }
 
-std::vector<std::string> take_accessed_snapshots() {
-    std::lock_guard lock(accessed_mutex);
-    std::vector<std::string> paths(accessed_snap_paths.begin(), accessed_snap_paths.end());
-    accessed_snap_paths.clear();
-    return paths;
-}
-
-void record_snapshot_access(std::string_view path) {
-    record_access(fs::path(path));
+Match snapshot_match(std::optional<std::string> report) {
+    return Match{
+        .held = !report,
+        .explain = [report = std::move(report)] { return report.value_or(""); },
+    };
 }
 
 std::size_t cleanup_unused_snapshots() {
@@ -517,6 +425,19 @@ std::size_t cleanup_unused_snapshots() {
         }
     }
     return removed;
+}
+
+}  // namespace detail
+
+std::vector<std::string> take_accessed_snapshots() {
+    std::lock_guard lock(accessed_mutex);
+    std::vector<std::string> paths(accessed_snap_paths.begin(), accessed_snap_paths.end());
+    accessed_snap_paths.clear();
+    return paths;
+}
+
+void record_snapshot_access(std::string_view path) {
+    record_access(fs::path(path));
 }
 
 }  // namespace kota::zest

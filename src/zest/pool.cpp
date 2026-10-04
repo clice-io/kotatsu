@@ -51,6 +51,13 @@ task<std::optional<T>> within(task<T> work, milliseconds timeout) {
     co_return std::move(*timed);
 }
 
+/// What a worker replied for a test.
+struct Reply {
+    TestState state;
+    /// A failed ZASSERT ended the test, and the worker exits after the reply.
+    bool fatal = false;
+};
+
 /// A running worker process.
 struct Worker {
     process proc;
@@ -70,19 +77,28 @@ struct Worker {
         co_return std::move(*line);
     }
 
-    /// The state reported for the running test, counting the snapshots it
-    /// checked as checked here; nothing if the worker goes before reporting.
-    task<std::optional<TestState>> read_reply() {
+    /// The reply for the running test, counting the snapshots it checked as
+    /// checked here; nothing if the worker goes before replying.
+    task<std::optional<Reply>> read_reply() {
+        bool fatal = false;
         while(auto line = co_await read_line()) {
             std::string_view text = *line;
             if(text.starts_with(protocol::snapshot)) {
                 record_snapshot_access(text.substr(protocol::snapshot.size()));
                 continue;
             }
+            if(text == protocol::fatal) {
+                fatal = true;
+                continue;
+            }
             // Test code runs in the worker and can garble the channel; any
             // other line counts as the worker failing.
             if(text.starts_with(protocol::done)) {
-                co_return protocol::parse_state(text.substr(protocol::done.size()));
+                auto state = protocol::parse_state(text.substr(protocol::done.size()));
+                if(!state) {
+                    break;
+                }
+                co_return Reply{.state = *state, .fatal = fatal};
             }
             break;
         }
@@ -182,41 +198,99 @@ struct Pool {
         co_return worker;
     }
 
-    task<Outcome> run(Worker& worker, const Entry& entry) {
+    /// Runs `entry` on `worker`, which is gone afterwards if the test took it
+    /// down.
+    task<Outcome> run(std::optional<Worker>& worker, const Entry& entry) {
+        const bool crashes = entry.test_case.attrs.crashes;
         auto begin = steady_clock::now();
         // A worker gone before the command arrives fails the write, and the
         // read after it reports the crash.
         [[maybe_unused]] auto written =
-            co_await worker.channel.write(std::format("{}{}\n", protocol::run, entry.name));
+            co_await worker->channel.write(std::format("{}{}\n", protocol::run, entry.name));
         // Outer: whether the worker answered in time. Inner: whether it
-        // reported a state before going away.
-        auto reply = co_await within(worker.read_reply(), options.timeout);
+        // replied before going away.
+        auto reply = co_await within(worker->read_reply(), options.timeout);
         auto duration = elapsed_since(begin);
 
         if(!reply) {
-            co_await worker.kill();
+            co_await worker->kill();
+            auto output = worker->take_output();
+            worker.reset();
             co_return Outcome{
                 .verdict = Verdict::TimedOut,
                 .duration = duration,
-                .output = worker.take_output(),
+                .output = std::move(output),
             };
         }
-        if(*reply) {
+        if(auto replied = *reply) {
+            if(replied->fatal) {
+                co_return co_await after_fatal(worker, duration);
+            }
+            auto verdict = verdict_of(replied->state);
             co_return Outcome{
-                .verdict = verdict_of(**reply),
+                .verdict = crashes && verdict != Verdict::Skipped ? Verdict::Survived : verdict,
                 .duration = duration,
-                .output = worker.take_output(),
+                .output = worker->take_output(),
             };
         }
         // Whatever broke the channel, the worker must be gone before its
         // status says how it ended.
-        auto status = co_await worker.kill();
+        auto status = co_await worker->kill();
+        auto output = worker->take_output();
+        worker.reset();
+        if(crashes && !status.success()) {
+            co_return Outcome{
+                .verdict = Verdict::Passed,
+                .duration = duration,
+                .output = std::move(output),
+                .detail = std::format("crashed as expected: {}", status.to_string()),
+            };
+        }
         co_return Outcome{
             .verdict = Verdict::Crashed,
             .duration = duration,
-            .output = worker.take_output(),
+            .output = std::move(output),
             .detail = std::format("{} before the test finished", status.to_string()),
         };
+    }
+
+    /// The outcome of a test a failed ZASSERT ended: the worker runs its fatal
+    /// hooks after the reply, and what they print is the test's too.
+    task<Outcome> after_fatal(std::optional<Worker>& worker, milliseconds duration) {
+        Outcome outcome{.verdict = Verdict::Failed, .duration = duration};
+        auto status = co_await within(worker->wait(), options.timeout);
+        if(!status) {
+            co_await worker->kill();
+            outcome.detail = "the fatal hooks did not finish within --timeout";
+        } else if(status->term_signal != 0 || status->status != fatal_exit_code) {
+            outcome.detail =
+                std::format("the fatal hooks ended the worker with {}", status->to_string());
+        }
+        outcome.output = worker->take_output();
+        worker.reset();
+        co_return outcome;
+    }
+
+    /// Hangs up on `worker`, which then exits. If it ends badly, all it
+    /// printed is shown: a sanitizer reports during the test it catches, which
+    /// may well have passed.
+    task<> finish(Worker& worker) {
+        worker.channel = pipe{};
+        auto status = co_await within(worker.wait(), options.timeout);
+        if(!status) {
+            // Giving up on the wait leaves the worker running.
+            co_await worker.kill();
+            failures.push_back(WorkerFailure{
+                .detail = "a worker did not exit within --timeout after its last test",
+                .output = worker.whole_output(),
+            });
+        } else if(!status->success()) {
+            failures.push_back(WorkerFailure{
+                .detail =
+                    std::format("a worker ended with {} after its last test", status->to_string()),
+                .output = worker.whole_output(),
+            });
+        }
     }
 
     /// Runs `tests` one after another on one worker at a time, starting a new
@@ -225,43 +299,30 @@ struct Pool {
         std::optional<Worker> worker;
         while(!broken && next < tests.size()) {
             const auto& entry = *tests[next++];
-            if(!worker) {
+            // A crash test runs alone on a worker of its own: a crash loses
+            // what a worker would write at its exit, such as the coverage of
+            // every test it ran, and nothing earlier tests left behind changes
+            // how the crash test goes.
+            const bool crashes = entry.test_case.attrs.crashes;
+            std::optional<Worker> own;
+            auto& runner = crashes ? own : worker;
+            if(!runner) {
                 auto started = co_await start();
                 if(!started) {
                     broken = std::move(started.error());
                     co_return;
                 }
-                worker.emplace(std::move(*started));
+                runner.emplace(std::move(*started));
             }
 
-            auto outcome = co_await run(*worker, entry);
-            if(outcome.verdict == Verdict::Crashed || outcome.verdict == Verdict::TimedOut) {
-                worker.reset();
+            auto outcome = co_await run(runner, entry);
+            if(own) {
+                co_await finish(*own);
             }
             report(entry, outcome);
         }
-
-        if(!worker) {
-            co_return;
-        }
-        // Hanging up tells the worker to exit. If it ends badly, all it printed
-        // is shown: a sanitizer reports during the test it catches, which may
-        // well have passed.
-        worker->channel = pipe{};
-        auto status = co_await within(worker->wait(), options.timeout);
-        if(!status) {
-            // Giving up on the wait leaves the worker running.
-            co_await worker->kill();
-            failures.push_back(WorkerFailure{
-                .detail = "a worker did not exit within --timeout after its last test",
-                .output = worker->whole_output(),
-            });
-        } else if(!status->success()) {
-            failures.push_back(WorkerFailure{
-                .detail =
-                    std::format("a worker ended with {} after its last test", status->to_string()),
-                .output = worker->whole_output(),
-            });
+        if(worker) {
+            co_await finish(*worker);
         }
     }
 };

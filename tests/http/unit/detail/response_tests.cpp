@@ -27,31 +27,31 @@ ZEST_CASE(ok_holds_for_2xx_only) {
         ZEST_CONTEXT("status {}", status);
         response out;
         out.status = status;
-        EXPECT(out.ok() == (status >= 200 && status < 300));
+        ZEXPECT(out.ok() == (status >= 200 && status < 300));
     }
 }
 
 ZEST_CASE(text_and_bytes_view_the_whole_body) {
     constexpr std::string_view body("ok\0!", 4);
     auto out = with_body(body);
-    EXPECT(out.bytes().size() == 4U);
-    EXPECT((out.bytes().data() == out.body.data()));
-    EXPECT(out.text() == body);
-    EXPECT((static_cast<const void*>(out.text().data()) == out.body.data()));
+    ZEXPECT(out.bytes().size() == 4U);
+    ZEXPECT((out.bytes().data() == out.body.data()));
+    ZEXPECT(out.text() == body);
+    ZEXPECT((static_cast<const void*>(out.text().data()) == out.body.data()));
 }
 
 ZEST_CASE(empty_body_has_empty_text) {
     response out;
-    EXPECT(out.bytes().empty());
-    EXPECT(out.text().empty());
-    EXPECT(out.text_copy().empty());
+    ZEXPECT(out.bytes().empty());
+    ZEXPECT(out.text().empty());
+    ZEXPECT(out.text_copy().empty());
 }
 
 ZEST_CASE(text_copy_owns_its_text) {
     auto out = with_body("body");
     auto copy = out.text_copy();
     out.body.clear();
-    EXPECT(copy == "body");
+    ZEXPECT(copy == "body");
 }
 
 ZEST_CASE(header_value_ignores_case_and_takes_the_first) {
@@ -63,11 +63,11 @@ ZEST_CASE(header_value_ignores_case_and_takes_the_first) {
     };
 
     auto type = out.header_value("content-type");
-    ASSERT(type.has_value());
-    EXPECT(*type == "text/plain");
+    ZASSERT(type.has_value());
+    ZEXPECT(*type == "text/plain");
     auto cookie = out.header_value("SET-COOKIE");
-    ASSERT(cookie.has_value());
-    EXPECT(*cookie == "a=1");
+    ZASSERT(cookie.has_value());
+    ZEXPECT(*cookie == "a=1");
 }
 
 ZEST_CASE(header_value_of_a_missing_header_is_empty) {
@@ -75,7 +75,7 @@ ZEST_CASE(header_value_of_a_missing_header_is_empty) {
     out.headers = {
         {"Content-Type", "text/plain"}
     };
-    EXPECT(!out.header_value("content-length").has_value());
+    ZEXPECT(!out.header_value("content-length").has_value());
 }
 
 };  // ZEST_SUITE(http_detail_response)

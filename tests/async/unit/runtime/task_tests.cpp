@@ -51,8 +51,8 @@ ZEST_CASE(await_returns_the_child_value) {
     };
 
     auto [result] = run(three());
-    ASSERT(result.has_value());
-    EXPECT(*result == 3);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 3);
 }
 
 ZEST_CASE(await_of_a_void_child_resumes_after_it) {
@@ -67,8 +67,8 @@ ZEST_CASE(await_of_a_void_child_resumes_after_it) {
     };
 
     auto [result] = run(parent());
-    EXPECT(result.has_value());
-    EXPECT(order == std::vector{1, 2});
+    ZEXPECT(result.has_value());
+    ZEXPECT(order == std::vector{1, 2});
 }
 
 // Awaited as an lvalue, a task keeps its frame: its owner can still ask
@@ -96,11 +96,11 @@ ZEST_CASE(await_of_an_lvalue_keeps_the_frame) {
     };
 
     auto [result] = run(parent());
-    ASSERT(result.has_value());
-    EXPECT(result->value == 5);
-    EXPECT(result->alive_after_await);
-    EXPECT(result->done);
-    EXPECT(watch.expired());
+    ZASSERT(result.has_value());
+    ZEXPECT(result->value == 5);
+    ZEXPECT(result->alive_after_await);
+    ZEXPECT(result->done);
+    ZEXPECT(watch.expired());
 }
 
 ZEST_CASE(fail_ends_the_task_with_the_error) {
@@ -112,9 +112,9 @@ ZEST_CASE(fail_ends_the_task_with_the_error) {
     };
 
     auto [result] = run(failing());
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::io_error);
-    EXPECT(!after);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::io_error);
+    ZEXPECT(!after);
 }
 
 ZEST_CASE(fail_builds_the_error_from_its_arguments) {
@@ -123,9 +123,9 @@ ZEST_CASE(fail_builds_the_error_from_its_arguments) {
     };
 
     auto [result] = run(failing());
-    ASSERT(result.has_error());
-    EXPECT(result.error().code == 7);
-    EXPECT(result.error().detail == "bad input");
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error().code == 7);
+    ZEXPECT(result.error().detail == "bad input");
 }
 
 ZEST_CASE(await_of_a_failing_child_hands_its_error_to_the_parent) {
@@ -137,9 +137,9 @@ ZEST_CASE(await_of_a_failing_child_hands_its_error_to_the_parent) {
     };
 
     auto [result] = run(parent());
-    ASSERT(result.has_value());
-    ASSERT(result->has_error());
-    EXPECT(result->error() == error::connection_refused);
+    ZASSERT(result.has_value());
+    ZASSERT(result->has_error());
+    ZEXPECT(result->error() == error::connection_refused);
 }
 
 // The error is made as the task is, from a view of text gone by the time the
@@ -150,20 +150,20 @@ ZEST_CASE(task_made_from_an_outcome_error_fails) {
         return outcome_error(std::string_view(text));
     };
     auto failing = make();
-    EXPECT(!failing.done());
+    ZEXPECT(!failing.done());
 
     auto [result] = run(std::move(failing));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == "bad input");
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == "bad input");
 }
 
 // Made from an error its error type takes, not from a value, and only with an
 // error channel.
 ZEST_CASE(task_converts_from_an_outcome_error_only) {
-    STATIC_EXPECT(std::convertible_to<outcome_error_t<error>, task<int, error>>);
-    STATIC_EXPECT(!std::convertible_to<outcome_error_t<std::string>, task<int, error>>);
-    STATIC_EXPECT(!std::convertible_to<outcome_error_t<error>, task<int>>);
-    STATIC_EXPECT(!std::convertible_to<int, task<int, error>>);
+    ZSTATIC_EXPECT(std::convertible_to<outcome_error_t<error>, task<int, error>>);
+    ZSTATIC_EXPECT(!std::convertible_to<outcome_error_t<std::string>, task<int, error>>);
+    ZSTATIC_EXPECT(!std::convertible_to<outcome_error_t<error>, task<int>>);
+    ZSTATIC_EXPECT(!std::convertible_to<int, task<int, error>>);
 }
 
 ZEST_CASE(or_fail_unwraps_a_successful_outcome) {
@@ -174,8 +174,8 @@ ZEST_CASE(or_fail_unwraps_a_successful_outcome) {
     };
 
     auto [result] = run(parent());
-    ASSERT(result.has_value());
-    EXPECT(*result == 10);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 10);
 }
 
 ZEST_CASE(or_fail_ends_the_task_with_a_failed_outcome) {
@@ -188,9 +188,9 @@ ZEST_CASE(or_fail_ends_the_task_with_a_failed_outcome) {
     };
 
     auto [result] = run(parent());
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::invalid_argument);
-    EXPECT(!after);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::invalid_argument);
+    ZEXPECT(!after);
 }
 
 ZEST_CASE(or_fail_on_a_task_unwraps_its_value) {
@@ -202,8 +202,8 @@ ZEST_CASE(or_fail_on_a_task_unwraps_its_value) {
     };
 
     auto [result] = run(parent());
-    ASSERT(result.has_value());
-    EXPECT(*result == 10);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 10);
 }
 
 ZEST_CASE(or_fail_on_a_task_ends_the_parent_without_resuming_it) {
@@ -218,9 +218,9 @@ ZEST_CASE(or_fail_on_a_task_ends_the_parent_without_resuming_it) {
     };
 
     auto [result] = run(parent());
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::connection_reset_by_peer);
-    EXPECT(!resumed);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::connection_reset_by_peer);
+    ZEXPECT(!resumed);
 }
 
 ZEST_CASE(or_fail_converts_the_error_to_the_parent_type) {
@@ -237,12 +237,12 @@ ZEST_CASE(or_fail_converts_the_error_to_the_parent_type) {
     };
 
     auto [by_task, by_outcome] = run(from_task(), from_outcome());
-    ASSERT(by_task.has_error());
-    ASSERT(std::holds_alternative<error>(by_task.error()));
-    EXPECT(std::get<error>(by_task.error()) == error::connection_timed_out);
-    ASSERT(by_outcome.has_error());
-    ASSERT(std::holds_alternative<error>(by_outcome.error()));
-    EXPECT(std::get<error>(by_outcome.error()) == error::broken_pipe);
+    ZASSERT(by_task.has_error());
+    ZASSERT(std::holds_alternative<error>(by_task.error()));
+    ZEXPECT(std::get<error>(by_task.error()) == error::connection_timed_out);
+    ZASSERT(by_outcome.has_error());
+    ZASSERT(std::holds_alternative<error>(by_outcome.error()));
+    ZEXPECT(std::get<error>(by_outcome.error()) == error::broken_pipe);
 }
 
 ZEST_CASE(cancel_ends_the_task_cancelled) {
@@ -254,8 +254,8 @@ ZEST_CASE(cancel_ends_the_task_cancelled) {
     };
 
     auto [result] = run(worker());
-    EXPECT(result.is_cancelled());
-    EXPECT(!after);
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(!after);
 }
 
 ZEST_CASE(cancelled_child_cancels_its_parent) {
@@ -270,13 +270,13 @@ ZEST_CASE(cancelled_child_cancels_its_parent) {
     };
 
     auto [result] = run(parent());
-    EXPECT(result.is_cancelled());
-    EXPECT(steps == 1);
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(steps == 1);
 }
 
 ZEST_CASE(catch_cancel_hands_the_cancellation_to_the_parent) {
-    EXPECT(zest::type_eq<decltype(std::declval<task<int, error>>().catch_cancel()),
-                         task<int, error, cancellation>>());
+    ZEXPECT(zest::type_eq<decltype(std::declval<task<int, error>>().catch_cancel()),
+                          task<int, error, cancellation>>());
 
     auto child = []() -> task<int> {
         co_await cancel();
@@ -287,8 +287,8 @@ ZEST_CASE(catch_cancel_hands_the_cancellation_to_the_parent) {
     };
 
     auto [result] = run(parent());
-    ASSERT(result.has_value());
-    EXPECT(result->is_cancelled());
+    ZASSERT(result.has_value());
+    ZEXPECT(result->is_cancelled());
 }
 
 ZEST_CASE(catch_cancel_passes_values_and_errors_through) {
@@ -306,12 +306,12 @@ ZEST_CASE(catch_cancel_passes_values_and_errors_through) {
     };
 
     auto [result] = run(parent());
-    ASSERT(result.has_value());
+    ZASSERT(result.has_value());
     auto& [first, second] = *result;
-    ASSERT(first.has_value());
-    EXPECT(*first == 3);
-    ASSERT(second.has_error());
-    EXPECT(second.error() == error::io_error);
+    ZASSERT(first.has_value());
+    ZEXPECT(*first == 3);
+    ZASSERT(second.has_error());
+    ZEXPECT(second.error() == error::io_error);
 }
 
 ZEST_CASE(external_cancel_ends_a_suspended_task) {
@@ -328,12 +328,12 @@ ZEST_CASE(external_cancel_ends_a_suspended_task) {
     };
 
     auto [result, done_before] = run(target, cancel_it());
-    EXPECT(result.is_cancelled());
-    EXPECT(target.done());
-    EXPECT(target.is_cancelled());
-    EXPECT(!gate.has_waiters());
-    ASSERT(done_before.has_value());
-    EXPECT(!*done_before);
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(target.done());
+    ZEXPECT(target.is_cancelled());
+    ZEXPECT(!gate.has_waiters());
+    ZASSERT(done_before.has_value());
+    ZEXPECT(!*done_before);
 }
 
 ZEST_CASE(cancel_of_a_finished_task_changes_nothing) {
@@ -347,10 +347,10 @@ ZEST_CASE(cancel_of_a_finished_task_changes_nothing) {
     };
 
     auto [result, drove] = run(target, late());
-    ASSERT(result.has_value());
-    EXPECT(*result == 1);
-    EXPECT(!target.is_cancelled());
-    EXPECT(drove.has_value());
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 1);
+    ZEXPECT(!target.is_cancelled());
+    ZEXPECT(drove.has_value());
 }
 
 // A task cancelled while it runs goes on until its next suspending co_await,
@@ -373,8 +373,8 @@ ZEST_CASE(checkpoint_starts_no_child_after_cancel) {
     target = worker();
 
     auto [result] = run(target);
-    EXPECT(result.is_cancelled());
-    EXPECT(started == 3);
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(started == 3);
 }
 
 ZEST_CASE(checkpoint_waits_for_the_cancelled_operation) {
@@ -397,11 +397,11 @@ ZEST_CASE(checkpoint_waits_for_the_cancelled_operation) {
     };
 
     auto [observer, driver] = run(observe(), finish());
-    EXPECT(op.cancel_requested());
-    ASSERT(driver.has_value());
-    EXPECT(!*driver);
-    EXPECT(worker_done);
-    EXPECT(observer.has_value());
+    ZEXPECT(op.cancel_requested());
+    ZASSERT(driver.has_value());
+    ZEXPECT(!*driver);
+    ZEXPECT(worker_done);
+    ZEXPECT(observer.has_value());
 }
 
 // An operation completed inside another task resumes the one awaiting it
@@ -422,9 +422,9 @@ ZEST_CASE(complete_deferred_resumes_once_the_completer_suspends) {
     };
 
     auto [waited, completed] = run(waiter(), completer());
-    EXPECT(waited.has_value());
-    EXPECT(completed.has_value());
-    EXPECT(order == std::vector<std::string>{"completer", "waiter", "completer resumed"});
+    ZEXPECT(waited.has_value());
+    ZEXPECT(completed.has_value());
+    ZEXPECT(order == std::vector<std::string>{"completer", "waiter", "completer resumed"});
 }
 
 ZEST_CASE(error_after_cancel_is_still_reported) {
@@ -436,8 +436,8 @@ ZEST_CASE(error_after_cancel_is_still_reported) {
     target = worker();
 
     auto [result] = run(target);
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::io_error);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::io_error);
 }
 
 ZEST_CASE(value_after_cancel_is_dropped) {
@@ -449,7 +449,7 @@ ZEST_CASE(value_after_cancel_is_dropped) {
     target = worker();
 
     auto [result] = run(target);
-    EXPECT(result.is_cancelled());
+    ZEXPECT(result.is_cancelled());
 }
 
 // A child started by co_await runs until it first suspends; a cancel() that
@@ -472,9 +472,9 @@ ZEST_CASE(child_cancelled_before_it_suspends_runs_to_that_point) {
     };
 
     auto [result] = run(parent());
-    ASSERT(result.has_value());
-    EXPECT(result->first);
-    EXPECT(result->second);
+    ZASSERT(result.has_value());
+    ZEXPECT(result->first);
+    ZEXPECT(result->second);
 }
 
 // A task cancelled before it starts never runs: it ends cancelled at once,
@@ -501,11 +501,11 @@ ZEST_CASE(awaiting_a_task_cancelled_before_it_started_never_runs_it) {
     };
 
     auto [caught, cancelled] = run(catching(), plain());
-    ASSERT(caught.has_value());
-    EXPECT(*caught);
-    EXPECT(cancelled.is_cancelled());
-    EXPECT(!ran);
-    EXPECT(!resumed);
+    ZASSERT(caught.has_value());
+    ZEXPECT(*caught);
+    ZEXPECT(cancelled.is_cancelled());
+    ZEXPECT(!ran);
+    ZEXPECT(!resumed);
 }
 
 // Nothing runs the task; the cancel does not end it either.
@@ -516,8 +516,8 @@ ZEST_CASE(cancel_of_a_task_that_has_not_started_only_marks_it) {
     auto pending = work();
     pending.cancel();
 
-    EXPECT(!pending.done());
-    EXPECT(!pending.is_cancelled());
+    ZEXPECT(!pending.done());
+    ZEXPECT(!pending.is_cancelled());
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -532,7 +532,7 @@ ZEST_CASE(exception_propagates_through_await, skip = test::exceptions_unreadable
         co_return co_await thrower();
     };
 
-    EXPECT(test::thrown([&] { run(parent()); }) == "boom");
+    ZEXPECT(test::thrown([&] { run(parent()); }) == "boom");
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
@@ -551,8 +551,8 @@ ZEST_CASE(parent_can_catch_a_child_exception, skip = test::exceptions_unreadable
     };
 
     auto [result] = run(parent());
-    ASSERT(result.has_value());
-    EXPECT(*result == "caught");
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == "caught");
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
@@ -565,7 +565,7 @@ ZEST_CASE(or_fail_rethrows_a_child_exception, skip = test::exceptions_unreadable
         co_return co_await child().or_fail();
     };
 
-    EXPECT(test::thrown([&] { run(parent()); }) == "or_fail child");
+    ZEXPECT(test::thrown([&] { run(parent()); }) == "or_fail child");
 }
 
 // Real errors outrank cancellation: an exception thrown after the task was
@@ -580,7 +580,7 @@ ZEST_CASE(exception_after_cancel_still_fails_the_task, skip = test::exceptions_u
     };
     target = worker();
 
-    EXPECT(test::thrown([&] { run(target); }) == "after cancel");
+    ZEXPECT(test::thrown([&] { run(target); }) == "after cancel");
 }
 
 #endif  // KOTA_ENABLE_EXCEPTIONS
@@ -610,8 +610,8 @@ ZEST_CASE(co_invoke_keeps_the_callable_for_the_task) {
     });
 
     auto [result] = run(std::move(read));
-    ASSERT(result.has_value());
-    EXPECT(*result);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
 }
 
 ZEST_CASE(co_invoke_keeps_the_arguments_for_the_task) {
@@ -622,17 +622,17 @@ ZEST_CASE(co_invoke_keeps_the_arguments_for_the_task) {
     auto invoked = co_invoke(read, std::string("an argument"));
 
     auto [result] = run(std::move(invoked));
-    ASSERT(result.has_value());
-    EXPECT(*result == "an argument");
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == "an argument");
 }
 
 ZEST_CASE(co_invoke_takes_what_can_be_called) {
     using member = task<int> (Counter::*)();
-    STATIC_EXPECT(invocable_through_co_invoke<task<int> (*)()>);
-    STATIC_EXPECT(!invocable_through_co_invoke<int (*)()>);
-    STATIC_EXPECT(!invocable_through_co_invoke<task<int, void, cancellation> (*)()>);
+    ZSTATIC_EXPECT(invocable_through_co_invoke<task<int> (*)()>);
+    ZSTATIC_EXPECT(!invocable_through_co_invoke<int (*)()>);
+    ZSTATIC_EXPECT(!invocable_through_co_invoke<task<int, void, cancellation> (*)()>);
     // A member function is no callable: bind it in a lambda.
-    STATIC_EXPECT(!invocable_through_co_invoke<member, Counter*>);
+    ZSTATIC_EXPECT(!invocable_through_co_invoke<member, Counter*>);
 }
 
 ZEST_CASE(co_invoke_passes_the_error_through) {
@@ -641,8 +641,8 @@ ZEST_CASE(co_invoke_passes_the_error_through) {
     };
 
     auto [result] = run(co_invoke(failing));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::connection_refused);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::connection_refused);
 }
 
 ZEST_CASE(co_invoke_ends_cancelled_with_the_task) {
@@ -651,7 +651,7 @@ ZEST_CASE(co_invoke_ends_cancelled_with_the_task) {
     };
 
     auto [result] = run(co_invoke(cancelling));
-    EXPECT(result.is_cancelled());
+    ZEXPECT(result.is_cancelled());
 }
 
 };  // ZEST_SUITE(async_runtime_task)

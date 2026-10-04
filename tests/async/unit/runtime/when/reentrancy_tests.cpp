@@ -34,9 +34,9 @@ ZEST_CASE(any_setter_of_an_event_wins_over_its_waiters) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    ASSERT(result->index() == 2U);
-    EXPECT(std::get<2>(*result) == 3);
+    ZASSERT(result.has_value());
+    ZASSERT(result->index() == 2U);
+    ZEXPECT(std::get<2>(*result) == 3);
 }
 
 ZEST_CASE(any_releaser_of_a_semaphore_wins_over_its_waiter) {
@@ -55,10 +55,10 @@ ZEST_CASE(any_releaser_of_a_semaphore_wins_over_its_waiter) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(result->index() == 1U);
+    ZASSERT(result.has_value());
+    ZEXPECT(result->index() == 1U);
     // The cancelled waiter gave its unit back.
-    EXPECT(sem.try_acquire());
+    ZEXPECT(sem.try_acquire());
 }
 
 ZEST_CASE(any_unlocker_of_a_mutex_wins_over_its_waiter) {
@@ -79,10 +79,10 @@ ZEST_CASE(any_unlocker_of_a_mutex_wins_over_its_waiter) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(result->index() == 0U);
+    ZASSERT(result.has_value());
+    ZEXPECT(result->index() == 0U);
     // The cancelled waiter gave the mutex back.
-    EXPECT(m.try_lock());
+    ZEXPECT(m.try_lock());
 }
 
 // The cancelled wait takes the mutex back before it ends; its guard unlocks it
@@ -106,9 +106,9 @@ ZEST_CASE(any_notifier_of_a_condition_variable_wins_over_its_waiter) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(result->index() == 1U);
-    EXPECT(m.try_lock());
+    ZASSERT(result.has_value());
+    ZEXPECT(result->index() == 1U);
+    ZEXPECT(m.try_lock());
 }
 
 ZEST_CASE(all_child_waking_a_sibling_lets_both_finish) {
@@ -128,8 +128,8 @@ ZEST_CASE(all_child_waking_a_sibling_lets_both_finish) {
     };
 
     auto [result] = run(combined());
-    EXPECT(result.has_value());
-    EXPECT(finished == 2);
+    ZEXPECT(result.has_value());
+    ZEXPECT(finished == 2);
 }
 
 // A sibling cancelled while it is between awaits stops at its next one. Were
@@ -154,9 +154,9 @@ ZEST_CASE(any_cancel_stops_a_looping_sibling_at_its_next_await) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(result->index() == 0U);
-    EXPECT(iterations == 1);
+    ZASSERT(result.has_value());
+    ZEXPECT(result->index() == 0U);
+    ZEXPECT(iterations == 1);
 }
 
 ZEST_CASE(all_error_stops_a_looping_sibling_at_its_next_await) {
@@ -179,10 +179,10 @@ ZEST_CASE(all_error_stops_a_looping_sibling_at_its_next_await) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    ASSERT(result->has_error());
-    EXPECT(result->error() == error::connection_refused);
-    EXPECT(iterations == 1);
+    ZASSERT(result.has_value());
+    ZASSERT(result->has_error());
+    ZEXPECT(result->error() == error::connection_refused);
+    ZEXPECT(iterations == 1);
 }
 
 // A token that fires once when_all has settled finds nothing left to cancel.
@@ -214,12 +214,12 @@ ZEST_CASE(token_firing_after_all_settled_leaves_the_values) {
     };
 
     auto [result, settled_first] = run(combined(), trigger());
-    ASSERT(settled_first.has_value());
-    EXPECT(*settled_first);
-    ASSERT(result.has_value());
-    ASSERT(result->has_value());
-    EXPECT(std::get<0>(**result) == 42);
-    EXPECT(std::get<1>(**result) == 42);
+    ZASSERT(settled_first.has_value());
+    ZEXPECT(*settled_first);
+    ZASSERT(result.has_value());
+    ZASSERT(result->has_value());
+    ZEXPECT(std::get<0>(**result) == 42);
+    ZEXPECT(std::get<1>(**result) == 42);
 }
 
 // The three cases below are repros of a bookkeeping bug: when_all with a
@@ -249,8 +249,8 @@ ZEST_CASE(token_firing_before_the_event_cancels_all) {
     };
 
     auto [result, drove] = run(combined(), trigger());
-    ASSERT(result.has_value());
-    EXPECT(*result);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
 }
 
 // The token fires before the event, both while the aggregate is armed, so
@@ -275,8 +275,8 @@ ZEST_CASE(token_then_event_while_armed_cancels_all) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(*result);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
 }
 
 // One request cancels the shared token as it completes; the cascade reaches
@@ -309,9 +309,9 @@ ZEST_CASE(child_firing_the_shared_token_cancels_all) {
     };
 
     auto [result, drove] = run(combined(), trigger());
-    ASSERT(result.has_value());
-    EXPECT(*result);
-    EXPECT(!never.has_waiters());
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
+    ZEXPECT(!never.has_waiters());
 }
 
 };  // ZEST_SUITE(async_runtime_when_reentrancy)

@@ -68,7 +68,7 @@ ZEST_SUITE(async_io_stream_pipe, zest::LoopFixture) {
 
 ZEST_CASE(read_returns_what_was_written_then_eof) {
     auto reader = pipe_holding("kotatsu-pipe", loop);
-    ASSERT(reader.has_value());
+    ZASSERT(reader.has_value());
     auto read_twice = [&]() -> task<std::pair<result<std::string>, result<std::string>>> {
         auto first = co_await reader->read();
         auto second = co_await reader->read();
@@ -76,19 +76,19 @@ ZEST_CASE(read_returns_what_was_written_then_eof) {
     };
 
     auto [result] = run(read_twice());
-    ASSERT(result.has_value());
+    ZASSERT(result.has_value());
     auto& [first, second] = *result;
-    ASSERT(first.has_value());
-    EXPECT(*first == "kotatsu-pipe");
-    ASSERT(second.has_error());
-    EXPECT(second.error() == error::end_of_file);
+    ZASSERT(first.has_value());
+    ZEXPECT(*first == "kotatsu-pipe");
+    ZASSERT(second.has_error());
+    ZEXPECT(second.error() == error::end_of_file);
 }
 
 // A line ends with "\n" or "\r\n"; what follows the last line break is a
 // line of its own.
 ZEST_CASE(read_line_splits_the_stream_into_lines) {
     auto reader = pipe_holding("first\r\nsecond\n\nlast", loop);
-    ASSERT(reader.has_value());
+    ZASSERT(reader.has_value());
     auto read_lines = [&]() -> task<std::vector<std::string>, error> {
         std::vector<std::string> lines;
         while(auto line = co_await reader->read_line().or_fail()) {
@@ -98,18 +98,18 @@ ZEST_CASE(read_line_splits_the_stream_into_lines) {
     };
 
     auto [lines] = run(read_lines());
-    ASSERT(lines.has_value());
-    EXPECT(*lines == std::vector<std::string>{"first", "second", "", "last"});
+    ZASSERT(lines.has_value());
+    ZEXPECT(*lines == std::vector<std::string>{"first", "second", "", "last"});
 }
 
 // The "\r" of a "\r\n" is buffered before its "\n" is written, so the two
 // come in different chunks; the line still ends without it.
 ZEST_CASE(read_line_drops_a_carriage_return_read_before_its_newline) {
     int fds[2] = {-1, -1};
-    ASSERT(test::create_pipe(fds) == 0);
+    ZASSERT(test::create_pipe(fds) == 0);
     auto reader = pipe::open(fds[0], loop);
-    ASSERT(reader.has_value());
-    ASSERT(test::write_fd(fds[1], "first\r", 6) == 6);
+    ZASSERT(reader.has_value());
+    ZASSERT(test::write_fd(fds[1], "first\r", 6) == 6);
     auto read_split = [&]() -> task<std::optional<std::string>, error> {
         co_await reader->read_chunk().or_fail();
         test::write_fd(fds[1], "\n", 1);
@@ -118,13 +118,13 @@ ZEST_CASE(read_line_drops_a_carriage_return_read_before_its_newline) {
     };
 
     auto [line] = run(read_split());
-    ASSERT(line.has_value());
-    EXPECT(*line == std::optional<std::string>("first"));
+    ZASSERT(line.has_value());
+    ZEXPECT(*line == std::optional<std::string>("first"));
 }
 
 ZEST_CASE(read_line_after_the_last_line_break_reads_nothing) {
     auto reader = pipe_holding("line\n", loop);
-    ASSERT(reader.has_value());
+    ZASSERT(reader.has_value());
     auto read_twice = [&]() -> task<std::vector<std::optional<std::string>>, error> {
         auto first = co_await reader->read_line().or_fail();
         auto second = co_await reader->read_line().or_fail();
@@ -132,15 +132,15 @@ ZEST_CASE(read_line_after_the_last_line_break_reads_nothing) {
     };
 
     auto [lines] = run(read_twice());
-    ASSERT(lines.has_value());
-    EXPECT(*lines == std::vector<std::optional<std::string>>{"line", std::nullopt});
+    ZASSERT(lines.has_value());
+    ZEXPECT(*lines == std::vector<std::optional<std::string>>{"line", std::nullopt});
 }
 
 // An empty buffer reads nothing without waiting; then read_some reads four
 // bytes at most per call, and zero at the end.
 ZEST_CASE(read_some_fills_the_buffer_and_reports_eof_as_zero) {
     auto reader = pipe_holding("abcdef", loop);
-    ASSERT(reader.has_value());
+    ZASSERT(reader.has_value());
     auto read_all = [&]() -> task<std::pair<std::size_t, std::vector<std::string>>, error> {
         auto nothing = co_await reader->read_some(std::span<char>()).or_fail();
         std::vector<std::string> pieces;
@@ -156,14 +156,14 @@ ZEST_CASE(read_some_fills_the_buffer_and_reports_eof_as_zero) {
     };
 
     auto [result] = run(read_all());
-    ASSERT(result.has_value());
-    EXPECT(result->first == 0U);
-    EXPECT(result->second == std::vector<std::string>{"abcd", "ef"});
+    ZASSERT(result.has_value());
+    ZEXPECT(result->first == 0U);
+    ZEXPECT(result->second == std::vector<std::string>{"abcd", "ef"});
 }
 
 ZEST_CASE(read_chunk_shows_the_buffer_until_consumed) {
     auto reader = pipe_holding("chunk", loop);
-    ASSERT(reader.has_value());
+    ZASSERT(reader.has_value());
     auto chunks = [&]() -> task<std::pair<std::string, std::string>, error> {
         auto first = co_await reader->read_chunk().or_fail();
         std::string seen(first.data(), first.size());
@@ -174,19 +174,19 @@ ZEST_CASE(read_chunk_shows_the_buffer_until_consumed) {
     };
 
     auto [result] = run(chunks());
-    ASSERT(result.has_value());
-    EXPECT(result->first == "chunk");
-    EXPECT(result->second == "chunk");
+    ZASSERT(result.has_value());
+    ZEXPECT(result->first == "chunk");
+    ZEXPECT(result->second == "chunk");
     auto [at_end] = run(reader->read_chunk());
-    ASSERT(at_end.has_error());
-    EXPECT(at_end.error() == error::end_of_file);
+    ZASSERT(at_end.has_error());
+    ZEXPECT(at_end.error() == error::end_of_file);
 }
 
 // What read_chunk() buffered and consume() left is what read_some() and
 // read() hand out next, without waiting for the pipe.
 ZEST_CASE(reads_serve_what_is_already_buffered) {
     auto reader = pipe_holding("abcdef", loop);
-    ASSERT(reader.has_value());
+    ZASSERT(reader.has_value());
     auto read_in_parts = [&]() -> task<std::vector<std::string>, error> {
         auto chunk = co_await reader->read_chunk().or_fail();
         std::vector<std::string> parts{std::string(chunk.data(), 2)};
@@ -199,17 +199,17 @@ ZEST_CASE(reads_serve_what_is_already_buffered) {
     };
 
     auto [result] = run(read_in_parts());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector<std::string>{"ab", "cd", "ef"});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector<std::string>{"ab", "cd", "ef"});
 }
 
 // The writer sends its second chunk only once the reader has consumed the
 // first, so read_some() after read_chunk() sees just the second.
 ZEST_CASE(read_some_after_read_chunk_reads_on) {
     int fds[2] = {-1, -1};
-    ASSERT(test::create_pipe(fds) == 0);
+    ZASSERT(test::create_pipe(fds) == 0);
     auto reader = pipe::open(fds[0], loop);
-    ASSERT(reader.has_value());
+    ZASSERT(reader.has_value());
     event consumed;
     auto read_both = [&]() -> task<std::pair<std::string, std::string>, error> {
         auto first = co_await reader->read_chunk().or_fail();
@@ -229,11 +229,11 @@ ZEST_CASE(read_some_after_read_chunk_reads_on) {
     };
 
     auto [read, wrote] = run(read_both(), write_both());
-    ASSERT(read.has_value());
-    EXPECT(read->first == "kotatsu-chunk");
-    EXPECT(read->second == "kotatsu-read-some");
-    ASSERT(wrote.has_value());
-    EXPECT(*wrote == std::vector<ssize_t>{13, 17});
+    ZASSERT(read.has_value());
+    ZEXPECT(read->first == "kotatsu-chunk");
+    ZEXPECT(read->second == "kotatsu-read-some");
+    ZASSERT(wrote.has_value());
+    ZEXPECT(*wrote == std::vector<ssize_t>{13, 17});
 }
 
 // A Linux pipe that holds exactly as much as the stream's buffer takes gets
@@ -242,7 +242,7 @@ ZEST_CASE(read_some_after_read_chunk_reads_on) {
 #ifdef __linux__
 ZEST_CASE(read_after_draining_a_full_buffer_waits_for_data) {
     int fds[2] = {-1, -1};
-    ASSERT(test::create_pipe(fds) == 0);
+    ZASSERT(test::create_pipe(fds) == 0);
     const std::string full(64 * 1024, 'x');
     // A user past pipe-user-pages-soft gets smaller pipes, which the write
     // below would block on for good.
@@ -252,9 +252,9 @@ ZEST_CASE(read_after_draining_a_full_buffer_waits_for_data) {
         zest::skip();
         return;
     }
-    ASSERT(test::write_fd(fds[1], full.data(), full.size()) == static_cast<ssize_t>(full.size()));
+    ZASSERT(test::write_fd(fds[1], full.data(), full.size()) == static_cast<ssize_t>(full.size()));
     auto reader = pipe::open(fds[0], loop);
-    ASSERT(reader.has_value());
+    ZASSERT(reader.has_value());
     event drained;
     auto read_both = [&]() -> task<std::pair<std::size_t, std::string>, error> {
         std::string first;
@@ -275,11 +275,11 @@ ZEST_CASE(read_after_draining_a_full_buffer_waits_for_data) {
     };
 
     auto [read, written] = run(read_both(), write_tail());
-    ASSERT(read.has_value());
-    EXPECT(read->first == full.size());
-    EXPECT(read->second == "tail");
-    ASSERT(written.has_value());
-    EXPECT(*written == 4);
+    ZASSERT(read.has_value());
+    ZEXPECT(read->first == full.size());
+    ZEXPECT(read->second == "tail");
+    ZASSERT(written.has_value());
+    ZEXPECT(*written == 4);
 }
 #endif
 
@@ -288,7 +288,7 @@ ZEST_CASE(read_after_draining_a_full_buffer_waits_for_data) {
 #ifdef __linux__
 ZEST_CASE(read_takes_what_wraps_around_the_buffer) {
     int fds[2] = {-1, -1};
-    ASSERT(test::create_pipe(fds) == 0);
+    ZASSERT(test::create_pipe(fds) == 0);
     const std::string first(48 * 1024, 'a');
     const std::string second(40 * 1024, 'b');
     // A user past pipe-user-pages-soft gets smaller pipes, which the writes
@@ -299,10 +299,10 @@ ZEST_CASE(read_takes_what_wraps_around_the_buffer) {
         zest::skip();
         return;
     }
-    ASSERT(test::write_fd(fds[1], first.data(), first.size()) ==
-           static_cast<ssize_t>(first.size()));
+    ZASSERT(test::write_fd(fds[1], first.data(), first.size()) ==
+            static_cast<ssize_t>(first.size()));
     auto reader = pipe::open(fds[0], loop);
-    ASSERT(reader.has_value());
+    ZASSERT(reader.has_value());
     auto read_around = [&]() -> task<std::pair<std::size_t, std::string>, error> {
         // One read takes all the pipe holds.
         auto held = co_await reader->read_chunk().or_fail();
@@ -317,9 +317,9 @@ ZEST_CASE(read_takes_what_wraps_around_the_buffer) {
 
     auto [read] = run(read_around());
     test::close_fd(fds[1]);
-    ASSERT(read.has_value());
-    EXPECT(read->first == first.size());
-    EXPECT(read->second == std::string(8 * 1024, 'a') + second);
+    ZASSERT(read.has_value());
+    ZEXPECT(read->first == first.size());
+    ZEXPECT(read->second == std::string(8 * 1024, 'a') + second);
 }
 #endif
 
@@ -328,7 +328,7 @@ ZEST_CASE(read_takes_what_wraps_around_the_buffer) {
 // up once it is drained, losing nothing of a MiB.
 ZEST_CASE(full_buffer_holds_the_rest_back_until_drained) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     std::string sent(1024 * 1024, '\0');
     for(std::size_t i = 0; i < sent.size(); ++i) {
         sent[i] = static_cast<char>('a' + i % 26);
@@ -360,44 +360,44 @@ ZEST_CASE(full_buffer_holds_the_rest_back_until_drained) {
     };
 
     auto [sent_all, received] = run(send(), receive());
-    EXPECT(sent_all.has_value());
-    ASSERT(received.has_value());
-    EXPECT(received->first == 64U * 1024);
-    EXPECT(received->second == sent);
+    ZEXPECT(sent_all.has_value());
+    ZASSERT(received.has_value());
+    ZEXPECT(received->first == 64U * 1024);
+    ZEXPECT(received->second == sent);
 }
 
 ZEST_CASE(second_read_while_one_is_pending_fails) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     auto second_then_write = [&]() -> task<error> {
         auto second = co_await ends->reader.read();
         auto written = co_await ends->writer.write(std::string_view("first"));
-        EXPECT(written.has_value());
+        ZEXPECT(written.has_value());
         co_return second.has_error() ? second.error() : error();
     };
 
     auto [first, second] = run(ends->reader.read(), second_then_write());
-    ASSERT(first.has_value());
-    EXPECT(*first == "first");
-    ASSERT(second.has_value());
-    EXPECT(*second == error::resource_busy_or_locked);
+    ZASSERT(first.has_value());
+    ZEXPECT(*first == "first");
+    ZASSERT(second.has_value());
+    ZEXPECT(*second == error::resource_busy_or_locked);
 }
 
 ZEST_CASE(read_from_the_write_end_fails) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     std::array<char, 8> buffer{};
 
     auto [buffered, direct] = run(ends->writer.read(), ends->writer.read_some(buffer));
-    ASSERT(buffered.has_error());
-    EXPECT(buffered.error() == error::socket_is_not_connected);
-    ASSERT(direct.has_error());
-    EXPECT(direct.error() == error::socket_is_not_connected);
+    ZASSERT(buffered.has_error());
+    ZEXPECT(buffered.error() == error::socket_is_not_connected);
+    ZASSERT(direct.has_error());
+    ZEXPECT(direct.error() == error::socket_is_not_connected);
 }
 
 ZEST_CASE(write_reaches_the_reader) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     auto send = [&]() -> task<void, error> {
         co_await ends->writer.write(std::string_view("kotatsu-write")).or_fail();
         // Closing the write end lets the reader see the end.
@@ -405,16 +405,16 @@ ZEST_CASE(write_reaches_the_reader) {
     };
 
     auto [sent, received] = run(send(), ends->reader.read_to_end());
-    EXPECT(sent.has_value());
-    ASSERT(received.has_value());
-    EXPECT(*received == "kotatsu-write");
+    ZEXPECT(sent.has_value());
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == "kotatsu-write");
 }
 
 // The first write is larger than the pipe holds, so it is still going out
 // when the second is made.
 ZEST_CASE(overlapping_writes_arrive_in_order) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     const std::string first(128 * 1024, 'a');
     const std::string second(128 * 1024, 'b');
     auto send = [&]() -> task<void, error> {
@@ -423,16 +423,16 @@ ZEST_CASE(overlapping_writes_arrive_in_order) {
     };
 
     auto [sent, received] = run(send(), ends->reader.read_to_end());
-    EXPECT(sent.has_value());
-    ASSERT(received.has_value());
-    EXPECT(*received == first + second);
+    ZEXPECT(sent.has_value());
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == first + second);
 }
 
 // libuv cannot take a write back: a cancelled write still goes out, and its
 // task ends cancelled once it has, never resuming past it.
 ZEST_CASE(cancelled_write_still_delivers) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     bool resumed = false;
     auto write = [&]() -> task<> {
         [[maybe_unused]] auto written = co_await ends->writer.write(std::string_view("kept"));
@@ -440,11 +440,11 @@ ZEST_CASE(cancelled_write_still_delivers) {
     };
 
     auto [raced, received] = run(test::winner(write(), test::finished()), ends->reader.read());
-    ASSERT(raced.has_value());
-    EXPECT(*raced == 1U);
-    EXPECT(!resumed);
-    ASSERT(received.has_value());
-    EXPECT(*received == "kept");
+    ZASSERT(raced.has_value());
+    ZEXPECT(*raced == 1U);
+    ZEXPECT(!resumed);
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == "kept");
 }
 
 // Nothing reads the pipe, so the write is still going out, and the shutdown
@@ -454,7 +454,7 @@ ZEST_CASE(cancelled_write_still_delivers) {
 #ifndef _WIN32
 ZEST_CASE(write_and_shutdown_ended_by_a_close_fails) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     const std::string large(4 * 1024 * 1024, 'x');
     auto close_it = [&]() -> task<> {
         co_await yield();
@@ -463,10 +463,10 @@ ZEST_CASE(write_and_shutdown_ended_by_a_close_fails) {
 
     auto [written, shut, closed] =
         run(ends->writer.write(large), ends->writer.shutdown(), close_it());
-    ASSERT(written.has_error());
-    EXPECT(written.error() == error::operation_aborted);
-    ASSERT(shut.has_error());
-    EXPECT(shut.error() == error::operation_aborted);
+    ZASSERT(written.has_error());
+    ZEXPECT(written.error() == error::operation_aborted);
+    ZASSERT(shut.has_error());
+    ZEXPECT(shut.error() == error::operation_aborted);
 }
 #endif
 
@@ -475,53 +475,53 @@ ZEST_CASE(write_and_shutdown_ended_by_a_close_fails) {
 // nobody reads.
 ZEST_CASE(write_to_a_pipe_nobody_reads_fails) {
     int fds[2] = {-1, -1};
-    ASSERT(test::create_pipe(fds) == 0);
+    ZASSERT(test::create_pipe(fds) == 0);
     test::close_fd(fds[0]);
     auto writer = pipe::open(fds[1], loop);
-    ASSERT(writer.has_value());
+    ZASSERT(writer.has_value());
     auto write = [&]() -> task<void, error> {
         std::string_view text = "text";
         co_await writer->write(std::span(text.data(), text.size())).or_fail();
     };
 
     auto [written] = run(write());
-    ASSERT(written.has_error());
-    EXPECT(written.error() == error::broken_pipe);
+    ZASSERT(written.has_error());
+    ZEXPECT(written.error() == error::broken_pipe);
 }
 #endif
 
 ZEST_CASE(write_of_nothing_fails) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
 
     auto [result] = run(ends->writer.write({}));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::invalid_argument);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::invalid_argument);
 }
 
 ZEST_CASE(write_to_the_read_end_fails) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
 
     auto [result] = run(ends->reader.write(std::string_view("x")));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::broken_pipe);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::broken_pipe);
 }
 
 ZEST_CASE(try_write_of_nothing_writes_nothing) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
 
     auto written = ends->writer.try_write({});
-    ASSERT(written.has_value());
-    EXPECT(*written == 0U);
+    ZASSERT(written.has_value());
+    ZEXPECT(*written == 0U);
 }
 
 // Windows pipes do not report a full buffer to try_write the same way.
 #ifndef _WIN32
 ZEST_CASE(try_write_to_a_full_pipe_fails) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     std::string chunk(4096, 'x');
 
     // Linux pipes hold at most 1 MiB; no write gets anywhere near 1000 chunks.
@@ -532,22 +532,22 @@ ZEST_CASE(try_write_to_a_full_pipe_fails) {
             refused = written.error();
         }
     }
-    EXPECT(refused == error::resource_temporarily_unavailable);
+    ZEXPECT(refused == error::resource_temporarily_unavailable);
 }
 #endif
 
 ZEST_CASE(ends_report_their_direction) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
-    EXPECT(ends->reader.readable());
-    EXPECT(!ends->reader.writable());
-    EXPECT(ends->writer.writable());
-    EXPECT(!ends->writer.readable());
-    EXPECT(!ends->writer.set_blocking(true));
+    ZASSERT(ends.has_value());
+    ZEXPECT(ends->reader.readable());
+    ZEXPECT(!ends->reader.writable());
+    ZEXPECT(ends->writer.writable());
+    ZEXPECT(!ends->writer.readable());
+    ZEXPECT(!ends->writer.set_blocking(true));
 
     pipe inert;
-    EXPECT(!inert.readable());
-    EXPECT(!inert.writable());
+    ZEXPECT(!inert.readable());
+    ZEXPECT(!inert.writable());
 }
 
 ZEST_CASE(inert_stream_fails) {
@@ -559,55 +559,55 @@ ZEST_CASE(inert_stream_fails) {
                                                        inert.read_chunk(),
                                                        inert.write(std::string_view("x")),
                                                        inert.shutdown());
-    ASSERT(read.has_error());
-    EXPECT(read.error() == error::invalid_argument);
-    ASSERT(read_some.has_error());
-    EXPECT(read_some.error() == error::invalid_argument);
-    ASSERT(chunk.has_error());
-    EXPECT(chunk.error() == error::invalid_argument);
-    ASSERT(written.has_error());
-    EXPECT(written.error() == error::invalid_argument);
-    ASSERT(shut.has_error());
-    EXPECT(shut.error() == error::invalid_argument);
-    EXPECT(inert.stop() == error::invalid_argument);
-    EXPECT(inert.set_blocking(true) == error::invalid_argument);
+    ZASSERT(read.has_error());
+    ZEXPECT(read.error() == error::invalid_argument);
+    ZASSERT(read_some.has_error());
+    ZEXPECT(read_some.error() == error::invalid_argument);
+    ZASSERT(chunk.has_error());
+    ZEXPECT(chunk.error() == error::invalid_argument);
+    ZASSERT(written.has_error());
+    ZEXPECT(written.error() == error::invalid_argument);
+    ZASSERT(shut.has_error());
+    ZEXPECT(shut.error() == error::invalid_argument);
+    ZEXPECT(inert.stop() == error::invalid_argument);
+    ZEXPECT(inert.set_blocking(true) == error::invalid_argument);
     auto tried = inert.try_write(std::string_view("x"));
-    ASSERT(tried.has_error());
-    EXPECT(tried.error() == error::invalid_argument);
+    ZASSERT(tried.has_error());
+    ZEXPECT(tried.error() == error::invalid_argument);
 }
 
 // stop() is not sticky: the read after it reads again.
 ZEST_CASE(stop_ends_a_pending_read) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     std::array<char, 8> buffer{};
     auto stop_it = [&]() -> task<error> {
         co_return ends->reader.stop();
     };
 
     auto [buffered, stopped] = run(ends->reader.read(), stop_it());
-    ASSERT(buffered.has_error());
-    EXPECT(buffered.error() == error::operation_aborted);
-    ASSERT(stopped.has_value());
-    EXPECT(!*stopped);
+    ZASSERT(buffered.has_error());
+    ZEXPECT(buffered.error() == error::operation_aborted);
+    ZASSERT(stopped.has_value());
+    ZEXPECT(!*stopped);
     auto [direct, again] = run(ends->reader.read_some(buffer), stop_it());
-    ASSERT(direct.has_error());
-    EXPECT(direct.error() == error::operation_aborted);
-    ASSERT(again.has_value());
-    EXPECT(!*again);
+    ZASSERT(direct.has_error());
+    ZEXPECT(direct.error() == error::operation_aborted);
+    ZASSERT(again.has_value());
+    ZEXPECT(!*again);
     auto exchange = [&]() -> task<std::string, error> {
         co_await ends->writer.write(std::string_view("after")).or_fail();
         co_return co_await ends->reader.read().or_fail();
     };
     auto [received] = run(exchange());
-    ASSERT(received.has_value());
-    EXPECT(*received == "after");
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == "after");
 }
 
 // Nothing is written, so only the cancels can end the reads.
 ZEST_CASE(cancelled_reads_leave_the_pipe_usable) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     std::array<char, 8> buffer{};
     auto cancel_reads = [&]() -> task<std::pair<std::size_t, std::size_t>, error> {
         auto buffered = co_await or_fail(co_await when_any(ends->reader.read(), yield()));
@@ -620,16 +620,16 @@ ZEST_CASE(cancelled_reads_leave_the_pipe_usable) {
     };
 
     auto [cancelled] = run(cancel_reads());
-    ASSERT(cancelled.has_value());
-    EXPECT(*cancelled == std::pair<std::size_t, std::size_t>{1, 1});
+    ZASSERT(cancelled.has_value());
+    ZEXPECT(*cancelled == std::pair<std::size_t, std::size_t>{1, 1});
     auto [received] = run(exchange());
-    ASSERT(received.has_value());
-    EXPECT(*received == "after");
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == "after");
 }
 
 ZEST_CASE(read_ended_by_destroying_its_stream_fails) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     std::optional<pipe> reader = std::move(ends->reader);
     auto destroy = [&]() -> task<> {
         reader.reset();
@@ -637,15 +637,15 @@ ZEST_CASE(read_ended_by_destroying_its_stream_fails) {
     };
 
     auto [read, destroyed] = run(reader->read(), destroy());
-    ASSERT(read.has_error());
-    EXPECT(read.error() == error::operation_aborted);
+    ZASSERT(read.has_error());
+    ZEXPECT(read.error() == error::operation_aborted);
 }
 
 // The destroyed stream's read is cancelled after its destruction has ended
 // it, before the loop has resumed it: the cancel leaves that ending alone.
 ZEST_CASE(read_cancelled_after_its_stream_is_destroyed_ends) {
     auto ends = pipe_ends(loop);
-    ASSERT(ends.has_value());
+    ZASSERT(ends.has_value());
     std::optional<pipe> reader = std::move(ends->reader);
     auto destroy = [&]() -> task<> {
         reader.reset();
@@ -653,14 +653,14 @@ ZEST_CASE(read_cancelled_after_its_stream_is_destroyed_ends) {
     };
 
     auto [result] = run(test::winner(reader->read(), destroy()));
-    ASSERT(result.has_value());
-    EXPECT(*result == 1U);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 1U);
 }
 
 ZEST_CASE(open_of_a_bad_descriptor_fails) {
     auto opened = pipe::open(-1, loop);
-    ASSERT(opened.has_error());
-    EXPECT(opened.error() == error::bad_file_descriptor);
+    ZASSERT(opened.has_error());
+    ZEXPECT(opened.error() == error::bad_file_descriptor);
 }
 
 // The loop cannot wait on a regular file to read it: on Linux epoll refuses
@@ -670,15 +670,15 @@ ZEST_CASE(read_of_a_file_fails) {
     test::TempDir dir;
     test::write_file(dir.file("file.txt"), "text");
     auto file = fs::sync::open(dir.file("file.txt"), O_RDONLY, 0);
-    ASSERT(file.has_value());
+    ZASSERT(file.has_value());
 
     auto opened = pipe::open(*file, loop);
 #ifdef _WIN32
-    ASSERT(opened.has_error());
-    EXPECT(opened.error() == error::socket_operation_on_non_socket);
-    EXPECT(!fs::sync::close(*file));
+    ZASSERT(opened.has_error());
+    ZEXPECT(opened.error() == error::socket_operation_on_non_socket);
+    ZEXPECT(!fs::sync::close(*file));
 #else
-    ASSERT(opened.has_value());
+    ZASSERT(opened.has_value());
     auto read_each_way = [&]() -> task<std::vector<error>> {
         auto read = co_await opened->read();
         auto rest = co_await opened->read_to_end();
@@ -689,8 +689,8 @@ ZEST_CASE(read_of_a_file_fails) {
     };
 
     auto [errors] = run(read_each_way());
-    ASSERT(errors.has_value());
-    EXPECT(*errors == std::vector<error>(3, error::socket_operation_on_non_socket));
+    ZASSERT(errors.has_value());
+    ZEXPECT(*errors == std::vector<error>(3, error::socket_operation_on_non_socket));
 #endif
 }
 
@@ -699,9 +699,9 @@ ZEST_CASE(read_of_a_file_fails) {
 // writing: writes to it go out, whether or not the loop can wait to read it.
 ZEST_CASE(open_of_the_null_device_to_read_and_write_writes_to_it) {
     auto file = fs::sync::open("/dev/null", O_RDWR, 0);
-    ASSERT(file.has_value());
+    ZASSERT(file.has_value());
     auto opened = pipe::open(*file, loop);
-    ASSERT(opened.has_value());
+    ZASSERT(opened.has_value());
     auto write_then_read = [&]() -> task<error, error> {
         std::string_view text = "text";
         co_await opened->write(std::span(text.data(), text.size())).or_fail();
@@ -710,13 +710,13 @@ ZEST_CASE(open_of_the_null_device_to_read_and_write_writes_to_it) {
     };
 
     auto [read] = run(write_then_read());
-    ASSERT(read.has_value());
+    ZASSERT(read.has_value());
 #ifdef __linux__
     // epoll refuses the null device.
-    EXPECT(*read == error::socket_operation_on_non_socket);
+    ZEXPECT(*read == error::socket_operation_on_non_socket);
 #else
     // kqueue reads it to its end.
-    EXPECT(*read == error::end_of_file);
+    ZEXPECT(*read == error::end_of_file);
 #endif
 }
 
@@ -725,43 +725,43 @@ ZEST_CASE(open_of_the_null_device_to_read_and_write_writes_to_it) {
 ZEST_CASE(open_of_a_file_to_write_writes_to_it) {
     test::TempDir dir;
     auto file = fs::sync::open(dir.file("file.txt"), O_CREAT | O_WRONLY, 0644);
-    ASSERT(file.has_value());
+    ZASSERT(file.has_value());
     auto opened = pipe::open(*file, loop);
-    ASSERT(opened.has_value());
+    ZASSERT(opened.has_value());
     auto writer = [&]() -> task<void, error> {
         std::string_view text = "text";
         co_await opened->write(std::span(text.data(), text.size())).or_fail();
     };
 
     auto [written] = run(writer());
-    EXPECT(written.has_value());
+    ZEXPECT(written.has_value());
     *opened = pipe();
-    EXPECT(test::read_file(dir.file("file.txt")) == "text");
+    ZEXPECT(test::read_file(dir.file("file.txt")) == "text");
 }
 #endif
 
 ZEST_CASE(guess_handle_tells_a_pipe_from_a_file) {
     test::TempDir dir;
     int fds[2] = {-1, -1};
-    ASSERT(test::create_pipe(fds) == 0);
+    ZASSERT(test::create_pipe(fds) == 0);
     auto file = fs::sync::open(dir.file("file.txt"), O_CREAT | O_WRONLY, 0644);
 
     auto pipe_kind = guess_handle(fds[0]);
     test::close_fd(fds[0]);
     test::close_fd(fds[1]);
-    ASSERT(file.has_value());
+    ZASSERT(file.has_value());
     auto file_kind = guess_handle(*file);
-    EXPECT(!fs::sync::close(*file));
-    EXPECT(pipe_kind == handle_type::pipe);
-    EXPECT(file_kind == handle_type::file);
-    EXPECT(guess_handle(-1) == handle_type::unknown);
+    ZEXPECT(!fs::sync::close(*file));
+    ZEXPECT(pipe_kind == handle_type::pipe);
+    ZEXPECT(file_kind == handle_type::file);
+    ZEXPECT(guess_handle(-1) == handle_type::unknown);
 }
 
 ZEST_CASE(listener_accepts_what_a_client_writes) {
     test::TempDir dir;
     auto name = pipe_name(dir);
     auto listener = pipe::listen(name, {.backlog = 16}, loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->accept().or_fail();
         co_return co_await connection.read().or_fail();
@@ -772,17 +772,17 @@ ZEST_CASE(listener_accepts_what_a_client_writes) {
     };
 
     auto [received, sent] = run(serve(), client());
-    ASSERT(received.has_value());
-    EXPECT(*received == "kotatsu-pipe-connect");
-    EXPECT(sent.has_value());
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == "kotatsu-pipe-connect");
+    ZEXPECT(sent.has_value());
 }
 
 ZEST_CASE(connect_to_a_missing_name_fails) {
     test::TempDir dir;
 
     auto [result] = run(pipe::connect(pipe_name(dir), loop));
-    ASSERT(result.has_error());
-    EXPECT(result.error() == error::no_such_file_or_directory);
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
 
 // The cancel closes the connection it interrupts, and the connect's task
@@ -791,7 +791,7 @@ ZEST_CASE(connect_can_be_cancelled) {
     test::TempDir dir;
     auto name = pipe_name(dir);
     auto listener = pipe::listen(name, loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     bool resumed = false;
     auto connect = [&]() -> task<> {
         [[maybe_unused]] auto connected = co_await pipe::connect(name, loop);
@@ -803,29 +803,29 @@ ZEST_CASE(connect_can_be_cancelled) {
     };
 
     auto [raced, served] = run(test::winner(connect(), test::finished()), serve());
-    ASSERT(raced.has_value());
-    EXPECT(*raced == 1U);
-    EXPECT(!resumed);
-    ASSERT(served.has_value());
-    ASSERT(served->has_error());
-    EXPECT(served->error() == error::end_of_file);
+    ZASSERT(raced.has_value());
+    ZEXPECT(*raced == 1U);
+    ZEXPECT(!resumed);
+    ZASSERT(served.has_value());
+    ZASSERT(served->has_error());
+    ZEXPECT(served->error() == error::end_of_file);
 }
 
 ZEST_CASE(listen_on_a_name_in_use_fails) {
     test::TempDir dir;
     auto name = pipe_name(dir);
     auto first = pipe::listen(name, loop);
-    ASSERT(first.has_value());
+    ZASSERT(first.has_value());
 
     auto taken = pipe::listen(name, loop);
-    ASSERT(taken.has_error());
-    EXPECT(taken.error() == error::address_already_in_use);
+    ZASSERT(taken.has_error());
+    ZEXPECT(taken.error() == error::address_already_in_use);
 }
 
 ZEST_CASE(listen_without_a_name_fails) {
     auto unnamed = pipe::listen("", loop);
-    ASSERT(unnamed.has_error());
-    EXPECT(unnamed.error() == error::invalid_argument);
+    ZASSERT(unnamed.has_error());
+    ZEXPECT(unnamed.error() == error::invalid_argument);
 }
 
 ZEST_CASE(no_truncate_listens_and_connects) {
@@ -833,7 +833,7 @@ ZEST_CASE(no_truncate_listens_and_connects) {
     auto name = pipe_name(dir);
     const pipe::options no_truncate{.no_truncate = true};
     auto listener = pipe::listen(name, no_truncate, loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto serve = [&]() -> task<void, error> {
         co_await listener->accept().or_fail();
     };
@@ -842,8 +842,8 @@ ZEST_CASE(no_truncate_listens_and_connects) {
     };
 
     auto [served, connected] = run(serve(), client());
-    EXPECT(served.has_value());
-    EXPECT(connected.has_value());
+    ZEXPECT(served.has_value());
+    ZEXPECT(connected.has_value());
 }
 
 // A socket path longer than sun_path is cut short to fit, unless no_truncate
@@ -854,10 +854,10 @@ ZEST_CASE(listen_on_a_name_too_long_with_no_truncate_fails) {
     auto name = dir.file(std::string(200, 'x'));
 
     auto truncated = pipe::listen(name, loop);
-    EXPECT(truncated.has_value());
+    ZEXPECT(truncated.has_value());
     auto refused = pipe::listen(name, {.no_truncate = true}, loop);
-    ASSERT(refused.has_error());
-    EXPECT(refused.error() == error::invalid_argument);
+    ZASSERT(refused.has_error());
+    ZEXPECT(refused.error() == error::invalid_argument);
 }
 #endif
 
@@ -868,12 +868,12 @@ ZEST_CASE(listen_on_a_name_too_long_with_no_truncate_fails) {
 #ifndef _WIN32
 ZEST_CASE(stream_dropped_while_its_loop_closes_it_goes_after) {
     int fds[2] = {-1, -1};
-    ASSERT(test::create_pipe(fds) == 0);
+    ZASSERT(test::create_pipe(fds) == 0);
     error written;
     std::optional<event_loop> own(std::in_place);
     auto writer = [&]() -> task<> {
         auto end = pipe::open(fds[1], *own);
-        CO_ASSERT(end.has_value());
+        ZASSERT(end.has_value());
         const std::string large(4 * 1024 * 1024, 'x');
         auto result = co_await end->write(large);
         written = result.has_error() ? result.error() : error();
@@ -888,7 +888,7 @@ ZEST_CASE(stream_dropped_while_its_loop_closes_it_goes_after) {
     own->run();
     own.reset();
     test::close_fd(fds[0]);
-    EXPECT(written == error::operation_aborted);
+    ZEXPECT(written == error::operation_aborted);
 }
 #endif
 
@@ -898,7 +898,7 @@ ZEST_CASE(shutdown_lets_the_peer_read_to_the_end) {
     test::TempDir dir;
     auto name = pipe_name(dir);
     auto listener = pipe::listen(name, loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->accept().or_fail();
         co_return co_await connection.read_to_end().or_fail();
@@ -912,10 +912,10 @@ ZEST_CASE(shutdown_lets_the_peer_read_to_the_end) {
     };
 
     auto [served, left] = run(serve(), client());
-    ASSERT(served.has_value());
-    EXPECT(*served == "firstsecond");
-    ASSERT(left.has_value());
-    EXPECT(left->empty());
+    ZASSERT(served.has_value());
+    ZEXPECT(*served == "firstsecond");
+    ZASSERT(left.has_value());
+    ZEXPECT(left->empty());
 }
 
 // Where a pipe can be half closed, the listener's end answers after reading
@@ -926,7 +926,7 @@ ZEST_CASE(shutdown_leaves_the_peer_free_to_answer) {
     test::TempDir dir;
     auto name = pipe_name(dir);
     auto listener = pipe::listen(name, loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto serve = [&]() -> task<void, error> {
         auto connection = co_await listener->accept().or_fail();
         auto request = co_await connection.read_to_end().or_fail();
@@ -940,9 +940,9 @@ ZEST_CASE(shutdown_leaves_the_peer_free_to_answer) {
     };
 
     auto [served, answer] = run(serve(), client());
-    EXPECT(served.has_value());
-    ASSERT(answer.has_value());
-    EXPECT(*answer == "asked-answered");
+    ZEXPECT(served.has_value());
+    ZASSERT(answer.has_value());
+    ZEXPECT(*answer == "asked-answered");
 }
 #endif
 
@@ -952,25 +952,25 @@ ZEST_CASE(acceptor_stop_aborts_an_accept) {
     test::TempDir dir;
     auto name = pipe_name(dir);
     auto listener = pipe::listen(name, loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto stop_it = [&]() -> task<error> {
         co_return listener->stop();
     };
 
     auto [pending, stopped] = run(listener->accept(), stop_it());
-    ASSERT(pending.has_error());
-    EXPECT(pending.error() == error::operation_aborted);
-    ASSERT(stopped.has_value());
-    EXPECT(!*stopped);
+    ZASSERT(pending.has_error());
+    ZEXPECT(pending.error() == error::operation_aborted);
+    ZASSERT(stopped.has_value());
+    ZEXPECT(!*stopped);
     auto [next, connected] = run(listener->accept(), pipe::connect(name, loop));
-    EXPECT(next.has_value());
-    EXPECT(connected.has_value());
+    ZEXPECT(next.has_value());
+    ZEXPECT(connected.has_value());
 }
 
 ZEST_CASE(accept_ended_by_destroying_its_acceptor_fails) {
     test::TempDir dir;
     auto listened = pipe::listen(pipe_name(dir), loop);
-    ASSERT(listened.has_value());
+    ZASSERT(listened.has_value());
     std::optional<pipe::acceptor> listener = std::move(*listened);
     auto destroy = [&]() -> task<> {
         listener.reset();
@@ -978,15 +978,15 @@ ZEST_CASE(accept_ended_by_destroying_its_acceptor_fails) {
     };
 
     auto [accepted, destroyed] = run(listener->accept(), destroy());
-    ASSERT(accepted.has_error());
-    EXPECT(accepted.error() == error::operation_aborted);
+    ZASSERT(accepted.has_error());
+    ZEXPECT(accepted.error() == error::operation_aborted);
 }
 
 // As for a read: the cancel leaves the ending the destruction queued alone.
 ZEST_CASE(accept_cancelled_after_its_acceptor_is_destroyed_ends) {
     test::TempDir dir;
     auto listened = pipe::listen(pipe_name(dir), loop);
-    ASSERT(listened.has_value());
+    ZASSERT(listened.has_value());
     std::optional<pipe::acceptor> listener = std::move(*listened);
     auto destroy = [&]() -> task<> {
         listener.reset();
@@ -994,8 +994,8 @@ ZEST_CASE(accept_cancelled_after_its_acceptor_is_destroyed_ends) {
     };
 
     auto [result] = run(test::winner(listener->accept(), destroy()));
-    ASSERT(result.has_value());
-    EXPECT(*result == 1U);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 1U);
 }
 
 };  // ZEST_SUITE(async_io_stream_pipe)

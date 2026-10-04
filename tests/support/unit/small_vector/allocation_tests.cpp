@@ -138,14 +138,14 @@ ZEST_CASE(allocation_where_the_inline_buffer_begins_is_traded) {
     auto* v = std::construct_at(arena.vector());
     recording.place_next(spot, arena.bytes);
     v->push_back(Probe{1});
-    EXPECT(!v->inlined());
-    EXPECT(v->data() != spot);
-    ASSERT(v->size() == 1U);
-    EXPECT(v->front().value == 1);
-    EXPECT(ledger.allocations == 2);
-    EXPECT(ledger.deallocations == 1);
+    ZEXPECT(!v->inlined());
+    ZEXPECT(v->data() != spot);
+    ZASSERT(v->size() == 1U);
+    ZEXPECT(v->front().value == 1);
+    ZEXPECT(ledger.allocations == 2);
+    ZEXPECT(ledger.deallocations == 1);
     std::destroy_at(v);
-    EXPECT(ledger.deallocations == 2);
+    ZEXPECT(ledger.deallocations == 2);
 }
 
 ZEST_CASE(move_leaves_an_allocation_where_its_inline_buffer_begins) {
@@ -156,16 +156,16 @@ ZEST_CASE(move_leaves_an_allocation_where_its_inline_buffer_begins) {
         Probes source;
         recording.place_next(spot, arena.bytes);
         source.push_back(Probe{7});
-        ASSERT(source.data() == spot);
+        ZASSERT(source.data() == spot);
         auto* moved = std::construct_at(arena.vector(), std::move(source));
-        EXPECT(moved->data() != spot);
-        EXPECT(!moved->inlined());
-        ASSERT(moved->size() == 1U);
-        EXPECT(moved->front().value == 7);
-        EXPECT(source.empty());
+        ZEXPECT(moved->data() != spot);
+        ZEXPECT(!moved->inlined());
+        ZASSERT(moved->size() == 1U);
+        ZEXPECT(moved->front().value == 7);
+        ZEXPECT(source.empty());
         std::destroy_at(moved);
     }
-    EXPECT(ledger.allocations == ledger.deallocations);
+    ZEXPECT(ledger.allocations == ledger.deallocations);
 }
 
 ZEST_CASE(move_assignment_leaves_an_allocation_where_its_inline_buffer_begins) {
@@ -178,13 +178,13 @@ ZEST_CASE(move_assignment_leaves_an_allocation_where_its_inline_buffer_begins) {
         recording.place_next(spot, arena.bytes);
         source.push_back(Probe{7});
         *target = std::move(source);
-        EXPECT(target->data() != spot);
-        EXPECT(!target->inlined());
-        ASSERT(target->size() == 1U);
-        EXPECT(target->front().value == 7);
+        ZEXPECT(target->data() != spot);
+        ZEXPECT(!target->inlined());
+        ZASSERT(target->size() == 1U);
+        ZEXPECT(target->front().value == 7);
         std::destroy_at(target);
     }
-    EXPECT(ledger.allocations == ledger.deallocations);
+    ZEXPECT(ledger.allocations == ledger.deallocations);
 }
 
 ZEST_CASE(swap_leaves_an_allocation_where_an_inline_buffer_begins) {
@@ -198,14 +198,14 @@ ZEST_CASE(swap_leaves_an_allocation_where_an_inline_buffer_begins) {
         recording.place_next(spot, arena.bytes);
         other.push_back(Probe{2});
         v->swap(other);
-        EXPECT(v->data() != spot);
-        ASSERT(v->size() == 1U);
-        EXPECT(v->front().value == 2);
-        ASSERT(other.size() == 1U);
-        EXPECT(other.front().value == 1);
+        ZEXPECT(v->data() != spot);
+        ZASSERT(v->size() == 1U);
+        ZEXPECT(v->front().value == 2);
+        ZASSERT(other.size() == 1U);
+        ZEXPECT(other.front().value == 1);
         std::destroy_at(v);
     }
-    EXPECT(ledger.allocations == ledger.deallocations);
+    ZEXPECT(ledger.allocations == ledger.deallocations);
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -217,10 +217,10 @@ ZEST_CASE(allocation_traded_is_freed_when_its_replacement_fails) {
     auto* v = std::construct_at(arena.vector());
     recording.place_next(spot, arena.bytes);
     ledger.fail_next = true;
-    EXPECT(test::throws<std::bad_alloc>([&] { v->push_back(Probe{1}); }));
-    EXPECT(v->empty());
-    EXPECT(ledger.allocations == 2);
-    EXPECT(ledger.deallocations == 1);
+    ZEXPECT(test::throws<std::bad_alloc>([&] { v->push_back(Probe{1}); }));
+    ZEXPECT(v->empty());
+    ZEXPECT(ledger.allocations == 2);
+    ZEXPECT(ledger.deallocations == 1);
     std::destroy_at(v);
 }
 
@@ -232,16 +232,16 @@ ZEST_CASE(from_raw_parts_leaves_a_buffer_where_the_inline_buffer_begins) {
     auto* spot = arena.inline_buffer();
     recording.place_next(spot, arena.bytes);
     auto* buffer = mem::allocate<Probe>(1);
-    ASSERT(buffer == spot);
+    ZASSERT(buffer == spot);
     std::construct_at(buffer, Probe{5});
     // Placement new builds the result in the arena itself, rather than moving it there.
     auto* v =
         ::new (static_cast<void*>(arena.vector())) Probes(Probes::from_raw_parts(buffer, 1, 1));
-    EXPECT(v->data() != spot);
-    ASSERT(v->size() == 1U);
-    EXPECT(v->front().value == 5);
+    ZEXPECT(v->data() != spot);
+    ZASSERT(v->size() == 1U);
+    ZEXPECT(v->front().value == 5);
     std::destroy_at(v);
-    EXPECT(ledger.allocations == ledger.deallocations);
+    ZEXPECT(ledger.allocations == ledger.deallocations);
 }
 
 ZEST_CASE(move_of_a_heap_vector_allocates_nothing) {
@@ -251,7 +251,7 @@ ZEST_CASE(move_of_a_heap_vector_allocates_nothing) {
     small_vector<Probe, 1> moved(std::move(source));
     small_vector<Probe, 1> assigned;
     assigned = std::move(moved);
-    EXPECT(ledger.allocations == allocations);
+    ZEXPECT(ledger.allocations == allocations);
 }
 
 ZEST_CASE(copy_assignment_within_the_capacity_allocates_nothing) {
@@ -260,7 +260,7 @@ ZEST_CASE(copy_assignment_within_the_capacity_allocates_nothing) {
     small_vector<Probe, 1> source = {Probe{4}, Probe{5}};
     const auto allocations = ledger.allocations;
     target = source;
-    EXPECT(ledger.allocations == allocations);
+    ZEXPECT(ledger.allocations == allocations);
 }
 
 ZEST_CASE(every_allocation_is_freed) {
@@ -272,12 +272,12 @@ ZEST_CASE(every_allocation_is_freed) {
         }
         v.resize(1);
         v.shrink_to_fit();
-        EXPECT(v.inlined());
-        EXPECT(ledger.allocations == ledger.deallocations);
+        ZEXPECT(v.inlined());
+        ZEXPECT(ledger.allocations == ledger.deallocations);
         v.reserve(10);
     }
-    EXPECT(ledger.allocations > 0);
-    EXPECT(ledger.allocations == ledger.deallocations);
+    ZEXPECT(ledger.allocations > 0);
+    ZEXPECT(ledger.allocations == ledger.deallocations);
 }
 
 };  // ZEST_SUITE(support_small_vector_allocation)

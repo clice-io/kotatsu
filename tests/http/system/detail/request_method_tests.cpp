@@ -19,7 +19,7 @@ ZEST_SUITE(http_detail_request_method, zest::LoopFixture) {
 
 ZEST_CASE(builders_send_their_methods) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
     auto url = server.url("/");
@@ -35,64 +35,64 @@ ZEST_CASE(builders_send_their_methods) {
     for(auto& [method, request]: built) {
         ZEST_CONTEXT("{}", method);
         auto [reply] = run(request.send());
-        EXPECT(reply.has_value());
+        ZEXPECT(reply.has_value());
     }
 
-    ASSERT(server.requests().size() == built.size());
+    ZASSERT(server.requests().size() == built.size());
     for(std::size_t i = 0; i < built.size(); ++i) {
         ZEST_CONTEXT("{}", built[i].first);
-        EXPECT(server.requests()[i].method == built[i].first);
+        ZEXPECT(server.requests()[i].method == built[i].first);
     }
 }
 
 ZEST_CASE(other_methods_go_as_written) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
 
     for(std::string method: {"OPTIONS", "PROPFIND", "put"}) {
         ZEST_CONTEXT("{}", method);
         auto [reply] = run(api.request(method, server.url("/caps")).send());
-        EXPECT(reply.has_value());
+        ZEXPECT(reply.has_value());
     }
 
-    ASSERT(server.requests().size() == 3U);
-    EXPECT(server.requests()[0].method == "OPTIONS");
-    EXPECT(server.requests()[1].method == "PROPFIND");
-    EXPECT(server.requests()[2].method == "put");
-    EXPECT(server.requests()[0].target == "/caps");
+    ZASSERT(server.requests().size() == 3U);
+    ZEXPECT(server.requests()[0].method == "OPTIONS");
+    ZEXPECT(server.requests()[1].method == "PROPFIND");
+    ZEXPECT(server.requests()[2].method == "put");
+    ZEXPECT(server.requests()[0].target == "/caps");
 }
 
 ZEST_CASE(get_head_and_post_match_any_case) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
 
     for(std::string method: {"get", "Head", "pOST"}) {
         ZEST_CONTEXT("{}", method);
         auto [reply] = run(api.request(method, server.url("/")).send());
-        EXPECT(reply.has_value());
+        ZEXPECT(reply.has_value());
     }
 
-    ASSERT(server.requests().size() == 3U);
-    EXPECT(server.requests()[0].method == "GET");
-    EXPECT(server.requests()[1].method == "HEAD");
-    EXPECT(server.requests()[2].method == "POST");
+    ZASSERT(server.requests().size() == 3U);
+    ZEXPECT(server.requests()[0].method == "GET");
+    ZEXPECT(server.requests()[1].method == "HEAD");
+    ZEXPECT(server.requests()[2].method == "POST");
 }
 
 ZEST_CASE(method_replaces_the_builders) {
     test::HttpServer server(loop);
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).get(server.url("/")).method("PUT").body("data").send());
-    EXPECT(reply.has_value());
+    ZEXPECT(reply.has_value());
 
-    ASSERT(server.requests().size() == 1U);
-    EXPECT(server.requests()[0].method == "PUT");
-    EXPECT(server.requests()[0].body == "data");
+    ZASSERT(server.requests().size() == 1U);
+    ZEXPECT(server.requests()[0].method == "PUT");
+    ZEXPECT(server.requests()[0].body == "data");
 }
 
 ZEST_CASE(head_reply_has_headers_and_no_body) {
@@ -102,15 +102,15 @@ ZEST_CASE(head_reply_has_headers_and_no_body) {
             .body = "not sent",
         };
     });
-    ASSERT(server.listening());
+    ZASSERT(server.listening());
     auto client = test::loopback_client();
 
     auto [reply] = run(client.on(loop).head(server.url("/only-headers")).send());
-    ASSERT(reply.has_value());
-    EXPECT(reply->status == 200);
-    EXPECT(reply->body.empty());
-    EXPECT(reply->header_value("x-mode") == "head");
-    EXPECT(reply->header_value("content-length") == "8");
+    ZASSERT(reply.has_value());
+    ZEXPECT(reply->status == 200);
+    ZEXPECT(reply->body.empty());
+    ZEXPECT(reply->header_value("x-mode") == "head");
+    ZEXPECT(reply->header_value("content-length") == "8");
 }
 
 };  // ZEST_SUITE(http_detail_request_method)

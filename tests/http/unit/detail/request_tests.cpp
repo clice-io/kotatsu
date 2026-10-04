@@ -71,9 +71,9 @@ ZEST_SUITE(http_detail_request, RequestFixture) {
 
 ZEST_CASE(empty_url_fails) {
     auto failed = failure_of(client.on(loop).get(""));
-    ASSERT(failed.has_value());
-    EXPECT(failed->kind == error_kind::invalid_request);
-    EXPECT(failed->message() == "request url must not be empty");
+    ZASSERT(failed.has_value());
+    ZEXPECT(failed->kind == error_kind::invalid_request);
+    ZEXPECT(failed->message() == "request url must not be empty");
 }
 
 ZEST_CASE(method_that_is_no_token_fails) {
@@ -81,9 +81,9 @@ ZEST_CASE(method_that_is_no_token_fails) {
     for(std::size_t i = 0; i < methods.size(); ++i) {
         ZEST_CONTEXT("method {}", i);
         auto failed = failure_of(client.on(loop).request(methods[i], std::string(nowhere)));
-        ASSERT(failed.has_value());
-        EXPECT(failed->kind == error_kind::invalid_request);
-        EXPECT(failed->message() == "request method must be an http token");
+        ZASSERT(failed.has_value());
+        ZEXPECT(failed->kind == error_kind::invalid_request);
+        ZEXPECT(failed->message() == "request method must be an http token");
     }
 }
 
@@ -92,9 +92,9 @@ ZEST_CASE(body_on_get_or_head_fails) {
     for(auto method: {"GET", "HEAD", "get", "Head"}) {
         ZEST_CONTEXT("{}", method);
         auto failed = failure_of(api.request(method, std::string(nowhere)).body("unexpected"));
-        ASSERT(failed.has_value());
-        EXPECT(failed->kind == error_kind::invalid_request);
-        EXPECT(failed->message() == "request body is not supported for GET or HEAD");
+        ZASSERT(failed.has_value());
+        ZEXPECT(failed->kind == error_kind::invalid_request);
+        ZEXPECT(failed->message() == "request body is not supported for GET or HEAD");
     }
 }
 
@@ -115,10 +115,10 @@ ZEST_CASE(header_that_would_break_its_line_fails) {
         ZEST_CONTEXT("header {}", i);
         auto failed = failure_of(
             client.on(loop).get(std::string(nowhere)).header(broken[i].name, broken[i].value));
-        ASSERT(failed.has_value());
-        EXPECT(failed->kind == error_kind::invalid_request);
-        EXPECT(failed->message() ==
-               "header names must be http tokens, and values must not hold CR, LF or NUL");
+        ZASSERT(failed.has_value());
+        ZEXPECT(failed->kind == error_kind::invalid_request);
+        ZEXPECT(failed->message() ==
+                "header names must be http tokens, and values must not hold CR, LF or NUL");
     }
 }
 
@@ -131,9 +131,9 @@ ZEST_CASE(cookie_or_user_agent_that_would_break_its_line_fails) {
     for(const auto& [what, request]: built) {
         ZEST_CONTEXT("{}", what);
         auto failed = failure_of(request);
-        ASSERT(failed.has_value());
-        EXPECT(failed->kind == error_kind::invalid_request);
-        EXPECT(failed->message() == "cookies and user agent must not hold CR, LF or NUL");
+        ZASSERT(failed.has_value());
+        ZEXPECT(failed->kind == error_kind::invalid_request);
+        ZEXPECT(failed->message() == "cookies and user agent must not hold CR, LF or NUL");
     }
 }
 
@@ -142,40 +142,40 @@ ZEST_CASE(min_tls_above_max_tls_fails) {
                                  .get(std::string(nowhere))
                                  .min_tls_version(tls_version::tls1_3)
                                  .max_tls_version(tls_version::tls1_2));
-    ASSERT(failed.has_value());
-    EXPECT(failed->kind == error_kind::invalid_request);
-    EXPECT(failed->message() == "min tls version must not exceed max tls version");
+    ZASSERT(failed.has_value());
+    ZEXPECT(failed->kind == error_kind::invalid_request);
+    ZEXPECT(failed->message() == "min tls version must not exceed max tls version");
 }
 
 ZEST_CASE(proxy_without_url_fails) {
     auto failed = failure_of(client.on(loop).get(std::string(nowhere)).proxy(""));
-    ASSERT(failed.has_value());
-    EXPECT(failed->kind == error_kind::invalid_request);
-    EXPECT(failed->message() == "proxy url must not be empty");
+    ZASSERT(failed.has_value());
+    ZEXPECT(failed->kind == error_kind::invalid_request);
+    ZEXPECT(failed->message() == "proxy url must not be empty");
 }
 
 ZEST_CASE(negative_timeout_fails) {
     auto failed = failure_of(client.on(loop).get(std::string(nowhere)).timeout(-1ms));
-    ASSERT(failed.has_value());
-    EXPECT(failed->kind == error_kind::invalid_request);
-    EXPECT(failed->message() == "timeout must be non-negative");
+    ZASSERT(failed.has_value());
+    ZEXPECT(failed->kind == error_kind::invalid_request);
+    ZEXPECT(failed->message() == "timeout must be non-negative");
 }
 
 // A timeout can exceed only a 32-bit long, which Windows has.
 ZEST_CASE(timeout_beyond_a_long_fails, skip = sizeof(long) > 4) {
     auto failed =
         failure_of(client.on(loop).get(std::string(nowhere)).timeout(std::chrono::days(30)));
-    ASSERT(failed.has_value());
-    EXPECT(failed->kind == error_kind::invalid_request);
-    EXPECT(failed->message() == "timeout exceeds libcurl timeout range");
+    ZASSERT(failed.has_value());
+    ZEXPECT(failed->kind == error_kind::invalid_request);
+    ZEXPECT(failed->message() == "timeout exceeds libcurl timeout range");
 }
 
 #if KOTA_HTTP_HAS_CODEC_JSON
 ZEST_CASE(json_that_cannot_be_encoded_fails) {
     auto failed = failure_of(client.on(loop).post(std::string(nowhere)).json(Unencodable{}));
-    ASSERT(failed.has_value());
-    EXPECT(failed->kind == error_kind::json_encode);
-    EXPECT(zest::contains(failed->message(), "refused"));
+    ZASSERT(failed.has_value());
+    ZEXPECT(failed->kind == error_kind::json_encode);
+    ZEXPECT(zest::contains(failed->message(), "refused"));
 }
 #endif
 
@@ -185,10 +185,10 @@ ZEST_CASE(request_sent_by_reference_can_be_sent_again) {
     auto built = client.on(loop).get(std::string(nowhere)).body("unexpected");
     auto [first] = run(built.send());
     auto [second] = run(built.send());
-    ASSERT(first.has_error());
-    ASSERT(second.has_error());
-    EXPECT(first.error().message() == "request body is not supported for GET or HEAD");
-    EXPECT(second.error().message() == "request body is not supported for GET or HEAD");
+    ZASSERT(first.has_error());
+    ZASSERT(second.has_error());
+    ZEXPECT(first.error().message() == "request body is not supported for GET or HEAD");
+    ZEXPECT(second.error().message() == "request body is not supported for GET or HEAD");
 }
 
 };  // ZEST_SUITE(http_detail_request)

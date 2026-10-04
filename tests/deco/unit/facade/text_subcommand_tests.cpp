@@ -29,13 +29,14 @@ void expect_laid_out(const SubCommandDocument& document, const SubCommandStyle& 
     CompatibleRendererConfig compatible;
     compatible.subcommand = style;
     const CompatibleRenderer compatible_renderer(compatible);
-    EXPECT_SNAPSHOT(render_subcommands(document, &compatible_renderer), "compatible");
+    ZEXPECT(zest::snapshot(render_subcommands(document, &compatible_renderer), "compatible"));
 
     ModernRendererConfig modern;
     modern.subcommand = style;
     modern.subcommand.heading = "Commands";
     const ModernRenderer modern_renderer(modern);
-    EXPECT_SNAPSHOT(test::visible(render_subcommands(document, &modern_renderer)), "modern");
+    ZEXPECT(
+        zest::snapshot(test::visible(render_subcommands(document, &modern_renderer)), "modern"));
 }
 
 ZEST_SUITE(deco_facade_text_subcommand) {

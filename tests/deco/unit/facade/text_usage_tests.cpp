@@ -47,10 +47,11 @@ void expect_laid_out(const UsageDocument& document,
                      const CompatibleRendererConfig& compatible = {},
                      const ModernRendererConfig& modern = {}) {
     const CompatibleRenderer compatible_renderer(compatible);
-    EXPECT_SNAPSHOT(render_usage(document, include_help, &compatible_renderer), "compatible");
+    ZEXPECT(
+        zest::snapshot(render_usage(document, include_help, &compatible_renderer), "compatible"));
     const ModernRenderer modern_renderer(modern);
-    EXPECT_SNAPSHOT(test::visible(render_usage(document, include_help, &modern_renderer)),
-                    "modern");
+    ZEXPECT(zest::snapshot(test::visible(render_usage(document, include_help, &modern_renderer)),
+                           "modern"));
 }
 
 ZEST_SUITE(deco_facade_text_usage) {

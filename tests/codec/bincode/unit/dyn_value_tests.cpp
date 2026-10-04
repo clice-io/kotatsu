@@ -53,38 +53,38 @@ ZEST_SUITE(codec_bincode_dyn_value) {
 
 ZEST_CASE(value_writes_its_kind_first) {
     auto null = bincode::to_bytes(dyn::Value(nullptr));
-    ASSERT(null);
-    EXPECT(*null == bytes({0x00}));
+    ZASSERT(null);
+    ZEXPECT(*null == bytes({0x00}));
 
     auto flag = bincode::to_bytes(dyn::Value(true));
-    ASSERT(flag);
-    EXPECT(*flag == bytes({0x01, 0x01}));
+    ZASSERT(flag);
+    ZEXPECT(*flag == bytes({0x01, 0x01}));
 
     auto number = bincode::to_bytes(dyn::Value(std::int64_t{-1}));
-    ASSERT(number);
-    EXPECT(*number == bytes({0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}));
+    ZASSERT(number);
+    ZEXPECT(*number == bytes({0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}));
 
     // An object: kind, entry count, then each key and tagged value.
     auto object = bincode::to_bytes(dyn::Value{
         {"a", std::uint64_t{5}}
     });
-    ASSERT(object);
-    EXPECT(*object == bytes({0x07, 1, 0, 0,   0,    0, 0, 0, 0, 1, 0, 0, 0, 0,
-                             0,    0, 0, 'a', 0x03, 5, 0, 0, 0, 0, 0, 0, 0}));
+    ZASSERT(object);
+    ZEXPECT(*object == bytes({0x07, 1, 0, 0,   0,    0, 0, 0, 0, 1, 0, 0, 0, 0,
+                              0,    0, 0, 'a', 0x03, 5, 0, 0, 0, 0, 0, 0, 0}));
 }
 
 ZEST_CASE(every_kind_roundtrip) {
     auto encoded = bincode::to_bytes(every_kind());
-    ASSERT(encoded);
+    ZASSERT(encoded);
     auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(*encoded));
-    ASSERT(decoded);
-    EXPECT(*decoded == every_kind());
+    ZASSERT(decoded);
+    ZEXPECT(*decoded == every_kind());
 }
 
 ZEST_CASE(unknown_kind_fails) {
     auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(bytes({0x08})));
-    ASSERT(!decoded);
-    EXPECT(decoded.error().message == "invalid dyn::Value kind 8");
+    ZASSERT(!decoded);
+    ZEXPECT(decoded.error().message == "invalid dyn::Value kind 8");
 }
 
 ZEST_CASE(object_roundtrip) {
@@ -93,19 +93,19 @@ ZEST_CASE(object_roundtrip) {
         {"a", dyn::Array{true}}
     };
     auto encoded = bincode::to_bytes(object);
-    ASSERT(encoded);
+    ZASSERT(encoded);
     auto decoded = bincode::from_bytes<dyn::Object>(std::span<const std::byte>(*encoded));
-    ASSERT(decoded);
-    EXPECT(*decoded == object);
+    ZASSERT(decoded);
+    ZEXPECT(*decoded == object);
 }
 
 ZEST_CASE(object_entry_error_names_its_index) {
     // One entry: key "a", then a value of unknown kind.
     auto decoded = bincode::from_bytes<dyn::Object>(std::span<const std::byte>(
         bytes({1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'a', 0x09})));
-    ASSERT(!decoded);
-    EXPECT(decoded.error().message == "invalid dyn::Value kind 9");
-    EXPECT(decoded.error().format_path() == "[0]");
+    ZASSERT(!decoded);
+    ZEXPECT(decoded.error().message == "invalid dyn::Value kind 9");
+    ZEXPECT(decoded.error().format_path() == "[0]");
 }
 
 ZEST_CASE(nested_arrays_roundtrip) {
@@ -113,19 +113,19 @@ ZEST_CASE(nested_arrays_roundtrip) {
     // failure cases, since a Value's destructor recurses.
     auto document = nested_arrays(100);
     auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(document));
-    ASSERT(decoded);
+    ZASSERT(decoded);
     auto again = bincode::to_bytes(*decoded);
-    ASSERT(again);
-    EXPECT(*again == document);
+    ZASSERT(again);
+    ZEXPECT(*again == document);
 }
 
 ZEST_CASE(nesting_past_the_limit_fails) {
     // 1024 arrays put the null 1025 Values deep.
     auto document = nested_arrays(1024);
     auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(document));
-    ASSERT(!decoded);
-    EXPECT(decoded.error().message == "dyn::Value nested deeper than 1024 levels");
-    EXPECT(decoded.error().path.size() == 1024);
+    ZASSERT(!decoded);
+    ZEXPECT(decoded.error().message == "dyn::Value nested deeper than 1024 levels");
+    ZEXPECT(decoded.error().path.size() == 1024);
 }
 
 ZEST_CASE(hostile_nesting_fails) {
@@ -133,14 +133,14 @@ ZEST_CASE(hostile_nesting_fails) {
     // could use, and past the limit long before the end.
     auto document = nested_arrays(40000);
     auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(document));
-    ASSERT(!decoded);
-    EXPECT(decoded.error().message == "dyn::Value nested deeper than 1024 levels");
+    ZASSERT(!decoded);
+    ZEXPECT(decoded.error().message == "dyn::Value nested deeper than 1024 levels");
 }
 
 ZEST_CASE(missing_kind_fails) {
     auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>());
-    ASSERT(!decoded);
-    EXPECT(decoded.error().message == "unexpected eof");
+    ZASSERT(!decoded);
+    ZEXPECT(decoded.error().message == "unexpected eof");
 }
 
 };  // ZEST_SUITE(codec_bincode_dyn_value)

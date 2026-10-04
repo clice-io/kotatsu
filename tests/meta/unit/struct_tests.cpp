@@ -146,94 +146,94 @@ ZEST_SUITE(meta_struct) {
 ZEST_CASE(field_addr_and_field_of) {
     Point p{.x = 1, .c = 'A', .z = 2.5, .y = 4};
 
-    EXPECT(field_addr_of<0>(p) == &p.x);
-    EXPECT(field_addr_of<1>(p) == &p.c);
-    EXPECT(field_addr_of<2>(p) == &p.z);
-    EXPECT(field_addr_of<3>(p) == &p.y);
+    ZEXPECT(field_addr_of<0>(p) == &p.x);
+    ZEXPECT(field_addr_of<1>(p) == &p.c);
+    ZEXPECT(field_addr_of<2>(p) == &p.z);
+    ZEXPECT(field_addr_of<3>(p) == &p.y);
 
     field_of<0>(p) = 11;
     field_of<3>(p) = 44;
-    EXPECT(p.x == 11);
-    EXPECT(p.y == 44);
+    ZEXPECT(p.x == 11);
+    ZEXPECT(p.y == 44);
 
     field<0, Point> fx{p};
     field<1, Point> fc{p};
     fx.value() = 21;
     fc.value() = 'Z';
-    EXPECT(p.x == 21);
-    EXPECT(p.c == 'Z');
+    ZEXPECT(p.x == 21);
+    ZEXPECT(p.c == 'Z');
 }
 
 ZEST_CASE(field_name_values) {
-    EXPECT(field_names<Point>().size() == 4U);
-    EXPECT(field_name<0, Point>() == "x");
-    EXPECT(field_name<1, Point>() == "c");
-    EXPECT(field_name<2, Point>() == "z");
-    EXPECT(field_name<3, Point>() == "y");
+    ZEXPECT(field_names<Point>().size() == 4U);
+    ZEXPECT(field_name<0, Point>() == "x");
+    ZEXPECT(field_name<1, Point>() == "c");
+    ZEXPECT(field_name<2, Point>() == "z");
+    ZEXPECT(field_name<3, Point>() == "y");
 
-    EXPECT(field_names<Empty>().size() == 1U);
-    EXPECT(field_names<Empty>()[0] == "PLACEHOLDER");
+    ZEXPECT(field_names<Empty>().size() == 1U);
+    ZEXPECT(field_names<Empty>()[0] == "PLACEHOLDER");
 
-    EXPECT(field_names<Many36>().size() == 36U);
-    EXPECT(field_name<0, Many36>() == "f01");
-    EXPECT(field_name<35, Many36>() == "f36");
+    ZEXPECT(field_names<Many36>().size() == 36U);
+    ZEXPECT(field_name<0, Many36>() == "f01");
+    ZEXPECT(field_name<35, Many36>() == "f36");
 
-    EXPECT(field<0, Point>::name() == "x");
-    EXPECT(field<1, Point>::name() == "c");
-    EXPECT(field<2, Point>::name() == "z");
-    EXPECT(field<3, Point>::name() == "y");
+    ZEXPECT(field<0, Point>::name() == "x");
+    ZEXPECT(field<1, Point>::name() == "c");
+    ZEXPECT(field<2, Point>::name() == "z");
+    ZEXPECT(field<3, Point>::name() == "y");
 }
 
 ZEST_CASE(reflection_static_values) {
-    EXPECT(reflection<Point>::field_count == 4U);
-    EXPECT(reflection<Empty>::field_count == 0U);
-    EXPECT(reflection<Many36>::field_count == 36U);
-    EXPECT(field_count_robustness_check<MoveOnly>() == true);
-    EXPECT(field_count_robustness_check<FromIntOnly>() == true);
+    ZEXPECT(reflection<Point>::field_count == 4U);
+    ZEXPECT(reflection<Empty>::field_count == 0U);
+    ZEXPECT(reflection<Many36>::field_count == 36U);
+    ZEXPECT(field_count_robustness_check<MoveOnly>() == true);
+    ZEXPECT(field_count_robustness_check<FromIntOnly>() == true);
 
-    EXPECT(std::tuple_size_v<point_rvalue_refs> == 4U);
-    EXPECT(std::is_rvalue_reference_v<std::tuple_element_t<0, point_rvalue_refs>> == true);
-    EXPECT(std::is_rvalue_reference_v<std::tuple_element_t<1, point_rvalue_refs>> == true);
-    EXPECT(std::is_rvalue_reference_v<std::tuple_element_t<2, point_rvalue_refs>> == true);
-    EXPECT(std::is_rvalue_reference_v<std::tuple_element_t<3, point_rvalue_refs>> == true);
+    ZEXPECT(std::tuple_size_v<point_rvalue_refs> == 4U);
+    ZEXPECT(std::is_rvalue_reference_v<std::tuple_element_t<0, point_rvalue_refs>> == true);
+    ZEXPECT(std::is_rvalue_reference_v<std::tuple_element_t<1, point_rvalue_refs>> == true);
+    ZEXPECT(std::is_rvalue_reference_v<std::tuple_element_t<2, point_rvalue_refs>> == true);
+    ZEXPECT(std::is_rvalue_reference_v<std::tuple_element_t<3, point_rvalue_refs>> == true);
 
-    EXPECT(field<0, Point>::index() == 0U);
-    EXPECT(field<1, Point>::index() == 1U);
-    EXPECT(field<2, Point>::index() == 2U);
-    EXPECT(field<3, Point>::index() == 3U);
+    ZEXPECT(field<0, Point>::index() == 0U);
+    ZEXPECT(field<1, Point>::index() == 1U);
+    ZEXPECT(field<2, Point>::index() == 2U);
+    ZEXPECT(field<3, Point>::index() == 3U);
 }
 
 ZEST_CASE(field_offset_values) {
-    EXPECT(field_offset<Layout>(0) == offsetof(Layout, a));
-    EXPECT(field_offset<Layout>(1) == offsetof(Layout, b));
-    EXPECT(field_offset<Layout>(2) == offsetof(Layout, bb));
-    EXPECT(field_offset<Layout>(3) == offsetof(Layout, c));
-    EXPECT(field_offset(&Layout::a) == offsetof(Layout, a));
-    EXPECT(field_offset(&Layout::b) == offsetof(Layout, b));
-    EXPECT(field_offset(&Layout::bb) == offsetof(Layout, bb));
-    EXPECT(field_offset(&Layout::c) == offsetof(Layout, c));
+    ZEXPECT(field_offset<Layout>(0) == offsetof(Layout, a));
+    ZEXPECT(field_offset<Layout>(1) == offsetof(Layout, b));
+    ZEXPECT(field_offset<Layout>(2) == offsetof(Layout, bb));
+    ZEXPECT(field_offset<Layout>(3) == offsetof(Layout, c));
+    ZEXPECT(field_offset(&Layout::a) == offsetof(Layout, a));
+    ZEXPECT(field_offset(&Layout::b) == offsetof(Layout, b));
+    ZEXPECT(field_offset(&Layout::bb) == offsetof(Layout, bb));
+    ZEXPECT(field_offset(&Layout::c) == offsetof(Layout, c));
 
-    EXPECT(field_offset<Packed>(0) == offsetof(Packed, a));
-    EXPECT(field_offset<Packed>(1) == offsetof(Packed, b));
-    EXPECT(field_offset<Packed>(2) == offsetof(Packed, bb));
-    EXPECT(field_offset<Packed>(3) == offsetof(Packed, c));
-    EXPECT(field_offset<Packed>(4) == offsetof(Packed, d));
-    EXPECT(field_offset<Packed>(5) == offsetof(Packed, e));
-    EXPECT(field_offset(&Packed::a) == offsetof(Packed, a));
-    EXPECT(field_offset(&Packed::b) == offsetof(Packed, b));
-    EXPECT(field_offset(&Packed::bb) == offsetof(Packed, bb));
-    EXPECT(field_offset(&Packed::c) == offsetof(Packed, c));
-    EXPECT(field_offset(&Packed::d) == offsetof(Packed, d));
-    EXPECT(field_offset(&Packed::e) == offsetof(Packed, e));
-    EXPECT(field_offset<NoUniqueAddress>(1) == offsetof(NoUniqueAddress, e));
-    EXPECT(field_offset(&NoUniqueAddress::e) == offsetof(NoUniqueAddress, e));
-    EXPECT(field_offset(&NoDefault::x) == offsetof(NoDefault, x));
-    EXPECT(field_offset(&NoDefault::y) == offsetof(NoDefault, y));
+    ZEXPECT(field_offset<Packed>(0) == offsetof(Packed, a));
+    ZEXPECT(field_offset<Packed>(1) == offsetof(Packed, b));
+    ZEXPECT(field_offset<Packed>(2) == offsetof(Packed, bb));
+    ZEXPECT(field_offset<Packed>(3) == offsetof(Packed, c));
+    ZEXPECT(field_offset<Packed>(4) == offsetof(Packed, d));
+    ZEXPECT(field_offset<Packed>(5) == offsetof(Packed, e));
+    ZEXPECT(field_offset(&Packed::a) == offsetof(Packed, a));
+    ZEXPECT(field_offset(&Packed::b) == offsetof(Packed, b));
+    ZEXPECT(field_offset(&Packed::bb) == offsetof(Packed, bb));
+    ZEXPECT(field_offset(&Packed::c) == offsetof(Packed, c));
+    ZEXPECT(field_offset(&Packed::d) == offsetof(Packed, d));
+    ZEXPECT(field_offset(&Packed::e) == offsetof(Packed, e));
+    ZEXPECT(field_offset<NoUniqueAddress>(1) == offsetof(NoUniqueAddress, e));
+    ZEXPECT(field_offset(&NoUniqueAddress::e) == offsetof(NoUniqueAddress, e));
+    ZEXPECT(field_offset(&NoDefault::x) == offsetof(NoDefault, x));
+    ZEXPECT(field_offset(&NoDefault::y) == offsetof(NoDefault, y));
 
-    EXPECT(field<0, Point>::offset() == offsetof(Point, x));
-    EXPECT(field<1, Point>::offset() == offsetof(Point, c));
-    EXPECT(field<2, Point>::offset() == offsetof(Point, z));
-    EXPECT(field<3, Point>::offset() == offsetof(Point, y));
+    ZEXPECT(field<0, Point>::offset() == offsetof(Point, x));
+    ZEXPECT(field<1, Point>::offset() == offsetof(Point, c));
+    ZEXPECT(field<2, Point>::offset() == offsetof(Point, z));
+    ZEXPECT(field<3, Point>::offset() == offsetof(Point, y));
 }
 
 ZEST_CASE(field_refs_lvalue) {
@@ -242,8 +242,8 @@ ZEST_CASE(field_refs_lvalue) {
 
     std::get<0>(refs) = 13;
     std::get<3>(refs) = 15;
-    EXPECT(p.x == 13);
-    EXPECT(p.y == 15);
+    ZEXPECT(p.x == 13);
+    ZEXPECT(p.y == 15);
 }
 
 ZEST_CASE(for_each_void_callback) {
@@ -259,16 +259,16 @@ ZEST_CASE(for_each_void_callback) {
         ++visited;
     });
 
-    EXPECT(all_ok);
-    EXPECT(visited == 4U);
-    EXPECT(names[0] == "x");
-    EXPECT(names[1] == "c");
-    EXPECT(names[2] == "z");
-    EXPECT(names[3] == "y");
-    EXPECT(offsets[0] == offsetof(Point, x));
-    EXPECT(offsets[1] == offsetof(Point, c));
-    EXPECT(offsets[2] == offsetof(Point, z));
-    EXPECT(offsets[3] == offsetof(Point, y));
+    ZEXPECT(all_ok);
+    ZEXPECT(visited == 4U);
+    ZEXPECT(names[0] == "x");
+    ZEXPECT(names[1] == "c");
+    ZEXPECT(names[2] == "z");
+    ZEXPECT(names[3] == "y");
+    ZEXPECT(offsets[0] == offsetof(Point, x));
+    ZEXPECT(offsets[1] == offsetof(Point, c));
+    ZEXPECT(offsets[2] == offsetof(Point, z));
+    ZEXPECT(offsets[3] == offsetof(Point, y));
 }
 
 ZEST_CASE(for_each_bool_short_circuit) {
@@ -280,8 +280,8 @@ ZEST_CASE(for_each_bool_short_circuit) {
         return f.index() < 2;
     });
 
-    EXPECT(!all_ok);
-    EXPECT(visited == 3U);
+    ZEXPECT(!all_ok);
+    ZEXPECT(visited == 3U);
 }
 
 ZEST_CASE(for_each_bool_all_true) {
@@ -293,8 +293,8 @@ ZEST_CASE(for_each_bool_all_true) {
         return f.index() <= 3;
     });
 
-    EXPECT(all_ok);
-    EXPECT(visited == 4U);
+    ZEXPECT(all_ok);
+    ZEXPECT(visited == 4U);
 }
 
 ZEST_CASE(for_each_int_return_short_circuit) {
@@ -306,8 +306,8 @@ ZEST_CASE(for_each_int_return_short_circuit) {
         return f.index() == 0 ? 1 : 0;
     });
 
-    EXPECT(!all_ok);
-    EXPECT(visited == 2U);
+    ZEXPECT(!all_ok);
+    ZEXPECT(visited == 2U);
 }
 
 ZEST_CASE(for_each_mutation_void_return) {
@@ -320,9 +320,9 @@ ZEST_CASE(for_each_mutation_void_return) {
         }
     });
 
-    EXPECT(all_ok);
-    EXPECT(p.x == 10);
-    EXPECT(p.y == 30);
+    ZEXPECT(all_ok);
+    ZEXPECT(p.x == 10);
+    ZEXPECT(p.y == 30);
 }
 
 ZEST_CASE(for_each_empty_object) {
@@ -333,8 +333,8 @@ ZEST_CASE(for_each_empty_object) {
         return true;
     });
 
-    EXPECT(all_ok);
-    EXPECT(visited == 0U);
+    ZEXPECT(all_ok);
+    ZEXPECT(visited == 0U);
 }
 
 ZEST_CASE(for_each_many36) {
@@ -387,9 +387,9 @@ ZEST_CASE(for_each_many36) {
         ++visited;
     });
 
-    EXPECT(all_ok);
-    EXPECT(visited == 36U);
-    EXPECT(sum == 666);
+    ZEXPECT(all_ok);
+    ZEXPECT(visited == 36U);
+    ZEXPECT(sum == 666);
 }
 
 };  // ZEST_SUITE(meta_struct)

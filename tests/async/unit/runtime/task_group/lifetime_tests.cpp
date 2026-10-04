@@ -23,12 +23,12 @@ concept spawnable = requires(Group& group, Task task) { group.spawn(std::move(ta
 ZEST_SUITE(async_runtime_task_group_lifetime, zest::LoopFixture) {
 
 ZEST_CASE(spawn_accepts_the_declared_error_types_only) {
-    STATIC_EXPECT(spawnable<task_group<>, task<>>);
-    STATIC_EXPECT(!spawnable<task_group<>, task<int, error>>);
-    STATIC_EXPECT(spawnable<task_group<error>, task<int, error>>);
-    STATIC_EXPECT(spawnable<task_group<error>, task<>>);
-    STATIC_EXPECT(!spawnable<task_group<error>, task<int, CustomError>>);
-    STATIC_EXPECT(spawnable<task_group<error, CustomError>, task<int, CustomError>>);
+    ZSTATIC_EXPECT(spawnable<task_group<>, task<>>);
+    ZSTATIC_EXPECT(!spawnable<task_group<>, task<int, error>>);
+    ZSTATIC_EXPECT(spawnable<task_group<error>, task<int, error>>);
+    ZSTATIC_EXPECT(spawnable<task_group<error>, task<>>);
+    ZSTATIC_EXPECT(!spawnable<task_group<error>, task<int, CustomError>>);
+    ZSTATIC_EXPECT(spawnable<task_group<error, CustomError>, task<int, CustomError>>);
 }
 
 ZEST_CASE(spawn_after_join_fails) {
@@ -46,9 +46,9 @@ ZEST_CASE(spawn_after_join_fails) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector{true, false});
-    EXPECT(started == 1);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector{true, false});
+    ZEXPECT(started == 1);
 }
 
 ZEST_CASE(spawn_after_cancel_fails) {
@@ -67,9 +67,9 @@ ZEST_CASE(spawn_after_cancel_fails) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector{true, false});
-    EXPECT(started == 1);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector{true, false});
+    ZEXPECT(started == 1);
 }
 
 // A child that fails cancels its siblings, and the group takes no child after
@@ -92,9 +92,9 @@ ZEST_CASE(spawn_after_a_child_failed_fails) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    EXPECT(!*result);
-    EXPECT(started == 0);
+    ZASSERT(result.has_value());
+    ZEXPECT(!*result);
+    ZEXPECT(started == 0);
 }
 
 // A child that ended cancelled leaves the group open.
@@ -116,9 +116,9 @@ ZEST_CASE(spawn_after_a_child_ended_cancelled_starts_the_child) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    EXPECT(*result);
-    EXPECT(started == 1);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
+    ZEXPECT(started == 1);
 }
 
 // A group whose children all finished while being spawned may go without a
@@ -136,7 +136,7 @@ ZEST_CASE(group_of_finished_children_needs_no_join) {
         group.spawn(work());
     }
 
-    EXPECT(finished == 2);
+    ZEXPECT(finished == 2);
 }
 
 // Destroying a group whose children still run lets them go: each is
@@ -158,10 +158,10 @@ ZEST_CASE(destroying_the_group_cancels_its_running_children) {
     };
 
     auto [result] = run(driver());
-    EXPECT(result.has_value());
-    EXPECT(!resumed);
-    EXPECT(!gate.has_waiters());
-    EXPECT(frames.use_count() == 1);
+    ZEXPECT(result.has_value());
+    ZEXPECT(!resumed);
+    ZEXPECT(!gate.has_waiters());
+    ZEXPECT(frames.use_count() == 1);
 }
 
 // The destructor's cancel resumes a child that catches it, which runs on
@@ -191,9 +191,9 @@ ZEST_CASE(child_the_destructor_resumes_cannot_spawn) {
     };
 
     auto [result] = run(driver());
-    EXPECT(result.has_value());
-    ASSERT(spawned.has_value());
-    EXPECT(!*spawned);
+    ZEXPECT(result.has_value());
+    ZASSERT(spawned.has_value());
+    ZEXPECT(!*spawned);
 }
 
 // A child let go keeps its frame until its cancellation completes, however
@@ -217,10 +217,10 @@ ZEST_CASE(destroyed_group_child_is_freed_once_its_cancel_completes) {
     };
 
     auto [alive, finished] = run(driver(), finisher());
-    ASSERT(alive.has_value());
-    EXPECT(*alive == 1);
-    EXPECT(op.cancel_requested());
-    EXPECT(frames.use_count() == 1);
+    ZASSERT(alive.has_value());
+    ZEXPECT(*alive == 1);
+    ZEXPECT(op.cancel_requested());
+    ZEXPECT(frames.use_count() == 1);
 }
 
 // Every child's frame goes as soon as the child ends, a failed one too, whose
@@ -257,10 +257,10 @@ ZEST_CASE(finished_children_are_reclaimed_at_once) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    EXPECT(result->alive_after_two == 0);
-    EXPECT(result->alive_after_failing == 0);
-    EXPECT(result->errors == std::vector{error::connection_refused});
+    ZASSERT(result.has_value());
+    ZEXPECT(result->alive_after_two == 0);
+    ZEXPECT(result->alive_after_failing == 0);
+    ZEXPECT(result->errors == std::vector{error::connection_refused});
 }
 
 // A child cancelled before it is spawned never runs: it ends cancelled at
@@ -289,11 +289,11 @@ ZEST_CASE(child_cancelled_before_spawn_never_runs) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    EXPECT(*result);
-    EXPECT(!ran);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
+    ZEXPECT(!ran);
     // Its sibling ran on.
-    EXPECT(slow_finished);
+    ZEXPECT(slow_finished);
 }
 
 // Structured completion: join() returns only once every cancelled child has
@@ -325,13 +325,13 @@ ZEST_CASE(join_after_cancel_waits_for_pending_children) {
     };
 
     auto [result, joined_before] = run(driver(), finisher());
-    EXPECT(result.has_value());
-    EXPECT(op.cancel_requested());
-    ASSERT(joined_before.has_value());
-    EXPECT(!*joined_before);
-    EXPECT(joined);
-    EXPECT(finished == 1);
-    EXPECT(frames.use_count() == 1);
+    ZEXPECT(result.has_value());
+    ZEXPECT(op.cancel_requested());
+    ZASSERT(joined_before.has_value());
+    ZEXPECT(!*joined_before);
+    ZEXPECT(joined);
+    ZEXPECT(finished == 1);
+    ZEXPECT(frames.use_count() == 1);
 }
 
 ZEST_CASE(join_after_an_error_waits_for_pending_children) {
@@ -362,12 +362,12 @@ ZEST_CASE(join_after_an_error_waits_for_pending_children) {
     };
 
     auto [result, joined_before] = run(driver(), finisher());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector{error::connection_refused});
-    EXPECT(op.cancel_requested());
-    ASSERT(joined_before.has_value());
-    EXPECT(!*joined_before);
-    EXPECT(frames.use_count() == 1);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector{error::connection_refused});
+    ZEXPECT(op.cancel_requested());
+    ZASSERT(joined_before.has_value());
+    ZEXPECT(!*joined_before);
+    ZEXPECT(frames.use_count() == 1);
 }
 
 };  // ZEST_SUITE(async_runtime_task_group_lifetime)

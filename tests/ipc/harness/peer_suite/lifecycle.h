@@ -30,10 +30,10 @@ void peer_lifecycle(const PeerKit<A>& kit) {
 
         auto [ran, asked, scripted] =
             f.run(f.peer.run(), f.peer.send_request(AddParams{}), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
-        EXPECT(asked.error().message == "transport closed");
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(asked.error().message == "transport closed");
     });
 
     kit.add("end_of_input_lets_running_handlers_answer", [](Fixture& f) {
@@ -52,10 +52,10 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         };
 
         auto [ran, scripted] = f.run(f.peer.run(), remote());
-        EXPECT(ran.has_value());
+        ZEXPECT(ran.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(sum_of<A>(written[0]) == 3);
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(sum_of<A>(written[0]) == 3);
     });
 
     // Nothing more is written once the input has ended and every answer is
@@ -68,12 +68,12 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
+        ZEXPECT(ran.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(sum_of<A>(written[0]) == 3);
-        EXPECT(f.remote.output_ended());
-        EXPECT(!f.remote.closed());
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(sum_of<A>(written[0]) == 3);
+        ZEXPECT(f.remote.output_ended());
+        ZEXPECT(!f.remote.closed());
     });
 
     kit.add("close_ends_run", [](Fixture& f) {
@@ -82,10 +82,10 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         };
 
         auto [ran, closed] = f.run(f.peer.run(), closer());
-        EXPECT(ran.has_value());
-        ASSERT(closed.has_value());
-        EXPECT(closed->has_value());
-        EXPECT(f.remote.closed());
+        ZEXPECT(ran.has_value());
+        ZASSERT(closed.has_value());
+        ZEXPECT(closed->has_value());
+        ZEXPECT(f.remote.closed());
     });
 
     kit.add("close_twice_succeeds", [](Fixture& f) {
@@ -96,17 +96,17 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         };
 
         auto [ran, closed] = f.run(f.peer.run(), closer());
-        EXPECT(ran.has_value());
-        ASSERT(closed.has_value());
-        EXPECT(*closed == std::vector{true, true});
+        ZEXPECT(ran.has_value());
+        ZASSERT(closed.has_value());
+        ZEXPECT(*closed == std::vector{true, true});
     });
 
     kit.add("run_after_close_returns_at_once", [](Fixture& f) {
-        ASSERT(f.peer.close().has_value());
+        ZASSERT(f.peer.close().has_value());
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        EXPECT(f.remote.closed());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(f.remote.closed());
     });
 
     // A request sent before run() fails when its Peer goes first; nothing of
@@ -123,10 +123,10 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         };
 
         auto [asked, destroyed] = f.run(ask(), destroy());
-        EXPECT(destroyed.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
-        EXPECT(asked.error().message == "peer destroyed");
+        ZEXPECT(destroyed.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(asked.error().message == "peer destroyed");
     });
 
     kit.add("close_fails_pending_requests", [](Fixture& f) {
@@ -136,10 +136,10 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, closed] = f.run(f.peer.run(), f.peer.send_request(AddParams{}), closer());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
-        EXPECT(asked.error().message == "peer closed");
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(asked.error().message == "peer closed");
     });
 
     // test/ping answers before the close; the two test/add handlers are
@@ -172,12 +172,12 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         };
 
         auto [ran, scripted] = f.run(f.peer.run(), remote());
-        EXPECT(ran.has_value());
-        EXPECT(started == 2);
-        EXPECT(completed == 0);
+        ZEXPECT(ran.has_value());
+        ZEXPECT(started == 2);
+        ZEXPECT(completed == 0);
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(written[0].id == RequestID(1));
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(written[0].id == RequestID(1));
     });
 
     kit.add("close_discards_queued_messages", [](Fixture& f) {
@@ -188,10 +188,10 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         };
 
         auto [ran, sent] = f.run(f.peer.run(), closer());
-        EXPECT(ran.has_value());
-        ASSERT(sent.has_value());
-        EXPECT(sent->has_value());
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZASSERT(sent.has_value());
+        ZEXPECT(sent->has_value());
+        ZEXPECT(f.written().empty());
     });
 
     kit.add("close_in_a_handler_ends_run", [](Fixture& f) {
@@ -202,9 +202,9 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         f.remote.send(request<A>(1, "test/add", AddParams{}));
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        EXPECT(f.remote.closed());
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(f.remote.closed());
+        ZEXPECT(f.written().empty());
     });
 
     // The notification read with the request closes the peer after the
@@ -226,23 +226,23 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         f.remote.send(notification<A>("test/note", NoteParams{.text = "close"}));
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        EXPECT(called);
-        EXPECT(!started);
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(called);
+        ZEXPECT(!started);
+        ZEXPECT(f.written().empty());
     });
 
     kit.add("send_after_close_fails", [](Fixture& f) {
-        ASSERT(f.peer.close().has_value());
+        ZASSERT(f.peer.close().has_value());
         auto sent = f.peer.send_notification(NoteParams{.text = "late"});
 
         auto [ran, asked] = f.run(f.peer.run(), f.peer.send_request(AddParams{}));
-        EXPECT(ran.has_value());
-        ASSERT(sent.has_error());
-        EXPECT(code_of(sent.error()) == ErrorCode::ConnectionClosed);
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZASSERT(sent.has_error());
+        ZEXPECT(code_of(sent.error()) == ErrorCode::ConnectionClosed);
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(f.written().empty());
     });
 
     kit.add("write_failure_fails_pending_requests_and_closes_the_transport", [](Fixture& f) {
@@ -254,14 +254,14 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked] = f.run(f.peer.run(), ask());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_value());
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_value());
         auto& [failure, after] = *asked;
-        EXPECT(code_of(failure) == ErrorCode::ConnectionClosed);
-        EXPECT(failure.message == "write failed");
-        ASSERT(after.has_error());
-        EXPECT(code_of(after.error()) == ErrorCode::ConnectionClosed);
-        EXPECT(f.remote.closed());
+        ZEXPECT(code_of(failure) == ErrorCode::ConnectionClosed);
+        ZEXPECT(failure.message == "write failed");
+        ZASSERT(after.has_error());
+        ZEXPECT(code_of(after.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(f.remote.closed());
     });
 
     // The handler's answer could not be written: it is cancelled, and run()
@@ -284,10 +284,10 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked] = f.run(f.peer.run(), ask());
-        EXPECT(ran.has_value());
-        EXPECT(asked.has_value());
-        EXPECT(cancelled);
-        EXPECT(f.remote.closed());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(asked.has_value());
+        ZEXPECT(cancelled);
+        ZEXPECT(f.remote.closed());
     });
 
     kit.add("close_output_ends_the_remote_input_and_keeps_reading", [](Fixture& f) {
@@ -298,10 +298,10 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        EXPECT(f.remote.output_ended());
-        EXPECT(!f.remote.closed());
-        EXPECT(seen == std::vector<std::string>{"after"});
+        ZEXPECT(ran.has_value());
+        ZEXPECT(f.remote.output_ended());
+        ZEXPECT(!f.remote.closed());
+        ZEXPECT(seen == std::vector<std::string>{"after"});
     });
 
     kit.add("close_output_writes_queued_messages_first", [](Fixture& f) {
@@ -310,12 +310,12 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        EXPECT(sent.has_value());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(sent.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(written[0].method == "test/note");
-        EXPECT(f.remote.output_ended());
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(written[0].method == "test/note");
+        ZEXPECT(f.remote.output_ended());
     });
 
     // A half-close that fails leaves the remote without the end of its
@@ -329,10 +329,10 @@ void peer_lifecycle(const PeerKit<A>& kit) {
 
         auto [ran, asked, scripted] =
             f.run(f.peer.run(), f.peer.send_request(AddParams{}), closer());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
-        EXPECT(f.remote.closed());
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(f.remote.closed());
     });
 
     kit.add("send_after_close_output_fails", [](Fixture& f) {
@@ -344,13 +344,13 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran, asked] = f.run(f.peer.run(), f.peer.send_request(AddParams{}));
-        EXPECT(ran.has_value());
-        ASSERT(sent.has_error());
-        EXPECT(code_of(sent.error()) == ErrorCode::ConnectionClosed);
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
-        EXPECT(seen == std::vector<std::string>{"after"});
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZASSERT(sent.has_error());
+        ZEXPECT(code_of(sent.error()) == ErrorCode::ConnectionClosed);
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(seen == std::vector<std::string>{"after"});
+        ZEXPECT(f.written().empty());
     });
 
     // A handler still running when the peer's output closes finishes, but
@@ -373,9 +373,9 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         };
 
         auto [ran, scripted] = f.run(f.peer.run(), remote());
-        EXPECT(ran.has_value());
-        EXPECT(f.remote.output_ended());
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(f.remote.output_ended());
+        ZEXPECT(f.written().empty());
     });
 
     // The request is pending when the input ends and fails with it; the
@@ -408,10 +408,10 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         };
 
         auto [ran, probed, scripted] = f.run(f.peer.run(), probe(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(failure.has_value());
-        EXPECT(code_of(*failure) == ErrorCode::ConnectionClosed);
-        EXPECT(failure->message == "peer input closed");
+        ZEXPECT(ran.has_value());
+        ZASSERT(failure.has_value());
+        ZEXPECT(code_of(*failure) == ErrorCode::ConnectionClosed);
+        ZEXPECT(failure->message == "peer input closed");
     });
 
     kit.add("cancelling_run_cancels_running_handlers_and_fails_pending_requests", [](Fixture& f) {
@@ -435,10 +435,10 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         auto [ran, asked, scripted] = f.run(with_token(f.peer.run(), source.token()),
                                             f.peer.send_request(AddParams{}),
                                             remote());
-        EXPECT(ran.is_cancelled());
-        EXPECT(!completed);
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(ran.is_cancelled());
+        ZEXPECT(!completed);
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
     });
 
     // The notification read with the request cancels run() after the
@@ -461,12 +461,12 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         f.remote.send(notification<A>("test/note", NoteParams{.text = "cancel"}));
 
         auto [ran] = f.run(with_token(f.peer.run(), source.token()));
-        EXPECT(ran.is_cancelled());
-        EXPECT(called);
-        EXPECT(!started);
+        ZEXPECT(ran.is_cancelled());
+        ZEXPECT(called);
+        ZEXPECT(!started);
         // At most the cancelled request's answer.
         for(const auto& message: f.written()) {
-            EXPECT(message.id == RequestID(1));
+            ZEXPECT(message.id == RequestID(1));
         }
     });
 
@@ -480,8 +480,8 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         };
 
         auto [ran, cancelled] = f.run(with_token(f.peer.run(), source.token()), canceller());
-        EXPECT(ran.is_cancelled());
-        EXPECT(f.remote.closed());
+        ZEXPECT(ran.is_cancelled());
+        ZEXPECT(f.remote.closed());
     });
 
     kit.add("two_peers_answer_on_one_loop", [](Fixture& f) {
@@ -497,18 +497,18 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         other_remote.end_input();
 
         auto [ran, other_ran] = f.run(f.peer.run(), other.run());
-        EXPECT(ran.has_value());
-        EXPECT(other_ran.has_value());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(other_ran.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(written[0].id == RequestID(11));
-        EXPECT(sum_of<A>(written[0]) == 7);
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(written[0].id == RequestID(11));
+        ZEXPECT(sum_of<A>(written[0]) == 7);
         auto other_written = other_remote.drain();
-        ASSERT(other_written.size() == 1U);
+        ZASSERT(other_written.size() == 1U);
         auto answer = A::read(other_written[0]);
-        ASSERT(answer.has_value());
-        EXPECT(answer->id == RequestID(22));
-        EXPECT(sum_of<A>(*answer) == 21);
+        ZASSERT(answer.has_value());
+        ZEXPECT(answer->id == RequestID(22));
+        ZEXPECT(sum_of<A>(*answer) == 21);
     });
 }
 

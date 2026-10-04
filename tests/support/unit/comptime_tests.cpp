@@ -55,28 +55,28 @@ constexpr Build<record> sized;
 ZEST_SUITE(support_comptime) {
 
 ZEST_CASE(counting_records_the_peak_of_each_pool) {
-    STATIC_EXPECT(!record.counting);
-    STATIC_EXPECT(record.data[0] == 5U);
-    STATIC_EXPECT(record.data[1] == 1U);
-    STATIC_EXPECT(record.count == 4U);
-    STATIC_EXPECT(Build<record>::Resource::read_reserved<0>() == 5U);
-    STATIC_EXPECT(Build<record>::Resource::read_reserved(1) == 1U);
+    ZSTATIC_EXPECT(!record.counting);
+    ZSTATIC_EXPECT(record.data[0] == 5U);
+    ZSTATIC_EXPECT(record.data[1] == 1U);
+    ZSTATIC_EXPECT(record.count == 4U);
+    ZSTATIC_EXPECT(Build<record>::Resource::read_reserved<0>() == 5U);
+    ZSTATIC_EXPECT(Build<record>::Resource::read_reserved(1) == 1U);
 }
 
 ZEST_CASE(sized_pools_hold_what_the_counting_saw) {
-    STATIC_EXPECT(sized.numbers.size() == 3U);
-    STATIC_EXPECT(sized.numbers.capacity() == 5U);
-    STATIC_EXPECT(sized.numbers.front() == 0);
-    STATIC_EXPECT(sized.numbers[1] == 1);
-    STATIC_EXPECT(sized.numbers.back() == 2);
-    STATIC_EXPECT(!sized.numbers.empty());
-    STATIC_EXPECT(sized.letters.size() == 1U);
-    STATIC_EXPECT(sized.letters.front() == 'y');
+    ZSTATIC_EXPECT(sized.numbers.size() == 3U);
+    ZSTATIC_EXPECT(sized.numbers.capacity() == 5U);
+    ZSTATIC_EXPECT(sized.numbers.front() == 0);
+    ZSTATIC_EXPECT(sized.numbers[1] == 1);
+    ZSTATIC_EXPECT(sized.numbers.back() == 2);
+    ZSTATIC_EXPECT(!sized.numbers.empty());
+    ZSTATIC_EXPECT(sized.letters.size() == 1U);
+    ZSTATIC_EXPECT(sized.letters.front() == 'y');
 }
 
 ZEST_CASE(sized_buffer_holds_the_bytes) {
-    STATIC_EXPECT(std::string_view(sized.text) == "abc");
-    STATIC_EXPECT(sized.resource.used_size() == 4U);
+    ZSTATIC_EXPECT(std::string_view(sized.text) == "abc");
+    ZSTATIC_EXPECT(sized.resource.used_size() == 4U);
 }
 
 ZEST_CASE(pools_iterate_and_compare) {
@@ -84,17 +84,17 @@ ZEST_CASE(pools_iterate_and_compare) {
     for(int value: sized.numbers) {
         sum += value;
     }
-    EXPECT(sum == 3);
-    EXPECT(sized.numbers.end() - sized.numbers.begin() == 3);
-    EXPECT(sized.numbers.cend() - sized.numbers.cbegin() == 3);
+    ZEXPECT(sum == 3);
+    ZEXPECT(sized.numbers.end() - sized.numbers.begin() == 3);
+    ZEXPECT(sized.numbers.cend() - sized.numbers.cbegin() == 3);
     // The pool's own comparison, not the checks', against a pool built the same way at run
     // time and then changed.
     Build<record> other;
-    EXPECT((other.numbers == sized.numbers));
+    ZEXPECT((other.numbers == sized.numbers));
     other.numbers.pop_back();
-    EXPECT(!(other.numbers == sized.numbers));
+    ZEXPECT(!(other.numbers == sized.numbers));
     other.numbers.push_back(7);
-    EXPECT(!(other.numbers == sized.numbers));
+    ZEXPECT(!(other.numbers == sized.numbers));
 }
 
 };  // ZEST_SUITE(support_comptime)

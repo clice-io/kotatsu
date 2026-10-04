@@ -31,25 +31,25 @@ using any_range_result_t =
 ZEST_SUITE(async_runtime_when_any, zest::LoopFixture) {
 
 ZEST_CASE(result_type_follows_the_children_channels) {
-    EXPECT(zest::type_eq<any_result_t<task<int>, task<int>>, std::variant<int, int>>());
-    EXPECT(zest::type_eq<any_result_t<task<int>, task<>>, std::variant<int, std::nullopt_t>>());
-    EXPECT(zest::type_eq<any_result_t<task<int, error>, task<int>>,
-                         outcome<std::variant<int, int>, error, void>>());
+    ZEXPECT(zest::type_eq<any_result_t<task<int>, task<int>>, std::variant<int, int>>());
+    ZEXPECT(zest::type_eq<any_result_t<task<int>, task<>>, std::variant<int, std::nullopt_t>>());
+    ZEXPECT(zest::type_eq<any_result_t<task<int, error>, task<int>>,
+                          outcome<std::variant<int, int>, error, void>>());
     // One error type, however many children carry it.
-    EXPECT(zest::type_eq<any_result_t<task<int, error>, task<int, error>>,
-                         outcome<std::variant<int, int>, error, void>>());
-    EXPECT(
+    ZEXPECT(zest::type_eq<any_result_t<task<int, error>, task<int, error>>,
+                          outcome<std::variant<int, int>, error, void>>());
+    ZEXPECT(
         zest::type_eq<any_result_t<task<int, error>, task<int, CustomError>>,
                       outcome<std::variant<int, int>, std::variant<error, CustomError>, void>>());
-    EXPECT(zest::type_eq<any_result_t<task<int, void, cancellation>, task<int>>,
-                         outcome<std::variant<int, int>, void, cancellation>>());
-    EXPECT(zest::type_eq<any_result_t<task<int, error, cancellation>, task<>>,
-                         outcome<std::variant<int, std::nullopt_t>, error, cancellation>>());
-    EXPECT(
+    ZEXPECT(zest::type_eq<any_result_t<task<int, void, cancellation>, task<int>>,
+                          outcome<std::variant<int, int>, void, cancellation>>());
+    ZEXPECT(zest::type_eq<any_result_t<task<int, error, cancellation>, task<>>,
+                          outcome<std::variant<int, std::nullopt_t>, error, cancellation>>());
+    ZEXPECT(
         zest::type_eq<any_range_result_t<std::vector<task<int>>>, std::pair<std::size_t, int>>());
-    EXPECT(zest::type_eq<any_range_result_t<small_vector<semaphore::acquire_awaiter>>,
-                         std::pair<std::size_t, std::nullopt_t>>());
-    STATIC_EXPECT(!std::constructible_from<when_any<>>);
+    ZEXPECT(zest::type_eq<any_range_result_t<small_vector<semaphore::acquire_awaiter>>,
+                          std::pair<std::size_t, std::nullopt_t>>());
+    ZSTATIC_EXPECT(!std::constructible_from<when_any<>>);
 }
 
 ZEST_CASE(first_child_to_finish_wins) {
@@ -69,11 +69,11 @@ ZEST_CASE(first_child_to_finish_wins) {
     };
 
     auto [result, drove] = run(combined(), driver());
-    ASSERT(result.has_value());
-    ASSERT(result->index() == 1U);
-    EXPECT(std::get<1>(*result) == 10);
-    EXPECT(finished == 1);
-    EXPECT(!gates[0].has_waiters());
+    ZASSERT(result.has_value());
+    ZASSERT(result->index() == 1U);
+    ZEXPECT(std::get<1>(*result) == 10);
+    ZEXPECT(finished == 1);
+    ZEXPECT(!gates[0].has_waiters());
 }
 
 ZEST_CASE(synchronous_winner_keeps_later_children_from_starting) {
@@ -87,10 +87,10 @@ ZEST_CASE(synchronous_winner_keeps_later_children_from_starting) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    ASSERT(result->index() == 0U);
-    EXPECT(std::get<0>(*result) == 1);
-    EXPECT(started == 1);
+    ZASSERT(result.has_value());
+    ZASSERT(result->index() == 0U);
+    ZEXPECT(std::get<0>(*result) == 1);
+    ZEXPECT(started == 1);
 }
 
 ZEST_CASE(single_child_wins) {
@@ -102,8 +102,8 @@ ZEST_CASE(single_child_wins) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(std::get<0>(*result) == 99);
+    ZASSERT(result.has_value());
+    ZEXPECT(std::get<0>(*result) == 99);
 }
 
 ZEST_CASE(accepts_awaiters_that_are_not_tasks) {
@@ -118,9 +118,9 @@ ZEST_CASE(accepts_awaiters_that_are_not_tasks) {
     };
 
     auto [result, driver] = run(combined(), releaser());
-    ASSERT(result.has_value());
-    EXPECT(result->index() == 1U);
-    EXPECT(!slow.has_waiters());
+    ZASSERT(result.has_value());
+    ZEXPECT(result->index() == 1U);
+    ZEXPECT(!slow.has_waiters());
 }
 
 ZEST_CASE(range_reports_the_winner_index) {
@@ -142,9 +142,9 @@ ZEST_CASE(range_reports_the_winner_index) {
     };
 
     auto [result, drove] = run(combined(), driver());
-    ASSERT(result.has_value());
-    EXPECT(result->first == 2U);
-    EXPECT(result->second == 20);
+    ZASSERT(result.has_value());
+    ZEXPECT(result->first == 2U);
+    ZEXPECT(result->second == 20);
 }
 
 ZEST_CASE(range_with_one_element_wins_at_once) {
@@ -158,9 +158,9 @@ ZEST_CASE(range_with_one_element_wins_at_once) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(result->first == 0U);
-    EXPECT(result->second == 42);
+    ZASSERT(result.has_value());
+    ZEXPECT(result->first == 0U);
+    ZEXPECT(result->second == 42);
 }
 
 ZEST_CASE(range_of_awaiters_that_are_not_tasks) {
@@ -179,16 +179,16 @@ ZEST_CASE(range_of_awaiters_that_are_not_tasks) {
     };
 
     auto [result, driver] = run(combined(), releaser());
-    ASSERT(result.has_value());
-    EXPECT(*result == 1U);
-    EXPECT(!slow.has_waiters());
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 1U);
+    ZEXPECT(!slow.has_waiters());
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
 // Reads what was thrown; see test::exceptions_unreadable.
 ZEST_CASE(empty_range_fails, skip = test::exceptions_unreadable) {
     small_vector<task<int>> tasks;
-    EXPECT(
+    ZEXPECT(
         test::thrown<std::invalid_argument>([&] { (void)when_any(std::move(tasks)); }).has_value());
 }
 #endif

@@ -102,26 +102,26 @@ ZEST_CASE(value_overload_value_initializes) {
         .count = 2
     };
     auto encoded = bincode::to_bytes(value);
-    ASSERT(encoded);
+    ZASSERT(encoded);
     auto result = bincode::from_bytes<test::HoldsExplicit>(std::as_bytes(std::span(*encoded)));
-    ASSERT(result);
+    ZASSERT(result);
     const test::HoldsExplicit expected{
         .list = {1, 2},
         .count = 2
     };
-    EXPECT(meta::eq(*result, expected));
-    STATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
+    ZEXPECT(meta::eq(*result, expected));
+    ZSTATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
     // A type with no default constructor has no value to decode into.
-    STATIC_EXPECT(!decodes_by_value<test::NoDefault>);
+    ZSTATIC_EXPECT(!decodes_by_value<test::NoDefault>);
 }
 
 ZEST_CASE(truncated_payload_fails) {
     auto encoded = bincode::to_bytes(std::string("hello"));
-    ASSERT(encoded);
+    ZASSERT(encoded);
     std::string out;
     auto status = bincode::from_bytes(std::span<const std::byte>(*encoded).first(10), out);
-    ASSERT(!status);
-    EXPECT(status.error().message == "unexpected eof");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "unexpected eof");
 }
 
 ZEST_CASE(oversized_length_prefix_fails) {
@@ -129,8 +129,8 @@ ZEST_CASE(oversized_length_prefix_fails) {
     // the bytes left, never used to size a read.
     std::string out;
     auto status = bincode::from_bytes(bytes({0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}), out);
-    ASSERT(!status);
-    EXPECT(status.error().message == "unexpected eof");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "unexpected eof");
 }
 
 ZEST_CASE(oversized_element_count_fails) {
@@ -138,83 +138,83 @@ ZEST_CASE(oversized_element_count_fails) {
     // element the bytes cannot hold.
     std::vector<int> out;
     auto status = bincode::from_bytes(bytes({0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F}), out);
-    ASSERT(!status);
-    EXPECT(status.error().message == "unexpected eof");
-    EXPECT(status.error().format_path() == "[0]");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "unexpected eof");
+    ZEXPECT(status.error().format_path() == "[0]");
 }
 
 ZEST_CASE(bool_byte_beyond_one_fails) {
     bool out = false;
     auto status = bincode::from_bytes(bytes({2}), out);
-    ASSERT(!status);
-    EXPECT(status.error().message == "type mismatch");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "type mismatch");
 }
 
 ZEST_CASE(option_tag_beyond_one_fails) {
     std::optional<bool> out;
     auto status = bincode::from_bytes(bytes({2, 1}), out);
-    ASSERT(!status);
-    EXPECT(status.error().message == "type mismatch");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "type mismatch");
 }
 
 ZEST_CASE(null_from_non_zero_byte_fails) {
     // A null is written as 0x00; any other byte is not one.
     std::nullptr_t out = nullptr;
     auto status = bincode::from_bytes(bytes({5}), out);
-    ASSERT(!status);
-    EXPECT(status.error().message == "type mismatch");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "type mismatch");
 }
 
 ZEST_CASE(number_out_of_range_fails) {
     auto encoded = bincode::to_bytes(300);
-    ASSERT(encoded);
+    ZASSERT(encoded);
     std::int8_t out = 0;
     auto status = bincode::from_bytes(*encoded, out);
-    ASSERT(!status);
-    EXPECT(status.error().message == "number out of range");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "number out of range");
 }
 
 ZEST_CASE(variant_index_out_of_range_fails) {
     std::variant<int, std::string> out;
     auto status = bincode::from_bytes(bytes({2, 0, 0, 0}), out);
-    ASSERT(!status);
-    EXPECT(status.error().message == "invalid variant index 2");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "invalid variant index 2");
 }
 
 ZEST_CASE(trailing_bytes_fails) {
     auto encoded = bincode::to_bytes(7);
-    ASSERT(encoded);
+    ZASSERT(encoded);
     encoded->push_back(std::byte{0});
     int out = 0;
     auto status = bincode::from_bytes(*encoded, out);
-    ASSERT(!status);
-    EXPECT(status.error().message == "trailing bytes");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "trailing bytes");
 }
 
 ZEST_CASE(skip_if_on_decode_reads_past_the_field) {
     // The field's bytes are there, so they are read and dropped, and the
     // next field reads from where it belongs.
     auto encoded = bincode::to_bytes(Triple{.first = 1, .second = 2, .third = 3});
-    ASSERT(encoded);
+    ZASSERT(encoded);
     SkipsSecondOnDecode out{};
-    ASSERT(bincode::from_bytes(*encoded, out));
-    EXPECT(out.first == 1);
-    EXPECT(meta::annotated_value(out.second) == 88);
-    EXPECT(out.third == 3);
+    ZASSERT(bincode::from_bytes(*encoded, out));
+    ZEXPECT(out.first == 1);
+    ZEXPECT(meta::annotated_value(out.second) == 88);
+    ZEXPECT(out.third == 3);
 }
 
 ZEST_CASE(dynamic_repr_reads_the_framing_it_writes) {
     // Followed by a string, which reads from where the framing ends.
     std::tuple<Framed, std::string> value{Framed{.bytes = bytes({0xAB, 0xCD})}, "after"};
     auto encoded = bincode::to_bytes(value);
-    ASSERT(encoded);
+    ZASSERT(encoded);
     auto plain =
         bincode::to_bytes(std::tuple{framed_magic, std::get<0>(value).bytes, std::string("after")});
-    ASSERT(plain);
-    EXPECT(*encoded == *plain);
+    ZASSERT(plain);
+    ZEXPECT(*encoded == *plain);
     std::tuple<Framed, std::string> out;
-    ASSERT(bincode::from_bytes(*encoded, out));
-    EXPECT(out == value);
+    ZASSERT(bincode::from_bytes(*encoded, out));
+    ZEXPECT(out == value);
 }
 
 ZEST_CASE(optional_of_null_pointer_keeps_its_presence) {
@@ -222,12 +222,12 @@ ZEST_CASE(optional_of_null_pointer_keeps_its_presence) {
     // engaged optional holding a null pointer is not an empty optional.
     std::optional<std::shared_ptr<int>> value = std::shared_ptr<int>();
     auto encoded = bincode::to_bytes(value);
-    ASSERT(encoded);
-    EXPECT(*encoded == bytes({1, 0}));
+    ZASSERT(encoded);
+    ZEXPECT(*encoded == bytes({1, 0}));
     std::optional<std::shared_ptr<int>> out;
-    ASSERT(bincode::from_bytes(*encoded, out));
-    ASSERT(out.has_value());
-    EXPECT(*out == nullptr);
+    ZASSERT(bincode::from_bytes(*encoded, out));
+    ZASSERT(out.has_value());
+    ZEXPECT(*out == nullptr);
 }
 
 };  // ZEST_SUITE(codec_bincode_decode)

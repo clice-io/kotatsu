@@ -31,20 +31,20 @@ struct CamelConfig {
 ZEST_SUITE(codec_visit_dispatch) {
 
 ZEST_CASE(only_a_variant_takes_a_tagging_spec) {
-    STATIC_EXPECT(detail::taggable<std::variant<int, std::string>>);
-    STATIC_EXPECT(!detail::taggable<Shape>);
-    STATIC_EXPECT(!detail::taggable<int>);
+    ZSTATIC_EXPECT(detail::taggable<std::variant<int, std::string>>);
+    ZSTATIC_EXPECT(!detail::taggable<Shape>);
+    ZSTATIC_EXPECT(!detail::taggable<int>);
     // An expected is variant-kinded, but has no alternatives to tag.
-    STATIC_EXPECT(!detail::taggable<std::expected<int, std::string>>);
+    ZSTATIC_EXPECT(!detail::taggable<std::expected<int, std::string>>);
 }
 
 ZEST_CASE(field_named_by_name_alias_or_rename) {
-    STATIC_EXPECT(detail::has_field_named<default_config<>, Shape>("sides"));
-    STATIC_EXPECT(!detail::has_field_named<default_config<>, Shape>("kind"));
-    STATIC_EXPECT(detail::has_field_named<default_config<>, Polygon>("corners"));
+    ZSTATIC_EXPECT(detail::has_field_named<default_config<>, Shape>("sides"));
+    ZSTATIC_EXPECT(!detail::has_field_named<default_config<>, Shape>("kind"));
+    ZSTATIC_EXPECT(detail::has_field_named<default_config<>, Polygon>("corners"));
     // Under the config's renaming, not the declared name.
-    STATIC_EXPECT(detail::has_field_named<default_config<CamelConfig>, Polygon>("vertexCount"));
-    STATIC_EXPECT(!detail::has_field_named<default_config<CamelConfig>, Polygon>("vertex_count"));
+    ZSTATIC_EXPECT(detail::has_field_named<default_config<CamelConfig>, Polygon>("vertexCount"));
+    ZSTATIC_EXPECT(!detail::has_field_named<default_config<CamelConfig>, Polygon>("vertex_count"));
 }
 
 };  // ZEST_SUITE(codec_visit_dispatch)

@@ -45,8 +45,8 @@ ZEST_SUITE(async_io_stream_tcp, zest::LoopFixture) {
 
 ZEST_CASE(both_ends_write_and_read) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
-    EXPECT(listener->port > 0);
+    ZASSERT(listener.has_value());
+    ZEXPECT(listener->port > 0);
     auto echo = [&]() -> task<void, error> {
         auto connection = co_await listener->acceptor.accept().or_fail();
         auto request = co_await connection.read().or_fail();
@@ -59,14 +59,14 @@ ZEST_CASE(both_ends_write_and_read) {
     };
 
     auto [served, reply] = run(echo(), client());
-    EXPECT(served.has_value());
-    ASSERT(reply.has_value());
-    EXPECT(*reply == "ping-pong");
+    ZEXPECT(served.has_value());
+    ZASSERT(reply.has_value());
+    ZEXPECT(*reply == "ping-pong");
 }
 
 ZEST_CASE(try_write_writes_at_once) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->acceptor.accept().or_fail();
         co_return co_await connection.read().or_fail();
@@ -77,16 +77,16 @@ ZEST_CASE(try_write_writes_at_once) {
     };
 
     auto [received, written] = run(serve(), client());
-    ASSERT(written.has_value());
-    ASSERT(written->has_value());
-    EXPECT(**written == 3U);
-    ASSERT(received.has_value());
-    EXPECT(*received == "now");
+    ZASSERT(written.has_value());
+    ZASSERT(written->has_value());
+    ZEXPECT(**written == 3U);
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == "now");
 }
 
 ZEST_CASE(read_after_the_peer_closes_reports_eof) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto serve = [&]() -> task<result<std::string>, error> {
         auto connection = co_await listener->acceptor.accept().or_fail();
         co_return co_await connection.read();
@@ -96,18 +96,18 @@ ZEST_CASE(read_after_the_peer_closes_reports_eof) {
     };
 
     auto [received, connected] = run(serve(), client());
-    EXPECT(connected.has_value());
-    ASSERT(received.has_value());
-    ASSERT(received->has_error());
-    EXPECT(received->error() == error::end_of_file);
+    ZEXPECT(connected.has_value());
+    ZASSERT(received.has_value());
+    ZASSERT(received->has_error());
+    ZEXPECT(received->error() == error::end_of_file);
 }
 
 ZEST_CASE(read_after_the_peer_resets_fails) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto sock = connect_raw(listener->port);
-    ASSERT(sock != invalid_socket);
-    ASSERT(reset_socket(sock) == 0);
+    ZASSERT(sock != invalid_socket);
+    ZASSERT(reset_socket(sock) == 0);
     auto serve = [&]() -> task<result<std::size_t>, error> {
         auto connection = co_await listener->acceptor.accept().or_fail();
         std::array<char, 16> buffer{};
@@ -115,9 +115,9 @@ ZEST_CASE(read_after_the_peer_resets_fails) {
     };
 
     auto [received] = run(serve());
-    ASSERT(received.has_value());
-    ASSERT(received->has_error());
-    EXPECT(received->error() == error::connection_reset_by_peer);
+    ZASSERT(received.has_value());
+    ZASSERT(received->has_error());
+    ZEXPECT(received->error() == error::connection_reset_by_peer);
 }
 
 // The reset arrives while the reader holds the data sent before it, and is
@@ -125,11 +125,11 @@ ZEST_CASE(read_after_the_peer_resets_fails) {
 #ifndef _WIN32
 ZEST_CASE(read_after_data_and_a_reset_fails) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto sock = connect_raw(listener->port);
-    ASSERT(sock != invalid_socket);
-    ASSERT(::send(sock, "data", 4, 0) == 4);
-    ASSERT(reset_socket(sock) == 0);
+    ZASSERT(sock != invalid_socket);
+    ZASSERT(::send(sock, "data", 4, 0) == 4);
+    ZASSERT(reset_socket(sock) == 0);
     auto serve = [&]() -> task<std::pair<std::string, result<std::string>>, error> {
         auto connection = co_await listener->acceptor.accept().or_fail();
         auto data = co_await connection.read().or_fail();
@@ -140,10 +140,10 @@ ZEST_CASE(read_after_data_and_a_reset_fails) {
     };
 
     auto [received] = run(serve());
-    ASSERT(received.has_value());
-    EXPECT(received->first == "data");
-    ASSERT(received->second.has_error());
-    EXPECT(received->second.error() == error::connection_reset_by_peer);
+    ZASSERT(received.has_value());
+    ZEXPECT(received->first == "data");
+    ZASSERT(received->second.has_error());
+    ZEXPECT(received->second.error() == error::connection_reset_by_peer);
 }
 #endif
 
@@ -151,7 +151,7 @@ ZEST_CASE(read_after_data_and_a_reset_fails) {
 // then the end, and answers on the half the client left open.
 ZEST_CASE(shutdown_lets_the_peer_read_to_the_end_and_answer) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->acceptor.accept().or_fail();
         auto request = co_await connection.read_to_end().or_fail();
@@ -167,10 +167,10 @@ ZEST_CASE(shutdown_lets_the_peer_read_to_the_end_and_answer) {
     };
 
     auto [served, answer] = run(serve(), client());
-    ASSERT(served.has_value());
-    EXPECT(*served == "firstsecond");
-    ASSERT(answer.has_value());
-    EXPECT(*answer == "firstsecond-answered");
+    ZASSERT(served.has_value());
+    ZEXPECT(*served == "firstsecond");
+    ZASSERT(answer.has_value());
+    ZEXPECT(*answer == "firstsecond-answered");
 }
 
 // The server never reads, so more than the loopback buffers hold is still
@@ -180,7 +180,7 @@ ZEST_CASE(shutdown_lets_the_peer_read_to_the_end_and_answer) {
 #ifndef _WIN32
 ZEST_CASE(write_ended_by_closing_its_stream_fails) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     const std::string large(32 * 1024 * 1024, 'x');
     std::optional<tcp> connection;
     event connected;
@@ -197,9 +197,9 @@ ZEST_CASE(write_ended_by_closing_its_stream_fails) {
     };
 
     auto [served, written] = run(serve(), client());
-    EXPECT(served.has_value());
-    ASSERT(written.has_error());
-    EXPECT(written.error() == error::operation_aborted);
+    ZEXPECT(served.has_value());
+    ZASSERT(written.has_error());
+    ZEXPECT(written.error() == error::operation_aborted);
 }
 #endif
 
@@ -207,7 +207,7 @@ ZEST_CASE(write_ended_by_closing_its_stream_fails) {
 // and so does a write after them.
 ZEST_CASE(write_or_shutdown_after_a_shutdown_fails) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->acceptor.accept().or_fail();
         co_return co_await connection.read_to_end().or_fail();
@@ -221,46 +221,46 @@ ZEST_CASE(write_or_shutdown_after_a_shutdown_fails) {
     };
 
     auto [served, failed] = run(serve(), client());
-    ASSERT(served.has_value());
-    EXPECT(served->empty());
-    ASSERT(failed.has_value());
-    EXPECT(failed->first == error::socket_is_not_connected);
-    EXPECT(failed->second == error::broken_pipe);
+    ZASSERT(served.has_value());
+    ZEXPECT(served->empty());
+    ZASSERT(failed.has_value());
+    ZEXPECT(failed->first == error::socket_is_not_connected);
+    ZEXPECT(failed->second == error::broken_pipe);
 }
 
 ZEST_CASE(inert_acceptor_fails) {
     tcp::acceptor inert;
 
     auto [accepted] = run(inert.accept());
-    ASSERT(accepted.has_error());
-    EXPECT(accepted.error() == error::invalid_argument);
-    EXPECT(inert.stop() == error::invalid_argument);
+    ZASSERT(accepted.has_error());
+    ZEXPECT(accepted.error() == error::invalid_argument);
+    ZEXPECT(inert.stop() == error::invalid_argument);
     auto name = inert.getsockname();
-    ASSERT(name.has_error());
-    EXPECT(name.error() == error::invalid_argument);
+    ZASSERT(name.has_error());
+    ZEXPECT(name.error() == error::invalid_argument);
 }
 
 ZEST_CASE(second_accept_while_one_is_pending_fails) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto second_then_connect = [&]() -> task<error> {
         auto second = co_await listener->acceptor.accept();
         auto connected = co_await tcp::connect("127.0.0.1", listener->port);
-        EXPECT(connected.has_value());
+        ZEXPECT(connected.has_value());
         co_return second.has_error() ? second.error() : error();
     };
 
     auto [first, second] = run(listener->acceptor.accept(), second_then_connect());
-    EXPECT(first.has_value());
-    ASSERT(second.has_value());
-    EXPECT(*second == error::resource_busy_or_locked);
+    ZEXPECT(first.has_value());
+    ZASSERT(second.has_value());
+    ZEXPECT(*second == error::resource_busy_or_locked);
 }
 
 // No client connects before the yield, so only the cancel can end the first
 // accept.
 ZEST_CASE(cancelled_accept_leaves_the_listener_usable) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto cancel_then_serve = [&]() -> task<std::pair<std::size_t, std::string>, error> {
         auto first = co_await or_fail(co_await when_any(listener->acceptor.accept(), yield()));
         auto connection = co_await listener->acceptor.accept().or_fail();
@@ -273,10 +273,10 @@ ZEST_CASE(cancelled_accept_leaves_the_listener_usable) {
     };
 
     auto [received, sent] = run(cancel_then_serve(), client());
-    ASSERT(received.has_value());
-    EXPECT(received->first == 1U);
-    EXPECT(received->second == "after");
-    EXPECT(sent.has_value());
+    ZASSERT(received.has_value());
+    ZEXPECT(received->first == 1U);
+    ZEXPECT(received->second == "after");
+    ZEXPECT(sent.has_value());
 }
 
 // libuv supports reuse_port where SO_REUSEPORT balances the load, and
@@ -285,14 +285,14 @@ ZEST_CASE(reuse_port_lets_two_listeners_share_a_port) {
     const tcp::options reuse_port{.reuse_port = true};
     auto first = tcp::listen("127.0.0.1", 0, reuse_port, loop);
 #if defined(__APPLE__) || defined(_WIN32)
-    ASSERT(first.has_error());
-    EXPECT(first.error() == error::operation_not_supported_on_socket);
+    ZASSERT(first.has_error());
+    ZEXPECT(first.error() == error::operation_not_supported_on_socket);
 #else
-    ASSERT(first.has_value());
+    ZASSERT(first.has_value());
     auto name = first->getsockname();
-    ASSERT(name.has_value());
+    ZASSERT(name.has_value());
     auto second = tcp::listen("127.0.0.1", name->port, reuse_port, loop);
-    EXPECT(second.has_value());
+    ZEXPECT(second.has_value());
 #endif
 }
 
@@ -304,10 +304,10 @@ ZEST_CASE(ipv6_only_listener_takes_ipv6_clients) {
         zest::skip();
         return;
     }
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto name = listener->getsockname();
-    ASSERT(name.has_value());
-    EXPECT(name->addr == "::1");
+    ZASSERT(name.has_value());
+    ZEXPECT(name->addr == "::1");
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->accept().or_fail();
         co_return co_await connection.read().or_fail();
@@ -318,36 +318,36 @@ ZEST_CASE(ipv6_only_listener_takes_ipv6_clients) {
     };
 
     auto [received, sent] = run(serve(), client());
-    ASSERT(received.has_value());
-    EXPECT(*received == "over-ipv6");
-    EXPECT(sent.has_value());
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == "over-ipv6");
+    ZEXPECT(sent.has_value());
 }
 
 // libuv only makes an IPv6 socket IPv6-only; the flag on an IPv4 address is
 // refused rather than ignored.
 ZEST_CASE(ipv6_only_listen_on_an_ipv4_address_fails) {
     auto listener = tcp::listen("127.0.0.1", 0, {.ipv6_only = true}, loop);
-    ASSERT(listener.has_error());
-    EXPECT(listener.error() == error::invalid_argument);
+    ZASSERT(listener.has_error());
+    ZEXPECT(listener.error() == error::invalid_argument);
 }
 
 ZEST_CASE(listen_on_a_port_in_use_fails) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
 
     auto taken = tcp::listen("127.0.0.1", listener->port, loop);
-    ASSERT(taken.has_error());
-    EXPECT(taken.error() == error::address_already_in_use);
+    ZASSERT(taken.has_error());
+    ZEXPECT(taken.error() == error::address_already_in_use);
 }
 
 ZEST_CASE(unparsable_host_fails) {
     auto listened = tcp::listen("not-an-address", 0, loop);
-    ASSERT(listened.has_error());
-    EXPECT(listened.error() == error::invalid_argument);
+    ZASSERT(listened.has_error());
+    ZEXPECT(listened.error() == error::invalid_argument);
 
     auto [connected] = run(tcp::connect("not-an-address", 80, loop));
-    ASSERT(connected.has_error());
-    EXPECT(connected.error() == error::invalid_argument);
+    ZASSERT(connected.has_error());
+    ZEXPECT(connected.error() == error::invalid_argument);
 }
 
 ZEST_CASE(connect_to_a_closed_port_fails) {
@@ -355,14 +355,14 @@ ZEST_CASE(connect_to_a_closed_port_fails) {
     {
         RawSocket bound;
         bound.fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        ASSERT(bound.fd != invalid_socket);
+        ZASSERT(bound.fd != invalid_socket);
         port = bind_loopback_raw(bound.fd);
     }
-    ASSERT(port > 0);
+    ZASSERT(port > 0);
 
     auto [connected] = run(tcp::connect("127.0.0.1", port, loop));
-    ASSERT(connected.has_error());
-    EXPECT(connected.error() == error::connection_refused);
+    ZASSERT(connected.has_error());
+    ZEXPECT(connected.error() == error::connection_refused);
 }
 
 // A raw listener that nobody accepts from, its backlog of 0 taken by one
@@ -373,13 +373,13 @@ ZEST_CASE(connect_to_a_closed_port_fails) {
 ZEST_CASE(connect_can_be_cancelled) {
     RawSocket listening;
     listening.fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    ASSERT(listening.fd != invalid_socket);
+    ZASSERT(listening.fd != invalid_socket);
     auto port = bind_loopback_raw(listening.fd);
-    ASSERT(port > 0);
-    ASSERT(::listen(listening.fd, 0) == 0);
+    ZASSERT(port > 0);
+    ZASSERT(::listen(listening.fd, 0) == 0);
     RawSocket queued;
     queued.fd = connect_raw(port);
-    ASSERT(queued.fd != invalid_socket);
+    ZASSERT(queued.fd != invalid_socket);
     cancellation_source source;
     auto cancel_it = [&]() -> task<> {
         source.cancel();
@@ -388,13 +388,13 @@ ZEST_CASE(connect_can_be_cancelled) {
 
     auto [connected, cancelled] =
         run(with_token(tcp::connect("127.0.0.1", port, loop), source.token()), cancel_it());
-    EXPECT(connected.is_cancelled());
+    ZEXPECT(connected.is_cancelled());
 }
 #endif
 
 ZEST_CASE(connection_before_accept_is_kept) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     event written;
     auto client = [&]() -> task<void, error> {
         auto connection = co_await tcp::connect("127.0.0.1", listener->port).or_fail();
@@ -408,33 +408,33 @@ ZEST_CASE(connection_before_accept_is_kept) {
     };
 
     auto [sent, received] = run(client(), serve_later());
-    EXPECT(sent.has_value());
-    ASSERT(received.has_value());
-    EXPECT(*received == "early");
+    ZEXPECT(sent.has_value());
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == "early");
 }
 
 #ifndef _WIN32
 ZEST_CASE(guess_handle_tells_sockets_apart) {
     socket_t stream = ::socket(AF_INET, SOCK_STREAM, 0);
     socket_t datagram = ::socket(AF_INET, SOCK_DGRAM, 0);
-    ASSERT(stream != invalid_socket);
-    ASSERT(datagram != invalid_socket);
+    ZASSERT(stream != invalid_socket);
+    ZASSERT(datagram != invalid_socket);
 
     auto stream_kind = guess_handle(stream);
     auto datagram_kind = guess_handle(datagram);
     close_socket(stream);
     close_socket(datagram);
-    EXPECT(stream_kind == handle_type::tcp);
-    EXPECT(datagram_kind == handle_type::udp);
+    ZEXPECT(stream_kind == handle_type::tcp);
+    ZEXPECT(datagram_kind == handle_type::udp);
 }
 
 ZEST_CASE(open_wraps_a_connected_socket) {
     auto listener = listen_loopback(loop);
-    ASSERT(listener.has_value());
+    ZASSERT(listener.has_value());
     auto sock = connect_raw(listener->port);
-    ASSERT(sock != invalid_socket);
+    ZASSERT(sock != invalid_socket);
     auto wrapped = tcp::open(sock, loop);
-    ASSERT(wrapped.has_value());
+    ZASSERT(wrapped.has_value());
     auto serve = [&]() -> task<std::string, error> {
         auto connection = co_await listener->acceptor.accept().or_fail();
         co_return co_await connection.read().or_fail();
@@ -444,9 +444,9 @@ ZEST_CASE(open_wraps_a_connected_socket) {
     };
 
     auto [received, sent] = run(serve(), client());
-    ASSERT(received.has_value());
-    EXPECT(*received == "opened");
-    EXPECT(sent.has_value());
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == "opened");
+    ZEXPECT(sent.has_value());
 }
 #endif
 

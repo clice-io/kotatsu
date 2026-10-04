@@ -54,12 +54,12 @@ ZEST_CASE(join_reports_the_first_error_and_cancels_the_rest) {
     };
 
     auto [result, drove] = run(driver(), trigger());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector{error::connection_refused});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector{error::connection_refused});
     // Neither gate is ever set: their waits went because the error's cancel
     // reached them.
-    EXPECT(!second_gate.has_waiters());
-    EXPECT(!slow_gate.has_waiters());
+    ZEXPECT(!second_gate.has_waiters());
+    ZEXPECT(!slow_gate.has_waiters());
 }
 
 // The children the first error cancels fail too; join() reports every error
@@ -86,8 +86,8 @@ ZEST_CASE(join_reports_errors_in_the_order_the_children_failed) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector{error::connection_refused, error::connection_reset_by_peer});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector{error::connection_refused, error::connection_reset_by_peer});
 }
 
 ZEST_CASE(join_reports_errors_of_mixed_types) {
@@ -112,10 +112,10 @@ ZEST_CASE(join_reports_errors_of_mixed_types) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    ASSERT(result->size() == 1U);
-    ASSERT(std::holds_alternative<CustomError>(result->front()));
-    EXPECT(std::get<CustomError>(result->front()).code == 7);
+    ZASSERT(result.has_value());
+    ZASSERT(result->size() == 1U);
+    ZASSERT(std::holds_alternative<CustomError>(result->front()));
+    ZEXPECT(std::get<CustomError>(result->front()).code == 7);
 }
 
 ZEST_CASE(error_handled_inside_a_child_does_not_reach_the_group) {
@@ -140,8 +140,8 @@ ZEST_CASE(error_handled_inside_a_child_does_not_reach_the_group) {
     };
 
     auto [result] = run(driver());
-    EXPECT(result.has_value());
-    EXPECT(sibling_finished);
+    ZEXPECT(result.has_value());
+    ZEXPECT(sibling_finished);
 }
 
 // A child that fails while its group is being cancelled from outside keeps
@@ -171,8 +171,8 @@ ZEST_CASE(child_error_survives_an_external_cancel) {
     };
 
     auto [result, drove] = run(target, cancel_it());
-    EXPECT(reported == std::vector{error::connection_refused});
-    EXPECT(result.is_cancelled());
+    ZEXPECT(reported == std::vector{error::connection_refused});
+    ZEXPECT(result.is_cancelled());
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -194,8 +194,8 @@ ZEST_CASE(exception_fails_the_joiner_and_cancels_the_rest, skip = test::exceptio
         co_await group.join();
     };
 
-    EXPECT(test::thrown([&] { run(driver()); }) == "group boom");
-    EXPECT(!gate.has_waiters());
+    ZEXPECT(test::thrown([&] { run(driver()); }) == "group boom");
+    ZEXPECT(!gate.has_waiters());
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
@@ -210,7 +210,7 @@ ZEST_CASE(exception_thrown_while_spawning_reaches_join, skip = test::exceptions_
         co_await group.join();
     };
 
-    EXPECT(test::thrown([&] { run(driver()); }) == "at once");
+    ZEXPECT(test::thrown([&] { run(driver()); }) == "at once");
 }
 
 // Reads what was thrown; see test::exceptions_unreadable.
@@ -231,7 +231,7 @@ ZEST_CASE(exception_outranks_an_error, skip = test::exceptions_unreadable) {
         [[maybe_unused]] auto joined = co_await group.join();
     };
 
-    EXPECT(test::thrown([&] { run(driver()); }) == "boom");
+    ZEXPECT(test::thrown([&] { run(driver()); }) == "boom");
 }
 
 #if !KOTA_WORKAROUND_WINDOWS_ASAN_COROUTINE_EXCEPTION
@@ -257,7 +257,7 @@ ZEST_CASE(join_rethrows_the_first_exception_thrown, skip = test::exceptions_unre
         co_return;
     };
 
-    EXPECT(test::thrown([&] { run(driver(), trigger()); }) == "first thrown");
+    ZEXPECT(test::thrown([&] { run(driver(), trigger()); }) == "first thrown");
 }
 #endif  // !KOTA_WORKAROUND_WINDOWS_ASAN_COROUTINE_EXCEPTION
 

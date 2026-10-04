@@ -30,33 +30,34 @@ ZEST_CASE(value_overload_value_initializes) {
         {"list",  dyn::Array{std::int64_t{1}, std::int64_t{2}}},
         {"count", std::int64_t{2}                             },
     });
-    ASSERT(result);
+    ZASSERT(result);
     const test::HoldsExplicit expected{
         .list = {1, 2},
         .count = 2
     };
-    EXPECT(meta::eq(*result, expected));
-    STATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
+    ZEXPECT(meta::eq(*result, expected));
+    ZSTATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
     // A type with no default constructor has no value to decode into.
-    STATIC_EXPECT(!decodes_by_value<test::NoDefault>);
+    ZSTATIC_EXPECT(!decodes_by_value<test::NoDefault>);
 }
 
 ZEST_CASE(tree_reads_itself) {
     dyn::Value tree{
         {"k", dyn::Array{std::int64_t{9}, "x"}}
     };
-    EXPECT(dyn::from_dyn<dyn::Value>(tree) == tree);
-    EXPECT(dyn::from_dyn<dyn::Object>(tree) == tree.as_object());
-    EXPECT(dyn::from_dyn<dyn::Array>(tree.as_object().at("k")) == dyn::Array{std::int64_t{9}, "x"});
+    ZEXPECT(dyn::from_dyn<dyn::Value>(tree) == tree);
+    ZEXPECT(dyn::from_dyn<dyn::Object>(tree) == tree.as_object());
+    ZEXPECT(dyn::from_dyn<dyn::Array>(tree.as_object().at("k")) ==
+            dyn::Array{std::int64_t{9}, "x"});
 }
 
 ZEST_CASE(tree_of_another_kind_fails) {
     auto array = dyn::from_dyn<dyn::Array>(dyn::Value(std::int64_t{1}));
-    ASSERT(!array);
-    EXPECT(array.error().message == "invalid type: expected array, got signed_int");
+    ZASSERT(!array);
+    ZEXPECT(array.error().message == "invalid type: expected array, got signed_int");
     auto object = dyn::from_dyn<dyn::Object>(dyn::Value("x"));
-    ASSERT(!object);
-    EXPECT(object.error().message == "invalid type: expected object, got string");
+    ZASSERT(!object);
+    ZEXPECT(object.error().message == "invalid type: expected object, got string");
 }
 
 ZEST_CASE(tree_inside_a_value_reads_itself) {
@@ -64,10 +65,10 @@ ZEST_CASE(tree_inside_a_value_reads_itself) {
     auto typed = dyn::from_dyn<test::Field<dyn::Value>>(dyn::Value{
         {"value", dyn::Object{{"name", "alice"}, {"n", std::int64_t{1}}}},
     });
-    ASSERT(typed);
-    EXPECT(typed->value == (dyn::Value{
-                               {"name", "alice"        },
-                               {"n",    std::int64_t{1}},
+    ZASSERT(typed);
+    ZEXPECT(typed->value == (dyn::Value{
+                                {"name", "alice"        },
+                                {"n",    std::int64_t{1}},
     }));
 }
 
@@ -79,10 +80,10 @@ ZEST_CASE(unknown_fields_reported_without_location) {
         {"y",     std::int64_t{2}},
         {"extra", true           },
     });
-    ASSERT(point);
-    ASSERT(unknown.entries.size() == 1U);
-    EXPECT(unknown.entries[0].message == "unknown field 'extra'");
-    EXPECT(!unknown.entries[0].location);
+    ZASSERT(point);
+    ZASSERT(unknown.entries.size() == 1U);
+    ZEXPECT(unknown.entries[0].message == "unknown field 'extra'");
+    ZEXPECT(!unknown.entries[0].location);
 }
 
 ZEST_CASE(duplicate_keys_last_wins) {
@@ -95,13 +96,13 @@ ZEST_CASE(duplicate_keys_last_wins) {
     dyn::Value tree(object);
 
     auto point = dyn::from_dyn<test::Point>(tree);
-    ASSERT(point);
-    EXPECT(point->x == 3);
+    ZASSERT(point);
+    ZEXPECT(point->x == 3);
     auto map = dyn::from_dyn<std::map<std::string, int>>(tree);
-    ASSERT(map);
-    EXPECT(*map == (std::map<std::string, int>{
-                       {"x", 3},
-                       {"y", 2}
+    ZASSERT(map);
+    ZEXPECT(*map == (std::map<std::string, int>{
+                        {"x", 3},
+                        {"y", 2}
     }));
 }
 
@@ -113,8 +114,8 @@ ZEST_CASE(adjacent_duplicate_tag_fails) {
     object.insert("c", std::int64_t{42});
     test::AdjacentShape out;
     auto status = dyn::from_dyn(dyn::Value(object), out);
-    ASSERT(!status);
-    EXPECT(status.error().message == "adjacently tagged variant: duplicate tag field");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "adjacently tagged variant: duplicate tag field");
 }
 
 ZEST_CASE(internal_duplicate_tag_fails) {
@@ -124,8 +125,8 @@ ZEST_CASE(internal_duplicate_tag_fails) {
     object.insert("radius", 1.0);
     test::InternalShape out;
     auto status = dyn::from_dyn(dyn::Value(object), out);
-    ASSERT(!status);
-    EXPECT(status.error().message == "internally tagged variant: duplicate tag field");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "internally tagged variant: duplicate tag field");
 }
 
 ZEST_CASE(adjacent_duplicate_content_fails) {
@@ -135,39 +136,39 @@ ZEST_CASE(adjacent_duplicate_content_fails) {
     object.insert("c", std::int64_t{2});
     test::AdjacentShape out;
     auto status = dyn::from_dyn(dyn::Value(object), out);
-    ASSERT(!status);
-    EXPECT(status.error().message == "adjacently tagged variant: duplicate content field");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "adjacently tagged variant: duplicate content field");
 }
 
 ZEST_CASE(type_mismatch_fails) {
     bool flag = false;
     auto status = dyn::from_dyn(dyn::Value(std::int64_t{1}), flag);
-    ASSERT(!status);
-    EXPECT(status.error().message == "invalid type: expected boolean, got signed_int");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "invalid type: expected boolean, got signed_int");
 }
 
 ZEST_CASE(null_from_non_null_fails) {
     std::nullptr_t null = nullptr;
     auto status = dyn::from_dyn(dyn::Value(std::int64_t{42}), null);
-    ASSERT(!status);
-    EXPECT(status.error().message == "invalid type: expected null, got signed_int");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "invalid type: expected null, got signed_int");
 
     // An untagged variant's last alternative decodes on the real reader when
     // nothing else claims the value; a null alternative there must not
     // swallow it.
     std::variant<int, std::monostate> choice = 1;
     auto fallback = dyn::from_dyn(dyn::Value(std::string("x")), choice);
-    ASSERT(!fallback);
-    EXPECT(fallback.error().message == "invalid type: expected null, got string");
+    ZASSERT(!fallback);
+    ZEXPECT(fallback.error().message == "invalid type: expected null, got string");
 }
 
 ZEST_CASE(integers_read_across_signedness) {
     std::int32_t signed_out = 0;
-    ASSERT(dyn::from_dyn(dyn::Value(std::uint64_t{7}), signed_out));
-    EXPECT(signed_out == 7);
+    ZASSERT(dyn::from_dyn(dyn::Value(std::uint64_t{7}), signed_out));
+    ZEXPECT(signed_out == 7);
     std::uint8_t unsigned_out = 0;
-    ASSERT(dyn::from_dyn(dyn::Value(std::int64_t{7}), unsigned_out));
-    EXPECT(unsigned_out == 7U);
+    ZASSERT(dyn::from_dyn(dyn::Value(std::int64_t{7}), unsigned_out));
+    ZEXPECT(unsigned_out == 7U);
 }
 
 ZEST_CASE(integer_out_of_range_fails) {
@@ -175,38 +176,38 @@ ZEST_CASE(integer_out_of_range_fails) {
     // the tree stores it with.
     std::int8_t narrow = 0;
     auto wide = dyn::from_dyn(dyn::Value(std::int64_t{300}), narrow);
-    ASSERT(!wide);
-    EXPECT(wide.error().message == "integer value out of range");
+    ZASSERT(!wide);
+    ZEXPECT(wide.error().message == "integer value out of range");
     std::int64_t signed_out = 0;
     auto too_big = dyn::from_dyn(dyn::Value(std::numeric_limits<std::uint64_t>::max()), signed_out);
-    ASSERT(!too_big);
-    EXPECT(too_big.error().message == "integer value out of range");
+    ZASSERT(!too_big);
+    ZEXPECT(too_big.error().message == "integer value out of range");
     std::uint32_t unsigned_out = 0;
     auto negative = dyn::from_dyn(dyn::Value(std::int64_t{-1}), unsigned_out);
-    ASSERT(!negative);
-    EXPECT(negative.error().message == "integer value out of range");
+    ZASSERT(!negative);
+    ZEXPECT(negative.error().message == "integer value out of range");
 }
 
 ZEST_CASE(byte_out_of_range_fails) {
     std::vector<std::byte> bytes;
     auto status =
         dyn::from_dyn(dyn::Value(dyn::Array{std::uint64_t{0}, std::uint64_t{256}}), bytes);
-    ASSERT(!status);
-    EXPECT(status.error().message == "byte array element out of range [0, 255]");
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "byte array element out of range [0, 255]");
 }
 
 ZEST_CASE(char_reads_one_codepoint_up_to_255) {
     // Two bytes of UTF-8 under either lead byte: C2 for U+0080-U+00BF, C3
     // above.
     char out = '\0';
-    ASSERT(dyn::from_dyn(dyn::Value("\xC2\x80"), out));
-    EXPECT(out == static_cast<char>(0x80));
-    ASSERT(dyn::from_dyn(dyn::Value("§"), out));
-    EXPECT(out == static_cast<char>(0xA7));
-    ASSERT(dyn::from_dyn(dyn::Value("é"), out));
-    EXPECT(out == static_cast<char>(0xE9));
-    ASSERT(dyn::from_dyn(dyn::Value("ÿ"), out));
-    EXPECT(out == static_cast<char>(0xFF));
+    ZASSERT(dyn::from_dyn(dyn::Value("\xC2\x80"), out));
+    ZEXPECT(out == static_cast<char>(0x80));
+    ZASSERT(dyn::from_dyn(dyn::Value("§"), out));
+    ZEXPECT(out == static_cast<char>(0xA7));
+    ZASSERT(dyn::from_dyn(dyn::Value("é"), out));
+    ZEXPECT(out == static_cast<char>(0xE9));
+    ZASSERT(dyn::from_dyn(dyn::Value("ÿ"), out));
+    ZEXPECT(out == static_cast<char>(0xFF));
 }
 
 ZEST_CASE(char_from_other_text_fails) {
@@ -217,8 +218,8 @@ ZEST_CASE(char_from_other_text_fails) {
         ZEST_CONTEXT("text: {}", text);
         char out = '\0';
         auto status = dyn::from_dyn(dyn::Value(text), out);
-        ASSERT(!status);
-        EXPECT(status.error().message == codec::invalid_char_message);
+        ZASSERT(!status);
+        ZEXPECT(status.error().message == codec::invalid_char_message);
     }
 }
 

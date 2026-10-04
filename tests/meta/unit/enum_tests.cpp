@@ -71,26 +71,26 @@ static_assert(reflection<Edge8>::member_names[1] == "Max");
 ZEST_SUITE(meta_enum) {
 
 ZEST_CASE(enum_member_names) {
-    EXPECT(enum_name(Color::Red) == "Red");
-    EXPECT(enum_name(Color::Green) == "Green");
-    EXPECT(enum_name(Color::Blue) == "Blue");
+    ZEXPECT(enum_name(Color::Red) == "Red");
+    ZEXPECT(enum_name(Color::Green) == "Green");
+    ZEXPECT(enum_name(Color::Blue) == "Blue");
 
-    EXPECT(enum_name(Plain::Zero) == "Zero");
-    EXPECT(enum_name(Plain::One) == "One");
-    EXPECT(enum_name(Plain::Two) == "Two");
+    ZEXPECT(enum_name(Plain::Zero) == "Zero");
+    ZEXPECT(enum_name(Plain::One) == "One");
+    ZEXPECT(enum_name(Plain::Two) == "Two");
 
-    EXPECT(enum_name(Tiny::A) == "A");
-    EXPECT(enum_name(Tiny::B) == "B");
-    EXPECT(enum_name(Tiny::C) == "C");
+    ZEXPECT(enum_name(Tiny::A) == "A");
+    ZEXPECT(enum_name(Tiny::B) == "B");
+    ZEXPECT(enum_name(Tiny::C) == "C");
 
-    EXPECT(enum_name(Sparse::Neg) == "Neg");
-    EXPECT(enum_name(Sparse::Mid) == "Mid");
-    EXPECT(enum_name(Sparse::High) == "High");
-    EXPECT(enum_name(static_cast<Sparse>(42)) == "");
-    EXPECT(enum_name(static_cast<Sparse>(42), "Unknown") == "Unknown");
+    ZEXPECT(enum_name(Sparse::Neg) == "Neg");
+    ZEXPECT(enum_name(Sparse::Mid) == "Mid");
+    ZEXPECT(enum_name(Sparse::High) == "High");
+    ZEXPECT(enum_name(static_cast<Sparse>(42)) == "");
+    ZEXPECT(enum_name(static_cast<Sparse>(42), "Unknown") == "Unknown");
 
-    EXPECT(enum_name(Edge8::Min) == "Min");
-    EXPECT(enum_name(Edge8::Max) == "Max");
+    ZEXPECT(enum_name(Edge8::Min) == "Min");
+    ZEXPECT(enum_name(Edge8::Max) == "Max");
 }
 
 };  // ZEST_SUITE(meta_enum)

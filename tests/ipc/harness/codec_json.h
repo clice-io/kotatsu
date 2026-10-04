@@ -33,7 +33,7 @@ struct JSONAdapter {
     static std::string encode(const T& value) {
         auto text = codec::json::to_string<ipc::lsp_config>(value);
         ZEST_CONTEXT("JSONAdapter::encode");
-        EXPECT(text.has_value());
+        ZEXPECT(text.has_value());
         return text ? std::move(*text) : std::string();
     }
 

@@ -72,65 +72,65 @@ ZEST_CASE(equivalent_merge_chains_share_type_info) {
     // describe one document.
     const auto& chained = type_info_of<ChainedPolicies>();
     const auto& flat = type_info_of<FlatPolicies>();
-    EXPECT(&chained == &flat);
+    ZEXPECT(&chained == &flat);
 
-    ASSERT(chained.kind == type_kind::structure);
+    ZASSERT(chained.kind == type_kind::structure);
     const auto& info = static_cast<const struct_type_info&>(chained);
-    EXPECT(info.deny_unknown);
-    ASSERT(info.fields.size() == 1U);
-    EXPECT(info.fields[0].name == "xVal");
+    ZEXPECT(info.deny_unknown);
+    ZASSERT(info.fields.size() == 1U);
+    ZEXPECT(info.fields[0].name == "xVal");
 }
 
 ZEST_CASE(defaulted_fields_stays_through_a_deeper_merge) {
     // Like deny, defaulted is sticky: the rename merged below it keeps it.
     const auto& info = static_cast<const struct_type_info&>(
         type_info_of<annotate<DefaultedOnly>::type<RenamedInside>>());
-    ASSERT(info.fields.size() == 1U);
-    EXPECT(info.fields[0].has_default);
+    ZASSERT(info.fields.size() == 1U);
+    ZEXPECT(info.fields[0].has_default);
     const auto& inner = static_cast<const struct_type_info&>(info.fields[0].type());
-    ASSERT(inner.fields.size() == 1U);
-    EXPECT(inner.fields[0].name == "xVal");
-    EXPECT(inner.fields[0].has_default);
+    ZASSERT(inner.fields.size() == 1U);
+    ZEXPECT(inner.fields[0].name == "xVal");
+    ZEXPECT(inner.fields[0].has_default);
 }
 
 ZEST_CASE(annotation_in_declared_repr_resolves) {
-    EXPECT(zest::type_eq<resolved_repr_t<test::BasisPoints>, double>());
+    ZEXPECT(zest::type_eq<resolved_repr_t<test::BasisPoints>, double>());
 }
 
 ZEST_CASE(tagging_in_declared_repr_reaches_type_info) {
     const auto& info = type_info_of<test::LoadResult>();
-    ASSERT(info.kind == type_kind::variant);
+    ZASSERT(info.kind == type_kind::variant);
     const auto& variant = static_cast<const variant_type_info&>(info);
-    EXPECT(variant.tagging == tag_mode::adjacent);
-    EXPECT(variant.tag_field == "status");
+    ZEXPECT(variant.tagging == tag_mode::adjacent);
+    ZEXPECT(variant.tag_field == "status");
 }
 
 ZEST_CASE(outer_policy_reaches_repr_alternatives) {
     const auto& info = type_info_of<annotate<test::StrictCamelTag>::type<test::LoadResult>>();
-    ASSERT(info.kind == type_kind::variant);
+    ZASSERT(info.kind == type_kind::variant);
     const auto& variant = static_cast<const variant_type_info&>(info);
-    EXPECT(variant.tagging == tag_mode::adjacent);
-    ASSERT(variant.alternatives.size() == 2U);
+    ZEXPECT(variant.tagging == tag_mode::adjacent);
+    ZASSERT(variant.alternatives.size() == 2U);
     const auto& ok = static_cast<const struct_type_info&>(variant.alternatives[0]());
-    EXPECT(ok.deny_unknown);
-    ASSERT(ok.fields.size() == 1U);
-    EXPECT(ok.fields[0].name == "byteCount");
+    ZEXPECT(ok.deny_unknown);
+    ZASSERT(ok.fields.size() == 1U);
+    ZEXPECT(ok.fields[0].name == "byteCount");
 }
 
 ZEST_CASE(adapter_beats_tagging_in_resolution) {
-    EXPECT(zest::type_eq<resolved_repr_t<test::AdaptedChoice>, std::string>());
+    ZEXPECT(zest::type_eq<resolved_repr_t<test::AdaptedChoice>, std::string>());
 }
 
 ZEST_CASE(tagging_beats_the_variants_repr_in_resolution) {
-    EXPECT(zest::type_eq<resolved_repr_t<test::TaggedStampOrNote>, test::StampOrNote>());
-    EXPECT(resolves_to_tagged_variant<test::TaggedStampOrNote>);
+    ZEXPECT(zest::type_eq<resolved_repr_t<test::TaggedStampOrNote>, test::StampOrNote>());
+    ZEXPECT(resolves_to_tagged_variant<test::TaggedStampOrNote>);
     // Untagged, the variant's repr applies.
-    EXPECT(zest::type_eq<resolved_repr_t<test::StampOrNote>, std::string>());
+    ZEXPECT(zest::type_eq<resolved_repr_t<test::StampOrNote>, std::string>());
 }
 
 ZEST_CASE(format_scoped_repr_resolves_under_its_format) {
-    EXPECT(zest::type_eq<resolved_repr_t<test::Journal>, std::string>());
-    EXPECT(zest::type_eq<resolved_repr_t<test::Journal, TestFormat>, std::int64_t>());
+    ZEXPECT(zest::type_eq<resolved_repr_t<test::Journal>, std::string>());
+    ZEXPECT(zest::type_eq<resolved_repr_t<test::Journal, TestFormat>, std::int64_t>());
 }
 
 ZEST_CASE(rename_all_on_untagged_variant_is_inert) {
@@ -138,12 +138,12 @@ ZEST_CASE(rename_all_on_untagged_variant_is_inert) {
     // one, so its alternatives keep their names.
     using choice = annotate<CamelOnly>::type<std::variant<test::RenameTarget, int>>;
     const auto& erased = type_info_of<choice>();
-    ASSERT(erased.kind == type_kind::variant);
+    ZASSERT(erased.kind == type_kind::variant);
     const auto& info = static_cast<const variant_type_info&>(erased);
-    ASSERT(info.alternatives.size() == 2U);
+    ZASSERT(info.alternatives.size() == 2U);
     const auto& alternative = static_cast<const struct_type_info&>(info.alternatives[0]());
-    ASSERT(alternative.fields.size() == 2U);
-    EXPECT(alternative.fields[0].name == "user_name");
+    ZASSERT(alternative.fields.size() == 2U);
+    ZEXPECT(alternative.fields[0].name == "user_name");
 }
 
 };  // ZEST_SUITE(meta_schema_type_info_repr)

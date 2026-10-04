@@ -24,16 +24,16 @@ using value_body = task<int> (*)(task_group<>&);
 ZEST_SUITE(async_runtime_task_group_scoped, zest::LoopFixture) {
 
 ZEST_CASE(with_task_group_gives_what_join_gives) {
-    EXPECT(zest::type_eq<decltype(with_task_group(plain_body{})), task<>>());
-    EXPECT(zest::type_eq<decltype(with_task_group<error>(error_body{})),
-                         task<void, std::vector<error>>>());
+    ZEXPECT(zest::type_eq<decltype(with_task_group(plain_body{})), task<>>());
+    ZEXPECT(zest::type_eq<decltype(with_task_group<error>(error_body{})),
+                          task<void, std::vector<error>>>());
 }
 
 ZEST_CASE(with_task_group_takes_a_body_its_group_takes) {
-    STATIC_EXPECT(group_body<plain_body>);
-    STATIC_EXPECT(group_body<error_body, error>);
-    STATIC_EXPECT(!group_body<error_body>);
-    STATIC_EXPECT(!group_body<value_body>);
+    ZSTATIC_EXPECT(group_body<plain_body>);
+    ZSTATIC_EXPECT(group_body<error_body, error>);
+    ZSTATIC_EXPECT(!group_body<error_body>);
+    ZSTATIC_EXPECT(!group_body<value_body>);
 }
 
 ZEST_CASE(with_task_group_waits_for_what_the_body_spawned) {
@@ -58,9 +58,9 @@ ZEST_CASE(with_task_group_waits_for_what_the_body_spawned) {
     };
 
     auto [result, opened] = run(driver(), opener());
-    EXPECT(result.has_value());
-    EXPECT(opened.has_value());
-    EXPECT(order == std::vector<std::string>{"body", "open", "child", "joined"});
+    ZEXPECT(result.has_value());
+    ZEXPECT(opened.has_value());
+    ZEXPECT(order == std::vector<std::string>{"body", "open", "child", "joined"});
 }
 
 // The body's captures live in with_task_group's frame: a child reads them
@@ -101,10 +101,10 @@ ZEST_CASE(with_task_group_keeps_the_body_captures_for_the_children) {
     };
 
     auto [result, opened] = run(driver(), opener());
-    EXPECT(result.has_value());
-    EXPECT(opened.has_value());
-    EXPECT(seen_alive);
-    EXPECT(!*alive);
+    ZEXPECT(result.has_value());
+    ZEXPECT(opened.has_value());
+    ZEXPECT(seen_alive);
+    ZEXPECT(!*alive);
 }
 
 ZEST_CASE(with_task_group_child_failure_cancels_the_body_fails) {
@@ -123,10 +123,10 @@ ZEST_CASE(with_task_group_child_failure_cancels_the_body_fails) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_error());
-    EXPECT(result.error() == std::vector{error::connection_refused});
-    EXPECT(!body_finished);
-    EXPECT(!gate.has_waiters());
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == std::vector{error::connection_refused});
+    ZEXPECT(!body_finished);
+    ZEXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(with_task_group_body_failure_cancels_the_children_fails) {
@@ -143,9 +143,9 @@ ZEST_CASE(with_task_group_body_failure_cancels_the_children_fails) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_error());
-    EXPECT(result.error() == std::vector{error::connection_refused});
-    EXPECT(!gate.has_waiters());
+    ZASSERT(result.has_error());
+    ZEXPECT(result.error() == std::vector{error::connection_refused});
+    ZEXPECT(!gate.has_waiters());
 }
 
 // A body that ends cancelled is a child like any other: the children it
@@ -169,9 +169,9 @@ ZEST_CASE(with_task_group_body_cancel_leaves_the_children_running) {
     };
 
     auto [result, opened] = run(driver(), opener());
-    EXPECT(result.has_value());
-    EXPECT(opened.has_value());
-    EXPECT(child_finished);
+    ZEXPECT(result.has_value());
+    ZEXPECT(opened.has_value());
+    ZEXPECT(child_finished);
 }
 
 // A cancel of the awaiting task cancels every child, and the task ends
@@ -194,10 +194,10 @@ ZEST_CASE(with_task_group_cancel_waits_for_every_child) {
     };
 
     auto [result, ended_early] = run(scoped, canceller());
-    EXPECT(result.is_cancelled());
-    EXPECT(op.cancel_requested());
-    ASSERT(ended_early.has_value());
-    EXPECT(!*ended_early);
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(op.cancel_requested());
+    ZASSERT(ended_early.has_value());
+    ZEXPECT(!*ended_early);
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -215,7 +215,7 @@ ZEST_CASE(with_task_group_rethrows_what_a_child_threw, skip = test::exceptions_u
         });
     };
 
-    EXPECT(test::thrown([&] { run(driver()); }) == "child boom");
+    ZEXPECT(test::thrown([&] { run(driver()); }) == "child boom");
 }
 
 #endif

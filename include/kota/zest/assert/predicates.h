@@ -1,16 +1,20 @@
 #pragma once
 
 #include <algorithm>
+#include <exception>
 #include <format>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 #include "kota/zest/assert/check.h"
+#include "kota/zest/assert/trace.h"
 #include "kota/meta/compare.h"
 #include "kota/meta/name.h"
 
-// Predicates for checks, e.g. `EXPECT(contains(text, "key"))`. Each returns a
+// Predicates for checks, e.g. `ZEXPECT(contains(text, "key"))`. Each returns a
 // Match, which carries how to show its inputs when the check fails; `!`
 // negates one and keeps that. A predicate takes its arguments by reference:
 // the explanation reads them, and they live as long as the check.
@@ -85,5 +89,46 @@ Match type_eq() {
             },
     };
 }
+
+#ifdef __cpp_exceptions
+
+/// Calling `body` throws, an `E` if `E` is given; `!throws(body)` is that it
+/// throws nothing. The explanation names what was thrown, if anything.
+template <typename E = void, typename F>
+Match throws(F&& body) {
+    // Kept, not read: clang-cl's ASan breaks the reference a handler gets,
+    // so only a failing check reads what was thrown.
+    std::exception_ptr thrown;
+    bool held = false;
+    try {
+        std::forward<F>(body)();
+    } catch(...) {
+        thrown = std::current_exception();
+        if constexpr(std::is_void_v<E>) {
+            held = true;
+        } else {
+            try {
+                throw;
+            } catch(const E&) {
+                held = true;
+            } catch(...) {}
+        }
+    }
+    return Match{
+        .held = held,
+        .explain =
+            [thrown] {
+                auto what = thrown ? std::format("thrown: {}", describe_exception(thrown))
+                                   : std::string("nothing was thrown");
+                if constexpr(std::is_void_v<E>) {
+                    return what;
+                } else {
+                    return std::format("expected: {}\n{}", meta::type_name<E>(), what);
+                }
+            },
+    };
+}
+
+#endif
 
 }  // namespace kota::zest

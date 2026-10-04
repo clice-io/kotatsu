@@ -116,33 +116,33 @@ ZEST_CASE(error_in_a_later_arm_fails) {
 
 ZEST_CASE(expansion_past_the_limit_fails) {
     auto product = GlobPattern::create("{a,b}.{c,d}", 2);
-    ASSERT(!product.has_value());
-    EXPECT(product.error().kind == GlobError::TooManyExpansions);
-    EXPECT(product.error().begin == 0U);
-    EXPECT(product.error().end == 0U);
+    ZASSERT(!product.has_value());
+    ZEXPECT(product.error().kind == GlobError::TooManyExpansions);
+    ZEXPECT(product.error().begin == 0U);
+    ZEXPECT(product.error().end == 0U);
     auto single = GlobPattern::create("{a,b,c}", 2);
-    ASSERT(!single.has_value());
-    EXPECT(single.error().kind == GlobError::TooManyExpansions);
+    ZASSERT(!single.has_value());
+    ZEXPECT(single.error().kind == GlobError::TooManyExpansions);
 }
 
 ZEST_CASE(expansions_up_to_the_limit_compile) {
     auto product = GlobPattern::create("{a,b}.{c,d}", 4);
-    ASSERT(product.has_value());
-    EXPECT(product->match("b.c"));
+    ZASSERT(product.has_value());
+    ZEXPECT(product->match("b.c"));
     auto single = GlobPattern::create("{a}", 1);
-    ASSERT(single.has_value());
-    EXPECT(single->match("a"));
+    ZASSERT(single.has_value());
+    ZEXPECT(single->match("a"));
 }
 
 ZEST_CASE(limit_of_zero_reads_braces_literally) {
     auto literal = GlobPattern::create("{a,b}", 0);
-    ASSERT(literal.has_value());
-    EXPECT(literal->match("{a,b}"));
-    EXPECT(!literal->match("a"));
-    EXPECT(!literal->match("b"));
+    ZASSERT(literal.has_value());
+    ZEXPECT(literal->match("{a,b}"));
+    ZEXPECT(!literal->match("a"));
+    ZEXPECT(!literal->match("b"));
     auto nested = GlobPattern::create("x{a,{b}}*", 0);
-    ASSERT(nested.has_value());
-    EXPECT(nested->match("x{a,{b}}yz"));
+    ZASSERT(nested.has_value());
+    ZEXPECT(nested->match("x{a,{b}}yz"));
 }
 
 };  // ZEST_SUITE(support_glob_pattern_syntax)

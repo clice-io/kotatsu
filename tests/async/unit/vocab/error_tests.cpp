@@ -10,31 +10,31 @@ ZEST_SUITE(async_vocab_error) {
 
 ZEST_CASE(default_is_success) {
     error e;
-    EXPECT(!e);
-    EXPECT(!e.has_error());
-    EXPECT(e.value() == 0);
-    EXPECT(e.message() == "success");
+    ZEXPECT(!e);
+    ZEXPECT(!e.has_error());
+    ZEXPECT(e.value() == 0);
+    ZEXPECT(e.message() == "success");
 }
 
 ZEST_CASE(named_code_is_an_error) {
     auto e = error::no_such_file_or_directory;
-    EXPECT(static_cast<bool>(e));
-    EXPECT(e.has_error());
-    EXPECT(e.value() != 0);
-    EXPECT(e == error(e.value()));
-    EXPECT(e != error::permission_denied);
+    ZEXPECT(static_cast<bool>(e));
+    ZEXPECT(e.has_error());
+    ZEXPECT(e.value() != 0);
+    ZEXPECT(e == error(e.value()));
+    ZEXPECT(e != error::permission_denied);
 }
 
 ZEST_CASE(message_describes_the_code) {
-    EXPECT(error::operation_aborted.message() == "operation aborted");
-    EXPECT(zest::contains(error::no_such_file_or_directory.message(), "no such file"));
+    ZEXPECT(error::operation_aborted.message() == "operation aborted");
+    ZEXPECT(zest::contains(error::no_such_file_or_directory.message(), "no such file"));
 }
 
 ZEST_CASE(clear_resets_to_success) {
     auto e = error::io_error;
     e.clear();
-    EXPECT(!e);
-    EXPECT(e == error());
+    ZEXPECT(!e);
+    ZEXPECT(e == error());
 }
 
 };  // ZEST_SUITE(async_vocab_error)

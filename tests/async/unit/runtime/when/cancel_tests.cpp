@@ -43,8 +43,8 @@ ZEST_CASE(all_child_cancel_cancels_the_rest) {
     };
 
     auto [result, drove] = run(combined(), driver());
-    EXPECT(result.is_cancelled());
-    EXPECT(!gate.has_waiters());
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(all_child_cancelling_while_armed_starts_no_later_child) {
@@ -58,8 +58,8 @@ ZEST_CASE(all_child_cancelling_while_armed_starts_no_later_child) {
     };
 
     auto [result] = run(combined());
-    EXPECT(result.is_cancelled());
-    EXPECT(started == 0);
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(started == 0);
 }
 
 // A child cancelled before the combinator starts it never runs: it ends
@@ -83,10 +83,10 @@ ZEST_CASE(child_cancelled_before_it_started_never_runs) {
     };
 
     auto [all_result, any_result] = run(all(), any());
-    EXPECT(all_result.is_cancelled());
-    EXPECT(any_result.is_cancelled());
+    ZEXPECT(all_result.is_cancelled());
+    ZEXPECT(any_result.is_cancelled());
     // Only the child of when_all started ahead of the cancelled one ran.
-    EXPECT(ran == 1);
+    ZEXPECT(ran == 1);
 }
 
 // The first decision cancels every child not started yet, those behind a
@@ -108,9 +108,9 @@ ZEST_CASE(cancel_reaches_children_behind_one_cancelled_before_it_started) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(*result == 0U);
-    EXPECT(!gate.has_waiters());
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 0U);
+    ZEXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(any_child_cancel_cancels_the_rest) {
@@ -134,8 +134,8 @@ ZEST_CASE(any_child_cancel_cancels_the_rest) {
     };
 
     auto [result, drove] = run(combined(), driver());
-    EXPECT(result.is_cancelled());
-    EXPECT(!gate.has_waiters());
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(any_child_cancelling_while_armed_starts_no_later_child) {
@@ -149,8 +149,8 @@ ZEST_CASE(any_child_cancelling_while_armed_starts_no_later_child) {
     };
 
     auto [result] = run(combined());
-    EXPECT(result.is_cancelled());
-    EXPECT(started == 0);
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(started == 0);
 }
 
 ZEST_CASE(all_reports_an_intercepted_cancel) {
@@ -165,9 +165,9 @@ ZEST_CASE(all_reports_an_intercepted_cancel) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(*result);
-    EXPECT(!gate.has_waiters());
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
+    ZEXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(any_reports_an_intercepted_cancel) {
@@ -182,9 +182,9 @@ ZEST_CASE(any_reports_an_intercepted_cancel) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(*result);
-    EXPECT(!gate.has_waiters());
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
+    ZEXPECT(!gate.has_waiters());
 }
 
 ZEST_CASE(cancel_handled_inside_a_child_is_a_value) {
@@ -200,8 +200,8 @@ ZEST_CASE(cancel_handled_inside_a_child_is_a_value) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::tuple{42, -1});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::tuple{42, -1});
 }
 
 ZEST_CASE(all_external_cancel_reaches_every_child) {
@@ -220,9 +220,9 @@ ZEST_CASE(all_external_cancel_reaches_every_child) {
     };
 
     auto [result, driver] = run(target, cancel_it());
-    EXPECT(result.is_cancelled());
-    EXPECT(!gates[0].has_waiters());
-    EXPECT(!gates[1].has_waiters());
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(!gates[0].has_waiters());
+    ZEXPECT(!gates[1].has_waiters());
 }
 
 ZEST_CASE(any_external_cancel_reaches_every_child) {
@@ -241,9 +241,9 @@ ZEST_CASE(any_external_cancel_reaches_every_child) {
     };
 
     auto [result, driver] = run(target, cancel_it());
-    EXPECT(result.is_cancelled());
-    EXPECT(!gates[0].has_waiters());
-    EXPECT(!gates[1].has_waiters());
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(!gates[0].has_waiters());
+    ZEXPECT(!gates[1].has_waiters());
 }
 
 // The range overloads report a child's own cancellation the same way.
@@ -272,11 +272,11 @@ ZEST_CASE(range_child_cancel_is_reported) {
     };
 
     auto [all_cancelled, any_cancelled] = run(all(), any());
-    ASSERT(all_cancelled.has_value());
-    EXPECT(*all_cancelled);
-    ASSERT(any_cancelled.has_value());
-    EXPECT(*any_cancelled);
-    EXPECT(!gate.has_waiters());
+    ZASSERT(all_cancelled.has_value());
+    ZEXPECT(*all_cancelled);
+    ZASSERT(any_cancelled.has_value());
+    ZEXPECT(*any_cancelled);
+    ZEXPECT(!gate.has_waiters());
 }
 
 /// What a combinator's parent sees once the combinator returns.
@@ -313,13 +313,13 @@ ZEST_CASE(all_waits_for_cancelled_children_to_finish) {
     };
 
     auto [result, done_before] = run(combined(), finisher());
-    ASSERT(result.has_value());
-    EXPECT(result->cancelled);
-    EXPECT(result->frames_alive == 0);
-    EXPECT(op.cancel_requested());
-    ASSERT(done_before.has_value());
-    EXPECT(!*done_before);
-    EXPECT(combined_done);
+    ZASSERT(result.has_value());
+    ZEXPECT(result->cancelled);
+    ZEXPECT(result->frames_alive == 0);
+    ZEXPECT(op.cancel_requested());
+    ZASSERT(done_before.has_value());
+    ZEXPECT(!*done_before);
+    ZEXPECT(combined_done);
 }
 
 ZEST_CASE(any_waits_for_cancelled_children_to_finish) {
@@ -345,12 +345,12 @@ ZEST_CASE(any_waits_for_cancelled_children_to_finish) {
     };
 
     auto [result, done_before] = run(combined(), finisher());
-    ASSERT(result.has_value());
+    ZASSERT(result.has_value());
     // The fast child won, and the slow one's frame is gone.
-    EXPECT(*result == std::pair<std::size_t, long>{1, 0});
-    EXPECT(op.cancel_requested());
-    ASSERT(done_before.has_value());
-    EXPECT(!*done_before);
+    ZEXPECT(*result == std::pair<std::size_t, long>{1, 0});
+    ZEXPECT(op.cancel_requested());
+    ZASSERT(done_before.has_value());
+    ZEXPECT(!*done_before);
 }
 
 // Awaiting a combinator under a cancelled task starts none of its children.
@@ -368,8 +368,8 @@ ZEST_CASE(checkpoint_starts_no_child) {
     target = worker();
 
     auto [result] = run(target);
-    EXPECT(result.is_cancelled());
-    EXPECT(started == 0);
+    ZEXPECT(result.is_cancelled());
+    ZEXPECT(started == 0);
 }
 
 };  // ZEST_SUITE(async_runtime_when_cancel)

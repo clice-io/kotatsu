@@ -15,12 +15,13 @@ void expect_laid_out(const Diagnostic& diagnostic, const PositionStyle& style = 
     CompatibleRendererConfig compatible;
     compatible.diagnostic = style;
     const CompatibleRenderer compatible_renderer(compatible);
-    EXPECT_SNAPSHOT(render_diagnostic(diagnostic, &compatible_renderer), "compatible");
+    ZEXPECT(zest::snapshot(render_diagnostic(diagnostic, &compatible_renderer), "compatible"));
 
     ModernRendererConfig modern;
     modern.diagnostic = style;
     const ModernRenderer modern_renderer(modern);
-    EXPECT_SNAPSHOT(test::visible(render_diagnostic(diagnostic, &modern_renderer)), "modern");
+    ZEXPECT(
+        zest::snapshot(test::visible(render_diagnostic(diagnostic, &modern_renderer)), "modern"));
 }
 
 /// The lines of the compatible layout of `diagnostic` without its label: the source line,
@@ -115,10 +116,10 @@ ZEST_CASE(cut_line_fits_the_width) {
             ZEST_CONTEXT("argument {}, width {}", begin, width);
             const auto lines =
                 unlabelled_lines(diagnostic_at(long_argv, begin, begin + 1, "x"), width);
-            ASSERT(lines.size() == 3U);
-            EXPECT(lines[0].size() <= width);
+            ZASSERT(lines.size() == 3U);
+            ZEXPECT(lines[0].size() <= width);
             // The marker is no wider than the line, save one past its end.
-            EXPECT(lines[1].size() <= lines[0].size() + 1);
+            ZEXPECT(lines[1].size() <= lines[0].size() + 1);
         }
     }
 }
@@ -126,10 +127,10 @@ ZEST_CASE(cut_line_fits_the_width) {
 ZEST_CASE(cut_line_marks_the_argument) {
     // The marker stands under the start of the argument, or under the "..." that cuts it.
     const auto lines = unlabelled_lines(diagnostic_at(long_argv, 3, 4, "x"), 40);
-    ASSERT(lines.size() == 3U);
+    ZASSERT(lines.size() == 3U);
     const auto marker = lines[1].find('^');
-    ASSERT(marker != std::string::npos);
-    EXPECT(zest::starts_with(std::string_view(lines[0]).substr(marker), "--"));
+    ZASSERT(marker != std::string::npos);
+    ZEXPECT(zest::starts_with(std::string_view(lines[0]).substr(marker), "--"));
 }
 
 ZEST_CASE(narrow_width_leaves_part_of_an_ellipsis) {
@@ -140,8 +141,8 @@ ZEST_CASE(narrow_width_leaves_part_of_an_ellipsis) {
 
 ZEST_CASE(zero_width_keeps_the_whole_line) {
     const auto lines = unlabelled_lines(diagnostic_at(long_argv, 2, 3, "x"), 0);
-    ASSERT(lines.size() == 3U);
-    EXPECT(lines[0].size() == 2U + 1 + 200 + 1 + 220 + 1 + 2 + 1 + 4);
+    ZASSERT(lines.size() == 3U);
+    ZEXPECT(lines[0].size() == 2U + 1 + 200 + 1 + 220 + 1 + 2 + 1 + 4);
 }
 
 ZEST_CASE(argv_is_viewed_not_copied) {
@@ -149,7 +150,7 @@ ZEST_CASE(argv_is_viewed_not_copied) {
     const auto diagnostic = diagnostic_at(words, 0, 1, "unknown option");
     words[0] = "--renamed";
     const CompatibleRenderer renderer;
-    EXPECT(zest::contains(render_diagnostic(diagnostic, &renderer), "--renamed"));
+    ZEXPECT(zest::contains(render_diagnostic(diagnostic, &renderer), "--renamed"));
 }
 
 };  // ZEST_SUITE(deco_facade_text_diagnostic)

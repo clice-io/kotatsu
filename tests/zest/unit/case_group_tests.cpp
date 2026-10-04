@@ -15,7 +15,7 @@ ZEST_SUITE_ATTRS(serial = true);
 // under and the body a name runs.
 ZEST_CASE_GROUP(dynamic_cases) {
     for(int i = 0; i < 3; ++i) {
-        add_case(std::format("case_{}", i), [i] { EXPECT_SNAPSHOT(std::format("case {}", i)); });
+        add_case(std::format("case_{}", i), [i] { ZEXPECT(snapshot(std::format("case {}", i))); });
     }
 }
 

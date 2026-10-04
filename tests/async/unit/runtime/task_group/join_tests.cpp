@@ -36,8 +36,8 @@ ZEST_CASE(join_waits_for_every_child) {
     };
 
     auto [result, drove] = run(driver(), releaser());
-    ASSERT(result.has_value());
-    EXPECT(*result == 111);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 111);
 }
 
 ZEST_CASE(spawn_runs_the_child_until_it_suspends) {
@@ -55,8 +55,8 @@ ZEST_CASE(spawn_runs_the_child_until_it_suspends) {
     };
 
     auto [result] = run(driver());
-    EXPECT(result.has_value());
-    EXPECT(order == std::vector{1, 2, 3});
+    ZEXPECT(result.has_value());
+    ZEXPECT(order == std::vector{1, 2, 3});
 }
 
 ZEST_CASE(children_that_finish_at_once_are_joined) {
@@ -74,8 +74,8 @@ ZEST_CASE(children_that_finish_at_once_are_joined) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    EXPECT(*result == 11);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 11);
 }
 
 ZEST_CASE(join_of_an_empty_group_completes_at_once) {
@@ -85,7 +85,7 @@ ZEST_CASE(join_of_an_empty_group_completes_at_once) {
     };
 
     auto [result] = run(driver());
-    EXPECT(result.has_value());
+    ZEXPECT(result.has_value());
 }
 
 ZEST_CASE(join_of_an_error_group_without_failures_has_no_error) {
@@ -102,8 +102,8 @@ ZEST_CASE(join_of_an_error_group_without_failures_has_no_error) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    EXPECT(*result);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
 }
 
 ZEST_CASE(group_joins_inside_when_all) {
@@ -129,8 +129,8 @@ ZEST_CASE(group_joins_inside_when_all) {
     };
 
     auto [result] = run(combined());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::tuple{3, 100});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::tuple{3, 100});
 }
 
 ZEST_CASE(children_can_await_when_all) {
@@ -152,8 +152,8 @@ ZEST_CASE(children_can_await_when_all) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    EXPECT(*result == 6);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 6);
 }
 
 ZEST_CASE(many_children_are_all_joined) {
@@ -177,8 +177,8 @@ ZEST_CASE(many_children_are_all_joined) {
     };
 
     auto [result] = run(driver());
-    ASSERT(result.has_value());
-    EXPECT(*result == 400);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 400);
 }
 
 };  // ZEST_SUITE(async_runtime_task_group_join)

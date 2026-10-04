@@ -1,10 +1,17 @@
 #include "kota/zest/assert/check.h"
 
 #include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <iostream>
+#include <mutex>
 #include <print>
 #include <string_view>
+#include <thread>
 #include <vector>
 
+#include "execution.h"
 #include "kota/zest/assert/trace.h"
 #include "kota/zest/runner/registry.h"
 
@@ -12,7 +19,7 @@ namespace kota::zest {
 
 namespace {
 
-struct Entry {
+struct ContextEntry {
     std::uint64_t id;
     std::string message;
 };
@@ -20,8 +27,8 @@ struct Entry {
 /// Contexts entered on this thread and not yet ended, outermost first. It
 /// holds their messages rather than the contexts: one that ends on another
 /// thread, as a coroutine's may, is left here instead of dangling.
-std::vector<Entry>& contexts() {
-    thread_local std::vector<Entry> stack;
+std::vector<ContextEntry>& contexts() {
+    thread_local std::vector<ContextEntry> stack;
     return stack;
 }
 
@@ -51,7 +58,34 @@ void print_contexts() {
     }
 }
 
+struct Hook {
+    std::uint64_t id;
+    function<void()> run;
+};
+
+/// The fatal hooks alive, oldest first. The thread ending the process holds
+/// the mutex to the end, and its hooks may create or destroy hooks of their
+/// own, hence recursive.
+struct Hooks {
+    std::recursive_mutex mutex;
+    std::vector<Hook> alive;
+    std::uint64_t next_id = 0;
+};
+
+/// Built on first use: a FatalHook of static duration may come first.
+Hooks& hooks() {
+    static Hooks instance;
+    return instance;
+}
+
 }  // namespace
+
+void flush_output() {
+    // std::cout buffers on its own once sync_with_stdio(false) is set.
+    std::cout.flush();
+    std::clog.flush();
+    std::fflush(nullptr);
+}
 
 std::uint64_t Context::enter(std::string message) {
     static std::atomic<std::uint64_t> next_id = 0;
@@ -62,7 +96,22 @@ std::uint64_t Context::enter(std::string message) {
 
 // Not necessarily the innermost: coroutines interleave their contexts.
 Context::~Context() {
-    std::erase_if(contexts(), [this](const Entry& entry) { return entry.id == id; });
+    std::erase_if(contexts(), [this](const ContextEntry& entry) { return entry.id == id; });
+}
+
+FatalHook::FatalHook(function<void()> hook) {
+    auto& registry = hooks();
+    std::lock_guard lock(registry.mutex);
+    id = registry.next_id++;
+    registry.alive.push_back({.id = id, .run = std::move(hook)});
+}
+
+// Gone already if it ran, or if the process is ending on another thread,
+// which then never lets go of the mutex.
+FatalHook::~FatalHook() {
+    auto& registry = hooks();
+    std::lock_guard lock(registry.mutex);
+    std::erase_if(registry.alive, [this](const Hook& hook) { return hook.id == id; });
 }
 
 namespace detail {
@@ -80,30 +129,40 @@ void report_failure(std::string_view expression,
     failure();
 }
 
-void fail_reported(std::source_location location) {
-    print_contexts();
-    print_trace(location);
-    failure();
-}
-
-#ifdef __cpp_exceptions
-
-void check_throws(function<void()> body,
-                  std::string_view expression,
-                  bool expect_throw,
-                  std::source_location location) {
-    // An unexpected exception is printed where it is caught.
-    bool threw = trace_exception(std::move(body), !expect_throw);
-    if(threw != expect_throw) {
-        report_failure(expression,
-                       {
-                           {"", expect_throw ? "expected to throw" : "expected not to throw"}
-        },
-                       location);
+void end_fatally() {
+    thread_local bool ending_here = false;
+    static std::atomic<bool> ending = false;
+    // A hook's own ZASSERT: the runner knows already.
+    if(ending_here) {
+        flush_output();
+        std::_Exit(fatal_exit_code);
     }
-}
+    if(ending.exchange(true)) {
+        // Another thread ends the process, and this one with it.
+        while(true) {
+            std::this_thread::sleep_for(std::chrono::hours(1));
+        }
+    }
+    ending_here = true;
+    if(fatal_notice != nullptr) {
+        fatal_notice();
+    }
 
+    auto& registry = hooks();
+    registry.mutex.lock();
+    while(!registry.alive.empty()) {
+        auto hook = std::move(registry.alive.back());
+        registry.alive.pop_back();
+#ifdef __cpp_exceptions
+        // What a hook throws is printed, and the next one runs.
+        trace_exception(std::move(hook.run));
+#else
+        hook.run();
 #endif
+    }
+    flush_output();
+    std::_Exit(fatal_exit_code);
+}
 
 }  // namespace detail
 

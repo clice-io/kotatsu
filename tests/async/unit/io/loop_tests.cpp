@@ -20,7 +20,7 @@ namespace {
 ZEST_SUITE(async_io_loop, zest::LoopFixture) {
 
 ZEST_CASE(current_is_the_running_loop) {
-    EXPECT(!event_loop::has_current());
+    ZEXPECT(!event_loop::has_current());
     event_loop* seen = nullptr;
     auto probe = [&]() -> task<bool> {
         seen = &event_loop::current();
@@ -28,15 +28,15 @@ ZEST_CASE(current_is_the_running_loop) {
     };
 
     auto [result] = run(probe());
-    ASSERT(result.has_value());
-    EXPECT(*result);
-    EXPECT(seen == &loop);
-    EXPECT(!event_loop::has_current());
+    ZASSERT(result.has_value());
+    ZEXPECT(*result);
+    ZEXPECT(seen == &loop);
+    ZEXPECT(!event_loop::has_current());
 }
 
 ZEST_CASE(run_without_work_returns_at_once) {
     event_loop own;
-    EXPECT(own.run() == 0);
+    ZEXPECT(own.run() == 0);
 }
 
 ZEST_CASE(scheduled_reference_stays_with_the_caller) {
@@ -47,9 +47,9 @@ ZEST_CASE(scheduled_reference_stays_with_the_caller) {
     auto root = make();
 
     loop.schedule(root);
-    EXPECT(loop.run() == 0);
-    ASSERT(root.done());
-    EXPECT(root.result() == 7);
+    ZEXPECT(loop.run() == 0);
+    ZASSERT(root.done());
+    ZEXPECT(root.result() == 7);
 }
 
 ZEST_CASE(task_scheduled_while_running_runs_on_a_later_turn) {
@@ -67,9 +67,9 @@ ZEST_CASE(task_scheduled_while_running_runs_on_a_later_turn) {
     auto root = first();
 
     loop.schedule(root);
-    EXPECT(loop.run() == 0);
-    EXPECT(scheduled.done());
-    EXPECT(order == std::vector{1, 2});
+    ZEXPECT(loop.run() == 0);
+    ZEXPECT(scheduled.done());
+    ZEXPECT(order == std::vector{1, 2});
 }
 
 // MSVC's coroutine codegen under ASan cannot destroy a frame from its final
@@ -83,9 +83,9 @@ ZEST_CASE(scheduled_temporary_is_destroyed_by_the_loop) {
     };
 
     loop.schedule(make(std::move(frame_alive)));
-    EXPECT(!watch.expired());
-    EXPECT(loop.run() == 0);
-    EXPECT(watch.expired());
+    ZEXPECT(!watch.expired());
+    ZEXPECT(loop.run() == 0);
+    ZEXPECT(watch.expired());
 }
 
 // A child that ends cancelled ends a root the loop owns at its co_await: the
@@ -106,10 +106,10 @@ ZEST_CASE(scheduled_temporary_ended_by_a_cancelled_child_is_destroyed) {
     };
 
     loop.schedule(make(std::move(frame_alive)));
-    EXPECT(loop.run() == 0);
-    EXPECT(watch.expired());
-    EXPECT(child_ran);
-    EXPECT(!resumed);
+    ZEXPECT(loop.run() == 0);
+    ZEXPECT(watch.expired());
+    ZEXPECT(child_ran);
+    ZEXPECT(!resumed);
 }
 #endif
 
@@ -128,9 +128,9 @@ ZEST_CASE(roots_that_never_ran_go_with_their_loop) {
         task<> dropped = work(frames);
         other.schedule(dropped);
     }
-    EXPECT(frames.use_count() == 2);
+    ZEXPECT(frames.use_count() == 2);
     kept = task<>();
-    EXPECT(frames.use_count() == 1);
+    ZEXPECT(frames.use_count() == 1);
 }
 
 // A root cancelled before its first turn never runs, whether the cancel
@@ -154,9 +154,9 @@ ZEST_CASE(root_cancelled_before_its_first_turn_never_runs) {
     loop.schedule(first);
     loop.schedule(late);
     loop.run();
-    EXPECT(early.is_cancelled());
-    EXPECT(late.is_cancelled());
-    EXPECT(ran == 0);
+    ZEXPECT(early.is_cancelled());
+    ZEXPECT(late.is_cancelled());
+    ZEXPECT(ran == 0);
 }
 
 // A root the loop owns and that was cancelled before its first turn never
@@ -174,10 +174,10 @@ ZEST_CASE(owned_root_cancelled_before_it_starts_is_freed) {
     owned.cancel();
 
     loop.schedule(std::move(owned));
-    EXPECT(!watch.expired());
+    ZEXPECT(!watch.expired());
     loop.run();
-    EXPECT(watch.expired());
-    EXPECT(!ran);
+    ZEXPECT(watch.expired());
+    ZEXPECT(!ran);
 }
 
 // A scheduled root its caller drops before the loop starts it is let go: it
@@ -194,11 +194,11 @@ ZEST_CASE(scheduled_root_dropped_before_its_turn_is_let_go) {
         auto root = make(std::move(frame));
         loop.schedule(root);
     }
-    EXPECT(!watch.expired());
+    ZEXPECT(!watch.expired());
 
-    EXPECT(loop.run() == 0);
-    EXPECT(watch.expired());
-    EXPECT(!ran);
+    ZEXPECT(loop.run() == 0);
+    ZEXPECT(watch.expired());
+    ZEXPECT(!ran);
 }
 
 // A running root its caller drops is let go too: the drop cancels it, which
@@ -221,11 +221,11 @@ ZEST_CASE(running_root_dropped_by_its_caller_is_let_go) {
 
     loop.schedule(*root);
     loop.schedule(dropping);
-    EXPECT(loop.run() == 0);
-    EXPECT(dropping.done());
-    EXPECT(watch.expired());
-    EXPECT(!resumed);
-    EXPECT(!never.has_waiters());
+    ZEXPECT(loop.run() == 0);
+    ZEXPECT(dropping.done());
+    ZEXPECT(watch.expired());
+    ZEXPECT(!resumed);
+    ZEXPECT(!never.has_waiters());
 }
 
 ZEST_CASE(finished_roots_report_through_result) {
@@ -242,11 +242,11 @@ ZEST_CASE(finished_roots_report_through_result) {
     loop.schedule(bad);
     loop.run();
     auto good_result = good.result();
-    ASSERT(good_result.has_value());
-    EXPECT(*good_result == 3);
+    ZASSERT(good_result.has_value());
+    ZEXPECT(*good_result == 3);
     auto bad_result = bad.result();
-    ASSERT(bad_result.has_error());
-    EXPECT(bad_result.error() == error::io_error);
+    ZASSERT(bad_result.has_error());
+    ZEXPECT(bad_result.error() == error::io_error);
 }
 
 ZEST_CASE(cancelled_roots_report_through_value_and_result) {
@@ -264,8 +264,8 @@ ZEST_CASE(cancelled_roots_report_through_value_and_result) {
     loop.schedule(without_channel);
     loop.schedule(with_channel);
     loop.run();
-    EXPECT(without_channel.is_cancelled());
-    EXPECT(with_channel.result().is_cancelled());
+    ZEXPECT(without_channel.is_cancelled());
+    ZEXPECT(with_channel.result().is_cancelled());
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -279,8 +279,8 @@ ZEST_CASE(failed_root_rethrows_through_result, skip = test::exceptions_unreadabl
 
     loop.schedule(root);
     loop.run();
-    EXPECT(root.done());
-    EXPECT(test::thrown([&] { root.result(); }) == "root");
+    ZEXPECT(root.done());
+    ZEXPECT(test::thrown([&] { root.result(); }) == "root");
 }
 #endif
 
@@ -300,11 +300,11 @@ ZEST_CASE(stop_ends_run_with_work_still_pending) {
     loop.schedule(pending);
     loop.schedule(stopping);
     // run() says whether work was left when it returned.
-    EXPECT(loop.run() != 0);
-    EXPECT(!pending.done());
-    EXPECT(!resumed);
+    ZEXPECT(loop.run() != 0);
+    ZEXPECT(!pending.done());
+    ZEXPECT(!resumed);
     pending.cancel();
-    EXPECT(pending.is_cancelled());
+    ZEXPECT(pending.is_cancelled());
 }
 
 ZEST_CASE(on_destroy_callbacks_run_when_the_loop_goes) {
@@ -313,9 +313,9 @@ ZEST_CASE(on_destroy_callbacks_run_when_the_loop_goes) {
         event_loop own;
         own.on_destroy([&] { called += 1; });
         own.on_destroy([&] { called += 10; });
-        EXPECT(called == 0);
+        ZEXPECT(called == 0);
     }
-    EXPECT(called == 11);
+    ZEXPECT(called == 11);
 }
 
 // The loop closes the handles still open when it goes, and a wait pending on
@@ -330,13 +330,13 @@ ZEST_CASE(wait_on_a_handle_outliving_its_loop_ends_when_cancelled) {
 
     own->schedule(waiting);
     // The timer never started, so nothing keeps this loop running.
-    EXPECT(own->run() == 0);
-    ASSERT(!waiting.done());
+    ZEXPECT(own->run() == 0);
+    ZASSERT(!waiting.done());
     own.reset();
     t = timer();
-    EXPECT(!waiting.done());
+    ZEXPECT(!waiting.done());
     waiting.cancel();
-    EXPECT(waiting.is_cancelled());
+    ZEXPECT(waiting.is_cancelled());
 }
 
 // The loop drops what relays sent but it never delivered.
@@ -347,7 +347,7 @@ ZEST_CASE(relay_callbacks_left_when_the_loop_goes_never_run) {
         auto r = own.create_relay();
         r.send([&] { called = true; });
     }
-    EXPECT(!called);
+    ZEXPECT(!called);
 }
 
 ZEST_CASE(kota_run_returns_every_value) {
@@ -359,10 +359,10 @@ ZEST_CASE(kota_run_returns_every_value) {
     };
 
     auto [value, failed] = kota::run(one(), failing());
-    ASSERT(value.has_value());
-    EXPECT(*value == 1);
-    ASSERT(failed.has_error());
-    EXPECT(failed.error() == error::io_error);
+    ZASSERT(value.has_value());
+    ZEXPECT(*value == 1);
+    ZASSERT(failed.has_error());
+    ZEXPECT(failed.error() == error::io_error);
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -373,7 +373,7 @@ ZEST_CASE(kota_run_rethrows_what_a_task_throws, skip = test::exceptions_unreadab
         co_return 0;
     };
 
-    EXPECT(test::thrown([&] { kota::run(thrower()); }) == "from run");
+    ZEXPECT(test::thrown([&] { kota::run(thrower()); }) == "from run");
 }
 #endif
 
@@ -395,8 +395,8 @@ ZEST_CASE(relay_runs_callbacks_on_the_loop_in_order) {
     };
 
     auto [result] = run(sender());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector{0, 1, 2, 3, 4});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector{0, 1, 2, 3, 4});
 }
 
 // The relay holds the loop open until the last one goes: run() returns only
@@ -412,8 +412,8 @@ ZEST_CASE(relay_keeps_the_loop_running_until_the_last_is_gone) {
         second = relay{};
     });
 
-    EXPECT(loop.run() == 0);
-    EXPECT(called);
+    ZEXPECT(loop.run() == 0);
+    ZEXPECT(called);
 }
 
 // The destructor lets the loop go as assigning over the relay does.
@@ -425,8 +425,8 @@ ZEST_CASE(relay_destroyed_in_a_callback_lets_run_return) {
         held.reset();
     });
 
-    EXPECT(loop.run() == 0);
-    EXPECT(called);
+    ZEXPECT(loop.run() == 0);
+    ZEXPECT(called);
 }
 
 ZEST_CASE(inert_relay_ignores_send) {
@@ -438,8 +438,8 @@ ZEST_CASE(inert_relay_ignores_send) {
     live.send([&] { called = true; });
     moved = relay{};
 
-    EXPECT(loop.run() == 0);
-    EXPECT(!called);
+    ZEXPECT(loop.run() == 0);
+    ZEXPECT(!called);
 }
 
 ZEST_CASE(relay_callbacks_sent_before_it_goes_still_run) {
@@ -459,8 +459,8 @@ ZEST_CASE(relay_callbacks_sent_before_it_goes_still_run) {
     };
 
     auto [result] = run(sender());
-    ASSERT(result.has_value());
-    EXPECT(*result == 2);
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == 2);
 }
 
 ZEST_CASE(relay_send_from_a_callback_runs_later) {
@@ -481,8 +481,8 @@ ZEST_CASE(relay_send_from_a_callback_runs_later) {
     };
 
     auto [result] = run(sender());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector{1, 2, 3});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector{1, 2, 3});
 }
 
 ZEST_CASE(relay_move_assignment_keeps_the_old_callbacks) {
@@ -501,8 +501,8 @@ ZEST_CASE(relay_move_assignment_keeps_the_old_callbacks) {
     };
 
     auto [result] = run(sender());
-    ASSERT(result.has_value());
-    EXPECT(*result == std::vector{1, 2});
+    ZASSERT(result.has_value());
+    ZEXPECT(*result == std::vector{1, 2});
 }
 
 };  // ZEST_SUITE(async_io_loop)

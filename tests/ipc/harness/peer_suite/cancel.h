@@ -37,15 +37,15 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, scripted] = f.run(f.peer.run(), remote());
-        EXPECT(ran.has_value());
-        EXPECT(scripted.has_value());
-        EXPECT(!completed);
+        ZEXPECT(ran.has_value());
+        ZEXPECT(scripted.has_value());
+        ZEXPECT(!completed);
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(written[0].kind == Message::Kind::Error);
-        EXPECT(written[0].id == RequestID(22));
-        EXPECT(code_of(written[0].error) == ErrorCode::RequestCancelled);
-        EXPECT(written[0].error.message == "request cancelled");
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(written[0].kind == Message::Kind::Error);
+        ZEXPECT(written[0].id == RequestID(22));
+        ZEXPECT(code_of(written[0].error) == ErrorCode::RequestCancelled);
+        ZEXPECT(written[0].error.message == "request cancelled");
     });
 
     // A $/cancelRequest read with its request is dispatched after the handler
@@ -67,14 +67,14 @@ void peer_cancel(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        EXPECT(called);
-        EXPECT(!started);
+        ZEXPECT(ran.has_value());
+        ZEXPECT(called);
+        ZEXPECT(!started);
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(written[0].kind == Message::Kind::Error);
-        EXPECT(written[0].id == RequestID(22));
-        EXPECT(code_of(written[0].error) == ErrorCode::RequestCancelled);
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(written[0].kind == Message::Kind::Error);
+        ZEXPECT(written[0].id == RequestID(22));
+        ZEXPECT(code_of(written[0].error) == ErrorCode::RequestCancelled);
     });
 
     kit.add("cancel_request_after_the_answer_is_ignored", [](Fixture& f) {
@@ -87,10 +87,10 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, scripted] = f.run(f.peer.run(), remote());
-        EXPECT(ran.has_value());
+        ZEXPECT(ran.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(sum_of<A>(written[0]) == 3);
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(sum_of<A>(written[0]) == 3);
     });
 
     kit.add("cancel_request_for_an_unknown_id_is_ignored", [](Fixture& f) {
@@ -98,8 +98,8 @@ void peer_cancel(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(f.written().empty());
     });
 
     // Both cancellations arrive while the handler runs.
@@ -120,11 +120,11 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, scripted] = f.run(f.peer.run(), remote());
-        EXPECT(ran.has_value());
-        EXPECT(scripted.has_value());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(scripted.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 1U);
-        EXPECT(code_of(written[0].error) == ErrorCode::RequestCancelled);
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(code_of(written[0].error) == ErrorCode::RequestCancelled);
     });
 
     // test/ping answers at once, so its answer shows the peer has read the
@@ -151,12 +151,12 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, scripted] = f.run(f.peer.run(), remote());
-        EXPECT(ran.has_value());
+        ZEXPECT(ran.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 2U);
-        EXPECT(written[0].id == RequestID(2));
-        EXPECT(written[1].id == RequestID(1));
-        EXPECT(sum_of<A>(written[1]) == 3);
+        ZASSERT(written.size() == 2U);
+        ZEXPECT(written[0].id == RequestID(2));
+        ZEXPECT(written[1].id == RequestID(1));
+        ZEXPECT(sum_of<A>(written[1]) == 3);
     });
 
     // The peer handles $/cancelRequest itself; a handler for it is never
@@ -169,8 +169,8 @@ void peer_cancel(const PeerKit<A>& kit) {
         f.remote.end_input();
 
         auto [ran] = f.run(f.peer.run());
-        EXPECT(ran.has_value());
-        EXPECT(!called);
+        ZEXPECT(ran.has_value());
+        ZEXPECT(!called);
     });
 
     // The handler passes its own cancellation to the request it sends; the
@@ -198,19 +198,19 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, scripted] = f.run(f.peer.run(), remote());
-        EXPECT(ran.has_value());
-        EXPECT(scripted.has_value());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(scripted.has_value());
         const auto& written = f.written();
-        ASSERT(written.size() == 3U);
-        EXPECT(written[0].kind == Message::Kind::Request);
-        EXPECT(written[0].id == RequestID(1));
-        EXPECT(written[1].method == "$/cancelRequest");
+        ZASSERT(written.size() == 3U);
+        ZEXPECT(written[0].kind == Message::Kind::Request);
+        ZEXPECT(written[0].id == RequestID(1));
+        ZEXPECT(written[1].method == "$/cancelRequest");
         auto cancelled = decoded<CancelRequestParams, A>(written[1].body);
-        ASSERT(cancelled.has_value());
-        EXPECT(cancelled->id == RequestID(1));
-        EXPECT(written[2].kind == Message::Kind::Error);
-        EXPECT(written[2].id == RequestID(31));
-        EXPECT(code_of(written[2].error) == ErrorCode::RequestCancelled);
+        ZASSERT(cancelled.has_value());
+        ZEXPECT(cancelled->id == RequestID(1));
+        ZEXPECT(written[2].kind == Message::Kind::Error);
+        ZEXPECT(written[2].id == RequestID(31));
+        ZEXPECT(code_of(written[2].error) == ErrorCode::RequestCancelled);
     });
 
     // The token's cancel tells the remote and waits for its answer, here
@@ -235,18 +235,18 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
-        EXPECT(asked.error().message == "cancelled by the remote");
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
+        ZEXPECT(asked.error().message == "cancelled by the remote");
         const auto& written = f.written();
-        ASSERT(written.size() == 2U);
-        EXPECT(written[0].id == RequestID(1));
-        EXPECT(written[1].kind == Message::Kind::Notification);
-        EXPECT(written[1].method == "$/cancelRequest");
+        ZASSERT(written.size() == 2U);
+        ZEXPECT(written[0].id == RequestID(1));
+        ZEXPECT(written[1].kind == Message::Kind::Notification);
+        ZEXPECT(written[1].method == "$/cancelRequest");
         auto cancelled = decoded<CancelRequestParams, A>(written[1].body);
-        ASSERT(cancelled.has_value());
-        EXPECT(cancelled->id == RequestID(1));
+        ZASSERT(cancelled.has_value());
+        ZEXPECT(cancelled->id == RequestID(1));
     });
 
     kit.add("send_request_with_a_cancelled_token_fails_without_writing", [](Fixture& f) {
@@ -262,11 +262,11 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked] = f.run(f.peer.run(), ask());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
-        EXPECT(asked.error().message == "request cancelled");
-        EXPECT(f.written().empty());
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::RequestCancelled);
+        ZEXPECT(asked.error().message == "request cancelled");
+        ZEXPECT(f.written().empty());
     });
 
     // A remote may finish a request after it was told of the cancellation:
@@ -286,10 +286,10 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(asked.has_value());
-        EXPECT(asked->sum == 1);
-        EXPECT(f.written().size() == 2U);
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_value());
+        ZEXPECT(asked->sum == 1);
+        ZEXPECT(f.written().size() == 2U);
     });
 
     // The token fires once the answer is read, before the caller resumes:
@@ -309,11 +309,11 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        EXPECT(source.cancelled());
-        ASSERT(asked.has_value());
-        EXPECT(asked->sum == 1);
-        EXPECT(f.written().size() == 1U);
+        ZEXPECT(ran.has_value());
+        ZEXPECT(source.cancelled());
+        ZASSERT(asked.has_value());
+        ZEXPECT(asked->sum == 1);
+        ZEXPECT(f.written().size() == 1U);
     });
 
     // The task awaiting the request is cancelled, not the request: the
@@ -342,16 +342,16 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, cancelled, scripted] = f.run(f.peer.run(), caller(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(cancelled.has_value());
-        EXPECT(*cancelled);
-        EXPECT(!ended_before_the_answer);
+        ZEXPECT(ran.has_value());
+        ZASSERT(cancelled.has_value());
+        ZEXPECT(*cancelled);
+        ZEXPECT(!ended_before_the_answer);
         const auto& written = f.written();
-        ASSERT(written.size() == 2U);
-        EXPECT(written[1].method == "$/cancelRequest");
+        ZASSERT(written.size() == 2U);
+        ZEXPECT(written[1].method == "$/cancelRequest");
         auto cancelled_id = decoded<CancelRequestParams, A>(written[1].body);
-        ASSERT(cancelled_id.has_value());
-        EXPECT(cancelled_id->id == RequestID(1));
+        ZASSERT(cancelled_id.has_value());
+        ZEXPECT(cancelled_id->id == RequestID(1));
     });
 
     // A request whose remote cannot be told of the cancellation, here as
@@ -374,10 +374,10 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, failure, scripted] = f.run(f.peer.run(), ask(), remote());
-        EXPECT(ran.has_value());
-        ASSERT(failure.has_value());
-        EXPECT(code_of(*failure) == ErrorCode::RequestCancelled);
-        EXPECT(f.written().size() == 1U);
+        ZEXPECT(ran.has_value());
+        ZASSERT(failure.has_value());
+        ZEXPECT(code_of(*failure) == ErrorCode::RequestCancelled);
+        ZEXPECT(f.written().size() == 1U);
     });
 
     // A request the remote never answers still lets a cancelled caller go
@@ -396,8 +396,8 @@ void peer_cancel(const PeerKit<A>& kit) {
 
         auto [ran, asked, scripted] =
             f.run(f.peer.run(), with_token(ask(), source.token()), remote());
-        EXPECT(ran.has_value());
-        EXPECT(asked.is_cancelled());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(asked.is_cancelled());
     });
 
     // Once run() is cancelled, here while a handler runs, nothing more can
@@ -418,17 +418,17 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, stopped] = f.run(with_token(f.peer.run(), source.token()), stop());
-        EXPECT(ran.is_cancelled());
-        EXPECT(stopped.has_value());
+        ZEXPECT(ran.is_cancelled());
+        ZEXPECT(stopped.has_value());
         auto sent = f.peer.send_notification(NoteParams{.text = "late"});
-        ASSERT(sent.has_error());
-        EXPECT(code_of(sent.error()) == ErrorCode::ConnectionClosed);
+        ZASSERT(sent.has_error());
+        ZEXPECT(code_of(sent.error()) == ErrorCode::ConnectionClosed);
         auto [asked] = f.run(f.peer.send_request(AddParams{}));
-        ASSERT(asked.has_error());
-        EXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
+        ZASSERT(asked.has_error());
+        ZEXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
         // At most the cancelled handler's answer.
         for(const auto& message: f.written()) {
-            EXPECT(message.id == RequestID(1));
+            ZEXPECT(message.id == RequestID(1));
         }
     });
 }

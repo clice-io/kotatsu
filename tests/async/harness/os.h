@@ -34,18 +34,18 @@ using ssize_t = SSIZE_T;
 #include <unistd.h>
 #endif
 
+#include "kota/zest/zest.h"
 #include "kota/async/async.h"
 
 namespace kota::test {
 
 /// A directory of its own under the system temp directory, removed with
-/// everything in it when this goes.
+/// everything in it when this goes, or when a failed ZASSERT ends the process.
 struct TempDir {
     TempDir() : path(create()) {}
 
     ~TempDir() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path, ignored);
+        remove();
     }
 
     TempDir(const TempDir&) = delete;
@@ -59,6 +59,13 @@ struct TempDir {
     const std::filesystem::path path;
 
 private:
+    void remove() const {
+        std::error_code ignored;
+        std::filesystem::remove_all(path, ignored);
+    }
+
+    zest::FatalHook on_fatal{[this] { remove(); }};
+
     static std::filesystem::path create() {
         std::random_device random;
         auto base = std::filesystem::temp_directory_path();

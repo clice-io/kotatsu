@@ -77,7 +77,7 @@ ZEST_SUITE(async_runtime_walk, zest::LoopFixture) {
 ZEST_CASE(visitor_walks_down_to_the_resources) {
     event gate;
     mutex lock;
-    ASSERT(lock.try_lock());
+    ZASSERT(lock.try_lock());
     auto on_event = [&]() -> task<> {
         co_await gate.wait();
     };
@@ -100,15 +100,15 @@ ZEST_CASE(visitor_walks_down_to_the_resources) {
     };
 
     auto [combined_result, walked] = run(target, inspect());
-    EXPECT(combined_result.has_value());
-    ASSERT(walked.has_value());
-    EXPECT(walked->count(Kind::WhenAll) == 1U);
-    EXPECT(walked->count(Kind::Waiter) == 2U);
-    EXPECT(walked->count(Kind::Task) == 3U);
-    EXPECT(zest::contains(walked->resources, sync_primitive::Kind::Event));
-    EXPECT(zest::contains(walked->resources, sync_primitive::Kind::Mutex));
-    EXPECT(walked->linked_both_ways(&gate));
-    EXPECT(walked->linked_both_ways(&lock));
+    ZEXPECT(combined_result.has_value());
+    ZASSERT(walked.has_value());
+    ZEXPECT(walked->count(Kind::WhenAll) == 1U);
+    ZEXPECT(walked->count(Kind::Waiter) == 2U);
+    ZEXPECT(walked->count(Kind::Task) == 3U);
+    ZEXPECT(zest::contains(walked->resources, sync_primitive::Kind::Event));
+    ZEXPECT(zest::contains(walked->resources, sync_primitive::Kind::Mutex));
+    ZEXPECT(walked->linked_both_ways(&gate));
+    ZEXPECT(walked->linked_both_ways(&lock));
 }
 
 ZEST_CASE(visitor_skips_the_children_of_a_node_it_rejects) {
@@ -129,11 +129,11 @@ ZEST_CASE(visitor_skips_the_children_of_a_node_it_rejects) {
     };
 
     auto [combined_result, walked] = run(target, inspect());
-    EXPECT(combined_result.has_value());
-    ASSERT(walked.has_value());
-    EXPECT(walked->count(Kind::WhenAll) == 1U);
-    EXPECT(walked->count(Kind::Waiter) == 0U);
-    EXPECT(walked->resources.empty());
+    ZEXPECT(combined_result.has_value());
+    ZASSERT(walked.has_value());
+    ZEXPECT(walked->count(Kind::WhenAll) == 1U);
+    ZEXPECT(walked->count(Kind::Waiter) == 0U);
+    ZEXPECT(walked->resources.empty());
 }
 
 ZEST_CASE(walk_visits_a_shared_resource_once) {
@@ -159,15 +159,15 @@ ZEST_CASE(walk_visits_a_shared_resource_once) {
     };
 
     auto [combined_result, sizes] = run(target, inspect());
-    EXPECT(combined_result.has_value());
-    ASSERT(sizes.has_value());
+    ZEXPECT(combined_result.has_value());
+    ZASSERT(sizes.has_value());
     // Two waiters share the event: once per walk, again only after reset().
-    EXPECT(*sizes == std::vector<std::size_t>{1, 1, 2});
+    ZEXPECT(*sizes == std::vector<std::size_t>{1, 1, 2});
 }
 
 ZEST_CASE(waiter_links_its_task_and_its_resource) {
     mutex lock;
-    ASSERT(lock.try_lock());
+    ZASSERT(lock.try_lock());
     auto waiter = [&]() -> task<> {
         co_await lock.lock();
         lock.unlock();
@@ -185,17 +185,17 @@ ZEST_CASE(waiter_links_its_task_and_its_resource) {
     };
 
     auto [waited, walked] = run(target, inspect());
-    EXPECT(waited.has_value());
-    ASSERT(walked.has_value());
+    ZEXPECT(waited.has_value());
+    ZASSERT(walked.has_value());
     auto& [collector, queued] = *walked;
-    ASSERT(queued);
-    ASSERT(collector.tasks.size() == 1U);
-    ASSERT(collector.waiters.size() == 1U);
+    ZASSERT(queued);
+    ZASSERT(collector.tasks.size() == 1U);
+    ZASSERT(collector.waiters.size() == 1U);
     const void* task = collector.tasks.front();
     const void* waiting = collector.waiters.front();
-    EXPECT(collector.has_edge(task, waiting));
-    EXPECT(collector.has_edge(waiting, &lock));
-    EXPECT(!collector.has_edge(task, &lock));
+    ZEXPECT(collector.has_edge(task, waiting));
+    ZEXPECT(collector.has_edge(waiting, &lock));
+    ZEXPECT(!collector.has_edge(task, &lock));
 }
 
 };  // ZEST_SUITE(async_runtime_walk)

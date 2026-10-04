@@ -25,15 +25,15 @@ ZEST_CASE(works_on_any_inline_capacity) {
     small_vector<int, 8> large;
     append_three(small);
     append_three(large);
-    EXPECT(small == std::vector{1, 2, 3});
-    EXPECT(large == std::vector{1, 2, 3});
-    EXPECT(!small.inlined());
-    EXPECT(large.inlined());
+    ZEXPECT(small == std::vector{1, 2, 3});
+    ZEXPECT(large == std::vector{1, 2, 3});
+    ZEXPECT(!small.inlined());
+    ZEXPECT(large.inlined());
 }
 
 ZEST_CASE(cannot_be_copied_out_of_a_small_vector) {
-    STATIC_EXPECT(!std::is_copy_constructible_v<hybrid_vector<int>>);
-    STATIC_EXPECT(!std::is_move_constructible_v<hybrid_vector<int>>);
+    ZSTATIC_EXPECT(!std::is_copy_constructible_v<hybrid_vector<int>>);
+    ZSTATIC_EXPECT(!std::is_move_constructible_v<hybrid_vector<int>>);
 }
 
 ZEST_CASE(copy_assignment_copies_the_elements) {
@@ -44,12 +44,12 @@ ZEST_CASE(copy_assignment_copies_the_elements) {
         hybrid_vector<test::Tracked>& target = a;
         const hybrid_vector<test::Tracked>& source = b;
         target = source;
-        EXPECT(test::values(a) == std::vector{3, 4, 5});
-        EXPECT(test::values(b) == std::vector{3, 4, 5});
-        EXPECT(a.data() != b.data());
-        EXPECT(census.live == 6);
+        ZEXPECT(test::values(a) == std::vector{3, 4, 5});
+        ZEXPECT(test::values(b) == std::vector{3, 4, 5});
+        ZEXPECT(a.data() != b.data());
+        ZEXPECT(census.live == 6);
     }
-    EXPECT(census.live == 0);
+    ZEXPECT(census.live == 0);
 }
 
 ZEST_CASE(move_assignment_takes_the_allocation) {
@@ -59,36 +59,36 @@ ZEST_CASE(move_assignment_takes_the_allocation) {
     hybrid_vector<std::string>& target = a;
     hybrid_vector<std::string>& source = b;
     target = std::move(source);
-    EXPECT(a == std::vector<std::string>{"b", "c", "d"});
-    EXPECT(a.data() == allocation);
+    ZEXPECT(a == std::vector<std::string>{"b", "c", "d"});
+    ZEXPECT(a.data() == allocation);
     // Through the base, the source's inline capacity is unknown: it is left with none, and
     // grows again from nothing.
-    EXPECT(b.empty());
-    EXPECT(b.capacity() == 0U);
+    ZEXPECT(b.empty());
+    ZEXPECT(b.capacity() == 0U);
     b.push_back("e");
-    EXPECT(b == std::vector<std::string>{"e"});
+    ZEXPECT(b == std::vector<std::string>{"e"});
     b.shrink_to_fit();
-    EXPECT(b.inlined());
-    EXPECT(b.capacity() == 2U);
+    ZEXPECT(b.inlined());
+    ZEXPECT(b.capacity() == 2U);
 }
 
 ZEST_CASE(move_assignment_of_inline_elements_moves_them) {
     small_vector<int, 4> target = {1, 2, 3};
     small_vector<int, 2> source = {7, 8};
     target.assign(static_cast<hybrid_vector<int>&&>(source));
-    EXPECT(target == std::vector{7, 8});
-    EXPECT(target.inlined());
-    EXPECT(source.empty());
+    ZEXPECT(target == std::vector{7, 8});
+    ZEXPECT(target.inlined());
+    ZEXPECT(source.empty());
 }
 
 ZEST_CASE(move_assignment_of_an_empty_vector_keeps_the_inline_buffer) {
     small_vector<int, 4> target = {1, 2, 3};
     small_vector<int, 2> source;
     target.assign(static_cast<hybrid_vector<int>&&>(source));
-    EXPECT(target.empty());
-    EXPECT(target.capacity() == 4U);
+    ZEXPECT(target.empty());
+    ZEXPECT(target.capacity() == 4U);
     target.push_back(42);
-    EXPECT(target.inlined());
+    ZEXPECT(target.inlined());
 }
 
 ZEST_CASE(small_vector_constructs_from_one) {
@@ -96,26 +96,26 @@ ZEST_CASE(small_vector_constructs_from_one) {
     const auto* allocation = source.data();
     hybrid_vector<int>& erased = source;
     small_vector<int, 8> copy(static_cast<const hybrid_vector<int>&>(erased));
-    EXPECT(copy == std::vector{1, 2, 3});
+    ZEXPECT(copy == std::vector{1, 2, 3});
     small_vector<int, 8> moved(std::move(erased));
-    EXPECT(moved == std::vector{1, 2, 3});
-    EXPECT(moved.data() == allocation);
+    ZEXPECT(moved == std::vector{1, 2, 3});
+    ZEXPECT(moved.data() == allocation);
     // Through the base, the source's inline capacity is unknown: it is left with none.
-    EXPECT(source.empty());
-    EXPECT(source.capacity() == 0U);
+    ZEXPECT(source.empty());
+    ZEXPECT(source.capacity() == 0U);
     source.push_back(4);
-    EXPECT(source == std::vector{4});
+    ZEXPECT(source == std::vector{4});
 }
 
 ZEST_CASE(move_assignment_gives_back_the_inline_buffer_a_base_move_took) {
     small_vector<int, 2> source = {1, 2, 3};
     hybrid_vector<int>& erased = source;
     small_vector<int, 8> taken(std::move(erased));
-    ASSERT(source.capacity() == 0U);
+    ZASSERT(source.capacity() == 0U);
     source = small_vector<int, 2>{7, 8};
-    EXPECT(source == std::vector{7, 8});
-    EXPECT(source.inlined());
-    EXPECT(source.capacity() == 2U);
+    ZEXPECT(source == std::vector{7, 8});
+    ZEXPECT(source.inlined());
+    ZEXPECT(source.capacity() == 2U);
 }
 
 ZEST_CASE(assign_copies_one) {
@@ -123,9 +123,9 @@ ZEST_CASE(assign_copies_one) {
     small_vector<int, 8> target = {9};
     hybrid_vector<int>& erased = target;
     erased.assign(static_cast<const hybrid_vector<int>&>(source));
-    EXPECT(target == std::vector{1, 2, 3});
-    EXPECT(target.inlined());
-    EXPECT(source == std::vector{1, 2, 3});
+    ZEXPECT(target == std::vector{1, 2, 3});
+    ZEXPECT(target.inlined());
+    ZEXPECT(source == std::vector{1, 2, 3});
 }
 
 ZEST_CASE(small_vector_assigns_from_one) {
@@ -134,12 +134,12 @@ ZEST_CASE(small_vector_assigns_from_one) {
     hybrid_vector<int>& erased = source;
     small_vector<int, 8> target = {9};
     target = static_cast<const hybrid_vector<int>&>(erased);
-    EXPECT(target == std::vector{1, 2, 3});
+    ZEXPECT(target == std::vector{1, 2, 3});
     small_vector<int, 1> taken = {7};
     taken = std::move(erased);
-    EXPECT(taken == std::vector{1, 2, 3});
-    EXPECT(taken.data() == allocation);
-    EXPECT(source.empty());
+    ZEXPECT(taken == std::vector{1, 2, 3});
+    ZEXPECT(taken.data() == allocation);
+    ZEXPECT(source.empty());
 }
 
 };  // ZEST_SUITE(support_small_vector_hybrid)

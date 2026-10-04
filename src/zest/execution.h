@@ -30,6 +30,8 @@ enum class Verdict : std::uint8_t {
     Crashed,
     /// The test outlived --timeout and its worker was killed.
     TimedOut,
+    /// A crash test finished instead of crashing.
+    Survived,
 };
 
 struct Outcome {
@@ -37,7 +39,8 @@ struct Outcome {
     std::chrono::milliseconds duration;
     /// What the test printed, when a worker ran it.
     std::string output = {};
-    /// How the worker died, for a crash.
+    /// How the worker died, for a crash test or a crash, or what went wrong
+    /// after a failed ZASSERT.
     std::string detail = {};
 };
 
@@ -51,11 +54,24 @@ inline std::chrono::milliseconds elapsed_since(std::chrono::steady_clock::time_p
 /// Runs one test in this process and returns its state.
 TestState run_in_process(const Entry& entry);
 
+/// Tells whoever runs this process's tests that a failed ZASSERT is ending it,
+/// before the fatal hooks run: the runner a worker serves, or the report of a
+/// run without isolation. Set before any test runs; unset outside a run.
+inline void (*fatal_notice)() = nullptr;
+
+/// What a process exits with once a failed ZASSERT has run its hooks.
+constexpr int fatal_exit_code = 1;
+
+/// Hands everything printed so far to the output file or terminal.
+void flush_output();
+
 /// Lines a runner and its workers exchange over the worker's stdin:
 ///
 ///     worker -> runner   ready              (once, when it can take tests)
 ///     runner -> worker   run SUITE.TEST
 ///     worker -> runner   snapshot PATH      (once per snapshot file checked)
+///     worker -> runner   fatal              (a failed ZASSERT: the worker
+///                                            exits after this reply)
 ///     worker -> runner   done passed|skipped|failed
 ///
 /// The runner hangs up once it has no more tests, and the worker exits.
@@ -67,6 +83,7 @@ constexpr std::string_view worker_flag = "--zest-worker";
 constexpr std::string_view ready = "ready";
 constexpr std::string_view run = "run ";
 constexpr std::string_view snapshot = "snapshot ";
+constexpr std::string_view fatal = "fatal";
 constexpr std::string_view done = "done ";
 
 std::string_view state_name(TestState state);

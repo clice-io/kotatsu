@@ -41,57 +41,57 @@ struct Mistyped {
 ZEST_SUITE(deco_facade_trait) {
 
 ZEST_CASE(flag_result_is_a_bool_or_a_count) {
-    STATIC_EXPECT(trait::FlagResultType<bool>);
-    STATIC_EXPECT(trait::FlagResultType<std::uint32_t>);
-    STATIC_EXPECT(!trait::FlagResultType<int>);
+    ZSTATIC_EXPECT(trait::FlagResultType<bool>);
+    ZSTATIC_EXPECT(trait::FlagResultType<std::uint32_t>);
+    ZSTATIC_EXPECT(!trait::FlagResultType<int>);
 }
 
 ZEST_CASE(scalar_result_is_primitive_or_reads_itself) {
-    STATIC_EXPECT(trait::ScalarResultType<bool>);
-    STATIC_EXPECT(trait::ScalarResultType<int>);
-    STATIC_EXPECT(trait::ScalarResultType<double>);
-    STATIC_EXPECT(trait::ScalarResultType<Mode>);
-    STATIC_EXPECT(trait::ScalarResultType<std::string>);
-    STATIC_EXPECT(trait::ScalarResultType<Name>);
-    STATIC_EXPECT(trait::ScalarResultType<LocatedName>);
+    ZSTATIC_EXPECT(trait::ScalarResultType<bool>);
+    ZSTATIC_EXPECT(trait::ScalarResultType<int>);
+    ZSTATIC_EXPECT(trait::ScalarResultType<double>);
+    ZSTATIC_EXPECT(trait::ScalarResultType<Mode>);
+    ZSTATIC_EXPECT(trait::ScalarResultType<std::string>);
+    ZSTATIC_EXPECT(trait::ScalarResultType<Name>);
+    ZSTATIC_EXPECT(trait::ScalarResultType<LocatedName>);
 }
 
 ZEST_CASE(scalar_result_owns_its_text) {
     // A view would outlive the argv it views.
-    STATIC_EXPECT(trait::StringResultType<std::string_view>);
-    STATIC_EXPECT(!trait::OwnedStringResultType<std::string_view>);
-    STATIC_EXPECT(!trait::ScalarResultType<std::string_view>);
-    STATIC_EXPECT(!trait::ScalarResultType<const char*>);
+    ZSTATIC_EXPECT(trait::StringResultType<std::string_view>);
+    ZSTATIC_EXPECT(!trait::OwnedStringResultType<std::string_view>);
+    ZSTATIC_EXPECT(!trait::ScalarResultType<std::string_view>);
+    ZSTATIC_EXPECT(!trait::ScalarResultType<const char*>);
 }
 
 ZEST_CASE(scalar_result_is_no_list_nor_long_double) {
-    STATIC_EXPECT(!trait::ScalarResultType<std::vector<int>>);
-    STATIC_EXPECT(!trait::ScalarResultType<long double>);
-    STATIC_EXPECT(!trait::ScalarResultType<Mistyped>);
+    ZSTATIC_EXPECT(!trait::ScalarResultType<std::vector<int>>);
+    ZSTATIC_EXPECT(!trait::ScalarResultType<long double>);
+    ZSTATIC_EXPECT(!trait::ScalarResultType<Mistyped>);
 }
 
 ZEST_CASE(vector_result_holds_scalars_or_reads_itself) {
-    STATIC_EXPECT(trait::VectorResultType<std::vector<int>>);
-    STATIC_EXPECT(trait::VectorResultType<std::vector<std::string>>);
-    STATIC_EXPECT(trait::VectorResultType<std::vector<Mode>>);
-    STATIC_EXPECT(trait::VectorResultType<Names>);
-    STATIC_EXPECT(trait::VectorResultType<LocatedNames>);
-    STATIC_EXPECT(!trait::VectorResultType<std::vector<std::string_view>>);
-    STATIC_EXPECT(!trait::VectorResultType<std::span<const std::string>>);
-    STATIC_EXPECT(!trait::VectorResultType<std::string>);
+    ZSTATIC_EXPECT(trait::VectorResultType<std::vector<int>>);
+    ZSTATIC_EXPECT(trait::VectorResultType<std::vector<std::string>>);
+    ZSTATIC_EXPECT(trait::VectorResultType<std::vector<Mode>>);
+    ZSTATIC_EXPECT(trait::VectorResultType<Names>);
+    ZSTATIC_EXPECT(trait::VectorResultType<LocatedNames>);
+    ZSTATIC_EXPECT(!trait::VectorResultType<std::vector<std::string_view>>);
+    ZSTATIC_EXPECT(!trait::VectorResultType<std::span<const std::string>>);
+    ZSTATIC_EXPECT(!trait::VectorResultType<std::string>);
 }
 
 ZEST_CASE(input_result_is_a_scalar_or_a_list) {
-    STATIC_EXPECT(trait::InputResultType<int>);
-    STATIC_EXPECT(trait::InputResultType<std::string>);
-    STATIC_EXPECT(trait::InputResultType<std::vector<Mode>>);
-    STATIC_EXPECT(!trait::InputResultType<std::string_view>);
-    STATIC_EXPECT(!trait::InputResultType<std::vector<std::string_view>>);
+    ZSTATIC_EXPECT(trait::InputResultType<int>);
+    ZSTATIC_EXPECT(trait::InputResultType<std::string>);
+    ZSTATIC_EXPECT(trait::InputResultType<std::vector<Mode>>);
+    ZSTATIC_EXPECT(!trait::InputResultType<std::string_view>);
+    ZSTATIC_EXPECT(!trait::InputResultType<std::vector<std::string_view>>);
 }
 
 ZEST_CASE(optional_result_is_its_value) {
-    EXPECT(zest::type_eq<trait::OptionalResultType<std::optional<std::string>>, std::string>());
-    EXPECT(zest::type_eq<trait::OptionalResultType<std::string>, void>());
+    ZEXPECT(zest::type_eq<trait::OptionalResultType<std::optional<std::string>>, std::string>());
+    ZEXPECT(zest::type_eq<trait::OptionalResultType<std::string>, void>());
 }
 
 };  // ZEST_SUITE(deco_facade_trait)

@@ -72,17 +72,17 @@ struct PseudoTerminal {
 ZEST_SUITE(async_io_stream_console, zest::LoopFixture) {
 
 ZEST_CASE(reset_mode_without_a_raw_console_succeeds) {
-    EXPECT(!console::reset_mode());
+    ZEXPECT(!console::reset_mode());
 }
 
 // Only Windows keeps a virtual terminal state.
 ZEST_CASE(get_vterm_state_is_windows_only) {
     auto state = console::get_vterm_state();
 #ifdef _WIN32
-    EXPECT(state.has_value());
+    ZEXPECT(state.has_value());
 #else
-    ASSERT(state.has_error());
-    EXPECT(state.error() == error::operation_not_supported_on_socket);
+    ZASSERT(state.has_error());
+    ZEXPECT(state.error() == error::operation_not_supported_on_socket);
 #endif
 }
 
@@ -91,12 +91,12 @@ ZEST_CASE(open_on_a_regular_file_fails) {
     test::TempDir dir;
     test::write_file(dir.path / "plain.txt", "plain");
     int fd = ::open(dir.file("plain.txt").c_str(), O_RDONLY);
-    ASSERT(fd >= 0);
+    ZASSERT(fd >= 0);
 
     auto opened = console::open(fd, {}, loop);
     ::close(fd);
-    ASSERT(opened.has_error());
-    EXPECT(opened.error() == error::invalid_argument);
+    ZASSERT(opened.has_error());
+    ZEXPECT(opened.error() == error::invalid_argument);
 }
 
 ZEST_CASE(get_winsize_reports_the_terminal_size) {
@@ -108,15 +108,15 @@ ZEST_CASE(get_winsize_reports_the_terminal_size) {
     ::winsize size{};
     size.ws_col = 80;
     size.ws_row = 24;
-    ASSERT(::ioctl(pty.controller, TIOCSWINSZ, &size) == 0);
-    EXPECT(guess_handle(pty.terminal) == handle_type::tty);
+    ZASSERT(::ioctl(pty.controller, TIOCSWINSZ, &size) == 0);
+    ZEXPECT(guess_handle(pty.terminal) == handle_type::tty);
 
     auto opened = console::open(pty.terminal, {}, loop);
-    ASSERT(opened.has_value());
+    ZASSERT(opened.has_value());
     auto reported = opened->get_winsize();
-    ASSERT(reported.has_value());
-    EXPECT(reported->width == 80);
-    EXPECT(reported->height == 24);
+    ZASSERT(reported.has_value());
+    ZEXPECT(reported->width == 80);
+    ZEXPECT(reported->height == 24);
 }
 
 ZEST_CASE(write_reaches_the_terminal) {
@@ -126,14 +126,14 @@ ZEST_CASE(write_reaches_the_terminal) {
         return;
     }
     auto opened = console::open(pty.terminal, {}, loop);
-    ASSERT(opened.has_value());
+    ZASSERT(opened.has_value());
     auto print = [&]() -> task<void, error> {
         co_await opened->write(std::string_view("shown")).or_fail();
     };
 
     auto [printed] = run(print());
-    EXPECT(printed.has_value());
-    EXPECT(pty.shown() == "shown");
+    ZEXPECT(printed.has_value());
+    ZEXPECT(pty.shown() == "shown");
 }
 
 // Raw mode hands over each key as it is typed rather than each line.
@@ -144,18 +144,18 @@ ZEST_CASE(read_in_raw_mode_takes_a_key_without_a_newline) {
         return;
     }
     auto opened = console::open(pty.terminal, {.readable = true}, loop);
-    ASSERT(opened.has_value());
-    ASSERT(!opened->set_mode(console::mode::raw));
-    ASSERT(::write(pty.controller, "k", 1) == 1);
+    ZASSERT(opened.has_value());
+    ZASSERT(!opened->set_mode(console::mode::raw));
+    ZASSERT(::write(pty.controller, "k", 1) == 1);
     auto type = [&]() -> task<std::string, error> {
         co_return co_await opened->read().or_fail();
     };
 
     auto [typed] = run(type());
-    ASSERT(typed.has_value());
-    EXPECT(*typed == "k");
-    EXPECT(!console::reset_mode());
-    EXPECT(!opened->set_mode(console::mode::normal));
+    ZASSERT(typed.has_value());
+    ZEXPECT(*typed == "k");
+    ZEXPECT(!console::reset_mode());
+    ZEXPECT(!opened->set_mode(console::mode::normal));
 }
 #endif
 

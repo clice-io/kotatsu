@@ -25,6 +25,11 @@ struct TestAttrs {
     /// process, so this is for contention outside it: fixed file or pipe
     /// names, or timing that load disturbs.
     bool serial = false;
+    /// Passes only if the test kills its process: by a signal, as abort() and
+    /// std::terminate() do, or by exiting with a nonzero code before it
+    /// finishes, as a sanitizer does. A failed ZASSERT fails it. It runs alone
+    /// in a fresh process, and not at all under --no-isolation.
+    bool crashes = false;
 };
 
 struct TestCase {

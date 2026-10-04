@@ -272,7 +272,8 @@ endif()
 #   1. zest_bootstrap_*: the tests of what zest itself relies on run in this
 #      process, without the pool.
 #   2. zest_runner: the pool itself, end to end, against tests that crash,
-#      hang or exit early; LoopFixture's watchdog; run_cli's command line.
+#      hang, exit early or fail a ZASSERT, and crash tests; LoopFixture's
+#      watchdog; run_cli's command line.
 #   3. unit_tests, system_tests: everything, through the pool.
 add_test(NAME zest_bootstrap_unit
     COMMAND unit_tests
