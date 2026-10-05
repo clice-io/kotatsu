@@ -104,9 +104,8 @@ ZEST_CASE(loop_stops_when_the_last_task_finishes_with_a_timer_armed) {
 
 #if KOTA_ENABLE_EXCEPTIONS
 
-// run() lets every other task finish before it fails with what was thrown,
-// which it reads; see test::exceptions_unreadable.
-ZEST_CASE(run_of_a_throwing_task_fails, skip = test::exceptions_unreadable) {
+// run() lets every other task finish before it fails with what was thrown.
+ZEST_CASE(run_of_a_throwing_task_fails) {
     bool finished = false;
     auto thrower = []() -> task<> {
         throw std::runtime_error("boom");

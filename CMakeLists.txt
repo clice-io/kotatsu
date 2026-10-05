@@ -109,6 +109,12 @@ if(KOTA_SANITIZE_ADDRESS)
         set(kota_sanitizer_link_options "")
 
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            # clang-cl's ASan moves locals to a fake stack to catch their use
+            # after return, which the funclets of Windows exception handling
+            # do not follow: a throw inside a catch handler then crashes in
+            # the C++ runtime.
+            list(APPEND kota_sanitizer_compile_options "-fsanitize-address-use-after-return=never")
+
             execute_process(
                 COMMAND ${CMAKE_CXX_COMPILER} --print-resource-dir
                 OUTPUT_VARIABLE kota_clang_resource_dir

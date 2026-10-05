@@ -99,11 +99,11 @@ CXX = "g++"
 sccache = "*"
 
 [feature.windows-llvm.target.win-64.dependencies]
-clang = "==20.1.8"
-clangxx = "==20.1.8"
-lld = "==20.1.8"
-llvm-tools = "==20.1.8"
-compiler-rt = "==20.1.8"
+clang = "==23.1.2"
+clangxx = "==23.1.2"
+lld = "==23.1.2"
+llvm-tools = "==23.1.2"
+compiler-rt = "==23.1.2"
 sccache = "*"
 
 [feature.windows-llvm.target.win-64.activation]

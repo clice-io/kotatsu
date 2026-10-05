@@ -202,8 +202,7 @@ ZEST_CASE(with_task_group_cancel_waits_for_every_child) {
 
 #if KOTA_ENABLE_EXCEPTIONS
 
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(with_task_group_rethrows_what_a_child_threw, skip = test::exceptions_unreadable) {
+ZEST_CASE(with_task_group_rethrows_what_a_child_threw) {
     auto thrower = []() -> task<> {
         co_await yield();
         throw std::runtime_error("child boom");

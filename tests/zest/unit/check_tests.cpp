@@ -6,7 +6,6 @@
 #include <type_traits>
 #include <vector>
 
-#include "async/harness/exceptions.h"
 #include "kota/zest/zest.h"
 
 namespace kota::zest {
@@ -168,8 +167,7 @@ ZEST_CASE(throws_matches_what_is_thrown) {
     ZEXPECT(!throws([] {}));
 }
 
-// Reads what was thrown, which clang-cl's ASan breaks.
-ZEST_CASE(throws_explains_what_was_thrown, skip = test::exceptions_unreadable) {
+ZEST_CASE(throws_explains_what_was_thrown) {
     auto boom = [] {
         throw std::runtime_error("boom");
     };
