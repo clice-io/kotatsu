@@ -146,7 +146,7 @@ bool keep_registered() {
     if(never) {
         kept = new Suite;
     }
-    return true;
+    return kept != nullptr;
 }
 
 }  // namespace detail
