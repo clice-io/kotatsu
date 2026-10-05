@@ -255,6 +255,20 @@ else()
             -static-libstdc++
             -Wl,--allow-multiple-definition
         )
+        # libstdc++'s fs_path.o aliases its wstring::operator+=(wstring_view)
+        # under GCC's older mangling of a pack ("II" for "IJ"), the alias
+        # living in the function's COMDAT section. When lld keeps another
+        # object's copy of that section, the alias goes with fs_path.o's, and
+        # fs_path.o fails to link; it is pointed at the kept function instead.
+        if(CMAKE_LINKER_TYPE STREQUAL "LLD")
+            set(kota_libstdcxx_alias
+                "_ZNSt7__cxx1112basic_stringIwSt11char_traitsIwESaIwEEpLISt17basic_string_viewIwS2_EEENSt9enable_ifIXsrSt6__and_IISt14is_convertibleIRKT_S7_ESt6__not_ISA_IPSC_PKS4_EESF_ISA_ISD_PKwEEEE5valueERS4_E4typeESD_"
+            )
+            string(REPLACE "__and_II" "__and_IJ" kota_libstdcxx_function "${kota_libstdcxx_alias}")
+            target_link_options(kota_project_options INTERFACE
+                "-Wl,-Xlink=-alternatename:${kota_libstdcxx_alias}=${kota_libstdcxx_function}"
+            )
+        endif()
     endif()
 endif()
 

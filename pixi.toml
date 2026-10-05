@@ -85,6 +85,9 @@ CXX = "clang++"
 [feature.windows-mingw.target.win-64.dependencies]
 gcc = "==14.2.0"
 gxx = "==14.2.0"
+# CI links with lld (CMAKE_LINKER_TYPE=LLD): GNU ld takes minutes over the
+# test binaries' debug information, lld seconds.
+lld = "==23.1.2"
 sccache = "*"
 
 [feature.windows-mingw.target.win-64.activation.env]
