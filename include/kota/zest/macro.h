@@ -20,7 +20,10 @@
 //
 // The variable before the suite keeps the suite and its cases registered
 // whatever the linker collects (/OPT:REF, --gc-sections, LTO), so a suite may
-// live in any namespace (kota::zest::detail::keep_registered says how).
+// live in any namespace (kota::zest::detail::keep_registered says how). It
+// makes one instance of every suite with new, so a suite of case groups alone
+// is default-constructible too. Only clang's -fvirtual-function-elimination,
+// which drops the virtual functions no one calls, still loses cases.
 #define ZEST_SUITE(name, ...)                                                                      \
     struct name##TEST;                                                                             \
     [[maybe_unused]] static const bool zest_registered_##name =                                    \

@@ -37,6 +37,11 @@ template <typename Derived>
 struct TestSuiteDef {
     using Self = Derived;
 
+    /// Virtual, as a suite is polymorphic anyway, its cases' hooks being
+    /// virtual (ZEST_CASE): -Wnon-virtual-dtor reports a polymorphic class
+    /// whose destructor is not.
+    virtual ~TestSuiteDef() = default;
+
     constexpr static auto _suite_name() {
         auto name = meta::type_name<Derived>();
         if(name.ends_with("TEST")) {
