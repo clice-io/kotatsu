@@ -91,12 +91,13 @@ endif()
 # Adds the calling module's integration tests, integration/*.test.ts, as one
 # ctest test that node runs from the repo root; their npm packages come from
 # the root package.json (`pixi run npm-ci`). Each integration/drivers/<name>.cpp
-# builds the driver <name>, linked against the module's libraries LIBS; the
-# tests find its path in the environment variable KOTA_<NAME>, and so the path
-# of each program PROGRAMS names, targets built elsewhere. DEBUG_ONLY names
-# files under integration/, tests and drivers, that only the builds above of
-# the largest units build and run; elsewhere such a driver is left out of the
-# default build.
+# builds the driver <name>, linked against the module's libraries LIBS, and so
+# does a directory integration/drivers/<name>/ of sources, for a driver too
+# heavy for one translation unit; the tests find its path in the environment
+# variable KOTA_<NAME>, and so the path of each program PROGRAMS names, targets
+# built elsewhere. DEBUG_ONLY names files under integration/, tests and
+# drivers, that only the builds above of the largest units build and run;
+# elsewhere such a driver is left out of the default build.
 function(kota_add_integration_tests)
     cmake_parse_arguments(PARSE_ARGV 0 arg "" "" "LIBS;PROGRAMS;DEBUG_ONLY")
     if(kota_node_problem)
@@ -115,13 +116,19 @@ function(kota_add_integration_tests)
     endforeach()
 
     set(programs "")
-    file(GLOB drivers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/drivers/*.cpp")
-    foreach(source IN LISTS drivers)
-        get_filename_component(driver "${source}" NAME_WE)
-        if(source IN_LIST left_out)
-            add_executable(${driver} EXCLUDE_FROM_ALL "${source}")
+    file(GLOB drivers CONFIGURE_DEPENDS LIST_DIRECTORIES true
+        "${CMAKE_CURRENT_SOURCE_DIR}/integration/drivers/*"
+    )
+    foreach(entry IN LISTS drivers)
+        get_filename_component(driver "${entry}" NAME_WE)
+        set(sources "${entry}")
+        if(IS_DIRECTORY "${entry}")
+            file(GLOB sources CONFIGURE_DEPENDS "${entry}/*.cpp")
+        endif()
+        if(entry IN_LIST left_out)
+            add_executable(${driver} EXCLUDE_FROM_ALL ${sources})
         else()
-            add_executable(${driver} "${source}")
+            add_executable(${driver} ${sources})
             list(APPEND programs ${driver})
             set_property(GLOBAL APPEND PROPERTY kota_default_drivers ${driver})
         endif()

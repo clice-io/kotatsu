@@ -29,7 +29,8 @@ tests/<module>/
   unit/<path mirroring the headers>/...
   system/...                  same shape
   integration/*.test.ts       integration tests, TypeScript; nothing else but drivers/
-  integration/drivers/*.cpp   the programs they spawn, one per file
+  integration/drivers/*.cpp   the programs they spawn, one per file, or one per
+                              directory of sources
   harness/*.h, harness/*.ts   helpers for this module's tests and the modules above,
                               integration tests' helpers included
   CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>)
@@ -66,7 +67,7 @@ Rules:
 ## Integration tests
 
 - An integration test is a TypeScript file on node's test runner (`node:test`, `node:assert/strict`), run by node directly (type stripping, no build step) and type-checked by `pixi run typecheck`. Its npm packages are the root `package.json`'s devDependencies (`vscode-jsonrpc`, `vscode-languageserver-protocol`, `vscode-uri`, `vscode-languageserver-textdocument`, `fast-check`), installed by `pixi run npm-ci`.
-- A driver is a C++ program under test, `integration/drivers/<name>.cpp`, linked against the module's libraries by `kota_add_integration_tests`; an example it runs is named in `PROGRAMS`. ctest passes each one's path in `KOTA_<NAME>`; a test whose driver is unset or missing fails, it never skips. A driver too heavy to build outside a plain Debug build, and the tests that run it, are named in `DEBUG_ONLY`; MinGW's GCC leaves them out too, its assembler being too slow for them.
+- A driver is a C++ program under test, `integration/drivers/<name>.cpp`, or the sources in `integration/drivers/<name>/` for one too heavy for a single translation unit, linked against the module's libraries by `kota_add_integration_tests`; an example it runs is named in `PROGRAMS`. ctest passes each one's path in `KOTA_<NAME>`; a test whose driver is unset or missing fails, it never skips. A driver too heavy to build outside a plain Debug build, and the tests that run it, are named in `DEBUG_ONLY`; MinGW's GCC leaves them out too, its assembler being too slow for them.
 - All of a module's `integration/*.test.ts` are one ctest test, `<module>_integration` (label `integration`); it needs nothing from zest and runs beside the other stages.
 - `Driver` (`tests/harness/driver.ts`) spawns a driver and hands its stdio to a channel in its protocol: JSON lines (`tests/harness/jsonl.ts`) for a driver that is no JSON-RPC peer; in ipc's harness, a vscode-jsonrpc connection (`connection.ts`), or a raw channel (`raw.ts`, and `session.ts`, which pairs responses with requests and keeps the strays; `jsonrpc_driver.ts` has what jsonrpc_driver's tests share). `Driver.spawn` takes the test's context: a driver the test did not finish with is killed when the test ends, and how it ended printed with its stderr.
 - A driver logs one `[<level>] <message>` line each to stderr, ipc's through `test::stderr_logger()` (`ipc/harness/stderr_logger.h`).
