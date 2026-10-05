@@ -231,7 +231,6 @@ ZEST_CASE(exception_outranks_an_error) {
     ZEXPECT(test::thrown([&] { run(driver()); }) == "boom");
 }
 
-#if !KOTA_WORKAROUND_WINDOWS_ASAN_COROUTINE_EXCEPTION
 // The children the first exception cancels throw too; join() rethrows the
 // first one thrown, as when_all does, not that of the first child spawned.
 ZEST_CASE(join_rethrows_the_first_exception_thrown) {
@@ -255,7 +254,6 @@ ZEST_CASE(join_rethrows_the_first_exception_thrown) {
 
     ZEXPECT(test::thrown([&] { run(driver(), trigger()); }) == "first thrown");
 }
-#endif  // !KOTA_WORKAROUND_WINDOWS_ASAN_COROUTINE_EXCEPTION
 
 #endif  // KOTA_ENABLE_EXCEPTIONS
 
