@@ -95,7 +95,11 @@ set(ok "${escape}[32m[       OK ]")
 set(snapshots "${WORK_DIR}/snapshots")
 file(REMOVE_RECURSE "${WORK_DIR}")
 
+# The cases of a suite in an anonymous namespace and of one outside are all
+# registered, though the linker collected garbage.
 run_fixture("${FIXTURE}" --list-tests)
+expect_output("fixture.passes")
+expect_output("fixture_external.registered")
 string(FIND "${output}" "fixture.throws" at)
 if(at EQUAL -1)
     set(failures 4)

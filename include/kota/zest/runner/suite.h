@@ -107,4 +107,44 @@ struct TestSuiteDef {
     }();
 };
 
+namespace detail {
+
+/// Keeps a suite and its cases registered, from the initializer of the
+/// variable ZEST_SUITE defines before the suite.
+///
+/// They register from the initializers of TestSuiteDef's variables, which
+/// nothing reads. C++ lets an implementation leave such a variable
+/// uninitialized, and a linker that collects garbage drops it with its
+/// initializer, as each is a COMDAT of its own. On Windows that loses tests:
+/// MSVC's linker drops those of suites in an anonymous namespace under
+/// /OPT:REF, the default of a link without /DEBUG, and lld drops those of the
+/// other suites from clang's MinGW objects under --gc-sections, built with
+/// -fdata-sections or LTO. No attribute stops either: clang turns
+/// [[gnu::used]] into a directive to the linker only for MSVC targets, and cl
+/// has nothing alike.
+///
+/// ZEST_SUITE's variable is an ordinary one at namespace scope, which no
+/// linker drops. Its initializer calls this, which takes the address of the
+/// suite's registration, and refers to its cases' through the suite's vtable:
+/// constructing the suite, in a branch the compiler cannot prove dead, makes
+/// it emit and keep the vtable, which holds every case's hook (ZEST_CASE
+/// makes it virtual), and each hook returns the address of its case's
+/// registration. A linker keeps what a kept section refers to, so every
+/// registration stays, and with it its initializer.
+///
+/// The variable comes before the suite's definition, so this is called where
+/// the suite is incomplete; GCC, Clang and MSVC instantiate it at the end of
+/// the translation unit, where it is complete.
+template <typename Suite>
+bool keep_registered() {
+    volatile bool never = false;
+    if(never) {
+        [[maybe_unused]] Suite suite;
+    }
+    const static void* volatile registration = &Suite::template _register_suites<>;
+    return registration != nullptr;
+}
+
+}  // namespace detail
+
 }  // namespace kota::zest

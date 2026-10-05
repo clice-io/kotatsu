@@ -396,6 +396,21 @@ struct FixtureOptions {
 
 }  // namespace kota::zest
 
+// A suite outside an anonymous namespace, which a linker sees as shared with
+// other files. tests/zest/CMakeLists.txt builds the fixture with the linker
+// collecting garbage, which must leave the cases of both kinds registered.
+namespace zest_fixture {
+
+ZEST_SUITE(fixture_external) {
+
+ZEST_CASE(registered) {
+    ZEXPECT(1 == 1);
+}
+
+};  // ZEST_SUITE(fixture_external)
+
+}  // namespace zest_fixture
+
 // Embeds zest's options the way a downstream test program does, so that its
 // own flag has to reach the workers.
 int main(int argc, char** argv) {
