@@ -98,7 +98,7 @@ A test in a bootstrap suite must not judge itself with what it tests: meta's com
 
 ## Namespaces
 
-- A test file puts its fixtures and suite in an anonymous namespace inside the namespace it tests: `namespace kota::ipc { namespace { ... } }`.
+- A test file puts its fixtures and suite in an anonymous namespace inside the namespace it tests: `namespace kota::ipc { namespace { ... } }`, so that the names of two files never collide. zest registers a suite in any namespace.
 - Harness headers use `namespace kota::test`.
 - Specializations of library templates (traits, `meta::repr`) are declared in the library's namespace, as C++ requires; the types they name stay in the test's anonymous namespace.
 - Test types never live in a library namespace outside an anonymous one. No `using namespace` at namespace scope except `std::literals`.
