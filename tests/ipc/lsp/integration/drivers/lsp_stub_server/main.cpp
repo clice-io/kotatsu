@@ -1,14 +1,12 @@
 #include <print>
 
-#include "handlers.h"
+#include "features.h"
 #include "ipc/harness/stderr_logger.h"
 #include "kota/ipc/codec/json.h"
 #include "kota/ipc/lsp/protocol.h"
 
 namespace ipc = kota::ipc;
 namespace proto = ipc::protocol;
-
-using kota::test::make_range;
 
 namespace {
 
@@ -83,7 +81,7 @@ int main() {
         peer.send_notification(proto::PublishDiagnosticsParams{
             .uri = p.text_document.uri,
             .diagnostics = {proto::Diagnostic{
-                .range = make_range(0, 0, 5),
+                .range = kota::test::make_range(0, 0, 5),
                 .severity = proto::DiagnosticSeverity::Warning,
                 .message = "stub warning",
             }},

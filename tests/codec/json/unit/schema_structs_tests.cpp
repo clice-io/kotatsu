@@ -8,7 +8,6 @@
 
 #include "codec/json/harness/schema.h"
 #include "kota/zest/zest.h"
-#include "kota/meta/attrs.h"
 #include "kota/meta/schema.h"
 #include "kota/codec/json/schema.h"
 

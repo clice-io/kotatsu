@@ -1,8 +1,8 @@
 #pragma once
 
-// What lsp_stub_server's main() shares with its language features, which are
-// a translation unit of their own: in one with main's initialize, the codec
-// instantiations of every request took longer to compile than any other test.
+// What lsp_stub_server's main.cpp shares with features.cpp, the language
+// features. The codec instantiations of their requests are a translation unit
+// of their own, which compiles beside main's.
 
 #include "kota/ipc/codec/json.h"
 #include "kota/ipc/lsp/protocol.h"

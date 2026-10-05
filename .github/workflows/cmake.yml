@@ -184,7 +184,7 @@ jobs:
           fi
           # GNU ld takes over a minute to link unit_tests.exe, lld seconds.
           if [[ "${{ matrix.toolchain }}" == "mingw" ]]; then
-            extra_args=(-DCMAKE_LINKER_TYPE=LLD)
+            extra_args+=(-DCMAKE_LINKER_TYPE=LLD)
           fi
 
           # ${arr[@]+...} guard: macOS ships bash 3.2, where expanding an

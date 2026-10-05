@@ -9,7 +9,6 @@
 #include "fixtures/repr.h"
 #include "kota/zest/zest.h"
 #include "kota/meta/attrs.h"
-#include "kota/meta/schema.h"
 #include "kota/codec/json/schema.h"
 
 namespace kota::meta {

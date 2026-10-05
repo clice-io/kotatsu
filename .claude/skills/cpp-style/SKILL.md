@@ -100,8 +100,6 @@ if (auto result = foo(); !result.has_value()) {
     /* handle error */
 }
 
-// --- Scope and Control Flow Considerations ---
-
 // Bad: Using init-statement forces an 'else' block because 'result'
 // goes out of scope, leading to nested/redundant code.
 if (auto result = get_data(); !result.has_value()) {

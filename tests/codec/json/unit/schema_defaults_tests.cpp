@@ -19,6 +19,8 @@
 
 namespace kota::meta {
 
+namespace {
+
 /// A non-reflectable class (raw kind unknown) whose meta::repr resolves to a
 /// struct with a defaulted member: the schema describes the representation's
 /// shape, but the defaults pass covers only types the decoder reads
@@ -83,43 +85,41 @@ struct json_schema_imperative_repr {
     <std::int32_t> n = 4;
 };
 
-}  // namespace kota::meta
-
-namespace kota::meta {
+}  // namespace
 
 template <>
-struct repr<kota::meta::json_schema_reprd_root> {
-    using type = kota::meta::json_schema_reprd_repr;
+struct repr<json_schema_reprd_root> {
+    using type = json_schema_reprd_repr;
 
-    static type to(const kota::meta::json_schema_reprd_root& v) {
+    static type to(const json_schema_reprd_root& v) {
         return {.total = v.total()};
     }
 };
 
 template <>
-struct repr<kota::meta::json_schema_reprd_shifted> {
-    using type = kota::meta::json_schema_reprd_shifted_repr;
+struct repr<json_schema_reprd_shifted> {
+    using type = json_schema_reprd_shifted_repr;
 
-    static type to(const kota::meta::json_schema_reprd_shifted& v) {
+    static type to(const json_schema_reprd_shifted& v) {
         return {.n = v.n()};
     }
 
-    static kota::meta::json_schema_reprd_shifted from(const type& d) {
-        return kota::meta::json_schema_reprd_shifted(d.n);
+    static json_schema_reprd_shifted from(const type& d) {
+        return json_schema_reprd_shifted(d.n);
     }
 };
 
 template <>
-struct repr<kota::meta::json_schema_imperative_root> {
-    using type = kota::meta::json_schema_imperative_repr;
+struct repr<json_schema_imperative_root> {
+    using type = json_schema_imperative_repr;
 
     template <typename Config>
-    static bool serialize(auto& vis, const kota::meta::json_schema_imperative_root& v) {
+    static bool serialize(auto& vis, const json_schema_imperative_root& v) {
         return codec::encode_value<Config>(vis, type{.n = v.n()});
     }
 
     template <typename Config>
-    static bool deserialize(auto& vis, kota::meta::json_schema_imperative_root& v) {
+    static bool deserialize(auto& vis, json_schema_imperative_root& v) {
         // Seed the representation from the in-place value: an absent
         // property keeps it.
         type d{.n = v.n()};
@@ -130,10 +130,6 @@ struct repr<kota::meta::json_schema_imperative_root> {
         return true;
     }
 };
-
-}  // namespace kota::meta
-
-namespace kota::meta {
 
 namespace {
 

@@ -83,9 +83,9 @@ if(NOT kota_multi_config
     AND kota_build_type STREQUAL "debug"
     AND NOT (KOTA_SANITIZE_ADDRESS OR KOTA_SANITIZE_MEMORY OR KOTA_SANITIZE_THREAD OR KOTA_SANITIZE_UNDEFINED)
     AND NOT (MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))
-    set(kota_largest_units ON)
+    set(kota_build_largest_units ON)
 else()
-    set(kota_largest_units OFF)
+    set(kota_build_largest_units OFF)
 endif()
 
 # Adds the calling module's integration tests, integration/*.test.ts, as one
@@ -96,8 +96,8 @@ endif()
 # heavy for one translation unit; the tests find its path in the environment
 # variable KOTA_<NAME>, and so the path of each program PROGRAMS names, targets
 # built elsewhere. DEBUG_ONLY names files under integration/, tests and
-# drivers, that only the builds above of the largest units build and run;
-# elsewhere such a driver is left out of the default build.
+# drivers, that only the builds above, which take the largest units, build and
+# run; elsewhere such a driver is left out of the default build.
 function(kota_add_integration_tests)
     cmake_parse_arguments(PARSE_ARGV 0 arg "" "" "LIBS;PROGRAMS;DEBUG_ONLY")
     if(kota_node_problem)
@@ -110,21 +110,25 @@ function(kota_add_integration_tests)
         if(NOT EXISTS "${path}")
             message(FATAL_ERROR "DEBUG_ONLY names ${path}, which does not exist.")
         endif()
-        if(NOT kota_largest_units)
+        if(NOT kota_build_largest_units)
             list(APPEND left_out "${path}")
         endif()
     endforeach()
 
     set(programs "")
-    file(GLOB drivers CONFIGURE_DEPENDS LIST_DIRECTORIES true
+    file(GLOB entries CONFIGURE_DEPENDS LIST_DIRECTORIES true
         "${CMAKE_CURRENT_SOURCE_DIR}/integration/drivers/*"
     )
-    foreach(entry IN LISTS drivers)
-        get_filename_component(driver "${entry}" NAME_WE)
-        set(sources "${entry}")
+    foreach(entry IN LISTS entries)
         if(IS_DIRECTORY "${entry}")
             file(GLOB sources CONFIGURE_DEPENDS "${entry}/*.cpp")
+        elseif(entry MATCHES "\\.cpp$")
+            set(sources "${entry}")
+        else()
+            # An editor's swap file, say.
+            continue()
         endif()
+        get_filename_component(driver "${entry}" NAME_WE)
         if(entry IN_LIST left_out)
             add_executable(${driver} EXCLUDE_FROM_ALL ${sources})
         else()

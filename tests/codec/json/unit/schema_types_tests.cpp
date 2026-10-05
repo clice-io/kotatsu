@@ -21,18 +21,14 @@
 
 namespace kota::meta {
 
+namespace {
+
 struct json_schema_opaque_root {};
 
-}  // namespace kota::meta
-
-namespace kota::meta {
+}  // namespace
 
 template <>
-constexpr inline bool schema_opaque<kota::meta::json_schema_opaque_root> = true;
-
-}  // namespace kota::meta
-
-namespace kota::meta {
+constexpr inline bool schema_opaque<json_schema_opaque_root> = true;
 
 namespace {
 

@@ -1,9 +1,10 @@
+#include "features.h"
+
 #include <map>
 #include <string>
 #include <tuple>
 #include <vector>
 
-#include "handlers.h"
 #include "kota/ipc/codec/json.h"
 #include "kota/ipc/lsp/progress.h"
 #include "kota/ipc/lsp/protocol.h"
