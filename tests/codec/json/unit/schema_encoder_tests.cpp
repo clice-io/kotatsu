@@ -25,10 +25,6 @@ namespace json = kota::codec::json;
 
 ZEST_SUITE(codec_json_schema_encoder) {
 
-// ---------------------------------------------------------------------------
-// enum representation config
-// ---------------------------------------------------------------------------
-
 struct string_enum_config {
     [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
 };
@@ -74,10 +70,6 @@ ZEST_CASE(schema_agrees_with_encoder_on_enum_rename) {
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("enum":["RED","GREEN","BLUE"]})");
 }
-
-// ---------------------------------------------------------------------------
-// nan_repr config
-// ---------------------------------------------------------------------------
 
 struct nan_null_config {
     [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::Null;
@@ -145,10 +137,6 @@ ZEST_CASE(schema_agrees_with_encoder_on_long_double_overflow) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// human_readable config
-// ---------------------------------------------------------------------------
-
 struct non_hr_config {
     [[maybe_unused]] constexpr static bool human_readable = false;
 };
@@ -169,10 +157,6 @@ ZEST_CASE(schema_agrees_with_encoder_on_non_human_readable) {
                       R"({"type":"string"}]})");
 }
 
-// ---------------------------------------------------------------------------
-// overlapping untagged alternatives
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(untagged_overlap_validates_as_any_of) {
     // A numeric enum's underlying range overlaps the int alternative: both
     // branches match the same document, so exactly-one (oneOf) semantics
@@ -186,10 +170,6 @@ ZEST_CASE(untagged_overlap_validates_as_any_of) {
                       R"("minimum":-2147483648,)"
                       R"("maximum":2147483647}]})");
 }
-
-// ---------------------------------------------------------------------------
-// metadata config forwarding
-// ---------------------------------------------------------------------------
 
 struct camel_deny_config {
     using field_rename = naming::rename_policy::lower_camel;
@@ -214,11 +194,8 @@ ZEST_CASE(schema_agrees_with_encoder_on_config) {
                       R"("additionalProperties":false})");
 }
 
-// ---------------------------------------------------------------------------
 // meta::repr: the schema describes the document the encoder writes, which the
 // codec kit's repr area pins.
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(schema_follows_repr) {
     auto schema = json::schema_string<test::Symbol>();
     ZASSERT(schema);

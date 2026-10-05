@@ -20,9 +20,6 @@ namespace {
 using test::point2d;
 using test::casing_child;
 
-// ---------------------------------------------------------------------------
-// Attributes
-// ---------------------------------------------------------------------------
 struct with_default {
     std::string name;
     KOTATSU_ANNOTATE(defaulted = true)
@@ -69,9 +66,6 @@ struct repeated_child_annotation {
     <casing_child> right;
 };
 
-// ---------------------------------------------------------------------------
-// Additional types
-// ---------------------------------------------------------------------------
 struct all_default {
     KOTATSU_ANNOTATE(defaulted = true)
     <std::int32_t> x;
@@ -110,9 +104,6 @@ struct flatten_rename {
     std::string extra;
 };
 
-// ---------------------------------------------------------------------------
-// fixtures of what an annotation states for a schema alone
-// ---------------------------------------------------------------------------
 struct bounded_fields {
     KOTATSU_ANNOTATE(minimum = 1, maximum = 64)
     <std::uint32_t> workers;
@@ -225,9 +216,6 @@ struct char_field {
     char letter;
 };
 
-// ---------------------------------------------------------------------------
-// description fixtures
-// ---------------------------------------------------------------------------
 struct desc_scalar {
     KOTATSU_ANNOTATE(description = "Number of worker threads.")
     <std::int32_t> threads;
@@ -289,10 +277,6 @@ namespace json = kota::codec::json;
 
 ZEST_SUITE(codec_json_schema_attrs) {
 
-// ---------------------------------------------------------------------------
-// default_value attribute
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(attr_default_value) {
     const auto result = json::schema_string<with_default>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -316,10 +300,6 @@ ZEST_CASE(all_default_fields) {
                       R"("y":{"type":"string","default":""}}})");
 }
 
-// ---------------------------------------------------------------------------
-// deny_unknown_fields
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(deny_unknown_struct) {
     const static field_info deny_fields[] = {
         {"name",  {}, 0, 0, type_info_of<std::string>,  false, false, false},
@@ -342,10 +322,6 @@ ZEST_CASE(deny_unknown_struct) {
                       R"("required":["name","count"],)"
                       R"("additionalProperties":false})");
 }
-
-// ---------------------------------------------------------------------------
-// skip
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(attr_skip) {
     const auto result = json::schema_string<with_skip>().value();
@@ -406,10 +382,6 @@ ZEST_CASE(repeated_inline_struct_annotation_shares_def) {
                       R"("required":["firstValue"]}}})");
 }
 
-// ---------------------------------------------------------------------------
-// flatten
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(attr_flatten) {
     const auto result = json::schema_string<with_flatten>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -456,10 +428,6 @@ ZEST_CASE(flatten_with_rename) {
                       R"("required":["alpha","b","extra"]})");
 }
 
-// ---------------------------------------------------------------------------
-// rename
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(attr_rename) {
     const auto result = json::schema_string<with_rename>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -471,10 +439,6 @@ ZEST_CASE(attr_rename) {
                       R"("y":{"type":"string"}},)"
                       R"("required":["my_field","y"]})");
 }
-
-// ---------------------------------------------------------------------------
-// what an annotation states for a schema alone
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(bounds_join_the_number_schema) {
     const auto result = json::schema_string<bounded_fields>().value();
@@ -613,10 +577,6 @@ ZEST_CASE(char_is_one_code_point_up_to_ff) {
     ZEXPECT(
         zest::contains(result, R"("letter":{"type":"string","pattern":"^[\\u0000-\\u00FF]$"})"));
 }
-
-// ---------------------------------------------------------------------------
-// description
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(description_on_scalar_field) {
     const auto result = json::schema_string<desc_scalar>().value();

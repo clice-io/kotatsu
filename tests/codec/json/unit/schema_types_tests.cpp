@@ -41,9 +41,6 @@ using test::point2d;
 using test::inner;
 using test::root_external_variant;
 
-// ---------------------------------------------------------------------------
-// Scalar wrappers
-// ---------------------------------------------------------------------------
 struct s_bool {
     bool v;
 };
@@ -96,17 +93,11 @@ struct s_str {
     std::string v;
 };
 
-// ---------------------------------------------------------------------------
-// Enums
-// ---------------------------------------------------------------------------
 enum class single_enum : std::int32_t { only = 42 };
 enum class status : std::int32_t { ok = 0, fail = 1, pending = 2 };
 enum class flag_u8 : std::uint8_t { off = 0, on = 1 };
 enum class level_i16 : std::int16_t { low = 0, mid = 50, high = 100 };
 
-// ---------------------------------------------------------------------------
-// Containers
-// ---------------------------------------------------------------------------
 struct s_vec_i32 {
     std::vector<std::int32_t> v;
 };
@@ -127,9 +118,6 @@ struct s_map_str_vec_i32 {
     std::map<std::string, std::vector<std::int32_t>> v;
 };
 
-// ---------------------------------------------------------------------------
-// Tuple / Pair
-// ---------------------------------------------------------------------------
 struct s_pair {
     std::pair<std::string, std::int32_t> v;
 };
@@ -138,9 +126,6 @@ struct s_tuple {
     std::tuple<std::int32_t, std::string, bool> v;
 };
 
-// ---------------------------------------------------------------------------
-// Variant
-// ---------------------------------------------------------------------------
 struct var_none {
     std::variant<std::int32_t, std::string> v;
 };
@@ -169,9 +154,6 @@ KOTATSU_ANNOTATION(root_adjacent_annotation,
 using root_adjacent_variant =
     annotate<root_adjacent_annotation>::type<std::variant<std::int32_t, std::string>>;
 
-// ---------------------------------------------------------------------------
-// Additional types
-// ---------------------------------------------------------------------------
 struct map_str_struct {
     std::map<std::string, point2d> entries;
 };
@@ -280,10 +262,6 @@ void check_wrapper_integer_schema() {
 
 ZEST_SUITE(codec_json_schema_types) {
 
-// ---------------------------------------------------------------------------
-// Root scalars
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(root_bool) {
     const auto result = json::schema_string<bool>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -321,10 +299,6 @@ ZEST_CASE(root_string) {
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("type":"string"})");
 }
-
-// ---------------------------------------------------------------------------
-// Scalar struct wrappers
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(scalar_wrapper_bool) {
     const auto result = json::schema_string<s_bool>().value();
@@ -371,10 +345,6 @@ ZEST_CASE(scalar_wrapper_str) {
                       R"("required":["v"]})");
 }
 
-// ---------------------------------------------------------------------------
-// Root enums
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(root_enum_color_i8) {
     const auto result = json::schema_string<color_i8>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -418,10 +388,6 @@ ZEST_CASE(root_enum_value_outside_name_scan) {
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("type":"integer","minimum":0,"maximum":65535})");
 }
-
-// ---------------------------------------------------------------------------
-// Containers
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(container_vec_i32) {
     const auto result = json::schema_string<s_vec_i32>().value();
@@ -484,10 +450,6 @@ ZEST_CASE(map_str_vec_i32) {
                       R"("maximum":2147483647}}}},)"
                       R"("required":["v"]})");
 }
-
-// ---------------------------------------------------------------------------
-// Tuple / Pair
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(tuple_pair) {
     const auto result = json::schema_string<s_pair>().value();
@@ -556,10 +518,6 @@ ZEST_CASE(tuple_in_struct) {
                       R"("required":["t","name"]})");
 }
 
-// ---------------------------------------------------------------------------
-// Variant (tag_mode::none)
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(variant_untagged) {
     const auto result = json::schema_string<var_none>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -586,10 +544,6 @@ ZEST_CASE(variant_three_alts) {
                       R"({"type":"boolean"}]}},)"
                       R"("required":["v"]})");
 }
-
-// ---------------------------------------------------------------------------
-// Variant (tag_mode::external)
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(variant_external_tag) {
     const static type_info_fn ext_alts[] = {
@@ -644,10 +598,6 @@ ZEST_CASE(variant_external_tag) {
                       R"("required":["v"]})");
 }
 
-// ---------------------------------------------------------------------------
-// Variant (tag_mode::internal)
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(variant_internal_tag) {
     const static type_info_fn int_alts[] = {
         type_info_of<point2d>,
@@ -699,10 +649,6 @@ ZEST_CASE(variant_internal_tag) {
                       R"("required":["a","type"]}]}},)"
                       R"("required":["v"]})");
 }
-
-// ---------------------------------------------------------------------------
-// Variant (tag_mode::adjacent)
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(variant_adjacent_tag) {
     const static type_info_fn adj_alts[] = {
@@ -861,10 +807,6 @@ ZEST_CASE(any_type_field) {
                       R"("required":["data"]})");
 }
 
-// ---------------------------------------------------------------------------
-// More containers
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(map_str_struct) {
     const auto result = json::schema_string<map_str_struct>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -1005,10 +947,6 @@ ZEST_CASE(map_of_map_field) {
                       R"("required":["m"]})");
 }
 
-// ---------------------------------------------------------------------------
-// Struct with enum fields
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(multi_enum_fields) {
     const auto result = json::schema_string<multi_enum>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -1042,10 +980,6 @@ ZEST_CASE(with_level_enum) {
                       R"("required":["l","v"]})");
 }
 
-// ---------------------------------------------------------------------------
-// Variant in container
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(vec_of_variant) {
     const auto result = json::schema_string<vec_variant>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -1060,10 +994,6 @@ ZEST_CASE(vec_of_variant) {
                       R"("required":["items"]})");
 }
 
-// ---------------------------------------------------------------------------
-// Empty enum
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(empty_enum) {
     const static enum_type_info empty_ei = {
         {type_kind::enumeration, "empty_enum"},
@@ -1075,10 +1005,6 @@ ZEST_CASE(empty_enum) {
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("type":"integer","minimum":-2147483648,"maximum":2147483647})");
 }
-
-// ---------------------------------------------------------------------------
-// Variant nesting variant
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(variant_of_variant) {
     const static type_info_fn inner_alts[] = {
@@ -1116,10 +1042,6 @@ ZEST_CASE(variant_of_variant) {
                       R"({"type":"boolean"}]}]})");
 }
 
-// ---------------------------------------------------------------------------
-// Variant with monostate
-// ---------------------------------------------------------------------------
-
 struct with_monostate {
     std::variant<std::monostate, std::int32_t, std::string> v;
 };
@@ -1137,10 +1059,6 @@ ZEST_CASE(variant_with_monostate) {
                       R"({"type":"string"}]}},)"
                       R"("required":["v"]})");
 }
-
-// ---------------------------------------------------------------------------
-// Bytes type
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(bytes_field) {
     const static type_info bytes_ti = {type_kind::bytes, "bytes"};

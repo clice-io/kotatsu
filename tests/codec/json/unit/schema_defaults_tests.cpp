@@ -137,9 +137,6 @@ namespace kota::meta {
 
 namespace {
 
-// ---------------------------------------------------------------------------
-// default annotation fixtures
-// ---------------------------------------------------------------------------
 struct defaults_leaf {
     KOTATSU_ANNOTATE(defaulted = true)
     <std::int32_t> threads = 4;
@@ -314,10 +311,6 @@ using renamed_defaults_root =
 namespace json = kota::codec::json;
 
 ZEST_SUITE(codec_json_schema_defaults) {
-
-// ---------------------------------------------------------------------------
-// default annotations from a default-constructed instance
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(defaults_annotated) {
     const auto result = json::schema_string<defaults_root>().value();

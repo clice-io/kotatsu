@@ -191,6 +191,7 @@ process(result.value());
 ## Style
 
 - Prefer `[[maybe_unused]]` over `(void)` for intentionally unused variables or parameters.
+- No banner comments (a section title between `// ----` rules). A file too long to read without them splits by aspect; a comment says what the names do not.
 
 ## Modern C++ Usage
 

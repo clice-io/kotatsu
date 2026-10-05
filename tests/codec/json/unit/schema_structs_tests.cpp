@@ -21,9 +21,6 @@ using test::point2d;
 using test::inner;
 using test::with_enum;
 
-// ---------------------------------------------------------------------------
-// Structs
-// ---------------------------------------------------------------------------
 struct empty_struct {};
 
 struct single_field {
@@ -35,9 +32,6 @@ struct with_string {
     std::int32_t value;
 };
 
-// ---------------------------------------------------------------------------
-// Nested structs
-// ---------------------------------------------------------------------------
 struct middle {
     inner i;
     std::string s;
@@ -48,9 +42,6 @@ struct outer {
     std::int32_t n;
 };
 
-// ---------------------------------------------------------------------------
-// Optional / pointer
-// ---------------------------------------------------------------------------
 struct with_optional {
     std::string name;
     std::optional<std::int32_t> age;
@@ -66,9 +57,6 @@ struct with_shared {
     std::shared_ptr<std::int32_t> ptr;
 };
 
-// ---------------------------------------------------------------------------
-// Combinations
-// ---------------------------------------------------------------------------
 struct combo {
     color_i8 color;
     std::optional<std::string> label;
@@ -107,9 +95,6 @@ struct deep_outer {
     std::int32_t n;
 };
 
-// ---------------------------------------------------------------------------
-// Additional types
-// ---------------------------------------------------------------------------
 struct all_optional {
     std::optional<std::int32_t> a;
     std::optional<std::string> b;
@@ -165,10 +150,6 @@ namespace json = kota::codec::json;
 
 ZEST_SUITE(codec_json_schema_structs) {
 
-// ---------------------------------------------------------------------------
-// Basic structs
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(struct_empty) {
     const auto result = json::schema_string<empty_struct>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -212,10 +193,6 @@ ZEST_CASE(struct_with_string) {
                       R"("maximum":2147483647}},)"
                       R"("required":["name","value"]})");
 }
-
-// ---------------------------------------------------------------------------
-// Nested structs
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(nested_inner) {
     const auto result = json::schema_string<inner>().value();
@@ -278,10 +255,6 @@ ZEST_CASE(nested_with_enum) {
                       R"("name":{"type":"string"}},)"
                       R"("required":["c","name"]})");
 }
-
-// ---------------------------------------------------------------------------
-// Optional / pointer
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(optional_field) {
     const auto result = json::schema_string<with_optional>().value();
@@ -350,10 +323,6 @@ ZEST_CASE(all_ptr_types) {
                       R"({"type":"null"}],"default":null}}})");
 }
 
-// ---------------------------------------------------------------------------
-// Struct with pointer to struct
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(shared_ptr_to_struct) {
     const auto result = json::schema_string<shared_struct>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -398,10 +367,6 @@ ZEST_CASE(optional_struct_field) {
                       R"("required":["x","y"]}}})");
 }
 
-// ---------------------------------------------------------------------------
-// $defs dedup
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(defs_dedup_multi_ref) {
     const auto result = json::schema_string<multi_ref>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -427,10 +392,6 @@ ZEST_CASE(defs_dedup_multi_ref) {
                       R"("required":["x","y"]}}})");
 }
 
-// ---------------------------------------------------------------------------
-// Nested struct with optional
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(optional_inner_field) {
     const auto result = json::schema_string<optional_inner>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -449,10 +410,6 @@ ZEST_CASE(optional_inner_field) {
                       R"("maximum":2147483647}},)"
                       R"("required":["a"]}}})");
 }
-
-// ---------------------------------------------------------------------------
-// Combinations
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(combo_mixed_fields) {
     const auto result = json::schema_string<combo>().value();
@@ -622,10 +579,6 @@ ZEST_CASE(combo_trivial_nested) {
                       R"("required":["x","y"]}}})");
 }
 
-// ---------------------------------------------------------------------------
-// Self-referential struct
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(self_referential_struct) {
     static struct_type_info self_info = {
         {type_kind::structure, "self_ref"},
@@ -657,10 +610,6 @@ ZEST_CASE(self_referential_struct) {
                       R"("required":["value"]})");
 }
 
-// ---------------------------------------------------------------------------
-// Field ordering stability
-// ---------------------------------------------------------------------------
-
 ZEST_CASE(field_ordering_stability) {
     const static field_info ordered_fields[] = {
         {"zebra",  {}, 0, 0, type_info_of<std::string>,  false, false, false},
@@ -684,10 +633,6 @@ ZEST_CASE(field_ordering_stability) {
                       R"("beta":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
                       R"("required":["zebra","alpha","middle","beta"]})");
 }
-
-// ---------------------------------------------------------------------------
-// Mutual recursion
-// ---------------------------------------------------------------------------
 
 ZEST_CASE(mutual_recursion) {
     static struct_type_info info_a = {
