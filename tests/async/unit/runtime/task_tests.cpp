@@ -522,8 +522,7 @@ ZEST_CASE(cancel_of_a_task_that_has_not_started_only_marks_it) {
 
 #if KOTA_ENABLE_EXCEPTIONS
 
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(exception_propagates_through_await, skip = test::exceptions_unreadable) {
+ZEST_CASE(exception_propagates_through_await) {
     auto thrower = []() -> task<int> {
         throw std::runtime_error("boom");
         co_return 0;
@@ -535,8 +534,7 @@ ZEST_CASE(exception_propagates_through_await, skip = test::exceptions_unreadable
     ZEXPECT(test::thrown([&] { run(parent()); }) == "boom");
 }
 
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(parent_can_catch_a_child_exception, skip = test::exceptions_unreadable) {
+ZEST_CASE(parent_can_catch_a_child_exception) {
     auto thrower = []() -> task<int> {
         throw std::runtime_error("caught");
         co_return 0;
@@ -555,8 +553,7 @@ ZEST_CASE(parent_can_catch_a_child_exception, skip = test::exceptions_unreadable
     ZEXPECT(*result == "caught");
 }
 
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(or_fail_rethrows_a_child_exception, skip = test::exceptions_unreadable) {
+ZEST_CASE(or_fail_rethrows_a_child_exception) {
     auto child = []() -> task<int, error> {
         throw std::runtime_error("or_fail child");
         co_return 0;
@@ -570,8 +567,7 @@ ZEST_CASE(or_fail_rethrows_a_child_exception, skip = test::exceptions_unreadable
 
 // Real errors outrank cancellation: an exception thrown after the task was
 // cancelled still fails it.
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(exception_after_cancel_still_fails_the_task, skip = test::exceptions_unreadable) {
+ZEST_CASE(exception_after_cancel_still_fails_the_task) {
     task<> target;
     auto worker = [&]() -> task<> {
         target.cancel();

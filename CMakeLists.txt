@@ -41,6 +41,13 @@ if(MSVC)
             endif()
         endforeach()
     endif()
+
+    # clang-cl keeps line tables only in RelWithDebInfo: file and line in the
+    # stacks of crash and sanitizer reports, for an eighth less build time than
+    # full debug information. cl has no such option.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        add_compile_options("$<$<CONFIG:RelWithDebInfo>:-gline-tables-only>")
+    endif()
 endif()
 
 set(kota_primary_sanitizers "")
@@ -102,6 +109,12 @@ if(KOTA_SANITIZE_ADDRESS)
         set(kota_sanitizer_link_options "")
 
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            # clang-cl's ASan moves locals to a fake stack to catch their use
+            # after return, which the funclets of Windows exception handling
+            # do not follow: a throw inside a catch handler then crashes in
+            # the C++ runtime.
+            list(APPEND kota_sanitizer_compile_options "-fsanitize-address-use-after-return=never")
+
             execute_process(
                 COMMAND ${CMAKE_CXX_COMPILER} --print-resource-dir
                 OUTPUT_VARIABLE kota_clang_resource_dir
@@ -248,6 +261,20 @@ else()
             -static-libstdc++
             -Wl,--allow-multiple-definition
         )
+        # libstdc++'s fs_path.o aliases its wstring::operator+=(wstring_view)
+        # under GCC's older mangling of a pack ("II" for "IJ"), the alias
+        # living in the function's COMDAT section. When lld keeps another
+        # object's copy of that section, the alias goes with fs_path.o's, and
+        # fs_path.o fails to link; it is pointed at the kept function instead.
+        if(CMAKE_LINKER_TYPE STREQUAL "LLD")
+            set(kota_libstdcxx_alias
+                "_ZNSt7__cxx1112basic_stringIwSt11char_traitsIwESaIwEEpLISt17basic_string_viewIwS2_EEENSt9enable_ifIXsrSt6__and_IISt14is_convertibleIRKT_S7_ESt6__not_ISA_IPSC_PKS4_EESF_ISA_ISD_PKwEEEE5valueERS4_E4typeESD_"
+            )
+            string(REPLACE "__and_II" "__and_IJ" kota_libstdcxx_function "${kota_libstdcxx_alias}")
+            target_link_options(kota_project_options INTERFACE
+                "-Wl,-Xlink=-alternatename:${kota_libstdcxx_alias}=${kota_libstdcxx_function}"
+            )
+        endif()
     endif()
 endif()
 

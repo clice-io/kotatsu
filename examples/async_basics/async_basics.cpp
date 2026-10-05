@@ -12,9 +12,7 @@
 using namespace kota;
 using namespace std::chrono_literals;
 
-// ============================================================
 // 1. Basic tasks — creation, chaining, and run()
-// ============================================================
 
 task<int> add(int a, int b) {
     co_return a + b;
@@ -36,9 +34,7 @@ void example_basic_tasks() {
     std::println("");
 }
 
-// ============================================================
 // 2. Timers and sleep — async delays
-// ============================================================
 
 task<> timed_greeting(event_loop& loop) {
     std::println("  (waiting 50ms...)");
@@ -56,9 +52,7 @@ void example_timers() {
     std::println("");
 }
 
-// ============================================================
 // 3. when_all — run tasks concurrently, collect all results
-// ============================================================
 
 task<int> slow_add(int a, int b, event_loop& loop) {
     co_await sleep(10ms, loop);
@@ -84,9 +78,7 @@ void example_when_all() {
     std::println("");
 }
 
-// ============================================================
 // 4. when_any — race tasks, first one wins
-// ============================================================
 
 task<std::string> fetch(const char* name, int delay_ms, event_loop& loop) {
     co_await sleep(delay_ms, loop);
@@ -116,9 +108,7 @@ void example_when_any() {
     std::println("");
 }
 
-// ============================================================
 // 5. task_group — dynamic structured concurrency
-// ============================================================
 
 void example_task_group() {
     std::println("--- 5. task_group ---");
@@ -152,9 +142,7 @@ void example_task_group() {
     std::println("");
 }
 
-// ============================================================
 // 6. Cancellation — cooperative cancel and catch_cancel
-// ============================================================
 
 void example_cancellation() {
     std::println("--- 6. Cancellation ---");
@@ -215,9 +203,7 @@ void example_cancellation() {
     std::println("");
 }
 
-// ============================================================
 // 7. Sync primitives — mutex and event
-// ============================================================
 
 void example_sync_primitives() {
     std::println("--- 7. Sync primitives ---");
@@ -279,9 +265,7 @@ void example_sync_primitives() {
     std::println("");
 }
 
-// ============================================================
 // 8. Combining patterns — task_group + when_all + cancellation
-// ============================================================
 
 void example_combined() {
     std::println("--- 8. Combined patterns ---");
@@ -337,8 +321,6 @@ void example_combined() {
         std::println("  cancelled after {} pairs", completed_pairs);
     }
 }
-
-// ============================================================
 
 int main() {
     std::println("=== kotatsu async examples ===");

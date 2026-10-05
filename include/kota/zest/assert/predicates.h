@@ -98,8 +98,7 @@ Match type_eq() {
 /// throws nothing. The explanation names what was thrown, if anything.
 template <typename E = void, typename F>
 Match throws(F&& body) {
-    // Kept, not read and not rethrown: clang-cl's ASan breaks the reference
-    // a handler gets, and a rethrow, so only a failing check reads it.
+    // Kept for the explanation, which only a failing check reads.
     std::exception_ptr thrown;
     bool held = false;
     if constexpr(std::is_void_v<E>) {

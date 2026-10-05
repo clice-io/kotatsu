@@ -118,10 +118,18 @@ cc_library(
     ]),
 ]]
 
-# The integration tests' drivers: integration/drivers/<name>.cpp of a module.
+# The integration tests' drivers: integration/drivers/<name>.cpp of a module,
+# or the sources in integration/drivers/<name>/ for a driver too heavy for one
+# translation unit.
 [kota_binary(
     name = driver,
-    srcs = ["%s/integration/drivers/%s.cpp" % (module, driver)],
+    srcs = glob(
+        [
+            "%s/integration/drivers/%s.cpp" % (module, driver),
+            "%s/integration/drivers/%s/*" % (module, driver),
+        ],
+        allow_empty = True,
+    ),
     # One translation unit instantiating the codec for every LSP type: about
     # 2 minutes and 2.7 GB in a debug build, far more optimized or sanitized.
     tags = ["manual"] if driver == "lsp_roundtrip" else [],

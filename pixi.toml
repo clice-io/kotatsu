@@ -85,6 +85,8 @@ CXX = "clang++"
 [feature.windows-mingw.target.win-64.dependencies]
 gcc = "==14.2.0"
 gxx = "==14.2.0"
+# CI's MinGW legs link with lld (CMAKE_LINKER_TYPE=LLD in cmake.yml).
+lld = "==23.1.2"
 sccache = "*"
 
 [feature.windows-mingw.target.win-64.activation.env]
@@ -96,18 +98,19 @@ CXX = "g++"
 sccache = "*"
 
 [feature.windows-llvm.target.win-64.dependencies]
-clang = "==20.1.8"
-clangxx = "==20.1.8"
-lld = "==20.1.8"
-llvm-tools = "==20.1.8"
-compiler-rt = "==20.1.8"
+clang = "==23.1.2"
+clangxx = "==23.1.2"
+lld = "==23.1.2"
+llvm-tools = "==23.1.2"
+compiler-rt = "==23.1.2"
 sccache = "*"
 
 [feature.windows-llvm.target.win-64.activation]
 scripts = ["scripts/activate_windows_llvm.bat"]
 
 # MinGW with libc++ rather than libstdc++: xclang (clice-io/xclang), whose
-# clang targets x86_64-w64-mingw32 with its own libc++ and runtimes.
+# clang targets x86_64-w64-mingw32 with its own libc++ and runtimes. Its
+# clang-cl builds CI's clang-cl legs too, but for ASan (cmake.yml).
 [feature.windows-xclang.target.win-64.dependencies]
 xclang = "==23.1.2.2"
 sccache = "*"
@@ -129,9 +132,6 @@ depends-on = ["npm-ci"]
 cmd = "npx --no -- bazelisk --output_user_root=C:/b --windows_enable_symlinks"
 depends-on = ["npm-ci"]
 
-# ============================================================================== #
-#                                    FORMAT                                      #
-# ============================================================================== #
 [feature.format.dependencies]
 ruff = "*"
 tombi = "*"

@@ -100,8 +100,6 @@ if (auto result = foo(); !result.has_value()) {
     /* handle error */
 }
 
-// --- Scope and Control Flow Considerations ---
-
 // Bad: Using init-statement forces an 'else' block because 'result'
 // goes out of scope, leading to nested/redundant code.
 if (auto result = get_data(); !result.has_value()) {
@@ -191,6 +189,7 @@ process(result.value());
 ## Style
 
 - Prefer `[[maybe_unused]]` over `(void)` for intentionally unused variables or parameters.
+- No banner comments (a section title between `// ----` rules). A file too long to read without them splits by aspect; a comment says what the names do not.
 
 ## Modern C++ Usage
 

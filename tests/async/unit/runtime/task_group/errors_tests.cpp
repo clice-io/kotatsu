@@ -177,8 +177,7 @@ ZEST_CASE(child_error_survives_an_external_cancel) {
 
 #if KOTA_ENABLE_EXCEPTIONS
 
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(exception_fails_the_joiner_and_cancels_the_rest, skip = test::exceptions_unreadable) {
+ZEST_CASE(exception_fails_the_joiner_and_cancels_the_rest) {
     event gate;
     auto thrower = []() -> task<> {
         co_await yield();
@@ -198,8 +197,7 @@ ZEST_CASE(exception_fails_the_joiner_and_cancels_the_rest, skip = test::exceptio
     ZEXPECT(!gate.has_waiters());
 }
 
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(exception_thrown_while_spawning_reaches_join, skip = test::exceptions_unreadable) {
+ZEST_CASE(exception_thrown_while_spawning_reaches_join) {
     auto thrower = []() -> task<> {
         throw std::runtime_error("at once");
         co_return;
@@ -213,8 +211,7 @@ ZEST_CASE(exception_thrown_while_spawning_reaches_join, skip = test::exceptions_
     ZEXPECT(test::thrown([&] { run(driver()); }) == "at once");
 }
 
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(exception_outranks_an_error, skip = test::exceptions_unreadable) {
+ZEST_CASE(exception_outranks_an_error) {
     event gate;
     auto thrower = [&]() -> task<int, error> {
         co_await wait_on(gate).catch_cancel();
@@ -234,11 +231,9 @@ ZEST_CASE(exception_outranks_an_error, skip = test::exceptions_unreadable) {
     ZEXPECT(test::thrown([&] { run(driver()); }) == "boom");
 }
 
-#if !KOTA_WORKAROUND_WINDOWS_ASAN_COROUTINE_EXCEPTION
 // The children the first exception cancels throw too; join() rethrows the
 // first one thrown, as when_all does, not that of the first child spawned.
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(join_rethrows_the_first_exception_thrown, skip = test::exceptions_unreadable) {
+ZEST_CASE(join_rethrows_the_first_exception_thrown) {
     event gates[3];
     const char* names[] = {"first spawned", "first thrown", "third spawned"};
     auto thrower = [&](int id) -> task<> {
@@ -259,7 +254,6 @@ ZEST_CASE(join_rethrows_the_first_exception_thrown, skip = test::exceptions_unre
 
     ZEXPECT(test::thrown([&] { run(driver(), trigger()); }) == "first thrown");
 }
-#endif  // !KOTA_WORKAROUND_WINDOWS_ASAN_COROUTINE_EXCEPTION
 
 #endif  // KOTA_ENABLE_EXCEPTIONS
 

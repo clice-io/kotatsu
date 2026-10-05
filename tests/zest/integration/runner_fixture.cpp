@@ -54,16 +54,7 @@ ZEST_CASE(fails_on_thread) {
     std::thread([] { ZEXPECT(1 == 2); }).join();
 }
 
-// clang-cl's ASan hands exception handlers a broken reference to the
-// exception, so there a throwing test crashes its worker when the runner reads
-// the message; it still fails, as CRASHED.
-#if defined(_WIN32) && defined(__clang__)
-#if __has_feature(address_sanitizer)
-#define ZEST_FIXTURE_BROKEN_CATCH
-#endif
-#endif
-
-#if defined(__cpp_exceptions) && !defined(ZEST_FIXTURE_BROKEN_CATCH)
+#ifdef __cpp_exceptions
 ZEST_CASE(throws) {
     throw std::runtime_error("thrown by the test");
 }
@@ -177,7 +168,7 @@ ZEST_CASE(throws_nothing) {
 }
 #endif
 
-#if defined(__cpp_exceptions) && !defined(ZEST_FIXTURE_BROKEN_CATCH)
+#ifdef __cpp_exceptions
 ZEST_CASE(throws_unexpectedly) {
     ZEXPECT(!throws([] { throw std::runtime_error("thrown on purpose"); }));
 }
@@ -261,7 +252,7 @@ ZEST_CASE(hook_crashes) {
     ZASSERT(1 == 2);
 }
 
-#if defined(__cpp_exceptions) && !defined(ZEST_FIXTURE_BROKEN_CATCH)
+#ifdef __cpp_exceptions
 // What a hook throws is printed, and the older hooks still run.
 ZEST_CASE(hook_throws) {
     FatalHook older{[] { std::println("hook older than the throw ran"); }};
@@ -270,7 +261,7 @@ ZEST_CASE(hook_throws) {
 }
 #endif
 
-#if defined(__cpp_exceptions) && !defined(ZEST_FIXTURE_BROKEN_CATCH)
+#ifdef __cpp_exceptions
 // A report that throws still ends the worker, after its hooks.
 ZEST_CASE(report_throws) {
     FatalHook hook{[] { std::println("hook after a throwing report ran"); }};

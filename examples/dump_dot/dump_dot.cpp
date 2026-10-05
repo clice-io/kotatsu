@@ -22,9 +22,7 @@
 using namespace kota;
 using namespace std::chrono_literals;
 
-// ---------------------------------------------------------------------------
 // Shared state — sync primitives whose waiter queues we want visible in graph.
-// ---------------------------------------------------------------------------
 static mutex mtx;
 static semaphore sem{0};  // starts empty → all acquirers block
 static event evt{false};  // starts unset → all waiters block
@@ -35,9 +33,7 @@ static mutex cv_mtx;  // dedicated mutex for cv.wait()
 // from the middle of the tree.
 static task<>* root_task = nullptr;
 
-// ---------------------------------------------------------------------------
 // Leaf helpers — each one blocks on a different primitive.
-// ---------------------------------------------------------------------------
 
 /// Holds the mutex and sleeps → all contenders queue as Waiters.
 task<> mtx_holder(event_loop& loop) {
@@ -89,9 +85,7 @@ task<int> fast_work(event_loop& loop) {
     co_return 2;
 }
 
-// ---------------------------------------------------------------------------
 // Observer — dumps the graph from the middle of the tree after 5 ms.
-// ---------------------------------------------------------------------------
 
 task<> observer(event_loop& loop) {
     co_await sleep(5ms, loop);
@@ -102,9 +96,7 @@ task<> observer(event_loop& loop) {
     co_await sleep(300ms, loop);
 }
 
-// ---------------------------------------------------------------------------
 // Composite branches — exercise when_all, when_any, task_group.
-// ---------------------------------------------------------------------------
 
 /// when_all branch: 1 holder + 3 contenders → Mutex has 3 Waiters.
 task<> branch_mutex(event_loop& loop) {
@@ -158,9 +150,7 @@ task<> branch_cancel(event_loop& loop) {
     co_await when_all(target(), canceler());
 }
 
-// ---------------------------------------------------------------------------
 // Root driver — ties everything together.
-// ---------------------------------------------------------------------------
 
 task<> driver(event_loop& loop) {
     auto obs = observer(loop);

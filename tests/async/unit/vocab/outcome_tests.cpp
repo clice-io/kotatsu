@@ -133,8 +133,7 @@ ZEST_CASE(unwrap_gives_the_value_in_its_value_category) {
 
 #if KOTA_ENABLE_EXCEPTIONS
 
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(unwrap_of_an_error_fails, skip = test::exceptions_unreadable) {
+ZEST_CASE(unwrap_of_an_error_fails) {
     result<int> failed = outcome_error(error::connection_refused);
     ZEXPECT(test::thrown<bad_outcome_access>([&] { failed.unwrap(); }) ==
             std::string(error::connection_refused.message()));
@@ -143,8 +142,7 @@ ZEST_CASE(unwrap_of_an_error_fails, skip = test::exceptions_unreadable) {
     ZEXPECT(test::thrown<bad_outcome_access>([&] { plain.unwrap(); }) == "outcome holds an error");
 }
 
-// Reads what was thrown; see test::exceptions_unreadable.
-ZEST_CASE(unwrap_of_a_cancellation_fails, skip = test::exceptions_unreadable) {
+ZEST_CASE(unwrap_of_a_cancellation_fails) {
     outcome<int, error, cancellation> cancelled = outcome_cancel(cancellation{});
     ZEXPECT(test::thrown<bad_outcome_access>([&] { std::move(cancelled).unwrap(); }) ==
             "outcome was cancelled");

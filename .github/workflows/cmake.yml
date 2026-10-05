@@ -70,7 +70,8 @@ jobs:
       - name: Derive toolchain variables
         shell: bash
         run: |
-          # Toolchain-specific: PIXI_ENV, CC, CXX, COMPILER_CACHE, CACHE_KEY, NEEDS_MSVC_ENV
+          # Toolchain-specific: PIXI_ENV, CC, CXX, COMPILER_CACHE, CACHE_KEY, NEEDS_MSVC_ENV,
+          # CLANG_NO_DEFAULT_CONFIG
           case "${{ matrix.os_label }}-${{ matrix.toolchain }}" in
             linux-gcc)
               echo "PIXI_ENV=linux-gcc"; echo "CC=gcc"; echo "CXX=g++"; echo "COMPILER_CACHE=ccache"; echo "CACHE_KEY=linux-gcc" ;;
@@ -83,7 +84,16 @@ jobs:
             windows-msvc)
               echo "PIXI_ENV=windows-msvc"; echo "CC=cl"; echo "CXX=cl"; echo "COMPILER_CACHE=sccache"; echo "CACHE_KEY=windows-msvc"; echo "NEEDS_MSVC_ENV=true" ;;
             windows-clang-cl)
-              echo "PIXI_ENV=windows-llvm"; echo "CC=clang-cl"; echo "CXX=clang-cl"; echo "COMPILER_CACHE=sccache"; echo "CACHE_KEY=windows-clang-cl"; echo "NEEDS_MSVC_ENV=true" ;;
+              # xclang's clang-cl builds twice as fast as conda-forge's, but
+              # xclang has no ASan runtime for the MSVC target, so the ASan leg
+              # keeps conda-forge's. xclang's default configuration is MinGW's,
+              # which clang-cl must not read.
+              if [[ "${{ matrix.preset }}" == "asan" ]]; then
+                echo "PIXI_ENV=windows-llvm"
+              else
+                echo "PIXI_ENV=windows-xclang"; echo "CLANG_NO_DEFAULT_CONFIG=1"
+              fi
+              echo "CC=clang-cl"; echo "CXX=clang-cl"; echo "COMPILER_CACHE=sccache"; echo "CACHE_KEY=windows-clang-cl"; echo "NEEDS_MSVC_ENV=true" ;;
             windows-mingw)
               echo "PIXI_ENV=windows-mingw"; echo "CC=gcc"; echo "CXX=g++"; echo "COMPILER_CACHE=sccache"; echo "CACHE_KEY=windows-mingw" ;;
             windows-xclang)
@@ -171,6 +181,10 @@ jobs:
               -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}"
               -DCMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld --sysroot=${SDKROOT}"
             )
+          fi
+          # GNU ld takes over a minute to link unit_tests.exe, lld seconds.
+          if [[ "${{ matrix.toolchain }}" == "mingw" ]]; then
+            extra_args+=(-DCMAKE_LINKER_TYPE=LLD)
           fi
 
           # ${arr[@]+...} guard: macOS ships bash 3.2, where expanding an

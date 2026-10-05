@@ -71,28 +71,33 @@ if(kota_node_problem)
     message(STATUS "Leaving out the integration tests: ${kota_node_problem}.")
 endif()
 
-# A plain Debug build, unoptimized and without sanitizers, compiles the
-# largest translation units fastest and in the least memory. A multi-config
-# generator picks the configuration at build time, which configure cannot
-# see, so it is never taken for one.
+# The largest translation units are built only where they build fastest and
+# in the least memory: a plain Debug build, unoptimized and without
+# sanitizers. A multi-config generator picks the configuration at build time,
+# which configure cannot see, so it is never taken for one. MinGW's GCC is left
+# out too: its assembler takes minutes over the object of such a unit, where
+# the ELF one takes seconds.
 get_property(kota_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 string(TOLOWER "${CMAKE_BUILD_TYPE}" kota_build_type)
 if(NOT kota_multi_config
     AND kota_build_type STREQUAL "debug"
-    AND NOT (KOTA_SANITIZE_ADDRESS OR KOTA_SANITIZE_MEMORY OR KOTA_SANITIZE_THREAD OR KOTA_SANITIZE_UNDEFINED))
-    set(kota_plain_debug ON)
+    AND NOT (KOTA_SANITIZE_ADDRESS OR KOTA_SANITIZE_MEMORY OR KOTA_SANITIZE_THREAD OR KOTA_SANITIZE_UNDEFINED)
+    AND NOT (MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))
+    set(kota_build_largest_units ON)
 else()
-    set(kota_plain_debug OFF)
+    set(kota_build_largest_units OFF)
 endif()
 
 # Adds the calling module's integration tests, integration/*.test.ts, as one
 # ctest test that node runs from the repo root; their npm packages come from
 # the root package.json (`pixi run npm-ci`). Each integration/drivers/<name>.cpp
-# builds the driver <name>, linked against the module's libraries LIBS; the
-# tests find its path in the environment variable KOTA_<NAME>, and so the path
-# of each program PROGRAMS names, targets built elsewhere. DEBUG_ONLY names
-# files under integration/, tests and drivers, that only a plain Debug build
-# builds and runs; elsewhere such a driver is left out of the default build.
+# builds the driver <name>, linked against the module's libraries LIBS, and so
+# does a directory integration/drivers/<name>/ of sources, for a driver too
+# heavy for one translation unit; the tests find its path in the environment
+# variable KOTA_<NAME>, and so the path of each program PROGRAMS names, targets
+# built elsewhere. DEBUG_ONLY names files under integration/, tests and
+# drivers, that only the builds above, which take the largest units, build and
+# run; elsewhere such a driver is left out of the default build.
 function(kota_add_integration_tests)
     cmake_parse_arguments(PARSE_ARGV 0 arg "" "" "LIBS;PROGRAMS;DEBUG_ONLY")
     if(kota_node_problem)
@@ -105,19 +110,29 @@ function(kota_add_integration_tests)
         if(NOT EXISTS "${path}")
             message(FATAL_ERROR "DEBUG_ONLY names ${path}, which does not exist.")
         endif()
-        if(NOT kota_plain_debug)
+        if(NOT kota_build_largest_units)
             list(APPEND left_out "${path}")
         endif()
     endforeach()
 
     set(programs "")
-    file(GLOB drivers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/drivers/*.cpp")
-    foreach(source IN LISTS drivers)
-        get_filename_component(driver "${source}" NAME_WE)
-        if(source IN_LIST left_out)
-            add_executable(${driver} EXCLUDE_FROM_ALL "${source}")
+    file(GLOB entries CONFIGURE_DEPENDS LIST_DIRECTORIES true
+        "${CMAKE_CURRENT_SOURCE_DIR}/integration/drivers/*"
+    )
+    foreach(entry IN LISTS entries)
+        if(IS_DIRECTORY "${entry}")
+            file(GLOB sources CONFIGURE_DEPENDS "${entry}/*.cpp")
+        elseif(entry MATCHES "\\.cpp$")
+            set(sources "${entry}")
         else()
-            add_executable(${driver} "${source}")
+            # An editor's swap file, say.
+            continue()
+        endif()
+        get_filename_component(driver "${entry}" NAME_WE)
+        if(entry IN_LIST left_out)
+            add_executable(${driver} EXCLUDE_FROM_ALL ${sources})
+        else()
+            add_executable(${driver} ${sources})
             list(APPEND programs ${driver})
             set_property(GLOBAL APPEND PROPERTY kota_default_drivers ${driver})
         endif()
@@ -126,6 +141,11 @@ function(kota_add_integration_tests)
         kota_apply_project_options(${driver})
         if(MSVC)
             target_compile_options(${driver} PRIVATE /bigobj)
+        endif()
+        # Without debug information MinGW's assembler takes half as long over
+        # a driver, and the LSP drivers are the build's longest steps there.
+        if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            target_compile_options(${driver} PRIVATE -g0)
         endif()
         set_property(GLOBAL APPEND PROPERTY kota_integration_drivers ${driver})
     endforeach()
