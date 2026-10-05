@@ -124,25 +124,29 @@ namespace detail {
 /// has nothing alike.
 ///
 /// ZEST_SUITE's variable is an ordinary one at namespace scope, which no
-/// linker drops. Its initializer calls this, which takes the address of the
-/// suite's registration, and refers to its cases' through the suite's vtable:
-/// constructing the suite, in a branch the compiler cannot prove dead, makes
-/// it emit and keep the vtable, which holds every case's hook (ZEST_CASE
-/// makes it virtual), and each hook returns the address of its case's
-/// registration. A linker keeps what a kept section refers to, so every
-/// registration stays, and with it its initializer.
+/// linker drops. Its initializer calls this, which stores the address of the
+/// suite's registration where the compiler must assume it is read, a volatile
+/// variable, and refers to its cases' through the suite's vtable: it stores
+/// there a suite made with new, in a branch the compiler cannot prove dead,
+/// so that the compiler keeps the store of the vtable into the suite, and with
+/// it the vtable. The vtable holds every case's hook (ZEST_CASE makes it
+/// virtual), and each hook returns the address of its case's registration. A
+/// linker keeps what a kept section refers to, so every registration stays,
+/// and with it its initializer. A suite constructed into a local instead has
+/// no effect anyone sees, and at -O2 compilers drop it with the vtable.
 ///
 /// The variable comes before the suite's definition, so this is called where
 /// the suite is incomplete; GCC, Clang and MSVC instantiate it at the end of
 /// the translation unit, where it is complete.
 template <typename Suite>
 bool keep_registered() {
+    const static void* volatile kept = nullptr;
+    kept = &Suite::template _register_suites<>;
     volatile bool never = false;
     if(never) {
-        [[maybe_unused]] Suite suite;
+        kept = new Suite;
     }
-    const static void* volatile registration = &Suite::template _register_suites<>;
-    return registration != nullptr;
+    return true;
 }
 
 }  // namespace detail
