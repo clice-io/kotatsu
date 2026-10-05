@@ -7,6 +7,14 @@
 #include <cstdint>
 
 #ifdef _WIN32
+// Without kota_http, which defines these for whatever links it, nothing else
+// keeps windows.h's min and max macros out of the code that follows.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else

@@ -26,7 +26,7 @@
 #include <vector>
 
 #ifdef _WIN32
-#include <BaseTsd.h>
+#include <basetsd.h>
 #include <fcntl.h>
 #include <io.h>
 using ssize_t = SSIZE_T;
