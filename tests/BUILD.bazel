@@ -153,6 +153,19 @@ cc_library(
 kota_binary(
     name = "zest_runner_fixture",
     srcs = ["zest/integration/runner_fixture.cpp"],
+    # On Windows it links with garbage collection, as tests/zest/CMakeLists.txt
+    # says why.
+    copts = select({
+        "@platforms//os:windows": [
+            "-ffunction-sections",
+            "-fdata-sections",
+        ],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "@platforms//os:windows": ["-Wl,--gc-sections"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//:zest",
         "//:zest_async",

@@ -397,8 +397,9 @@ struct FixtureOptions {
 }  // namespace kota::zest
 
 // A suite outside an anonymous namespace, which a linker sees as shared with
-// other files. tests/zest/CMakeLists.txt builds the fixture with the linker
-// collecting garbage, which must leave the cases of both kinds registered.
+// other files. On Windows, tests/zest/CMakeLists.txt links the fixture with
+// garbage collection, which must leave the cases of suites of both kinds
+// registered.
 namespace zest_fixture {
 
 ZEST_SUITE(fixture_external) {

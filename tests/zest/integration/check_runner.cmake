@@ -96,7 +96,7 @@ set(snapshots "${WORK_DIR}/snapshots")
 file(REMOVE_RECURSE "${WORK_DIR}")
 
 # The cases of a suite in an anonymous namespace and of one outside are all
-# registered, though the linker collected garbage.
+# registered, even where the linker collected garbage (on Windows).
 run_fixture("${FIXTURE}" --list-tests)
 expect_output("fixture.passes")
 expect_output("fixture_external.registered")

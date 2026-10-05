@@ -19,11 +19,11 @@
 // environment, the current directory) puts it back, as an RAII guard does.
 //
 // The variable before the suite keeps the suite and its cases registered
-// whatever the linker drops, so a suite may live in any namespace and be built
-// with any options (kota::zest::detail::keep_registered says how).
+// whatever the linker collects (/OPT:REF, --gc-sections, LTO), so a suite may
+// live in any namespace (kota::zest::detail::keep_registered says how).
 #define ZEST_SUITE(name, ...)                                                                      \
     struct name##TEST;                                                                             \
-    [[maybe_unused]] static const bool _zest_registered_##name =                                   \
+    [[maybe_unused]] static const bool zest_registered_##name =                                    \
         ::kota::zest::detail::keep_registered<name##TEST>();                                       \
     struct name##TEST : __VA_OPT__(__VA_ARGS__, )::kota::zest::TestSuiteDef<name##TEST>
 
@@ -41,7 +41,7 @@
     constexpr static ::kota::zest::TestAttrs suite_attrs = ZEST_MAKE_ATTRS(__VA_ARGS__)
 
 // A case registers from the initializer of TestSuiteDef's _register_test_case
-// specialization that its hook names. The hook is virtual so that the suite's
+// specialization that its hook, _register_<name>, names. The hook is virtual so that the suite's
 // vtable, which ZEST_SUITE's variable keeps, refers to it, and it returns the
 // specialization's address so that the reference survives optimization.
 #define ZEST_CASE(name, ...)                                                                       \

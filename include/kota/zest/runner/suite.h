@@ -123,21 +123,28 @@ namespace detail {
 /// [[gnu::used]] into a directive to the linker only for MSVC targets, and cl
 /// has nothing alike.
 ///
-/// ZEST_SUITE's variable is an ordinary one at namespace scope, which no
-/// linker drops. Its initializer calls this, which stores the address of the
-/// suite's registration where the compiler must assume it is read, a volatile
-/// variable, and refers to its cases' through the suite's vtable: it stores
-/// there a suite made with new, in a branch the compiler cannot prove dead,
-/// so that the compiler keeps the store of the vtable into the suite, and with
-/// it the vtable. The vtable holds every case's hook (ZEST_CASE makes it
-/// virtual), and each hook returns the address of its case's registration. A
-/// linker keeps what a kept section refers to, so every registration stays,
-/// and with it its initializer. A suite constructed into a local instead has
-/// no effect anyone sees, and at -O2 compilers drop it with the vtable.
+/// ZEST_SUITE's variable is neither inline nor a template's, so it has no
+/// COMDAT of its own: its initializer runs from the start-up code of the
+/// translation unit, which no linker drops. That initializer calls this.
 ///
-/// The variable comes before the suite's definition, so this is called where
-/// the suite is incomplete; GCC, Clang and MSVC instantiate it at the end of
-/// the translation unit, where it is complete.
+/// This stores the address of the suite's registration in a volatile
+/// variable, which the compiler must assume is read. It reaches the cases'
+/// registrations through the suite's vtable: in a branch the compiler cannot
+/// prove dead, it stores a suite made with new into the same variable, so the
+/// compiler keeps the constructor's store of the vtable pointer, and with it
+/// the vtable. A suite constructed into a local instead has no effect anyone
+/// sees, and at -O2 compilers drop it with the vtable. The vtable holds every
+/// case's hook (ZEST_CASE and ZEST_CASE_GROUP make it virtual), and each hook
+/// returns the address of its registration. A linker keeps what a kept section
+/// refers to, so every registration stays, and with it its initializer. The
+/// variable is read back at the end, as clang reports one set but never read.
+///
+/// ZEST_SUITE's expansion ends at the suite's class head, so the variable
+/// comes before the suite's definition and this is called where the suite is
+/// incomplete. The standard lets this be instantiated right there, where it
+/// would not compile, which makes the program ill-formed, no diagnostic
+/// required; GCC, Clang and MSVC instantiate it at the end of the translation
+/// unit, where the suite is complete.
 template <typename Suite>
 bool keep_registered() {
     const static void* volatile kept = nullptr;
