@@ -96,6 +96,12 @@ public:
     /// error::value_too_large_for_defined_data_type.
     task<void, error> write(std::span<const char> data);
 
+    /// Writes `pieces` one after another as one write, as write() writes
+    /// one piece: each must stay alive until the write completes, and only
+    /// what they hold together must be neither empty nor more than 4 GiB - 1
+    /// bytes.
+    task<void, error> write_vectored(std::span<const std::span<const char>> pieces);
+
     /// Writes what fits without waiting; returns how much that was, 0 for
     /// empty data.
     result<std::size_t> try_write(std::span<const char> data);

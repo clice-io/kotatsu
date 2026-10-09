@@ -410,6 +410,35 @@ ZEST_CASE(write_reaches_the_reader) {
     ZEXPECT(*received == "kotatsu-write");
 }
 
+// Empty pieces are passed over; the first is larger than the pipe holds.
+ZEST_CASE(write_vectored_writes_its_pieces_in_order) {
+    auto ends = pipe_ends(loop);
+    ZASSERT(ends.has_value());
+    const std::string large(128 * 1024, 'a');
+    const std::span<const char> pieces[] = {large, {}, std::string_view("b"), large};
+    auto send = [&]() -> task<void, error> {
+        co_await ends->writer.write_vectored(pieces).or_fail();
+        ends->writer = pipe{};
+    };
+
+    auto [sent, received] = run(send(), ends->reader.read_to_end());
+    ZEXPECT(sent.has_value());
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == large + "b" + large);
+}
+
+ZEST_CASE(write_vectored_of_nothing_fails) {
+    auto ends = pipe_ends(loop);
+    ZASSERT(ends.has_value());
+    const std::span<const char> empty[] = {{}, {}};
+
+    auto [none, empties] = run(ends->writer.write_vectored({}), ends->writer.write_vectored(empty));
+    ZASSERT(none.has_error());
+    ZEXPECT(none.error() == error::invalid_argument);
+    ZASSERT(empties.has_error());
+    ZEXPECT(empties.error() == error::invalid_argument);
+}
+
 // The first write is larger than the pipe holds, so it is still going out
 // when the second is made.
 ZEST_CASE(overlapping_writes_arrive_in_order) {
