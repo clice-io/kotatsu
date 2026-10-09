@@ -266,6 +266,9 @@ task<void, error> stream::write_vectored(std::span<const std::span<const char>> 
     std::vector<uv_buf_t> bufs;
     bufs.reserve(pieces.size());
     for(auto piece: pieces) {
+        if(piece.empty()) {
+            continue;
+        }
         size += piece.size();
         bufs.push_back(uv::buffer_of(piece));
     }
