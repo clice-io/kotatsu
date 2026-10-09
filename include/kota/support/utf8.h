@@ -6,6 +6,8 @@
 #include <string>
 #include <string_view>
 
+#include "kota/support/swar.h"
+
 namespace kota {
 
 /// The bytes a UTF-8 decoder takes from the start of a text: their length,
@@ -67,13 +69,16 @@ constexpr UTF8Sequence decode_utf8(std::string_view text) {
 }
 
 /// Whether text is UTF-8: whole code points, none overlong, a surrogate or
-/// past U+10FFFF. Runs of ASCII pass eight bytes at a time.
+/// past U+10FFFF. ASCII passes eight bytes at a time.
 inline bool is_utf8(std::string_view text) {
+    if(!any_word(text, 0, [](std::uint64_t word) { return has_non_ascii(word); })) {
+        return true;
+    }
     for(std::size_t at = 0; at < text.size();) {
         if(text.size() - at >= sizeof(std::uint64_t)) {
             std::uint64_t word;
             std::memcpy(&word, text.data() + at, sizeof(word));
-            if((word & 0x8080'8080'8080'8080) == 0) {
+            if(!has_non_ascii(word)) {
                 at += sizeof(word);
                 continue;
             }
