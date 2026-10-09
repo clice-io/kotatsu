@@ -249,6 +249,19 @@ void values(const Kit<B>& kit) {
     }
 
     if constexpr(B::caps.self_describing) {
+        // A sequence keeps the elements it read before one that does not
+        // read, and not that one.
+        kit.add("sequence_element_out_of_range_fails_keeping_those_before", [] {
+            auto document = B::encode(std::vector<int>{1, 2, 300, 4});
+            ZASSERT(succeeds(document));
+            ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
+            std::vector<std::int8_t> decoded;
+            auto status = B::decode(*document, decoded);
+            ZASSERT(!status);
+            ZEXPECT(status.error().format_path() == "[2]");
+            ZEXPECT(decoded == std::vector<std::int8_t>{1, 2});
+        });
+
         // The leaf error is the backend's to word; its path is the protocol's.
         // A value that does not read leaves the target as it was.
         read_in_field_fails_over(

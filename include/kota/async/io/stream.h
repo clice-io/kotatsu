@@ -3,6 +3,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -89,12 +90,24 @@ public:
     /// starts reading again.
     error stop();
 
+    /// The most bytes one write takes, 4 GiB - 1: libuv takes a length as an
+    /// unsigned int. (max) is parenthesized for the files that include
+    /// <windows.h> without NOMINMAX first.
+    constexpr static std::size_t max_write_size = (std::numeric_limits<unsigned int>::max)();
+
     /// Writes `data`, which must stay alive until the write completes. A
     /// cancelled write still goes out: libuv cannot take it back, and the
     /// task ends once it has. A write goes out whole: empty data fails with
-    /// error::invalid_argument, and more than 4 GiB - 1 bytes with
+    /// error::invalid_argument, and more than max_write_size bytes with
     /// error::value_too_large_for_defined_data_type.
     task<void, error> write(std::span<const char> data);
+
+    /// Writes `pieces` one after another as one write, as write() writes
+    /// one piece, each to stay alive until the write completes. Empty pieces
+    /// are passed over; nothing at all to write fails with
+    /// error::invalid_argument, and more than max_write_size bytes in all
+    /// with error::value_too_large_for_defined_data_type.
+    task<void, error> write_vectored(std::span<const std::span<const char>> pieces);
 
     /// Writes what fits without waiting; returns how much that was, 0 for
     /// empty data.

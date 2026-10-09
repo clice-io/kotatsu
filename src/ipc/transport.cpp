@@ -7,6 +7,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #ifdef _WIN32
 #include <io.h>
@@ -102,16 +103,54 @@ task<std::string, ReadError> StreamTransport::read_message() {
     }
 }
 
+task<void, Error> Transport::write_messages(std::span<const std::string> payloads) {
+    for(const auto& payload: payloads) {
+        co_await write_message(payload).or_fail();
+    }
+}
+
 task<void, Error> StreamTransport::write_message(std::string_view payload) {
-    auto framed = frame(payload);
+    const std::string_view payloads[] = {payload};
+    co_await write_frames(payloads).or_fail();
+}
+
+task<void, Error> StreamTransport::write_messages(std::span<const std::string> payloads) {
+    const std::vector<std::string_view> views(payloads.begin(), payloads.end());
+    co_await write_frames(views).or_fail();
+}
+
+task<void, Error> StreamTransport::write_frames(std::span<const std::string_view> payloads) {
+    std::vector<std::string> headers;
+    headers.reserve(payloads.size());
+    for(auto payload: payloads) {
+        headers.push_back(frame_header(payload.size()));
+    }
+
     auto& stream = shared_stream ? read_stream : write_stream;
-    auto status = co_await stream.write(std::span<const char>(framed.data(), framed.size()));
-    if(status.has_error()) {
-        // The stream was closed under the write.
-        if(status.error() == error::operation_aborted) {
-            co_await fail("transport closed");
+    // The frames go in as few writes as max_write_size allows, and a larger
+    // frame fails alone.
+    for(std::size_t first = 0; first < payloads.size();) {
+        std::vector<std::span<const char>> pieces;
+        std::size_t size = 0;
+        std::size_t next = first;
+        for(; next < payloads.size(); ++next) {
+            const auto frame = headers[next].size() + payloads[next].size();
+            if(next > first && size + frame > stream::max_write_size) {
+                break;
+            }
+            pieces.push_back(headers[next]);
+            pieces.push_back(payloads[next]);
+            size += frame;
         }
-        co_await fail(std::string(status.error().message()));
+        auto status = co_await stream.write_vectored(pieces);
+        if(status.has_error()) {
+            // The stream was closed under the write.
+            if(status.error() == error::operation_aborted) {
+                co_await fail("transport closed");
+            }
+            co_await fail(std::string(status.error().message()));
+        }
+        first = next;
     }
 }
 

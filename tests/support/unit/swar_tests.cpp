@@ -22,8 +22,8 @@ ZEST_SUITE(support_swar) {
 ZEST_CASE(has_byte_finds_its_byte_anywhere_in_the_word) {
     for(std::size_t at = 0; at < 8; ++at) {
         ZEST_CONTEXT("byte {}", at);
-        ZEXPECT(has_byte_below(word_with(at, 0x1F), 0x20));
-        ZEXPECT(has_byte_below(word_with(at, 0x00), 0x20));
+        ZEXPECT(bytes_below(word_with(at, 0x1F), 0x20) != 0);
+        ZEXPECT(bytes_below(word_with(at, 0x00), 0x20) != 0);
         ZEXPECT(has_byte(word_with(at, '"'), '"'));
         ZEXPECT(has_non_ascii(word_with(at, 0x80)));
     }
@@ -36,13 +36,28 @@ ZEST_CASE(has_byte_passes_over_the_bytes_beside_its_bound) {
         // wraps them, do not count.
         for(unsigned byte: {0x20, 0x21, 0x7F, 0x80, 0xFF}) {
             ZEST_CONTEXT("value {}", byte);
-            ZEXPECT(!has_byte_below(word_with(at, byte), 0x20));
+            ZEXPECT(bytes_below(word_with(at, byte), 0x20) == 0);
         }
         ZEXPECT(!has_byte(word_with(at, '"' - 1), '"'));
         ZEXPECT(!has_byte(word_with(at, '"' + 1), '"'));
         ZEXPECT(!has_byte(word_with(at, '"' | 0x80), '"'));
         ZEXPECT(!has_non_ascii(word_with(at, 0x7F)));
     }
+}
+
+ZEST_CASE(first_byte_index_is_the_first_match_whatever_follows) {
+    for(std::size_t at = 0; at < 8; ++at) {
+        ZEST_CONTEXT("byte {}", at);
+        // The bytes after the match, one above it, show through its borrow.
+        ZEXPECT(first_byte_index(bytes_below(word_with(at, 0x1F, 0x20), 0x20)) == at);
+        ZEXPECT(first_byte_index(bytes_equal(word_with(at, '"', '"' + 1), '"')) == at);
+    }
+    ZEXPECT(first_byte_index(bytes_equal(ones * '"', '"')) == 0U);
+}
+
+ZEST_CASE(load_word_puts_the_first_byte_lowest) {
+    const char bytes[] = "\x01\x02\x03\x04\x05\x06\x07\x08";
+    ZEXPECT(load_word(bytes) == 0x0807'0605'0403'0201U);
 }
 
 ZEST_CASE(any_word_reads_every_byte_of_a_text_of_any_size) {

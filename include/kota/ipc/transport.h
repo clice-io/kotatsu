@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -22,6 +23,10 @@ public:
     virtual task<std::string, ReadError> read_message() = 0;
 
     virtual task<void, Error> write_message(std::string_view payload) = 0;
+
+    /// Writes `payloads` in order, as write_message() writes each, until one
+    /// fails; a transport that can sends them in one write.
+    virtual task<void, Error> write_messages(std::span<const std::string> payloads);
 
     /// Ends the output once what was written has gone out; the remote reads
     /// the end of its input, and the input stays open.
@@ -64,6 +69,9 @@ public:
 
     task<void, Error> write_message(std::string_view payload) override;
 
+    /// Frames the payloads as one write, or as few as the stream takes.
+    task<void, Error> write_messages(std::span<const std::string> payloads) override;
+
     /// The remote reads the end of its input. A transport over one stream
     /// (connect_tcp) shuts its write side down, and goes on reading. Over
     /// stdio (open_stdio), the process's stdout is pointed at the null
@@ -83,6 +91,10 @@ public:
     std::size_t remote_max_payload() const noexcept override;
 
 private:
+    /// Writes each payload after its header, in as few writes as the stream
+    /// takes, the payloads as they are.
+    task<void, Error> write_frames(std::span<const std::string_view> payloads);
+
     /// Points stdout at the null device, once, if the output is stdout.
     Result<void> release_stdout();
 

@@ -410,6 +410,35 @@ ZEST_CASE(write_reaches_the_reader) {
     ZEXPECT(*received == "kotatsu-write");
 }
 
+// Empty pieces are passed over; the first is larger than the pipe holds.
+ZEST_CASE(write_vectored_writes_its_pieces_in_order) {
+    auto ends = pipe_ends(loop);
+    ZASSERT(ends.has_value());
+    const std::string large(128 * 1024, 'a');
+    const std::span<const char> pieces[] = {large, {}, std::string_view("b"), large};
+    auto send = [&]() -> task<void, error> {
+        co_await ends->writer.write_vectored(pieces).or_fail();
+        ends->writer = pipe{};
+    };
+
+    auto [sent, received] = run(send(), ends->reader.read_to_end());
+    ZEXPECT(sent.has_value());
+    ZASSERT(received.has_value());
+    ZEXPECT(*received == large + "b" + large);
+}
+
+ZEST_CASE(write_vectored_of_nothing_fails) {
+    auto ends = pipe_ends(loop);
+    ZASSERT(ends.has_value());
+    const std::span<const char> empty[] = {{}, {}};
+
+    auto [none, empties] = run(ends->writer.write_vectored({}), ends->writer.write_vectored(empty));
+    ZASSERT(none.has_error());
+    ZEXPECT(none.error() == error::invalid_argument);
+    ZASSERT(empties.has_error());
+    ZEXPECT(empties.error() == error::invalid_argument);
+}
+
 // The first write is larger than the pipe holds, so it is still going out
 // when the second is made.
 ZEST_CASE(overlapping_writes_arrive_in_order) {
@@ -447,9 +476,9 @@ ZEST_CASE(cancelled_write_still_delivers) {
     ZEXPECT(*received == "kept");
 }
 
-// Nothing reads the pipe, so the write is still going out, and the shutdown
-// waits behind it, when their stream closes: libuv ends both, which fails
-// them rather than cancelling them. Windows writes an anonymous pipe from a
+// Nothing reads the pipe, so the writes are still going out, and the
+// shutdown waits behind them, when their stream closes: libuv ends them all,
+// which fails them rather than cancelling them. Windows writes an anonymous pipe from a
 // thread that the close cannot stop.
 #ifndef _WIN32
 ZEST_CASE(write_and_shutdown_ended_by_a_close_fails) {
@@ -461,10 +490,16 @@ ZEST_CASE(write_and_shutdown_ended_by_a_close_fails) {
         ends->writer = pipe{};
     };
 
-    auto [written, shut, closed] =
-        run(ends->writer.write(large), ends->writer.shutdown(), close_it());
+    const std::span<const char> pieces[] = {large, large};
+
+    auto [written, vectored, shut, closed] = run(ends->writer.write(large),
+                                                 ends->writer.write_vectored(pieces),
+                                                 ends->writer.shutdown(),
+                                                 close_it());
     ZASSERT(written.has_error());
     ZEXPECT(written.error() == error::operation_aborted);
+    ZASSERT(vectored.has_error());
+    ZEXPECT(vectored.error() == error::operation_aborted);
     ZASSERT(shut.has_error());
     ZEXPECT(shut.error() == error::operation_aborted);
 }
@@ -554,11 +589,14 @@ ZEST_CASE(inert_stream_fails) {
     pipe inert;
     std::array<char, 8> buffer{};
 
-    auto [read, read_some, chunk, written, shut] = run(inert.read(),
-                                                       inert.read_some(buffer),
-                                                       inert.read_chunk(),
-                                                       inert.write(std::string_view("x")),
-                                                       inert.shutdown());
+    const std::span<const char> pieces[] = {std::string_view("x")};
+
+    auto [read, read_some, chunk, written, vectored, shut] = run(inert.read(),
+                                                                 inert.read_some(buffer),
+                                                                 inert.read_chunk(),
+                                                                 inert.write(std::string_view("x")),
+                                                                 inert.write_vectored(pieces),
+                                                                 inert.shutdown());
     ZASSERT(read.has_error());
     ZEXPECT(read.error() == error::invalid_argument);
     ZASSERT(read_some.has_error());
@@ -567,6 +605,8 @@ ZEST_CASE(inert_stream_fails) {
     ZEXPECT(chunk.error() == error::invalid_argument);
     ZASSERT(written.has_error());
     ZEXPECT(written.error() == error::invalid_argument);
+    ZASSERT(vectored.has_error());
+    ZEXPECT(vectored.error() == error::invalid_argument);
     ZASSERT(shut.has_error());
     ZEXPECT(shut.error() == error::invalid_argument);
     ZEXPECT(inert.stop() == error::invalid_argument);

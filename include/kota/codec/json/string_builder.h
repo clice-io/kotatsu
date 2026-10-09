@@ -67,16 +67,16 @@ constexpr char* escape_to(std::string_view text, char* out) {
     return out;
 }
 
-/// Whether a byte of word is one escape_to changes: a quote, a backslash or
-/// a control character.
-constexpr bool has_escaped_byte(std::uint64_t word) {
-    return has_byte_below(word, 0x20) || has_byte(word, '"') || has_byte(word, '\\');
+/// The bytes of word escape_to changes, a quote, a backslash or a control
+/// character, as bytes_below shows them.
+constexpr std::uint64_t escaped_bytes(std::uint64_t word) {
+    return bytes_below(word, 0x20) | bytes_equal(word, '"') | bytes_equal(word, '\\');
 }
 
 /// Whether escape_to changes text.
 inline bool needs_escape(std::string_view text) {
     constexpr std::uint64_t letters = 0x6161'6161'6161'6161;
-    return any_word(text, letters, [](std::uint64_t word) { return has_escaped_byte(word); });
+    return any_word(text, letters, [](std::uint64_t word) { return escaped_bytes(word) != 0; });
 }
 
 /// Copies size bytes from source to out, without a call for a short run.

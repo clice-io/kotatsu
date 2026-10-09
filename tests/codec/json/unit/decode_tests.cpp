@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -170,6 +171,28 @@ ZEST_CASE(char_from_several_characters_fails) {
     auto status = json::from_string(R"("xy")", out);
     ZASSERT(!status);
     ZEXPECT(status.error().message == codec::invalid_char_message);
+}
+
+// A key with escapes reads unescaped, wherever its backslash stands; one
+// without reads as written.
+ZEST_CASE(escaped_keys_read_unescaped) {
+    auto point = json::from_string<test::Point>(R"({"\u0078":1,"y":2})");
+    ZASSERT(point);
+    ZEXPECT(*point == test::Point{.x = 1, .y = 2});
+    auto map = json::from_string<std::map<std::string, int>>(
+        R"({"a\"b":1,"a key longer than a word\n":2,"plain":3})");
+    ZASSERT(map);
+    ZEXPECT(*map == std::map<std::string, int>{
+                        {"a\"b",                       1},
+                        {"a key longer than a word\n", 2},
+                        {"plain",                      3},
+    });
+}
+
+ZEST_CASE(key_with_an_unknown_escape_fails) {
+    auto point = json::from_string<test::Point>(R"({"\q":1,"y":2})");
+    ZASSERT(!point);
+    ZEXPECT(zest::starts_with(point.error().message, "STRING_ERROR"));
 }
 
 ZEST_CASE(byte_out_of_range_fails) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -14,15 +15,39 @@ constexpr std::uint64_t byte_ones = 0x0101'0101'0101'0101;
 
 }  // namespace detail
 
-/// Whether a byte of word is below n, which is at most 0x80.
-constexpr bool has_byte_below(std::uint64_t word, std::uint8_t n) {
+/// The top bit of each byte of word below n, which is at most 0x80. Up to
+/// the first such byte, the lowest bit set, it is exact; past it, a byte not
+/// below n may show too.
+constexpr std::uint64_t bytes_below(std::uint64_t word, std::uint8_t n) {
     using detail::byte_ones;
-    return ((word - byte_ones * n) & ~word & byte_ones * 0x80) != 0;
+    return (word - byte_ones * n) & ~word & byte_ones * 0x80;
+}
+
+/// The top bit of each byte of word that is c, as bytes_below shows them.
+constexpr std::uint64_t bytes_equal(std::uint64_t word, char c) {
+    return bytes_below(word ^ detail::byte_ones * static_cast<unsigned char>(c), 1);
 }
 
 /// Whether a byte of word is c.
 constexpr bool has_byte(std::uint64_t word, char c) {
-    return has_byte_below(word ^ detail::byte_ones * static_cast<unsigned char>(c), 1);
+    return bytes_equal(word, c) != 0;
+}
+
+/// The eight bytes from `bytes` as a word whose lowest byte is the first, as
+/// first_byte_index reads them.
+inline std::uint64_t load_word(const char* bytes) {
+    std::uint64_t word;
+    std::memcpy(&word, bytes, sizeof(word));
+    if constexpr(std::endian::native == std::endian::big) {
+        word = std::byteswap(word);
+    }
+    return word;
+}
+
+/// The index of the first byte a nonzero mask of bytes_below or bytes_equal
+/// shows in a word from load_word.
+constexpr std::size_t first_byte_index(std::uint64_t mask) {
+    return static_cast<std::size_t>(std::countr_zero(mask)) / 8;
 }
 
 /// Whether a byte of word is past ASCII.

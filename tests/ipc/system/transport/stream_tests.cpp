@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "async/harness/os.h"
+#include "ipc/harness/frames.h"
 #include "kota/ipc/transport.h"
 #include "kota/zest/async.h"
 #include "kota/zest/macro.h"
@@ -20,11 +21,6 @@
 namespace kota::ipc {
 
 namespace {
-
-/// `payload` framed as StreamTransport frames it.
-std::string frame(std::string_view payload) {
-    return std::format("Content-Length: {}\r\n\r\n{}", payload.size(), payload);
-}
 
 /// Both ends of an anonymous pipe, opened as kota pipes.
 struct Ends {
@@ -97,7 +93,7 @@ ZEST_CASE(messages_in_one_write_read_in_order) {
     std::string frames;
     for(int i = 0; i < 10; ++i) {
         sent.push_back(std::format(R"({{"i":{}}})", i));
-        frames += frame(sent.back());
+        frames += test::framed(sent.back());
     }
     ZASSERT(test::write_fd(input->writer, frames.data(), frames.size()) ==
             static_cast<ssize_t>(frames.size()));
@@ -122,7 +118,7 @@ ZEST_CASE(messages_split_across_writes_read_whole) {
     ZASSERT(ends.has_value());
     StreamTransport transport(stream(std::move(ends->reader)));
     const std::vector<std::string> sent{"first", R"({"second":2})"};
-    const auto frames = frame(sent[0]) + frame(sent[1]);
+    const auto frames = test::framed(sent[0]) + test::framed(sent[1]);
     auto write_in_pieces = [&]() -> task<void, error> {
         for(std::size_t at = 0; at < frames.size(); at += 3) {
             co_await ends->writer.write(std::string_view(frames).substr(at, 3)).or_fail();
@@ -153,7 +149,7 @@ ZEST_CASE(large_payload_reads_whole) {
     auto input = feed(loop);
     ZASSERT(input.has_value());
     const std::string payload(10 * 1024, 'x');
-    const auto data = frame(payload);
+    const auto data = test::framed(payload);
     ssize_t written = 0;
     std::thread writer([&] {
         written = test::write_fd(input->writer, data.data(), data.size());
@@ -189,7 +185,7 @@ ZEST_CASE(unreadable_header_fails) {
 ZEST_CASE(oversized_message_is_skipped_and_reading_goes_on) {
     auto input = feed(loop, 8);
     ZASSERT(input.has_value());
-    const auto data = frame("0123456789") + frame("next");
+    const auto data = test::framed("0123456789") + test::framed("next");
     ZASSERT(test::write_fd(input->writer, data.data(), data.size()) ==
             static_cast<ssize_t>(data.size()));
     ZASSERT(test::close_fd(input->writer) == 0);
@@ -259,6 +255,23 @@ ZEST_CASE(write_frames_the_payload) {
     ZEXPECT(*read == "Content-Length: 5\r\n\r\nhello");
 }
 
+ZEST_CASE(write_messages_frames_each_in_order) {
+    auto ends = pipe_ends(loop);
+    ZASSERT(ends.has_value());
+    StreamTransport transport(stream(std::move(ends->writer)));
+    const std::vector<std::string> payloads = {"first", "", std::string(100'000, 'x'), "last"};
+    auto send = [&]() -> task<void, Error> {
+        co_await transport.write_messages(payloads).or_fail();
+        transport.close();
+    };
+
+    auto [sent, read] = run(send(), ends->reader.read_to_end());
+    ZEXPECT(sent.has_value());
+    ZASSERT(read.has_value());
+    ZEXPECT(*read == test::framed(payloads[0]) + test::framed(payloads[1]) +
+                         test::framed(payloads[2]) + test::framed(payloads[3]));
+}
+
 // A pipe's read end is not writable, so the write fails without a signal.
 ZEST_CASE(write_to_the_read_end_fails) {
     auto ends = pipe_ends(loop);
@@ -315,7 +328,7 @@ ZEST_CASE(close_output_on_a_shared_socket_ends_the_remote_input_and_keeps_readin
     auto& transport = **connected;
     auto remote = [&]() -> task<std::string, error> {
         auto received = co_await accepted->read_to_end().or_fail();
-        auto answer = frame("after");
+        auto answer = test::framed("after");
         co_await accepted->write(std::span<const char>(answer.data(), answer.size())).or_fail();
         co_return received;
     };
@@ -331,7 +344,7 @@ ZEST_CASE(close_output_on_a_shared_socket_ends_the_remote_input_and_keeps_readin
 
     auto [received, read] = run(remote(), local());
     ZASSERT(received.has_value());
-    ZEXPECT(*received == frame("before"));
+    ZEXPECT(*received == test::framed("before"));
     ZASSERT(read.has_value());
     ZEXPECT(*read == "after");
 }

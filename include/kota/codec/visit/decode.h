@@ -932,11 +932,28 @@ bool decode_value(Vis& vis, T& out) {
                 std::size_t idx = 0;
                 auto* sink = scoped_context<UnknownFields>::try_current();
                 return vis.visit_seq([&](auto& ev) -> bool {
-                    auto item = element_t();
-                    KOTA_CODEC_TRY(detail::decode_step<Config>(sink, idx, [&] {
-                        return decode_value<Config>(ev, item);
-                    }));
-                    kota::detail::append_sequence_element(out, std::move(item));
+                    auto decode = [&](element_t& item) {
+                        return detail::decode_step<Config>(sink, idx, [&] {
+                            return decode_value<Config>(ev, item);
+                        });
+                    };
+                    // An element of a container whose emplace_back gives it
+                    // back (a vector, a deque, a list) is decoded where it
+                    // ends up, rather than moved there; one that fails is
+                    // taken back.
+                    if constexpr(requires {
+                                     { out.emplace_back() } -> std::same_as<element_t&>;
+                                     out.pop_back();
+                                 }) {
+                        if(!decode(out.emplace_back())) {
+                            out.pop_back();
+                            return false;
+                        }
+                    } else {
+                        auto item = element_t();
+                        KOTA_CODEC_TRY(decode(item));
+                        kota::detail::append_sequence_element(out, std::move(item));
+                    }
                     ++idx;
                     return true;
                 });
@@ -947,6 +964,8 @@ bool decode_value(Vis& vis, T& out) {
                     }
                     detail::reserve_for(out, sv);
                     std::size_t idx = 0;
+                    // Here an element is decoded apart and moved in, which
+                    // measures faster than in place once out has made room.
                     while(sv.has_element()) {
                         auto item = element_t();
                         bool ok = sv.visit_element(

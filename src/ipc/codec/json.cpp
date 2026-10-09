@@ -2,15 +2,17 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
+#include <expected>
 #include <format>
-#include <initializer_list>
+#include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "kota/ipc/codec/json.h"
 #include "kota/ipc/framing.h"
+#include "kota/support/swar.h"
 #include "kota/codec/macro.h"
 
 namespace kota::ipc {
@@ -49,28 +51,6 @@ struct json_rpc_incoming {
     <codec::RawValue> result;
     std::optional<Error> error;
 };
-
-/// A message: head, its members up to the last, written by the codec, then
-/// the member `name` holding raw, JSON as it is, unless raw is empty. raw is
-/// copied once, into a message sized for it.
-std::string message(std::initializer_list<std::string_view> head,
-                    std::string_view name,
-                    std::string_view raw) {
-    std::size_t size = name.size() + raw.size() + 5;
-    for(auto part: head) {
-        size += part.size();
-    }
-    std::string text;
-    text.reserve(size);
-    for(auto part: head) {
-        text.append(part);
-    }
-    if(!raw.empty()) {
-        text.append(R"(,")").append(name).append(R"(":)").append(raw);
-    }
-    text.push_back('}');
-    return text;
-}
 
 /// The request id `raw`, an id member as written, holds: nothing for a null,
 /// or for a value that is neither an integer nor a string.
@@ -165,15 +145,42 @@ struct PrefixReader {
     }
 };
 
+/// A key as written, quotes included, read as its name: "m\u0065thod" is the
+/// key method.
+std::string key_name(std::string_view quoted) {
+    if(quoted.find('\\') == std::string_view::npos) {
+        return std::string(quoted.substr(1, quoted.size() - 2));
+    }
+    auto name = codec::json::from_string<std::string>(quoted);
+    return name ? std::move(*name) : std::string();
+}
+
+/// A member of a root object that holds a message's params or result: where
+/// its value starts and ends.
+struct Carried {
+    bool params = false;
+    std::size_t start = 0;
+    std::size_t end = 0;
+};
+
 /// Checks JSON's grammar (RFC 8259) without reading values, and measures
 /// how deeply the value nests. A number of any size is JSON, where simdjson
 /// refuses integers past 64 bits. It keeps its own stack rather than
-/// recursing, however deep the value.
+/// recursing, however deep the value. On the way, it notes where the values
+/// of a root object's params and result members lie.
 struct JSONChecker {
     std::string_view text;
     std::size_t at = 0;
     /// The deepest the arrays and objects nest.
     std::size_t depth = 0;
+    /// The params and result members of the root object, in order.
+    std::vector<Carried> carried = {};
+    /// The arrays and objects around the next value.
+    std::vector<char> open = {};
+    /// The key of the root object's member being read, quotes included, and
+    /// where its value starts.
+    std::string_view member_key = {};
+    std::size_t member_start = 0;
 
     bool ended() const {
         return at >= text.size();
@@ -218,13 +225,13 @@ struct JSONChecker {
         return at > start;
     }
 
-    /// Passes the bytes of a string that need no look, eight at a time: no
-    /// quote, backslash or control character.
+    /// Passes the bytes of a string that need no look, eight at a time, up
+    /// to the first that does: a quote, a backslash or a control character.
     void skip_plain() {
-        std::uint64_t word;
-        while(text.size() - at >= sizeof(word)) {
-            std::memcpy(&word, text.data() + at, sizeof(word));
-            if(codec::json::detail::has_escaped_byte(word)) {
+        while(text.size() - at >= sizeof(std::uint64_t)) {
+            const auto word = load_word(text.data() + at);
+            if(const auto escaped = codec::json::detail::escaped_bytes(word)) {
+                at += first_byte_index(escaped);
                 return;
             }
             at += sizeof(word);
@@ -284,26 +291,48 @@ struct JSONChecker {
         return true;
     }
 
+    /// Whether the value read next is a member of a root object.
+    bool in_root_object() const {
+        return open.size() == 1 && open.front() == '{';
+    }
+
     /// A key and its colon, in an object.
     bool key() {
         skip_space();
+        const auto start = at;
         if(!string()) {
             return false;
         }
+        if(in_root_object()) {
+            member_key = text.substr(start, at - start);
+        }
         skip_space();
         return take(':');
+    }
+
+    /// The value of the root object's member being read ended at `end`.
+    void end_member(std::size_t end) {
+        const auto name = key_name(member_key);
+        if(name == "params" || name == "result") {
+            carried.push_back({
+                .params = name == "params",
+                .start = member_start,
+                .end = end,
+            });
+        }
     }
 
     bool check() {
         if(!simdjson::validate_utf8(text.data(), text.size())) {
             return false;
         }
-        // The arrays and objects around the next value.
-        std::vector<char> open;
         while(true) {
             skip_space();
             if(ended()) {
                 return false;
+            }
+            if(in_root_object()) {
+                member_start = at;
             }
             const char c = text[at];
             if(c == '[' || c == '{') {
@@ -330,6 +359,9 @@ struct JSONChecker {
             }
             // A value ended: close what it ends, up to the next value.
             while(true) {
+                if(in_root_object()) {
+                    end_member(at);
+                }
                 skip_space();
                 if(open.empty()) {
                     return ended();
@@ -348,16 +380,6 @@ struct JSONChecker {
         }
     }
 };
-
-/// A key as written, quotes included, read as its name: "m\u0065thod" is the
-/// key method.
-std::string key_name(std::string_view quoted) {
-    if(quoted.find('\\') == std::string_view::npos) {
-        return std::string(quoted.substr(1, quoted.size() - 2));
-    }
-    auto name = codec::json::from_string<std::string>(quoted);
-    return name ? std::move(*name) : std::string();
-}
 
 /// The members that tell what kind of message an object is.
 struct HeadMembers {
@@ -447,6 +469,29 @@ IncomingMessage read_malformed(std::string_view payload, std::string reason) {
     };
 }
 
+/// The envelope of `payload`, JSON whose params and result members are
+/// `carried`: those members read as 0 rather than their values, unless null,
+/// so that a large params or result is not parsed twice, here and where it
+/// is decoded. A params that is null reads as none still.
+std::expected<json_rpc_incoming, codec::rich_error>
+    read_envelope(std::string_view payload, std::span<const Carried> carried) {
+    std::string text;
+    text.reserve(payload.size() + simdjson::SIMDJSON_PADDING);
+    std::size_t from = 0;
+    for(const auto& member: carried) {
+        if(payload.substr(member.start, member.end - member.start) == "null") {
+            continue;
+        }
+        text.append(payload.substr(from, member.start - from)).push_back('0');
+        from = member.end;
+    }
+    text.append(payload.substr(from));
+    const auto size = text.size();
+    text.append(simdjson::SIMDJSON_PADDING, ' ');
+    return codec::json::from_padded_string<json_rpc_incoming>(
+        codec::json::padded_string_view(text.data(), size, text.size()));
+}
+
 }  // namespace
 
 Error JSONCodec::codec_error(protocol::ErrorCode code, const codec::rich_error& error) {
@@ -458,21 +503,19 @@ static_assert(payload_padding >= simdjson::SIMDJSON_PADDING,
 
 // The padding is written rather than left in the string's capacity
 // (simdjson's pad_with_reserve): bytes past its size are not the string's to
-// read, and are not even set.
-JSONCodec::Padded JSONCodec::pad(std::string& text) {
-    const auto size = text.size();
-    text.append(simdjson::SIMDJSON_PADDING, ' ');
-    return {.text = text, .size = size};
+// read, and are not even set. Past the slice lies the rest of the envelope,
+// read already.
+codec::json::padded_string_view JSONCodec::pad(PayloadSlice& slice) {
+    auto& text = slice.payload;
+    const auto end = slice.offset + slice.size;
+    text.resize(std::max(text.size(), end + simdjson::SIMDJSON_PADDING));
+    std::fill_n(text.data() + end, simdjson::SIMDJSON_PADDING, ' ');
+    return codec::json::padded_string_view(text.data() + slice.offset,
+                                           slice.size,
+                                           text.size() - slice.offset);
 }
 
-std::string JSONCodec::copy(std::string_view text) {
-    std::string copied;
-    copied.reserve(text.size() + simdjson::SIMDJSON_PADDING);
-    copied.assign(text);
-    return copied;
-}
-
-IncomingMessage JSONCodec::parse_message(std::string& payload) {
+IncomingMessage JSONCodec::parse_message(std::string payload) {
     // simdjson does not check the members it skips, so the grammar is checked
     // first, in a pass that also measures the nesting: text that is no JSON
     // is a parse error wherever it breaks.
@@ -488,12 +531,12 @@ IncomingMessage JSONCodec::parse_message(std::string& payload) {
         return read_malformed(payload,
                               std::format("message nests deeper than {} levels", max_nesting));
     }
-    auto envelope = [&] {
-        auto padded = pad(payload);
-        return codec::json::from_padded_string<json_rpc_incoming>(padded.view());
-    }();
+    auto envelope = read_envelope(payload, checker.carried);
     if(!envelope) {
-        return read_malformed(payload, envelope.error().to_string());
+        // Located in the message as it was sent, which the values read as 0
+        // shift; they read as anything, so it fails there all the same.
+        auto as_sent = read_envelope(payload, {});
+        return read_malformed(payload, (as_sent ? envelope : as_sent).error().to_string());
     }
 
     const bool has_id = !envelope->id.empty();
@@ -513,10 +556,20 @@ IncomingMessage JSONCodec::parse_message(std::string& payload) {
     }
 
     auto id = has_id ? read_id(envelope->id.data) : std::nullopt;
+    // The params or result the envelope read: of a member named twice, the
+    // last.
+    auto slice_of = [&](bool params) {
+        auto last =
+            std::ranges::find(checker.carried | std::views::reverse, params, &Carried::params);
+        return PayloadSlice{
+            .payload = std::move(payload),
+            .offset = last->start,
+            .size = last->end - last->start,
+        };
+    };
 
     if(envelope->method.has_value()) {
-        auto params =
-            envelope->params.has_value() ? std::move(envelope->params->data) : std::string{};
+        auto params = envelope->params.has_value() ? slice_of(true) : PayloadSlice{};
         if(!has_id) {
             return IncomingNotification{
                 .method = std::move(*envelope->method),
@@ -554,7 +607,7 @@ IncomingMessage JSONCodec::parse_message(std::string& payload) {
                            "response id must be an integer or a string"),
         };
     }
-    return IncomingResponse{.id = std::move(*id), .result = std::move(envelope->result.data)};
+    return IncomingResponse{.id = std::move(*id), .result = slice_of(false)};
 }
 
 /// Members are read in order until the prefix ends, so a writer that puts a
@@ -566,49 +619,25 @@ MessageHead JSONCodec::peek(std::string_view prefix) {
 }
 
 Result<std::string> JSONCodec::encode_request(const protocol::RequestID& id,
-                                              std::string_view method,
-                                              std::string_view params) {
-    auto id_text = serialize_value(id);
-    if(!id_text) {
-        return id_text;
-    }
-    auto method_text = serialize_value(method);
-    if(!method_text) {
-        return method_text;
-    }
-    return message({R"({"jsonrpc":"2.0","id":)", *id_text, R"(,"method":)", *method_text},
-                   "params",
-                   params);
+                                              std::string_view method) {
+    MessageWriter out;
+    out.text(R"({"jsonrpc":"2.0","id":)").value(id).text(R"(,"method":)").value(method).text("}");
+    return std::move(out).finish();
 }
 
-Result<std::string> JSONCodec::encode_notification(std::string_view method,
-                                                   std::string_view params) {
-    auto method_text = serialize_value(method);
-    if(!method_text) {
-        return method_text;
-    }
-    return message({R"({"jsonrpc":"2.0","method":)", *method_text}, "params", params);
-}
-
-Result<std::string> JSONCodec::encode_success_response(const protocol::RequestID& id,
-                                                       std::string_view result) {
-    auto id_text = serialize_value(id);
-    if(!id_text) {
-        return id_text;
-    }
-    // An empty result, which no JSON is, is the null of a method that
-    // returns nothing.
-    return message({R"({"jsonrpc":"2.0","id":)", *id_text},
-                   "result",
-                   result.empty() ? std::string_view("null") : result);
+Result<std::string> JSONCodec::encode_notification(std::string_view method) {
+    MessageWriter out;
+    out.text(R"({"jsonrpc":"2.0","method":)").value(method).text("}");
+    return std::move(out).finish();
 }
 
 Result<std::string> JSONCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
                                                      const Error& error) {
-    return serialize_value(outgoing_error_response_message{
-        .id = id,
-        .error = error,
-    });
+    return unwrap(codec::json::to_string<lsp_config>(outgoing_error_response_message{
+                      .id = id,
+                      .error = error,
+                  }),
+                  protocol::ErrorCode::InternalError);
 }
 
 template class Peer<JSONCodec>;
