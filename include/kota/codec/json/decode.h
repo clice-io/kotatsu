@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "kota/support/config.h"
 #include "kota/support/expected_try.h"
 #include "kota/support/numeric.h"
 #include "kota/codec/json/type.h"
@@ -306,58 +307,126 @@ struct Reader {
         });
     }
 
+    /// Where an object's members stand as they are read. simdjson inlines its
+    /// ondemand iteration into every caller, so open and next hold the only
+    /// copies, and the visitors only their loop and callback.
+    struct ObjectCursor {
+        simdjson::ondemand::object object;
+        simdjson::simdjson_result<simdjson::ondemand::object_iterator> it;
+        simdjson::simdjson_result<simdjson::ondemand::object_iterator> end;
+        std::string_view key;
+        /// The opening quote of key.
+        const char* key_at = nullptr;
+        ondemand::Value value;
+        bool started = false;
+        /// A member could not be read; the failure is reported.
+        bool failed = false;
+    };
+
+    /// Where an array's elements stand as they are read, as ObjectCursor.
+    struct ArrayCursor {
+        simdjson::ondemand::array array;
+        simdjson::simdjson_result<simdjson::ondemand::array_iterator> it;
+        simdjson::simdjson_result<simdjson::ondemand::array_iterator> end;
+        ondemand::Value value;
+        bool started = false;
+        bool failed = false;
+    };
+
+    KOTA_NOINLINE bool open(ObjectCursor& cursor) {
+        auto r = src.apply([&](auto& s) { return s.get_object(); });
+        if(r.error()) {
+            return fail_simdjson(r.error());
+        }
+        cursor.object = std::move(r).value_unsafe();
+        cursor.it = cursor.object.begin();
+        cursor.end = cursor.object.end();
+        return true;
+    }
+
+    /// Moves to the next member: false at the end, or when it cannot be read.
+    KOTA_NOINLINE bool next(ObjectCursor& cursor) {
+        if(cursor.started) {
+            ++cursor.it;
+        }
+        cursor.started = true;
+        if(cursor.it == cursor.end) {
+            return false;
+        }
+        auto field_result = *cursor.it;
+        if(field_result.error()) {
+            cursor.failed = true;
+            return fail_simdjson(field_result.error());
+        }
+        auto field = std::move(field_result).value_unsafe();
+        // The raw key starts after its opening quote; unescaping it lets go of
+        // it, so it is taken first.
+        cursor.key_at = field.key().raw() - 1;
+        auto key = field.unescaped_key();
+        if(key.error()) {
+            cursor.failed = true;
+            return fail_simdjson(key.error());
+        }
+        cursor.key = key.value_unsafe();
+        cursor.value = std::move(field).value();
+        return true;
+    }
+
+    KOTA_NOINLINE bool open(ArrayCursor& cursor) {
+        auto r = src.apply([&](auto& s) { return s.get_array(); });
+        if(r.error()) {
+            return fail_simdjson(r.error());
+        }
+        cursor.array = std::move(r).value_unsafe();
+        cursor.it = cursor.array.begin();
+        cursor.end = cursor.array.end();
+        return true;
+    }
+
+    KOTA_NOINLINE bool next(ArrayCursor& cursor) {
+        if(cursor.started) {
+            ++cursor.it;
+        }
+        cursor.started = true;
+        if(cursor.it == cursor.end) {
+            return false;
+        }
+        auto elem = *cursor.it;
+        if(elem.error()) {
+            cursor.failed = true;
+            return fail_simdjson(elem.error());
+        }
+        cursor.value = std::move(elem).value_unsafe();
+        return true;
+    }
+
     template <typename Callback>
     bool visit_struct(Callback&& cb) {
-        auto r = src.apply([&](auto& s) { return s.get_object(); });
-        if(r.error())
-            return fail_simdjson(r.error());
-        auto& obj = r.value_unsafe();
-        bool ok = true;
-        for(auto field_result: obj) {
-            if(field_result.error()) {
-                ok = fail_simdjson(field_result.error());
-                break;
-            }
-            auto field = std::move(field_result).value_unsafe();
-            // The raw key starts after its opening quote; unescaping it lets
-            // go of it, so it is taken first.
-            const char* key_at = field.key().raw() - 1;
-            auto key = field.unescaped_key();
-            if(key.error()) {
-                ok = fail_simdjson(key.error());
-                break;
-            }
-            auto fv = std::move(field).value();
-            Reader sub{fv, buf_base, buf_size};
-            sub.key_at = key_at;
-            if(!cb(key.value_unsafe(), sub)) {
-                ok = false;
-                break;
-            }
+        ObjectCursor cursor;
+        if(!open(cursor)) {
+            return false;
         }
-        return ok;
+        bool ok = true;
+        while(ok && next(cursor)) {
+            Reader sub{cursor.value, buf_base, buf_size};
+            sub.key_at = cursor.key_at;
+            ok = cb(cursor.key, sub);
+        }
+        return ok && !cursor.failed;
     }
 
     template <typename Callback>
     bool visit_seq(Callback&& cb) {
-        auto r = src.apply([&](auto& s) { return s.get_array(); });
-        if(r.error())
-            return fail_simdjson(r.error());
-        auto& arr = r.value_unsafe();
-        bool ok = true;
-        for(auto elem: arr) {
-            if(elem.error()) {
-                ok = fail_simdjson(elem.error());
-                break;
-            }
-            auto val = std::move(elem).value_unsafe();
-            Reader sub{val, buf_base, buf_size};
-            if(!cb(sub)) {
-                ok = false;
-                break;
-            }
+        ArrayCursor cursor;
+        if(!open(cursor)) {
+            return false;
         }
-        return ok;
+        bool ok = true;
+        while(ok && next(cursor)) {
+            Reader sub{cursor.value, buf_base, buf_size};
+            ok = cb(sub);
+        }
+        return ok && !cursor.failed;
     }
 
     /// An object read with MapKeyReader keys.
@@ -403,51 +472,90 @@ bool Reader::try_read(F&& fn) {
     return false;
 }
 
+namespace detail {
+
+/// One parse: the parser and its document, set up, run and torn down out of
+/// line, so that a decode's instance carries only the decode.
+struct ParsedDocument {
+    ondemand::Parser parser;
+    ondemand::Document doc;
+    /// Where the decode reports unknown fields, and how many it held before.
+    UnknownFields* sink = scoped_context<UnknownFields>::try_current();
+    std::size_t reported = sink ? sink->entries.size() : 0;
+
+    KOTA_NOINLINE ParsedDocument() {}
+
+    KOTA_NOINLINE ~ParsedDocument() {}
+
+    /// Parses text and sees that it holds one value: simdjson checks what
+    /// follows a scalar root, not what follows an object or array, so the
+    /// root is walked first and the document must end after it, so that
+    /// trailing content fails before anything reaches the output.
+    KOTA_NOINLINE std::expected<void, rich_error> parse(padded_string_view text) {
+        if(auto ec = parser.iterate(text).get(doc); ec != success) {
+            return std::unexpected(simdjson_error(ec));
+        }
+        if(auto root = doc.raw_json(); root.error()) {
+            return std::unexpected(simdjson_error(root.error()));
+        }
+        if(!doc.at_end()) {
+            return std::unexpected(simdjson_error(simdjson::TRAILING_CONTENT));
+        }
+        doc.rewind();
+        return {};
+    }
+
+    /// Gives the locations the decode of text left behind, which hold their
+    /// byte offsets, their lines; one a decode nested in it (an adapter
+    /// reading a JSON string) counted in its own text already has its line.
+    KOTA_NOINLINE void locate(std::string_view text, std::expected<void, rich_error>& result) {
+        std::vector<rich_error::source_location*> locations;
+        auto uncounted = [&](std::optional<rich_error::source_location>& location) {
+            if(location && location->line == 0) {
+                locations.push_back(&*location);
+            }
+        };
+        if(!result) {
+            uncounted(result.error().location);
+        }
+        if(sink) {
+            for(auto& entry: std::span(sink->entries).subspan(reported)) {
+                uncounted(entry.location);
+            }
+        }
+        count_lines(text, locations);
+    }
+};
+
+}  // namespace detail
+
+/// Decodes JSON text that has SIMDJSON_PADDING readable bytes past its end
+/// into `out`, without a copy of the text (or, in the value-returning
+/// overload, into a value-initialized T).
+template <typename Config = void, typename T>
+auto from_padded_string(padded_string_view json, T& out) -> std::expected<void, rich_error> {
+    detail::ParsedDocument document;
+    KOTA_EXPECTED_TRY(document.parse(json));
+    Reader r{document.doc, json.data(), json.size()};
+    auto result = codec::detail::run_decode<Config>(r, out);
+    document.locate(json, result);
+    return result;
+}
+
+template <typename T, typename Config = void>
+    requires std::is_default_constructible_v<T>
+auto from_padded_string(padded_string_view json) -> std::expected<T, rich_error> {
+    auto value = T();
+    KOTA_EXPECTED_TRY(from_padded_string<Config>(json, value));
+    return value;
+}
+
 /// Decodes JSON text into `out` (or, in the value-returning overload, into a
 /// value-initialized T).
 template <typename Config = void, typename T>
 auto from_string(std::string_view json, T& out) -> std::expected<void, rich_error> {
     padded_string padded(json);
-    ondemand::Parser parser;
-    ondemand::Document doc;
-
-    if(auto ec = parser.iterate(padded).get(doc); ec != success) {
-        return std::unexpected(detail::simdjson_error(ec));
-    }
-    // simdjson checks what follows a scalar root, not what follows an object
-    // or array: walk the root first and see that the document ends after it,
-    // so that trailing content fails before anything reaches `out`.
-    if(auto root = doc.raw_json(); root.error()) {
-        return std::unexpected(detail::simdjson_error(root.error()));
-    }
-    if(!doc.at_end()) {
-        return std::unexpected(detail::simdjson_error(simdjson::TRAILING_CONTENT));
-    }
-    doc.rewind();
-
-    auto* sink = scoped_context<UnknownFields>::try_current();
-    auto reported = sink ? sink->entries.size() : 0;
-    Reader r{doc, padded.data(), padded.size()};
-    auto result = codec::detail::run_decode<Config>(r, out);
-    // The locations this decode leaves behind hold their byte offsets; one a
-    // decode nested in it (an adapter reading a JSON string) counted in its
-    // own text already has its line.
-    std::vector<rich_error::source_location*> locations;
-    auto uncounted = [&](std::optional<rich_error::source_location>& location) {
-        if(location && location->line == 0) {
-            locations.push_back(&*location);
-        }
-    };
-    if(!result) {
-        uncounted(result.error().location);
-    }
-    if(sink) {
-        for(auto& entry: std::span(sink->entries).subspan(reported)) {
-            uncounted(entry.location);
-        }
-    }
-    detail::count_lines(json, locations);
-    return result;
+    return from_padded_string<Config>(padded, out);
 }
 
 template <typename T, typename Config = void>

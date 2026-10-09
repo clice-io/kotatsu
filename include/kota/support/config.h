@@ -12,6 +12,12 @@
 #define KOTA_COMPILER_MSVC_VERSION 0
 #endif
 
+#if KOTA_COMPILER_MSVC
+#define KOTA_NOINLINE __declspec(noinline)
+#else
+#define KOTA_NOINLINE [[gnu::noinline]]
+#endif
+
 // Visual Studio issue:
 // https://developercommunity.visualstudio.com/t/Unable-to-destroy-C20-coroutine-in-fin/10657377
 //

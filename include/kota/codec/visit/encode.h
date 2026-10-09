@@ -48,6 +48,18 @@ bool encode_value(Vis& vis, const T& value);
 template <typename Config, typename Vis, typename T>
 bool encode_struct_fields(Vis& vis, const T& value);
 
+/// The name of a struct's field as encode hands it to a visitor's
+/// visit_field: a visitor that takes a std::string_view reads it as one, and
+/// one that takes a FieldName has it at compile time.
+template <typename Field>
+struct FieldName {
+    constexpr static std::string_view value = Field::name;
+
+    constexpr operator std::string_view() const {
+        return value;
+    }
+};
+
 /// True when the visitor writes UTF-8 text (json, toml), which its format tag
 /// says, so its value and map key writers alike.
 template <typename Vis>
@@ -246,7 +258,7 @@ bool encode_one_field(Vis& vis, const T& value) {
 
         bool ok = vis.visit_field(
             std::integral_constant<std::size_t, I>{},
-            field::name,
+            FieldName<field>{},
             [&](auto& fv) -> bool {
                 return encode_with_attrs<Config, typename field::attrs>(fv, field_ref);
             });

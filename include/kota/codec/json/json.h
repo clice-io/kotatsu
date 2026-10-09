@@ -48,6 +48,9 @@ struct deserialize_visit<json::Reader, RawValue, Config> {
         std::string_view raw;
         if(vis.apply([&](auto& s) { return s.raw_json().get(raw); }) != simdjson::SUCCESS)
             return scoped_context<rich_error>::fail(rich_error("failed to read raw JSON value"));
+        // Raw JSON is often parsed again later; the room past it lets that
+        // parse write simdjson's padding without moving the text.
+        value.data.reserve(raw.size() + simdjson::SIMDJSON_PADDING);
         value.data.assign(raw.data(), raw.size());
         return true;
     }

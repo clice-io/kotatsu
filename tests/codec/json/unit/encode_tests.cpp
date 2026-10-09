@@ -1,11 +1,14 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <limits>
 #include <map>
 #include <span>
 #include <string>
+#include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "codec/harness/fixtures/enums.h"
@@ -16,6 +19,7 @@
 #include "kota/zest/zest.h"
 #include "kota/codec/dyn/dyn.h"
 #include "kota/codec/json/json.h"
+#include "kota/codec/macro.h"
 
 namespace kota::codec {
 
@@ -34,6 +38,28 @@ struct Folio {
 
 /// A format tag no backend declares.
 struct OtherFormat {};
+
+/// Keys JSON escapes, which encode spells out as it compiles.
+struct OddlyNamed {
+    KOTATSU_ANNOTATE(rename = R"(say "hi")")
+    <int> quoted = 1;
+    KOTATSU_ANNOTATE(rename = R"(back\slash)")
+    <int> backslashed = 2;
+    KOTATSU_ANNOTATE(rename = "tab\tand\x01")
+    <int> controlled = 3;
+    KOTATSU_ANNOTATE(rename = "\b\f\n\r\x1f")
+    <int> shortened = 4;
+    KOTATSU_ANNOTATE(rename = "del\x7f/caf\xC3\xA9")
+    <int> kept = 5;
+};
+
+/// Its first field is left out when empty, and the next one's key then
+/// opens the object.
+struct NoteFirst {
+    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
+    <std::string> note;
+    int id = 1;
+};
 
 }  // namespace
 
@@ -108,6 +134,49 @@ ZEST_CASE(strings_escape_control_characters) {
     ZEXPECT(json::to_string(std::string("\x01\x1f")) == R"("\u0001\u001f")");
 }
 
+ZEST_CASE(strings_escape_the_byte_wherever_it_stands) {
+    // Strings are scanned eight bytes at a time; the byte to escape is found
+    // in every place of a word, and of a text shorter than one.
+    const std::pair<char, std::string_view> escapes[] = {
+        {'"',    R"(\")"    },
+        {'\\',   R"(\\)"    },
+        {'\n',   R"(\n)"    },
+        {'\x01', R"(\u0001)"},
+    };
+    for(std::size_t size = 1; size <= 20; ++size) {
+        for(std::size_t at = 0; at < size; ++at) {
+            for(auto [byte, escaped]: escapes) {
+                ZEST_CONTEXT("size {}, byte {} at {}", size, +byte, at);
+                std::string text(size, 'a');
+                text[at] = byte;
+                auto expected = std::format(R"("{}{}{}")",
+                                            std::string(at, 'a'),
+                                            escaped,
+                                            std::string(size - at - 1, 'a'));
+                ZEXPECT(json::to_string(text) == expected);
+            }
+        }
+    }
+}
+
+ZEST_CASE(strings_keep_text_past_ascii) {
+    ZEXPECT(json::to_string(std::string("caf\xC3\xA9 \xE2\x82\xAC")) ==
+            "\"caf\xC3\xA9 \xE2\x82\xAC\"");
+}
+
+ZEST_CASE(field_names_escape_as_strings_do) {
+    ZEXPECT(json::to_string(OddlyNamed{}) ==
+            R"({"say \"hi\"":1,"back\\slash":2,"tab\tand\u0001":3,"\b\f\n\r\u001f":4,)"
+            "\"del\x7f/caf\xC3\xA9\":5}");
+}
+
+ZEST_CASE(first_field_written_opens_the_object) {
+    NoteFirst value;
+    ZEXPECT(json::to_string(value) == R"({"id":1})");
+    value.note.assign("x");
+    ZEXPECT(json::to_string(value) == R"({"note":"x","id":1})");
+}
+
 ZEST_CASE(map_keys_are_escaped) {
     std::map<std::string, int> keyed{
         {R"(key "quoted")", 1}
@@ -129,6 +198,52 @@ ZEST_CASE(char_backed_enum_writes_its_integer) {
 
 ZEST_CASE(zero_writes_as_a_float) {
     ZEXPECT(json::to_string(0.0) == "0.0");
+}
+
+ZEST_CASE(floats_write_text_that_reads_back) {
+    // Digits alone get a fraction, so that they read back as a float, and an
+    // exponent starts past 1e15 and below 1e-4.
+    const std::pair<double, std::string_view> texts[] = {
+        {1.0,                      "1.0"                     },
+        {-0.0,                     "-0.0"                    },
+        {-3.0,                     "-3.0"                    },
+        {100000.0,                 "100000.0"                },
+        {1e14,                     "100000000000000.0"       },
+        {1e15,                     "1e+15"                   },
+        {0.0001,                   "0.0001"                  },
+        {1e-5,                     "1e-05"                   },
+        {-1e21,                    "-1e+21"                  },
+        {0.1,                      "0.1"                     },
+        {5e-324,                   "5e-324"                  },
+        {-2.2250738585072014e-308, "-2.2250738585072014e-308"},
+    };
+    for(auto [value, text]: texts) {
+        ZEST_CONTEXT("value {}", value);
+        auto written = json::to_string(value);
+        ZASSERT(written);
+        ZEXPECT(*written == text);
+        auto back = json::from_string<double>(*written);
+        ZASSERT(back);
+        ZEXPECT(*back == value);
+    }
+    ZEXPECT(json::to_string(0.1f) == "0.10000000149011612");
+    auto tree = json::to_string(dyn::Value(100000.0));
+    ZASSERT(tree);
+    auto read = json::from_string<dyn::Value>(*tree);
+    ZASSERT(read);
+    ZEXPECT(read->kind() == dyn::ValueKind::floating);
+}
+
+ZEST_CASE(long_documents_grow_their_buffer) {
+    std::vector<std::string> items;
+    std::string expected = "[";
+    for(int i = 0; i < 50'000; ++i) {
+        items.push_back(std::format("item {}", i));
+        expected += std::format(R"({}"item {}")", i == 0 ? "" : ",", i);
+    }
+    expected += "]";
+    ZEXPECT(json::to_string(items) == expected);
+    ZEXPECT(json::to_string(items, 0) == expected);
 }
 
 ZEST_CASE(non_finite_writes_null) {
@@ -221,10 +336,12 @@ ZEST_CASE(json_scoped_repr_applies_to_json_only) {
 }
 
 ZEST_CASE(everything_lowering) {
-    // How each kind lowers into JSON text, in one document.
+    // How each kind lowers into JSON text, in one document: prettified to
+    // read, and as written.
     auto document = json::to_string(test::Everything::typical());
     ZASSERT(document);
     ZEXPECT(zest::snapshot(test::Json::render(*document)));
+    ZEXPECT(zest::snapshot(*document, "compact"));
 }
 
 };  // ZEST_SUITE(codec_json_encode)

@@ -17,7 +17,7 @@ namespace kota::codec::json {
 ///
 /// # Lowerings
 ///
-/// Human-readable text backend (simdjson ondemand parse / string_builder
+/// Human-readable text backend (simdjson ondemand parse, StringBuilder
 /// write). How each meta::type_kind lands in JSON:
 /// - null, empty optional, null pointer → `null`; engaged optional/pointer →
 ///   the payload itself, no wrapper
@@ -49,8 +49,6 @@ struct format {
     constexpr static bool utf8 = true;
 };
 
-using StringBuilder = simdjson::builder::string_builder;
-
 namespace ondemand {
 
 using Parser = simdjson::ondemand::parser;
@@ -62,6 +60,7 @@ using NumberType = simdjson::ondemand::number_type;
 }  // namespace ondemand
 
 using padded_string = simdjson::padded_string;
+using padded_string_view = simdjson::padded_string_view;
 
 constexpr inline auto success = simdjson::SUCCESS;
 
