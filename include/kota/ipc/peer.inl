@@ -186,7 +186,18 @@ struct Peer<CodecT>::Self {
     Deadlines deadlines;
     /// A deadline earlier than the others was filed, or the input ended.
     event deadline_changed;
-    std::unordered_map<protocol::RequestID, std::shared_ptr<cancellation_source>> incoming_requests;
+
+    /// A request whose handler answers it, from its dispatch to its answer.
+    struct RunningRequest {
+        /// The key of its handler's entry in request_callbacks, which is
+        /// never erased.
+        std::string_view method;
+        /// Shared, so that it outlives the entry: its cancel() may end the
+        /// handler, which erases the entry.
+        std::shared_ptr<cancellation_source> source;
+    };
+
+    std::unordered_map<protocol::RequestID, RunningRequest> incoming_requests;
 
     /// Answers can still arrive: the read loop has not ended. Once it has,
     /// a new request fails at once, since nothing could answer it.
@@ -370,7 +381,8 @@ struct Peer<CodecT>::Self {
     void cancel_handlers() {
         // Copy the sources first: cancel() may resume handlers, which erase
         // their entries.
-        auto values = incoming_requests | std::views::values;
+        auto values =
+            incoming_requests | std::views::values | std::views::transform(&RunningRequest::source);
         std::vector<std::shared_ptr<cancellation_source>> sources(values.begin(), values.end());
         for(auto& source: sources) {
             source->cancel();
@@ -630,7 +642,7 @@ struct Peer<CodecT>::Self {
             auto parsed = codec.template deserialize_value<protocol::CancelRequestParams>(params);
             if(parsed) {
                 if(auto it = incoming_requests.find(parsed->id); it != incoming_requests.end()) {
-                    auto source = it->second;
+                    auto source = it->second.source;
                     source->cancel();
                 }
             }
@@ -671,15 +683,15 @@ struct Peer<CodecT>::Self {
         }
 
         auto callback = it->second;
-        auto cancel_source = std::make_shared<cancellation_source>();
-        incoming_requests.insert_or_assign(id, cancel_source);
+        auto source = std::make_shared<cancellation_source>();
+        incoming_requests.emplace(id, RunningRequest{.method = it->first, .source = source});
         if(!handlers.spawn(run_request(id,
                                        std::move(callback),
                                        std::move(params),
-                                       cancel_source->token()))) {
+                                       source->token()))) {
             // The handlers are being cancelled: run() is ending.
-            incoming_requests.erase(id);
             send_error(id, Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
+            incoming_requests.erase(id);
         }
     }
 
@@ -697,19 +709,17 @@ struct Peer<CodecT>::Self {
             guarded_result =
                 outcome_error(Error(protocol::ErrorCode::InternalError, "request handler threw"));
         }
-        incoming_requests.erase(id);
-
         if(guarded_result.is_cancelled()) {
             send_error(id, Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
-            co_return;
-        }
-
-        if(guarded_result.has_error()) {
+        } else if(guarded_result.has_error()) {
             send_error(id, guarded_result.error());
-            co_return;
+        } else {
+            send_answer(id, std::move(*guarded_result));
         }
-
-        send_answer(id, std::move(*guarded_result));
+        // Off the list once its answer is queued. Its source goes with the
+        // node, once the map is done with it: its end runs the callbacks
+        // still registered on the token, which find the request answered.
+        auto answered = incoming_requests.extract(id);
     }
 
     void dispatch_incoming_message(std::string payload, task_group<>& handlers) {
@@ -811,6 +821,14 @@ template <typename CodecT>
 void Peer<CodecT>::set_logger(LogCallback callback, LogLevel min_level) {
     self->logger = std::move(callback);
     self->min_level = min_level;
+}
+
+template <typename CodecT>
+std::vector<UnansweredRequest> Peer<CodecT>::incoming_requests() const {
+    auto requests = self->incoming_requests | std::views::transform([](const auto& entry) {
+                        return UnansweredRequest{.method = entry.second.method, .id = entry.first};
+                    });
+    return {requests.begin(), requests.end()};
 }
 
 template <typename CodecT>

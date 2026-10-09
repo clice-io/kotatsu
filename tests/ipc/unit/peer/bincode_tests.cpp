@@ -2,6 +2,7 @@
 #include "ipc/harness/peer_fixture.h"
 #include "ipc/harness/peer_suite/cancel.h"
 #include "ipc/harness/peer_suite/dispatch.h"
+#include "ipc/harness/peer_suite/incoming.h"
 #include "ipc/harness/peer_suite/lifecycle.h"
 #include "ipc/harness/peer_suite/limit.h"
 #include "ipc/harness/peer_suite/link.h"
@@ -30,6 +31,10 @@ ZEST_CASE_GROUP(requests) {
 
 ZEST_CASE_GROUP(cancel) {
     test::peer_cancel(Kit{add_case});
+}
+
+ZEST_CASE_GROUP(incoming) {
+    test::peer_incoming(Kit{add_case});
 }
 
 ZEST_CASE_GROUP(timeout) {
