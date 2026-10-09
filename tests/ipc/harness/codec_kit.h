@@ -21,6 +21,7 @@
 // comment naming it. Its fix removes the skip.
 
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <optional>
@@ -160,6 +161,13 @@ void codec_protocol(const CodecKit<A>& kit) {
             ZASSERT(!encoded.has_value());
             ZEXPECT(code_of(encoded.error()) == ErrorCode::InternalError);
         });
+
+        kit.add("encode_success_response_with_a_string_id_fails", [] {
+            Codec codec;
+            auto encoded = codec.encode_success_response("abc", A::encode(AddResult{.sum = 1}));
+            ZASSERT(!encoded.has_value());
+            ZEXPECT(code_of(encoded.error()) == ErrorCode::InternalError);
+        });
     }
 
     kit.add("encode_notification_writes_a_notification", [] {
@@ -288,6 +296,55 @@ void codec_protocol(const CodecKit<A>& kit) {
         ZEXPECT(request->params.empty());
     });
 
+    // Params and results of any size travel whole: past the lengths a
+    // codec writes in one byte, and in two.
+    kit.add("long_params_and_results_roundtrip", [] {
+        Codec codec;
+        for(std::size_t size: {300, 70'000}) {
+            ZEST_CONTEXT("size {}", size);
+            auto body = A::encode(NoteParams{.text = std::string(size, 'x')});
+            auto request = codec.encode_request(1, "test/note", body);
+            auto response = codec.encode_success_response(2, body);
+            ZASSERT(request.has_value());
+            ZASSERT(response.has_value());
+            auto sent = A::read(*request);
+            auto answered = A::read(*response);
+            ZASSERT(sent.has_value());
+            ZASSERT(answered.has_value());
+            ZEXPECT(sent->body == body);
+            ZEXPECT(answered->body == body);
+            auto parsed = codec.parse_message(A::request_raw(3, "test/note", body));
+            const auto* incoming = std::get_if<ipc::IncomingRequest>(&parsed);
+            ZASSERT(incoming != nullptr);
+            ZEXPECT(incoming->params == body);
+        }
+    });
+
+    // A codec may read a message or a value in place, but leaves the text as
+    // it was.
+    kit.add("parse_message_leaves_the_payload_as_it_was", [] {
+        Codec codec;
+        auto payload = request<A>(5, "test/add", AddParams{.a = 1, .b = 2});
+        const auto before = payload;
+        auto parsed = codec.parse_message(payload);
+        ZEXPECT(std::holds_alternative<ipc::IncomingRequest>(parsed));
+        ZEXPECT(payload == before);
+    });
+
+    kit.add("deserialize_value_leaves_the_text_as_it_was", [] {
+        Codec codec;
+        auto text = A::encode(AddParams{.a = 1, .b = 2});
+        const auto before = text;
+        auto value = codec.template deserialize_value<AddParams>(text);
+        ZASSERT(value.has_value());
+        ZEXPECT(*value == AddParams{.a = 1, .b = 2});
+        ZEXPECT(text == before);
+        auto other = A::encode(NoteParams{.text = "x"});
+        const auto other_before = other;
+        ZEXPECT(!codec.template deserialize_value<AddParams>(other).has_value());
+        ZEXPECT(other == other_before);
+    });
+
     kit.add("parse_message_of_garbage_fails", [] {
         Codec codec;
         auto parsed = codec.parse_message(A::garbage);
@@ -383,14 +440,21 @@ void codec_protocol(const CodecKit<A>& kit) {
     // and only as those: nothing is not params with fields.
     kit.add("deserialize_value_of_nothing_reads_empty_params", [] {
         Codec codec;
+        std::string nothing;
         ZEXPECT(codec.template deserialize_value<EmptyParams>("").has_value());
+        ZEXPECT(codec.template deserialize_value<EmptyParams>(nothing).has_value());
     });
 
     kit.add("deserialize_value_of_nothing_into_fields_fails", [] {
         Codec codec;
-        auto value = codec.template deserialize_value<AddParams>("", ErrorCode::InvalidParams);
-        ZASSERT(!value.has_value());
-        ZEXPECT(code_of(value.error()) == ErrorCode::InvalidParams);
+        std::string nothing;
+        auto from_view = codec.template deserialize_value<AddParams>("", ErrorCode::InvalidParams);
+        auto in_place =
+            codec.template deserialize_value<AddParams>(nothing, ErrorCode::InvalidParams);
+        ZASSERT(!from_view.has_value());
+        ZASSERT(!in_place.has_value());
+        ZEXPECT(code_of(from_view.error()) == ErrorCode::InvalidParams);
+        ZEXPECT(code_of(in_place.error()) == ErrorCode::InvalidParams);
     });
 }
 

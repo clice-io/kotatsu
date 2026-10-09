@@ -100,9 +100,11 @@ consteval void validate_notification_callback_signature() {
 
 template <typename CodecT>
 struct Peer<CodecT>::Self {
+    /// The params come as the codec read them from the message, in a string
+    /// the codec may decode them from in place.
     using RequestCallback = std::function<
-        task<std::string, Error>(const protocol::RequestID&, std::string_view, cancellation_token)>;
-    using NotificationCallback = std::function<void(std::string_view)>;
+        task<std::string, Error>(const protocol::RequestID&, std::string&, cancellation_token)>;
+    using NotificationCallback = std::function<void(std::string&)>;
 
     using Clock = std::chrono::steady_clock;
 
@@ -597,7 +599,17 @@ struct Peer<CodecT>::Self {
         }
     }
 
-    void dispatch_notification(const std::string& method, std::string_view params) {
+    /// Logs that the params of the `kind` (request or notification) `method`
+    /// did not decode.
+    void log_params_failure(std::string_view kind, std::string_view method, const Error& error) {
+        log(LogLevel::warn,
+            "{} '{}' params deserialization failed: {}",
+            kind,
+            method,
+            error.message);
+    }
+
+    void dispatch_notification(const std::string& method, std::string& params) {
         log(LogLevel::debug, "notification: {}", method);
 
         if(method == "$/cancelRequest") {
@@ -628,7 +640,7 @@ struct Peer<CodecT>::Self {
 
     void dispatch_request(const std::string& method,
                           const protocol::RequestID& id,
-                          std::string_view params,
+                          std::string params,
                           task_group<>& handlers) {
         log(LogLevel::debug, "request: {} id={}", method, detail::LoggedId{id});
 
@@ -649,7 +661,7 @@ struct Peer<CodecT>::Self {
         incoming_requests.insert_or_assign(id, cancel_source);
         if(!handlers.spawn(run_request(id,
                                        std::move(callback),
-                                       std::string(params),
+                                       std::move(params),
                                        cancel_source->token()))) {
             // The handlers are being cancelled: run() is ending.
             incoming_requests.erase(id);
@@ -692,14 +704,14 @@ struct Peer<CodecT>::Self {
         send_answer(id, std::move(*response));
     }
 
-    void dispatch_incoming_message(std::string_view payload, task_group<>& handlers) {
+    void dispatch_incoming_message(std::string& payload, task_group<>& handlers) {
         log(LogLevel::trace, "recv: {}", payload);
         auto msg = codec.parse_message(payload);
         std::visit(
             [&](auto& m) {
                 using T = std::remove_cvref_t<decltype(m)>;
                 if constexpr(std::is_same_v<T, IncomingRequest>) {
-                    dispatch_request(m.method, m.id, m.params, handlers);
+                    dispatch_request(m.method, m.id, std::move(m.params), handlers);
                 } else if constexpr(std::is_same_v<T, IncomingNotification>) {
                     dispatch_notification(m.method, m.params);
                 } else if constexpr(std::is_same_v<T, IncomingResponse>) {
@@ -904,17 +916,14 @@ void Peer<CodecT>::on_request_impl(std::string_view method, Callback&& callback)
     auto wrapped = [cb = std::forward<Callback>(callback),
                     method_name = std::string(method),
                     peer = this](const protocol::RequestID& request_id,
-                                 std::string_view params_raw,
+                                 std::string& params_raw,
                                  cancellation_token token) -> task<std::string, Error> {
         auto& state = *peer->self;
         auto parsed_params =
             state.codec.template deserialize_value<Params>(params_raw,
                                                           protocol::ErrorCode::InvalidParams);
         if(!parsed_params) {
-            state.log(LogLevel::warn,
-                     "request '{}' params deserialization failed: {}",
-                     method_name,
-                     parsed_params.error().message);
+            state.log_params_failure("request", method_name, parsed_params.error());
             co_await fail(parsed_params.error());
         }
 
@@ -967,13 +976,13 @@ template <typename CodecT>
 template <typename Callback>
 void Peer<CodecT>::on_notification_impl(std::string_view method, Callback&& callback) {
     using Params = detail::callback_param_t<Callback, 0>;
-    auto wrapped = [cb = std::forward<Callback>(callback), peer = this](std::string_view params_raw) {
+    auto wrapped = [cb = std::forward<Callback>(callback),
+                    method_name = std::string(method),
+                    peer = this](std::string& params_raw) {
         auto& state = *peer->self;
         auto parsed_params = state.codec.template deserialize_value<Params>(params_raw);
         if(!parsed_params) {
-            state.log(LogLevel::warn,
-                     "notification params deserialization failed: {}",
-                     parsed_params.error().message);
+            state.log_params_failure("notification", method_name, parsed_params.error());
             return;
         }
         std::invoke(cb, *parsed_params);

@@ -133,7 +133,7 @@ FrameParser::Step FrameParser::feed(std::string_view input) {
                     skipped_size = *length;
                 } else {
                     phase = Phase::Payload;
-                    payload.reserve(*length);
+                    payload.reserve(*length + payload_padding);
                 }
                 continue;
             }

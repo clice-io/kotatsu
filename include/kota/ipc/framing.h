@@ -17,6 +17,11 @@ constexpr std::size_t default_max_payload = 64 * 1024 * 1024;
 /// message's id from.
 constexpr std::size_t skipped_prefix_size = 4 * 1024;
 
+/// The room a payload is read into past its end: a codec that parses it in
+/// place writes there what its parser reads past the text, without moving
+/// the payload.
+constexpr std::size_t payload_padding = 64;
+
 /// Why a message could not be read.
 struct ReadError {
     enum class Kind : std::uint8_t {
