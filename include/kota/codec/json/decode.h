@@ -15,6 +15,7 @@
 #include "kota/support/config.h"
 #include "kota/support/expected_try.h"
 #include "kota/support/numeric.h"
+#include "kota/support/swar.h"
 #include "kota/codec/json/type.h"
 #include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
@@ -362,12 +363,17 @@ struct Reader {
         // The raw key starts after its opening quote; unescaping it lets go of
         // it, so it is taken first.
         cursor.key_at = field.key().raw() - 1;
-        auto key = field.unescaped_key();
-        if(key.error()) {
-            cursor.failed = true;
-            return fail_simdjson(key.error());
+        // A key without escapes is the text itself, which outlives the decode.
+        cursor.key = field.escaped_key();
+        constexpr std::uint64_t letters = 0x6161'6161'6161'6161;
+        if(any_word(cursor.key, letters, [](std::uint64_t word) { return has_byte(word, '\\'); })) {
+            auto key = field.unescaped_key();
+            if(key.error()) {
+                cursor.failed = true;
+                return fail_simdjson(key.error());
+            }
+            cursor.key = key.value_unsafe();
         }
-        cursor.key = key.value_unsafe();
         cursor.value = std::move(field).value();
         return true;
     }

@@ -172,6 +172,17 @@ ZEST_CASE(char_from_several_characters_fails) {
     ZEXPECT(status.error().message == codec::invalid_char_message);
 }
 
+// A vector's elements are decoded where they end up; the one that fails is
+// taken back, those before it stay.
+ZEST_CASE(sequence_element_that_fails_is_not_kept) {
+    std::vector<test::Point> points;
+    auto status = json::from_string(R"([{"x":1,"y":2},{"x":3,"y":"four"}])", points);
+    ZASSERT(!status);
+    ZEXPECT(points == std::vector<test::Point>{
+                          {.x = 1, .y = 2}
+    });
+}
+
 ZEST_CASE(byte_out_of_range_fails) {
     std::vector<std::byte> out;
     auto status = json::from_string("[0,256]", out);

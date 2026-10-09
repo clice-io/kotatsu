@@ -45,6 +45,16 @@ ZEST_CASE(has_byte_passes_over_the_bytes_beside_its_bound) {
     }
 }
 
+ZEST_CASE(first_byte_is_the_first_match_whatever_follows) {
+    for(std::size_t at = 0; at < 8; ++at) {
+        ZEST_CONTEXT("byte {}", at);
+        // The bytes after the match, one above it, show through its borrow.
+        ZEXPECT(first_byte(bytes_below(word_with(at, 0x1F, 0x20), 0x20)) == at);
+        ZEXPECT(first_byte(bytes_equal(word_with(at, '"', '"' + 1), '"')) == at);
+        ZEXPECT(first_byte(bytes_equal(word_with(at, '"', '"'), '"')) == 0U);
+    }
+}
+
 ZEST_CASE(any_word_reads_every_byte_of_a_text_of_any_size) {
     for(std::size_t size = 0; size <= 20; ++size) {
         ZEST_CONTEXT("size {}", size);
