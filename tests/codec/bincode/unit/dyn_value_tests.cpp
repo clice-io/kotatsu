@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <initializer_list>
 #include <span>
 #include <string>
@@ -28,7 +29,7 @@ std::vector<std::byte> bytes(std::initializer_list<unsigned> values) {
 std::vector<std::byte> nested_arrays(std::size_t levels) {
     std::vector<std::byte> out;
     for(std::size_t i = 0; i < levels; ++i) {
-        auto level = bytes({0x06, 1, 0, 0, 0, 0, 0, 0, 0});
+        auto level = bytes({0x06, 1});
         out.insert(out.end(), level.begin(), level.end());
     }
     out.push_back(std::byte{0x00});
@@ -69,8 +70,23 @@ ZEST_CASE(value_writes_its_kind_first) {
         {"a", std::uint64_t{5}}
     });
     ZASSERT(object);
-    ZEXPECT(*object == bytes({0x07, 1, 0, 0,   0,    0, 0, 0, 0, 1, 0, 0, 0, 0,
-                              0,    0, 0, 'a', 0x03, 5, 0, 0, 0, 0, 0, 0, 0}));
+    ZEXPECT(*object == bytes({0x07, 1, 1, 'a', 0x03, 5, 0, 0, 0, 0, 0, 0, 0}));
+}
+
+ZEST_CASE(long_array_roundtrip) {
+    // 300 elements: a count past one byte.
+    dyn::Array items;
+    for(std::int64_t i = 0; i < 300; ++i) {
+        items.emplace_back(i);
+    }
+    dyn::Value value(items);
+    auto encoded = bincode::to_bytes(value);
+    ZASSERT(encoded);
+    ZASSERT(encoded->size() > 1);
+    ZEXPECT((*encoded)[1] == std::byte{251});
+    auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(*encoded));
+    ZASSERT(decoded);
+    ZEXPECT(*decoded == value);
 }
 
 ZEST_CASE(every_kind_roundtrip) {
@@ -79,6 +95,25 @@ ZEST_CASE(every_kind_roundtrip) {
     auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(*encoded));
     ZASSERT(decoded);
     ZEXPECT(*decoded == every_kind());
+}
+
+ZEST_CASE(object_past_250_entries_roundtrip) {
+    dyn::Object object;
+    for(int i = 0; i < 300; ++i) {
+        object.insert(std::format("key {}", i), std::int64_t{i});
+    }
+    dyn::Value value(object);
+    auto encoded = bincode::to_bytes(value);
+    ZASSERT(encoded);
+    auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(*encoded));
+    ZASSERT(decoded);
+    ZEXPECT(*decoded == value);
+}
+
+ZEST_CASE(child_count_of_an_invalid_length_fails) {
+    auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(bytes({0x06, 254})));
+    ZASSERT(!decoded);
+    ZEXPECT(decoded.error().message == "invalid length");
 }
 
 ZEST_CASE(unknown_kind_fails) {
@@ -101,8 +136,8 @@ ZEST_CASE(object_roundtrip) {
 
 ZEST_CASE(object_entry_error_names_its_index) {
     // One entry: key "a", then a value of unknown kind.
-    auto decoded = bincode::from_bytes<dyn::Object>(std::span<const std::byte>(
-        bytes({1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 'a', 0x09})));
+    auto decoded =
+        bincode::from_bytes<dyn::Object>(std::span<const std::byte>(bytes({1, 1, 'a', 0x09})));
     ZASSERT(!decoded);
     ZEXPECT(decoded.error().message == "invalid dyn::Value kind 9");
     ZEXPECT(decoded.error().format_path() == "[0]");
@@ -129,8 +164,8 @@ ZEST_CASE(nesting_past_the_limit_fails) {
 }
 
 ZEST_CASE(hostile_nesting_fails) {
-    // 40000 nested arrays, 360 KB: far past any stack a recursive read
-    // could use, and past the limit long before the end.
+    // 40000 nested arrays, 80 KB: far past any stack a recursive read could
+    // use, and past the limit long before the end.
     auto document = nested_arrays(40000);
     auto decoded = bincode::from_bytes<dyn::Value>(std::span<const std::byte>(document));
     ZASSERT(!decoded);

@@ -1,6 +1,8 @@
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -50,6 +52,11 @@ struct Framed {
 
 constexpr std::uint8_t framed_magic = 0x42;
 
+/// Much larger in memory than in bincode, which writes it as a number.
+struct Page {
+    std::array<std::byte, 4096> bytes{};
+};
+
 std::vector<std::byte> bytes(std::initializer_list<unsigned> values) {
     std::vector<std::byte> out;
     for(unsigned value: values) {
@@ -63,6 +70,19 @@ std::vector<std::byte> bytes(std::initializer_list<unsigned> values) {
 }  // namespace kota::codec
 
 namespace kota::meta {
+
+template <>
+struct repr<codec::Page> {
+    using type = std::uint8_t;
+
+    static type to(const codec::Page& /*page*/) {
+        return 0;
+    }
+
+    static codec::Page from(type /*number*/) {
+        return {};
+    }
+};
 
 template <>
 struct repr<codec::Framed> {
@@ -119,7 +139,7 @@ ZEST_CASE(truncated_payload_fails) {
     auto encoded = bincode::to_bytes(std::string("hello"));
     ZASSERT(encoded);
     std::string out;
-    auto status = bincode::from_bytes(std::span<const std::byte>(*encoded).first(10), out);
+    auto status = bincode::from_bytes(std::span<const std::byte>(*encoded).first(4), out);
     ZASSERT(!status);
     ZEXPECT(status.error().message == "unexpected eof");
 }
@@ -128,19 +148,44 @@ ZEST_CASE(oversized_length_prefix_fails) {
     // A length of uint64's maximum with nothing behind it is checked against
     // the bytes left, never used to size a read.
     std::string out;
-    auto status = bincode::from_bytes(bytes({0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}), out);
+    auto status =
+        bincode::from_bytes(bytes({253, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}), out);
     ZASSERT(!status);
     ZEXPECT(status.error().message == "unexpected eof");
 }
 
 ZEST_CASE(oversized_element_count_fails) {
-    // An element count is not trusted either: reading stops at the first
-    // element the bytes cannot hold.
+    // An element count is not trusted either: it makes room for no more
+    // elements than the bytes left, and reading stops at the first element
+    // they cannot hold.
     std::vector<int> out;
-    auto status = bincode::from_bytes(bytes({0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F}), out);
+    auto document = bytes({253, 0, 0, 0, 0, 0, 1, 0, 0});
+    for(int element = 0; element < 3; ++element) {
+        auto written = bincode::to_bytes(element);
+        ZASSERT(written);
+        document.insert(document.end(), written->begin(), written->end());
+    }
+    auto status = bincode::from_bytes(document, out);
     ZASSERT(!status);
     ZEXPECT(status.error().message == "unexpected eof");
-    ZEXPECT(status.error().format_path() == "[0]");
+    ZEXPECT(status.error().format_path() == "[3]");
+    ZEXPECT(out.capacity() <= 24U);
+}
+
+ZEST_CASE(element_count_makes_room_for_at_most_a_mebibyte) {
+    // A page takes 4 KiB of memory but 8 bytes of input: room for as many
+    // as the bytes left could hold, 1600, would be 6.25 MiB.
+    auto document = bytes({252, 0, 0, 1, 0});
+    for(int page = 0; page < 200; ++page) {
+        auto written = bincode::to_bytes(Page{});
+        ZASSERT(written);
+        document.insert(document.end(), written->begin(), written->end());
+    }
+    std::vector<Page> out;
+    auto status = bincode::from_bytes(document, out);
+    ZASSERT(!status);
+    ZEXPECT(status.error().format_path() == "[200]");
+    ZEXPECT(out.capacity() <= (std::size_t{1} << 20) / sizeof(Page));
 }
 
 ZEST_CASE(bool_byte_beyond_one_fails) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <concepts>
@@ -325,6 +326,20 @@ bool match_field(std::string_view key,
     return with_index<N>(slot, [&](auto i) {
         return decode_field_value<Config, decltype(i)::value>(reader, out, key, sink);
     });
+}
+
+/// Makes room in out for the elements a counted container's access says
+/// are coming, as many as its size_hint and no more than a mebibyte of them:
+/// the hint is cut to the bytes left, but an element may take more memory
+/// than its bytes, and a container inside each of a forged count's elements
+/// would multiply what was reserved.
+template <typename Container, typename Access>
+void reserve_for(Container& out, const Access& access) {
+    if constexpr(requires { out.reserve(access.size_hint()); }) {
+        constexpr std::size_t most =
+            (std::size_t{1} << 20) / sizeof(std::ranges::range_value_t<Container>);
+        out.reserve(std::min(access.size_hint(), most));
+    }
 }
 
 /// Whether the input must carry a slot: its type is not nullable (seen
@@ -930,6 +945,7 @@ bool decode_value(Vis& vis, T& out) {
                     if constexpr(requires { out.clear(); }) {
                         out.clear();
                     }
+                    detail::reserve_for(out, sv);
                     std::size_t idx = 0;
                     while(sv.has_element()) {
                         auto item = element_t();
@@ -1006,6 +1022,7 @@ bool decode_value(Vis& vis, T& out) {
                     if constexpr(requires { out.clear(); }) {
                         out.clear();
                     }
+                    detail::reserve_for(out, sv);
                     std::size_t idx = 0;
                     while(sv.has_entry()) {
                         auto key = key_t();

@@ -11,22 +11,14 @@ namespace kota::codec {
 template <typename Config>
 struct serialize_visit<bincode::Writer, RawValue, Config> {
     static bool visit(bincode::Writer& vis, const RawValue& value) {
-        auto bytes =
-            std::span<const std::byte>(reinterpret_cast<const std::byte*>(value.data.data()),
-                                       value.data.size());
-        return vis.visit_bytes(bytes);
+        return vis.visit_str(value.data);
     }
 };
 
 template <typename Config>
 struct deserialize_visit<bincode::Reader, RawValue, Config> {
     static bool visit(bincode::Reader& vis, RawValue& value) {
-        std::vector<std::byte> bytes;
-        if(!vis.visit_bytes(bytes)) {
-            return false;
-        }
-        value.data.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-        return true;
+        return vis.visit_str(value.data);
     }
 };
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "kota/codec/visit/context.h"
 
 namespace kota::codec::bincode {
@@ -22,19 +24,34 @@ namespace kota::codec::bincode {
 /// - float32/float64 (and long double) → the value as IEEE double, 8-byte
 ///   LE bit pattern
 /// - character → one byte
-/// - string / bytes → u64 LE byte-length prefix + raw bytes
+/// - string / bytes → byte length (see below) + raw bytes
 /// - enumeration → underlying integer (8 bytes), or a length-prefixed name
 ///   string under enum_repr::String
-/// - array/set/map → u64 LE element-count prefix, then elements back to
-///   back (maps: key, value, key, value, ...)
+/// - array/set/map → element count (see below), then elements back to back
+///   (maps: key, value, key, value, ...)
 /// - tuple/structure → fields concatenated in declaration order, no prefix;
 ///   skip_if omits nothing, since no marker could say a field is absent
 /// - variant → u32 LE alternative index + payload
 /// - optional/pointer → presence byte (0x00 / 0x01) + payload when engaged
-/// - RawValue → stored as a bytes blob (length prefix + raw)
+/// - RawValue → its text as bytes (length + raw)
 /// - dyn::Value → its ValueKind as one byte, then what it holds as above (an
 ///   array as a sequence of Values, an object as a map from strings to
 ///   Values); decode rejects an unknown kind and nesting deeper than 1024
+///
+/// A length or count below 251 is one byte. A larger one is a marker byte,
+/// 251, 252 or 253, and the value as a u16, u32 or u64 LE; decode rejects
+/// the bytes 254 and 255 in its place.
 struct format {};
+
+namespace detail {
+
+/// The byte before a length or count that does not fit in one.
+enum class LengthMarker : std::uint8_t {
+    U16 = 251,
+    U32 = 252,
+    U64 = 253,
+};
+
+}  // namespace detail
 
 }  // namespace kota::codec::bincode
