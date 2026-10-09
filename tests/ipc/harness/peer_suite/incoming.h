@@ -4,9 +4,6 @@
 // from their dispatch until their answer is queued.
 
 #include <algorithm>
-#include <cstddef>
-#include <string>
-#include <utility>
 #include <vector>
 
 #include "ipc/harness/peer_fixture.h"
@@ -15,17 +12,13 @@
 
 namespace kota::test {
 
-/// Requests as (method, id), in that order.
-using Listed = std::vector<std::pair<std::string, RequestID>>;
+using Listed = std::vector<ipc::UnansweredRequest>;
 
-/// What `peer` lists as read and not answered yet.
+/// What `peer` lists as read and not answered yet, by id.
 template <typename PeerT>
 Listed listed_by(const PeerT& peer) {
-    Listed requests;
-    for(auto request: peer.incoming_requests()) {
-        requests.emplace_back(std::string(request.method), request.id);
-    }
-    std::ranges::sort(requests);
+    auto requests = peer.incoming_requests();
+    std::ranges::sort(requests, {}, &ipc::UnansweredRequest::id);
     return requests;
 }
 
@@ -52,12 +45,11 @@ void peer_incoming(const PeerKit<A>& kit) {
 
         auto [ran] = f.run(f.peer.run());
         ZEXPECT(ran.has_value());
-        ZEXPECT(at_call == Listed{
-                               {"test/add", RequestID(7)}
-        });
-        ZEXPECT(in_task == Listed{
-                               {"test/add", RequestID(7)}
-        });
+        const Listed expected = {
+            {.method = "test/add", .id = 7}
+        };
+        ZEXPECT(at_call == expected);
+        ZEXPECT(in_task == expected);
         ZEXPECT(f.peer.incoming_requests().empty());
         const auto& written = f.written();
         ZASSERT(written.size() == 1U);
@@ -66,7 +58,7 @@ void peer_incoming(const PeerKit<A>& kit) {
 
     // Each handler waits for its release; the remote reads the list before
     // and between the answers.
-    kit.add("requests_are_listed_until_their_answers_are_queued", [](Fixture& f) {
+    kit.add("each_request_is_listed_until_it_is_answered", [](Fixture& f) {
         event both_started;
         event release_add;
         event release_custom;
@@ -88,14 +80,12 @@ void peer_incoming(const PeerKit<A>& kit) {
                               co_await release_custom.wait();
                               co_return AddResult{.sum = params.a + params.b};
                           });
-        std::size_t count = 0;
         Listed both;
         Listed after_one;
         auto remote = [&]() -> task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
             f.remote.send(request<A>(2, "custom/add", AddParams{.a = 3, .b = 4}));
             co_await both_started.wait();
-            count = f.peer.incoming_requests().size();
             both = listed_by(f.peer);
             release_add.set();
             co_await f.next();
@@ -108,14 +98,15 @@ void peer_incoming(const PeerKit<A>& kit) {
         auto [ran, scripted] = f.run(f.peer.run(), remote());
         ZEXPECT(ran.has_value());
         ZEXPECT(scripted.has_value());
-        ZEXPECT(count == 2U);
-        ZEXPECT(both == Listed{
-                            {"custom/add", RequestID(2)},
-                            {"test/add",   RequestID(1)}
-        });
-        ZEXPECT(after_one == Listed{
-                                 {"custom/add", RequestID(2)}
-        });
+        const Listed expected_both = {
+            {.method = "test/add",   .id = 1},
+            {.method = "custom/add", .id = 2},
+        };
+        const Listed expected_after_one = {
+            {.method = "custom/add", .id = 2}
+        };
+        ZEXPECT(both == expected_both);
+        ZEXPECT(after_one == expected_after_one);
         ZEXPECT(f.peer.incoming_requests().empty());
         const auto& written = f.written();
         ZASSERT(written.size() == 2U);
@@ -123,12 +114,47 @@ void peer_incoming(const PeerKit<A>& kit) {
         ZEXPECT(written[1].id == RequestID(2));
     });
 
+    // The remote waits for the list to empty, as a request that waits for
+    // the peer to go quiet would, then has the peer send a notification: the
+    // answer comes first.
+    kit.add("request_off_the_list_is_answered_ahead_of_what_is_sent_after", [](Fixture& f) {
+        event started;
+        event release;
+        f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
+            started.set();
+            co_await release.wait();
+            co_return AddResult{.sum = params.a + params.b};
+        });
+        auto remote = [&]() -> task<ipc::Result<void>> {
+            f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
+            co_await started.wait();
+            release.set();
+            while(!f.peer.incoming_requests().empty()) {
+                co_await yield(f.loop);
+            }
+            auto sent = f.peer.send_notification(NoteParams{.text = "after"});
+            co_await f.next();
+            co_await f.next();
+            f.remote.end_input();
+            co_return sent;
+        };
+
+        auto [ran, sent] = f.run(f.peer.run(), remote());
+        ZEXPECT(ran.has_value());
+        ZASSERT(sent.has_value());
+        ZEXPECT(sent->has_value());
+        const auto& written = f.written();
+        ZASSERT(written.size() == 2U);
+        ZEXPECT(sum_of<A>(written[0]) == 3);
+        ZEXPECT(written[1].method == "test/note");
+    });
+
     if constexpr(A::caps.string_ids) {
         kit.add("request_with_a_string_id_is_listed_with_it", [](Fixture& f) {
-            Listed at_call;
+            Listed listed;
             f.peer.on_request(
                 [&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
-                    at_call = listed_by(f.peer);
+                    listed = listed_by(f.peer);
                     co_return AddResult{.sum = params.a + params.b};
                 });
             f.remote.send(request<A>("abc", "test/add", AddParams{.a = 2, .b = 3}));
@@ -136,15 +162,16 @@ void peer_incoming(const PeerKit<A>& kit) {
 
             auto [ran] = f.run(f.peer.run());
             ZEXPECT(ran.has_value());
-            ZEXPECT(at_call == Listed{
-                                   {"test/add", RequestID("abc")}
-            });
+            const Listed expected = {
+                {.method = "test/add", .id = "abc"}
+            };
+            ZEXPECT(listed == expected);
             ZEXPECT(f.peer.incoming_requests().empty());
         });
     }
 
-    // The duplicate of request 1 names another handler's method: listed, it
-    // would show.
+    // The duplicate of request 1 names another method, so that it would show
+    // if it took the first one's place in the list.
     kit.add("request_answered_at_once_with_an_error_is_never_listed", [](Fixture& f) {
         event started;
         event never;
@@ -174,9 +201,10 @@ void peer_incoming(const PeerKit<A>& kit) {
         auto [ran, scripted] = f.run(f.peer.run(), remote());
         ZEXPECT(ran.has_value());
         ZEXPECT(scripted.has_value());
-        ZEXPECT(after_errors == Listed{
-                                    {"test/add", RequestID(1)}
-        });
+        const Listed expected = {
+            {.method = "test/add", .id = 1}
+        };
+        ZEXPECT(after_errors == expected);
         const auto& written = f.written();
         ZASSERT(written.size() == 3U);
         ZEXPECT(code_of(written[0].error) == ErrorCode::InvalidRequest);
@@ -184,8 +212,8 @@ void peer_incoming(const PeerKit<A>& kit) {
         ZEXPECT(code_of(written[2].error) == ErrorCode::RequestCancelled);
     });
 
-    // The handler waits for a request of its own, which the cancel passes on
-    // to: it ends once the remote has answered that request too.
+    // The handler passes the cancel on to a request of its own, so it ends
+    // only once the remote answers that one.
     kit.add("cancelled_request_stays_listed_until_its_handler_ends", [](Fixture& f) {
         f.peer.on_request(
             [&](Context& context, const AddParams& params) -> ipc::RequestResult<AddParams> {
@@ -212,9 +240,10 @@ void peer_incoming(const PeerKit<A>& kit) {
         auto [ran, scripted] = f.run(f.peer.run(), remote());
         ZEXPECT(ran.has_value());
         ZEXPECT(scripted.has_value());
-        ZEXPECT(after_cancel == Listed{
-                                    {"test/add", RequestID(31)}
-        });
+        const Listed expected = {
+            {.method = "test/add", .id = 31}
+        };
+        ZEXPECT(after_cancel == expected);
         ZEXPECT(f.peer.incoming_requests().empty());
         const auto& written = f.written();
         ZASSERT(written.size() == 3U);
@@ -223,7 +252,7 @@ void peer_incoming(const PeerKit<A>& kit) {
         ZEXPECT(code_of(written[2].error) == ErrorCode::RequestCancelled);
     });
 
-    kit.add("close_empties_the_list", [](Fixture& f) {
+    kit.add("close_empties_incoming_requests", [](Fixture& f) {
         event started;
         event never;
         f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
@@ -244,11 +273,43 @@ void peer_incoming(const PeerKit<A>& kit) {
         auto [ran, scripted] = f.run(f.peer.run(), remote());
         ZEXPECT(ran.has_value());
         ZEXPECT(scripted.has_value());
-        ZEXPECT(before_close == Listed{
-                                    {"test/add", RequestID(1)}
-        });
+        const Listed expected = {
+            {.method = "test/add", .id = 1}
+        };
+        ZEXPECT(before_close == expected);
         ZEXPECT(empty_after_close);
         ZEXPECT(f.written().empty());
+    });
+
+    // The peer's own request fails to be written, which fails the output; the
+    // asker resumes once the peer is done with the failure.
+    kit.add("write_failure_empties_incoming_requests", [](Fixture& f) {
+        event started;
+        event never;
+        f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
+            started.set();
+            co_await never.wait();
+            co_return AddResult{};
+        });
+        f.remote.fail_writes();
+        f.remote.send(request<A>(1, "test/add", AddParams{}));
+        Listed before_failure;
+        bool empty_after_failure = false;
+        auto ask = [&]() -> task<> {
+            co_await started.wait();
+            before_failure = listed_by(f.peer);
+            co_await f.peer.send_request(AddParams{});
+            empty_after_failure = f.peer.incoming_requests().empty();
+        };
+
+        auto [ran, asked] = f.run(f.peer.run(), ask());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(asked.has_value());
+        const Listed expected = {
+            {.method = "test/add", .id = 1}
+        };
+        ZEXPECT(before_failure == expected);
+        ZEXPECT(empty_after_failure);
     });
 }
 

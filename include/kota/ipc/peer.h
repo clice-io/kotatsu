@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "kota/ipc/codec.h"
 #include "kota/ipc/logger.h"
@@ -48,7 +49,7 @@ struct basic_request_context {
 
 /// A request the peer has read and not answered yet, as
 /// Peer::incoming_requests() lists it.
-struct InFlightRequest {
+struct UnansweredRequest {
     /// The method its handler was registered for; it lasts as long as the
     /// Peer.
     std::string_view method;
@@ -168,20 +169,16 @@ public:
     template <typename Callback>
     void on_notification(std::string_view method, Callback&& callback);
 
-    /// The requests read and not answered yet, as InFlightRequest values in
-    /// no particular order; the view's size() is their count. A request is
-    /// listed from its dispatch, before its handler is called, until the task
-    /// its handler returned has ended and its answer is queued, so a handler
-    /// finds its own request listed, in both steps, and an answer no longer
-    /// listed is queued ahead of those still listed. A $/cancelRequest does
-    /// not take a request off: its handler's end, with the RequestCancelled
-    /// answer, does. A request answered at once with an error, its id that
-    /// of a request listed or its method without a handler, is never listed,
-    /// and close() or a failure of the output empties the list, as nothing
-    /// more is answered. The view follows the peer, but an iteration must not span
-    /// the dispatch of a message or a handler's end, which a co_await may
-    /// let in.
-    auto incoming_requests() const;
+    /// The requests read and not answered yet, in no particular order. A
+    /// request is listed while its handler answers it: from its dispatch,
+    /// before the handler is called, until the task the handler returned has
+    /// ended and its answer is queued, or dropped when the output takes no
+    /// more. So a handler finds its own request listed, and a request off the
+    /// list has its answer queued ahead of anything sent after. A
+    /// $/cancelRequest leaves a request listed until its handler ends; one
+    /// answered at once without its handler, such as a duplicate id, is never
+    /// listed; close() or a failure of the output empties the list.
+    std::vector<UnansweredRequest> incoming_requests() const;
 
 private:
     /// Sends `request`, the encoded request `id`, and waits for its result.
