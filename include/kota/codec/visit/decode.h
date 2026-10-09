@@ -937,7 +937,8 @@ bool decode_value(Vis& vis, T& out) {
                             return decode_value<Config>(ev, item);
                         });
                     };
-                    // An element of a vector or a deque is decoded where it
+                    // An element of a container whose emplace_back gives it
+                    // back (a vector, a deque, a list) is decoded where it
                     // ends up, rather than moved there; one that fails is
                     // taken back.
                     if constexpr(requires {
@@ -963,6 +964,8 @@ bool decode_value(Vis& vis, T& out) {
                     }
                     detail::reserve_for(out, sv);
                     std::size_t idx = 0;
+                    // Here an element is decoded apart and moved in, which
+                    // measures faster than in place once out has made room.
                     while(sv.has_element()) {
                         auto item = element_t();
                         bool ok = sv.visit_element(

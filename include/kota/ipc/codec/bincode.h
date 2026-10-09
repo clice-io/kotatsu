@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <cstring>
-#include <expected>
 #include <optional>
 #include <span>
 #include <string>
@@ -95,6 +94,8 @@ struct BincodeCodec {
         return message(detail::request_prefix{.id = id, .method = method}, &params);
     }
 
+    /// A notification of a method that takes no params, which are left
+    /// empty.
     Result<std::string> encode_notification(std::string_view method) {
         return message(detail::notification_prefix{.method = method});
     }
@@ -113,39 +114,24 @@ struct BincodeCodec {
     Result<std::string> encode_error_response(const std::optional<protocol::RequestID>& id,
                                               const Error& error);
 
-    template <typename T>
-    Result<std::string> serialize_value(const T& value) {
-        auto bytes = codec::bincode::to_bytes(value);
-        if(!bytes) {
-            return outcome_error(codec_error(protocol::ErrorCode::InternalError, bytes.error()));
-        }
-        return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
-    }
-
     /// Empty bytes decode only into a value without fields, as params
     /// without fields are written.
     template <typename T>
-    Result<T> deserialize_value(std::string_view raw,
+    Result<T> deserialize_value(const PayloadSlice& raw,
                                 protocol::ErrorCode code = protocol::ErrorCode::RequestFailed) {
         if constexpr(std::is_same_v<T, codec::RawValue>) {
-            return codec::RawValue{std::string(raw)};
+            return codec::RawValue{std::string(raw.text())};
         } else {
-            auto bytes_span =
-                std::span<const std::byte>(reinterpret_cast<const std::byte*>(raw.data()),
-                                           raw.size());
+            const auto text = raw.text();
             T value{};
-            auto status = codec::bincode::from_bytes(bytes_span, value);
+            auto status = codec::bincode::from_bytes(
+                std::span(reinterpret_cast<const std::byte*>(text.data()), text.size()),
+                value);
             if(!status) {
                 return outcome_error(codec_error(code, status.error()));
             }
             return value;
         }
-    }
-
-    template <typename T>
-    Result<T> deserialize_value(const PayloadSlice& raw,
-                                protocol::ErrorCode code = protocol::ErrorCode::RequestFailed) {
-        return deserialize_value<T>(raw.text(), code);
     }
 
 private:

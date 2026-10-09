@@ -6,6 +6,8 @@
 #include <system_error>
 #include <utility>
 
+#include "kota/support/naming.h"
+
 namespace kota::ipc {
 
 namespace {
@@ -19,15 +21,11 @@ std::string_view trim(std::string_view value) {
     return value.substr(start, end - start + 1);
 }
 
-/// c in lower case if it is an ASCII letter, as header names are; whatever
-/// the locale.
-constexpr char ascii_lower(char c) {
-    return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
-}
-
+/// Whether lhs and rhs are the same ASCII text but for case, as header names
+/// are compared, whatever the locale.
 bool equals_ignoring_case(std::string_view lhs, std::string_view rhs) {
     return std::ranges::equal(lhs, rhs, [](char a, char b) {
-        return ascii_lower(a) == ascii_lower(b);
+        return naming::to_lower(a) == naming::to_lower(b);
     });
 }
 

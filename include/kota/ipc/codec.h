@@ -25,7 +25,8 @@ using Result = outcome<T, Error>;
 
 /// The params or result of a message as it came in: `size` bytes from
 /// `offset` in the payload, which it keeps rather than a copy of them. The
-/// codec decodes it in place, writing over what follows it in the payload.
+/// codec decodes it in place, and may write over what follows it in the
+/// payload.
 struct PayloadSlice {
     std::string payload;
     std::size_t offset = 0;

@@ -235,6 +235,16 @@ struct Peer<CodecT>::Self {
         }
     }
 
+    /// The notification `method` with `params`, encoded, as encode_request.
+    template <typename Params>
+    Result<std::string> encode_notification(std::string_view method, const Params& params) {
+        if constexpr(detail::takes_no_params_v<protocol::NotificationTraits<Params>>) {
+            return codec.encode_notification(method);
+        } else {
+            return codec.encode_notification(method, params);
+        }
+    }
+
     /// Why a request cannot be sent now, if it cannot.
     std::optional<Error> refuse_request(const request_options& opts) const {
         if(opts.timeout && *opts.timeout <= std::chrono::milliseconds::zero()) {
@@ -301,7 +311,7 @@ struct Peer<CodecT>::Self {
                 continue;
             }
 
-            // What is queued goes in one write.
+            // What is queued goes to the transport at once.
             auto batch = std::exchange(outgoing_queue, {});
             auto written = co_await transport->write_messages(batch).catch_cancel();
             if(written.is_cancelled()) {
@@ -435,17 +445,6 @@ struct Peer<CodecT>::Self {
         }
     }
 
-    /// A result as it came in, read as T. A RawValue takes it as it is, the
-    /// way a handler's RawValue result is sent.
-    template <typename T>
-    Result<T> read_result(PayloadSlice& raw) {
-        if constexpr(std::is_same_v<T, codec::RawValue>) {
-            return codec::RawValue{std::string(raw.text())};
-        } else {
-            return codec.template deserialize_value<T>(raw);
-        }
-    }
-
     void send_error(const std::optional<protocol::RequestID>& id, const Error& error) {
         log(LogLevel::error, "error response: {}", error.message);
         auto response = codec.encode_error_response(id, error);
@@ -487,20 +486,13 @@ struct Peer<CodecT>::Self {
     }
 
     /// Sends the notification `method` with `params`; one the remote would
-    /// not read fails unsent, and one for a method that takes no params
-    /// carries none.
+    /// not read fails unsent.
     template <typename Params>
     Result<void> send_notification(std::string_view method, const Params& params) {
         if(auto unsendable = this->unsendable(false)) {
             return outcome_error(std::move(*unsendable));
         }
-        auto notification = [&] {
-            if constexpr(detail::takes_no_params_v<protocol::NotificationTraits<Params>>) {
-                return codec.encode_notification(method);
-            } else {
-                return codec.encode_notification(method, params);
-            }
-        }();
+        auto notification = encode_notification(method, params);
         if(!notification) {
             return outcome_error(notification.error());
         }
@@ -867,7 +859,7 @@ task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
     auto request = co_await or_fail(self->encode_request(id, method, params));
     auto raw_result =
         co_await send_request_impl(std::move(id), std::move(request), std::move(opts)).or_fail();
-    co_return co_await or_fail(self->template read_result<ResultT>(raw_result));
+    co_return co_await or_fail(self->codec.template deserialize_value<ResultT>(raw_result));
 }
 
 template <typename CodecT>
@@ -937,12 +929,8 @@ void Peer<CodecT>::on_request_impl(std::string_view method, Callback&& callback)
         co_await yield(state.loop);
         auto result = co_await std::move(answering).or_fail();
         // A RawValue result is already in the codec's encoding, and goes as
-        // it is; read_result takes it back so.
-        auto response = state.codec.encode_success_response(request_id, result);
-        if(!response) {
-            co_await fail(Error(protocol::ErrorCode::InternalError, response.error().message));
-        }
-        co_return std::move(*response);
+        // it is; deserialize_value takes it back so.
+        co_return co_await or_fail(state.codec.encode_success_response(request_id, result));
     };
 
     self->request_callbacks.insert_or_assign(std::string(method), std::move(wrapped));

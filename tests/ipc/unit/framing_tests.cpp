@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "ipc/harness/frames.h"
 #include "kota/ipc/framing.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -60,11 +61,12 @@ std::expected<std::string, ReadError> first_frame(std::string_view input,
 constexpr std::string_view stream =
     "Content-Length: 5\r\n\r\nhello"
     "content-length:0\r\n\r\n"
+    "CONTENT-LENGTH: 2\r\n\r\nup"
     "Content-Type: application/vscode-jsonrpc; charset=utf-8\r\nContent-Length:  3 \r\n\r\nabc"
     "Content-Length: 6\r\n\r\nx\r\n\r\ny";
 
 // The last payload holds a blank line of its own.
-const std::vector<std::string> stream_frames{"hello", "", "abc", "x\r\n\r\ny"};
+const std::vector<std::string> stream_frames{"hello", "", "up", "abc", "x\r\n\r\ny"};
 
 ZEST_SUITE(ipc_framing) {
 
@@ -212,7 +214,7 @@ ZEST_CASE(oversized_frame_is_skipped_and_reading_goes_on) {
 ZEST_CASE(oversized_frame_keeps_its_size_and_first_bytes) {
     std::string payload(2 * skipped_prefix_size, 'x');
     payload[0] = '{';
-    auto read = first_frame(frame_header(payload.size()) + payload, 16);
+    auto read = first_frame(test::framed(payload), 16);
     ZASSERT(!read.has_value());
     ZEXPECT(read.error().kind == ReadError::Kind::Oversized);
     ZEXPECT(read.error().size == payload.size());

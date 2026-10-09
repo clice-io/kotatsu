@@ -232,12 +232,15 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     return value_fn(vw);
 }
 
+/// The room to_string starts with, unless told how much.
+constexpr std::size_t default_capacity = 1024;
+
 /// Encodes `value` as compact JSON text; use json::prettify for indented
 /// output.
 template <typename Config = void, typename T>
 auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
     -> std::expected<std::string, rich_error> {
-    StringBuilder builder(initial_capacity.value_or(1024));
+    StringBuilder builder(initial_capacity.value_or(default_capacity));
     ValueWriter vis{builder};
     KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
     return std::move(builder).take();

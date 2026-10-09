@@ -2,7 +2,6 @@
 
 #include <cerrno>
 #include <fcntl.h>
-#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -128,16 +127,15 @@ task<void, Error> StreamTransport::write_frames(std::span<const std::string_view
     }
 
     auto& stream = shared_stream ? read_stream : write_stream;
-    // A write takes no more than 4 GiB - 1 bytes: the frames go in as few
-    // writes as that allows, and a larger frame fails alone.
-    constexpr std::size_t most = std::numeric_limits<unsigned int>::max();
+    // The frames go in as few writes as max_write_size allows, and a larger
+    // frame fails alone.
     for(std::size_t first = 0; first < payloads.size();) {
         std::vector<std::span<const char>> pieces;
         std::size_t size = 0;
         std::size_t next = first;
         for(; next < payloads.size(); ++next) {
             const auto frame = headers[next].size() + payloads[next].size();
-            if(next > first && size + frame > most) {
+            if(next > first && size + frame > stream::max_write_size) {
                 break;
             }
             pieces.push_back(headers[next]);

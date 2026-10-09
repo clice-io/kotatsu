@@ -1,8 +1,8 @@
 #pragma once
 
 // The shared suite of the ipc codecs. JSONCodec and BincodeCodec implement one
-// duck-typed protocol (parse_message, encode_*, serialize_value,
-// deserialize_value), so its behaviour is written once, below, and each codec
+// duck-typed protocol (parse_message, peek, encode_*, deserialize_value), so
+// its behaviour is written once, below, and each codec
 // runs it through an adapter (codec_json.h, codec_bincode.h):
 //
 //     ZEST_CASE_GROUP(protocol) {
@@ -114,6 +114,12 @@ std::string response(const RequestID& id, const T& result) {
 template <typename T, CodecAdapter A>
 std::optional<T> decoded(std::string_view body) {
     return A::template decode<T>(body);
+}
+
+/// `text` as a payload of its own, all of it the slice a codec decodes.
+inline ipc::PayloadSlice whole(std::string text) {
+    const auto size = text.size();
+    return {.payload = std::move(text), .size = size};
 }
 
 /// The code of `error`, as the enumerator it matches.
@@ -315,18 +321,46 @@ void codec_protocol(const CodecKit<A>& kit) {
         auto request = codec.encode_request(1, "test/note", codec::RawValue{body});
         auto notification = codec.encode_notification("test/note", codec::RawValue{body});
         auto response = codec.encode_success_response(2, codec::RawValue{body});
-        for(const auto* encoded: {&request, &notification, &response}) {
+        for(const auto& [kind, encoded]: {
+                std::pair{"request",      &request     },
+                std::pair{"notification", &notification},
+                std::pair{"response",     &response    },
+        }) {
+            ZEST_CONTEXT("{}", kind);
             ZASSERT(encoded->has_value());
             auto message = A::read(**encoded);
             ZASSERT(message.has_value());
             ZEXPECT(message->body == body);
         }
-        auto parsed = codec.parse_message(A::response_raw(3, body));
-        auto* incoming = std::get_if<ipc::IncomingResponse>(&parsed);
+        auto sent = codec.parse_message(A::request_raw(3, "test/note", body));
+        auto answered = codec.parse_message(A::response_raw(3, body));
+        auto* incoming = std::get_if<ipc::IncomingRequest>(&sent);
+        auto* answer = std::get_if<ipc::IncomingResponse>(&answered);
         ZASSERT(incoming != nullptr);
-        auto raw = codec.template deserialize_value<codec::RawValue>(incoming->result);
-        ZASSERT(raw.has_value());
-        ZEXPECT(raw->data == body);
+        ZASSERT(answer != nullptr);
+        auto params = codec.template deserialize_value<codec::RawValue>(incoming->params);
+        auto result = codec.template deserialize_value<codec::RawValue>(answer->result);
+        ZASSERT(params.has_value());
+        ZASSERT(result.has_value());
+        ZEXPECT(params->data == body);
+        ZEXPECT(result->data == body);
+    });
+
+    kit.add("encode_of_a_value_that_does_not_encode_fails", [] {
+        Codec codec;
+        auto request = codec.encode_request(1, "test/note", Unwritable{});
+        auto notification = codec.encode_notification("test/note", Unwritable{});
+        auto response = codec.encode_success_response(2, Unwritable{});
+        for(const auto& [kind, encoded]: {
+                std::pair{"request",      &request     },
+                std::pair{"notification", &notification},
+                std::pair{"response",     &response    },
+        }) {
+            ZEST_CONTEXT("{}", kind);
+            ZASSERT(!encoded->has_value());
+            ZEXPECT(code_of(encoded->error()) == ErrorCode::InternalError);
+            ZEXPECT(zest::contains(encoded->error().message, "unwritable"));
+        }
     });
 
     // Params and results of any size travel whole: past the lengths a
@@ -354,7 +388,7 @@ void codec_protocol(const CodecKit<A>& kit) {
         }
     });
 
-    // The params are the message's own bytes: no copy of them is made.
+    // The params are a slice of the payload as it was read.
     kit.add("parse_message_keeps_the_params_in_the_payload", [] {
         Codec codec;
         const auto payload = request<A>(5, "test/add", AddParams{.a = 1, .b = 2});
@@ -366,27 +400,34 @@ void codec_protocol(const CodecKit<A>& kit) {
     });
 
     // A slice decodes in place, whatever lies around it in its payload, and
-    // keeps its own bytes, whether it decodes or not.
+    // keeps its own bytes and those before it.
     kit.add("deserialize_value_reads_a_slice_in_place", [] {
         Codec codec;
-        for(const auto& [body, decodes]: {
-                std::pair{A::encode(AddParams{.a = 1, .b = 2}), true },
-                std::pair{A::encode(NoteParams{.text = "x"}),   false},
-        }) {
-            ZEST_CONTEXT("decodes {}", decodes);
-            ipc::PayloadSlice slice{
-                .payload = "before" + body + "after",
-                .offset = 6,
-                .size = body.size(),
-            };
-            auto value = codec.template deserialize_value<AddParams>(slice);
-            ZEXPECT(value.has_value() == decodes);
-            ZEXPECT(slice.text() == body);
-            if(decodes) {
-                ZASSERT(value.has_value());
-                ZEXPECT(*value == AddParams{.a = 1, .b = 2});
-            }
-        }
+        const auto body = A::encode(AddParams{.a = 1, .b = 2});
+        ipc::PayloadSlice slice{
+            .payload = "before" + body + "after",
+            .offset = 6,
+            .size = body.size(),
+        };
+        auto value = codec.template deserialize_value<AddParams>(slice);
+        ZASSERT(value.has_value());
+        ZEXPECT(*value == AddParams{.a = 1, .b = 2});
+        ZEXPECT(slice.text() == body);
+        ZEXPECT(slice.payload.starts_with("before"));
+    });
+
+    kit.add("deserialize_value_of_a_slice_that_does_not_decode_fails", [] {
+        Codec codec;
+        const auto body = A::encode(NoteParams{.text = "x"});
+        ipc::PayloadSlice slice{
+            .payload = "before" + body + "after",
+            .offset = 6,
+            .size = body.size(),
+        };
+        auto value = codec.template deserialize_value<AddParams>(slice);
+        ZASSERT(!value.has_value());
+        ZEXPECT(code_of(value.error()) == ErrorCode::RequestFailed);
+        ZEXPECT(slice.text() == body);
     });
 
     kit.add("parse_message_of_garbage_fails", [] {
@@ -446,36 +487,21 @@ void codec_protocol(const CodecKit<A>& kit) {
         ZEXPECT(!head.id.has_value());
     });
 
-    kit.add("serialize_value_writes_what_the_codec_writes", [] {
-        Codec codec;
-        auto serialized = codec.serialize_value(AddParams{.a = 1, .b = 2});
-        ZASSERT(serialized.has_value());
-        ZEXPECT(*serialized == A::encode(AddParams{.a = 1, .b = 2}));
-    });
-
-    kit.add("serialize_value_of_an_unwritable_value_fails", [] {
-        Codec codec;
-        auto serialized = codec.serialize_value(Unwritable{});
-        ZASSERT(!serialized.has_value());
-        ZEXPECT(code_of(serialized.error()) == ErrorCode::InternalError);
-        ZEXPECT(zest::contains(serialized.error().message, "unwritable"));
-    });
-
     kit.add("deserialize_value_reads_what_the_codec_writes", [] {
         Codec codec;
-        auto value =
-            codec.template deserialize_value<AddParams>(A::encode(AddParams{.a = 4, .b = 5}));
+        auto text = whole(A::encode(AddParams{.a = 4, .b = 5}));
+        auto value = codec.template deserialize_value<AddParams>(text);
         ZASSERT(value.has_value());
         ZEXPECT(*value == AddParams{.a = 4, .b = 5});
     });
 
     kit.add("deserialize_value_failure_carries_the_given_code", [] {
         Codec codec;
-        auto by_default = codec.template deserialize_value<AddParams>(A::not_a_value);
+        auto text = whole(std::string(A::not_a_value));
+        auto by_default = codec.template deserialize_value<AddParams>(text);
         ZASSERT(!by_default.has_value());
         ZEXPECT(code_of(by_default.error()) == ErrorCode::RequestFailed);
-        auto given =
-            codec.template deserialize_value<AddParams>(A::not_a_value, ErrorCode::InvalidParams);
+        auto given = codec.template deserialize_value<AddParams>(text, ErrorCode::InvalidParams);
         ZASSERT(!given.has_value());
         ZEXPECT(code_of(given.error()) == ErrorCode::InvalidParams);
     });
@@ -485,20 +511,16 @@ void codec_protocol(const CodecKit<A>& kit) {
     kit.add("deserialize_value_of_nothing_reads_empty_params", [] {
         Codec codec;
         ipc::PayloadSlice nothing;
-        ZEXPECT(codec.template deserialize_value<EmptyParams>("").has_value());
         ZEXPECT(codec.template deserialize_value<EmptyParams>(nothing).has_value());
     });
 
     kit.add("deserialize_value_of_nothing_into_fields_fails", [] {
         Codec codec;
         ipc::PayloadSlice nothing;
-        auto from_view = codec.template deserialize_value<AddParams>("", ErrorCode::InvalidParams);
-        auto in_place =
+        auto params =
             codec.template deserialize_value<AddParams>(nothing, ErrorCode::InvalidParams);
-        ZASSERT(!from_view.has_value());
-        ZASSERT(!in_place.has_value());
-        ZEXPECT(code_of(from_view.error()) == ErrorCode::InvalidParams);
-        ZEXPECT(code_of(in_place.error()) == ErrorCode::InvalidParams);
+        ZASSERT(!params.has_value());
+        ZEXPECT(code_of(params.error()) == ErrorCode::InvalidParams);
     });
 }
 

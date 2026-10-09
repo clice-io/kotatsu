@@ -144,6 +144,24 @@ ZEST_CASE(params_decode_in_their_payload) {
     ZEXPECT(request->params.payload.capacity() == capacity);
 }
 
+// Past params with more than the padding after them, the padding is written
+// over what follows, and the payload does not grow.
+ZEST_CASE(params_before_other_members_decode_in_place) {
+    JSONCodec codec;
+    const auto method = std::string(80, 'm');
+    auto parsed = codec.parse_message(
+        std::format(R"({{"params":{{"a":1,"b":2}},"jsonrpc":"2.0","id":1,"method":"{}"}})",
+                    method));
+    auto* request = std::get_if<IncomingRequest>(&parsed);
+    ZASSERT(request != nullptr);
+    ZEXPECT(request->method == method);
+    const auto size = request->params.payload.size();
+    auto params = codec.deserialize_value<test::AddParams>(request->params);
+    ZASSERT(params.has_value());
+    ZEXPECT(*params == test::AddParams{.a = 1, .b = 2});
+    ZEXPECT(request->params.payload.size() == size);
+}
+
 // JSON-RPC lets an error without data leave the member out.
 ZEST_CASE(encode_error_response_without_data_leaves_it_out) {
     JSONCodec codec;
@@ -526,6 +544,10 @@ ZEST_CASE(params_are_the_root_objects_last_params) {
             std::pair{R"({"jsonrpc":"2.0","id":1,"p\u0061rams":3,"method":"m"})",                "3"},
             std::pair{R"({"jsonrpc":"2.0","id":1,"method":"m","params":{"a":1},"params":null})",
                       ""                                                                            },
+            std::pair{R"({"jsonrpc":"2.0","id":1,"method":"m","params":null,"params":{"a":1}})",
+                      R"({"a":1})"                                                                  },
+            std::pair{R"({"jsonrpc":"2.0","id":1,"method":"m","params" :  ["}\"",{"x":"]"}] })",
+                      R"(["}\"",{"x":"]"}])"                                                        },
     }) {
         ZEST_CONTEXT("payload: {}", payload);
         auto parsed = codec.parse_message(payload);
@@ -539,8 +561,9 @@ ZEST_CASE(result_is_the_root_objects_last_result) {
     JSONCodec codec;
     for(auto [payload, result]: {
             std::pair{R"({"jsonrpc":"2.0","id":1,"result": [1, {"result":2}] })",
-                      R"([1, {"result":2}])"                                            },
-            std::pair{R"({"result":1,"jsonrpc":"2.0","result":null,"id":1})",     "null"},
+                      R"([1, {"result":2}])"                                                 },
+            std::pair{R"({"result":1,"jsonrpc":"2.0","result":null,"id":1})",     "null"     },
+            std::pair{R"({"jsonrpc":"2.0","id":1,"r\u0065sult":"text"})",         R"("text")"},
     }) {
         ZEST_CONTEXT("payload: {}", payload);
         auto parsed = codec.parse_message(payload);
@@ -552,7 +575,7 @@ ZEST_CASE(result_is_the_root_objects_last_result) {
 
 // A member the envelope cannot read is reported where it stands in the
 // message as sent: on the line after the one the params break.
-ZEST_CASE(malformed_member_past_the_params_is_located_as_sent) {
+ZEST_CASE(malformed_member_past_the_params_fails_where_it_stands) {
     JSONCodec codec;
     auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":1,"params":{"a":
 [1,2,3]},"method":7})");

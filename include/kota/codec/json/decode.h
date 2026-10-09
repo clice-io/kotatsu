@@ -365,8 +365,7 @@ struct Reader {
         cursor.key_at = field.key().raw() - 1;
         // A key without escapes is the text itself, which outlives the decode.
         cursor.key = field.escaped_key();
-        constexpr std::uint64_t letters = 0x6161'6161'6161'6161;
-        if(any_word(cursor.key, letters, [](std::uint64_t word) { return has_byte(word, '\\'); })) {
+        if(any_word(cursor.key, 0, [](std::uint64_t word) { return has_byte(word, '\\'); })) {
             auto key = field.unescaped_key();
             if(key.error()) {
                 cursor.failed = true;

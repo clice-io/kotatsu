@@ -3,8 +3,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -35,7 +37,7 @@ struct error_envelope {
     std::optional<codec::dyn::Value> data;
 };
 
-using envelope =
+using message_envelope =
     std::variant<request_envelope, notification_envelope, success_envelope, error_envelope>;
 
 // The envelopes' first fields, as far as they tell a message's kind and id.
@@ -68,8 +70,8 @@ IncomingMessage BincodeCodec::parse_message(std::string payload) {
     codec::bincode::Reader reader{
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(payload.data()),
                                    payload.size())};
-    envelope read;
-    if(!codec::decode_value<codec::default_config<>>(reader, read)) {
+    message_envelope envelope;
+    if(!codec::decode_value<codec::default_config<>>(reader, envelope)) {
         return IncomingParseError{
             .id = std::nullopt,
             .error = codec_error(protocol::ErrorCode::ParseError, error),
@@ -110,7 +112,7 @@ IncomingMessage BincodeCodec::parse_message(std::string payload) {
                 };
             }
         },
-        read);
+        envelope);
 }
 
 MessageHead BincodeCodec::peek(std::string_view prefix) {
@@ -140,12 +142,16 @@ MessageHead BincodeCodec::peek(std::string_view prefix) {
 Result<std::string>
     BincodeCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
                                         const Error& error) {
-    return serialize_value(envelope(error_envelope{
+    auto bytes = codec::bincode::to_bytes(message_envelope(error_envelope{
         .id = id,
         .code = static_cast<std::int32_t>(error.code),
         .message = error.message,
         .data = error.data,
     }));
+    if(!bytes) {
+        return outcome_error(codec_error(protocol::ErrorCode::InternalError, bytes.error()));
+    }
+    return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }
 
 template class Peer<BincodeCodec>;

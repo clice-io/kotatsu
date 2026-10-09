@@ -264,6 +264,23 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         ZEXPECT(f.remote.closed());
     });
 
+    // What is queued together goes to the transport together: its write
+    // failing fails every request in it.
+    kit.add("write_failure_fails_every_request_queued_with_it", [](Fixture& f) {
+        f.remote.fail_writes();
+        ZASSERT(f.peer.send_notification(NoteParams{.text = "queued"}).has_value());
+
+        auto [ran, first, second] =
+            f.run(f.peer.run(), f.peer.send_request(AddParams{}), f.peer.send_request(AddParams{}));
+        ZEXPECT(ran.has_value());
+        ZASSERT(first.has_error());
+        ZASSERT(second.has_error());
+        ZEXPECT(code_of(first.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(code_of(second.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(f.written().empty());
+        ZEXPECT(f.remote.closed());
+    });
+
     // The handler's answer could not be written: it is cancelled, and run()
     // ends without waiting for it.
     kit.add("write_failure_cancels_running_handlers", [](Fixture& f) {

@@ -1,9 +1,7 @@
 #include "kota/codec/json/json.h"
 
 #include <algorithm>
-#include <cassert>
 #include <cstdint>
-#include <cstring>
 #include <expected>
 #include <format>
 #include <ranges>
@@ -14,6 +12,7 @@
 
 #include "kota/ipc/codec/json.h"
 #include "kota/ipc/framing.h"
+#include "kota/support/swar.h"
 #include "kota/codec/macro.h"
 
 namespace kota::ipc {
@@ -156,16 +155,12 @@ std::string key_name(std::string_view quoted) {
     return name ? std::move(*name) : std::string();
 }
 
-/// Where a value lies in a text.
-struct Span {
-    std::size_t start = 0;
-    std::size_t end = 0;
-};
-
-/// A member of a root object that holds a message's params or result.
+/// A member of a root object that holds a message's params or result: where
+/// its value starts and ends.
 struct Carried {
     bool params = false;
-    Span value;
+    std::size_t start = 0;
+    std::size_t end = 0;
 };
 
 /// Checks JSON's grammar (RFC 8259) without reading values, and measures
@@ -233,11 +228,10 @@ struct JSONChecker {
     /// Passes the bytes of a string that need no look, eight at a time, up
     /// to the first that does: a quote, a backslash or a control character.
     void skip_plain() {
-        std::uint64_t word;
-        while(text.size() - at >= sizeof(word)) {
-            std::memcpy(&word, text.data() + at, sizeof(word));
+        while(text.size() - at >= sizeof(std::uint64_t)) {
+            const auto word = load_word(text.data() + at);
             if(const auto escaped = codec::json::detail::escaped_bytes(word)) {
-                at += first_byte(escaped);
+                at += first_byte_index(escaped);
                 return;
             }
             at += sizeof(word);
@@ -322,7 +316,8 @@ struct JSONChecker {
         if(name == "params" || name == "result") {
             carried.push_back({
                 .params = name == "params",
-                .value = {.start = member_start, .end = end},
+                .start = member_start,
+                .end = end,
             });
         }
     }
@@ -484,12 +479,11 @@ std::expected<json_rpc_incoming, codec::rich_error>
     text.reserve(payload.size() + simdjson::SIMDJSON_PADDING);
     std::size_t from = 0;
     for(const auto& member: carried) {
-        const auto [start, end] = member.value;
-        if(payload.substr(start, end - start) == "null") {
+        if(payload.substr(member.start, member.end - member.start) == "null") {
             continue;
         }
-        text.append(payload.substr(from, start - from)).push_back('0');
-        from = end;
+        text.append(payload.substr(from, member.start - from)).push_back('0');
+        from = member.end;
     }
     text.append(payload.substr(from));
     const auto size = text.size();
@@ -521,13 +515,6 @@ codec::json::padded_string_view JSONCodec::pad(PayloadSlice& slice) {
                                            text.size() - slice.offset);
 }
 
-std::string JSONCodec::copy(std::string_view text) {
-    std::string copied;
-    copied.reserve(text.size() + simdjson::SIMDJSON_PADDING);
-    copied.assign(text);
-    return copied;
-}
-
 IncomingMessage JSONCodec::parse_message(std::string payload) {
     // simdjson does not check the members it skips, so the grammar is checked
     // first, in a pass that also measures the nesting: text that is no JSON
@@ -547,10 +534,9 @@ IncomingMessage JSONCodec::parse_message(std::string payload) {
     auto envelope = read_envelope(payload, checker.carried);
     if(!envelope) {
         // Located in the message as it was sent, which the values read as 0
-        // would shift: they read as anything, so it fails all the same.
-        envelope = read_envelope(payload, {});
-        assert(!envelope);
-        return read_malformed(payload, envelope.error().to_string());
+        // shift; they read as anything, so it fails there all the same.
+        auto as_sent = read_envelope(payload, {});
+        return read_malformed(payload, (as_sent ? envelope : as_sent).error().to_string());
     }
 
     const bool has_id = !envelope->id.empty();
@@ -572,15 +558,18 @@ IncomingMessage JSONCodec::parse_message(std::string payload) {
     auto id = has_id ? read_id(envelope->id.data) : std::nullopt;
     // The params or result the envelope read: of a member named twice, the
     // last.
-    auto carried = [&](bool params) {
+    auto slice_of = [&](bool params) {
         auto last =
             std::ranges::find(checker.carried | std::views::reverse, params, &Carried::params);
-        const auto [start, end] = last->value;
-        return PayloadSlice{.payload = std::move(payload), .offset = start, .size = end - start};
+        return PayloadSlice{
+            .payload = std::move(payload),
+            .offset = last->start,
+            .size = last->end - last->start,
+        };
     };
 
     if(envelope->method.has_value()) {
-        auto params = envelope->params.has_value() ? carried(true) : PayloadSlice{};
+        auto params = envelope->params.has_value() ? slice_of(true) : PayloadSlice{};
         if(!has_id) {
             return IncomingNotification{
                 .method = std::move(*envelope->method),
@@ -618,7 +607,7 @@ IncomingMessage JSONCodec::parse_message(std::string payload) {
                            "response id must be an integer or a string"),
         };
     }
-    return IncomingResponse{.id = std::move(*id), .result = carried(false)};
+    return IncomingResponse{.id = std::move(*id), .result = slice_of(false)};
 }
 
 /// Members are read in order until the prefix ends, so a writer that puts a
@@ -644,10 +633,11 @@ Result<std::string> JSONCodec::encode_notification(std::string_view method) {
 
 Result<std::string> JSONCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
                                                      const Error& error) {
-    return serialize_value(outgoing_error_response_message{
-        .id = id,
-        .error = error,
-    });
+    return unwrap(codec::json::to_string<lsp_config>(outgoing_error_response_message{
+                      .id = id,
+                      .error = error,
+                  }),
+                  protocol::ErrorCode::InternalError);
 }
 
 template class Peer<JSONCodec>;

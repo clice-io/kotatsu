@@ -160,7 +160,7 @@ public:
     void on_notification(std::string_view method, Callback&& callback);
 
 private:
-    /// Sends `request`, encoded as `id`, and waits for its answer.
+    /// Sends `request`, the encoded request `id`, and waits for its result.
     task<PayloadSlice, Error> send_request_impl(protocol::RequestID id,
                                                 std::string request,
                                                 request_options opts);

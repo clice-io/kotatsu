@@ -1,4 +1,5 @@
 #include <array>
+#include <format>
 #include <memory>
 #include <optional>
 #include <span>
@@ -9,6 +10,7 @@
 
 #include "async/harness/os.h"
 #include "ipc/harness/fixtures.h"
+#include "ipc/harness/frames.h"
 #include "kota/ipc/codec/bincode.h"
 #include "kota/ipc/codec/json.h"
 #include "kota/ipc/framing.h"
@@ -25,11 +27,6 @@ namespace {
 using test::AddParams;
 using test::AddResult;
 using test::NoteParams;
-
-/// `payload` framed as StreamTransport frames it.
-std::string frame(std::string_view payload) {
-    return frame_header(payload.size()).append(payload);
-}
 
 /// Both ends of an anonymous pipe, opened as streams.
 struct Ends {
@@ -95,6 +92,35 @@ ZEST_CASE(json_peers_talk_over_pipes) {
 
 ZEST_CASE(bincode_peers_talk_over_pipes) {
     talk_over_pipes<BincodeCodec>(*this);
+}
+
+// What is queued before the peer runs goes out together, each message framed,
+// in the order it was queued; the second is larger than a pipe holds.
+ZEST_CASE(queued_messages_go_out_framed_in_order) {
+    auto input = pipe_ends(loop);
+    auto output = pipe_ends(loop);
+    ZASSERT(input.has_value());
+    ZASSERT(output.has_value());
+    JSONPeer peer(
+        loop,
+        std::make_unique<StreamTransport>(std::move(input->reader), std::move(output->writer)));
+    input->writer = stream{};
+    const std::string large(256 * 1024, 'x');
+    for(const auto& text: {std::string("first"), large, std::string("last")}) {
+        ZEST_CONTEXT("a note of {} bytes", text.size());
+        ZASSERT(peer.send_notification(NoteParams{.text = text}).has_value());
+    }
+    peer.close_output();
+
+    auto [ran, received] = run(peer.run(), output->reader.read_to_end());
+    ZEXPECT(ran.has_value());
+    ZASSERT(received.has_value());
+    auto note = [](std::string_view text) {
+        return test::framed(
+            std::format(R"({{"jsonrpc":"2.0","method":"test/note","params":{{"text":"{}"}}}})",
+                        text));
+    };
+    ZEXPECT(*received == note("first") + note(large) + note("last"));
 }
 
 // A notification larger than the connection buffers, which the test reads
@@ -195,8 +221,8 @@ ZEST_CASE(task_starts_after_the_messages_read_with_its_request) {
     peer.on_notification([&](const NoteParams& params) { order.push_back(params.text); });
     auto remote = [&]() -> task<void, error> {
         auto messages =
-            frame(R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})") +
-            frame(R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"note"}})");
+            test::framed(R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})") +
+            test::framed(R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"note"}})");
         co_await input->writer.write(std::span<const char>(messages.data(), messages.size()))
             .or_fail();
     };
@@ -226,7 +252,8 @@ ZEST_CASE(close_output_on_a_shared_stream_keeps_reading) {
     auto remote = [&]() -> task<void, error> {
         auto received = co_await accepted->read_to_end().or_fail();
         static_cast<void>(received);
-        auto note = frame(R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"after"}})");
+        auto note =
+            test::framed(R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"after"}})");
         co_await accepted->write(std::span<const char>(note.data(), note.size())).or_fail();
         co_await accepted->shutdown().or_fail();
     };

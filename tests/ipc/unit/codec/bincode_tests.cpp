@@ -15,10 +15,12 @@ namespace {
 using protocol::ErrorCode;
 using test::code_of;
 
+const test::AddParams sent_params{.a = 1, .b = 2};
+
 /// A request as BincodeCodec writes it.
 std::string encoded_request() {
     BincodeCodec codec;
-    auto encoded = codec.encode_request(1, "test/add", test::AddParams{.a = 1, .b = 2});
+    auto encoded = codec.encode_request(1, "test/add", sent_params);
     return encoded ? *encoded : std::string();
 }
 
@@ -37,7 +39,7 @@ ZEST_CASE(error_response_roundtrip_keeps_the_data) {
 ZEST_CASE(truncated_message_fails) {
     auto message = encoded_request();
     // The params end the request.
-    const auto params_size = test::BincodeAdapter::encode(test::AddParams{}).size();
+    const auto params_size = test::BincodeAdapter::encode(sent_params).size();
     ZASSERT(message.size() > params_size);
     const auto envelope_size = message.size() - params_size;
     BincodeCodec codec;
@@ -52,8 +54,10 @@ ZEST_CASE(truncated_message_fails) {
         }
         const auto* request = std::get_if<IncomingRequest>(&parsed);
         ZASSERT(request != nullptr);
+        ZEXPECT(request->params.text() == message.substr(envelope_size, size - envelope_size));
         auto params = codec.deserialize_value<test::AddParams>(request->params);
-        ZEXPECT(!params.has_value());
+        ZASSERT(!params.has_value());
+        ZEXPECT(code_of(params.error()) == ErrorCode::RequestFailed);
     }
 }
 
@@ -69,7 +73,7 @@ ZEST_CASE(unknown_alternative_fails) {
     ZEXPECT(code_of(failure->error) == ErrorCode::ParseError);
 }
 
-ZEST_CASE(params_with_trailing_bytes_fail_to_decode) {
+ZEST_CASE(decode_of_params_with_trailing_bytes_fails) {
     auto message = encoded_request();
     ZASSERT(!message.empty());
     message.push_back('\0');

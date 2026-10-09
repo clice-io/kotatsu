@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -23,6 +24,7 @@ public:
 
     task<std::string, ReadError> read_message() override;
     task<void, Error> write_message(std::string_view payload) override;
+    task<void, Error> write_messages(std::span<const std::string> payloads) override;
     task<void, Error> close_output() override;
     Result<void> close() override;
     std::size_t remote_max_payload() const noexcept override;

@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -172,15 +173,26 @@ ZEST_CASE(char_from_several_characters_fails) {
     ZEXPECT(status.error().message == codec::invalid_char_message);
 }
 
-// A vector's elements are decoded where they end up; the one that fails is
-// taken back, those before it stay.
-ZEST_CASE(sequence_element_that_fails_is_not_kept) {
-    std::vector<test::Point> points;
-    auto status = json::from_string(R"([{"x":1,"y":2},{"x":3,"y":"four"}])", points);
-    ZASSERT(!status);
-    ZEXPECT(points == std::vector<test::Point>{
-                          {.x = 1, .y = 2}
+// A key with escapes reads unescaped, wherever its backslash stands; one
+// without reads as written.
+ZEST_CASE(escaped_keys_read_unescaped) {
+    auto point = json::from_string<test::Point>(R"({"\u0078":1,"y":2})");
+    ZASSERT(point);
+    ZEXPECT(*point == test::Point{.x = 1, .y = 2});
+    auto map = json::from_string<std::map<std::string, int>>(
+        R"({"a\"b":1,"a key longer than a word\n":2,"plain":3})");
+    ZASSERT(map);
+    ZEXPECT(*map == std::map<std::string, int>{
+                        {"a\"b",                       1},
+                        {"a key longer than a word\n", 2},
+                        {"plain",                      3},
     });
+}
+
+ZEST_CASE(key_with_an_unknown_escape_fails) {
+    auto point = json::from_string<test::Point>(R"({"\q":1,"y":2})");
+    ZASSERT(!point);
+    ZEXPECT(zest::starts_with(point.error().message, "STRING_ERROR"));
 }
 
 ZEST_CASE(byte_out_of_range_fails) {

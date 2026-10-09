@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -26,6 +25,18 @@ struct write_op : uv::request_op<write_op, uv_write_t> {
             ::uv_write(&req, stream, bufs.data(), static_cast<unsigned int>(bufs.size()), on_done));
     }
 };
+
+/// Why `size` bytes cannot go out in one write, if they cannot: a write goes
+/// out whole.
+error refused_write(std::size_t size) {
+    if(size == 0) {
+        return error::invalid_argument;
+    }
+    if(size > stream::max_write_size) {
+        return error::value_too_large_for_defined_data_type;
+    }
+    return {};
+}
 
 /// libuv shuts the write side once the writes before it have gone out,
 /// whatever happens to its task, and ends it with ECANCELED if the stream
@@ -230,13 +241,11 @@ error stream::stop() {
 }
 
 task<void, error> stream::write(std::span<const char> data) {
-    if(!self || data.empty()) {
+    if(!self) {
         co_await fail(error::invalid_argument);
     }
-
-    // A write goes out whole, and libuv takes no more than this at once.
-    if(data.size() > std::numeric_limits<unsigned int>::max()) {
-        co_await fail(error::value_too_large_for_defined_data_type);
+    if(auto err = refused_write(data.size())) {
+        co_await fail(err);
     }
 
     // A named op: MSVC's ASan build gives up the tail call of symmetric
@@ -260,11 +269,8 @@ task<void, error> stream::write_vectored(std::span<const std::span<const char>> 
         size += piece.size();
         bufs.push_back(uv::buffer_of(piece));
     }
-    if(size == 0) {
-        co_await fail(error::invalid_argument);
-    }
-    if(size > std::numeric_limits<unsigned int>::max()) {
-        co_await fail(error::value_too_large_for_defined_data_type);
+    if(auto err = refused_write(size)) {
+        co_await fail(err);
     }
 
     write_op op(&self->stream, bufs);
