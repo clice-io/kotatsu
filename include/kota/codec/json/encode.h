@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -11,6 +12,7 @@
 #include <type_traits>
 
 #include "kota/support/expected_try.h"
+#include "kota/codec/json/string_builder.h"
 #include "kota/codec/json/type.h"
 #include "kota/codec/visit/common.h"
 #include "kota/codec/visit/config.h"
@@ -26,19 +28,19 @@ struct ValueWriter {
     constexpr static bool human_readable = true;
 
     bool visit_bool(bool v) {
-        builder.append(v);
+        builder.append_bool(v);
         return true;
     }
 
     template <typename T>
     bool visit_int(T v) {
-        builder.append(static_cast<std::int64_t>(v));
+        builder.append_number(static_cast<std::int64_t>(v));
         return true;
     }
 
     template <typename T>
     bool visit_uint(T v) {
-        builder.append(static_cast<std::uint64_t>(v));
+        builder.append_number(static_cast<std::uint64_t>(v));
         return true;
     }
 
@@ -46,7 +48,7 @@ struct ValueWriter {
     bool visit_float(T v) {
         double d = static_cast<double>(v);
         if(std::isfinite(d)) {
-            builder.append(d);
+            builder.append_number(d);
         } else {
             builder.append_null();
         }
@@ -55,13 +57,13 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_str(const T& v) {
-        builder.escape_and_append_with_quotes(std::string_view(v));
+        builder.append_string(std::string_view(v));
         return true;
     }
 
     template <typename T>
     bool visit_char(T v) {
-        builder.escape_and_append_with_quotes(char_to_utf8(v));
+        builder.append_string(char_to_utf8(v));
         return true;
     }
 
@@ -69,13 +71,13 @@ struct ValueWriter {
     bool visit_bytes(const T& v) {
         auto data = reinterpret_cast<const std::uint8_t*>(std::data(v));
         auto len = std::size(v);
-        builder.start_array();
+        builder.put('[');
         for(std::size_t i = 0; i < len; ++i) {
             if(i > 0)
-                builder.append_comma();
-            builder.append(static_cast<std::uint64_t>(data[i]));
+                builder.put(',');
+            builder.append_number(static_cast<std::uint64_t>(data[i]));
         }
-        builder.end_array();
+        builder.put(']');
         return true;
     }
 
@@ -97,12 +99,34 @@ struct ValueWriter {
     bool visit_tuple(const T&, Body&& body);
 };
 
+namespace detail {
+
+/// `,"name":`, the key of a member that follows another, for a field whose
+/// name is known at compile time.
+template <typename Field>
+constexpr auto member_key = [] {
+    constexpr std::string_view name = FieldName<Field>::value;
+    std::array<char, escaped_size(name) + 4> key{};
+    key[0] = ',';
+    key[1] = '"';
+    auto* end = escape_to(name, key.data() + 2);
+    end[0] = '"';
+    end[1] = ':';
+    return key;
+}();
+
+}  // namespace detail
+
 struct StructWriter {
     StringBuilder& builder;
     bool first = true;
 
     template <typename F>
     bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
+
+    /// A field's key, written as one piece the compiler spells out.
+    template <typename Field, typename F>
+    bool visit_field(std::size_t /*index*/, FieldName<Field> /*name*/, F&& writer);
 };
 
 struct SeqWriter {
@@ -119,7 +143,7 @@ struct KeySink {
     StringBuilder& builder;
 
     void emit(std::string_view key) {
-        builder.escape_and_append_with_quotes(key);
+        builder.append_string(key);
     }
 };
 
@@ -133,28 +157,28 @@ struct MapWriter {
 
 template <typename T, typename Body>
 bool ValueWriter::visit_struct(const T&, Body&& body) {
-    builder.start_object();
+    builder.put('{');
     StructWriter sw{builder};
     KOTA_CODEC_TRY(body(sw));
-    builder.end_object();
+    builder.put('}');
     return true;
 }
 
 template <typename Container, typename Body>
 bool ValueWriter::visit_seq(const Container&, Body&& body) {
-    builder.start_array();
+    builder.put('[');
     SeqWriter sw{builder};
     KOTA_CODEC_TRY(body(sw));
-    builder.end_array();
+    builder.put(']');
     return true;
 }
 
 template <typename Container, typename Body>
 bool ValueWriter::visit_map(const Container&, Body&& body) {
-    builder.start_object();
+    builder.put('{');
     MapWriter mw{builder};
     KOTA_CODEC_TRY(body(mw));
-    builder.end_object();
+    builder.put('}');
     return true;
 }
 
@@ -166,10 +190,23 @@ bool ValueWriter::visit_tuple(const T& value, Body&& body) {
 template <typename F>
 bool StructWriter::visit_field(std::size_t /*index*/, std::string_view name, F&& writer) {
     if(!first)
-        builder.append_comma();
+        builder.put(',');
     first = false;
-    builder.escape_and_append_with_quotes(name);
-    builder.append_colon();
+    builder.append_string(name);
+    builder.put(':');
+    ValueWriter vw{builder};
+    return writer(vw);
+}
+
+template <typename Field, typename F>
+bool StructWriter::visit_field(std::size_t /*index*/, FieldName<Field> /*name*/, F&& writer) {
+    constexpr auto& key = detail::member_key<Field>;
+    if(first) {
+        builder.append_raw<key.size() - 1>(key.data() + 1);
+    } else {
+        builder.append_raw<key.size()>(key.data());
+    }
+    first = false;
     ValueWriter vw{builder};
     return writer(vw);
 }
@@ -177,7 +214,7 @@ bool StructWriter::visit_field(std::size_t /*index*/, std::string_view name, F&&
 template <typename F>
 bool SeqWriter::visit_element(F&& writer) {
     if(!first)
-        builder.append_comma();
+        builder.put(',');
     first = false;
     ValueWriter vw{builder};
     return writer(vw);
@@ -186,11 +223,11 @@ bool SeqWriter::visit_element(F&& writer) {
 template <typename KF, typename VF>
 bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
     if(!first)
-        builder.append_comma();
+        builder.put(',');
     first = false;
     MapKeyWriter<KeySink, format> kw{{builder}};
     KOTA_CODEC_TRY(key_fn(kw));
-    builder.append_colon();
+    builder.put(':');
     ValueWriter vw{builder};
     return value_fn(vw);
 }
@@ -200,15 +237,10 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
 template <typename Config = void, typename T>
 auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
     -> std::expected<std::string, rich_error> {
-    StringBuilder builder(initial_capacity.value_or(StringBuilder::DEFAULT_INITIAL_CAPACITY));
+    StringBuilder builder(initial_capacity.value_or(1024));
     ValueWriter vis{builder};
     KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
-    std::string_view sv;
-    auto ec = builder.view().get(sv);
-    if(ec != success) {
-        return std::unexpected(rich_error("write failed"));
-    }
-    return std::string(sv);
+    return std::move(builder).take();
 }
 
 }  // namespace kota::codec::json

@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <format>
 #include <string>
 #include <string_view>
@@ -50,6 +51,88 @@ ZEST_CASE(encode_without_params_leaves_them_out) {
     ZASSERT(notification.has_value());
     ZEXPECT(*request == R"({"jsonrpc":"2.0","id":1,"method":"shutdown"})");
     ZEXPECT(*notification == R"({"jsonrpc":"2.0","method":"exit"})");
+}
+
+// The envelope is written around the params or result as they are.
+ZEST_CASE(encode_writes_the_members_in_order) {
+    JSONCodec codec;
+    auto request = codec.encode_request(7, "test/add", R"({"a":1,"b":2})");
+    auto notification = codec.encode_notification("test/note", R"({"text":"hi"})");
+    auto response = codec.encode_success_response("r\"1", "[1,2]");
+    ZASSERT(request.has_value());
+    ZASSERT(notification.has_value());
+    ZASSERT(response.has_value());
+    ZEXPECT(*request == R"({"jsonrpc":"2.0","id":7,"method":"test/add","params":{"a":1,"b":2}})");
+    ZEXPECT(*notification == R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"hi"}})");
+    ZEXPECT(*response == R"({"jsonrpc":"2.0","id":"r\"1","result":[1,2]})");
+}
+
+// A method that returns nothing answers null.
+ZEST_CASE(encode_success_response_without_a_result_writes_null) {
+    JSONCodec codec;
+    auto response = codec.encode_success_response(1, "");
+    ZASSERT(response.has_value());
+    ZEXPECT(*response == R"({"jsonrpc":"2.0","id":1,"result":null})");
+}
+
+ZEST_CASE(encode_escapes_the_method) {
+    JSONCodec codec;
+    auto request = codec.encode_request(1, R"(say "\hi")", "");
+    ZASSERT(request.has_value());
+    ZEXPECT(*request == R"({"jsonrpc":"2.0","id":1,"method":"say \"\\hi\""})");
+}
+
+ZEST_CASE(encode_with_text_that_is_no_utf8_fails) {
+    JSONCodec codec;
+    auto request = codec.encode_request(1, "caf\xE9", "");
+    auto notification = codec.encode_notification("caf\xE9", "");
+    auto response = codec.encode_success_response("caf\xE9", "1");
+    for(const auto* encoded: {&request, &notification, &response}) {
+        ZASSERT(!encoded->has_value());
+        ZEXPECT(code_of(encoded->error()) == ErrorCode::InternalError);
+        ZEXPECT(zest::contains(encoded->error().message, "UTF-8"));
+    }
+}
+
+ZEST_CASE(parse_message_checks_a_string_byte_by_byte) {
+    // Strings are scanned eight bytes at a time; what breaks or ends one is
+    // found wherever it stands.
+    for(std::size_t at = 0; at < 16; ++at) {
+        ZEST_CONTEXT("at {}", at);
+        auto method = [&](std::string_view inner) {
+            return std::string(at, 'm') + std::string(inner) + std::string(16 - at, 'm');
+        };
+        JSONCodec codec;
+        auto with = [&](std::string_view inner) {
+            return std::format(R"({{"jsonrpc":"2.0","method":"{}"}})", method(inner));
+        };
+        auto tab = codec.parse_message(with("\t"));
+        auto unknown_escape = codec.parse_message(with(R"(\q)"));
+        auto quote = codec.parse_message(with(R"(\")"));
+        const auto* tab_failure = std::get_if<IncomingParseError>(&tab);
+        const auto* escape_failure = std::get_if<IncomingParseError>(&unknown_escape);
+        const auto* notification = std::get_if<IncomingNotification>(&quote);
+        ZASSERT(tab_failure != nullptr);
+        ZASSERT(escape_failure != nullptr);
+        ZASSERT(notification != nullptr);
+        ZEXPECT(code_of(tab_failure->error) == ErrorCode::ParseError);
+        ZEXPECT(code_of(escape_failure->error) == ErrorCode::ParseError);
+        ZEXPECT(notification->method == method("\""));
+    }
+}
+
+ZEST_CASE(parse_message_keeps_a_payload_with_room_in_place) {
+    JSONCodec codec;
+    std::string payload = R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1}})";
+    payload.reserve(payload.size() + 64);
+    const auto* data = payload.data();
+    const auto capacity = payload.capacity();
+    const auto before = payload;
+    auto parsed = codec.parse_message(payload);
+    ZEXPECT(std::holds_alternative<IncomingRequest>(parsed));
+    ZEXPECT(payload == before);
+    ZEXPECT(static_cast<const void*>(payload.data()) == static_cast<const void*>(data));
+    ZEXPECT(payload.capacity() == capacity);
 }
 
 // JSON-RPC lets an error without data leave the member out.

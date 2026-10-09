@@ -1,6 +1,12 @@
 #pragma once
 
+#include <cstddef>
+#include <expected>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <type_traits>
+#include <utility>
 
 #include "kota/ipc/codec.h"
 #include "kota/ipc/peer.h"
@@ -9,7 +15,15 @@
 namespace kota::ipc {
 
 struct JSONCodec {
-    IncomingMessage parse_message(std::string_view payload);
+    /// Parses payload in place: the bytes simdjson reads past the text are
+    /// written after it while it parses, and cut off after, so no one else
+    /// may hold or read it meanwhile.
+    IncomingMessage parse_message(std::string& payload);
+
+    IncomingMessage parse_message(std::string_view payload) {
+        auto text = copy(payload);
+        return parse_message(text);
+    }
 
     /// Reads what it can from `prefix`, the first bytes of a message too
     /// large to read whole.
@@ -32,30 +46,63 @@ struct JSONCodec {
 
     template <typename T>
     Result<std::string> serialize_value(const T& value) {
-        auto serialized = codec::json::to_string<lsp_config>(value);
-        if(!serialized) {
-            return outcome_error(
-                Error(protocol::ErrorCode::InternalError, serialized.error().to_string()));
+        return unwrap(codec::json::to_string<lsp_config>(value),
+                      protocol::ErrorCode::InternalError);
+    }
+
+    /// Decodes raw in place, as parse_message parses a payload: raw grows
+    /// while it decodes, and is cut back after, so no one else may hold or
+    /// read it meanwhile. Empty raw, the params of a method that takes none,
+    /// reads as null, or as an object without members.
+    template <typename T>
+    Result<T> deserialize_value(std::string& raw,
+                                protocol::ErrorCode code = protocol::ErrorCode::RequestFailed) {
+        if(raw.empty()) {
+            constexpr bool null =
+                std::is_same_v<T, protocol::null> || std::is_same_v<T, codec::dyn::Value>;
+            return unwrap(codec::json::from_string<T, lsp_config>(null ? "null" : "{}"), code);
         }
-        return std::move(*serialized);
+        auto padded = pad(raw);
+        return unwrap(codec::json::from_padded_string<T, lsp_config>(padded.view()), code);
     }
 
     template <typename T>
     Result<T> deserialize_value(std::string_view raw,
                                 protocol::ErrorCode code = protocol::ErrorCode::RequestFailed) {
-        if(raw.empty()) {
-            if constexpr(std::is_same_v<T, protocol::null> ||
-                         std::is_same_v<T, codec::dyn::Value>) {
-                raw = "null";
-            } else {
-                raw = "{}";
-            }
+        auto text = copy(raw);
+        return deserialize_value<T>(text, code);
+    }
+
+private:
+    /// text with the bytes simdjson reads past it written after it, as
+    /// spaces, while the Padded lives.
+    struct Padded {
+        std::string& text;
+        std::size_t size;
+
+        ~Padded() {
+            text.resize(size);
         }
-        auto parsed = codec::json::from_string<T, lsp_config>(raw);
-        if(!parsed) {
-            return outcome_error(Error(code, parsed.error().to_string()));
+
+        codec::json::padded_string_view view() const {
+            return codec::json::padded_string_view(text.data(), size, text.size());
         }
-        return std::move(*parsed);
+    };
+
+    static Padded pad(std::string& text);
+
+    /// text in a string with room for its padding.
+    static std::string copy(std::string_view text);
+
+    /// The peer error that carries a codec failure's message.
+    static Error codec_error(protocol::ErrorCode code, const codec::rich_error& error);
+
+    template <typename T>
+    static Result<T> unwrap(std::expected<T, codec::rich_error> value, protocol::ErrorCode code) {
+        if(!value) {
+            return outcome_error(codec_error(code, value.error()));
+        }
+        return std::move(*value);
     }
 };
 

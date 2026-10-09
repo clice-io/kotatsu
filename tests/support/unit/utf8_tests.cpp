@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <string>
 #include <string_view>
 
 #include "kota/zest/zest.h"
@@ -58,6 +60,26 @@ ZEST_CASE(utf8_rejects_what_is_no_code_point) {
     ZEXPECT(!is_utf8("\xF4\x90\x80\x80"));
     ZEXPECT(!is_utf8("eight bytes, then \xE9"));
     ZEXPECT(!is_utf8("caf\xE9 and then more text"));
+}
+
+ZEST_CASE(utf8_checks_every_byte_of_a_text_of_any_size) {
+    // ASCII passes in words; a byte past it anywhere goes to the full check.
+    for(std::size_t size = 0; size <= 20; ++size) {
+        ZEST_CONTEXT("size {}", size);
+        const std::string text(size, 'a');
+        ZEXPECT(is_utf8(text));
+        for(std::size_t at = 0; at < size; ++at) {
+            ZEST_CONTEXT("byte {}", at);
+            auto broken = text;
+            broken[at] = '\xFF';
+            ZEXPECT(!is_utf8(broken));
+            if(at + 1 < size) {
+                auto accented = text;
+                accented.replace(at, 2, "\xC3\xA9");
+                ZEXPECT(is_utf8(accented));
+            }
+        }
+    }
 }
 
 ZEST_CASE(replacement_takes_each_maximal_subpart) {

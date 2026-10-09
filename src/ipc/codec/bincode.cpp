@@ -2,10 +2,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
+#include <vector>
 
 namespace kota::ipc {
 
@@ -55,7 +58,56 @@ struct error_head {
 
 using envelope_head = std::variant<request_head, notification_head, success_head, error_head>;
 
+// The envelopes as far as the params or result they end with, which a
+// message appends to them as it is; in bincode_envelope's order, whose
+// alternative index they write.
+
+struct request_prefix {
+    protocol::RequestID id;
+    std::string_view method;
+};
+
+struct notification_prefix {
+    std::string_view method;
+};
+
+struct success_prefix {
+    protocol::RequestID id;
+};
+
+using envelope_prefix = std::variant<request_prefix, notification_prefix, success_prefix>;
+
+/// A message: prefix, then raw, the params or result, copied once into a
+/// message sized for it.
+std::expected<std::string, codec::rich_error> message(const envelope_prefix& prefix,
+                                                      std::string_view raw) {
+    codec::rich_error error;
+    codec::scoped_context<codec::rich_error> guard(error);
+    std::vector<std::byte> head;
+    codec::bincode::Writer writer{head};
+    if(!codec::encode_value<codec::default_config<>>(writer, prefix)) {
+        return std::unexpected(std::move(error));
+    }
+    writer.write_length(raw.size());
+    std::string text;
+    text.reserve(writer.size + raw.size());
+    text.append(reinterpret_cast<const char*>(head.data()), writer.size);
+    text.append(raw);
+    return text;
+}
+
 }  // namespace
+
+Error BincodeCodec::codec_error(protocol::ErrorCode code, const codec::rich_error& error) {
+    return Error(code, error.to_string());
+}
+
+Result<std::string> BincodeCodec::encoded(std::expected<std::string, codec::rich_error> text) {
+    if(!text) {
+        return outcome_error(codec_error(protocol::ErrorCode::InternalError, text.error()));
+    }
+    return std::move(*text);
+}
 
 IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
     auto bytes_span = std::span<const std::byte>(reinterpret_cast<const std::byte*>(payload.data()),
@@ -66,7 +118,7 @@ IncomingMessage BincodeCodec::parse_message(std::string_view payload) {
     if(!status) {
         return IncomingParseError{
             .id = std::nullopt,
-            .error = Error(protocol::ErrorCode::ParseError, status.error().to_string()),
+            .error = codec_error(protocol::ErrorCode::ParseError, status.error()),
         };
     }
 
@@ -125,20 +177,17 @@ MessageHead BincodeCodec::peek(std::string_view prefix) {
 Result<std::string> BincodeCodec::encode_request(const protocol::RequestID& id,
                                                  std::string_view method,
                                                  std::string_view params) {
-    return serialize_value(bincode_envelope(
-        bincode_request{id, std::string(method), codec::RawValue{std::string(params)}}));
+    return encoded(message(request_prefix{.id = id, .method = method}, params));
 }
 
 Result<std::string> BincodeCodec::encode_notification(std::string_view method,
                                                       std::string_view params) {
-    return serialize_value(bincode_envelope(
-        bincode_notification{std::string(method), codec::RawValue{std::string(params)}}));
+    return encoded(message(notification_prefix{.method = method}, params));
 }
 
 Result<std::string> BincodeCodec::encode_success_response(const protocol::RequestID& id,
                                                           std::string_view result) {
-    return serialize_value(
-        bincode_envelope(bincode_success{id, codec::RawValue{std::string(result)}}));
+    return encoded(message(success_prefix{.id = id}, result));
 }
 
 Result<std::string>

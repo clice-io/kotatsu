@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <span>
 #include <string>
 
@@ -63,8 +64,7 @@ struct BincodeCodec {
     Result<std::string> serialize_value(const T& value) {
         auto bytes = codec::bincode::to_bytes(value);
         if(!bytes) {
-            return outcome_error(
-                Error(protocol::ErrorCode::InternalError, bytes.error().to_string()));
+            return outcome_error(codec_error(protocol::ErrorCode::InternalError, bytes.error()));
         }
         return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
     }
@@ -79,10 +79,17 @@ struct BincodeCodec {
         T value{};
         auto status = codec::bincode::from_bytes(bytes_span, value);
         if(!status) {
-            return outcome_error(Error(code, status.error().to_string()));
+            return outcome_error(codec_error(code, status.error()));
         }
         return value;
     }
+
+private:
+    /// The peer error that carries a codec failure's message.
+    static Error codec_error(protocol::ErrorCode code, const codec::rich_error& error);
+
+    /// text, a message, or the error that kept it from being encoded.
+    static Result<std::string> encoded(std::expected<std::string, codec::rich_error> text);
 };
 
 using BincodePeer = Peer<BincodeCodec>;

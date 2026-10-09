@@ -1,12 +1,16 @@
 #include "kota/codec/json/json.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <format>
+#include <initializer_list>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "kota/ipc/codec/json.h"
+#include "kota/ipc/framing.h"
 #include "kota/codec/macro.h"
 
 namespace kota::ipc {
@@ -23,29 +27,6 @@ namespace {
 /// levels; about 800 bytes optimized. This keeps twice the deepest real
 /// payload, and half a 1 MiB stack in a debug build.
 constexpr std::size_t max_nesting = 256;
-
-struct outgoing_request_message {
-    std::string jsonrpc = "2.0";
-    protocol::RequestID id;
-    std::string method;
-    /// Left out for a method that takes none.
-    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
-    <codec::RawValue> params;
-};
-
-struct outgoing_notification_message {
-    std::string jsonrpc = "2.0";
-    std::string method;
-    /// Left out for a method that takes none.
-    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
-    <codec::RawValue> params;
-};
-
-struct outgoing_success_response_message {
-    std::string jsonrpc = "2.0";
-    protocol::RequestID id;
-    codec::RawValue result;
-};
 
 struct outgoing_error_response_message {
     std::string jsonrpc = "2.0";
@@ -68,6 +49,28 @@ struct json_rpc_incoming {
     <codec::RawValue> result;
     std::optional<Error> error;
 };
+
+/// A message: head, its members up to the last, written by the codec, then
+/// the member `name` holding raw, JSON as it is, unless raw is empty. raw is
+/// copied once, into a message sized for it.
+std::string message(std::initializer_list<std::string_view> head,
+                    std::string_view name,
+                    std::string_view raw) {
+    std::size_t size = name.size() + raw.size() + 5;
+    for(auto part: head) {
+        size += part.size();
+    }
+    std::string text;
+    text.reserve(size);
+    for(auto part: head) {
+        text.append(part);
+    }
+    if(!raw.empty()) {
+        text.append(R"(,")").append(name).append(R"(":)").append(raw);
+    }
+    text.push_back('}');
+    return text;
+}
 
 /// The request id `raw`, an id member as written, holds: nothing for a null,
 /// or for a value that is neither an integer nor a string.
@@ -215,12 +218,29 @@ struct JSONChecker {
         return at > start;
     }
 
+    /// Passes the bytes of a string that need no look, eight at a time: no
+    /// quote, backslash or control character.
+    void skip_plain() {
+        std::uint64_t word;
+        while(text.size() - at >= sizeof(word)) {
+            std::memcpy(&word, text.data() + at, sizeof(word));
+            if(codec::json::detail::has_escaped_byte(word)) {
+                return;
+            }
+            at += sizeof(word);
+        }
+    }
+
     /// A string, its opening quote next.
     bool string() {
         if(!take('"')) {
             return false;
         }
-        while(!ended()) {
+        while(true) {
+            skip_plain();
+            if(ended()) {
+                return false;
+            }
             const auto c = static_cast<unsigned char>(text[at++]);
             if(c == '"') {
                 return true;
@@ -245,7 +265,6 @@ struct JSONChecker {
                 return false;
             }
         }
-        return false;
     }
 
     bool number() {
@@ -430,7 +449,30 @@ IncomingMessage read_malformed(std::string_view payload, std::string reason) {
 
 }  // namespace
 
-IncomingMessage JSONCodec::parse_message(std::string_view payload) {
+Error JSONCodec::codec_error(protocol::ErrorCode code, const codec::rich_error& error) {
+    return Error(code, error.to_string());
+}
+
+static_assert(payload_padding >= simdjson::SIMDJSON_PADDING,
+              "a payload has room for what simdjson reads past it");
+
+// The padding is written rather than left in the string's capacity
+// (simdjson's pad_with_reserve): bytes past its size are not the string's to
+// read, and are not even set.
+JSONCodec::Padded JSONCodec::pad(std::string& text) {
+    const auto size = text.size();
+    text.append(simdjson::SIMDJSON_PADDING, ' ');
+    return {.text = text, .size = size};
+}
+
+std::string JSONCodec::copy(std::string_view text) {
+    std::string copied;
+    copied.reserve(text.size() + simdjson::SIMDJSON_PADDING);
+    copied.assign(text);
+    return copied;
+}
+
+IncomingMessage JSONCodec::parse_message(std::string& payload) {
     // simdjson does not check the members it skips, so the grammar is checked
     // first, in a pass that also measures the nesting: text that is no JSON
     // is a parse error wherever it breaks.
@@ -446,7 +488,10 @@ IncomingMessage JSONCodec::parse_message(std::string_view payload) {
         return read_malformed(payload,
                               std::format("message nests deeper than {} levels", max_nesting));
     }
-    auto envelope = codec::json::from_string<json_rpc_incoming>(payload);
+    auto envelope = [&] {
+        auto padded = pad(payload);
+        return codec::json::from_padded_string<json_rpc_incoming>(padded.view());
+    }();
     if(!envelope) {
         return read_malformed(payload, envelope.error().to_string());
     }
@@ -523,27 +568,39 @@ MessageHead JSONCodec::peek(std::string_view prefix) {
 Result<std::string> JSONCodec::encode_request(const protocol::RequestID& id,
                                               std::string_view method,
                                               std::string_view params) {
-    return serialize_value(outgoing_request_message{
-        .id = id,
-        .method = std::string(method),
-        .params = {codec::RawValue{std::string(params)}},
-    });
+    auto id_text = serialize_value(id);
+    if(!id_text) {
+        return id_text;
+    }
+    auto method_text = serialize_value(method);
+    if(!method_text) {
+        return method_text;
+    }
+    return message({R"({"jsonrpc":"2.0","id":)", *id_text, R"(,"method":)", *method_text},
+                   "params",
+                   params);
 }
 
 Result<std::string> JSONCodec::encode_notification(std::string_view method,
                                                    std::string_view params) {
-    return serialize_value(outgoing_notification_message{
-        .method = std::string(method),
-        .params = {codec::RawValue{std::string(params)}},
-    });
+    auto method_text = serialize_value(method);
+    if(!method_text) {
+        return method_text;
+    }
+    return message({R"({"jsonrpc":"2.0","method":)", *method_text}, "params", params);
 }
 
 Result<std::string> JSONCodec::encode_success_response(const protocol::RequestID& id,
                                                        std::string_view result) {
-    return serialize_value(outgoing_success_response_message{
-        .id = id,
-        .result = codec::RawValue{std::string(result)},
-    });
+    auto id_text = serialize_value(id);
+    if(!id_text) {
+        return id_text;
+    }
+    // An empty result, which no JSON is, is the null of a method that
+    // returns nothing.
+    return message({R"({"jsonrpc":"2.0","id":)", *id_text},
+                   "result",
+                   result.empty() ? std::string_view("null") : result);
 }
 
 Result<std::string> JSONCodec::encode_error_response(const std::optional<protocol::RequestID>& id,

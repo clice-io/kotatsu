@@ -75,6 +75,55 @@ ZEST_CASE(malformed_document_fails) {
     ZEXPECT(zest::starts_with(status.error().message, "TAPE_ERROR"));
 }
 
+ZEST_CASE(member_that_cannot_be_read_fails) {
+    test::Point out{};
+    auto status = json::from_string(R"({"x":1 "y":2})", out);
+    ZASSERT(!status);
+    ZEXPECT(zest::starts_with(status.error().message, "TAPE_ERROR"));
+}
+
+ZEST_CASE(padded_text_decodes_whatever_its_padding_holds) {
+    // What lies in the padding is not read as the text, whatever it is.
+    std::string text = R"({"x":1,"y":2})";
+    const auto size = text.size();
+    text.append(simdjson::SIMDJSON_PADDING, '}');
+    const json::padded_string_view padded(text.data(), size, text.size());
+    test::Point out{};
+    ZASSERT(json::from_padded_string(padded, out));
+    ZEXPECT(out.x == 1);
+    ZEXPECT(out.y == 2);
+    auto value = json::from_padded_string<test::Point>(padded);
+    ZASSERT(value);
+    ZEXPECT(value->y == 2);
+}
+
+ZEST_CASE(padded_text_without_its_padding_fails) {
+    std::string text = "[1,2]";
+    std::vector<int> out;
+    auto status =
+        json::from_padded_string(json::padded_string_view(text.data(), text.size(), text.size()),
+                                 out);
+    ZASSERT(!status);
+    ZEXPECT(status.error().message ==
+            simdjson::error_message(simdjson::error_code::INSUFFICIENT_PADDING));
+}
+
+ZEST_CASE(padded_text_locates_a_failure) {
+    std::string text = R"({
+  "name": "alice",
+  "age": "not_a_number"
+})";
+    const auto size = text.size();
+    text.append(simdjson::SIMDJSON_PADDING, ' ');
+    test::Person out{};
+    auto status =
+        json::from_padded_string(json::padded_string_view(text.data(), size, text.size()), out);
+    ZASSERT(!status);
+    ZASSERT(status.error().location);
+    ZEXPECT(status.error().location->line == 3U);
+    ZEXPECT(status.error().location->column == 10U);
+}
+
 ZEST_CASE(empty_document_fails) {
     // Rejected before any reading starts, so there is no location.
     std::vector<int> out;

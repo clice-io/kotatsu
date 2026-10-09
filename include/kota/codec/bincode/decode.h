@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <bit>
 #include <cassert>
 #include <concepts>
@@ -13,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "kota/support/expected_try.h"
@@ -32,6 +34,7 @@ constexpr inline std::string_view unexpected_eof = "unexpected eof";
 constexpr inline std::string_view type_mismatch = "type mismatch";
 constexpr inline std::string_view number_out_of_range = "number out of range";
 constexpr inline std::string_view trailing_bytes = "trailing bytes";
+constexpr inline std::string_view invalid_length = "invalid length";
 
 }  // namespace detail
 
@@ -44,6 +47,10 @@ struct SeqAccess {
 
     bool has_element();
 
+    /// How many elements to make room for: the count, cut to the bytes left
+    /// (see Reader::size_hint).
+    std::size_t size_hint() const;
+
     template <typename F>
     bool visit_element(F&& f);
 };
@@ -55,17 +62,21 @@ struct MapAccess {
 
     bool has_entry();
 
+    /// As SeqAccess::size_hint, for entries.
+    std::size_t size_hint() const;
+
     template <typename KF, typename VF>
     bool visit_entry(KF&& key_reader, VF&& value_reader);
 };
 
-/// Mirror of Writer: consumes `data` front to back in bincode's fixed
-/// little-endian layout, failing with "unexpected eof", "type mismatch" or
-/// "number out of range" through the scoped error context. Every read is
-/// length-checked via check_remaining before touching the buffer; integers
-/// are read at their widened 8-byte size and narrowed back into the target
-/// type with a range check. from_bytes additionally rejects buffers with
-/// bytes left over after the root value ("trailing bytes").
+/// Mirror of Writer: consumes `data` front to back in bincode's
+/// little-endian layout, failing with "unexpected eof", "type mismatch",
+/// "number out of range" or "invalid length" through the scoped error
+/// context. Every read is length-checked via check_remaining before touching
+/// the buffer; integers are read at their widened 8-byte size and narrowed
+/// back into the target type with a range check. from_bytes additionally
+/// rejects buffers with bytes left over after the root value ("trailing
+/// bytes").
 struct Reader {
     std::span<const std::byte> data;
     std::size_t pos = 0;
@@ -101,6 +112,23 @@ struct Reader {
         } else {
             return static_cast<T>(raw);
         }
+    }
+
+    /// A length or an element count, as Writer::write_length writes it.
+    bool read_length(std::uint64_t& out) {
+        KOTA_CODEC_TRY(check_remaining(1));
+        auto marker = read_u8();
+        using enum detail::LengthMarker;
+        if(marker < std::to_underlying(U16)) {
+            out = marker;
+            return true;
+        }
+        switch(static_cast<detail::LengthMarker>(marker)) {
+            case U16: return read_wide<std::uint16_t>(out);
+            case U32: return read_wide<std::uint32_t>(out);
+            case U64: return read_wide<std::uint64_t>(out);
+        }
+        return fail(detail::invalid_length);
     }
 
     bool visit_bool(bool& out) {
@@ -144,12 +172,18 @@ struct Reader {
 
     template <typename T>
     bool visit_str(T& out) {
-        KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
-        auto length = read_le<std::uint64_t>();
+        std::uint64_t length = 0;
+        KOTA_CODEC_TRY(read_length(length));
         KOTA_CODEC_TRY(check_remaining(length));
         auto len = static_cast<std::size_t>(length);
         const auto* begin = reinterpret_cast<const char*>(data.data() + pos);
-        out = T(begin, begin + len);
+        // assign writes into the string's own buffer, where a new string
+        // would allocate one.
+        if constexpr(requires { out.assign(begin, len); }) {
+            out.assign(begin, len);
+        } else {
+            out = T(begin, begin + len);
+        }
         pos += len;
         return true;
     }
@@ -163,8 +197,8 @@ struct Reader {
 
     template <typename T>
     bool visit_bytes(T& out) {
-        KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
-        auto length = read_le<std::uint64_t>();
+        std::uint64_t length = 0;
+        KOTA_CODEC_TRY(read_length(length));
         KOTA_CODEC_TRY(check_remaining(length));
         auto len = static_cast<std::size_t>(length);
         using value_type = typename T::value_type;
@@ -208,8 +242,8 @@ struct Reader {
 
     template <typename T, typename Body>
     bool visit_seq(T&, Body&& body) {
-        KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
-        auto count = read_le<std::uint64_t>();
+        std::uint64_t count = 0;
+        KOTA_CODEC_TRY(read_length(count));
         SeqAccess ctx{*this, count};
         return body(ctx);
     }
@@ -226,8 +260,8 @@ struct Reader {
 
     template <typename T, typename Body>
     bool visit_map(T&, Body&& body) {
-        KOTA_CODEC_TRY(check_remaining(sizeof(std::uint64_t)));
-        auto count = read_le<std::uint64_t>();
+        std::uint64_t count = 0;
+        KOTA_CODEC_TRY(read_length(count));
         MapAccess ctx{*this, count};
         return body(ctx);
     }
@@ -239,7 +273,22 @@ struct Reader {
         return body(static_cast<std::size_t>(index), *this);
     }
 
+    /// How many of `count` elements to make room for before reading them:
+    /// no more than the bytes left, so that a count the input forged makes
+    /// room for no more elements than it has bytes. Zero-width elements
+    /// take none, but making room for them costs nothing.
+    std::size_t size_hint(std::uint64_t count) const {
+        return static_cast<std::size_t>(std::min<std::uint64_t>(count, data.size() - pos));
+    }
+
 private:
+    template <typename Wide>
+    bool read_wide(std::uint64_t& out) {
+        KOTA_CODEC_TRY(check_remaining(sizeof(Wide)));
+        out = read_le<Wide>();
+        return true;
+    }
+
     static bool fail(std::string_view message) {
         return scoped_context<rich_error>::fail(rich_error(std::string(message)));
     }
@@ -247,6 +296,10 @@ private:
 
 inline bool SeqAccess::has_element() {
     return idx < count;
+}
+
+inline std::size_t SeqAccess::size_hint() const {
+    return r.size_hint(count);
 }
 
 template <typename F>
@@ -258,6 +311,10 @@ bool SeqAccess::visit_element(F&& f) {
 
 inline bool MapAccess::has_entry() {
     return idx < count;
+}
+
+inline std::size_t MapAccess::size_hint() const {
+    return r.size_hint(count);
 }
 
 template <typename KF, typename VF>
@@ -392,11 +449,11 @@ private:
             case dyn::ValueKind::floating: return read_as<double>(vis, out);
             case dyn::ValueKind::string: return read_as<std::string>(vis, out);
             case dyn::ValueKind::array:
-                KOTA_CODEC_TRY(decode_value<Config>(vis, children));
+                KOTA_CODEC_TRY(vis.read_length(children));
                 out = dyn::Value(dyn::Array{});
                 return true;
             case dyn::ValueKind::object:
-                KOTA_CODEC_TRY(decode_value<Config>(vis, children));
+                KOTA_CODEC_TRY(vis.read_length(children));
                 out = dyn::Value(dyn::Object{});
                 return true;
             default:

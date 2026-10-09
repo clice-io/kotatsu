@@ -93,7 +93,7 @@ ZEST_CASE(params_that_do_not_decode_are_a_warning) {
 
     auto [ran] = run(peer.run());
     ZEXPECT(ran.has_value());
-    ZEXPECT(has(LogLevel::warn, "notification params deserialization failed"));
+    ZEXPECT(has(LogLevel::warn, "notification 'test/note' params deserialization failed"));
     ZEXPECT(has(LogLevel::warn, "request 'test/add' params deserialization failed"));
 }
 

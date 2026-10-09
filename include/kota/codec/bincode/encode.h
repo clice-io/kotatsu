@@ -1,17 +1,22 @@
 #pragma once
 
+#include <algorithm>
 #include <bit>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <expected>
 #include <iterator>
+#include <limits>
 #include <ranges>
 #include <span>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
+#include "kota/support/config.h"
 #include "kota/support/expected_try.h"
 #include "kota/codec/bincode/type.h"
 #include "kota/codec/dyn/document.h"
@@ -20,40 +25,76 @@
 
 namespace kota::codec::bincode {
 
-/// Streams values into `buf` in bincode's fixed little-endian layout (see
-/// the `# Lowerings` table on bincode::format in type.h). Everything is
-/// widened before writing — ints to int64/uint64, floats to double — so a
-/// value's encoded size never depends on its declared width; Reader narrows
-/// back with range checks. Containers write only a u64 element count and
-/// structs write nothing at all, which is what makes the format
-/// non-self-describing.
+/// Streams values onto the end of `buf` in bincode's little-endian layout
+/// (see the `# Lowerings` table on bincode::format in type.h). Every value
+/// that is a number is widened before writing — ints to int64/uint64, floats
+/// to double — so a value's encoded size never depends on its declared
+/// width; Reader narrows back with range checks. Containers write only their
+/// element count and structs write nothing at all, which is what makes the
+/// format non-self-describing.
 struct Writer {
     std::vector<std::byte>& buf;
+    /// The end of what is written: buf grows ahead of it, its bytes past it
+    /// zero, and to_bytes cuts it back to it.
+    std::size_t size = buf.size();
     using format = bincode::format;
     constexpr static bool human_readable = false;
     /// Struct fields are concatenated with no marker, so skip_if never omits
     /// one: decode reads every field in order.
     constexpr static bool writes_every_field = true;
 
+    /// Where the next n bytes go.
+    std::byte* claim(std::size_t n) {
+        if(buf.size() - size < n) [[unlikely]] {
+            grow(n);
+        }
+        auto* at = buf.data() + size;
+        size += n;
+        return at;
+    }
+
+    KOTA_NOINLINE void grow(std::size_t n) {
+        buf.resize(std::max({buf.size() * 2, size + n, std::size_t{64}}));
+    }
+
     template <typename T>
         requires std::integral<T>
     void write_le(T value) {
-        using unsigned_t = std::make_unsigned_t<T>;
-        unsigned_t raw = static_cast<unsigned_t>(value);
-        for(std::size_t i = 0; i < sizeof(unsigned_t); ++i) {
-            auto byte = static_cast<std::uint8_t>((raw >> (i * 8)) & 0xFFU);
-            buf.push_back(static_cast<std::byte>(byte));
+        auto raw = static_cast<std::make_unsigned_t<T>>(value);
+        auto* at = claim(sizeof(raw));
+        for(std::size_t i = 0; i < sizeof(raw); ++i) {
+            at[i] = static_cast<std::byte>(raw >> (i * 8));
         }
     }
 
     void write_u8(std::uint8_t value) {
-        buf.push_back(static_cast<std::byte>(value));
+        *claim(1) = static_cast<std::byte>(value);
     }
 
-    /// A string or byte sequence: u64 length prefix, then the bytes.
+    /// A length or an element count, in as few bytes as detail::LengthMarker
+    /// lets it.
+    void write_length(std::uint64_t length) {
+        using enum detail::LengthMarker;
+        if(length < std::to_underlying(U16)) {
+            write_u8(static_cast<std::uint8_t>(length));
+        } else if(length <= std::numeric_limits<std::uint16_t>::max()) {
+            write_u8(std::to_underlying(U16));
+            write_le(static_cast<std::uint16_t>(length));
+        } else if(length <= std::numeric_limits<std::uint32_t>::max()) {
+            write_u8(std::to_underlying(U32));
+            write_le(static_cast<std::uint32_t>(length));
+        } else {
+            write_u8(std::to_underlying(U64));
+            write_le(length);
+        }
+    }
+
+    /// A string or byte sequence: its length, then the bytes.
     void write_blob(std::span<const std::byte> bytes) {
-        write_le(static_cast<std::uint64_t>(bytes.size()));
-        buf.insert(buf.end(), bytes.begin(), bytes.end());
+        write_length(bytes.size());
+        if(!bytes.empty()) {
+            std::memcpy(claim(bytes.size()), bytes.data(), bytes.size());
+        }
     }
 
     bool visit_bool(bool v) {
@@ -123,7 +164,7 @@ struct Writer {
 
     template <typename Container, typename Body>
     bool visit_seq(const Container& c, Body&& body) {
-        write_le(static_cast<std::uint64_t>(std::ranges::size(c)));
+        write_length(std::ranges::size(c));
         return body(*this);
     }
 
@@ -139,7 +180,7 @@ struct Writer {
 
     template <typename Container, typename Body>
     bool visit_map(const Container& c, Body&& body) {
-        write_le(static_cast<std::uint64_t>(std::ranges::size(c)));
+        write_length(std::ranges::size(c));
         return body(*this);
     }
 
@@ -163,6 +204,7 @@ auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, rich_erro
     std::vector<std::byte> buf;
     Writer vis{buf};
     KOTA_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
+    buf.resize(vis.size);
     return buf;
 }
 

@@ -86,6 +86,15 @@ ZEST_CASE(feed_stops_at_the_end_of_a_frame) {
     ZEXPECT(*second.frame == "b");
 }
 
+ZEST_CASE(payload_leaves_room_past_its_end) {
+    // A codec parsing the payload in place writes its parser's padding
+    // there without moving it.
+    auto payload = first_frame("Content-Length: 5\r\n\r\nhello");
+    ZASSERT(payload);
+    ZEXPECT(*payload == "hello");
+    ZEXPECT(payload->capacity() >= payload->size() + payload_padding);
+}
+
 ZEST_CASE(frames_read_whole_from_one_piece) {
     FrameParser parser;
     auto read = read_pieces(parser, {stream});
