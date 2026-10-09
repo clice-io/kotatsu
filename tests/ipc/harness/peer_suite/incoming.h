@@ -149,6 +149,33 @@ void peer_incoming(const PeerKit<A>& kit) {
         ZEXPECT(written[1].method == "test/note");
     });
 
+    // The handler leaves a callback registered on its request's token, which
+    // runs as the request's cancellation source goes, once it is answered.
+    kit.add("callback_left_on_the_token_runs_after_the_answer_is_queued", [](Fixture& f) {
+        cancellation_callback left;
+        bool listed_in_callback = true;
+        bool sent = false;
+        f.peer.on_request(
+            [&](Context& context, const AddParams& params) -> ipc::RequestResult<AddParams> {
+                left = context.cancellation.on_cancel([&] {
+                    listed_in_callback = !f.peer.incoming_requests().empty();
+                    sent = f.peer.send_notification(NoteParams{.text = "after"}).has_value();
+                });
+                co_return AddResult{.sum = params.a + params.b};
+            });
+        f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
+        f.remote.end_input();
+
+        auto [ran] = f.run(f.peer.run());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(!listed_in_callback);
+        ZEXPECT(sent);
+        const auto& written = f.written();
+        ZASSERT(written.size() == 2U);
+        ZEXPECT(sum_of<A>(written[0]) == 3);
+        ZEXPECT(written[1].method == "test/note");
+    });
+
     if constexpr(A::caps.string_ids) {
         kit.add("request_with_a_string_id_is_listed_with_it", [](Fixture& f) {
             Listed listed;

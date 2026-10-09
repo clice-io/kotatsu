@@ -690,8 +690,8 @@ struct Peer<CodecT>::Self {
                                        std::move(params),
                                        source->token()))) {
             // The handlers are being cancelled: run() is ending.
-            incoming_requests.erase(id);
             send_error(id, Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
+            incoming_requests.erase(id);
         }
     }
 
@@ -709,19 +709,17 @@ struct Peer<CodecT>::Self {
             guarded_result =
                 outcome_error(Error(protocol::ErrorCode::InternalError, "request handler threw"));
         }
-        incoming_requests.erase(id);
-
         if(guarded_result.is_cancelled()) {
             send_error(id, Error(protocol::ErrorCode::RequestCancelled, "request cancelled"));
-            co_return;
-        }
-
-        if(guarded_result.has_error()) {
+        } else if(guarded_result.has_error()) {
             send_error(id, guarded_result.error());
-            co_return;
+        } else {
+            send_answer(id, std::move(*guarded_result));
         }
-
-        send_answer(id, std::move(*guarded_result));
+        // Off the list once its answer is queued. Its source goes with the
+        // node, once the map is done with it: its end runs the callbacks
+        // still registered on the token, which find the request answered.
+        auto answered = incoming_requests.extract(id);
     }
 
     void dispatch_incoming_message(std::string payload, task_group<>& handlers) {
