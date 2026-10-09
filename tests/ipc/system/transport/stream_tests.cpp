@@ -259,6 +259,23 @@ ZEST_CASE(write_frames_the_payload) {
     ZEXPECT(*read == "Content-Length: 5\r\n\r\nhello");
 }
 
+ZEST_CASE(write_messages_frames_each_in_order) {
+    auto ends = pipe_ends(loop);
+    ZASSERT(ends.has_value());
+    StreamTransport transport(stream(std::move(ends->writer)));
+    const std::vector<std::string> payloads = {"first", "", std::string(100'000, 'x'), "last"};
+    auto send = [&]() -> task<void, Error> {
+        co_await transport.write_messages(payloads).or_fail();
+        transport.close();
+    };
+
+    auto [sent, read] = run(send(), ends->reader.read_to_end());
+    ZEXPECT(sent.has_value());
+    ZASSERT(read.has_value());
+    ZEXPECT(*read ==
+            frame(payloads[0]) + frame(payloads[1]) + frame(payloads[2]) + frame(payloads[3]));
+}
+
 // A pipe's read end is not writable, so the write fails without a signal.
 ZEST_CASE(write_to_the_read_end_fails) {
     auto ends = pipe_ends(loop);

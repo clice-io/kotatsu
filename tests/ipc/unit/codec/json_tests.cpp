@@ -2,7 +2,9 @@
 #include <format>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
+#include <vector>
 
 #include "ipc/harness/codec_json.h"
 #include "ipc/harness/codec_kit.h"
@@ -42,23 +44,23 @@ ZEST_CASE(encode_error_response_writes_the_data) {
     ZEXPECT(*message->error.data == data);
 }
 
-// Empty params, those of a method that takes none, leave the member out.
+// A method that takes no params leaves the member out.
 ZEST_CASE(encode_without_params_leaves_them_out) {
     JSONCodec codec;
-    auto request = codec.encode_request(1, "shutdown", "");
-    auto notification = codec.encode_notification("exit", "");
+    auto request = codec.encode_request(1, "shutdown");
+    auto notification = codec.encode_notification("exit");
     ZASSERT(request.has_value());
     ZASSERT(notification.has_value());
     ZEXPECT(*request == R"({"jsonrpc":"2.0","id":1,"method":"shutdown"})");
     ZEXPECT(*notification == R"({"jsonrpc":"2.0","method":"exit"})");
 }
 
-// The envelope is written around the params or result as they are.
+// The envelope is written around the params or result: a RawValue as it is.
 ZEST_CASE(encode_writes_the_members_in_order) {
     JSONCodec codec;
-    auto request = codec.encode_request(7, "test/add", R"({"a":1,"b":2})");
-    auto notification = codec.encode_notification("test/note", R"({"text":"hi"})");
-    auto response = codec.encode_success_response("r\"1", "[1,2]");
+    auto request = codec.encode_request(7, "test/add", test::AddParams{.a = 1, .b = 2});
+    auto notification = codec.encode_notification("test/note", codec::RawValue{R"({"text":"hi"})"});
+    auto response = codec.encode_success_response("r\"1", std::vector{1, 2});
     ZASSERT(request.has_value());
     ZASSERT(notification.has_value());
     ZASSERT(response.has_value());
@@ -70,23 +72,23 @@ ZEST_CASE(encode_writes_the_members_in_order) {
 // A method that returns nothing answers null.
 ZEST_CASE(encode_success_response_without_a_result_writes_null) {
     JSONCodec codec;
-    auto response = codec.encode_success_response(1, "");
+    auto response = codec.encode_success_response(1, codec::RawValue{});
     ZASSERT(response.has_value());
     ZEXPECT(*response == R"({"jsonrpc":"2.0","id":1,"result":null})");
 }
 
 ZEST_CASE(encode_escapes_the_method) {
     JSONCodec codec;
-    auto request = codec.encode_request(1, R"(say "\hi")", "");
+    auto request = codec.encode_request(1, R"(say "\hi")");
     ZASSERT(request.has_value());
     ZEXPECT(*request == R"({"jsonrpc":"2.0","id":1,"method":"say \"\\hi\""})");
 }
 
 ZEST_CASE(encode_with_text_that_is_no_utf8_fails) {
     JSONCodec codec;
-    auto request = codec.encode_request(1, "caf\xE9", "");
-    auto notification = codec.encode_notification("caf\xE9", "");
-    auto response = codec.encode_success_response("caf\xE9", "1");
+    auto request = codec.encode_request(1, "caf\xE9");
+    auto notification = codec.encode_notification("caf\xE9");
+    auto response = codec.encode_success_response("caf\xE9", 1);
     for(const auto* encoded: {&request, &notification, &response}) {
         ZASSERT(!encoded->has_value());
         ZEXPECT(code_of(encoded->error()) == ErrorCode::InternalError);
@@ -121,18 +123,25 @@ ZEST_CASE(parse_message_checks_a_string_byte_by_byte) {
     }
 }
 
-ZEST_CASE(parse_message_keeps_a_payload_with_room_in_place) {
+// The params stay where they came, and decode there: a payload with room
+// for the padding past them is neither copied nor grown.
+ZEST_CASE(params_decode_in_their_payload) {
     JSONCodec codec;
-    std::string payload = R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1}})";
+    std::string payload = R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":1,"b":2}})";
     payload.reserve(payload.size() + 64);
     const auto* data = payload.data();
     const auto capacity = payload.capacity();
-    const auto before = payload;
-    auto parsed = codec.parse_message(payload);
-    ZEXPECT(std::holds_alternative<IncomingRequest>(parsed));
-    ZEXPECT(payload == before);
-    ZEXPECT(static_cast<const void*>(payload.data()) == static_cast<const void*>(data));
-    ZEXPECT(payload.capacity() == capacity);
+    auto parsed = codec.parse_message(std::move(payload));
+    auto* request = std::get_if<IncomingRequest>(&parsed);
+    ZASSERT(request != nullptr);
+    ZEXPECT(request->params.text() == R"({"a":1,"b":2})");
+    auto params = codec.deserialize_value<test::AddParams>(request->params);
+    ZASSERT(params.has_value());
+    ZEXPECT(*params == test::AddParams{.a = 1, .b = 2});
+    ZEXPECT(request->params.text() == R"({"a":1,"b":2})");
+    ZEXPECT(static_cast<const void*>(request->params.payload.data()) ==
+            static_cast<const void*>(data));
+    ZEXPECT(request->params.payload.capacity() == capacity);
 }
 
 // JSON-RPC lets an error without data leave the member out.
@@ -173,7 +182,7 @@ ZEST_CASE(request_without_params_reads_empty_params) {
     const auto* request = std::get_if<IncomingRequest>(&parsed);
     ZASSERT(request != nullptr);
     ZEXPECT(request->method == "test/noparams");
-    ZEXPECT(request->params.empty());
+    ZEXPECT(request->params.text().empty());
 }
 
 // shutdown and exit take no params; clients send them as null, or not at all.
@@ -181,9 +190,9 @@ ZEST_CASE(null_params_read_as_no_params) {
     JSONCodec codec;
     auto parsed =
         codec.parse_message(R"({"jsonrpc":"2.0","id":1,"method":"shutdown","params":null})");
-    const auto* request = std::get_if<IncomingRequest>(&parsed);
+    auto* request = std::get_if<IncomingRequest>(&parsed);
     ZASSERT(request != nullptr);
-    ZEXPECT(request->params.empty());
+    ZEXPECT(request->params.text().empty());
     ZEXPECT(codec.deserialize_value<test::EmptyParams>(request->params).has_value());
 }
 
@@ -192,7 +201,7 @@ ZEST_CASE(null_result_is_a_result) {
     auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":3,"result":null})");
     const auto* response = std::get_if<IncomingResponse>(&parsed);
     ZASSERT(response != nullptr);
-    ZEXPECT(response->result == "null");
+    ZEXPECT(response->result.text() == "null");
 }
 
 ZEST_CASE(response_with_both_result_and_error_is_an_invalid_response) {
@@ -250,7 +259,7 @@ ZEST_CASE(json_that_is_no_message_is_an_invalid_request) {
             R"({"jsonrpc":"2.0","method":5})",
         }) {
         ZEST_CONTEXT("payload: {}", payload);
-        auto parsed = codec.parse_message(payload);
+        auto parsed = codec.parse_message(std::string(payload));
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
         ZASSERT(failure != nullptr);
         ZEXPECT(!failure->id.has_value());
@@ -268,7 +277,7 @@ ZEST_CASE(json_with_numbers_past_64_bits_is_an_invalid_request) {
             R"({"jsonrpc":"2.0","method":99999999999999999999999})",
         }) {
         ZEST_CONTEXT("payload: {}", payload);
-        auto parsed = codec.parse_message(payload);
+        auto parsed = codec.parse_message(std::string(payload));
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
         ZASSERT(failure != nullptr);
         ZEXPECT(!failure->id.has_value());
@@ -299,7 +308,7 @@ ZEST_CASE(text_that_is_no_json_is_a_parse_error) {
             "[[]",
         }) {
         ZEST_CONTEXT("payload: {}", payload);
-        auto parsed = codec.parse_message(payload);
+        auto parsed = codec.parse_message(std::string(payload));
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
         ZASSERT(failure != nullptr);
         ZEXPECT(!failure->id.has_value());
@@ -323,7 +332,7 @@ ZEST_CASE(response_with_a_malformed_error_keeps_its_id) {
             R"({"jsonrpc":"2.0","id":1,"error":"x"})",
         }) {
         ZEST_CONTEXT("payload: {}", payload);
-        auto parsed = codec.parse_message(payload);
+        auto parsed = codec.parse_message(std::string(payload));
         const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
         ZASSERT(response != nullptr);
         ZEXPECT(response->id == protocol::RequestID(1));
@@ -340,7 +349,7 @@ ZEST_CASE(request_without_jsonrpc_2_0_is_an_invalid_request) {
             R"({"jsonrpc":2,"id":5,"method":"test/echo","params":[]})",
         }) {
         ZEST_CONTEXT("payload: {}", payload);
-        auto parsed = codec.parse_message(payload);
+        auto parsed = codec.parse_message(std::string(payload));
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
         ZASSERT(failure != nullptr);
         ZEXPECT(!failure->notification);
@@ -357,7 +366,7 @@ ZEST_CASE(notification_without_jsonrpc_2_0_is_never_answered) {
             R"({"jsonrpc":2,"method":"test/note","params":{}})",
         }) {
         ZEST_CONTEXT("payload: {}", payload);
-        auto parsed = codec.parse_message(payload);
+        auto parsed = codec.parse_message(std::string(payload));
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
         ZASSERT(failure != nullptr);
         ZEXPECT(failure->notification);
@@ -382,7 +391,7 @@ ZEST_CASE(error_without_its_code_or_message_fails_its_request) {
             R"({"jsonrpc":"2.0","id":1,"error":{"code":-32000}})",
         }) {
         ZEST_CONTEXT("payload: {}", payload);
-        auto parsed = codec.parse_message(payload);
+        auto parsed = codec.parse_message(std::string(payload));
         const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
         ZASSERT(response != nullptr);
         ZEXPECT(response->id == protocol::RequestID(1));
@@ -474,7 +483,7 @@ ZEST_CASE(malformed_request_objects_are_answered) {
     for(auto head: {R"("id":true,"method":"test/echo")", R"("method":5)"}) {
         auto payload = std::format(R"({{"jsonrpc":"2.0",{},"params":{}}})", head, deep);
         ZEST_CONTEXT("head: {}", head);
-        auto parsed = codec.parse_message(payload);
+        auto parsed = codec.parse_message(std::string(payload));
         const auto* failure = std::get_if<IncomingParseError>(&parsed);
         ZASSERT(failure != nullptr);
         ZEXPECT(!failure->notification);
@@ -502,6 +511,55 @@ ZEST_CASE(brackets_inside_strings_do_not_nest) {
                     std::string(1000, '['),
                     std::string(1000, '{')));
     ZEXPECT(std::holds_alternative<IncomingRequest>(parsed));
+}
+
+// The params read are the root object's, its last of that name, with their
+// text as sent; the envelope reads them as their member's name says, escaped
+// or not, wherever they stand.
+ZEST_CASE(params_are_the_root_objects_last_params) {
+    JSONCodec codec;
+    for(auto [payload, params]: {
+            std::pair{R"({"jsonrpc":"2.0","id":1,"method":"m","params": {"params":[1]} })",
+                      R"({"params":[1]})"                                                           },
+            std::pair{R"({"params":[1],"jsonrpc":"2.0","id":1,"method":"m","params":"two"})",
+                      R"("two")"                                                                    },
+            std::pair{R"({"jsonrpc":"2.0","id":1,"p\u0061rams":3,"method":"m"})",                "3"},
+            std::pair{R"({"jsonrpc":"2.0","id":1,"method":"m","params":{"a":1},"params":null})",
+                      ""                                                                            },
+    }) {
+        ZEST_CONTEXT("payload: {}", payload);
+        auto parsed = codec.parse_message(payload);
+        const auto* request = std::get_if<IncomingRequest>(&parsed);
+        ZASSERT(request != nullptr);
+        ZEXPECT(request->params.text() == params);
+    }
+}
+
+ZEST_CASE(result_is_the_root_objects_last_result) {
+    JSONCodec codec;
+    for(auto [payload, result]: {
+            std::pair{R"({"jsonrpc":"2.0","id":1,"result": [1, {"result":2}] })",
+                      R"([1, {"result":2}])"                                            },
+            std::pair{R"({"result":1,"jsonrpc":"2.0","result":null,"id":1})",     "null"},
+    }) {
+        ZEST_CONTEXT("payload: {}", payload);
+        auto parsed = codec.parse_message(payload);
+        const auto* response = std::get_if<IncomingResponse>(&parsed);
+        ZASSERT(response != nullptr);
+        ZEXPECT(response->result.text() == result);
+    }
+}
+
+// A member the envelope cannot read is reported where it stands in the
+// message as sent: on the line after the one the params break.
+ZEST_CASE(malformed_member_past_the_params_is_located_as_sent) {
+    JSONCodec codec;
+    auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","id":1,"params":{"a":
+[1,2,3]},"method":7})");
+    const auto* failure = std::get_if<IncomingParseError>(&parsed);
+    ZASSERT(failure != nullptr);
+    ZEXPECT(code_of(failure->error) == ErrorCode::InvalidRequest);
+    ZEXPECT(zest::contains(failure->error.message, "line 2"));
 }
 
 };  // ZEST_SUITE(ipc_codec_json)

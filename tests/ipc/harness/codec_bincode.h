@@ -20,23 +20,21 @@
 namespace kota::test {
 
 // Mirrors of BincodeCodec's envelopes: an envelope is the index of its
-// alternative, then its fields in order, with an id as an int64, a params or
-// result blob as length-prefixed bytes, and error data as a dynamic value.
+// alternative, then its fields in order, with an id as an int64 and error
+// data as a dynamic value. A request's or notification's params, or a
+// result, follow as the rest of the message.
 
 struct BincodeRequest {
     std::int64_t id = 0;
     std::string method;
-    codec::RawValue params;
 };
 
 struct BincodeNotification {
     std::string method;
-    codec::RawValue params;
 };
 
 struct BincodeResult {
     std::int64_t id = 0;
-    codec::RawValue result;
 };
 
 struct BincodeError {
@@ -82,24 +80,20 @@ struct BincodeAdapter {
                                    std::string_view method,
                                    std::string_view params) {
         return encode(BincodeEnvelope(BincodeRequest{
-            .id = std::get<std::int64_t>(id),
-            .method = std::string(method),
-            .params = {std::string(params)},
-        }));
+                   .id = std::get<std::int64_t>(id),
+                   .method = std::string(method),
+               })) +
+               std::string(params);
     }
 
     static std::string notification_raw(std::string_view method, std::string_view params) {
-        return encode(BincodeEnvelope(BincodeNotification{
-            .method = std::string(method),
-            .params = {std::string(params)},
-        }));
+        return encode(BincodeEnvelope(BincodeNotification{.method = std::string(method)})) +
+               std::string(params);
     }
 
     static std::string response_raw(const RequestID& id, std::string_view result) {
-        return encode(BincodeEnvelope(BincodeResult{
-            .id = std::get<std::int64_t>(id),
-            .result = {std::string(result)},
-        }));
+        return encode(BincodeEnvelope(BincodeResult{.id = std::get<std::int64_t>(id)})) +
+               std::string(result);
     }
 
     static std::string error_response(const std::optional<RequestID>& id, const ipc::Error& error) {
@@ -116,27 +110,34 @@ struct BincodeAdapter {
     }
 
     static std::expected<Message, std::string> read(std::string_view payload) {
+        codec::rich_error error;
+        codec::scoped_context<codec::rich_error> guard(error);
+        codec::bincode::Reader reader{as_bytes(payload)};
         BincodeEnvelope envelope;
-        if(auto status = codec::bincode::from_bytes(as_bytes(payload), envelope); !status) {
-            return std::unexpected("not an envelope: " + status.error().to_string());
+        if(!codec::decode_value<codec::default_config<>>(reader, envelope)) {
+            return std::unexpected("not an envelope: " + error.to_string());
+        }
+        const auto rest = std::string(payload.substr(reader.pos));
+        if(std::holds_alternative<BincodeError>(envelope) && !rest.empty()) {
+            return std::unexpected("an error followed by more bytes");
         }
         return std::visit(
-            [](auto& alternative) {
+            [&](auto& alternative) {
                 using T = std::remove_cvref_t<decltype(alternative)>;
                 Message message;
                 if constexpr(std::is_same_v<T, BincodeRequest>) {
                     message.kind = Message::Kind::Request;
                     message.id = RequestID(alternative.id);
                     message.method = std::move(alternative.method);
-                    message.body = std::move(alternative.params.data);
+                    message.body = rest;
                 } else if constexpr(std::is_same_v<T, BincodeNotification>) {
                     message.kind = Message::Kind::Notification;
                     message.method = std::move(alternative.method);
-                    message.body = std::move(alternative.params.data);
+                    message.body = rest;
                 } else if constexpr(std::is_same_v<T, BincodeResult>) {
                     message.kind = Message::Kind::Result;
                     message.id = RequestID(alternative.id);
-                    message.body = std::move(alternative.result.data);
+                    message.body = rest;
                 } else {
                     message.kind = Message::Kind::Error;
                     if(alternative.id) {

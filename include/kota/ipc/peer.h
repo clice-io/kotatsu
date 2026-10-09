@@ -160,9 +160,10 @@ public:
     void on_notification(std::string_view method, Callback&& callback);
 
 private:
-    task<std::string, Error> send_request_impl(std::string_view method,
-                                               std::string params,
-                                               request_options opts);
+    /// Sends `request`, encoded as `id`, and waits for its answer.
+    task<PayloadSlice, Error> send_request_impl(protocol::RequestID id,
+                                                std::string request,
+                                                request_options opts);
 
     /// Register a callback whose signature the caller has checked.
     template <typename Callback>

@@ -68,9 +68,9 @@ const std::vector<std::string> stream_frames{"hello", "", "abc", "x\r\n\r\ny"};
 
 ZEST_SUITE(ipc_framing) {
 
-ZEST_CASE(frame_writes_a_content_length_header) {
-    ZEXPECT(frame("hello") == "Content-Length: 5\r\n\r\nhello");
-    ZEXPECT(frame("") == "Content-Length: 0\r\n\r\n");
+ZEST_CASE(frame_header_names_the_content_length) {
+    ZEXPECT(frame_header(5) == "Content-Length: 5\r\n\r\n");
+    ZEXPECT(frame_header(0) == "Content-Length: 0\r\n\r\n");
 }
 
 ZEST_CASE(feed_stops_at_the_end_of_a_frame) {
@@ -212,7 +212,7 @@ ZEST_CASE(oversized_frame_is_skipped_and_reading_goes_on) {
 ZEST_CASE(oversized_frame_keeps_its_size_and_first_bytes) {
     std::string payload(2 * skipped_prefix_size, 'x');
     payload[0] = '{';
-    auto read = first_frame(frame(payload), 16);
+    auto read = first_frame(frame_header(payload.size()) + payload, 16);
     ZASSERT(!read.has_value());
     ZEXPECT(read.error().kind == ReadError::Kind::Oversized);
     ZEXPECT(read.error().size == payload.size());

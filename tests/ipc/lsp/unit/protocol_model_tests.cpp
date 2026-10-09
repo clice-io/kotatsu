@@ -224,13 +224,13 @@ ZEST_CASE(parameterless_methods_read_null_params) {
             R"({"jsonrpc":"2.0","id":1,"method":"shutdown"})",
         }) {
         ZEST_CONTEXT("payload: {}", payload);
-        auto parsed = codec.parse_message(payload);
-        const auto* request = std::get_if<IncomingRequest>(&parsed);
+        auto parsed = codec.parse_message(std::string(payload));
+        auto* request = std::get_if<IncomingRequest>(&parsed);
         ZASSERT(request != nullptr);
         ZEXPECT(codec.deserialize_value<protocol::ShutdownParams>(request->params).has_value());
     }
     auto parsed = codec.parse_message(R"({"jsonrpc":"2.0","method":"exit","params":null})");
-    const auto* notification = std::get_if<IncomingNotification>(&parsed);
+    auto* notification = std::get_if<IncomingNotification>(&parsed);
     ZASSERT(notification != nullptr);
     ZEXPECT(codec.deserialize_value<protocol::ExitParams>(notification->params).has_value());
 }
@@ -296,7 +296,7 @@ ZEST_CASE(nesting_of_real_payloads_is_read) {
     chain += std::string(125, '}');
     auto parsed =
         codec.parse_message(std::format(R"({{"jsonrpc":"2.0","id":1,"result":[{}]}})", chain));
-    const auto* response = std::get_if<IncomingResponse>(&parsed);
+    auto* response = std::get_if<IncomingResponse>(&parsed);
     ZASSERT(response != nullptr);
     auto ranges = codec.deserialize_value<std::vector<protocol::SelectionRange>>(response->result);
     ZASSERT(ranges.has_value());

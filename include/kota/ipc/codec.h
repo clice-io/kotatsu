@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 
 #include "kota/ipc/protocol.h"
@@ -21,21 +23,35 @@ struct lsp_config {
 template <typename T>
 using Result = outcome<T, Error>;
 
-/// Typed incoming message alternatives (codec-agnostic).
+/// The params or result of a message as it came in: `size` bytes from
+/// `offset` in the payload, which it keeps rather than a copy of them. The
+/// codec decodes it in place, writing over what follows it in the payload.
+struct PayloadSlice {
+    std::string payload;
+    std::size_t offset = 0;
+    std::size_t size = 0;
+
+    std::string_view text() const {
+        return std::string_view(payload).substr(offset, size);
+    }
+};
+
+/// Typed incoming message alternatives (codec-agnostic). Empty params are
+/// those of a method that takes none.
 struct IncomingRequest {
     protocol::RequestID id;
     std::string method;
-    std::string params;
+    PayloadSlice params;
 };
 
 struct IncomingNotification {
     std::string method;
-    std::string params;
+    PayloadSlice params;
 };
 
 struct IncomingResponse {
     protocol::RequestID id;
-    std::string result;
+    PayloadSlice result;
 };
 
 struct IncomingErrorResponse {

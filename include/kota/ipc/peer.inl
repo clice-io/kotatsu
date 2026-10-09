@@ -9,7 +9,6 @@
 #include <chrono>
 #include <coroutine>
 #include <cstdint>
-#include <deque>
 #include <format>
 #include <functional>
 #include <map>
@@ -100,11 +99,12 @@ consteval void validate_notification_callback_signature() {
 
 template <typename CodecT>
 struct Peer<CodecT>::Self {
-    /// The params come as the codec read them from the message, in a string
-    /// the codec may decode them from in place.
+    /// The params come as the codec read them from the message, which it
+    /// decodes them from in place. A request's callback returns its answer,
+    /// encoded.
     using RequestCallback = std::function<
-        task<std::string, Error>(const protocol::RequestID&, std::string&, cancellation_token)>;
-    using NotificationCallback = std::function<void(std::string&)>;
+        task<std::string, Error>(const protocol::RequestID&, PayloadSlice&, cancellation_token)>;
+    using NotificationCallback = std::function<void(PayloadSlice&)>;
 
     using Clock = std::chrono::steady_clock;
 
@@ -121,7 +121,7 @@ struct Peer<CodecT>::Self {
         protocol::RequestID id;
         /// What settled it. Once set, nothing touches the Peer again, which
         /// may be gone by then.
-        std::optional<Result<std::string>> response;
+        std::optional<Result<PayloadSlice>> response;
         /// Its entry in `deadlines`, while it has one.
         std::optional<typename Deadlines::iterator> deadline;
         /// The remote was told that the request is no longer awaited.
@@ -176,7 +176,7 @@ struct Peer<CodecT>::Self {
     std::unique_ptr<Transport> transport;
     CodecT codec;
 
-    std::deque<std::string> outgoing_queue;
+    std::vector<std::string> outgoing_queue;
     std::int64_t next_request_id = 1;
 
     std::unordered_map<std::string, RequestCallback> request_callbacks;
@@ -222,15 +222,31 @@ struct Peer<CodecT>::Self {
         }
     }
 
-    /// What `params` is sent as: nothing at all, for the params of a method
-    /// that takes none.
-    template <template <typename> class Traits, typename Params>
-    Result<std::string> encode_params(const Params& params) {
-        if constexpr(detail::takes_no_params_v<Traits<Params>>) {
-            return std::string();
+    /// The request `method` with `params`, as `id`, encoded; one for a
+    /// method that takes no params carries none.
+    template <typename Params>
+    Result<std::string> encode_request(const protocol::RequestID& id,
+                                       std::string_view method,
+                                       const Params& params) {
+        if constexpr(detail::takes_no_params_v<protocol::RequestTraits<Params>>) {
+            return codec.encode_request(id, method);
         } else {
-            return codec.serialize_value(params);
+            return codec.encode_request(id, method, params);
         }
+    }
+
+    /// Why a request cannot be sent now, if it cannot.
+    std::optional<Error> refuse_request(const request_options& opts) const {
+        if(opts.timeout && *opts.timeout <= std::chrono::milliseconds::zero()) {
+            return Error(protocol::ErrorCode::RequestCancelled, "request timed out");
+        }
+        if(auto unsendable = this->unsendable(true)) {
+            return unsendable;
+        }
+        if(opts.token.cancelled()) {
+            return Error(protocol::ErrorCode::RequestCancelled, "request cancelled");
+        }
+        return std::nullopt;
     }
 
     /// Why a message cannot be sent now, if it cannot; a request also needs
@@ -285,9 +301,9 @@ struct Peer<CodecT>::Self {
                 continue;
             }
 
-            auto payload = std::move(outgoing_queue.front());
-            outgoing_queue.pop_front();
-            auto written = co_await transport->write_message(payload).catch_cancel();
+            // What is queued goes in one write.
+            auto batch = std::exchange(outgoing_queue, {});
+            auto written = co_await transport->write_messages(batch).catch_cancel();
             if(written.is_cancelled()) {
                 cancelled = true;
                 break;
@@ -390,7 +406,7 @@ struct Peer<CodecT>::Self {
         while(true) {
             auto message = co_await transport->read_message();
             if(message) {
-                dispatch_incoming_message(*message, handlers);
+                dispatch_incoming_message(std::move(*message), handlers);
             } else if(message.error().kind == ReadError::Kind::Oversized) {
                 skip_oversized(message.error());
             } else {
@@ -422,9 +438,9 @@ struct Peer<CodecT>::Self {
     /// A result as it came in, read as T. A RawValue takes it as it is, the
     /// way a handler's RawValue result is sent.
     template <typename T>
-    Result<T> read_result(std::string raw) {
+    Result<T> read_result(PayloadSlice& raw) {
         if constexpr(std::is_same_v<T, codec::RawValue>) {
-            return codec::RawValue{std::move(raw)};
+            return codec::RawValue{std::string(raw.text())};
         } else {
             return codec.template deserialize_value<T>(raw);
         }
@@ -470,13 +486,21 @@ struct Peer<CodecT>::Self {
         }
     }
 
-    /// Sends the notification `method` with `params`, encoded; one the remote
-    /// would not read fails unsent.
-    Result<void> send_notification(std::string_view method, std::string_view params) {
+    /// Sends the notification `method` with `params`; one the remote would
+    /// not read fails unsent, and one for a method that takes no params
+    /// carries none.
+    template <typename Params>
+    Result<void> send_notification(std::string_view method, const Params& params) {
         if(auto unsendable = this->unsendable(false)) {
             return outcome_error(std::move(*unsendable));
         }
-        auto notification = codec.encode_notification(method, params);
+        auto notification = [&] {
+            if constexpr(detail::takes_no_params_v<protocol::NotificationTraits<Params>>) {
+                return codec.encode_notification(method);
+            } else {
+                return codec.encode_notification(method, params);
+            }
+        }();
         if(!notification) {
             return outcome_error(notification.error());
         }
@@ -490,9 +514,7 @@ struct Peer<CodecT>::Self {
     /// Tells the remote that the request `id` is no longer awaited; false,
     /// and logged, when that cannot be sent.
     bool send_cancel_request(const protocol::RequestID& id) {
-        auto params = codec.serialize_value(protocol::CancelRequestParams{id});
-        auto sent = params ? send_notification("$/cancelRequest", *params)
-                           : outcome_error(params.error());
+        auto sent = send_notification("$/cancelRequest", protocol::CancelRequestParams{id});
         if(!sent) {
             log(LogLevel::error,
                 "$/cancelRequest for id={} not sent: {}",
@@ -518,7 +540,7 @@ struct Peer<CodecT>::Self {
 
     /// Settles `pending` with `response`, and has its sender resume once
     /// whatever runs has suspended: never inside the read loop.
-    void settle(PendingRequest& pending, Result<std::string> response) {
+    void settle(PendingRequest& pending, Result<PayloadSlice> response) {
         forget(pending);
         pending.response = std::move(response);
         pending.complete_deferred(loop);
@@ -571,7 +593,7 @@ struct Peer<CodecT>::Self {
         }
     }
 
-    void complete_pending_request(const protocol::RequestID& id, Result<std::string>&& response) {
+    void complete_pending_request(const protocol::RequestID& id, Result<PayloadSlice>&& response) {
         auto it = pending_requests.find(id);
         if(it == pending_requests.end()) {
             log(LogLevel::warn, "orphan response for id={}", detail::LoggedId{id});
@@ -609,7 +631,7 @@ struct Peer<CodecT>::Self {
             error.message);
     }
 
-    void dispatch_notification(const std::string& method, std::string& params) {
+    void dispatch_notification(const std::string& method, PayloadSlice& params) {
         log(LogLevel::debug, "notification: {}", method);
 
         if(method == "$/cancelRequest") {
@@ -640,7 +662,7 @@ struct Peer<CodecT>::Self {
 
     void dispatch_request(const std::string& method,
                           const protocol::RequestID& id,
-                          std::string params,
+                          PayloadSlice params,
                           task_group<>& handlers) {
         log(LogLevel::debug, "request: {} id={}", method, detail::LoggedId{id});
 
@@ -671,7 +693,7 @@ struct Peer<CodecT>::Self {
 
     task<> run_request(protocol::RequestID id,
                        RequestCallback callback,
-                       std::string params,
+                       PayloadSlice params,
                        cancellation_token token) {
         outcome<std::string, Error, cancellation> guarded_result = outcome_error(Error());
         // A handler that throws is answered InternalError; the exception
@@ -695,18 +717,12 @@ struct Peer<CodecT>::Self {
             co_return;
         }
 
-        auto response = codec.encode_success_response(id, *guarded_result);
-        if(!response) {
-            send_error(id, Error(protocol::ErrorCode::InternalError, response.error().message));
-            co_return;
-        }
-
-        send_answer(id, std::move(*response));
+        send_answer(id, std::move(*guarded_result));
     }
 
-    void dispatch_incoming_message(std::string& payload, task_group<>& handlers) {
+    void dispatch_incoming_message(std::string payload, task_group<>& handlers) {
         log(LogLevel::trace, "recv: {}", payload);
-        auto msg = codec.parse_message(payload);
+        auto msg = codec.parse_message(std::move(payload));
         std::visit(
             [&](auto& m) {
                 using T = std::remove_cvref_t<decltype(m)>;
@@ -715,7 +731,7 @@ struct Peer<CodecT>::Self {
                 } else if constexpr(std::is_same_v<T, IncomingNotification>) {
                     dispatch_notification(m.method, m.params);
                 } else if constexpr(std::is_same_v<T, IncomingResponse>) {
-                    complete_pending_request(m.id, Result<std::string>(std::move(m.result)));
+                    complete_pending_request(m.id, Result<PayloadSlice>(std::move(m.result)));
                 } else if constexpr(std::is_same_v<T, IncomingErrorResponse>) {
                     // An error that answers no request is not answered in
                     // turn, or two peers would trade such errors for good.
@@ -806,34 +822,19 @@ void Peer<CodecT>::set_logger(LogCallback callback, LogLevel min_level) {
 }
 
 template <typename CodecT>
-task<std::string, Error> Peer<CodecT>::send_request_impl(std::string_view method,
-                                                         std::string params,
-                                                         request_options opts) {
-    if(opts.timeout && *opts.timeout <= std::chrono::milliseconds::zero()) {
-        co_await fail(protocol::ErrorCode::RequestCancelled, "request timed out");
-    }
-    if(auto unsendable = self->unsendable(true)) {
-        co_await fail(std::move(*unsendable));
-    }
-    if(opts.token.cancelled()) {
-        co_await fail(protocol::ErrorCode::RequestCancelled, "request cancelled");
+task<PayloadSlice, Error> Peer<CodecT>::send_request_impl(protocol::RequestID id,
+                                                          std::string request,
+                                                          request_options opts) {
+    if(!self->fits(request)) {
+        co_await fail(self->too_large("request", request.size()));
     }
 
-    protocol::RequestID id{self->next_request_id++};
-    auto encoded = self->codec.encode_request(id, method, params);
-    if(!encoded) {
-        co_await fail(encoded.error());
-    }
-    if(!self->fits(*encoded)) {
-        co_await fail(self->too_large("request", encoded->size()));
-    }
-
-    typename Self::PendingRequest pending(*self, id);
-    self->pending_requests.emplace(id, &pending);
+    typename Self::PendingRequest pending(*self, std::move(id));
+    self->pending_requests.emplace(pending.id, &pending);
     if(opts.timeout) {
         self->file_deadline(pending, *opts.timeout);
     }
-    self->enqueue_outgoing(std::move(*encoded));
+    self->enqueue_outgoing(std::move(request));
 
     // The token's cancel tells the remote; its answer still counts.
     auto told = opts.token.on_cancel([&pending] { pending.cancel_remote(); });
@@ -859,11 +860,14 @@ template <typename ResultT, typename Params>
 task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
                                                 const Params& params,
                                                 request_options opts) {
-    auto serialized_params =
-        co_await or_fail(self->template encode_params<protocol::RequestTraits>(params));
+    if(auto refused = self->refuse_request(opts)) {
+        co_await fail(std::move(*refused));
+    }
+    protocol::RequestID id{self->next_request_id++};
+    auto request = co_await or_fail(self->encode_request(id, method, params));
     auto raw_result =
-        co_await send_request_impl(method, std::move(serialized_params), std::move(opts)).or_fail();
-    co_return co_await or_fail(self->template read_result<ResultT>(std::move(raw_result)));
+        co_await send_request_impl(std::move(id), std::move(request), std::move(opts)).or_fail();
+    co_return co_await or_fail(self->template read_result<ResultT>(raw_result));
 }
 
 template <typename CodecT>
@@ -877,11 +881,7 @@ Result<void> Peer<CodecT>::send_notification(const Params& params) {
 template <typename CodecT>
 template <typename Params>
 Result<void> Peer<CodecT>::send_notification(std::string_view method, const Params& params) {
-    auto serialized_params = self->template encode_params<protocol::NotificationTraits>(params);
-    if(!serialized_params) {
-        return outcome_error(serialized_params.error());
-    }
-    return self->send_notification(method, *serialized_params);
+    return self->send_notification(method, params);
 }
 
 template <typename CodecT>
@@ -916,7 +916,7 @@ void Peer<CodecT>::on_request_impl(std::string_view method, Callback&& callback)
     auto wrapped = [cb = std::forward<Callback>(callback),
                     method_name = std::string(method),
                     peer = this](const protocol::RequestID& request_id,
-                                 std::string& params_raw,
+                                 PayloadSlice& params_raw,
                                  cancellation_token token) -> task<std::string, Error> {
         auto& state = *peer->self;
         auto parsed_params =
@@ -936,17 +936,13 @@ void Peer<CodecT>::on_request_impl(std::string_view method, Callback&& callback)
         auto answering = std::invoke(cb, context, *parsed_params);
         co_await yield(state.loop);
         auto result = co_await std::move(answering).or_fail();
-        // A RawValue result is already in the codec's encoding; read_result
-        // takes it back as it is.
-        if constexpr(std::is_same_v<decltype(result), codec::RawValue>) {
-            co_return std::move(result.data);
-        } else {
-            auto serialized = state.codec.serialize_value(result);
-            if(!serialized) {
-                co_await fail(Error(protocol::ErrorCode::InternalError, serialized.error().message));
-            }
-            co_return std::move(*serialized);
+        // A RawValue result is already in the codec's encoding, and goes as
+        // it is; read_result takes it back so.
+        auto response = state.codec.encode_success_response(request_id, result);
+        if(!response) {
+            co_await fail(Error(protocol::ErrorCode::InternalError, response.error().message));
         }
+        co_return std::move(*response);
     };
 
     self->request_callbacks.insert_or_assign(std::string(method), std::move(wrapped));
@@ -978,7 +974,7 @@ void Peer<CodecT>::on_notification_impl(std::string_view method, Callback&& call
     using Params = detail::callback_param_t<Callback, 0>;
     auto wrapped = [cb = std::forward<Callback>(callback),
                     method_name = std::string(method),
-                    peer = this](std::string& params_raw) {
+                    peer = this](PayloadSlice& params_raw) {
         auto& state = *peer->self;
         auto parsed_params = state.codec.template deserialize_value<Params>(params_raw);
         if(!parsed_params) {

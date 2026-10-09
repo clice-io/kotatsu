@@ -1,7 +1,6 @@
 #include "kota/ipc/framing.h"
 
 #include <algorithm>
-#include <cctype>
 #include <charconv>
 #include <format>
 #include <system_error>
@@ -20,10 +19,15 @@ std::string_view trim(std::string_view value) {
     return value.substr(start, end - start + 1);
 }
 
+/// c in lower case if it is an ASCII letter, as header names are; whatever
+/// the locale.
+constexpr char ascii_lower(char c) {
+    return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+}
+
 bool equals_ignoring_case(std::string_view lhs, std::string_view rhs) {
     return std::ranges::equal(lhs, rhs, [](char a, char b) {
-        return std::tolower(static_cast<unsigned char>(a)) ==
-               std::tolower(static_cast<unsigned char>(b));
+        return ascii_lower(a) == ascii_lower(b);
     });
 }
 
@@ -54,13 +58,8 @@ std::expected<std::size_t, std::string> content_length(std::string_view header) 
 
 }  // namespace
 
-std::string frame(std::string_view payload) {
-    auto header = std::format("Content-Length: {}\r\n\r\n", payload.size());
-    std::string framed;
-    framed.reserve(header.size() + payload.size());
-    framed.append(header);
-    framed.append(payload);
-    return framed;
+std::string frame_header(std::size_t size) {
+    return std::format("Content-Length: {}\r\n\r\n", size);
 }
 
 FrameParser::FrameParser(std::size_t max_payload) : max_payload(max_payload) {}

@@ -3,6 +3,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -24,6 +25,11 @@ namespace {
 using test::AddParams;
 using test::AddResult;
 using test::NoteParams;
+
+/// `payload` framed as StreamTransport frames it.
+std::string frame(std::string_view payload) {
+    return frame_header(payload.size()).append(payload);
+}
 
 /// Both ends of an anonymous pipe, opened as streams.
 struct Ends {

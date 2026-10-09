@@ -43,9 +43,9 @@ struct ReadError {
     std::string prefix = {};
 };
 
-/// `payload` in the LSP base protocol's framing: a Content-Length header, a
-/// blank line, then the payload.
-std::string frame(std::string_view payload);
+/// What goes before a payload of `size` bytes in the LSP base protocol's
+/// framing: a Content-Length header and a blank line.
+std::string frame_header(std::size_t size);
 
 /// Reads the frames of a byte stream handed to it in pieces of any size.
 /// Header names are matched without regard to case, headers other than
