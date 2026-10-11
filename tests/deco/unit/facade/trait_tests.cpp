@@ -81,12 +81,12 @@ ZEST_CASE(vector_result_holds_scalars_or_reads_itself) {
     ZSTATIC_EXPECT(!trait::VectorResultType<std::string>);
 }
 
-ZEST_CASE(input_result_is_a_scalar_or_a_list) {
-    ZSTATIC_EXPECT(trait::InputResultType<int>);
-    ZSTATIC_EXPECT(trait::InputResultType<std::string>);
-    ZSTATIC_EXPECT(trait::InputResultType<std::vector<Mode>>);
-    ZSTATIC_EXPECT(!trait::InputResultType<std::string_view>);
-    ZSTATIC_EXPECT(!trait::InputResultType<std::vector<std::string_view>>);
+ZEST_CASE(value_result_is_a_scalar_or_a_list) {
+    ZSTATIC_EXPECT(trait::ValueResultType<int>);
+    ZSTATIC_EXPECT(trait::ValueResultType<std::string>);
+    ZSTATIC_EXPECT(trait::ValueResultType<std::vector<Mode>>);
+    ZSTATIC_EXPECT(!trait::ValueResultType<std::string_view>);
+    ZSTATIC_EXPECT(!trait::ValueResultType<std::vector<std::string_view>>);
 }
 
 ZEST_CASE(optional_result_is_its_value) {

@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <optional>
@@ -45,6 +46,14 @@ struct Nested {
 
     DecoKV(names = {"--second"}; required = false;)
     <std::string> other;
+};
+
+struct Includes {
+    DecoKV(names = {"-I"}; required = false;)
+    <std::vector<std::string>> include;
+
+    DecoFlag(names = {"--no-includes"}; required = false;)
+    no_includes;
 };
 
 struct FieldCallbackCounter {
@@ -154,6 +163,30 @@ ZEST_CASE(after_hook_sees_the_step) {
     ZASSERT(parsed.has_value());
     ZEXPECT(hits == 1);
     ZEXPECT(parsed->options.verbose.as_optional() == std::optional(true));
+}
+
+ZEST_CASE(after_hook_of_a_list_sees_it_so_far) {
+    auto command = cli::command<Includes>("cc [OPTIONS]");
+    std::vector<std::size_t> sizes;
+    command.after<&Includes::include>([&](auto& step) {
+        sizes.push_back(step.value().size());
+        return step.next();
+    });
+    auto argv = test::split("-I a -I b");
+    ZASSERT(command.invoke(argv).has_value());
+    ZEXPECT(sizes == (std::vector<std::size_t>{1, 2}));
+}
+
+ZEST_CASE(list_reset_by_a_hook_starts_over) {
+    auto command = cli::command<Includes>("cc [OPTIONS]");
+    command.after<&Includes::no_includes>([](auto& step) {
+        step.options().include.reset();
+        return step.next();
+    });
+    auto argv = test::split("-I a --no-includes -I b");
+    const auto parsed = command.invoke(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.include.as_optional() == std::optional(strings{"b"}));
 }
 
 ZEST_CASE(after_hook_runs_after_the_field_callback) {

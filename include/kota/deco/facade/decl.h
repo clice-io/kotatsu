@@ -77,7 +77,7 @@ enum KVStyle : char {
     // -o 1
     Separate = 1 << 1,
 
-    // -o 1 or -o=1
+    // -o 1 or -o=1, DecoKV's and DecoKVAlias's default
     JoinedOrSeparate = Joined | Separate
 };
 
@@ -540,7 +540,7 @@ struct FlagFields : NamedOptionFields {
 
 struct KVFields : NamedOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::KV;
-    char style = KVStyle::Separate;
+    char style = KVStyle::JoinedOrSeparate;
     constexpr KVFields() = default;
 };
 
@@ -567,7 +567,7 @@ struct FlagAliasFields : AliasFields {
 
 struct KVAliasFields : AliasFields {
     constexpr static DecoType deco_field_ty = DecoType::KV;
-    char style = KVStyle::Separate;
+    char style = KVStyle::JoinedOrSeparate;
     constexpr KVAliasFields() = default;
 };
 
@@ -677,6 +677,14 @@ constexpr bool is_joined_kv_name(char style, std::string_view name) {
         return false;
     }
     return !has_kv_style(style, KVStyle::Separate) || name.ends_with('=') || name.ends_with(':');
+}
+
+/// Whether KV option name `name` of `style` also takes its value after itself and '='
+/// (`--name=value`): a name that takes it separate does when the style allows it joined too,
+/// and so does a generated name under Joined; a name joined by its end does not, nor does an
+/// explicit name under Joined, which takes the value right after itself (`-Ifoo`).
+constexpr bool takes_value_after_equals(char style, std::string_view name, bool generated) {
+    return has_kv_style(style, KVStyle::Joined) && (generated || !is_joined_kv_name(style, name));
 }
 
 /// The name an option without explicit names answers to: its field's name with '_' spelled
@@ -845,25 +853,24 @@ std::optional<std::string> assign_vector(std::optional<ResTy>& target,
     }
 }
 
+/// Adds `values`, those of one more occurrence of an option, to `raw_values`, the values of
+/// its occurrences before, and parses them all into `target` as if given at once: the first
+/// occurrence replaces a default, and a custom result type sees every value. Values that fail
+/// are dropped again, so that the next occurrence goes on from those before; a `target` reset
+/// meanwhile (by a hook) starts over from `values`.
 template <typename ResTy>
-std::optional<std::string> assign_input_vector(std::optional<ResTy>& target,
-                                               std::vector<std::string>& raw_inputs,
-                                               std::span<const std::string_view> values,
-                                               const IntoContext& context = {}) {
-    const auto original_size = raw_inputs.size();
-    raw_inputs.reserve(original_size + values.size());
-    for(const auto value: values) {
-        raw_inputs.emplace_back(value);
+std::optional<std::string> append_vector(std::optional<ResTy>& target,
+                                         std::vector<std::string>& raw_values,
+                                         std::span<const std::string> values,
+                                         const IntoContext& context = {}) {
+    if(!target.has_value()) {
+        raw_values.clear();
     }
-
-    std::vector<std::string_view> all_values;
-    all_values.reserve(raw_inputs.size());
-    for(const auto& value: raw_inputs) {
-        all_values.emplace_back(value);
-    }
-
+    const auto given_before = raw_values.size();
+    raw_values.insert(raw_values.end(), values.begin(), values.end());
+    std::vector<std::string_view> all_values(raw_values.begin(), raw_values.end());
     if(auto err = assign_vector(target, all_values, context)) {
-        raw_inputs.resize(original_size);
+        raw_values.resize(given_before);
         return err;
     }
     return std::nullopt;
@@ -918,9 +925,10 @@ struct ScalarOption : DecoOption<ResTy> {
 
 template <typename ResTy>
 struct InputOption : DecoOption<ResTy> {
-    static_assert(trait::InputResultType<ResTy>, DecoInputResultErrString);
+    static_assert(trait::ValueResultType<ResTy>, DecoValueResultErrString);
     using DecoOption<ResTy>::DecoOption;
-    std::vector<std::string> raw_inputs;
+    /// The inputs so far, for a vector result.
+    std::vector<std::string> raw_values;
     constexpr ~InputOption() = default;
 
     std::optional<std::string> into(const ParsedArgOwning& arg) override {
@@ -947,28 +955,28 @@ struct InputOption : DecoOption<ResTy> {
             return context.format_error("input option expects at most one value");
         } else {
             if(arg.values.empty()) {
-                const std::string_view spelling = arg.spelling;
-                return detail::assign_input_vector(this->as_optional(),
-                                                   this->raw_inputs,
-                                                   {&spelling, 1},
-                                                   context);
+                return detail::append_vector(this->as_optional(),
+                                             this->raw_values,
+                                             {&arg.spelling, 1},
+                                             context);
             }
-            std::vector<std::string_view> views;
-            views.reserve(arg.values.size());
-            for(const auto& v: arg.values)
-                views.emplace_back(v);
-            return detail::assign_input_vector(this->as_optional(),
-                                               this->raw_inputs,
-                                               views,
-                                               context);
+            return detail::append_vector(this->as_optional(),
+                                         this->raw_values,
+                                         arg.values,
+                                         context);
         }
     }
 };
 
+/// An option with a vector result, which collects the values of every occurrence of it. The
+/// value is parsed anew from those each time, so a hook that changes it between occurrences
+/// sees the change replaced at the next one, unless it reset the option, which starts over.
 template <typename ResTy>
 struct VectorOption : DecoOption<ResTy> {
     static_assert(trait::VectorResultType<ResTy>, DecoVectorResultErrString);
     using DecoOption<ResTy>::DecoOption;
+    /// The values of the occurrences so far.
+    std::vector<std::string> raw_values;
     constexpr ~VectorOption() = default;
 
     std::optional<std::string> into(const ParsedArgOwning& arg) override {
@@ -977,13 +985,15 @@ struct VectorOption : DecoOption<ResTy> {
 
     std::optional<std::string> into(const ParsedArgOwning& arg,
                                     const IntoContext& context) override {
-        std::vector<std::string_view> views;
-        views.reserve(arg.values.size());
-        for(const auto& v: arg.values)
-            views.emplace_back(v);
-        return detail::assign_vector(this->as_optional(), views, context);
+        return detail::append_vector(this->as_optional(), raw_values, arg.values, context);
     }
 };
+
+/// What a DecoKV parses into: a scalar keeps the value of its last occurrence, and a vector
+/// collects one value from each.
+template <typename ResTy>
+using KVOption =
+    std::conditional_t<trait::ScalarResultType<ResTy>, ScalarOption<ResTy>, VectorOption<ResTy>>;
 
 /// The names help is asked for by: HelpOption's, and the first argument
 /// cli::SubCommander::enable_help() answers.

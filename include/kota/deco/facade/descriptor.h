@@ -1,5 +1,7 @@
 #pragma once
 #include <algorithm>
+#include <concepts>
+#include <cstdint>
 #include <format>
 #include <ranges>
 #include <string>
@@ -165,26 +167,23 @@ inline std::string join_aliases(const std::vector<std::string>& aliases, bool he
 
 /// The forms KV option `cfg` is written in, as the parser takes them: its names that take
 /// their value separate together, `-o|--output <FILE>`, then each that takes it joined,
-/// `--output=<FILE>`. A generated name takes its value joined after '='.
+/// `--output=<FILE>` or `-I<DIR>`. The '=' form a name that takes its value separate may
+/// also take (takes_value_after_equals()) goes without saying.
 template <typename CfgTy>
 inline std::string kv_usage_text(const CfgTy& cfg,
                                  bool help_mode,
                                  std::string_view fallback_name,
                                  std::string_view value_token) {
+    const bool generated = cfg.names.empty();
     std::vector<std::string> separate;
     std::vector<std::string> joined;
-    if(cfg.names.empty()) {
-        const auto name = named_aliases(cfg, fallback_name).front();
-        if(decl::detail::has_kv_style(cfg.style, decl::KVStyle::Separate)) {
+    for(const auto& name: named_aliases(cfg, fallback_name)) {
+        if(!decl::detail::is_joined_kv_name(cfg.style, name)) {
             separate.push_back(name);
-        }
-        if(decl::detail::has_kv_style(cfg.style, decl::KVStyle::Joined)) {
+        } else if(decl::detail::takes_value_after_equals(cfg.style, name, generated)) {
             joined.push_back(name + "=");
-        }
-    } else {
-        for(const auto name: cfg.names) {
-            (decl::detail::is_joined_kv_name(cfg.style, name) ? joined : separate)
-                .emplace_back(name);
+        } else {
+            joined.push_back(name);
         }
     }
 
@@ -256,6 +255,35 @@ inline std::string usage_text(const CfgTy& cfg,
     }
 }
 
+/// Whether every occurrence of `FieldTy` counts: a DecoFlagN's, and a named option's that
+/// collects the values of each, a DecoKV with a vector result, a DecoComma or a DecoMulti.
+template <typename FieldTy>
+constexpr bool is_repeatable() {
+    if constexpr(ty::deco_option_like<FieldTy>) {
+        using result_ty = typename ty::base_ty<FieldTy>::result_type;
+        constexpr auto kind = ty::field_ty_of<FieldTy>::deco_field_ty;
+        if constexpr(kind == decl::DecoType::Flag) {
+            return std::same_as<result_ty, std::uint32_t>;
+        } else if constexpr(kind == decl::DecoType::KV) {
+            return !trait::ScalarResultType<result_ty>;
+        } else {
+            return kind == decl::DecoType::CommaJoined || kind == decl::DecoType::Multi;
+        }
+    } else {
+        return false;
+    }
+}
+
+/// The entry of option or alias `FieldTy`, declared `cfg`, in a usage listing, written `usage`.
+template <typename FieldTy, typename CfgTy>
+inline cli::text::UsageEntry usage_entry(const CfgTy& cfg, std::string usage) {
+    return cli::text::UsageEntry{
+        .usage = std::move(usage),
+        .help = has_help_text(cfg.help) ? std::string(cfg.help) : std::string{},
+        .repeatable = is_repeatable<FieldTy>(),
+    };
+}
+
 template <typename FieldTy, typename CfgTy>
 inline std::string usage_text_for_field(const FieldTy&,
                                         const CfgTy& cfg,
@@ -296,12 +324,8 @@ inline std::string from_deco_option(const T& field,
     if(!include_help) {
         return usage;
     }
-    return cli::text::render_usage_entry(
-        cli::text::UsageEntry{
-            .usage = std::move(usage),
-            .help = detail::has_help_text(cfg.help) ? std::string(cfg.help) : std::string{},
-        },
-        config.render.compatible.usage);
+    return cli::text::render_usage_entry(detail::usage_entry<T>(cfg, std::move(usage)),
+                                         config.render.compatible.usage);
 }
 
 }  // namespace kota::deco::desc

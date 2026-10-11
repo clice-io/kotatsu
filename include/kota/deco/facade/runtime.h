@@ -214,38 +214,35 @@ auto make_usage_document(std::string_view command_overview,
     };
     std::vector<const decl::Category*> seen_categories;
     const auto& generator = ::kota::deco::detail::generator_of<T>();
-    generator.visit_fields(
-        T{},
-        [&](const auto& field, const auto& cfg, std::string_view name, auto) {
-            const auto* category = cfg.category.ptr();
-            std::size_t group_index = 0;
-            bool found = false;
-            for(std::size_t i = 0; i < seen_categories.size(); ++i) {
-                if(seen_categories[i] == category) {
-                    group_index = i;
-                    found = true;
-                    break;
-                }
-            }
-            if(!found) {
-                seen_categories.push_back(category);
-                document.groups.push_back(text::UsageGroup{
-                    .title = desc::detail::category_desc(*category),
-                    .exclusive = category->exclusive,
-                    .is_default = category == &decl::default_category,
-                    .entries = {},
-                });
-                group_index = document.groups.size() - 1;
-            }
+    generator.visit_fields(T{},
+                           [&](const auto& field, const auto& cfg, std::string_view name, auto) {
+                               const auto* category = cfg.category.ptr();
+                               std::size_t group_index = 0;
+                               bool found = false;
+                               for(std::size_t i = 0; i < seen_categories.size(); ++i) {
+                                   if(seen_categories[i] == category) {
+                                       group_index = i;
+                                       found = true;
+                                       break;
+                                   }
+                               }
+                               if(!found) {
+                                   seen_categories.push_back(category);
+                                   document.groups.push_back(text::UsageGroup{
+                                       .title = desc::detail::category_desc(*category),
+                                       .exclusive = category->exclusive,
+                                       .is_default = category == &decl::default_category,
+                                       .entries = {},
+                                   });
+                                   group_index = document.groups.size() - 1;
+                               }
 
-            auto& group = document.groups[group_index];
-            group.entries.push_back(text::UsageEntry{
-                .usage = desc::from_deco_option(field, false, name, usage_config),
-                .help =
-                    desc::detail::has_help_text(cfg.help) ? std::string(cfg.help) : std::string{},
-            });
-            return true;
-        });
+                               auto& group = document.groups[group_index];
+                               group.entries.push_back(desc::detail::usage_entry<decltype(field)>(
+                                   cfg,
+                                   desc::from_deco_option(field, false, name, usage_config)));
+                               return true;
+                           });
     return document;
 }
 

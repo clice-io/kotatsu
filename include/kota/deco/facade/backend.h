@@ -6,6 +6,7 @@
 #include <limits>
 #include <ranges>
 #include <span>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -40,6 +41,17 @@ constexpr auto prefixes_of(std::string_view full_name) -> std::span<const std::s
         return backend::pfx_slash_dash;
     }
     KOTA_THROW("Option name must start with '-', '--', or '/'");
+}
+
+/// Whether option names `a` and `b` reach the same option: the same name after a prefix both
+/// accept, as "/x" and "-x" do.
+constexpr bool same_option_name(std::string_view a, std::string_view b) {
+    const auto a_prefixes = prefixes_of(a);
+    const auto b_prefixes = prefixes_of(b);
+    return a.substr(a_prefixes.front().size()) == b.substr(b_prefixes.front().size()) &&
+           std::ranges::any_of(a_prefixes, [&](std::string_view prefix) {
+               return std::ranges::find(b_prefixes, prefix) != b_prefixes.end();
+           });
 }
 
 /// Walks a deco struct in declaration order, nested structs included, and hands each option
@@ -275,6 +287,26 @@ public:
             return dispatch(static_cast<Derived&>(*this), field, cfg, name, path);
         });
     }
+
+    /// Whether KV option or alias `fields`, written `name`, also takes its value after `name`
+    /// and '=': takes_value_after_equals() says so, and no option or alias of the struct is
+    /// named that spelling itself, which then stays its own.
+    template <typename FieldsTy>
+    constexpr bool takes_equals_spelling(const FieldsTy& fields, std::string_view name) const {
+        if(!decl::detail::takes_value_after_equals(fields.style, name, fields.names.empty())) {
+            return false;
+        }
+        const auto equals = std::string(name) + "=";
+        return visit_schema_fields([&](auto, const auto& cfg, std::string_view, auto) {
+            if constexpr(requires { cfg.names; }) {
+                return std::ranges::none_of(cfg.names, [&](std::string_view other) {
+                    return same_option_name(equals, other);
+                });
+            } else {
+                return true;
+            }
+        });
+    }
 };
 
 template <typename ResourceTy>
@@ -453,8 +485,8 @@ private:
     }
 
     /// Adds KV option or alias `fields`: each explicit name takes its value the way
-    /// is_joined_kv_name() says, and a generated name takes it separate, joined to the name
-    /// and '=', or both, as the style allows.
+    /// is_joined_kv_name() says, and a generated name takes it separate or joined, as the style
+    /// allows; each name that takes_equals_spelling() also takes it after '='.
     template <typename FieldsTy>
     constexpr void add_kv(const FieldsTy& fields,
                           std::string_view field_name,
@@ -476,10 +508,20 @@ private:
             return decl::detail::is_joined_kv_name(style, name) ? backend::Kind::Joined
                                                                 : backend::Kind::Separate;
         });
-        if(fields.names.empty() && joined) {
+
+        auto add_equals_spelling = [&](std::string_view name) {
+            if(!this->takes_equals_spelling(fields, name)) {
+                return;
+            }
             const auto spelling = add_spelling(id);
             items[spelling].kind = backend::Kind::Joined;
-            set_name(spelling, decl::detail::generated_option_name(field_name) + "=");
+            set_name(spelling, std::string(name) + "=");
+        };
+        if(fields.names.empty()) {
+            add_equals_spelling(decl::detail::generated_option_name(field_name));
+        }
+        for(const auto name: fields.names) {
+            add_equals_spelling(name);
         }
     }
 
