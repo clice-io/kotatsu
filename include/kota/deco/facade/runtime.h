@@ -243,6 +243,7 @@ auto make_usage_document(std::string_view command_overview,
                 .usage = desc::from_deco_option(field, false, name, usage_config),
                 .help =
                     desc::detail::has_help_text(cfg.help) ? std::string(cfg.help) : std::string{},
+                .repeatable = desc::detail::is_repeatable<decltype(field)>(),
             });
             return true;
         });

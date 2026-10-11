@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -81,6 +83,9 @@ struct ManyNames {
     DecoKVStyled(decl::KVStyle::JoinedOrSeparate, names = {"-c", "--cc=", "--ccc", "--cccc="};
                  required = false;)
     <int> c;
+
+    DecoKVStyled(decl::KVStyle::Separate, names = {"-d", "--dd"}; required = false;)
+    <int> d;
 };
 
 struct NoInput {
@@ -119,6 +124,14 @@ const option::Option* option_named(std::string_view spelling) {
         }
     }
     return nullptr;
+}
+
+/// How many options of T's table `spelling` names.
+template <typename T>
+std::size_t options_named(std::string_view spelling) {
+    return std::ranges::count(detail::generator_of<T>().option_infos(),
+                              spelling,
+                              &option::Option::prefixed_name);
 }
 
 ZEST_SUITE(deco_facade_backend) {
@@ -213,12 +226,21 @@ ZEST_CASE(option_with_many_names_is_built) {
     }
 }
 
-ZEST_CASE(kv_is_separate_by_default) {
+ZEST_CASE(kv_is_joined_or_separate_by_default) {
     const auto* level = option_named<Everything>("--level");
     ZASSERT(level != nullptr);
     ZEXPECT(level->kind == option::Kind::Separate);
     ZEXPECT(level->num_args == 1U);
-    ZEXPECT(option_named<Everything>("--level=") == nullptr);
+    const auto* equals = option_named<Everything>("--level=");
+    ZASSERT(equals != nullptr);
+    ZEXPECT(equals->kind == option::Kind::Joined);
+}
+
+ZEST_CASE(separate_kv_takes_no_value_after_equals) {
+    ZEXPECT(option_named<ManyNames>("-d") != nullptr);
+    ZEXPECT(option_named<ManyNames>("--dd") != nullptr);
+    ZEXPECT(option_named<ManyNames>("-d=") == nullptr);
+    ZEXPECT(option_named<ManyNames>("--dd=") == nullptr);
 }
 
 ZEST_CASE(joined_kv_takes_each_name_as_spelled) {
@@ -238,6 +260,20 @@ ZEST_CASE(joined_or_separate_kv_takes_each_name_by_its_end) {
     const auto* joined = option_named<Everything>("--flags=");
     ZASSERT(joined != nullptr);
     ZEXPECT(joined->kind == option::Kind::Joined);
+    // Named too, the '=' spelling is not added again.
+    ZEXPECT(options_named<Everything>("--flags=") == 1U);
+}
+
+ZEST_CASE(joined_or_separate_kv_name_also_takes_its_value_after_equals) {
+    for(const auto spelling: {"-c=", "--ccc="}) {
+        ZEST_CONTEXT("spelling {}", spelling);
+        const auto* equals = option_named<ManyNames>(spelling);
+        ZASSERT(equals != nullptr);
+        ZEXPECT(equals->kind == option::Kind::Joined);
+    }
+    // A name joined by its end takes no more.
+    ZEXPECT(option_named<ManyNames>("--cc==") == nullptr);
+    ZEXPECT(option_named<ManyNames>("--cccc==") == nullptr);
 }
 
 ZEST_CASE(generated_kv_name_also_takes_its_value_after_equals) {

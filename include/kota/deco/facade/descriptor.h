@@ -1,5 +1,7 @@
 #pragma once
 #include <algorithm>
+#include <concepts>
+#include <cstdint>
 #include <format>
 #include <ranges>
 #include <string>
@@ -165,7 +167,9 @@ inline std::string join_aliases(const std::vector<std::string>& aliases, bool he
 
 /// The forms KV option `cfg` is written in, as the parser takes them: its names that take
 /// their value separate together, `-o|--output <FILE>`, then each that takes it joined,
-/// `--output=<FILE>`. A generated name takes its value joined after '='.
+/// `--output=<FILE>`. A generated name is written separate when it takes its value so, else
+/// joined after '='. That a name taking its value separate takes it after '=' too goes
+/// without saying.
 template <typename CfgTy>
 inline std::string kv_usage_text(const CfgTy& cfg,
                                  bool help_mode,
@@ -177,8 +181,7 @@ inline std::string kv_usage_text(const CfgTy& cfg,
         const auto name = named_aliases(cfg, fallback_name).front();
         if(decl::detail::has_kv_style(cfg.style, decl::KVStyle::Separate)) {
             separate.push_back(name);
-        }
-        if(decl::detail::has_kv_style(cfg.style, decl::KVStyle::Joined)) {
+        } else {
             joined.push_back(name + "=");
         }
     } else {
@@ -256,6 +259,25 @@ inline std::string usage_text(const CfgTy& cfg,
     }
 }
 
+/// Whether every occurrence of `FieldTy` counts: a DecoFlagN's, and a named option's that
+/// collects the values of each, a DecoKV with a vector result, a DecoComma or a DecoMulti.
+template <typename FieldTy>
+constexpr bool is_repeatable() {
+    if constexpr(ty::deco_option_like<FieldTy>) {
+        using result_ty = typename ty::base_ty<FieldTy>::result_type;
+        constexpr auto kind = ty::field_ty_of<FieldTy>::deco_field_ty;
+        if constexpr(kind == decl::DecoType::Flag) {
+            return std::same_as<result_ty, std::uint32_t>;
+        } else if constexpr(kind == decl::DecoType::KV) {
+            return !trait::ScalarResultType<result_ty>;
+        } else {
+            return kind == decl::DecoType::CommaJoined || kind == decl::DecoType::Multi;
+        }
+    } else {
+        return false;
+    }
+}
+
 template <typename FieldTy, typename CfgTy>
 inline std::string usage_text_for_field(const FieldTy&,
                                         const CfgTy& cfg,
@@ -300,6 +322,7 @@ inline std::string from_deco_option(const T& field,
         cli::text::UsageEntry{
             .usage = std::move(usage),
             .help = detail::has_help_text(cfg.help) ? std::string(cfg.help) : std::string{},
+            .repeatable = detail::is_repeatable<T>(),
         },
         config.render.compatible.usage);
 }

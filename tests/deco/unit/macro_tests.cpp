@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "kota/deco/deco.h"
@@ -54,6 +55,9 @@ struct Declared {
 
     DecoKV()
     <> path;
+
+    DecoKV(names = {"-I"};)
+    <std::vector<std::string>> includes;
 
     DecoKVStyled(decl::KVStyle::Joined, help = "joined";)
     <int> joined = 7;
@@ -125,13 +129,20 @@ ZEST_CASE(options_default_to_strings) {
     ZEXPECT(zest::type_eq<decltype(Declared::tags)::result_type, std::vector<std::string>>());
 }
 
-ZEST_CASE(kv_is_separate_unless_styled) {
+ZEST_CASE(kv_is_joined_or_separate_unless_styled) {
     const cfg_of<decltype(Declared::path)> path;
     ZEXPECT(path.deco_field_ty == decl::DecoType::KV);
-    ZEXPECT(path.style == decl::KVStyle::Separate);
+    ZEXPECT(path.style == decl::KVStyle::JoinedOrSeparate);
     const cfg_of<decltype(Declared::joined)> joined;
     ZEXPECT(joined.style == decl::KVStyle::Joined);
     ZEXPECT(joined.help == "joined");
+}
+
+ZEST_CASE(kv_keeps_a_scalar_and_collects_a_vector) {
+    ZSTATIC_EXPECT(std::is_base_of_v<decl::ScalarOption<std::string>, decltype(Declared::path)>);
+    ZSTATIC_EXPECT(std::is_base_of_v<decl::VectorOption<std::vector<std::string>>,
+                                     decltype(Declared::includes)>);
+    ZEXPECT(cfg_of<decltype(Declared::includes)>::deco_field_ty == decl::DecoType::KV);
 }
 
 ZEST_CASE(comma_and_multi_declare_their_kinds) {
@@ -177,7 +188,7 @@ ZEST_CASE(alias_macros_declare_forwards) {
 
     const ty::alias_ty_of<decltype(Aliases::__)> kv;
     ZEXPECT(kv.deco_field_ty == decl::DecoType::KV);
-    ZEXPECT(kv.style == decl::KVStyle::Separate);
+    ZEXPECT(kv.style == decl::KVStyle::JoinedOrSeparate);
     ZEXPECT(kv.forward.static_tokens == std::vector<std::string_view>{"--define"});
 
     const ty::alias_ty_of<decltype(Aliases::___)> joined;

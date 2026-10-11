@@ -342,6 +342,29 @@ ZEST_CASE(vector_reads_no_values_as_empty) {
     ZEXPECT(option->empty());
 }
 
+ZEST_CASE(vector_collects_every_occurrence) {
+    decl::VectorOption<std::vector<int>> option;
+    ZEXPECT(!option.into(arg_of("--list", {"1"})));
+    ZEXPECT(!option.into(arg_of("--list", {"2", "3"})));
+    ZEXPECT(option.as_optional() == std::optional(std::vector<int>{1, 2, 3}));
+}
+
+ZEST_CASE(vector_first_occurrence_replaces_the_default) {
+    decl::VectorOption<std::vector<int>> option = std::vector<int>{9};
+    ZEXPECT(!option.into(arg_of("--list", {"1"})));
+    ZEXPECT(option.as_optional() == std::optional(std::vector<int>{1}));
+}
+
+ZEST_CASE(vector_bad_value_keeps_what_it_had) {
+    decl::VectorOption<std::vector<int>> option;
+    ZEXPECT(!option.into(arg_of("--list", {"1"})));
+    const auto error = option.into(arg_of("--list", {"x"}));
+    ZASSERT(error.has_value());
+    ZEXPECT(*error == "invalid vector value at index 1: invalid integer value: x");
+    ZEXPECT(!option.into(arg_of("--list", {"2"})));
+    ZEXPECT(option.as_optional() == std::optional(std::vector<int>{1, 2}));
+}
+
 ZEST_CASE(vector_bad_value_fails) {
     decl::VectorOption<std::vector<Mode>> option;
     const auto error = option.into(arg_of("--modes", {"alpha", "delta"}));
@@ -355,6 +378,14 @@ ZEST_CASE(vector_bad_value_fails) {
 ZEST_CASE(custom_vector_reads_through_into) {
     decl::VectorOption<Names> option;
     ZEXPECT(!option.into(arg_of("--names", {"x", "y"})));
+    ZASSERT(option.has_value());
+    ZEXPECT(option->values == (std::vector<std::string>{"x", "y"}));
+}
+
+ZEST_CASE(custom_vector_sees_every_occurrence) {
+    decl::VectorOption<Names> option;
+    ZEXPECT(!option.into(arg_of("--names", {"x"})));
+    ZEXPECT(!option.into(arg_of("--names", {"y"})));
     ZASSERT(option.has_value());
     ZEXPECT(option->values == (std::vector<std::string>{"x", "y"}));
 }

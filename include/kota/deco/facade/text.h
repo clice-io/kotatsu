@@ -28,6 +28,8 @@ struct Diagnostic {
 struct UsageEntry {
     std::string usage;
     std::string help;
+    /// Whether every occurrence of the option counts, which its help then says.
+    bool repeatable = false;
 };
 
 struct UsageGroup {
@@ -103,7 +105,8 @@ auto render_usage(const UsageDocument& document,
                   const Renderer* renderer = nullptr) -> std::string;
 
 /// One line of a compatible usage listing: `entry.usage`, then its help (`style.default_help`
-/// when it has none) at the help column, on a line of its own when the usage reaches it.
+/// when it has none, followed by `style.repeatable_suffix` when the entry is repeatable) at the
+/// help column, on a line of its own when the usage reaches it.
 auto render_usage_entry(const UsageEntry& entry, const UsageStyle& style) -> std::string;
 
 auto render_subcommands(const SubCommandDocument& document, const Renderer* renderer = nullptr)

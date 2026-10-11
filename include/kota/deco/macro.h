@@ -171,7 +171,7 @@
                               __VA_ARGS__)
 
 #define DecoInput(...)                                                                             \
-    DECO_DECLARE_OPTION_TEMPLATE(kota::deco::trait::InputResultType,                               \
+    DECO_DECLARE_OPTION_TEMPLATE(kota::deco::trait::ValueResultType,                               \
                                  std::string,                                                      \
                                  kota::deco::decl::InputOption,                                    \
                                  kota::deco::decl::InputFields,                                    \
@@ -187,15 +187,15 @@
                                  __VA_ARGS__)
 
 #define DecoKVStyled(kv_style, ...)                                                                \
-    DECO_DECLARE_OPTION_TEMPLATE(kota::deco::trait::ScalarResultType,                              \
+    DECO_DECLARE_OPTION_TEMPLATE(kota::deco::trait::ValueResultType,                               \
                                  std::string,                                                      \
-                                 kota::deco::decl::ScalarOption,                                   \
+                                 kota::deco::decl::KVOption,                                       \
                                  kota::deco::decl::KVFields,                                       \
                                  DECO_USING_KV,                                                    \
                                  style = kv_style;                                                 \
                                  __VA_ARGS__)
 
-#define DecoKV(...) DecoKVStyled(kota::deco::decl::KVStyle::Separate, __VA_ARGS__)
+#define DecoKV(...) DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, __VA_ARGS__)
 
 #define DecoComma(...)                                                                             \
     DECO_DECLARE_OPTION_TEMPLATE(kota::deco::trait::VectorResultType,                              \
@@ -221,7 +221,7 @@
     DECO_DECLARE_ALIAS(kota::deco::decl::KVAliasFields, DECO_USING_KV_ALIAS, style = kv_style;     \
                        __VA_ARGS__)
 
-#define DecoKVAlias(...) DecoKVAliasStyled(kota::deco::decl::KVStyle::Separate, __VA_ARGS__)
+#define DecoKVAlias(...) DecoKVAliasStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, __VA_ARGS__)
 
 #define DecoCommaAlias(...)                                                                        \
     DECO_DECLARE_ALIAS(kota::deco::decl::CommaJoinedAliasFields, DECO_USING_ALIAS, __VA_ARGS__)

@@ -180,16 +180,25 @@ public:
             return true;
         }
         const auto name = option_name(cfg, field_name);
-        const auto value = scalar_to_arg(*field);
-        if(cfg.names.empty() && decl::detail::has_kv_style(cfg.style, decl::KVStyle::Joined)) {
-            // A generated name takes its value after '=': the form that reads back any value,
-            // an empty one or one starting with '=' too.
-            argv.push_back(name + "=" + value);
-        } else if(decl::detail::is_joined_kv_name(cfg.style, name)) {
-            argv.push_back(name + value);
+        auto write = [&](std::string value) {
+            if(decl::detail::takes_value_after_equals(cfg.style, name, cfg.names.empty())) {
+                // The form that reads back any value, an empty one or one starting with '=' too.
+                argv.push_back(name + "=" + value);
+            } else if(decl::detail::is_joined_kv_name(cfg.style, name)) {
+                argv.push_back(name + value);
+            } else {
+                argv.push_back(name);
+                argv.push_back(std::move(value));
+            }
+        };
+        using result_ty = typename FieldTy::result_type;
+        if constexpr(trait::ScalarResultType<result_ty>) {
+            write(scalar_to_arg(*field));
         } else {
-            argv.push_back(name);
-            argv.push_back(value);
+            // One occurrence for each value, which the option collects.
+            for(auto& value: vector_to_args(*field)) {
+                write(std::move(value));
+            }
         }
         return true;
     }
@@ -223,13 +232,14 @@ public:
         if(!should_emit(cfg) || !field.has_value()) {
             return true;
         }
+        // One occurrence for each arg_num values, which the option collects.
+        const auto name = option_name(cfg, field_name);
         auto values = vector_to_args(*field);
-        if(values.empty()) {
-            return true;
-        }
-        argv.push_back(option_name(cfg, field_name));
-        for(const auto& value: values) {
-            argv.push_back(value);
+        for(std::size_t i = 0; i < values.size(); ++i) {
+            if(i % cfg.arg_num == 0) {
+                argv.push_back(name);
+            }
+            argv.push_back(std::move(values[i]));
         }
         return true;
     }

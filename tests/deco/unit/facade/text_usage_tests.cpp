@@ -91,6 +91,23 @@ ZEST_CASE(style_names_the_headings) {
     expect_laid_out(grouped(), true, compatible, modern);
 }
 
+ZEST_CASE(repeatable_entry_says_so) {
+    expect_laid_out(UsageDocument{
+        .overview = "app",
+        .groups = {UsageGroup{
+            .title = "<default> (the default category for options)",
+            .exclusive = false,
+            .is_default = true,
+            .entries =
+                {
+                    UsageEntry{.usage = "-I <DIR>", .help = "Search DIR", .repeatable = true},
+                    UsageEntry{.usage = "-d", .help = "", .repeatable = true},
+                    UsageEntry{.usage = "-o <FILE>", .help = "Write FILE", .repeatable = false},
+                },
+        }},
+    });
+}
+
 };  // ZEST_SUITE(deco_facade_text_usage)
 
 }  // namespace

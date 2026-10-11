@@ -110,6 +110,37 @@ struct VectorInput {
     <std::vector<std::string>> files;
 };
 
+/// An option of each kind, and of a scalar and a vector result where it takes either.
+struct Kinds {
+    DECO_CFG_START(required = false);
+
+    DecoFlag()
+    flag;
+
+    DecoFlagN()
+    count;
+
+    DecoKV()
+    <std::string> value;
+
+    DecoKV(names = {"-I"}; meta_var = "DIR"; help = "Search DIR";)
+    <std::vector<std::string>> include;
+
+    DecoComma()
+    <std::vector<std::string>> tags;
+
+    DecoMulti(2)
+    <std::vector<std::string>> pair;
+
+    DecoInput()
+    <std::vector<std::string>> inputs;
+
+    DecoPack()
+    <std::vector<std::string>> trailing;
+
+    DECO_CFG_END();
+};
+
 /// The argv each form `usage` shows is written with, the value "x": "-o|--output <FILE>"
 /// shows "-o x" and "--output x", "--output=<FILE>" shows "--output=x".
 std::vector<std::vector<std::string>> written_forms(std::string_view usage) {
@@ -152,11 +183,12 @@ ZEST_CASE(kv_shows_each_name_as_the_parser_takes_it) {
     ZEXPECT(desc::from_deco_option(options.object) == "/Fo:<value>");
 }
 
-ZEST_CASE(kv_generated_name_also_takes_its_value_after_equals) {
+ZEST_CASE(kv_generated_name_shows_one_form) {
+    // The '=' form of a name that takes its value separate goes without saying.
     const Forms options{};
     ZEXPECT(desc::from_deco_option(options.level_name, false, "level_name") ==
-            "--level-name <value>|--level-name=<value>");
-    ZEXPECT(desc::from_deco_option(options.x, false, "x") == "-x <value>|-x=<value>");
+            "--level-name <value>");
+    ZEXPECT(desc::from_deco_option(options.x, false, "x") == "-x <value>");
     ZEXPECT(desc::from_deco_option(options.joined, false, "joined") == "--joined=<value>");
 }
 
@@ -170,7 +202,7 @@ ZEST_CASE(every_kv_form_shown_parses) {
             }
             return true;
         });
-    ZEXPECT(shown.size() == 13U);
+    ZEXPECT(shown.size() == 11U);
 
     for(auto& [name, argv]: shown) {
         ZEST_CONTEXT("{} written {}", name, argv.front());
@@ -296,6 +328,29 @@ ZEST_CASE(help_line_without_help_shows_the_default) {
     config.render.compatible.usage.default_help = "nothing to say";
     ZEXPECT(desc::from_deco_option(options.unnamed, true, "unnamed", &config) ==
             "  --unnamed       nothing to say");
+}
+
+ZEST_CASE(options_collecting_every_occurrence_are_repeatable) {
+    using desc::detail::is_repeatable;
+    ZSTATIC_EXPECT(!is_repeatable<decltype(Kinds::flag)>());
+    ZSTATIC_EXPECT(is_repeatable<decltype(Kinds::count)>());
+    ZSTATIC_EXPECT(!is_repeatable<decltype(Kinds::value)>());
+    ZSTATIC_EXPECT(is_repeatable<decltype(Kinds::include)>());
+    ZSTATIC_EXPECT(is_repeatable<decltype(Kinds::tags)>());
+    ZSTATIC_EXPECT(is_repeatable<decltype(Kinds::pair)>());
+    ZSTATIC_EXPECT(!is_repeatable<decltype(Kinds::inputs)>());
+    ZSTATIC_EXPECT(!is_repeatable<decltype(Kinds::trailing)>());
+}
+
+ZEST_CASE(help_line_of_a_repeatable_option_says_so) {
+    const Kinds options{};
+    auto config = config::get();
+    config.render.compatible.usage.help_column = 16;
+    ZEXPECT(desc::from_deco_option(options.include, true, {}, &config) ==
+            "  -I <DIR>        Search DIR (may be repeated)");
+    config.render.compatible.usage.repeatable_suffix = "; repeatable";
+    ZEXPECT(desc::from_deco_option(options.count, true, "count", &config) ==
+            "  --count         no description provided; repeatable");
 }
 
 ZEST_CASE(category_shows_what_it_has) {

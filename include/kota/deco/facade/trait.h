@@ -103,8 +103,10 @@ template <typename Ty>
 concept VectorResultType = PrimitiveVectorResultType<Ty> || CustomStringVectorResultTy<Ty> ||
                            CustomStringVectorResultTyWithContext<Ty>;
 
+/// The result of an option that takes values, DecoInput's and DecoKV's: a scalar, or a vector
+/// that collects the values of every occurrence.
 template <typename Ty>
-concept InputResultType = ScalarResultType<Ty> || VectorResultType<Ty>;
+concept ValueResultType = ScalarResultType<Ty> || VectorResultType<Ty>;
 
 }  // namespace kota::deco::trait
 
@@ -118,6 +120,6 @@ concept InputResultType = ScalarResultType<Ty> || VectorResultType<Ty>;
     "strings only) or provide into(vector<string_view>) or into(vector<string_view>, "             \
     "IntoContext)."
 
-#define DecoInputResultErrString                                                                   \
-    "Input result type must be a scalar value (including enums and owning strings) or a vector "   \
+#define DecoValueResultErrString                                                                   \
+    "Result type must be a scalar value (including enums and owning strings) or a vector "         \
     "of primitive scalar values, or provide a compatible into(...) overload."

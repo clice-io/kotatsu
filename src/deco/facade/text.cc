@@ -47,6 +47,7 @@ struct DiagnosticLayout {
 };
 
 auto paint(std::string_view ansi, std::string_view text) -> std::string;
+auto help_of(const UsageEntry& entry, const UsageStyle& style) -> std::string;
 auto join_argv(std::span<const std::string> argv) -> JoinedArgv;
 auto build_diagnostic_layout(const Diagnostic& diagnostic, std::size_t max_width)
     -> DiagnosticLayout;
@@ -198,10 +199,9 @@ struct ModernRendererImpl {
         if(!include_help) {
             return "  " + syntax;
         }
-        const std::string_view help = entry.help.empty() ? style.usage.default_help : entry.help;
         return lay_out_entry(syntax,
                              entry.usage.size(),
-                             paint(ansi_help, help),
+                             paint(ansi_help, help_of(entry, style.usage)),
                              style.usage.help_column);
     }
 
@@ -348,6 +348,15 @@ auto paint(std::string_view ansi, std::string_view text) -> std::string {
         return {};
     }
     return std::format("{}{}{}", ansi, text, ansi_reset);
+}
+
+/// The help `entry` is listed with: its own or the default, and whether it may be repeated.
+auto help_of(const UsageEntry& entry, const UsageStyle& style) -> std::string {
+    std::string help = entry.help.empty() ? style.default_help : entry.help;
+    if(entry.repeatable) {
+        help += style.repeatable_suffix;
+    }
+    return help;
 }
 
 auto join_argv(std::span<const std::string> argv) -> JoinedArgv {
@@ -632,10 +641,7 @@ auto render_usage(const UsageDocument& document, bool include_help, const Render
 }
 
 auto render_usage_entry(const UsageEntry& entry, const UsageStyle& style) -> std::string {
-    return lay_out_entry(entry.usage,
-                         entry.usage.size(),
-                         entry.help.empty() ? style.default_help : entry.help,
-                         style.help_column);
+    return lay_out_entry(entry.usage, entry.usage.size(), help_of(entry, style), style.help_column);
 }
 
 auto render_subcommands(const SubCommandDocument& document, const Renderer* renderer)

@@ -126,6 +126,38 @@ struct Script {
     <std::string> s;
 };
 
+/// Options that collect the values of every occurrence.
+struct Lists {
+    DECO_CFG_START(required = false);
+
+    DecoKV(names = {"--move"};)
+    <std::vector<std::string>> moves;
+
+    DecoKV()
+    <std::vector<int>> numbers;
+
+    DecoComma(names = {"--tags"};)
+    <std::vector<std::string>> tags;
+
+    DecoMulti(2, names = {"--pair"};)
+    <std::vector<int>> pairs;
+
+    DecoKV()
+    <std::vector<std::string>> defaulted = strings{"default"};
+
+    DECO_CFG_END();
+
+    DecoKVAlias(names = {"-m"}; forward = {"--move"};) _;
+};
+
+struct RequiredList {
+    DecoKV(names = {"-I"};)
+    <std::vector<std::string>> include;
+
+    DecoFlag(required = false;)
+    other;
+};
+
 struct ScriptArgs {
     DecoInput(required = false;)
     <std::vector<std::string>> args;
@@ -167,6 +199,85 @@ ZEST_CASE(repeated_option_keeps_the_last_value) {
     const auto parsed = cli::parse<Kinds>(argv);
     ZASSERT(parsed.has_value());
     ZEXPECT(parsed->options.level.as_optional() == std::optional(2));
+}
+
+ZEST_CASE(kv_takes_its_value_separate_or_after_equals) {
+    auto argv = test::split("--level=3 --out-path out");
+    const auto parsed = cli::parse<Kinds>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.level.as_optional() == std::optional(3));
+    ZEXPECT(parsed->options.output.out_path.as_optional() == std::optional<std::string>("out"));
+}
+
+ZEST_CASE(kv_list_collects_every_occurrence) {
+    // Each value is taken whole, commas and '=' too.
+    auto argv = test::split("--move a=x.h --move=b,c=y.h");
+    const auto parsed = cli::parse<Lists>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.moves.as_optional() == std::optional(strings{"a=x.h", "b,c=y.h"}));
+}
+
+ZEST_CASE(kv_list_parses_each_value) {
+    auto argv = test::split("--numbers 1 --numbers=2");
+    const auto parsed = cli::parse<Lists>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.numbers.as_optional() == std::optional(std::vector<int>{1, 2}));
+}
+
+ZEST_CASE(kv_list_bad_value_fails) {
+    auto argv = test::split("--numbers 1 --numbers x");
+    const auto parsed = cli::parse<Lists>(argv);
+    ZASSERT(!parsed.has_value());
+    ZEXPECT(parsed.error().type == cli::ParseError::Type::IntoError);
+    ZEXPECT(zest::starts_with(parsed.error().message, "at argv[2]:"));
+    ZEXPECT(zest::ends_with(parsed.error().message,
+                            "invalid vector value at index 1: invalid integer value: x"));
+}
+
+ZEST_CASE(comma_list_collects_every_occurrence) {
+    auto argv = test::split("--tags,a,b --tags,c");
+    const auto parsed = cli::parse<Lists>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.tags.as_optional() == std::optional(strings{"a", "b", "c"}));
+}
+
+ZEST_CASE(multi_collects_every_occurrence) {
+    auto argv = test::split("--pair 1 2 --pair 3 4");
+    const auto parsed = cli::parse<Lists>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.pairs.as_optional() == std::optional(std::vector<int>{1, 2, 3, 4}));
+}
+
+ZEST_CASE(list_given_replaces_its_default) {
+    auto argv = test::split("--defaulted a --defaulted b");
+    const auto parsed = cli::parse<Lists>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.defaulted.as_optional() == std::optional(strings{"a", "b"}));
+
+    std::vector<std::string> none;
+    const auto unset = cli::parse<Lists>(none);
+    ZASSERT(unset.has_value());
+    ZEXPECT(unset->options.defaulted.as_optional() == std::optional(strings{"default"}));
+}
+
+ZEST_CASE(list_collects_through_an_alias) {
+    auto argv = test::split("-m a --move b -m c");
+    const auto parsed = cli::parse<Lists>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.moves.as_optional() == std::optional(strings{"a", "b", "c"}));
+}
+
+ZEST_CASE(required_list_is_given_once) {
+    auto argv = test::split("-I a");
+    ZEXPECT(cli::parse<RequiredList>(argv).has_value());
+}
+
+ZEST_CASE(required_list_missing_fails) {
+    auto argv = test::split("--other");
+    const auto parsed = cli::parse<RequiredList>(argv);
+    ZASSERT(!parsed.has_value());
+    ZEXPECT(parsed.error().type == cli::ParseError::Type::DecoParsing);
+    ZEXPECT(zest::ends_with(parsed.error().message, "required option -I <value> is missing"));
 }
 
 ZEST_CASE(input_list_gathers_every_positional) {

@@ -38,7 +38,7 @@ struct Written {
     DecoFlagN(names = {"-n"};)
     repeat;
 
-    DecoKV(names = {"--count"};)
+    DecoKVStyled(decl::KVStyle::Separate, names = {"--count"};)
     <int> count;
 
     DecoKVStyled(decl::KVStyle::Joined, names = {"--joined"};)
@@ -117,6 +117,18 @@ struct InputList {
     <std::vector<std::string>> inputs;
 };
 
+struct Lists {
+    DECO_CFG_START(required = false);
+
+    DecoKV(names = {"-I"};)
+    <std::vector<std::string>> include;
+
+    DecoMulti(2, names = {"--pair"};)
+    <std::vector<int>> pairs;
+
+    DECO_CFG_END();
+};
+
 Written full() {
     Written written;
     written.verbose = true;
@@ -155,8 +167,7 @@ ZEST_CASE(options_write_in_declaration_order_with_the_pack_last) {
                                                               "7",
                                                               "--joined9",
                                                               "--split=3",
-                                                              "--auto-name",
-                                                              "11",
+                                                              "--auto-name=11",
                                                               "--tags,a,b",
                                                               "--pair",
                                                               "left",
@@ -192,8 +203,7 @@ ZEST_CASE(category_selects_what_is_written) {
     const decl::Category* selected[] = {&secondary_category, &trailing_category};
     ZEXPECT(ser::to_argv(full(), std::span<const decl::Category* const>(selected)) ==
             (std::vector<std::string>{"--split=3",
-                                      "--auto-name",
-                                      "11",
+                                      "--auto-name=11",
                                       "--tags,a,b",
                                       "--pair",
                                       "left",
@@ -218,7 +228,7 @@ ZEST_CASE(floating_point_writes_what_reads_back_the_same) {
     values.ratio = 0.1234567891;
     values.scale = 1e-7F;
     auto argv = ser::to_argv(values);
-    ZEXPECT(argv == (std::vector<std::string>{"--ratio", "0.1234567891", "--scale", "1e-07"}));
+    ZEXPECT(argv == (std::vector<std::string>{"--ratio=0.1234567891", "--scale=1e-07"}));
     const auto parsed = cli::parse<Numbers>(argv);
     ZASSERT(parsed.has_value());
     ZEXPECT(parsed->options.ratio.as_optional() == values.ratio.as_optional());
@@ -230,7 +240,7 @@ ZEST_CASE(enum_writes_its_name) {
     values.color = Color::DarkGreen;
     values.colors = std::vector<Color>{Color::Red, Color::DarkGreen};
     auto argv = ser::to_argv(values);
-    ZEXPECT(argv == (std::vector<std::string>{"--color", "darkGreen", "--colors,red,darkGreen"}));
+    ZEXPECT(argv == (std::vector<std::string>{"--color=darkGreen", "--colors,red,darkGreen"}));
     const auto parsed = cli::parse<Colors>(argv);
     ZASSERT(parsed.has_value());
     ZEXPECT(parsed->options.color.as_optional() == values.color.as_optional());
@@ -242,7 +252,7 @@ ZEST_CASE(bool_and_char_write_what_they_parse_from) {
     values.enabled = false;
     values.small = 'A';
     auto argv = ser::to_argv(values);
-    ZEXPECT(argv == (std::vector<std::string>{"--enabled", "false", "--small", "65"}));
+    ZEXPECT(argv == (std::vector<std::string>{"--enabled=false", "--small=65"}));
     const auto parsed = cli::parse<Numbers>(argv);
     ZASSERT(parsed.has_value());
     ZEXPECT(parsed->options.enabled.as_optional() == values.enabled.as_optional());
@@ -274,10 +284,30 @@ ZEST_CASE(any_value_reads_back_after_equals) {
     }
 }
 
+ZEST_CASE(kv_list_writes_an_occurrence_for_each_value) {
+    Lists values;
+    values.include = std::vector<std::string>{"a", "b,c"};
+    auto argv = ser::to_argv(values);
+    ZEXPECT(argv == (std::vector<std::string>{"-I=a", "-I=b,c"}));
+    const auto parsed = cli::parse<Lists>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.include.as_optional() == values.include.as_optional());
+}
+
+ZEST_CASE(multi_writes_an_occurrence_for_each_group) {
+    Lists values;
+    values.pairs = std::vector<int>{1, 2, 3, 4};
+    auto argv = ser::to_argv(values);
+    ZEXPECT(argv == (std::vector<std::string>{"--pair", "1", "2", "--pair", "3", "4"}));
+    const auto parsed = cli::parse<Lists>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.pairs.as_optional() == values.pairs.as_optional());
+}
+
 ZEST_CASE(alias_writes_nothing_of_its_own) {
     Aliased values;
     values.color = Color::Red;
-    ZEXPECT(ser::to_argv(values) == (std::vector<std::string>{"--color", "red"}));
+    ZEXPECT(ser::to_argv(values) == (std::vector<std::string>{"--color=red"}));
 }
 
 };  // ZEST_SUITE(deco_facade_serialize)
