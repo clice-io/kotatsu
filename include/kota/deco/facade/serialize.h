@@ -182,7 +182,7 @@ public:
         }
         const auto name = option_name(cfg, field_name);
         auto write = [&](std::string value) {
-            if(decl::detail::takes_value_after_equals(cfg.style, name, cfg.names.empty())) {
+            if(this->takes_equals_spelling(cfg, name)) {
                 // The form that reads back any value, an empty one or one starting with '=' too.
                 argv.push_back(name + "=" + value);
             } else if(decl::detail::is_joined_kv_name(cfg.style, name)) {

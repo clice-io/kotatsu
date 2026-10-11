@@ -118,6 +118,21 @@ struct Aliased {
     DecoFlagAlias(names = {"--red"}; forward = {"--color", "red"};) _;
 };
 
+/// An option whose '=' spelling an alias names.
+struct EqualsTaken {
+    DECO_CFG_START(required = false);
+
+    DecoKV(names = {"--x"};)
+    <std::string> x;
+
+    DecoKV(names = {"--y"};)
+    <std::string> y;
+
+    DECO_CFG_END();
+
+    DecoKVAlias(names = {"--x="}; forward = {"--y"};) _;
+};
+
 struct InputList {
     DecoInput(required = false;)
     <std::vector<std::string>> inputs;
@@ -290,6 +305,17 @@ ZEST_CASE(any_value_reads_back_after_equals) {
         ZEXPECT(parsed->options.label.as_optional() == values.label.as_optional());
         ZEXPECT(parsed->options.title.as_optional() == values.title.as_optional());
     }
+}
+
+ZEST_CASE(kv_whose_equals_spelling_is_taken_writes_its_value_apart) {
+    EqualsTaken values;
+    values.x = std::string("v");
+    auto argv = ser::to_argv(values);
+    ZEXPECT(argv == (std::vector<std::string>{"--x", "v"}));
+    const auto parsed = cli::parse<EqualsTaken>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.x.as_optional() == std::optional<std::string>("v"));
+    ZEXPECT(!parsed->options.y.has_value());
 }
 
 ZEST_CASE(separate_kv_writes_its_value_apart) {

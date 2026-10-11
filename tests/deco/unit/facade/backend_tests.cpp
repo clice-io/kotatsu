@@ -88,12 +88,17 @@ struct ManyNames {
     <int> d;
 };
 
-/// An option whose '=' spelling another field names.
+/// Options whose '=' spelling another field names, the same or through a prefix both accept.
 struct NamedEquals {
     DecoKV(names = {"--x"}; required = false;)
     <std::string> x;
 
+    DecoKV(names = {"/w"}; required = false;)
+    <std::string> w;
+
     DecoKVAlias(names = {"--x="}; forward = {"--y"};) _;
+
+    DecoKVAlias(names = {"-w="}; forward = {"--y"};) __;
 
     DecoKV(names = {"--y"}; required = false;)
     <std::string> y;
@@ -280,6 +285,8 @@ ZEST_CASE(equals_spelling_another_field_names_is_left_to_it) {
     const auto* equals = option_named<NamedEquals>("--x=");
     ZASSERT(equals != nullptr);
     ZEXPECT(detail::generator_of<NamedEquals>().alias_meta_of(equals->id) != nullptr);
+    // "/w=" would take "-w=" too.
+    ZEXPECT(option_named<NamedEquals>("/w=") == nullptr);
 }
 
 ZEST_CASE(joined_or_separate_kv_name_also_takes_its_value_after_equals) {

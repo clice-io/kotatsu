@@ -968,7 +968,9 @@ struct InputOption : DecoOption<ResTy> {
     }
 };
 
-/// An option with a vector result, which collects the values of every occurrence of it.
+/// An option with a vector result, which collects the values of every occurrence of it. The
+/// value is parsed anew from those each time, so a hook that changes it between occurrences
+/// sees the change replaced at the next one, unless it reset the option, which starts over.
 template <typename ResTy>
 struct VectorOption : DecoOption<ResTy> {
     static_assert(trait::VectorResultType<ResTy>, DecoVectorResultErrString);
