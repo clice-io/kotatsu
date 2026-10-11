@@ -22,7 +22,8 @@ struct UsageStyle {
     std::string group_prefix = "Group ";
     std::string exclusive_suffix = ", exclusive with other groups";
     std::string default_help = "no description provided";
-    /// After the help of an option every occurrence of which counts.
+    /// Follows the help of an option all of whose occurrences count: a DecoFlagN, or a named
+    /// option with a vector result.
     std::string repeatable_suffix = " (may be repeated)";
 };
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <format>
 #include <ranges>
@@ -235,6 +236,7 @@ public:
         // One occurrence for each arg_num values, which the option collects.
         const auto name = option_name(cfg, field_name);
         auto values = vector_to_args(*field);
+        assert(cfg.arg_num != 0 && values.size() % cfg.arg_num == 0);
         for(std::size_t i = 0; i < values.size(); ++i) {
             if(i % cfg.arg_num == 0) {
                 argv.push_back(name);

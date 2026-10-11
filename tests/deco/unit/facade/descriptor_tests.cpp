@@ -163,6 +163,22 @@ std::vector<std::vector<std::string>> written_forms(std::string_view usage) {
     return forms;
 }
 
+/// The value field `name` of `argv` parsed as Forms holds; argv must parse.
+std::optional<std::string> parsed_value(std::vector<std::string> argv, std::string_view name) {
+    auto parsed = cli::parse<Forms>(argv);
+    ZASSERT(parsed.has_value());
+    std::optional<std::string> value;
+    detail::generator_of<Forms>().visit_fields(
+        parsed->options,
+        [&](const auto& field, const auto&, std::string_view field_name, auto) {
+            if(field_name == name) {
+                value = field.as_optional();
+            }
+            return true;
+        });
+    return value;
+}
+
 ZEST_SUITE(deco_facade_descriptor) {
 
 ZEST_CASE(flag_shows_its_names) {
@@ -206,18 +222,28 @@ ZEST_CASE(every_kv_form_shown_parses) {
 
     for(auto& [name, argv]: shown) {
         ZEST_CONTEXT("{} written {}", name, argv.front());
-        auto parsed = cli::parse<Forms>(argv);
-        ZASSERT(parsed.has_value());
-        std::optional<std::string> value;
-        detail::generator_of<Forms>().visit_fields(
-            parsed->options,
-            [&](const auto& field, const auto&, std::string_view field_name, auto) {
-                if(field_name == name) {
-                    value = field.as_optional();
+        ZEXPECT(parsed_value(argv, name) == std::optional<std::string>("x"));
+    }
+}
+
+ZEST_CASE(every_kv_name_shown_separate_takes_its_value_after_equals_too) {
+    // Every such option of Forms is JoinedOrSeparate.
+    std::vector<std::pair<std::string, std::string>> shown;
+    detail::generator_of<Forms>().visit_fields(
+        Forms{},
+        [&](const auto& field, const auto&, std::string_view name, auto) {
+            for(auto& argv: written_forms(desc::from_deco_option(field, false, name))) {
+                if(argv.size() == 2) {
+                    shown.emplace_back(name, argv.front() + "=x");
                 }
-                return true;
-            });
-        ZEXPECT(value == std::optional<std::string>("x"));
+            }
+            return true;
+        });
+    ZEXPECT(shown.size() == 6U);
+
+    for(auto& [name, spelling]: shown) {
+        ZEST_CONTEXT("{} written {}", name, spelling);
+        ZEXPECT(parsed_value({spelling}, name) == std::optional<std::string>("x"));
     }
 }
 

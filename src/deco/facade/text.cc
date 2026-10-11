@@ -350,7 +350,8 @@ auto paint(std::string_view ansi, std::string_view text) -> std::string {
     return std::format("{}{}{}", ansi, text, ansi_reset);
 }
 
-/// The help `entry` is listed with: its own or the default, and whether it may be repeated.
+/// The help `entry` is listed with: its own or the default, then `style.repeatable_suffix` when
+/// the entry is repeatable.
 auto help_of(const UsageEntry& entry, const UsageStyle& style) -> std::string {
     std::string help = entry.help.empty() ? style.default_help : entry.help;
     if(entry.repeatable) {

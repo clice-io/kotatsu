@@ -161,6 +161,9 @@ ZEST_CASE(joined_or_separate_kv_alias_takes_each_name_by_its_end) {
     const auto by_joined = cli::parse<KVAliases>(joined);
     ZASSERT(by_joined.has_value());
     ZEXPECT(by_joined->options.target.as_optional() == std::optional<std::string>("42"));
+    // The alias named "--target=" takes it, not the option it forwards to.
+    ZASSERT(by_joined->trace().size() == 1U);
+    ZEXPECT(by_joined->trace()[0].spelling == "--target");
 
     auto separate = test::split("--target-alias 7");
     const auto by_separate = cli::parse<KVAliases>(separate);

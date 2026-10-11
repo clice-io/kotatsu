@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -145,6 +146,9 @@ struct Lists {
     DecoKV()
     <std::vector<std::string>> defaulted = strings{"default"};
 
+    DecoKVStyled(decl::KVStyle::Separate, names = {"--strict"};)
+    <std::string> strict;
+
     DECO_CFG_END();
 
     DecoKVAlias(names = {"-m"}; forward = {"--move"};) _;
@@ -209,6 +213,40 @@ ZEST_CASE(kv_takes_its_value_separate_or_after_equals) {
     ZEXPECT(parsed->options.output.out_path.as_optional() == std::optional<std::string>("out"));
 }
 
+ZEST_CASE(string_kv_keeps_the_last_value) {
+    auto argv = test::split("--out-path a --out-path b");
+    const auto parsed = cli::parse<Kinds>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.output.out_path.as_optional() == std::optional<std::string>("b"));
+}
+
+ZEST_CASE(separate_kv_value_after_equals_fails) {
+    auto argv = test::split("--strict=1");
+    const auto parsed = cli::parse<Lists>(argv);
+    ZASSERT(!parsed.has_value());
+    ZEXPECT(parsed.error().type == cli::ParseError::Type::BackendParsing);
+    ZEXPECT(zest::ends_with(parsed.error().message, "unknown option '--strict=1'"));
+}
+
+ZEST_CASE(usage_says_which_options_may_be_repeated) {
+    std::ostringstream usage;
+    cli::write_usage_for<Kinds>(usage, "app");
+    // The line of each option, by how it starts.
+    auto line_of = [&](std::string_view start) {
+        for(const auto& line: test::split(usage.str(), '\n')) {
+            if(line.starts_with(start)) {
+                return line;
+            }
+        }
+        return std::string();
+    };
+    ZEXPECT(zest::ends_with(line_of("  -d"), "(may be repeated)"));
+    ZEXPECT(zest::ends_with(line_of("  --tags,"), "(may be repeated)"));
+    ZEXPECT(zest::ends_with(line_of("  --pair"), "(may be repeated)"));
+    ZEXPECT(!zest::contains(line_of("  --level"), "(may be repeated)"));
+    ZEXPECT(!zest::contains(line_of("  -v"), "(may be repeated)"));
+}
+
 ZEST_CASE(kv_list_collects_every_occurrence) {
     // Each value is taken whole, commas and '=' too.
     auto argv = test::split("--move a=x.h --move=b,c=y.h");
@@ -253,23 +291,27 @@ ZEST_CASE(list_given_replaces_its_default) {
     const auto parsed = cli::parse<Lists>(argv);
     ZASSERT(parsed.has_value());
     ZEXPECT(parsed->options.defaulted.as_optional() == std::optional(strings{"a", "b"}));
+}
 
-    std::vector<std::string> none;
-    const auto unset = cli::parse<Lists>(none);
-    ZASSERT(unset.has_value());
-    ZEXPECT(unset->options.defaulted.as_optional() == std::optional(strings{"default"}));
+ZEST_CASE(list_not_given_keeps_its_default) {
+    std::vector<std::string> argv;
+    const auto parsed = cli::parse<Lists>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.defaulted.as_optional() == std::optional(strings{"default"}));
 }
 
 ZEST_CASE(list_collects_through_an_alias) {
-    auto argv = test::split("-m a --move b -m c");
+    auto argv = test::split("-m a --move b -m=c");
     const auto parsed = cli::parse<Lists>(argv);
     ZASSERT(parsed.has_value());
     ZEXPECT(parsed->options.moves.as_optional() == std::optional(strings{"a", "b", "c"}));
 }
 
-ZEST_CASE(required_list_is_given_once) {
+ZEST_CASE(required_list_given_once_is_satisfied) {
     auto argv = test::split("-I a");
-    ZEXPECT(cli::parse<RequiredList>(argv).has_value());
+    const auto parsed = cli::parse<RequiredList>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.include.as_optional() == std::optional(strings{"a"}));
 }
 
 ZEST_CASE(required_list_missing_fails) {

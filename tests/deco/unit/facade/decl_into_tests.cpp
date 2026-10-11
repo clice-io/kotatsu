@@ -361,6 +361,7 @@ ZEST_CASE(vector_bad_value_keeps_what_it_had) {
     const auto error = option.into(arg_of("--list", {"x"}));
     ZASSERT(error.has_value());
     ZEXPECT(*error == "invalid vector value at index 1: invalid integer value: x");
+    ZEXPECT(option.as_optional() == std::optional(std::vector<int>{1}));
     ZEXPECT(!option.into(arg_of("--list", {"2"})));
     ZEXPECT(option.as_optional() == std::optional(std::vector<int>{1, 2}));
 }

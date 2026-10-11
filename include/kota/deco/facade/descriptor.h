@@ -167,27 +167,23 @@ inline std::string join_aliases(const std::vector<std::string>& aliases, bool he
 
 /// The forms KV option `cfg` is written in, as the parser takes them: its names that take
 /// their value separate together, `-o|--output <FILE>`, then each that takes it joined,
-/// `--output=<FILE>`. A generated name is written separate when it takes its value so, else
-/// joined after '='. That a name taking its value separate takes it after '=' too goes
-/// without saying.
+/// `--output=<FILE>` or `-I<DIR>`. The '=' form a name that takes its value separate may
+/// also take (takes_value_after_equals()) goes without saying.
 template <typename CfgTy>
 inline std::string kv_usage_text(const CfgTy& cfg,
                                  bool help_mode,
                                  std::string_view fallback_name,
                                  std::string_view value_token) {
+    const bool generated = cfg.names.empty();
     std::vector<std::string> separate;
     std::vector<std::string> joined;
-    if(cfg.names.empty()) {
-        const auto name = named_aliases(cfg, fallback_name).front();
-        if(decl::detail::has_kv_style(cfg.style, decl::KVStyle::Separate)) {
+    for(const auto& name: named_aliases(cfg, fallback_name)) {
+        if(!decl::detail::is_joined_kv_name(cfg.style, name)) {
             separate.push_back(name);
-        } else {
+        } else if(decl::detail::takes_value_after_equals(cfg.style, name, generated)) {
             joined.push_back(name + "=");
-        }
-    } else {
-        for(const auto name: cfg.names) {
-            (decl::detail::is_joined_kv_name(cfg.style, name) ? joined : separate)
-                .emplace_back(name);
+        } else {
+            joined.push_back(name);
         }
     }
 
@@ -278,6 +274,16 @@ constexpr bool is_repeatable() {
     }
 }
 
+/// The entry of option or alias `FieldTy`, declared `cfg`, in a usage listing, written `usage`.
+template <typename FieldTy, typename CfgTy>
+inline cli::text::UsageEntry usage_entry(const CfgTy& cfg, std::string usage) {
+    return cli::text::UsageEntry{
+        .usage = std::move(usage),
+        .help = has_help_text(cfg.help) ? std::string(cfg.help) : std::string{},
+        .repeatable = is_repeatable<FieldTy>(),
+    };
+}
+
 template <typename FieldTy, typename CfgTy>
 inline std::string usage_text_for_field(const FieldTy&,
                                         const CfgTy& cfg,
@@ -318,13 +324,8 @@ inline std::string from_deco_option(const T& field,
     if(!include_help) {
         return usage;
     }
-    return cli::text::render_usage_entry(
-        cli::text::UsageEntry{
-            .usage = std::move(usage),
-            .help = detail::has_help_text(cfg.help) ? std::string(cfg.help) : std::string{},
-            .repeatable = detail::is_repeatable<T>(),
-        },
-        config.render.compatible.usage);
+    return cli::text::render_usage_entry(detail::usage_entry<T>(cfg, std::move(usage)),
+                                         config.render.compatible.usage);
 }
 
 }  // namespace kota::deco::desc

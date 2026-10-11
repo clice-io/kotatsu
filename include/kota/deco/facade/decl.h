@@ -77,7 +77,7 @@ enum KVStyle : char {
     // -o 1
     Separate = 1 << 1,
 
-    // -o 1 or -o=1, DecoKV's default
+    // -o 1 or -o=1, DecoKV's and DecoKVAlias's default
     JoinedOrSeparate = Joined | Separate
 };
 
@@ -856,12 +856,16 @@ std::optional<std::string> assign_vector(std::optional<ResTy>& target,
 /// Adds `values`, those of one more occurrence of an option, to `raw_values`, the values of
 /// its occurrences before, and parses them all into `target` as if given at once: the first
 /// occurrence replaces a default, and a custom result type sees every value. Values that fail
-/// are dropped again, so that the next occurrence goes on from those before.
+/// are dropped again, so that the next occurrence goes on from those before; a `target` reset
+/// meanwhile (by a hook) starts over from `values`.
 template <typename ResTy>
 std::optional<std::string> append_vector(std::optional<ResTy>& target,
                                          std::vector<std::string>& raw_values,
-                                         std::span<const std::string_view> values,
+                                         std::span<const std::string> values,
                                          const IntoContext& context = {}) {
+    if(!target.has_value()) {
+        raw_values.clear();
+    }
     const auto given_before = raw_values.size();
     raw_values.insert(raw_values.end(), values.begin(), values.end());
     std::vector<std::string_view> all_values(raw_values.begin(), raw_values.end());
@@ -951,14 +955,15 @@ struct InputOption : DecoOption<ResTy> {
             return context.format_error("input option expects at most one value");
         } else {
             if(arg.values.empty()) {
-                const std::string_view spelling = arg.spelling;
                 return detail::append_vector(this->as_optional(),
                                              this->raw_values,
-                                             {&spelling, 1},
+                                             {&arg.spelling, 1},
                                              context);
             }
-            std::vector<std::string_view> views(arg.values.begin(), arg.values.end());
-            return detail::append_vector(this->as_optional(), this->raw_values, views, context);
+            return detail::append_vector(this->as_optional(),
+                                         this->raw_values,
+                                         arg.values,
+                                         context);
         }
     }
 };
@@ -978,8 +983,7 @@ struct VectorOption : DecoOption<ResTy> {
 
     std::optional<std::string> into(const ParsedArgOwning& arg,
                                     const IntoContext& context) override {
-        std::vector<std::string_view> views(arg.values.begin(), arg.values.end());
-        return detail::append_vector(this->as_optional(), raw_values, views, context);
+        return detail::append_vector(this->as_optional(), raw_values, arg.values, context);
     }
 };
 

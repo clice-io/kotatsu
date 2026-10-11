@@ -15,8 +15,7 @@ namespace kota::zest {
 ///
 ///     struct MyTestOptions {
 ///         kota::zest::Options zest;
-///         DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate,
-///                      meta_var = "<DIR>"; help = "corpus directory")
+///         DecoKV(meta_var = "<DIR>"; help = "corpus directory")
 ///         <std::string> corpus_dir;
 ///     };
 ///
@@ -27,9 +26,8 @@ namespace kota::zest {
 /// Tests run in worker processes that re-execute the program with the original
 /// arguments, so the embedding `main` sees its own flags there too.
 struct Options {
-    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<PATTERN>";
-                 help = "test name filter: SUITE or SUITE.TEST or SUITE.* or *";
-                 required = false)
+    DecoKV(meta_var = "<PATTERN>"; help = "test name filter: SUITE or SUITE.TEST or SUITE.* or *";
+           required = false)
     <std::string> test_filter = "";
 
     DecoFlag(help = "print all test results, not just failures"; required = false)
@@ -38,16 +36,16 @@ struct Options {
     DecoFlag(help = "list all registered test cases and exit"; required = false)
     list_tests = false;
 
-    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<N>";
-                 help = "worker processes running tests at once (0 = one per available CPU)";
-                 required = false)
+    DecoKV(meta_var = "<N>";
+           help = "worker processes running tests at once (0 = one per available CPU)";
+           required = false)
     <unsigned> jobs = 0;
 
-    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<SECONDS>";
-                 help =
-                     "kill a test, or a worker starting or exiting, that takes longer "
-                     "than this (0 = no limit)";
-                 required = false)
+    DecoKV(meta_var = "<SECONDS>";
+           help =
+               "kill a test, or a worker starting or exiting, that takes longer "
+               "than this (0 = no limit)";
+           required = false)
     <unsigned> timeout = 60;
 
     DecoFlag(help =
@@ -63,9 +61,7 @@ struct Options {
     DecoFlag(help = "remove orphaned snapshot files not used in this run"; required = false)
     cleanup_snapshots = false;
 
-    DecoKVStyled(kota::deco::decl::KVStyle::JoinedOrSeparate, meta_var = "<DIR>";
-                 help = "directory for snapshot files";
-                 required = false)
+    DecoKV(meta_var = "<DIR>"; help = "directory for snapshot files"; required = false)
     <std::string> snapshot_dir = "";
 
     // run_tests reads this from argv itself; it is declared so that a worker's

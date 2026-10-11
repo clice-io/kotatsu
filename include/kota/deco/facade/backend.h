@@ -454,8 +454,8 @@ private:
 
     /// Adds KV option or alias `fields`: each explicit name takes its value the way
     /// is_joined_kv_name() says, and a generated name takes it separate or joined, as the style
-    /// allows; each name that takes_value_after_equals() also takes it after '=', unless
-    /// `fields` names that spelling itself.
+    /// allows; each name that takes_value_after_equals() also takes it after '=', unless a field
+    /// of the struct names that spelling itself.
     template <typename FieldsTy>
     constexpr void add_kv(const FieldsTy& fields,
                           std::string_view field_name,
@@ -478,23 +478,34 @@ private:
                                                                 : backend::Kind::Separate;
         });
 
+        const bool generated = fields.names.empty();
         auto add_equals_spelling = [&](std::string_view name) {
+            const auto equals = std::string(name) + "=";
+            if(!decl::detail::takes_value_after_equals(fields.style, name, generated) ||
+               names_spelling(equals)) {
+                return;
+            }
             const auto spelling = add_spelling(id);
             items[spelling].kind = backend::Kind::Joined;
-            set_name(spelling, std::string(name) + "=");
+            set_name(spelling, equals);
         };
-        if(fields.names.empty()) {
-            if(joined) {
-                add_equals_spelling(decl::detail::generated_option_name(field_name));
-            }
-            return;
+        if(generated) {
+            add_equals_spelling(decl::detail::generated_option_name(field_name));
         }
         for(const auto name: fields.names) {
-            if(decl::detail::takes_value_after_equals(fields.style, name, false) &&
-               std::ranges::find(fields.names, std::string(name) + "=") == fields.names.end()) {
-                add_equals_spelling(name);
-            }
+            add_equals_spelling(name);
         }
+    }
+
+    /// Whether an option or alias of the struct is explicitly named `spelling`.
+    constexpr bool names_spelling(std::string_view spelling) const {
+        return !this->visit_schema_fields([&](auto, const auto& cfg, std::string_view, auto) {
+            if constexpr(requires { cfg.names; }) {
+                return std::ranges::find(cfg.names, spelling) == cfg.names.end();
+            } else {
+                return true;
+            }
+        });
     }
 
     constexpr static unsigned char checked_arg_num(std::uint32_t arg_num) {
