@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -292,7 +293,7 @@ auto misaligned_vector(std::uint32_t count, std::span<const std::byte> elements)
     put32(16, 8);
     put32(20, 12);
     put32(32, count);
-    std::memcpy(&bytes[36], elements.data(), elements.size());
+    std::ranges::copy(elements, reinterpret_cast<std::byte*>(bytes.data()) + 36);
     return bytes;
 }
 
@@ -631,6 +632,28 @@ ZEST_CASE(misaligned_vector_elements_view_fails) {
     const std::array<std::uint64_t, 2> values{7, 0xFFFFFFFFFFFFFFFFULL};
     ZEXPECT(!table_view<Hashes>::from_bytes(misaligned_vector(2, std::as_bytes(std::span(values))))
                  .valid());
+}
+
+ZEST_CASE(empty_vector_views_wherever_its_data_sits) {
+    // An empty vector has no element to read in place, so its data's
+    // alignment is never asked for: flatbuffers aligns only data it writes.
+    auto hashes = misaligned_vector(0, {});
+    ZASSERT(reinterpret_cast<std::uintptr_t>(hashes.data() + 36) % alignof(std::uint64_t) != 0U);
+    auto hashes_view = table_view<Hashes>::from_bytes(hashes);
+    ZASSERT(hashes_view.valid());
+    auto values = hashes_view[&Hashes::values];
+    ZEXPECT(values.valid());
+    ZEXPECT(values.empty());
+    ZEXPECT(values.data() == nullptr);
+
+    auto mesh = misaligned_vector(0, {});
+    ZASSERT(reinterpret_cast<std::uintptr_t>(mesh.data() + 36) % alignof(Vec4) != 0U);
+    auto mesh_view = table_view<Mesh>::from_bytes(mesh);
+    ZASSERT(mesh_view.valid());
+    auto points = mesh_view[&Mesh::points];
+    ZEXPECT(points.valid());
+    ZEXPECT(points.empty());
+    ZEXPECT(points.data() == nullptr);
 }
 
 ZEST_CASE(converted_cells_view_wherever_they_sit) {

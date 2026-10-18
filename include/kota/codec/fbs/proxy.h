@@ -823,10 +823,14 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
             // but checked only the length word's alignment, and only relative
             // to the buffer's start. array_view reads elements stored in place
             // through pointers to them, so their data must sit aligned at its
-            // actual address; the others it copies out.
+            // actual address; the others it copies out. An empty vector has
+            // nothing to read, and flatbuffers aligns a vector's data only
+            // when it has some: an empty one's sits wherever its length word
+            // ends, which array_view::data() never hands out.
             const auto* data = vec->Data();
             if constexpr(stored_in_place<element_t>()) {
-                if(reinterpret_cast<std::uintptr_t>(data) % alignof(apply_repr_t<element_t>) != 0) {
+                if(vec->size() != 0 &&
+                   reinterpret_cast<std::uintptr_t>(data) % alignof(apply_repr_t<element_t>) != 0) {
                     return false;
                 }
             }
@@ -1057,10 +1061,11 @@ public:
         return length == 0U;
     }
 
-    /// The elements themselves; null for an absent vector.
+    /// The elements themselves; null for an absent or empty vector, since
+    /// an empty one's data need not be aligned for value_type.
     auto data() const noexcept -> const value_type*
         requires contiguous {
-        return valid() ? reinterpret_cast<const value_type*>(vector->Data()) : nullptr;
+        return length != 0U ? reinterpret_cast<const value_type*>(vector->Data()) : nullptr;
     }
 
     auto begin() const -> iterator {
@@ -1346,11 +1351,11 @@ public:
     /// flatbuffers' maximum buffer size (just under 2 GiB). The views read
     /// the vectors whose elements are stored in place (integers, float,
     /// double, char, std::byte, inline structs aligned no more than operator
-    /// new aligns) through pointers to them, so that element data must also
-    /// sit aligned for the element at its actual address: to_bytes aligns it
-    /// within the buffer, so a buffer held in a std::vector or a memory map
-    /// passes; the same bytes copied to an odd address do not, though
-    /// fbs::from_bytes still decodes them.
+    /// new aligns) through pointers to them, so the element data of a
+    /// non-empty one must also sit aligned for the element at its actual
+    /// address: to_bytes aligns it within the buffer, so a buffer held in a
+    /// std::vector or a memory map passes; the same bytes copied to an odd
+    /// address do not, though fbs::from_bytes still decodes them.
     static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
         assert_viewable();
         auto opened = detail::open_root(bytes);
