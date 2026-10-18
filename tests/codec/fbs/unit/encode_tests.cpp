@@ -16,10 +16,12 @@
 #include <variant>
 #include <vector>
 
+#include "codec/fbs/harness/backend.h"
 #include "codec/fbs/harness/struct_keys.h"
 #include "codec/harness/fixtures/attrs.h"
 #include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/enums.h"
+#include "codec/harness/fixtures/everything.h"
 #include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/repr.h"
@@ -463,6 +465,14 @@ struct Reading {
 };
 
 ZEST_SUITE(codec_fbs_encode) {
+
+ZEST_CASE(everything_lowering) {
+    // How each kind lowers into a flatbuffers buffer, in one document: the
+    // layout is a pure function of the type, and these bytes pin it.
+    auto document = fbs::to_bytes(test::Everything::typical());
+    ZASSERT(document);
+    ZEXPECT(zest::snapshot(test::Fbs::render(*document)));
+}
 
 ZEST_CASE(buffer_carries_the_identifier) {
     auto bytes = fbs::to_bytes(test::Point{.x = 1, .y = 2});
