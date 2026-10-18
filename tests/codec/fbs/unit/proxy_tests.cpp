@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -133,6 +134,8 @@ struct Columns {
     std::vector<char> letters;
     std::vector<std::byte> blob;
     std::vector<test::Point> points;
+    std::vector<test::Point2d> corners;
+    std::vector<Vec4> quads;
     std::vector<bool> flags;
     std::vector<test::SignedEnum> signs;
     std::vector<long double> wide;
@@ -149,10 +152,52 @@ auto make_columns() -> Columns {
         .letters = {'k', static_cast<char>(0xE9)},
         .blob = {std::byte{0x01}, std::byte{0xFE}},
         .points = {{.x = 1, .y = 2}, {.x = 3, .y = 4}},
+        .corners = {{.x = 0.5, .y = -1.5}},
+        .quads = {{.x = 1, .y = 2, .z = 3, .w = 4}},
         .flags = {true, false, true},
         .signs = {test::SignedEnum::neg, test::SignedEnum::pos},
         .wide = {0.25L},
     };
+}
+
+/// Columns one level down: in a nested table and in a vector of tables, and
+/// a column as the boxed elements of a vector of vectors.
+struct ColumnTables {
+    Columns nested;
+    std::vector<Columns> rows;
+    std::vector<std::vector<std::uint64_t>> grid;
+};
+
+/// Checks that a column reads as an empty range, handing out no pointer.
+template <typename Column>
+void expect_empty(std::string_view name, const Column& column) {
+    ZEST_CONTEXT("{}", name);
+    ZEXPECT(column.valid());
+    ZEXPECT(column.empty());
+    ZEXPECT(std::ranges::distance(column) == 0);
+    if constexpr(std::ranges::contiguous_range<Column>) {
+        ZEXPECT(column.data() == nullptr);
+    }
+}
+
+/// Checks that every column of a Columns table reads as an empty range.
+void expect_empty_columns(std::string_view table, const table_view<Columns>& columns) {
+    ZEST_CONTEXT("{}", table);
+    ZASSERT(columns.valid());
+    expect_empty("hashes", columns[&Columns::hashes]);
+    expect_empty("ends", columns[&Columns::ends]);
+    expect_empty("deltas", columns[&Columns::deltas]);
+    expect_empty("weights", columns[&Columns::weights]);
+    expect_empty("scores", columns[&Columns::scores]);
+    expect_empty("postings", columns[&Columns::postings]);
+    expect_empty("letters", columns[&Columns::letters]);
+    expect_empty("blob", columns[&Columns::blob]);
+    expect_empty("points", columns[&Columns::points]);
+    expect_empty("corners", columns[&Columns::corners]);
+    expect_empty("quads", columns[&Columns::quads]);
+    expect_empty("flags", columns[&Columns::flags]);
+    expect_empty("signs", columns[&Columns::signs]);
+    expect_empty("wide", columns[&Columns::wide]);
 }
 
 /// An unsigned key whose value a negative probe converts to.
@@ -502,6 +547,7 @@ ZEST_CASE(array_view_is_contiguous_when_elements_are_stored_as_themselves) {
     ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<char>>);
     ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<std::byte>>);
     ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<test::Point>>);
+    ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<test::Point2d>>);
     ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<Vec4>>);
     // Aligned past operator new: copied out, wherever the buffer sits.
     ZSTATIC_EXPECT(!std::ranges::contiguous_range<array_view<test::Vec8>>);
@@ -531,6 +577,51 @@ ZEST_CASE(array_view_is_contiguous_when_elements_are_stored_as_themselves) {
     ZEXPECT(std::span<const char>(root[&Columns::letters]) == make_columns().letters);
     ZEXPECT(std::span<const std::byte>(root[&Columns::blob]) == make_columns().blob);
     ZEXPECT(std::span<const test::Point>(root[&Columns::points]) == make_columns().points);
+    ZEXPECT(std::span<const test::Point2d>(root[&Columns::corners]) == make_columns().corners);
+    ZEXPECT(std::span<const Vec4>(root[&Columns::quads]) == make_columns().quads);
+}
+
+ZEST_CASE(empty_columns_read_as_empty_ranges) {
+    // flatbuffers aligns a vector's data only when it has some, so an empty
+    // vector's sits wherever its length word ends, which may be off a wide
+    // element's alignment. With no element to read in place, it verifies
+    // wherever it sits, and the view hands out no pointer to it.
+    auto columns = fbs::to_bytes(Columns{});
+    ZASSERT(columns);
+    const auto root = table_view<Columns>::from_bytes(*columns);
+    ZASSERT(root.valid());
+    // The empty columns' length words sit 4 bytes apart, so some wide one's
+    // data is off its alignment.
+    const auto misaligned = [](const auto& column, std::size_t alignment) -> bool {
+        return reinterpret_cast<std::uintptr_t>(column.raw()->Data()) % alignment != 0U;
+    };
+    ZASSERT((misaligned(root[&Columns::hashes], alignof(std::uint64_t)) ||
+             misaligned(root[&Columns::corners], alignof(test::Point2d)) ||
+             misaligned(root[&Columns::quads], alignof(Vec4))));
+    expect_empty_columns("root", root);
+    const bound_view bound(root);
+    ZEXPECT(bound[&Columns::hashes].data() == nullptr);
+    ZEXPECT(bound[&Columns::quads].data() == nullptr);
+
+    auto tables = fbs::to_bytes(ColumnTables{
+        .nested = {},
+        .rows = {Columns{}, Columns{}},
+        .grid = {{}, {}},
+    });
+    ZASSERT(tables);
+    const auto tables_root = table_view<ColumnTables>::from_bytes(*tables);
+    ZASSERT(tables_root.valid());
+    expect_empty_columns("nested", tables_root[&ColumnTables::nested]);
+    auto rows = tables_root[&ColumnTables::rows];
+    ZASSERT(rows.size() == 2U);
+    for(std::size_t i = 0; i < rows.size(); ++i) {
+        expect_empty_columns(std::format("rows[{}]", i), rows[i]);
+    }
+    auto grid = tables_root[&ColumnTables::grid];
+    ZASSERT(grid.size() == 2U);
+    for(std::size_t i = 0; i < grid.size(); ++i) {
+        expect_empty(std::format("grid[{}]", i), grid[i]);
+    }
 }
 
 ZEST_CASE(array_view_iterates_every_element_layout) {
