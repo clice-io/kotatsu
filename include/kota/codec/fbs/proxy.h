@@ -823,10 +823,10 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
             // but checked only the length word's alignment, and only relative
             // to the buffer's start. array_view reads elements stored in place
             // through pointers to them, so their data must sit aligned at its
-            // actual address; the others it copies out. An empty vector has
-            // nothing to read, and flatbuffers aligns a vector's data only
-            // when it has some: an empty one's sits wherever its length word
-            // ends, which array_view::data() never hands out.
+            // actual address; the others it copies out. flatbuffers aligns a
+            // vector's data only when it has some, so an empty one's sits
+            // wherever its length word ends; it has nothing to read, and
+            // array_view::data() returns null for it.
             const auto* data = vec->Data();
             if constexpr(stored_in_place<element_t>()) {
                 if(vec->size() != 0 &&
@@ -1065,7 +1065,7 @@ public:
     /// an empty one's data need not be aligned for value_type.
     auto data() const noexcept -> const value_type*
         requires contiguous {
-        return length != 0U ? reinterpret_cast<const value_type*>(vector->Data()) : nullptr;
+        return empty() ? nullptr : reinterpret_cast<const value_type*>(vector->Data());
     }
 
     auto begin() const -> iterator {

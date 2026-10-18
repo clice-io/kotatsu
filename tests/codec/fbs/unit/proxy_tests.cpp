@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -159,8 +160,8 @@ auto make_columns() -> Columns {
     };
 }
 
-/// Columns where tables hold them: a nested table, a vector of tables, and
-/// a vector of vectors, whose elements are boxed.
+/// Columns one level down: in a nested table and in a vector of tables, and
+/// a column as the boxed elements of a vector of vectors.
 struct ColumnTables {
     Columns nested;
     std::vector<Columns> rows;
@@ -180,7 +181,8 @@ void expect_empty(std::string_view name, const Column& column) {
 }
 
 /// Checks that every column of a Columns table reads as an empty range.
-void expect_empty_columns(const table_view<Columns>& columns) {
+void expect_empty_columns(std::string_view table, const table_view<Columns>& columns) {
+    ZEST_CONTEXT("{}", table);
     ZASSERT(columns.valid());
     expect_empty("hashes", columns[&Columns::hashes]);
     expect_empty("ends", columns[&Columns::ends]);
@@ -545,6 +547,7 @@ ZEST_CASE(array_view_is_contiguous_when_elements_are_stored_as_themselves) {
     ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<char>>);
     ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<std::byte>>);
     ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<test::Point>>);
+    ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<test::Point2d>>);
     ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<Vec4>>);
     // Aligned past operator new: copied out, wherever the buffer sits.
     ZSTATIC_EXPECT(!std::ranges::contiguous_range<array_view<test::Vec8>>);
@@ -580,13 +583,22 @@ ZEST_CASE(array_view_is_contiguous_when_elements_are_stored_as_themselves) {
 
 ZEST_CASE(empty_columns_read_as_empty_ranges) {
     // flatbuffers aligns a vector's data only when it has some, so an empty
-    // vector's sits wherever its length word ends, off the alignment of a
-    // wide element. With no element to read in place, it verifies wherever
-    // it sits, and the view hands out no pointer to it.
+    // vector's sits wherever its length word ends, which may be off a wide
+    // element's alignment. With no element to read in place, it verifies
+    // wherever it sits, and the view hands out no pointer to it.
     auto columns = fbs::to_bytes(Columns{});
     ZASSERT(columns);
     const auto root = table_view<Columns>::from_bytes(*columns);
-    expect_empty_columns(root);
+    ZASSERT(root.valid());
+    // The empty columns' length words sit 4 bytes apart, so some wide one's
+    // data is off its alignment.
+    const auto misaligned = [](const auto& column, std::size_t alignment) -> bool {
+        return reinterpret_cast<std::uintptr_t>(column.raw()->Data()) % alignment != 0U;
+    };
+    ZASSERT((misaligned(root[&Columns::hashes], alignof(std::uint64_t)) ||
+             misaligned(root[&Columns::corners], alignof(test::Point2d)) ||
+             misaligned(root[&Columns::quads], alignof(Vec4))));
+    expect_empty_columns("root", root);
     const bound_view bound(root);
     ZEXPECT(bound[&Columns::hashes].data() == nullptr);
     ZEXPECT(bound[&Columns::quads].data() == nullptr);
@@ -597,18 +609,18 @@ ZEST_CASE(empty_columns_read_as_empty_ranges) {
         .grid = {{}, {}},
     });
     ZASSERT(tables);
-    auto tables_root = table_view<ColumnTables>::from_bytes(*tables);
+    const auto tables_root = table_view<ColumnTables>::from_bytes(*tables);
     ZASSERT(tables_root.valid());
-    expect_empty_columns(tables_root[&ColumnTables::nested]);
+    expect_empty_columns("nested", tables_root[&ColumnTables::nested]);
     auto rows = tables_root[&ColumnTables::rows];
     ZASSERT(rows.size() == 2U);
-    for(auto row: rows) {
-        expect_empty_columns(row);
+    for(std::size_t i = 0; i < rows.size(); ++i) {
+        expect_empty_columns(std::format("rows[{}]", i), rows[i]);
     }
     auto grid = tables_root[&ColumnTables::grid];
     ZASSERT(grid.size() == 2U);
-    for(auto line: grid) {
-        expect_empty("grid", line);
+    for(std::size_t i = 0; i < grid.size(); ++i) {
+        expect_empty(std::format("grid[{}]", i), grid[i]);
     }
 }
 
