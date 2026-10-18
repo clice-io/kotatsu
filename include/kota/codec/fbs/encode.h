@@ -472,7 +472,7 @@ struct BoxedTableCollector {
 /// map_view::find_entry applies to decoded keys (proxy_detail::ordering_less):
 /// strings compare lexicographically (captured owning — the buffer is still
 /// being built), enums by their underlying value, reflected structs
-/// field-wise, every other scalar as itself.
+/// field-wise, every other scalar as ordering_less compares it.
 template <typename K>
 constexpr auto ordering_key_impl() {
     using clean_k = proxy_detail::deep_clean_t<K>;

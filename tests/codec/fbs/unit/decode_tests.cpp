@@ -1,6 +1,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <optional>
@@ -243,6 +244,56 @@ struct Node {
     std::unique_ptr<Node> next;
 };
 
+/// A bool table slot; the string keeps the struct table-shaped.
+struct Switch {
+    bool on = false;
+    std::string label;
+};
+
+/// Over-aligned: SSE loads of it need 16-byte alignment.
+struct alignas(16) Vec4 {
+    float x = 0;
+    float y = 0;
+    float z = 0;
+    float w = 0;
+
+    auto operator==(const Vec4&) const -> bool = default;
+};
+
+struct Mesh {
+    std::vector<Vec4> points;
+};
+
+struct Hashes {
+    std::vector<std::uint64_t> values;
+};
+
+/// A buffer whose root table holds one vector, with the element data 4
+/// bytes past a 16-byte boundary: the length word is 4-aligned, all the
+/// verifier asks of it, while anything wider sits misaligned.
+auto misaligned_vector(std::uint32_t count, std::span<const std::byte> elements)
+    -> std::vector<std::uint8_t> {
+    std::vector<std::uint8_t> bytes(36 + elements.size(), 0);
+    auto put32 = [&](std::size_t at, std::uint32_t value) {
+        std::memcpy(&bytes[at], &value, sizeof(value));
+    };
+    auto put16 = [&](std::size_t at, std::uint16_t value) {
+        std::memcpy(&bytes[at], &value, sizeof(value));
+    };
+    put32(0, 16);
+    std::memcpy(&bytes[4], "EVTO", 4);
+    // The vtable at 8: its own 6 bytes, an 8-byte table, the field at +4.
+    put16(8, 6);
+    put16(10, 8);
+    put16(12, 4);
+    // The table at 16, the vector it points to at 32.
+    put32(16, 8);
+    put32(20, 12);
+    put32(32, count);
+    std::memcpy(&bytes[36], elements.data(), elements.size());
+    return bytes;
+}
+
 struct MaybeAddress {
     std::variant<std::monostate, test::Address> maybe;
 };
@@ -385,34 +436,34 @@ ZEST_CASE(root_table_in_the_identifier_fails) {
 
 ZEST_CASE(hostile_bytes_stay_in_bounds) {
     expect_hostile_bytes_contained(make_rich(), [](const table_view<Rich>& root) {
-        [[maybe_unused]] auto title = root[&Rich::title];
-        auto tags = root[&Rich::tags];
+        [[maybe_unused]] auto title = root.get<&Rich::title>();
+        auto tags = root.get<&Rich::tags>();
         for(std::size_t i = 0; i < tags.size(); ++i) {
             [[maybe_unused]] auto tag = tags[i];
         }
-        auto items = root[&Rich::items];
+        auto items = root.get<&Rich::items>();
         for(std::size_t i = 0; i < items.size(); ++i) {
-            [[maybe_unused]] auto name = items[i][&Inner::name];
+            [[maybe_unused]] auto name = items[i].get<&Inner::name>();
         }
-        [[maybe_unused]] auto hit = root[&Rich::index]["k1"];
-        [[maybe_unused]] auto chosen = root[&Rich::which].get<1>();
-        [[maybe_unused]] auto second = root[&Rich::pair_like].get<1>();
-        [[maybe_unused]] auto level = root[&Rich::level];
-        [[maybe_unused]] auto pos = root[&Rich::pos];
-        [[maybe_unused]] auto extra_name = root[&Rich::extra][&Inner::name];
-        [[maybe_unused]] auto lookup = root[&Rich::names][std::uint64_t{7}];
-        auto grid = root[&Rich::grid];
+        [[maybe_unused]] auto hit = root.get<&Rich::index>()["k1"];
+        [[maybe_unused]] auto chosen = root.get<&Rich::which>().get<1>();
+        [[maybe_unused]] auto second = root.get<&Rich::pair_like>().get<1>();
+        [[maybe_unused]] auto level = root.get<&Rich::level>();
+        [[maybe_unused]] auto pos = root.get<&Rich::pos>();
+        [[maybe_unused]] auto extra_name = root.get<&Rich::extra>().get<&Inner::name>();
+        [[maybe_unused]] auto lookup = root.get<&Rich::names>()[std::uint64_t{7}];
+        auto grid = root.get<&Rich::grid>();
         for(std::size_t i = 0; i < grid.size(); ++i) {
             auto row = grid[i];
             for(std::size_t j = 0; j < row.size(); ++j) {
                 [[maybe_unused]] auto cell = row[j];
             }
         }
-        [[maybe_unused]] auto uniq_size = root[&Rich::uniq].size();
-        [[maybe_unused]] auto payload = root[&Rich::maybe].get<1>();
-        [[maybe_unused]] auto element = root[&Rich::mixed].get<1>().get<0>();
-        [[maybe_unused]] auto widened = root[&Rich::widened];
-        [[maybe_unused]] auto level_name = root[&Rich::level_name];
+        [[maybe_unused]] auto uniq_size = root.get<&Rich::uniq>().size();
+        [[maybe_unused]] auto payload = root.get<&Rich::maybe>().get<1>();
+        [[maybe_unused]] auto element = root.get<&Rich::mixed>().get<1>().get<0>();
+        [[maybe_unused]] auto widened = root.get<&Rich::widened>();
+        [[maybe_unused]] auto level_name = root.get<&Rich::level_name>();
     });
 }
 
@@ -440,7 +491,7 @@ ZEST_CASE(hostile_bytes_stay_in_bounds_for_struct_keys) {
     },
         3);
     expect_hostile_bytes_contained(input, [](const table_view<StructKeyed>& root) {
-        auto hits = root[&StructKeyed::hits];
+        auto hits = root.get<&StructKeyed::hits>();
         for(std::size_t i = 0; i < hits.size(); ++i) {
             auto entry = hits.at(i);
             [[maybe_unused]] auto key = entry.get<0>();
@@ -509,7 +560,55 @@ ZEST_CASE(inline_struct_bool_byte_other_than_zero_or_one_fails) {
     ZEXPECT(decoded->items[0].ready);
     auto view = table_view<WithBoolStructs>::from_bytes(flipped);
     ZASSERT(view.valid());
-    ZEXPECT(view[&WithBoolStructs::items][0].ready);
+    ZEXPECT(view.get<&WithBoolStructs::items>()[0].ready);
+}
+
+ZEST_CASE(bool_cell_other_than_zero_or_one_reads_true) {
+    // A bool slot is a uint8 cell; any nonzero cell decodes as true, and
+    // the view reads what from_bytes reads.
+    auto encoded = fbs::to_bytes(Switch{.on = true, .label = "x"});
+    ZASSERT(encoded);
+    const auto* root = ::flatbuffers::GetRoot<fbs::Table>(encoded->data());
+    const auto* cell = root->GetStruct<const std::uint8_t*>(4);
+    ZASSERT(cell != nullptr);
+    auto tampered = *encoded;
+    tampered[static_cast<std::size_t>(cell - encoded->data())] = 0x02;
+
+    auto decoded = fbs::from_bytes<Switch>(tampered);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->on);
+    auto view = table_view<Switch>::from_bytes(tampered);
+    ZASSERT(view.valid());
+    ZEXPECT(view.get<&Switch::on>());
+}
+
+ZEST_CASE(misaligned_vector_elements_decode_but_do_not_view) {
+    // from_bytes copies each element out bytewise, so the misaligned data
+    // decodes. The views read the elements in place and hand out pointers
+    // to them, so verification asks for the alignment and the view fails.
+    const std::array<Vec4, 2> points{
+        {{.x = 1, .y = 2, .z = 3, .w = 4}, {.x = 5, .y = 6, .z = 7, .w = 8}}
+    };
+    auto mesh = misaligned_vector(2, std::as_bytes(std::span(points)));
+    ZASSERT(reinterpret_cast<std::uintptr_t>(mesh.data() + 36) % alignof(Vec4) != 0U);
+    auto decoded = fbs::from_bytes<Mesh>(mesh);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->points == std::vector<Vec4>(points.begin(), points.end()));
+    ZEXPECT(!table_view<Mesh>::from_bytes(mesh).valid());
+
+    const std::array<std::uint64_t, 2> values{7, 0xFFFFFFFFFFFFFFFFULL};
+    auto hashes = misaligned_vector(2, std::as_bytes(std::span(values)));
+    auto decoded_hashes = fbs::from_bytes<Hashes>(hashes);
+    ZASSERT(decoded_hashes);
+    ZEXPECT(decoded_hashes->values == std::vector<std::uint64_t>(values.begin(), values.end()));
+    ZEXPECT(!table_view<Hashes>::from_bytes(hashes).valid());
+
+    // The same element bytes aligned, as to_bytes lays them out, view.
+    auto aligned = fbs::to_bytes(Mesh{
+        .points = {points.begin(), points.end()}
+    });
+    ZASSERT(aligned);
+    ZEXPECT(table_view<Mesh>::from_bytes(*aligned).valid());
 }
 
 ZEST_CASE(monostate_payload_written_as_an_empty_table_reads) {
@@ -535,7 +634,7 @@ ZEST_CASE(monostate_payload_written_as_an_empty_table_reads) {
     ZEXPECT(decoded.maybe.index() == 0U);
     auto root = table_view<MaybeAddress>::from_bytes(bytes);
     ZASSERT(root.valid());
-    ZEXPECT(root[&MaybeAddress::maybe].index() == 0U);
+    ZEXPECT(root.get<&MaybeAddress::maybe>().index() == 0U);
 }
 
 ZEST_CASE(nesting_deeper_than_64_tables_fails) {

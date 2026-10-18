@@ -63,7 +63,8 @@ using verifier_t = ::flatbuffers::Verifier;
 ///   fields that are scalars other than long double, fixed-underlying-type
 ///   enums, or nested inline structs) may instead inline as fixed-size
 ///   structs inside vectors, with padding bytes encoded as zero and bool
-///   bytes verified on decode
+///   bytes verified on decode; decoding copies the image bytewise, so it
+///   need not sit aligned
 /// - array/set → vector; elements are laid out per element_layout (proxy.h):
 ///   scalar cells, strings, inline structs, tables (tuple-, variant-, and
 ///   other table-shaped elements use their own layouts), or boxed tables
@@ -71,7 +72,8 @@ using verifier_t = ::flatbuffers::Verifier;
 /// - tuple → table with one slot per element
 /// - map → sorted vector of two-field {key, value} entry tables; the
 ///   ordering key mirrors find_entry (strings lexicographic, enums by
-///   underlying value, scalars by value) so lookups can binary-search
+///   underlying value, chars as their int8 cell, other scalars by value)
+///   so lookups can binary-search
 /// - variant → table with the u32 alternative index at the first slot and
 ///   the payload at the slot for that alternative (detail::field_slot);
 ///   a null alternative such as std::monostate leaves that slot absent
