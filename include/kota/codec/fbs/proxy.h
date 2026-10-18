@@ -301,48 +301,59 @@ using slot_view_t =
     typename decltype(slot_view_impl<
                       type_list_element_t<I, typename object_schema<Object>::slots>>())::type;
 
-/// The reflected field a member pointer names: the field of Object at the
-/// member's address with the member's type (two fields share an address only
-/// when one is an empty [[no_unique_address]] member, and then their types
-/// differ). Found at compile time over an uninitialized Object, so no Object
-/// is ever constructed; the field count when the member is none of them.
-template <typename Object, auto Member>
-consteval std::size_t member_field() {
-    using member_t = std::remove_cv_t<member_type_t<decltype(Member)>>;
-    const auto& unknown = meta::detail::ext<meta::detail::uninitialized<Object>>;
-    const void* address = std::addressof(unknown.value.*Member);
-    const auto addrs = meta::reflection<Object>::field_addrs(unknown.value);
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        std::size_t found = sizeof...(Is);
-        ((std::same_as<std::remove_cv_t<meta::field_type<Object, Is>>, member_t> &&
-                  static_cast<const void*>(std::get<Is>(addrs)) == address
-              ? void(found = Is)
-              : void()),
-         ...);
-        return found;
-    }(std::make_index_sequence<meta::field_count<Object>()>{});
-}
+template <typename Object, std::size_t I>
+using field_value_t = std::remove_cv_t<meta::field_type<Object, I>>;
 
-/// A member the views read: a reflected field of Object that has a slot of
-/// its own. A skipped field has none, and a flattened field's own fields
-/// take the enclosing table's slots, so neither is addressable.
-template <typename Object, auto Member>
-concept viewable_member =
-    std::is_member_object_pointer_v<decltype(Member)> && meta::reflectable_class<Object> &&
-    std::same_as<class_type_t<decltype(Member)>, Object> &&
-    (member_field<Object, Member>() < meta::field_count<Object>()) &&
-    !meta::detail::field_attr_flags<Object, member_field<Object, Member>()>::skipped &&
-    !meta::detail::field_attr_flags<Object, member_field<Object, Member>()>::flattened;
+/// Whether Object's I-th field has a slot of its own, so the views address
+/// it: a skipped field has none, and a flattened field's own fields take the
+/// enclosing table's slots. Both are attrs of the field's type, so either
+/// every member of a type is addressable or none is.
+template <typename Object, std::size_t I>
+constexpr bool addressable_field_v = !meta::detail::field_attr_flags<Object, I>::skipped &&
+                                     !meta::detail::field_attr_flags<Object, I>::flattened;
 
-/// The slot of a viewable member: one per field before it, none for a
+/// The slot of Object's I-th field: one per field before it, none for a
 /// skipped one, a flattened one's own count for a flattened one — the slots
 /// meta's schema lays out.
-template <typename Object, auto Member>
-consteval std::size_t member_slot() {
+template <typename Object, std::size_t I>
+consteval std::size_t field_slot_index() {
     return []<std::size_t... Is>(std::index_sequence<Is...>) {
         return (std::size_t{0} + ... +
                 type_list_size_v<typename meta::detail::single_field_slots<Object, Is>::type>);
-    }(std::make_index_sequence<member_field<Object, Member>()>{});
+    }(std::make_index_sequence<I>{});
+}
+
+/// The types of Object's addressable members, each once.
+template <typename Object, typename Seq = std::make_index_sequence<meta::field_count<Object>()>>
+struct member_types;
+
+template <typename Object, std::size_t... Is>
+struct member_types<Object, std::index_sequence<Is...>> {
+    using type = type_list_unique_t<
+        type_list_concat_t<std::conditional_t<addressable_field_v<Object, Is>,
+                                              type_list<field_value_t<Object, Is>>,
+                                              type_list<>>...>>;
+};
+
+template <typename Object>
+using member_types_t = typename member_types<Object>::type;
+
+/// The slots of Object's members of type M, in declaration order.
+template <typename Object, typename M>
+consteval auto member_slots() {
+    using fields = std::make_index_sequence<meta::field_count<Object>()>;
+    constexpr auto count = []<std::size_t... Is>(std::index_sequence<Is...>) {
+        return (std::size_t{0} + ... + std::size_t{std::same_as<field_value_t<Object, Is>, M>});
+    }(fields{});
+    std::array<std::size_t, count> slots{};
+    std::size_t next = 0;
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        ((std::same_as<field_value_t<Object, Is>, M>
+              ? void(slots[next++] = field_slot_index<Object, Is>())
+              : void()),
+         ...);
+    }(fields{});
+    return slots;
 }
 
 /// The typed flatbuffers vector pointer an element layout is read through;
@@ -501,19 +512,111 @@ auto read_slot(table_ref view) -> field_return_type_t<slot_view_t<Object, I>> {
     return read_field<slot_view_t<Object, I>>(view, detail::field_slot(I));
 }
 
-/// Every slot of an Object's table read once, for bound_view.
-template <typename Object,
-          typename Seq =
-              std::make_index_sequence<type_list_size_v<typename object_schema<Object>::slots>>>
-struct slot_columns;
+/// The view type of Object's members of type M: they share their slot type.
+template <typename Object, typename M>
+using member_view_t = field_return_type_t<slot_view_t<Object, member_slots<Object, M>()[0]>>;
 
-template <typename Object, std::size_t... Is>
-struct slot_columns<Object, std::index_sequence<Is...>> {
-    using type = std::tuple<field_return_type_t<slot_view_t<Object, Is>>...>;
+/// A member of Object of type M, located where it is named: the conversion
+/// from &Object::member is evaluated at compile time, finding which of
+/// Object's members of type M it points to by address, over an uninitialized
+/// Object, so none is ever constructed. A member pointer that is not a
+/// constant expression does not convert.
+template <typename Object, typename M>
+struct member_key {
+    template <typename P>
+        requires std::same_as<class_type_t<P>, Object> &&
+                     std::same_as<std::remove_cv_t<member_type_t<P>>, M>
+    consteval member_key(P member) : rank(rank_of(member)), slot(member_slots<Object, M>()[rank]) {}
 
-    static auto read(table_ref view) -> type {
-        return type(read_slot<Object, Is>(view)...);
+    /// The member's place among Object's members of type M.
+    std::size_t rank;
+    /// The member's slot in Object's table.
+    std::size_t slot;
+
+private:
+    template <typename P>
+    static consteval std::size_t rank_of(P member) {
+        const auto& unknown = meta::detail::ext<meta::detail::uninitialized<Object>>;
+        const void* address = std::addressof(unknown.value.*member);
+        const auto addrs = meta::reflection<Object>::field_addrs(unknown.value);
+        std::size_t rank = 0;
+        bool found = false;
+        [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            ((std::same_as<field_value_t<Object, Is>, M> && !found
+                  ? void(static_cast<const void*>(std::get<Is>(addrs)) == address ? found = true
+                                                                                  : ++rank)
+                  : void()),
+             ...);
+        }(std::make_index_sequence<meta::field_count<Object>()>{});
+        return rank;
     }
+};
+
+/// table_view's access to Object's members of type M. table_view gathers one
+/// per member type, and `view[&Object::member]` takes the one whose key the
+/// member pointer converts to.
+template <typename View, typename Object, typename M>
+struct table_member {
+    /// The member's view: a scalar or inline struct by value, a string as a
+    /// string_view, a sequence as an array_view, a map as a map_view, a
+    /// table-shaped member as its view. An absent member, or any member of
+    /// an invalid view, reads as that view type's default.
+    auto operator[](member_key<Object, M> key) const {
+        using view_t = slot_view_t<Object, member_slots<Object, M>()[0]>;
+        const table_ref view(static_cast<const View&>(*this).raw());
+        if(!view.valid()) {
+            return field_return_type_t<view_t>();
+        }
+        return read_field<view_t>(view, detail::field_slot(key.slot));
+    }
+
+    /// Whether the buffer holds the member: false for an absent nullable,
+    /// and on an invalid view.
+    auto has(member_key<Object, M> key) const -> bool {
+        return table_ref(static_cast<const View&>(*this).raw()).has(detail::field_slot(key.slot));
+    }
+};
+
+template <typename View, typename Object, typename Types = member_types_t<Object>>
+struct table_members;
+
+template <typename View, typename Object, typename... Ms>
+struct table_members<View, Object, type_list<Ms...>> : table_member<View, Object, Ms>... {
+    using table_member<View, Object, Ms>::operator[]...;
+    using table_member<View, Object, Ms>::has...;
+};
+
+/// bound_view's columns of Object's members of type M, read once.
+template <typename Object, typename M>
+class bound_member {
+    constexpr static auto slots = member_slots<Object, M>();
+
+public:
+    bound_member() = default;
+
+    explicit bound_member(table_ref view) :
+        column([&]<std::size_t... Rs>(std::index_sequence<Rs...>) {
+            return std::array{read_slot<Object, slots[Rs]>(view)...};
+        }(std::make_index_sequence<slots.size()>{})) {}
+
+    auto operator[](member_key<Object, M> key) const -> const member_view_t<Object, M>& {
+        return column[key.rank];
+    }
+
+private:
+    std::array<member_view_t<Object, M>, slots.size()> column;
+};
+
+template <typename Object, typename Types = member_types_t<Object>>
+struct bound_members;
+
+template <typename Object, typename... Ms>
+struct bound_members<Object, type_list<Ms...>> : bound_member<Object, Ms>... {
+    bound_members() = default;
+
+    explicit bound_members(table_ref view) : bound_member<Object, Ms>(view)... {}
+
+    using bound_member<Object, Ms>::operator[]...;
 };
 
 // Upfront deep verification for the zero-copy views: walks the buffer along
@@ -1197,8 +1300,12 @@ private:
     vector_type vector = nullptr;
 };
 
+/// A table in the buffer. `view[&T::member]` reads a member and
+/// `view.has(&T::member)` asks whether the buffer holds it, the member
+/// located at compile time (proxy_detail::member_key); skipped and flattened
+/// members have no slot of their own and are not addressable.
 template <typename T>
-class table_view {
+class table_view : public proxy_detail::table_members<table_view<T>, std::remove_cvref_t<T>> {
 public:
     using object_type = std::remove_cvref_t<T>;
     using view_type = proxy_detail::table_ref;
@@ -1260,26 +1367,6 @@ public:
         return view.raw();
     }
 
-    /// Whether the buffer holds the member: false for an absent nullable,
-    /// and on an invalid view.
-    template <auto Member>
-        requires proxy_detail::viewable_member<object_type, Member>
-    auto has() const -> bool {
-        return view.has(detail::field_slot(proxy_detail::member_slot<object_type, Member>()));
-    }
-
-    /// The member's view, located at compile time: a scalar or inline
-    /// struct by value, a string as a string_view, a sequence as an
-    /// array_view, a map as a map_view, and a table-shaped member as its
-    /// view. An absent member, or any member of an invalid view, reads as
-    /// that view type's default.
-    template <auto Member>
-        requires proxy_detail::viewable_member<object_type, Member>
-    auto get() const {
-        return proxy_detail::read_slot<object_type,
-                                       proxy_detail::member_slot<object_type, Member>()>(view);
-    }
-
 private:
     static consteval void assert_viewable() {
         static_assert(std::is_same_v<proxy_detail::apply_repr_t<object_type>, object_type>,
@@ -1292,28 +1379,17 @@ private:
 
 /// A table_view with every member read once: binding fetches each member's
 /// view (a sequence's pointer and length, a scalar's value, a nested table's
-/// view), and get() hands the cached one out with no lookup at all. For a
-/// table read many times over, such as the columns of an index.
+/// view), and `bound[&T::member]` hands the cached one out with no lookup at
+/// all. For a table read many times over, such as the columns of an index.
 template <typename T>
-class bound_view {
-    using columns_type = proxy_detail::slot_columns<T>;
-
+class bound_view : public proxy_detail::bound_members<T> {
 public:
     using object_type = T;
 
     bound_view() = default;
 
     explicit bound_view(table_view<T> view) :
-        columns(columns_type::read(proxy_detail::table_ref(view.raw()))) {}
-
-    template <auto Member>
-        requires proxy_detail::viewable_member<object_type, Member>
-    auto get() const -> const auto& {
-        return std::get<proxy_detail::member_slot<object_type, Member>()>(columns);
-    }
-
-private:
-    typename columns_type::type columns;
+        proxy_detail::bound_members<T>(proxy_detail::table_ref(view.raw())) {}
 };
 
 }  // namespace kota::codec::fbs

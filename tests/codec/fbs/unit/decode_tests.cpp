@@ -436,34 +436,34 @@ ZEST_CASE(root_table_in_the_identifier_fails) {
 
 ZEST_CASE(hostile_bytes_stay_in_bounds) {
     expect_hostile_bytes_contained(make_rich(), [](const table_view<Rich>& root) {
-        [[maybe_unused]] auto title = root.get<&Rich::title>();
-        auto tags = root.get<&Rich::tags>();
+        [[maybe_unused]] auto title = root[&Rich::title];
+        auto tags = root[&Rich::tags];
         for(std::size_t i = 0; i < tags.size(); ++i) {
             [[maybe_unused]] auto tag = tags[i];
         }
-        auto items = root.get<&Rich::items>();
+        auto items = root[&Rich::items];
         for(std::size_t i = 0; i < items.size(); ++i) {
-            [[maybe_unused]] auto name = items[i].get<&Inner::name>();
+            [[maybe_unused]] auto name = items[i][&Inner::name];
         }
-        [[maybe_unused]] auto hit = root.get<&Rich::index>()["k1"];
-        [[maybe_unused]] auto chosen = root.get<&Rich::which>().get<1>();
-        [[maybe_unused]] auto second = root.get<&Rich::pair_like>().get<1>();
-        [[maybe_unused]] auto level = root.get<&Rich::level>();
-        [[maybe_unused]] auto pos = root.get<&Rich::pos>();
-        [[maybe_unused]] auto extra_name = root.get<&Rich::extra>().get<&Inner::name>();
-        [[maybe_unused]] auto lookup = root.get<&Rich::names>()[std::uint64_t{7}];
-        auto grid = root.get<&Rich::grid>();
+        [[maybe_unused]] auto hit = root[&Rich::index]["k1"];
+        [[maybe_unused]] auto chosen = root[&Rich::which].get<1>();
+        [[maybe_unused]] auto second = root[&Rich::pair_like].get<1>();
+        [[maybe_unused]] auto level = root[&Rich::level];
+        [[maybe_unused]] auto pos = root[&Rich::pos];
+        [[maybe_unused]] auto extra_name = root[&Rich::extra][&Inner::name];
+        [[maybe_unused]] auto lookup = root[&Rich::names][std::uint64_t{7}];
+        auto grid = root[&Rich::grid];
         for(std::size_t i = 0; i < grid.size(); ++i) {
             auto row = grid[i];
             for(std::size_t j = 0; j < row.size(); ++j) {
                 [[maybe_unused]] auto cell = row[j];
             }
         }
-        [[maybe_unused]] auto uniq_size = root.get<&Rich::uniq>().size();
-        [[maybe_unused]] auto payload = root.get<&Rich::maybe>().get<1>();
-        [[maybe_unused]] auto element = root.get<&Rich::mixed>().get<1>().get<0>();
-        [[maybe_unused]] auto widened = root.get<&Rich::widened>();
-        [[maybe_unused]] auto level_name = root.get<&Rich::level_name>();
+        [[maybe_unused]] auto uniq_size = root[&Rich::uniq].size();
+        [[maybe_unused]] auto payload = root[&Rich::maybe].get<1>();
+        [[maybe_unused]] auto element = root[&Rich::mixed].get<1>().get<0>();
+        [[maybe_unused]] auto widened = root[&Rich::widened];
+        [[maybe_unused]] auto level_name = root[&Rich::level_name];
     });
 }
 
@@ -491,7 +491,7 @@ ZEST_CASE(hostile_bytes_stay_in_bounds_for_struct_keys) {
     },
         3);
     expect_hostile_bytes_contained(input, [](const table_view<StructKeyed>& root) {
-        auto hits = root.get<&StructKeyed::hits>();
+        auto hits = root[&StructKeyed::hits];
         for(std::size_t i = 0; i < hits.size(); ++i) {
             auto entry = hits.at(i);
             [[maybe_unused]] auto key = entry.get<0>();
@@ -560,7 +560,7 @@ ZEST_CASE(inline_struct_bool_byte_other_than_zero_or_one_fails) {
     ZEXPECT(decoded->items[0].ready);
     auto view = table_view<WithBoolStructs>::from_bytes(flipped);
     ZASSERT(view.valid());
-    ZEXPECT(view.get<&WithBoolStructs::items>()[0].ready);
+    ZEXPECT(view[&WithBoolStructs::items][0].ready);
 }
 
 ZEST_CASE(bool_cell_other_than_zero_or_one_reads_true) {
@@ -579,7 +579,7 @@ ZEST_CASE(bool_cell_other_than_zero_or_one_reads_true) {
     ZEXPECT(decoded->on);
     auto view = table_view<Switch>::from_bytes(tampered);
     ZASSERT(view.valid());
-    ZEXPECT(view.get<&Switch::on>());
+    ZEXPECT(view[&Switch::on]);
 }
 
 ZEST_CASE(misaligned_vector_elements_decode_but_do_not_view) {
@@ -634,7 +634,7 @@ ZEST_CASE(monostate_payload_written_as_an_empty_table_reads) {
     ZEXPECT(decoded.maybe.index() == 0U);
     auto root = table_view<MaybeAddress>::from_bytes(bytes);
     ZASSERT(root.valid());
-    ZEXPECT(root.get<&MaybeAddress::maybe>().index() == 0U);
+    ZEXPECT(root[&MaybeAddress::maybe].index() == 0U);
 }
 
 ZEST_CASE(nesting_deeper_than_64_tables_fails) {
