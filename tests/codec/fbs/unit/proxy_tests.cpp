@@ -502,6 +502,10 @@ ZEST_CASE(array_view_is_contiguous_when_elements_are_stored_as_themselves) {
     ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<char>>);
     ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<std::byte>>);
     ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<test::Point>>);
+    ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<Vec4>>);
+    // Aligned past operator new: copied out, wherever the buffer sits.
+    ZSTATIC_EXPECT(!std::ranges::contiguous_range<array_view<test::Vec8>>);
+    ZSTATIC_EXPECT(std::ranges::random_access_range<array_view<test::Vec8>>);
     ZSTATIC_EXPECT(!std::ranges::contiguous_range<array_view<bool>>);
     ZSTATIC_EXPECT(!std::ranges::contiguous_range<array_view<test::SignedEnum>>);
     ZSTATIC_EXPECT(!std::ranges::contiguous_range<array_view<long double>>);

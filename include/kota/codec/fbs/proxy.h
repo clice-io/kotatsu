@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <compare>
 #include <concepts>
 #include <cstddef>
@@ -182,43 +183,39 @@ struct scalar_cell<long double> {
     using type = double;
 };
 
+/// An enum's underlying integer's cell: an enum over bool or char travels
+/// as the uint8 or int8 cell its underlying type does.
 template <typename T>
     requires std::is_enum_v<T>
 struct scalar_cell<T> {
-    using type = std::underlying_type_t<T>;
+    using type = typename scalar_cell<std::underlying_type_t<T>>::type;
 };
 
 template <typename T>
 using scalar_cell_t = typename scalar_cell<std::remove_cvref_t<T>>::type;
 
 /// Whether a vector's elements are stored as their view type itself, so the
-/// buffer holds an array of them that array_view can hand out in place: an
-/// inline struct's image, and the scalars whose cell is their own object
-/// representation — every integer and floating type but long double (a
-/// double cell), plain char (an int8 cell, which char may alias) and
-/// std::byte. A bool cell can hold any byte, and an enum's cell is its
-/// underlying integer, so their elements are read one by one.
+/// buffer holds an array of them that array_view can hand out in place, and
+/// whose alignment any buffer from to_bytes held in a std::vector meets: an
+/// inline struct's image, unless the struct is aligned past what operator new
+/// guarantees; and, on little-endian hosts, the scalars whose cell is their
+/// own object representation — every integer and floating type but long
+/// double (a double cell), plain char (an int8 cell, which char may alias)
+/// and std::byte. A bool cell can hold any byte, and an enum's cell is its
+/// underlying integer, so their elements are read one by one, as are those
+/// of an over-aligned struct.
 template <typename Element>
 consteval bool stored_in_place() {
     using repr_t = apply_repr_t<std::remove_cvref_t<Element>>;
     constexpr auto layout = element_layout_of<Element>();
     if constexpr(layout == element_layout::scalar) {
-        return std::same_as<repr_t, scalar_cell_t<repr_t>> || meta::char_like<repr_t> ||
-               std::same_as<repr_t, std::byte>;
+        return std::endian::native == std::endian::little &&
+               (std::same_as<repr_t, scalar_cell_t<repr_t>> || meta::char_like<repr_t> ||
+                std::same_as<repr_t, std::byte>);
+    } else if constexpr(layout == element_layout::inline_struct) {
+        return alignof(repr_t) <= __STDCPP_DEFAULT_NEW_ALIGNMENT__;
     } else {
-        return layout == element_layout::inline_struct;
-    }
-}
-
-/// The alignment a scalar or inline-struct vector's element data needs: its
-/// cell's, or the struct's own.
-template <typename Element>
-consteval std::size_t element_alignment() {
-    using repr_t = apply_repr_t<std::remove_cvref_t<Element>>;
-    if constexpr(element_layout_of<Element>() == element_layout::scalar) {
-        return alignof(scalar_cell_t<repr_t>);
-    } else {
-        return alignof(repr_t);
+        return false;
     }
 }
 
@@ -618,6 +615,16 @@ struct bound_members<Object, type_list<Ms...>> : bound_member<Object, Ms>... {
 // views trust their pointers, so this walk is what makes from_bytes safe on
 // corrupt, truncated, or malicious input.
 
+/// Whether a field of an inline struct is a bool, or an enum over one.
+template <typename T>
+consteval bool is_bool_image() {
+    if constexpr(std::is_enum_v<T>) {
+        return std::same_as<std::underlying_type_t<T>, bool>;
+    } else {
+        return std::same_as<T, bool>;
+    }
+}
+
 /// Whether an inline struct's memcpy image contains bool fields, recursing
 /// into nested inline structs.
 template <typename T>
@@ -627,7 +634,7 @@ consteval bool has_bool_field() {
             return (has_bool_field<std::remove_cv_t<meta::field_type<T, I>>>() || ...);
         }(std::make_index_sequence<meta::field_count<T>()>{});
     } else {
-        return std::same_as<T, bool>;
+        return is_bool_image<T>();
     }
 }
 
@@ -639,7 +646,7 @@ bool bool_bytes_valid(const std::uint8_t* image) {
                         image + meta::field_offset<T>(I)) &&
                     ...);
         }(std::make_index_sequence<meta::field_count<T>()>{});
-    } else if constexpr(std::same_as<T, bool>) {
+    } else if constexpr(is_bool_image<T>()) {
         return *image <= 1;
     } else {
         return true;
@@ -795,12 +802,14 @@ bool verify_field(verifier_t& v, const Table* tbl, slot_id slot) {
         } else {
             // scalar / inline_struct: VerifyVector bounded the element data
             // but checked only the length word's alignment, and only relative
-            // to the buffer's start, while array_view reads the elements in
-            // place and hands out pointers to them: their data must sit
-            // aligned at its actual address.
+            // to the buffer's start. array_view reads elements stored in place
+            // through pointers to them, so their data must sit aligned at its
+            // actual address; the others it copies out.
             const auto* data = vec->Data();
-            if(reinterpret_cast<std::uintptr_t>(data) % element_alignment<element_t>() != 0) {
-                return false;
+            if constexpr(stored_in_place<element_t>()) {
+                if(reinterpret_cast<std::uintptr_t>(data) % alignof(apply_repr_t<element_t>) != 0) {
+                    return false;
+                }
             }
             // An inline struct's bool bytes additionally need semantic
             // checking — in-bounds is not the same as a valid bool.
@@ -1083,6 +1092,9 @@ private:
                                                           detail::first_field);
         } else if constexpr(layout == scalar) {
             return static_cast<element_type>(vector->Get(offset));
+        } else if constexpr(layout == inline_struct) {
+            return proxy_detail::load_unaligned<value_type>(vector->Data() +
+                                                            index * sizeof(value_type));
         } else if constexpr(layout == string) {
             const auto* text = vector->GetAsString(offset);
             return std::string_view(text->data(), text->size());
@@ -1311,12 +1323,13 @@ public:
     /// verification yields an invalid view. Table nesting deeper than the
     /// flatbuffers default of 64 is rejected, as are buffers at or above
     /// flatbuffers' maximum buffer size (just under 2 GiB). The views read
-    /// scalar and inline-struct vectors in place, so their element data
-    /// must also sit aligned for the element at its actual address: to_bytes
-    /// aligns it within the buffer, and a buffer held at an address aligned
-    /// like its widest element (as std::vector and memory-mapped files hold
-    /// one, up to 16) passes; the same bytes copied to an odd address do
-    /// not, though fbs::from_bytes still decodes them.
+    /// the vectors whose elements are stored in place (integers, float,
+    /// double, char, std::byte, inline structs aligned no more than operator
+    /// new aligns) through pointers to them, so that element data must also
+    /// sit aligned for the element at its actual address: to_bytes aligns it
+    /// within the buffer, so a buffer held in a std::vector or a memory map
+    /// passes; the same bytes copied to an odd address do not, though
+    /// fbs::from_bytes still decodes them.
     static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
         assert_viewable();
         auto opened = detail::open_root(bytes);
