@@ -354,11 +354,11 @@ bool FieldReader::visit_struct(T& out, Body&& body) {
     if constexpr(can_inline_struct_v<V>) {
         if(!tbl->VerifyField<V>(*verifier, slot, alignof(V)))
             return fail_verify("inline struct field");
-        const auto* ptr = tbl->GetStruct<const V*>(slot);
-        if(!proxy_detail::valid_inline_struct_bytes(ptr))
+        const auto* image = tbl->GetStruct<const std::uint8_t*>(slot);
+        if(!proxy_detail::valid_inline_struct_bytes<V>(image))
             return fail_verify("inline struct bool byte");
-        if(ptr != nullptr)
-            out = *ptr;
+        if(image != nullptr)
+            out = proxy_detail::load_unaligned<V>(image);
         return true;
     } else {
         detail::assert_fields_reflected<V>();
@@ -435,9 +435,9 @@ bool VecReader<E>::visit_element(F&& reader) {
         verifier->EndTable();
         return ok;
     } else if constexpr(layout == scalar) {
-        auto val = vec->Get(idx);
+        using cell_t = proxy_detail::scalar_cell_t<repr_t>;
+        ScalarReader<cell_t> sr{.value = proxy_detail::load_cell<cell_t>(vec->Data(), idx)};
         ++idx;
-        ScalarReader<decltype(val)> sr{.value = val};
         return reader(sr);
     } else if constexpr(layout == string) {
         const auto* text = vec->GetAsString(static_cast<uoffset_t>(idx));
@@ -451,11 +451,11 @@ bool VecReader<E>::visit_element(F&& reader) {
         StringReader sr{.value = sv};
         return reader(sr);
     } else if constexpr(layout == inline_struct) {
-        const auto* ptr = vec->Get(static_cast<uoffset_t>(idx));
+        const auto* image = vec->Data() + std::size_t{idx} * sizeof(repr_t);
         ++idx;
-        if(!proxy_detail::valid_inline_struct_bytes(ptr))
+        if(!proxy_detail::valid_inline_struct_bytes<repr_t>(image))
             return fail_verify("inline struct element bool byte");
-        ScalarReader<repr_t> sr{.value = ptr ? *ptr : repr_t{}};
+        ScalarReader<repr_t> sr{.value = proxy_detail::load_unaligned<repr_t>(image)};
         return reader(sr);
     } else {
         const auto* child = vec->template GetAs<Table>(static_cast<uoffset_t>(idx));

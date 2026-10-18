@@ -1,6 +1,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <optional>
@@ -12,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/fbs/harness/over_aligned.h"
 #include "codec/fbs/harness/struct_keys.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/structs.h"
@@ -142,8 +144,12 @@ namespace kota::codec {
 namespace {
 
 using fbs::table_view;
+using test::Mesh;
 using test::OccurrenceKey;
 using test::Point;
+using test::Vec4;
+using test::Vec8;
+using test::WideMesh;
 using test::StructKeyed;
 
 struct Inner {
@@ -242,6 +248,53 @@ struct Node {
     std::int32_t value = 0;
     std::unique_ptr<Node> next;
 };
+
+/// A bool table slot.
+struct Switch {
+    bool on = false;
+};
+
+enum class Toggle : bool { off, on };
+
+/// A table slot of an enum over bool, whose cell is a bool's.
+struct Toggled {
+    Toggle state = Toggle::off;
+};
+
+struct Hashes {
+    std::vector<std::uint64_t> values;
+};
+
+/// long double elements travel as double cells, converted on each read.
+struct Samples {
+    std::vector<long double> values;
+};
+
+/// A buffer whose root table holds one vector, with the element data 4
+/// bytes past a 16-byte boundary: the length word is 4-aligned, all the
+/// verifier asks of it, while anything wider sits misaligned.
+auto misaligned_vector(std::uint32_t count, std::span<const std::byte> elements)
+    -> std::vector<std::uint8_t> {
+    std::vector<std::uint8_t> bytes(36 + elements.size(), 0);
+    auto put32 = [&](std::size_t at, std::uint32_t value) {
+        std::memcpy(&bytes[at], &value, sizeof(value));
+    };
+    auto put16 = [&](std::size_t at, std::uint16_t value) {
+        std::memcpy(&bytes[at], &value, sizeof(value));
+    };
+    put32(0, 16);
+    std::memcpy(&bytes[4], "EVTO", 4);
+    // The vtable at 8: its own 6 bytes, an 8-byte table, the field at +4.
+    put16(8, 6);
+    put16(10, 8);
+    put16(12, 4);
+    // The table at 16, the vector it points to at 32.
+    put32(16, 8);
+    put32(20, 12);
+    put32(32, count);
+    std::memcpy(&bytes[36], elements.data(), elements.size());
+    return bytes;
+}
 
 struct MaybeAddress {
     std::variant<std::monostate, test::Address> maybe;
@@ -510,6 +563,106 @@ ZEST_CASE(inline_struct_bool_byte_other_than_zero_or_one_fails) {
     auto view = table_view<WithBoolStructs>::from_bytes(flipped);
     ZASSERT(view.valid());
     ZEXPECT(view[&WithBoolStructs::items][0].ready);
+}
+
+ZEST_CASE(bool_cell_other_than_zero_or_one_reads_true) {
+    // A bool slot is a uint8 cell; any nonzero cell decodes as true, and
+    // the view reads what from_bytes reads.
+    auto encoded = fbs::to_bytes(Switch{.on = true});
+    ZASSERT(encoded);
+    const auto* root = ::flatbuffers::GetRoot<fbs::Table>(encoded->data());
+    const auto* cell = root->GetStruct<const std::uint8_t*>(4);
+    ZASSERT(cell != nullptr);
+    auto tampered = *encoded;
+    tampered[static_cast<std::size_t>(cell - encoded->data())] = 0x02;
+
+    auto decoded = fbs::from_bytes<Switch>(tampered);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->on);
+    auto view = table_view<Switch>::from_bytes(tampered);
+    ZASSERT(view.valid());
+    ZEXPECT(view[&Switch::on]);
+}
+
+ZEST_CASE(bool_enum_cell_other_than_zero_or_one_reads_true) {
+    auto encoded = fbs::to_bytes(Toggled{.state = Toggle::on});
+    ZASSERT(encoded);
+    const auto* root = ::flatbuffers::GetRoot<fbs::Table>(encoded->data());
+    const auto* cell = root->GetStruct<const std::uint8_t*>(4);
+    ZASSERT(cell != nullptr);
+    auto tampered = *encoded;
+    tampered[static_cast<std::size_t>(cell - encoded->data())] = 0x02;
+
+    auto decoded = fbs::from_bytes<Toggled>(tampered);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->state == Toggle::on);
+    auto view = table_view<Toggled>::from_bytes(tampered);
+    ZASSERT(view.valid());
+    ZEXPECT(view[&Toggled::state] == Toggle::on);
+}
+
+ZEST_CASE(misaligned_vector_elements_decode) {
+    // from_bytes copies each scalar cell and inline struct out bytewise, so
+    // element data the verifier admits decodes however it sits.
+    const std::array<Vec4, 2> points{
+        {{.x = 1, .y = 2, .z = 3, .w = 4}, {.x = 5, .y = 6, .z = 7, .w = 8}}
+    };
+    auto mesh = misaligned_vector(2, std::as_bytes(std::span(points)));
+    ZASSERT(reinterpret_cast<std::uintptr_t>(mesh.data() + 36) % alignof(Vec4) != 0U);
+    auto decoded = fbs::from_bytes<Mesh>(mesh);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->points == std::vector<Vec4>(points.begin(), points.end()));
+
+    const std::array<std::uint64_t, 2> values{7, 0xFFFFFFFFFFFFFFFFULL};
+    auto hashes = misaligned_vector(2, std::as_bytes(std::span(values)));
+    auto decoded_hashes = fbs::from_bytes<Hashes>(hashes);
+    ZASSERT(decoded_hashes);
+    ZEXPECT(decoded_hashes->values == std::vector<std::uint64_t>(values.begin(), values.end()));
+}
+
+ZEST_CASE(misaligned_vector_elements_view_fails) {
+    // The views read scalar and inline-struct vectors in place and hand out
+    // pointers to the elements, so verification asks for their alignment.
+    const std::array<Vec4, 2> points{
+        {{.x = 1, .y = 2, .z = 3, .w = 4}, {.x = 5, .y = 6, .z = 7, .w = 8}}
+    };
+    ZEXPECT(!table_view<Mesh>::from_bytes(misaligned_vector(2, std::as_bytes(std::span(points))))
+                 .valid());
+    const std::array<std::uint64_t, 2> values{7, 0xFFFFFFFFFFFFFFFFULL};
+    ZEXPECT(!table_view<Hashes>::from_bytes(misaligned_vector(2, std::as_bytes(std::span(values))))
+                 .valid());
+}
+
+ZEST_CASE(converted_cells_view_wherever_they_sit) {
+    // Cells the view converts on each read are copied out, not read in
+    // place, so their alignment is never asked for.
+    const std::array<double, 2> cells{1.5, -2.25};
+    auto bytes = misaligned_vector(2, std::as_bytes(std::span(cells)));
+    ZASSERT(reinterpret_cast<std::uintptr_t>(bytes.data() + 36) % alignof(double) != 0U);
+    auto view = table_view<Samples>::from_bytes(bytes);
+    ZASSERT(view.valid());
+    auto samples = view[&Samples::values];
+    ZASSERT(samples.size() == 2U);
+    ZEXPECT(samples[1] == -2.25L);
+}
+
+ZEST_CASE(elements_aligned_past_operator_new_view_wherever_they_sit) {
+    // No allocation promises such elements their alignment, so the view
+    // copies them out like from_bytes does instead of reading them in place.
+    ZSTATIC_EXPECT(alignof(Vec8) > __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+    const std::array<Vec8, 2> points{
+        {{.a = 1, .b = 2, .c = 3, .d = 4, .e = 5, .f = 6, .g = 7, .h = 8},
+         {.a = 9, .b = 10, .c = 11, .d = 12, .e = 13, .f = 14, .g = 15, .h = 16}}
+    };
+    auto bytes = misaligned_vector(2, std::as_bytes(std::span(points)));
+    auto decoded = fbs::from_bytes<WideMesh>(bytes);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->points == std::vector<Vec8>(points.begin(), points.end()));
+    auto view = table_view<WideMesh>::from_bytes(bytes);
+    ZASSERT(view.valid());
+    auto elements = view[&WideMesh::points];
+    ZASSERT(elements.size() == 2U);
+    ZEXPECT(elements[1] == points[1]);
 }
 
 ZEST_CASE(monostate_payload_written_as_an_empty_table_reads) {

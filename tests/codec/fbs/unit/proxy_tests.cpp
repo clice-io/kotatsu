@@ -1,9 +1,12 @@
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <span>
 #include <string>
@@ -14,6 +17,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/fbs/harness/over_aligned.h"
 #include "codec/fbs/harness/struct_keys.h"
 #include "codec/harness/fixtures/attrs.h"
 #include "codec/harness/fixtures/containers.h"
@@ -26,15 +30,26 @@
 #include "kota/meta/attrs.h"
 #include "kota/codec/fbs/fbs.h"
 
-// The zero-copy views over a verified buffer: table_view and the array,
-// map, tuple and variant views it hands out, their lookups, and how they
-// follow reprs, behavior attrs and nullable wrappers.
+// The zero-copy views over a verified buffer: table_view, its bound_view,
+// and the array, map, tuple and variant views they hand out, their lookups,
+// and how they follow reprs, behavior attrs and nullable wrappers.
 
 namespace kota::codec {
 
 namespace {
 
+using fbs::bound_view;
 using fbs::table_view;
+using test::Mesh;
+using test::Vec4;
+
+/// Whether the views address Member.
+template <typename T, auto Member>
+concept viewable = requires(const table_view<T>& view, const bound_view<T>& bound) {
+    view[Member];
+    view.has(Member);
+    bound[Member];
+};
 
 struct Profile {
     std::int32_t id;
@@ -106,6 +121,45 @@ struct Lists {
     std::vector<std::vector<std::int32_t>> grid;
 };
 
+/// One column of each element type a contiguous array_view may hold, and
+/// of some it may not.
+struct Columns {
+    std::vector<std::uint64_t> hashes;
+    std::vector<std::uint32_t> ends;
+    std::vector<std::int16_t> deltas;
+    std::vector<float> weights;
+    std::vector<double> scores;
+    std::vector<std::uint8_t> postings;
+    std::vector<char> letters;
+    std::vector<std::byte> blob;
+    std::vector<test::Point> points;
+    std::vector<bool> flags;
+    std::vector<test::SignedEnum> signs;
+    std::vector<long double> wide;
+};
+
+auto make_columns() -> Columns {
+    return {
+        .hashes = {0xFFFFFFFFFFFFFFFFULL, 2, 3},
+        .ends = {4, 9},
+        .deltas = {-3, 7},
+        .weights = {0.5F},
+        .scores = {1.25, -8.0},
+        .postings = {0xAB, 0xCD},
+        .letters = {'k', static_cast<char>(0xE9)},
+        .blob = {std::byte{0x01}, std::byte{0xFE}},
+        .points = {{.x = 1, .y = 2}, {.x = 3, .y = 4}},
+        .flags = {true, false, true},
+        .signs = {test::SignedEnum::neg, test::SignedEnum::pos},
+        .wide = {0.25L},
+    };
+}
+
+/// An unsigned key whose value a negative probe converts to.
+struct UnsignedKeyed {
+    std::map<std::uint32_t, std::int32_t> by_id;
+};
+
 struct MapFields {
     std::map<std::string, std::int32_t> by_name;
     std::map<std::int32_t, std::string> by_id;
@@ -127,6 +181,10 @@ auto make_map_fields() -> MapFields {
         .none = {},
     };
 }
+
+struct CharKeyed {
+    std::map<char, std::int32_t> letters;
+};
 
 using test::OccurrenceKey;
 using test::StructKeyed;
@@ -239,13 +297,88 @@ ZEST_CASE(absent_nullable_fields_read_defaults) {
 }
 
 ZEST_CASE(skipped_member_has_no_slot) {
+    // The skipped member is not in the buffer, and the members after it
+    // read the slots after the one before it.
     auto bytes = fbs::to_bytes(test::FlattenInnerWithSkip{.keep_a = 3, .drop_b = 999, .keep_c = 5});
     ZASSERT(bytes);
     auto root = table_view<test::FlattenInnerWithSkip>::from_bytes(*bytes);
     ZASSERT(root.valid());
     ZEXPECT(root[&test::FlattenInnerWithSkip::keep_a] == 3);
-    ZEXPECT(!root.has(&test::FlattenInnerWithSkip::drop_b));
+    ZSTATIC_EXPECT(!viewable<test::FlattenInnerWithSkip, &test::FlattenInnerWithSkip::drop_b>);
     ZEXPECT(root[&test::FlattenInnerWithSkip::keep_c] == 5);
+    ZEXPECT(root.has(&test::FlattenInnerWithSkip::keep_c));
+    const bound_view bound(root);
+    ZEXPECT(bound[&test::FlattenInnerWithSkip::keep_c] == 5);
+}
+
+ZEST_CASE(flattened_member_has_no_slot) {
+    // A flattened member's own fields take the enclosing table's slots, so
+    // the member itself is not addressable; the members after it read past
+    // all of them, at any depth of flattening.
+    ZSTATIC_EXPECT(!viewable<test::Outer, &test::Outer::inner>);
+    ZSTATIC_EXPECT(!viewable<test::DeepOuter, &test::DeepOuter::mid>);
+
+    auto outer = fbs::to_bytes(test::Outer{
+        .x = 1,
+        .inner = {{.a = 0x10000000, .b = 3}},
+        .y = 4,
+    });
+    ZASSERT(outer);
+    auto root = table_view<test::Outer>::from_bytes(*outer);
+    ZASSERT(root.valid());
+    ZEXPECT(root[&test::Outer::x] == 1);
+    ZEXPECT(root[&test::Outer::y] == 4);
+    const bound_view bound(root);
+    ZEXPECT(bound[&test::Outer::x] == 1);
+    ZEXPECT(bound[&test::Outer::y] == 4);
+
+    auto deep = fbs::to_bytes(test::DeepOuter{
+        .head = 5,
+        .mid = {{.m = 6, .deep = {{.p = 7, .q = 8}}}},
+        .tail = 9,
+    });
+    ZASSERT(deep);
+    auto deep_root = table_view<test::DeepOuter>::from_bytes(*deep);
+    ZASSERT(deep_root.valid());
+    ZEXPECT(deep_root[&test::DeepOuter::head] == 5);
+    ZEXPECT(deep_root[&test::DeepOuter::tail] == 9);
+}
+
+ZEST_CASE(non_member_is_not_viewable) {
+    // Only Profile's own data members, by pointer.
+    ZSTATIC_EXPECT(viewable<Profile, &Profile::id>);
+    ZSTATIC_EXPECT(!viewable<Profile, &test::Address::zip>);
+    ZSTATIC_EXPECT(!viewable<Profile, 0>);
+}
+
+ZEST_CASE(bound_view_reads_what_the_table_view_reads) {
+    auto bytes = fbs::to_bytes(make_profile());
+    ZASSERT(bytes);
+    auto root = table_view<Profile>::from_bytes(*bytes);
+    ZASSERT(root.valid());
+    const bound_view bound(root);
+    ZEXPECT(bound[&Profile::id] == 7);
+    ZEXPECT(bound[&Profile::name] == "alice");
+    ZEXPECT(bound[&Profile::pos] == root[&Profile::pos]);
+    ZEXPECT(bound[&Profile::addr][&test::Address::city] == "sh");
+    ZEXPECT(bound[&Profile::sign] == test::SignedEnum::neg);
+    ZEXPECT(bound[&Profile::initial] == 'k');
+    ZEXPECT(bound[&Profile::flag] == std::byte{0x5A});
+    ZEXPECT(bound[&Profile::ratio] == 2.5L);
+    // A sequence binds its pointer and length once.
+    const auto& scores = bound[&Profile::scores];
+    ZEXPECT(scores.data() == root[&Profile::scores].data());
+    ZEXPECT(std::span<const std::int32_t>(scores) == std::vector<std::int32_t>{1, 2, 3});
+    ZEXPECT(bound[&Profile::samples][1] == -2.25L);
+}
+
+ZEST_CASE(bound_view_of_an_invalid_view_reads_defaults) {
+    const bound_view bound{table_view<Profile>()};
+    ZEXPECT(bound[&Profile::id] == 0);
+    ZEXPECT(bound[&Profile::name] == "");
+    ZEXPECT(!bound[&Profile::addr].valid());
+    ZEXPECT(!bound[&Profile::scores].valid());
+    ZEXPECT(bound[&Profile::scores].empty());
 }
 
 ZEST_CASE(variant_view_reads_the_held_alternative) {
@@ -303,7 +436,7 @@ ZEST_CASE(variant_view_reads_a_monostate_alternative) {
     auto table = root[&Choices::table];
     ZASSERT(table.valid());
     ZEXPECT(table.index() == 0U);
-    // The alternative reads as the empty inline struct it is.
+    // A null alternative reads as its value, without reading its slot.
     ZEXPECT(table.get<0>() == std::monostate{});
 }
 
@@ -355,6 +488,111 @@ ZEST_CASE(array_view_reads_each_element_layout) {
     ZEXPECT(blobs[0][1] == std::byte{0xBB});
     ZEXPECT(blobs[1].size() == 0U);
     ZEXPECT(root[&Lists::grid][0][1] == 2);
+}
+
+ZEST_CASE(array_view_is_contiguous_when_elements_are_stored_as_themselves) {
+    using fbs::array_view;
+    // Integers, float and double, char, std::byte and inline structs are
+    // stored as themselves; bool, enum and long double elements are cells
+    // converted on each read.
+    ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<std::uint64_t>>);
+    ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<std::int16_t>>);
+    ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<float>>);
+    ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<double>>);
+    ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<char>>);
+    ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<std::byte>>);
+    ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<test::Point>>);
+    ZSTATIC_EXPECT(std::ranges::contiguous_range<array_view<Vec4>>);
+    // Aligned past operator new: copied out, wherever the buffer sits.
+    ZSTATIC_EXPECT(!std::ranges::contiguous_range<array_view<test::Vec8>>);
+    ZSTATIC_EXPECT(std::ranges::random_access_range<array_view<test::Vec8>>);
+    ZSTATIC_EXPECT(!std::ranges::contiguous_range<array_view<bool>>);
+    ZSTATIC_EXPECT(!std::ranges::contiguous_range<array_view<test::SignedEnum>>);
+    ZSTATIC_EXPECT(!std::ranges::contiguous_range<array_view<long double>>);
+    ZSTATIC_EXPECT(std::ranges::sized_range<array_view<std::uint32_t>>);
+    ZSTATIC_EXPECT(std::ranges::borrowed_range<array_view<std::uint32_t>>);
+
+    auto bytes = fbs::to_bytes(make_columns());
+    ZASSERT(bytes);
+    auto root = table_view<Columns>::from_bytes(*bytes);
+    ZASSERT(root.valid());
+    // A span builds straight from the view, over the buffer itself.
+    const std::span<const std::uint64_t> hashes = root[&Columns::hashes];
+    ZEXPECT(hashes == make_columns().hashes);
+    const auto* begin = bytes->data();
+    const auto* at = reinterpret_cast<const std::uint8_t*>(hashes.data());
+    ZEXPECT(at > begin);
+    ZEXPECT(at < begin + bytes->size());
+    ZEXPECT(std::span<const std::uint32_t>(root[&Columns::ends]) == make_columns().ends);
+    ZEXPECT(std::span<const std::int16_t>(root[&Columns::deltas]) == make_columns().deltas);
+    ZEXPECT(std::span<const float>(root[&Columns::weights]) == make_columns().weights);
+    ZEXPECT(std::span<const double>(root[&Columns::scores]) == make_columns().scores);
+    ZEXPECT(std::span<const std::uint8_t>(root[&Columns::postings]) == make_columns().postings);
+    ZEXPECT(std::span<const char>(root[&Columns::letters]) == make_columns().letters);
+    ZEXPECT(std::span<const std::byte>(root[&Columns::blob]) == make_columns().blob);
+    ZEXPECT(std::span<const test::Point>(root[&Columns::points]) == make_columns().points);
+}
+
+ZEST_CASE(array_view_iterates_every_element_layout) {
+    // Elements not stored as themselves read one by one, through a
+    // random-access iterator.
+    using fbs::array_view;
+    ZSTATIC_EXPECT(std::ranges::random_access_range<array_view<bool>>);
+    ZSTATIC_EXPECT(std::ranges::random_access_range<array_view<std::string>>);
+    ZSTATIC_EXPECT(std::ranges::random_access_range<array_view<test::Address>>);
+    ZSTATIC_EXPECT(std::ranges::random_access_range<array_view<std::optional<std::int32_t>>>);
+
+    auto columns = fbs::to_bytes(make_columns());
+    ZASSERT(columns);
+    auto root = table_view<Columns>::from_bytes(*columns);
+    ZASSERT(root.valid());
+    auto flags = root[&Columns::flags];
+    ZEXPECT(std::vector<bool>(flags.begin(), flags.end()) == make_columns().flags);
+    auto signs = root[&Columns::signs];
+    ZEXPECT(std::vector<test::SignedEnum>(signs.begin(), signs.end()) == make_columns().signs);
+    auto wide = root[&Columns::wide];
+    ZASSERT(std::ranges::distance(wide) == 1);
+    ZEXPECT(*wide.begin() == 0.25L);
+
+    auto lists = fbs::to_bytes(Lists{
+        .words = {"hello", "world"},
+        .places = {{.city = "a", .zip = 1}, {.city = "b", .zip = 2}},
+        .points = {},
+        .maybe = {5, std::nullopt, 9},
+        .blobs = {},
+        .grid = {},
+    });
+    ZASSERT(lists);
+    auto lists_root = table_view<Lists>::from_bytes(*lists);
+    ZASSERT(lists_root.valid());
+    std::vector<std::string_view> words;
+    for(auto word: lists_root[&Lists::words]) {
+        words.push_back(word);
+    }
+    ZEXPECT(words == std::vector<std::string_view>{"hello", "world"});
+    auto places = lists_root[&Lists::places];
+    ZASSERT(places.size() == 2U);
+    auto second = places.begin() + 1;
+    ZEXPECT((*second)[&test::Address::city] == "b");
+    ZEXPECT(second[-1][&test::Address::zip] == 1);
+    ZEXPECT(places.end() - places.begin() == 2);
+    ZEXPECT(std::ranges::count(lists_root[&Lists::maybe], 0) == 1);
+}
+
+ZEST_CASE(over_aligned_inline_struct_vector_is_contiguous) {
+    // to_bytes aligns the elements for the struct; held at an address
+    // aligned like it, the view hands them out in place.
+    ZSTATIC_EXPECT(fbs::can_inline_struct_v<Vec4>);
+    const Mesh mesh{
+        .points = {{.x = 1, .y = 2, .z = 3, .w = 4}, {.x = 5, .y = 6, .z = 7, .w = 8}}
+    };
+    auto bytes = fbs::to_bytes(mesh);
+    ZASSERT(bytes);
+    auto root = table_view<Mesh>::from_bytes(*bytes);
+    ZASSERT(root.valid());
+    auto points = root[&Mesh::points];
+    ZEXPECT(reinterpret_cast<std::uintptr_t>(points.data()) % alignof(Vec4) == 0U);
+    ZEXPECT(std::span<const Vec4>(points) == mesh.points);
 }
 
 ZEST_CASE(array_view_out_of_range_reads_default) {
@@ -439,6 +677,46 @@ ZEST_CASE(map_view_looks_up_integer_and_enum_keys) {
     auto by_wide_id = root[&MapFields::by_wide_id];
     ZEXPECT(by_wide_id[42U] == 3);
     ZEXPECT(by_wide_id[0x8000000000000001ULL] == 2);
+}
+
+ZEST_CASE(map_view_looks_up_across_signedness) {
+    // Integer keys and probes compare by value whatever their signedness.
+    auto bytes = fbs::to_bytes(make_map_fields());
+    ZASSERT(bytes);
+    auto root = table_view<MapFields>::from_bytes(*bytes);
+    ZASSERT(root.valid());
+    auto by_id = root[&MapFields::by_id];
+    ZEXPECT(by_id.contains(2U));
+    ZEXPECT(by_id[30U] == "thirty");
+    ZEXPECT(!by_id.contains(0xFFFFFFF9U));
+    auto by_wide_id = root[&MapFields::by_wide_id];
+    ZEXPECT(by_wide_id[42] == 3);
+
+    // -1 converts to the one key the map holds.
+    auto unsigned_bytes = fbs::to_bytes(UnsignedKeyed{.by_id = {{0xFFFFFFFFU, 1}}});
+    ZASSERT(unsigned_bytes);
+    auto unsigned_ids =
+        table_view<UnsignedKeyed>::from_bytes(*unsigned_bytes)[&UnsignedKeyed::by_id];
+    ZEXPECT(unsigned_ids.contains(0xFFFFFFFFU));
+    ZEXPECT(!unsigned_ids.contains(-1));
+    ZEXPECT(unsigned_ids[-1] == 0);
+}
+
+ZEST_CASE(map_view_orders_char_keys_as_int8) {
+    // A char key sorts as the int8 cell it is stored as, so a buffer reads
+    // the same where char is signed and where it is unsigned.
+    const std::map<char, std::int32_t> letters{
+        {'a',                     1},
+        {static_cast<char>(0xE9), 2},
+    };
+    auto bytes = fbs::to_bytes(CharKeyed{.letters = letters});
+    ZASSERT(bytes);
+    auto map = table_view<CharKeyed>::from_bytes(*bytes)[&CharKeyed::letters];
+    ZASSERT(map.size() == 2U);
+    ZEXPECT(map.at(0).get<0>() == static_cast<char>(0xE9));
+    ZEXPECT(map.at(1).get<0>() == 'a');
+    ZEXPECT(map['a'] == 1);
+    ZEXPECT(map[static_cast<char>(0xE9)] == 2);
 }
 
 ZEST_CASE(map_view_looks_up_struct_keys) {

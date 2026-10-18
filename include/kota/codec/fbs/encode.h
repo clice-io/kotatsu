@@ -468,18 +468,15 @@ struct BoxedTableCollector {
     }
 };
 
-/// The owning key an encoded map entry is ordered by, matching the comparison
-/// map_view::find_entry applies to decoded keys (proxy_detail::ordering_less):
-/// strings compare lexicographically (captured owning — the buffer is still
-/// being built), enums by their underlying value, reflected structs
-/// field-wise, every other scalar as itself.
+/// The owning key an encoded map entry is ordered by, compared with the
+/// ordering map_view::find_entry applies to decoded keys
+/// (proxy_detail::ordering_less): a string captured owning — the buffer is
+/// still being built — and every other key as itself.
 template <typename K>
 constexpr auto ordering_key_impl() {
     using clean_k = proxy_detail::deep_clean_t<K>;
     if constexpr(meta::str_like<clean_k>) {
         return std::type_identity<std::string>{};
-    } else if constexpr(std::is_enum_v<clean_k>) {
-        return std::type_identity<std::underlying_type_t<clean_k>>{};
     } else {
         if constexpr(meta::reflectable_class<clean_k>) {
             static_assert(can_inline_struct_v<clean_k>,
