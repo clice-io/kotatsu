@@ -436,10 +436,8 @@ bool VecReader<E>::visit_element(F&& reader) {
         return ok;
     } else if constexpr(layout == scalar) {
         using cell_t = proxy_detail::scalar_cell_t<repr_t>;
-        const auto* image = vec->Data() + std::size_t{idx} * sizeof(cell_t);
+        ScalarReader<cell_t> sr{.value = proxy_detail::load_cell<cell_t>(vec->Data(), idx)};
         ++idx;
-        ScalarReader<cell_t> sr{
-            .value = ::flatbuffers::EndianScalar(proxy_detail::load_unaligned<cell_t>(image))};
         return reader(sr);
     } else if constexpr(layout == string) {
         const auto* text = vec->GetAsString(static_cast<uoffset_t>(idx));

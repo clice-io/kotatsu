@@ -242,6 +242,13 @@ auto load_unaligned(const std::uint8_t* image) -> T {
     return value;
 }
 
+/// The index-th cell of a scalar vector's element data, copied out bytewise
+/// (load_unaligned) and in the buffer's little-endian order.
+template <typename Cell>
+auto load_cell(const std::uint8_t* data, std::size_t index) -> Cell {
+    return ::flatbuffers::EndianScalar(load_unaligned<Cell>(data + index * sizeof(Cell)));
+}
+
 /// How a value of view type T sits in a table slot. The one classification
 /// both read_field and verify_field branch on, so the views never read a
 /// slot the verifier did not check. Decided on the type's kind, as the codec
@@ -1103,7 +1110,9 @@ private:
             return proxy_detail::read_field<element_type>(proxy_detail::table_ref(wrapper),
                                                           detail::first_field);
         } else if constexpr(layout == scalar) {
-            return proxy_detail::from_cell<element_type>(vector->Get(offset));
+            using cell_t = proxy_detail::scalar_cell_t<element_type>;
+            return proxy_detail::from_cell<element_type>(
+                proxy_detail::load_cell<cell_t>(vector->Data(), index));
         } else if constexpr(layout == inline_struct) {
             return proxy_detail::load_unaligned<value_type>(vector->Data() +
                                                             index * sizeof(value_type));

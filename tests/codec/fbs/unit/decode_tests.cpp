@@ -265,6 +265,11 @@ struct Hashes {
     std::vector<std::uint64_t> values;
 };
 
+/// long double elements travel as double cells, converted on each read.
+struct Samples {
+    std::vector<long double> values;
+};
+
 /// A buffer whose root table holds one vector, with the element data 4
 /// bytes past a 16-byte boundary: the length word is 4-aligned, all the
 /// verifier asks of it, while anything wider sits misaligned.
@@ -626,6 +631,19 @@ ZEST_CASE(misaligned_vector_elements_view_fails) {
     const std::array<std::uint64_t, 2> values{7, 0xFFFFFFFFFFFFFFFFULL};
     ZEXPECT(!table_view<Hashes>::from_bytes(misaligned_vector(2, std::as_bytes(std::span(values))))
                  .valid());
+}
+
+ZEST_CASE(converted_cells_view_wherever_they_sit) {
+    // Cells the view converts on each read are copied out, not read in
+    // place, so their alignment is never asked for.
+    const std::array<double, 2> cells{1.5, -2.25};
+    auto bytes = misaligned_vector(2, std::as_bytes(std::span(cells)));
+    ZASSERT(reinterpret_cast<std::uintptr_t>(bytes.data() + 36) % alignof(double) != 0U);
+    auto view = table_view<Samples>::from_bytes(bytes);
+    ZASSERT(view.valid());
+    auto samples = view[&Samples::values];
+    ZASSERT(samples.size() == 2U);
+    ZEXPECT(samples[1] == -2.25L);
 }
 
 ZEST_CASE(elements_aligned_past_operator_new_view_wherever_they_sit) {
