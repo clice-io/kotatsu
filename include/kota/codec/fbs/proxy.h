@@ -219,6 +219,18 @@ consteval bool stored_in_place() {
     }
 }
 
+/// A scalar from the cell it is stored as. An enum converts through its
+/// underlying type, so a bool enum's cell holding 2 is true first: GCC
+/// otherwise converts the integer to such an enum by its low bit.
+template <typename T, typename Cell>
+constexpr auto from_cell(Cell cell) -> T {
+    if constexpr(std::is_enum_v<T>) {
+        return static_cast<T>(static_cast<std::underlying_type_t<T>>(cell));
+    } else {
+        return static_cast<T>(cell);
+    }
+}
+
 /// Copies a scalar cell or an inline struct out of its image in the buffer.
 /// from_bytes verifies vector elements for bounds only, so they are only as
 /// aligned as the buffer's placement and the 4-byte length word before them
@@ -472,7 +484,7 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
     } else if constexpr(layout == scalar) {
         // Read as the cell the encoder wrote, then converted: a bool cell
         // holding 2 reads as true, as it decodes.
-        return static_cast<T>(view.template get_scalar<scalar_cell_t<T>>(field));
+        return from_cell<T>(view.template get_scalar<scalar_cell_t<T>>(field));
     } else if constexpr(layout == string) {
         const auto* text = tbl->template GetPointer<const String*>(field);
         if(text == nullptr) {
@@ -1091,7 +1103,7 @@ private:
             return proxy_detail::read_field<element_type>(proxy_detail::table_ref(wrapper),
                                                           detail::first_field);
         } else if constexpr(layout == scalar) {
-            return static_cast<element_type>(vector->Get(offset));
+            return proxy_detail::from_cell<element_type>(vector->Get(offset));
         } else if constexpr(layout == inline_struct) {
             return proxy_detail::load_unaligned<value_type>(vector->Data() +
                                                             index * sizeof(value_type));
