@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <compare>
 #include <concepts>
@@ -8,6 +9,7 @@
 #include <cstring>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -30,9 +32,6 @@ namespace kota::codec::fbs {
 
 template <typename T>
 class table_view;
-
-template <typename T>
-class bound_view;
 
 template <typename T>
 class array_view;
@@ -118,8 +117,9 @@ using deep_clean_t = typename decltype(deep_clean_impl<T>())::type;
 
 /// The kinds that travel as a fixed-width cell (scalar_cell_t).
 consteval bool is_scalar_kind(meta::type_kind k) {
-    return k == meta::type_kind::boolean || meta::is_integer_kind(k) || meta::is_floating_kind(k) ||
-           k == meta::type_kind::character || k == meta::type_kind::enumeration;
+    using enum meta::type_kind;
+    return k == boolean || meta::is_integer_kind(k) || meta::is_floating_kind(k) ||
+           k == character || k == enumeration;
 }
 
 /// How a vector element is laid out in the buffer.
@@ -178,11 +178,6 @@ struct scalar_cell<char> {
 };
 
 template <>
-struct scalar_cell<std::byte> {
-    using type = std::uint8_t;
-};
-
-template <>
 struct scalar_cell<long double> {
     using type = double;
 };
@@ -227,12 +222,12 @@ consteval std::size_t element_alignment() {
     }
 }
 
-/// Copies an inline struct out of its image in the buffer. The image is only
-/// as aligned as the buffer's placement and the verifier make it — an
-/// over-aligned struct's vector elements sit wherever a 4-byte length word
-/// puts them — so it is copied bytewise, never read through a T pointer.
+/// Copies a scalar cell or an inline struct out of its image in the buffer.
+/// from_bytes verifies vector elements for bounds only, so they are only as
+/// aligned as the buffer's placement and the 4-byte length word before them
+/// make them; the image is copied bytewise, never read through a T pointer.
 template <typename T>
-auto load_inline_struct(const std::uint8_t* image) -> T {
+auto load_unaligned(const std::uint8_t* image) -> T {
     T value;
     std::memcpy(std::addressof(value), image, sizeof(T));
     return value;
@@ -312,17 +307,6 @@ template <typename Object, std::size_t I>
 constexpr bool addressable_field_v = !meta::detail::field_attr_flags<Object, I>::skipped &&
                                      !meta::detail::field_attr_flags<Object, I>::flattened;
 
-/// The slot of Object's I-th field: one per field before it, none for a
-/// skipped one, a flattened one's own count for a flattened one — the slots
-/// meta's schema lays out.
-template <typename Object, std::size_t I>
-consteval std::size_t field_slot_index() {
-    return []<std::size_t... Is>(std::index_sequence<Is...>) {
-        return (std::size_t{0} + ... +
-                type_list_size_v<typename meta::detail::single_field_slots<Object, Is>::type>);
-    }(std::make_index_sequence<I>{});
-}
-
 /// The types of Object's addressable members, each once.
 template <typename Object, typename Seq = std::make_index_sequence<meta::field_count<Object>()>>
 struct member_types;
@@ -338,21 +322,35 @@ struct member_types<Object, std::index_sequence<Is...>> {
 template <typename Object>
 using member_types_t = typename member_types<Object>::type;
 
-/// The slots of Object's members of type M, in declaration order.
+/// The indices of Object's fields of type M, in declaration order.
+template <typename Object, typename M>
+consteval auto member_fields() {
+    constexpr auto typed = []<std::size_t... Is>(std::index_sequence<Is...>) {
+        return std::array<bool, sizeof...(Is)>{std::same_as<field_value_t<Object, Is>, M>...};
+    }(std::make_index_sequence<meta::field_count<Object>()>{});
+    std::array<std::size_t, std::ranges::count(typed, true)> fields{};
+    std::size_t next = 0;
+    for(std::size_t i = 0; i < typed.size(); ++i) {
+        if(typed[i]) {
+            fields[next++] = i;
+        }
+    }
+    return fields;
+}
+
+/// The slots of Object's fields of type M: a field's slot is the count of the
+/// slots the fields before it take — one each, none for a skipped one, a
+/// flattened one's own count — as meta's schema lays them out.
 template <typename Object, typename M>
 consteval auto member_slots() {
-    using fields = std::make_index_sequence<meta::field_count<Object>()>;
-    constexpr auto count = []<std::size_t... Is>(std::index_sequence<Is...>) {
-        return (std::size_t{0} + ... + std::size_t{std::same_as<field_value_t<Object, Is>, M>});
-    }(fields{});
-    std::array<std::size_t, count> slots{};
-    std::size_t next = 0;
-    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        ((std::same_as<field_value_t<Object, Is>, M>
-              ? void(slots[next++] = field_slot_index<Object, Is>())
-              : void()),
-         ...);
-    }(fields{});
+    constexpr auto taken = []<std::size_t... Is>(std::index_sequence<Is...>) {
+        return std::array<std::size_t, sizeof...(Is)>{
+            type_list_size_v<typename meta::detail::single_field_slots<Object, Is>::type>...};
+    }(std::make_index_sequence<meta::field_count<Object>()>{});
+    auto slots = member_fields<Object, M>();
+    for(auto& slot: slots) {
+        slot = std::accumulate(taken.begin(), taken.begin() + slot, std::size_t{0});
+    }
     return slots;
 }
 
@@ -463,7 +461,7 @@ consteval auto field_return_impl() {
 template <typename T>
 using field_return_type_t = typename decltype(field_return_impl<T>())::type;
 
-// Unchecked read: an absent slot reads as the type's default.
+/// Unchecked read: an absent slot reads as the type's default.
 template <typename T>
 auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
     using return_t = field_return_type_t<T>;
@@ -489,7 +487,7 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
         if(image == nullptr) {
             return T();
         }
-        return load_inline_struct<T>(image);
+        return load_unaligned<T>(image);
     } else if constexpr(layout == vector) {
         // array_view owns the element-layout classification; read with its
         // pointer type so the two can never diverge.
@@ -501,20 +499,22 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
     }
 }
 
-/// Reads the I-th slot of a table holding an Object; an invalid view reads
-/// every slot as its default.
-template <typename Object, std::size_t I>
-auto read_slot(table_ref view) -> field_return_type_t<slot_view_t<Object, I>> {
-    using return_t = field_return_type_t<slot_view_t<Object, I>>;
-    if(!view.valid()) {
-        return return_t();
-    }
-    return read_field<slot_view_t<Object, I>>(view, detail::field_slot(I));
-}
-
 /// The view type of Object's members of type M: they share their slot type.
 template <typename Object, typename M>
-using member_view_t = field_return_type_t<slot_view_t<Object, member_slots<Object, M>()[0]>>;
+using member_slot_view_t = slot_view_t<Object, member_slots<Object, M>()[0]>;
+
+template <typename Object, typename M>
+using member_view_t = field_return_type_t<member_slot_view_t<Object, M>>;
+
+/// Reads a member of Object of type M from its slot; an invalid view reads
+/// every member as its default.
+template <typename Object, typename M>
+auto read_member(table_ref view, std::size_t slot) -> member_view_t<Object, M> {
+    if(!view.valid()) {
+        return member_view_t<Object, M>();
+    }
+    return read_field<member_slot_view_t<Object, M>>(view, detail::field_slot(slot));
+}
 
 /// A member of Object of type M, located where it is named: the conversion
 /// from &Object::member is evaluated at compile time, finding which of
@@ -537,18 +537,14 @@ private:
     template <typename P>
     static consteval std::size_t rank_of(P member) {
         const auto& unknown = meta::detail::ext<meta::detail::uninitialized<Object>>;
+        const auto addresses = std::apply(
+            [](auto... field) { return std::array<const void*, sizeof...(field)>{field...}; },
+            meta::reflection<Object>::field_addrs(unknown.value));
         const void* address = std::addressof(unknown.value.*member);
-        const auto addrs = meta::reflection<Object>::field_addrs(unknown.value);
-        std::size_t rank = 0;
-        bool found = false;
-        [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            ((std::same_as<field_value_t<Object, Is>, M> && !found
-                  ? void(static_cast<const void*>(std::get<Is>(addrs)) == address ? found = true
-                                                                                  : ++rank)
-                  : void()),
-             ...);
-        }(std::make_index_sequence<meta::field_count<Object>()>{});
-        return rank;
+        const auto fields = member_fields<Object, M>();
+        return static_cast<std::size_t>(
+            std::ranges::find(fields, address, [&](std::size_t i) { return addresses[i]; }) -
+            fields.begin());
     }
 };
 
@@ -561,13 +557,8 @@ struct table_member {
     /// string_view, a sequence as an array_view, a map as a map_view, a
     /// table-shaped member as its view. An absent member, or any member of
     /// an invalid view, reads as that view type's default.
-    auto operator[](member_key<Object, M> key) const {
-        using view_t = slot_view_t<Object, member_slots<Object, M>()[0]>;
-        const table_ref view(static_cast<const View&>(*this).raw());
-        if(!view.valid()) {
-            return field_return_type_t<view_t>();
-        }
-        return read_field<view_t>(view, detail::field_slot(key.slot));
+    auto operator[](member_key<Object, M> key) const -> member_view_t<Object, M> {
+        return read_member<Object, M>(table_ref(static_cast<const View&>(*this).raw()), key.slot);
     }
 
     /// Whether the buffer holds the member: false for an absent nullable,
@@ -586,7 +577,7 @@ struct table_members<View, Object, type_list<Ms...>> : table_member<View, Object
     using table_member<View, Object, Ms>::has...;
 };
 
-/// bound_view's columns of Object's members of type M, read once.
+/// bound_view's column of Object's members of type M, read once.
 template <typename Object, typename M>
 class bound_member {
     constexpr static auto slots = member_slots<Object, M>();
@@ -596,7 +587,7 @@ public:
 
     explicit bound_member(table_ref view) :
         column([&]<std::size_t... Rs>(std::index_sequence<Rs...>) {
-            return std::array{read_slot<Object, slots[Rs]>(view)...};
+            return std::array{read_member<Object, M>(view, slots[Rs])...};
         }(std::make_index_sequence<slots.size()>{})) {}
 
     auto operator[](member_key<Object, M> key) const -> const member_view_t<Object, M>& {
@@ -604,7 +595,7 @@ public:
     }
 
 private:
-    std::array<member_view_t<Object, M>, slots.size()> column;
+    std::array<member_view_t<Object, M>, slots.size()> column{};
 };
 
 template <typename Object, typename Types = member_types_t<Object>>
@@ -928,13 +919,12 @@ class array_view {
     // The element layout is decided on the unpeeled resolved representation;
     // nullable peeling applies only to the view returned for each element.
     constexpr static auto layout = proxy_detail::element_layout_of<Element>();
+    constexpr static bool contiguous = proxy_detail::stored_in_place<Element>();
 
 public:
     using element_type = proxy_detail::deep_clean_t<Element>;
     using value_type = proxy_detail::field_return_type_t<element_type>;
     using vector_ptr_type = proxy_detail::element_vector_ptr_t<Element>;
-
-    constexpr static bool contiguous = proxy_detail::stored_in_place<Element>();
 
     /// Reads elements by value, for the layouts not stored as value_type.
     class index_iterator {
@@ -1002,13 +992,9 @@ public:
             return lhs.index - rhs.index;
         }
 
-        friend constexpr bool operator==(const index_iterator& lhs, const index_iterator& rhs) {
-            return lhs.index == rhs.index;
-        }
+        friend constexpr bool operator==(const index_iterator&, const index_iterator&) = default;
 
-        friend constexpr auto operator<=>(const index_iterator& lhs, const index_iterator& rhs) {
-            return lhs.index <=> rhs.index;
-        }
+        friend constexpr auto operator<=>(const index_iterator&, const index_iterator&) = default;
 
     private:
         friend class array_view;
@@ -1074,7 +1060,11 @@ public:
         if(index >= length) {
             return value_type();
         }
-        return element(vector, index);
+        if constexpr(contiguous) {
+            return data()[index];
+        } else {
+            return element(vector, index);
+        }
     }
 
     constexpr auto raw() const noexcept -> vector_ptr_type {
@@ -1082,23 +1072,22 @@ public:
     }
 
 private:
+    /// An element of a layout not stored as value_type.
     static auto element(vector_ptr_type vector, std::size_t index) -> value_type {
         using enum proxy_detail::element_layout;
-        const auto at = static_cast<uoffset_t>(index);
+        const auto offset = static_cast<uoffset_t>(index);
 
-        if constexpr(contiguous) {
-            return reinterpret_cast<const value_type*>(vector->Data())[index];
-        } else if constexpr(layout == boxed) {
-            const auto* wrapper = vector->template GetAs<Table>(at);
+        if constexpr(layout == boxed) {
+            const auto* wrapper = vector->template GetAs<Table>(offset);
             return proxy_detail::read_field<element_type>(proxy_detail::table_ref(wrapper),
                                                           detail::first_field);
         } else if constexpr(layout == scalar) {
-            return static_cast<element_type>(vector->Get(at));
+            return static_cast<element_type>(vector->Get(offset));
         } else if constexpr(layout == string) {
-            const auto* text = vector->GetAsString(at);
+            const auto* text = vector->GetAsString(offset);
             return std::string_view(text->data(), text->size());
         } else {
-            return value_type(proxy_detail::table_ref(vector->template GetAs<Table>(at)));
+            return value_type(proxy_detail::table_ref(vector->template GetAs<Table>(offset)));
         }
     }
 
@@ -1327,7 +1316,7 @@ public:
     /// aligns it within the buffer, and a buffer held at an address aligned
     /// like its widest element (as std::vector and memory-mapped files hold
     /// one, up to 16) passes; the same bytes copied to an odd address do
-    /// not, though from_bytes still decodes them.
+    /// not, though fbs::from_bytes still decodes them.
     static auto from_bytes(std::span<const std::byte> bytes) -> table_view {
         assert_viewable();
         auto opened = detail::open_root(bytes);
@@ -1384,8 +1373,6 @@ private:
 template <typename T>
 class bound_view : public proxy_detail::bound_members<T> {
 public:
-    using object_type = T;
-
     bound_view() = default;
 
     explicit bound_view(table_view<T> view) :

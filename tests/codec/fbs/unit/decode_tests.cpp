@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/fbs/harness/over_aligned.h"
 #include "codec/fbs/harness/struct_keys.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/structs.h"
@@ -143,8 +144,10 @@ namespace kota::codec {
 namespace {
 
 using fbs::table_view;
+using test::Mesh;
 using test::OccurrenceKey;
 using test::Point;
+using test::Vec4;
 using test::StructKeyed;
 
 struct Inner {
@@ -244,24 +247,9 @@ struct Node {
     std::unique_ptr<Node> next;
 };
 
-/// A bool table slot; the string keeps the struct table-shaped.
+/// A bool table slot.
 struct Switch {
     bool on = false;
-    std::string label;
-};
-
-/// Over-aligned: SSE loads of it need 16-byte alignment.
-struct alignas(16) Vec4 {
-    float x = 0;
-    float y = 0;
-    float z = 0;
-    float w = 0;
-
-    auto operator==(const Vec4&) const -> bool = default;
-};
-
-struct Mesh {
-    std::vector<Vec4> points;
 };
 
 struct Hashes {
@@ -566,7 +554,7 @@ ZEST_CASE(inline_struct_bool_byte_other_than_zero_or_one_fails) {
 ZEST_CASE(bool_cell_other_than_zero_or_one_reads_true) {
     // A bool slot is a uint8 cell; any nonzero cell decodes as true, and
     // the view reads what from_bytes reads.
-    auto encoded = fbs::to_bytes(Switch{.on = true, .label = "x"});
+    auto encoded = fbs::to_bytes(Switch{.on = true});
     ZASSERT(encoded);
     const auto* root = ::flatbuffers::GetRoot<fbs::Table>(encoded->data());
     const auto* cell = root->GetStruct<const std::uint8_t*>(4);
@@ -582,10 +570,9 @@ ZEST_CASE(bool_cell_other_than_zero_or_one_reads_true) {
     ZEXPECT(view[&Switch::on]);
 }
 
-ZEST_CASE(misaligned_vector_elements_decode_but_do_not_view) {
-    // from_bytes copies each element out bytewise, so the misaligned data
-    // decodes. The views read the elements in place and hand out pointers
-    // to them, so verification asks for the alignment and the view fails.
+ZEST_CASE(misaligned_vector_elements_decode) {
+    // from_bytes copies each scalar cell and inline struct out bytewise, so
+    // element data the verifier admits decodes however it sits.
     const std::array<Vec4, 2> points{
         {{.x = 1, .y = 2, .z = 3, .w = 4}, {.x = 5, .y = 6, .z = 7, .w = 8}}
     };
@@ -594,21 +581,25 @@ ZEST_CASE(misaligned_vector_elements_decode_but_do_not_view) {
     auto decoded = fbs::from_bytes<Mesh>(mesh);
     ZASSERT(decoded);
     ZEXPECT(decoded->points == std::vector<Vec4>(points.begin(), points.end()));
-    ZEXPECT(!table_view<Mesh>::from_bytes(mesh).valid());
 
     const std::array<std::uint64_t, 2> values{7, 0xFFFFFFFFFFFFFFFFULL};
     auto hashes = misaligned_vector(2, std::as_bytes(std::span(values)));
     auto decoded_hashes = fbs::from_bytes<Hashes>(hashes);
     ZASSERT(decoded_hashes);
     ZEXPECT(decoded_hashes->values == std::vector<std::uint64_t>(values.begin(), values.end()));
-    ZEXPECT(!table_view<Hashes>::from_bytes(hashes).valid());
+}
 
-    // The same element bytes aligned, as to_bytes lays them out, view.
-    auto aligned = fbs::to_bytes(Mesh{
-        .points = {points.begin(), points.end()}
-    });
-    ZASSERT(aligned);
-    ZEXPECT(table_view<Mesh>::from_bytes(*aligned).valid());
+ZEST_CASE(misaligned_vector_elements_view_fails) {
+    // The views read scalar and inline-struct vectors in place and hand out
+    // pointers to the elements, so verification asks for their alignment.
+    const std::array<Vec4, 2> points{
+        {{.x = 1, .y = 2, .z = 3, .w = 4}, {.x = 5, .y = 6, .z = 7, .w = 8}}
+    };
+    ZEXPECT(!table_view<Mesh>::from_bytes(misaligned_vector(2, std::as_bytes(std::span(points))))
+                 .valid());
+    const std::array<std::uint64_t, 2> values{7, 0xFFFFFFFFFFFFFFFFULL};
+    ZEXPECT(!table_view<Hashes>::from_bytes(misaligned_vector(2, std::as_bytes(std::span(values))))
+                 .valid());
 }
 
 ZEST_CASE(monostate_payload_written_as_an_empty_table_reads) {

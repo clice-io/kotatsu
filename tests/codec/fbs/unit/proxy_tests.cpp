@@ -17,6 +17,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/fbs/harness/over_aligned.h"
 #include "codec/fbs/harness/struct_keys.h"
 #include "codec/harness/fixtures/attrs.h"
 #include "codec/harness/fixtures/containers.h"
@@ -39,6 +40,8 @@ namespace {
 
 using fbs::bound_view;
 using fbs::table_view;
+using test::Mesh;
+using test::Vec4;
 
 /// Whether the views address Member.
 template <typename T, auto Member>
@@ -152,18 +155,9 @@ auto make_columns() -> Columns {
     };
 }
 
-/// Over-aligned: SSE loads of it need 16-byte alignment.
-struct alignas(16) Vec4 {
-    float x = 0;
-    float y = 0;
-    float z = 0;
-    float w = 0;
-
-    auto operator==(const Vec4&) const -> bool = default;
-};
-
-struct Mesh {
-    std::vector<Vec4> points;
+/// An unsigned key whose value a negative probe converts to.
+struct UnsignedKeyed {
+    std::map<std::uint32_t, std::int32_t> by_id;
 };
 
 struct MapFields {
@@ -312,6 +306,9 @@ ZEST_CASE(skipped_member_has_no_slot) {
     ZEXPECT(root[&test::FlattenInnerWithSkip::keep_a] == 3);
     ZSTATIC_EXPECT(!viewable<test::FlattenInnerWithSkip, &test::FlattenInnerWithSkip::drop_b>);
     ZEXPECT(root[&test::FlattenInnerWithSkip::keep_c] == 5);
+    ZEXPECT(root.has(&test::FlattenInnerWithSkip::keep_c));
+    const bound_view bound(root);
+    ZEXPECT(bound[&test::FlattenInnerWithSkip::keep_c] == 5);
 }
 
 ZEST_CASE(flattened_member_has_no_slot) {
@@ -331,6 +328,9 @@ ZEST_CASE(flattened_member_has_no_slot) {
     ZASSERT(root.valid());
     ZEXPECT(root[&test::Outer::x] == 1);
     ZEXPECT(root[&test::Outer::y] == 4);
+    const bound_view bound(root);
+    ZEXPECT(bound[&test::Outer::x] == 1);
+    ZEXPECT(bound[&test::Outer::y] == 4);
 
     auto deep = fbs::to_bytes(test::DeepOuter{
         .head = 5,
@@ -436,7 +436,7 @@ ZEST_CASE(variant_view_reads_a_monostate_alternative) {
     auto table = root[&Choices::table];
     ZASSERT(table.valid());
     ZEXPECT(table.index() == 0U);
-    // The alternative reads as the empty inline struct it is.
+    // A null alternative reads as its value, without reading its slot.
     ZEXPECT(table.get<0>() == std::monostate{});
 }
 
@@ -542,8 +542,8 @@ ZEST_CASE(array_view_iterates_every_element_layout) {
     ZASSERT(columns);
     auto root = table_view<Columns>::from_bytes(*columns);
     ZASSERT(root.valid());
-    const std::vector<bool> flags(root[&Columns::flags].begin(), root[&Columns::flags].end());
-    ZEXPECT(flags == make_columns().flags);
+    auto flags = root[&Columns::flags];
+    ZEXPECT(std::vector<bool>(flags.begin(), flags.end()) == make_columns().flags);
     auto signs = root[&Columns::signs];
     ZEXPECT(std::vector<test::SignedEnum>(signs.begin(), signs.end()) == make_columns().signs);
     auto wide = root[&Columns::wide];
@@ -567,6 +567,7 @@ ZEST_CASE(array_view_iterates_every_element_layout) {
     }
     ZEXPECT(words == std::vector<std::string_view>{"hello", "world"});
     auto places = lists_root[&Lists::places];
+    ZASSERT(places.size() == 2U);
     auto second = places.begin() + 1;
     ZEXPECT((*second)[&test::Address::city] == "b");
     ZEXPECT(second[-1][&test::Address::zip] == 1);
@@ -686,7 +687,15 @@ ZEST_CASE(map_view_looks_up_across_signedness) {
     ZEXPECT(!by_id.contains(0xFFFFFFF9U));
     auto by_wide_id = root[&MapFields::by_wide_id];
     ZEXPECT(by_wide_id[42] == 3);
-    ZEXPECT(!by_wide_id.contains(-1));
+
+    // -1 converts to the one key the map holds.
+    auto unsigned_bytes = fbs::to_bytes(UnsignedKeyed{.by_id = {{0xFFFFFFFFU, 1}}});
+    ZASSERT(unsigned_bytes);
+    auto unsigned_ids =
+        table_view<UnsignedKeyed>::from_bytes(*unsigned_bytes)[&UnsignedKeyed::by_id];
+    ZEXPECT(unsigned_ids.contains(0xFFFFFFFFU));
+    ZEXPECT(!unsigned_ids.contains(-1));
+    ZEXPECT(unsigned_ids[-1] == 0);
 }
 
 ZEST_CASE(map_view_orders_char_keys_as_int8) {

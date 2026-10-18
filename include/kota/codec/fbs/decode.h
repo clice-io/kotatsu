@@ -358,7 +358,7 @@ bool FieldReader::visit_struct(T& out, Body&& body) {
         if(!proxy_detail::valid_inline_struct_bytes<V>(image))
             return fail_verify("inline struct bool byte");
         if(image != nullptr)
-            out = proxy_detail::load_inline_struct<V>(image);
+            out = proxy_detail::load_unaligned<V>(image);
         return true;
     } else {
         detail::assert_fields_reflected<V>();
@@ -435,9 +435,11 @@ bool VecReader<E>::visit_element(F&& reader) {
         verifier->EndTable();
         return ok;
     } else if constexpr(layout == scalar) {
-        auto val = vec->Get(idx);
+        using cell_t = proxy_detail::scalar_cell_t<repr_t>;
+        const auto* image = vec->Data() + std::size_t{idx} * sizeof(cell_t);
         ++idx;
-        ScalarReader<decltype(val)> sr{.value = val};
+        ScalarReader<cell_t> sr{
+            .value = ::flatbuffers::EndianScalar(proxy_detail::load_unaligned<cell_t>(image))};
         return reader(sr);
     } else if constexpr(layout == string) {
         const auto* text = vec->GetAsString(static_cast<uoffset_t>(idx));
@@ -455,7 +457,7 @@ bool VecReader<E>::visit_element(F&& reader) {
         ++idx;
         if(!proxy_detail::valid_inline_struct_bytes<repr_t>(image))
             return fail_verify("inline struct element bool byte");
-        ScalarReader<repr_t> sr{.value = proxy_detail::load_inline_struct<repr_t>(image)};
+        ScalarReader<repr_t> sr{.value = proxy_detail::load_unaligned<repr_t>(image)};
         return reader(sr);
     } else {
         const auto* child = vec->template GetAs<Table>(static_cast<uoffset_t>(idx));
