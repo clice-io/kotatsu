@@ -33,6 +33,9 @@ ZEST_CASE(vec_is_two_words_read_in_place) {
     // Its offset counts from its own address, so a copy would point elsewhere.
     ZSTATIC_EXPECT(!std::is_copy_constructible_v<Vec<std::uint32_t>>);
     ZSTATIC_EXPECT(!std::is_copy_assignable_v<Vec<std::uint32_t>>);
+    // An implicit-lifetime type, which bytes hold without a constructor run.
+    ZSTATIC_EXPECT(std::is_trivially_default_constructible_v<Vec<std::uint32_t>>);
+    ZSTATIC_EXPECT(std::is_trivially_destructible_v<Vec<std::uint32_t>>);
     ZSTATIC_EXPECT(sizeof(Vec<std::uint64_t>) == 8);
     ZSTATIC_EXPECT(sizeof(Vec<char>) == 8);
 }

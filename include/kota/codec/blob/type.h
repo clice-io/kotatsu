@@ -62,7 +62,10 @@ constexpr inline std::size_t alignment = 8;
 
 /// A string (`Vec<char>`) or a sequence read in place. Its offset counts from
 /// its own address, so it is never copied out of the blob: bind a reference to
-/// it, or read it as a std::span or a std::string_view.
+/// it, or read it as a std::span or a std::string_view. It is never
+/// constructed either, only read where the writer put it: its default
+/// constructor is trivial, so that it is an implicit-lifetime type, which the
+/// bytes holding a blob can hold without running any constructor.
 template <typename T>
 class Vec {
 public:
@@ -117,9 +120,9 @@ private:
         return reinterpret_cast<const T*>(reinterpret_cast<const std::byte*>(this) + offset);
     }
 
-    std::uint32_t offset = 0;
+    std::uint32_t offset;
 
-    std::uint32_t length = 0;
+    std::uint32_t length;
 };
 
 /// The owning sequence of a struct template's writer form: std::string for
