@@ -7,6 +7,7 @@
 #include <expected>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -23,19 +24,15 @@ namespace kota::codec::blob {
 namespace detail {
 
 /// Checks bytes against a view's layout, part by part in the order the
-/// writer appends them.
+/// writer appends them. Positions are 64-bit, so that a length near 2^32
+/// cannot wrap past the bounds where std::size_t is 32-bit.
 struct Checker {
-    Checker(std::span<const std::byte> bytes, std::uint64_t cursor) :
-        bytes(bytes), cursor(cursor) {}
-
     std::span<const std::byte> bytes;
 
     /// Where the next out-of-line part begins, give or take its alignment.
-    /// Positions are 64-bit, so that a length near 2^32 cannot wrap past the
-    /// bounds where std::size_t is 32-bit.
     std::uint64_t cursor;
 
-    rich_error error;
+    rich_error error = {};
 
     /// Check the view A at `at`, inside bytes already placed, and place its
     /// out-of-line parts.
@@ -59,7 +56,7 @@ struct Checker {
             return ok;
         } else {
             using E = element_t<A>;
-            auto placed = is_string_v<A> ? place(at, 1, 1) : place(at, sizeof(E), alignment);
+            auto placed = place(at, sizeof(E), part_alignment_v<A>);
             if(!placed) {
                 return false;
             }
@@ -97,7 +94,7 @@ private:
                 fail("an empty part has an offset");
                 return std::nullopt;
             }
-            return Placed{0, 0};
+            return Placed{.at = 0, .length = 0};
         }
         auto expected = align_up(cursor, align);
         if(at + offset != expected) {
@@ -110,7 +107,7 @@ private:
             return std::nullopt;
         }
         cursor = end;
-        return Placed{expected, length};
+        return Placed{.at = expected, .length = length};
     }
 };
 
@@ -118,15 +115,13 @@ private:
 template <typename T>
 void decode(const view_t<T>& in, T& out) {
     using A = view_t<T>;
-    if constexpr(is_plain<A>()) {
+    if constexpr(std::is_same_v<A, T>) {
         out = in;
     } else if constexpr(kind_of<A>() == Kind::Record) {
         for_each_index<A>([&](auto index) {
             detail::decode(meta::field_of<index()>(in), meta::field_of<index()>(out));
         });
-    } else if constexpr(is_string_v<A>) {
-        out.assign(in.data(), in.size());
-    } else if constexpr(is_plain<element_t<A>>()) {
+    } else if constexpr(std::is_same_v<element_t<A>, std::ranges::range_value_t<T>>) {
         out.assign(in.begin(), in.end());
     } else {
         out.clear();
@@ -139,10 +134,24 @@ void decode(const view_t<T>& in, T& out) {
 
 }  // namespace detail
 
-/// The root of `bytes` read in place, once they hold a blob of T in exactly
-/// the layout type.h describes: every read through it is then in bounds,
-/// with no further check. The bytes must start at `alignment`, and stay where they
-/// are while the root is read.
+/// The root of bytes view accepted, read in place with no check: for bytes
+/// verified once and read many times.
+template <typename T>
+auto view_verified(std::span<const std::byte> bytes) -> const view_t<T>& {
+    assert(reinterpret_cast<std::uintptr_t>(bytes.data()) % alignment == 0);
+    assert(bytes.size() >= sizeof(detail::Header) + sizeof(view_t<T>));
+    return *reinterpret_cast<const view_t<T>*>(bytes.data() + sizeof(detail::Header));
+}
+
+template <typename T>
+auto view_verified(std::span<const std::uint8_t> bytes) -> const view_t<T>& {
+    return view_verified<T>(std::as_bytes(bytes));
+}
+
+/// The root of `bytes` read in place if they hold a blob of T in exactly the
+/// layout type.h describes, the reason otherwise. Every read through the root
+/// is in bounds, with no further check. The bytes must start at `alignment`,
+/// and stay where they are while the root is read.
 template <typename T>
 auto view(std::span<const std::byte> bytes) -> std::expected<const view_t<T>*, rich_error> {
     using A = view_t<T>;
@@ -150,45 +159,31 @@ auto view(std::span<const std::byte> bytes) -> std::expected<const view_t<T>*, r
     if(reinterpret_cast<std::uintptr_t>(bytes.data()) % alignment != 0) {
         return std::unexpected(rich_error("the bytes do not start at an 8-byte boundary"));
     }
-    if(bytes.size() < detail::header_size + sizeof(A) ||
+    if(bytes.size() < sizeof(detail::Header) + sizeof(A) ||
        bytes.size() > std::numeric_limits<std::uint32_t>::max()) {
         return std::unexpected(rich_error("the bytes cannot hold a blob of this type"));
     }
-    std::uint32_t header[2];
-    std::memcpy(header, bytes.data(), sizeof(header));
-    if(header[0] != detail::magic) {
+    detail::Header header;
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    if(header.magic != detail::magic) {
         return std::unexpected(rich_error("not a blob"));
     }
-    if(header[1] != detail::fingerprint<A>()) {
+    if(header.fingerprint != detail::fingerprint_v<A>) {
         return std::unexpected(rich_error("a blob of another layout"));
     }
-    detail::Checker checker(bytes, detail::header_size + sizeof(A));
-    if(!checker.check<A>(detail::header_size)) {
+    detail::Checker checker{.bytes = bytes, .cursor = sizeof(detail::Header) + sizeof(A)};
+    if(!checker.check<A>(sizeof(detail::Header))) {
         return std::unexpected(std::move(checker.error));
     }
     if(checker.cursor != bytes.size()) {
         return std::unexpected(rich_error("bytes past the blob's last part"));
     }
-    return reinterpret_cast<const A*>(bytes.data() + detail::header_size);
+    return &view_verified<T>(bytes);
 }
 
 template <typename T>
 auto view(std::span<const std::uint8_t> bytes) -> std::expected<const view_t<T>*, rich_error> {
     return view<T>(std::as_bytes(bytes));
-}
-
-/// The root of bytes view accepted, read in place with no check: for bytes
-/// verified once and read many times.
-template <typename T>
-auto view_verified(std::span<const std::byte> bytes) -> const view_t<T>& {
-    assert(reinterpret_cast<std::uintptr_t>(bytes.data()) % alignment == 0);
-    assert(bytes.size() >= detail::header_size + sizeof(view_t<T>));
-    return *reinterpret_cast<const view_t<T>*>(bytes.data() + detail::header_size);
-}
-
-template <typename T>
-auto view_verified(std::span<const std::uint8_t> bytes) -> const view_t<T>& {
-    return view_verified<T>(std::as_bytes(bytes));
 }
 
 /// Copies the value a blob of T holds out of `bytes`, which view checks.

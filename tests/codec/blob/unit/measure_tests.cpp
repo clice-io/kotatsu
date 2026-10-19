@@ -1,4 +1,6 @@
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -25,7 +27,7 @@ using Parts = std::vector<std::pair<std::string, std::uint64_t>>;
 /// What measure reports for the root of `bytes`, a path's consecutive parts
 /// summed.
 template <typename T>
-Parts measured(const std::vector<std::byte>& bytes) {
+Parts measured(std::span<const std::byte> bytes) {
     auto viewed = view<T>(bytes);
     ZASSERT(viewed);
     Parts parts;
@@ -49,6 +51,7 @@ ZEST_CASE(measure_splits_bytes_by_field) {
         {"empty_numbers", 0        },
         {"names",         3 * 8 + 4},
         {"points",        2 * 16   },
+        {"stamps",        2 * 8    },
         {"leaves",        3 * 16   },
         {"leaves.name",   1        },
         {"leaves.values", 4        },
@@ -56,7 +59,7 @@ ZEST_CASE(measure_splits_bytes_by_field) {
         {"leaves.values", 0        },
         {"leaves.name",   2        },
         {"leaves.values", 2        },
-        {"inner.label",   5        },
+        {"badge.label",   5        },
         {"bytes",         5        },
     };
     ZEXPECT(measured<test::Sample>(test::blob_of(test::sample())) == expected);

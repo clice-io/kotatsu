@@ -160,7 +160,13 @@ namespace detail {
 
 constexpr inline std::uint32_t magic = 'B' | ('L' << 8) | ('O' << 16) | ('B' << 24);
 
-constexpr inline std::size_t header_size = 8;
+/// What a blob starts with.
+struct Header {
+    std::uint32_t magic;
+
+    /// The fingerprint of the root's view.
+    std::uint32_t fingerprint;
+};
 
 template <typename A>
 constexpr inline bool is_vec_v = false;
@@ -174,6 +180,13 @@ constexpr inline bool is_string_v = std::is_same_v<A, Vec<char>>;
 template <typename A>
 using element_t = typename A::value_type;
 
+/// Where the part a Vec points to starts: a string's anywhere, a sequence's at
+/// `alignment`.
+template <typename A>
+constexpr inline std::size_t part_alignment_v = is_string_v<A> ? 1 : alignment;
+
+/// An enum list-initializes from an integer only when its underlying type is
+/// fixed, and only then is every value of that type one of the enum's.
 template <typename T>
 constexpr inline bool is_scalar_v =
     std::is_arithmetic_v<T> ? !std::is_same_v<T, long double>
@@ -223,13 +236,13 @@ consteval Kind kind_of() {
         return Kind::Record;
     } else {
         static_assert(sizeof(A) == 0,
-                      "a blob holds arithmetic types, enums with a fixed underlying type, Vec "
-                      "and aggregates of those; a record holding strings or sequences is a "
-                      "struct template over its sequence type");
+                      "a blob holds arithmetic types other than long double, enums with a fixed "
+                      "underlying type, Vec and aggregates of those; a record holding strings or "
+                      "sequences is a struct template over its sequence type");
     }
 }
 
-/// Whether A holds no Vec, so a writer copies it as it is.
+/// Whether A holds no Vec, and so no out-of-line parts.
 template <typename A>
 consteval bool is_plain() {
     if constexpr(kind_of<A>() == Kind::Record) {
@@ -241,8 +254,8 @@ consteval bool is_plain() {
     }
 }
 
-/// Whether A is plain and its image has no padding, so a sequence of them
-/// copies out whole.
+/// Whether A is plain and its image has no padding, so that the writer copies
+/// a sequence of them in one piece.
 template <typename A>
 consteval bool is_packed() {
     if constexpr(!is_plain<A>()) {
@@ -261,9 +274,9 @@ consteval bool is_packed() {
     }
 }
 
-/// Whether reading A in place needs a check beyond its bounds: a bool, or an
-/// enum over one, admits two bytes of 256, and a Vec points somewhere to
-/// place.
+/// Whether reading A in place needs a check beyond its bounds: only 0 and 1
+/// of a byte's 256 values are a bool (or an enum over one), and a Vec points
+/// somewhere to place.
 template <typename A>
 consteval bool needs_check() {
     if constexpr(kind_of<A>() == Kind::Scalar) {
@@ -277,23 +290,29 @@ consteval bool needs_check() {
     }
 }
 
-consteval std::uint32_t mix(std::uint32_t hash, std::string_view text) {
+/// One step of FNV-1a.
+constexpr std::uint32_t mix_byte(std::uint32_t hash, std::uint8_t byte) {
+    return (hash ^ byte) * 16777619u;
+}
+
+constexpr std::uint32_t mix(std::uint32_t hash, std::string_view text) {
     for(auto c: text) {
-        hash = (hash ^ static_cast<std::uint8_t>(c)) * 16777619u;
+        hash = mix_byte(hash, static_cast<std::uint8_t>(c));
     }
     return hash;
 }
 
-consteval std::uint32_t mix_number(std::uint32_t hash, std::uint64_t number) {
+constexpr std::uint32_t mix_number(std::uint32_t hash, std::uint64_t number) {
     for(std::uint32_t shift = 0; shift < 64; shift += 8) {
-        hash = (hash ^ static_cast<std::uint8_t>(number >> shift)) * 16777619u;
+        hash = mix_byte(hash, static_cast<std::uint8_t>(number >> shift));
     }
     return hash;
 }
 
-/// A hash of A's layout: its kinds, sizes, field names and field offsets.
+/// A hash of A's layout, from FNV-1a's offset basis: its kinds, sizes, field
+/// names and field offsets.
 template <typename A>
-consteval std::uint32_t fingerprint(std::uint32_t hash = 2166136261u) {
+constexpr std::uint32_t fingerprint(std::uint32_t hash = 2166136261u) {
     if constexpr(kind_of<A>() == Kind::Scalar) {
         using U = arithmetic_t<A>;
         char code[] = {std::is_same_v<U, bool>       ? 'b'
@@ -317,6 +336,12 @@ consteval std::uint32_t fingerprint(std::uint32_t hash = 2166136261u) {
         return mix_number(mix(hash, "}"), sizeof(A));
     }
 }
+
+/// A's fingerprint, computed at compile time. The functions it runs are
+/// constexpr rather than consteval: fingerprint passes them the hash its
+/// lambda captures, which MSVC does not take for a constant expression.
+template <typename A>
+constexpr inline std::uint32_t fingerprint_v = fingerprint<A>();
 
 constexpr std::uint64_t align_up(std::uint64_t at, std::uint64_t align) {
     return (at + align - 1) / align * align;

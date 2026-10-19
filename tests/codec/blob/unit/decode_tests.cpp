@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <cstring>
 #include <span>
-#include <string>
 #include <string_view>
 #include <vector>
 
@@ -16,6 +15,32 @@ namespace kota::codec::blob {
 
 namespace {
 
+struct Unsigned {
+    std::uint32_t x = 0;
+};
+
+struct Renamed {
+    std::uint32_t y = 0;
+};
+
+struct Signed {
+    std::int32_t x = 0;
+};
+
+struct Real {
+    float x = 0;
+};
+
+template <template <typename> typename Seq>
+struct TextOf {
+    Seq<char> x;
+};
+
+template <template <typename> typename Seq>
+struct OctetsOf {
+    Seq<std::uint8_t> x;
+};
+
 /// Alike in fields and size, but for where `third` sits.
 struct Near {
     std::uint64_t first = 0;
@@ -23,11 +48,23 @@ struct Near {
     std::uint16_t third = 0;
 };
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4324)  // padded to its alignment, which is the point
+#endif
 struct Far {
     std::uint64_t first = 0;
     std::uint16_t second = 0;
     alignas(4) std::uint16_t third = 0;
 };
+
+/// Unsigned with tail padding.
+struct alignas(8) Wider {
+    std::uint32_t x = 0;
+};
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 static_assert(sizeof(Near) == sizeof(Far));
 
@@ -41,20 +78,6 @@ struct Switch {
     Toggle toggle = Toggle::Off;
 };
 
-/// Bytes at an address `shift` past a multiple of the alignment.
-struct Shifted {
-    std::vector<std::uint64_t> words;
-
-    std::span<const std::byte> bytes;
-
-    Shifted(std::span<const std::byte> from, std::size_t shift) :
-        words(from.size() / sizeof(std::uint64_t) + 2) {
-        auto* at = reinterpret_cast<std::byte*>(words.data()) + shift;
-        std::memcpy(at, from.data(), from.size());
-        bytes = {at, from.size()};
-    }
-};
-
 void set_u32(std::vector<std::byte>& bytes, std::size_t at, std::uint32_t value) {
     std::memcpy(bytes.data() + at, &value, sizeof(value));
 }
@@ -62,6 +85,16 @@ void set_u32(std::vector<std::byte>& bytes, std::size_t at, std::uint32_t value)
 /// Where `part`, inside the root view of `bytes`, sits in them.
 std::size_t offset_of(std::span<const std::byte> bytes, const void* part) {
     return static_cast<std::size_t>(static_cast<const std::byte*>(part) - bytes.data());
+}
+
+/// The blob of `value` viewed as an As, which a layout that differs in `what`
+/// refuses.
+template <typename As, typename T>
+void another_layout_fails(const T& value, std::string_view what) {
+    ZEST_CONTEXT("{}", what);
+    auto viewed = view<As>(test::blob_of(value));
+    ZASSERT(!viewed);
+    ZEXPECT(viewed.error().message == "a blob of another layout");
 }
 
 ZEST_SUITE(codec_blob_decode) {
@@ -79,8 +112,8 @@ ZEST_CASE(view_reads_fields_in_place) {
     ZEXPECT(root.ratio == 0.5f);
     ZEXPECT(root.precise == 2.25);
     ZEXPECT(root.color == test::Shade::Green);
-    ZEXPECT(root.first == 11U);
-    ZEXPECT(root.second == 22U);
+    ZEXPECT(root.stamp.seconds == 11U);
+    ZEXPECT(root.stamp.nanos == 22U);
     ZEXPECT(std::string_view(root.text) == "hello");
     ZEXPECT(root.empty_text.empty());
     ZEXPECT(
@@ -93,9 +126,11 @@ ZEST_CASE(view_reads_fields_in_place) {
     ZEXPECT(names[1].empty());
     ZEXPECT(std::string_view(names.back()) == "ccc");
 
-    ZASSERT(root.points.size() == 2U);
-    ZEXPECT(root.points.front().flag);
-    ZEXPECT(root.points[1].y == 4U);
+    ZEXPECT(std::vector<test::PaddedPoint>(root.points.begin(), root.points.end()) == value.points);
+
+    ZASSERT(root.stamps.size() == 2U);
+    ZEXPECT(root.stamps.front().seconds == 5U);
+    ZEXPECT(root.stamps.back().nanos == 8U);
 
     const auto& leaves = root.leaves;
     ZASSERT(leaves.size() == 3U);
@@ -104,8 +139,8 @@ ZEST_CASE(view_reads_fields_in_place) {
     ZEXPECT(leaves[1].values.empty());
     ZEXPECT(std::string_view(leaves[2].name) == "zz");
 
-    ZEXPECT(root.inner.id == 42U);
-    ZEXPECT(std::string_view(root.inner.label) == "inner");
+    ZEXPECT(root.badge.id == 42U);
+    ZEXPECT(std::string_view(root.badge.label) == "badge");
 }
 
 ZEST_CASE(from_bytes_roundtrip) {
@@ -119,7 +154,10 @@ ZEST_CASE(from_bytes_replaces_what_out_holds) {
     auto value = test::sample();
     auto out = test::sample();
     out.text = "other";
+    out.empty_text = "stale";
+    out.empty_numbers = {9};
     out.names.emplace_back("more");
+    out.stamps.clear();
     out.leaves.clear();
     out.bytes.clear();
     auto status = from_bytes(test::blob_of(value), out);
@@ -152,46 +190,21 @@ ZEST_CASE(byte_spans_read_alike) {
     ZEXPECT(out == test::probe());
 }
 
-ZEST_CASE(plain_sequences_sit_aligned_in_the_bytes) {
-    auto bytes = test::blob_of(test::sample());
-    auto viewed = view<test::Sample>(bytes);
-    ZASSERT(viewed);
-    const auto& root = **viewed;
-    auto inside = [&](const void* data) {
-        auto at = offset_of(bytes, data);
-        ZEST_CONTEXT("offset {}", at);
-        ZEXPECT(at < bytes.size());
-        ZEXPECT(at % alignment == 0U);
-    };
-    inside(root.numbers.data());
-    inside(root.points.data());
-    inside(root.bytes.data());
-}
-
 ZEST_CASE(nested_blob_reads_in_place) {
-    // A blob held as the bytes of another one is aligned, so it reads where
-    // it lies.
-    auto inner = test::blob_of(test::Inner{.id = 7, .label = "seven"});
+    // A blob held as the bytes of another one is aligned, whatever string
+    // comes before it, so it reads where it lies.
+    auto inner = test::blob_of(test::Badge{.id = 7, .label = "seven"});
     test::Sample outer;
+    outer.text = "odd";
     outer.bytes.resize(inner.size());
     std::memcpy(outer.bytes.data(), inner.data(), inner.size());
     auto bytes = test::blob_of(outer);
     auto viewed = view<test::Sample>(bytes);
     ZASSERT(viewed);
     const auto& held = (*viewed)->bytes;
-    auto nested = view<test::Inner>(std::span(held.data(), held.size()));
+    auto nested = view<test::Badge>(std::span(held.data(), held.size()));
     ZASSERT(nested);
     ZEXPECT(std::string_view((*nested)->label) == "seven");
-}
-
-ZEST_CASE(empty_vec_has_null_data) {
-    auto bytes = test::blob_of(test::empty_probe());
-    auto viewed = view<test::Probe>(bytes);
-    ZASSERT(viewed);
-    // Pointers compare as themselves.
-    ZEXPECT(((*viewed)->numbers.data() == nullptr));
-    ZEXPECT(((*viewed)->numbers.begin() == (*viewed)->numbers.end()));
-    ZEXPECT(std::string_view((*viewed)->text).empty());
 }
 
 ZEST_CASE(view_verified_reads_the_same_root) {
@@ -201,23 +214,47 @@ ZEST_CASE(view_verified_reads_the_same_root) {
     ZEXPECT((&view_verified<test::Sample>(bytes) == *viewed));
 }
 
-ZEST_CASE(misaligned_bytes_fail) {
+ZEST_CASE(from_bytes_of_another_layout_fails) {
     auto bytes = test::blob_of(test::sample());
-    Shifted shifted(bytes, 1);
-    auto viewed = view<test::Sample>(shifted.bytes);
+    auto decoded = from_bytes<test::Badge>(bytes);
+    ZASSERT(!decoded);
+    ZEXPECT(decoded.error().message == "a blob of another layout");
+    test::Badge out;
+    auto status = from_bytes(bytes, out);
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "a blob of another layout");
+    std::span<const std::uint8_t> octets(reinterpret_cast<const std::uint8_t*>(bytes.data()),
+                                         bytes.size());
+    auto from_octets = from_bytes<test::Badge>(octets);
+    ZASSERT(!from_octets);
+    ZEXPECT(from_octets.error().message == "a blob of another layout");
+}
+
+ZEST_CASE(misaligned_bytes_fails) {
+    auto bytes = test::blob_of(test::sample());
+    std::vector<std::uint64_t> words(bytes.size() / sizeof(std::uint64_t) + 2);
+    auto* shifted = reinterpret_cast<std::byte*>(words.data()) + 1;
+    std::memcpy(shifted, bytes.data(), bytes.size());
+    auto viewed = view<test::Sample>(std::span(shifted, bytes.size()));
     ZASSERT(!viewed);
     ZEXPECT(viewed.error().message == "the bytes do not start at an 8-byte boundary");
 }
 
-ZEST_CASE(cut_bytes_fail) {
+ZEST_CASE(cut_bytes_fails) {
     auto bytes = test::blob_of(test::sample());
     for(std::size_t size = 0; size < bytes.size(); ++size) {
         ZEST_CONTEXT("{} bytes of {}", size, bytes.size());
         ZEXPECT(!view<test::Sample>(std::span(bytes).first(size)));
     }
-    auto viewed = view<test::Sample>(std::span(bytes).first(8));
-    ZASSERT(!viewed);
-    ZEXPECT(viewed.error().message == "the bytes cannot hold a blob of this type");
+    // The header and the root, and one byte short of them.
+    constexpr auto inline_size = 8 + sizeof(view_t<test::Sample>);
+    auto short_of_root = view<test::Sample>(std::span(bytes).first(inline_size - 1));
+    ZASSERT(!short_of_root);
+    ZEXPECT(short_of_root.error().message == "the bytes cannot hold a blob of this type");
+    auto root_alone = view<test::Sample>(std::span(bytes).first(inline_size));
+    ZASSERT(!root_alone);
+    ZEXPECT(root_alone.error().message == "a part runs past the end of the bytes");
+    ZEXPECT(root_alone.error().format_path() == "text");
 }
 
 ZEST_CASE(trailing_byte_fails) {
@@ -235,17 +272,19 @@ ZEST_CASE(junk_fails) {
     ZEXPECT(viewed.error().message == "not a blob");
 }
 
-ZEST_CASE(another_layout_fails) {
-    auto viewed = view<test::Inner>(test::blob_of(test::sample()));
-    ZASSERT(!viewed);
-    ZEXPECT(viewed.error().message == "a blob of another layout");
+ZEST_CASE(another_root_fails) {
+    another_layout_fails<test::Badge>(test::sample(), "another root");
 }
 
-ZEST_CASE(moved_field_fails) {
-    // The fingerprint holds every field's offset.
-    auto viewed = view<Near>(test::blob_of(Far{.first = 1, .second = 2, .third = 3}));
-    ZASSERT(!viewed);
-    ZEXPECT(viewed.error().message == "a blob of another layout");
+ZEST_CASE(one_part_of_the_layout_differs_fails) {
+    // The fingerprint holds every field's name, offset and kind, and every
+    // record's size.
+    another_layout_fails<Unsigned>(Renamed{.y = 1}, "a field's name");
+    another_layout_fails<Near>(Far{.first = 1, .second = 2, .third = 3}, "a field's offset");
+    another_layout_fails<Unsigned>(Signed{.x = 1}, "a scalar's signedness");
+    another_layout_fails<Unsigned>(Real{.x = 1}, "an integer or a floating scalar");
+    another_layout_fails<TextOf<Owned>>(OctetsOf<Owned>{.x = {1}}, "a string or a byte sequence");
+    another_layout_fails<Unsigned>(Wider{.x = 1}, "a record's size");
 }
 
 ZEST_CASE(bool_byte_beyond_one_fails) {
@@ -288,7 +327,7 @@ ZEST_CASE(misplaced_part_fails) {
     ZEXPECT(viewed.error().format_path() == "text");
 }
 
-ZEST_CASE(wrong_length_misplaces_the_next_part) {
+ZEST_CASE(overlong_string_fails) {
     // A longer string moves where the sequence after it must start.
     auto bytes = test::blob_of(test::probe());
     set_u32(bytes, 16, 6);
@@ -316,28 +355,42 @@ ZEST_CASE(empty_part_with_an_offset_fails) {
     ZEXPECT(viewed.error().format_path() == "numbers");
 }
 
-ZEST_CASE(error_path_names_the_element) {
-    auto original = test::blob_of(test::sample());
-    auto viewed = view<test::Sample>(original);
+ZEST_CASE(misplaced_string_element_fails) {
+    auto bytes = test::blob_of(test::sample());
+    auto viewed = view<test::Sample>(bytes);
     ZASSERT(viewed);
-    const auto& root = **viewed;
-
-    auto string = original;
-    set_u32(string, offset_of(original, &root.names[2]), 1);
-    auto misplaced_string = view<test::Sample>(string);
-    ZASSERT(!misplaced_string);
-    ZEXPECT(misplaced_string.error().format_path() == "names[2]");
-
-    auto name = original;
-    set_u32(name, offset_of(original, &root.leaves[2].name), 1);
-    auto misplaced = view<test::Sample>(name);
+    ZASSERT((*viewed)->names.size() == 3U);
+    auto at = offset_of(bytes, &(*viewed)->names[2]);
+    set_u32(bytes, at, 1);
+    auto misplaced = view<test::Sample>(bytes);
     ZASSERT(!misplaced);
-    ZEXPECT(misplaced.error().format_path() == "leaves[2].name");
+    ZEXPECT(misplaced.error().message == "a part is not where the layout puts it");
+    ZEXPECT(misplaced.error().format_path() == "names[2]");
+}
 
-    auto flag = original;
-    flag[offset_of(original, &root.points[1].flag)] = std::byte{7};
-    auto bad_bool = view<test::Sample>(flag);
+ZEST_CASE(misplaced_element_field_fails) {
+    auto bytes = test::blob_of(test::sample());
+    auto viewed = view<test::Sample>(bytes);
+    ZASSERT(viewed);
+    ZASSERT((*viewed)->leaves.size() == 3U);
+    auto at = offset_of(bytes, &(*viewed)->leaves[2].name);
+    set_u32(bytes, at, 1);
+    auto misplaced = view<test::Sample>(bytes);
+    ZASSERT(!misplaced);
+    ZEXPECT(misplaced.error().message == "a part is not where the layout puts it");
+    ZEXPECT(misplaced.error().format_path() == "leaves[2].name");
+}
+
+ZEST_CASE(bool_field_of_an_element_fails) {
+    auto bytes = test::blob_of(test::sample());
+    auto viewed = view<test::Sample>(bytes);
+    ZASSERT(viewed);
+    ZASSERT((*viewed)->points.size() == 2U);
+    auto at = offset_of(bytes, &(*viewed)->points[1].flag);
+    bytes[at] = std::byte{7};
+    auto bad_bool = view<test::Sample>(bytes);
     ZASSERT(!bad_bool);
+    ZEXPECT(bad_bool.error().message == "a bool is neither 0 nor 1");
     ZEXPECT(bad_bool.error().format_path() == "points[1].flag");
 }
 

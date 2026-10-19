@@ -31,16 +31,25 @@ struct LeafOf {
 using Leaf = LeafOf<codec::blob::Owned>;
 
 template <template <typename> typename Seq>
-struct InnerOf {
+struct BadgeOf {
     std::uint32_t id = 0;
     Seq<char> label;
 };
 
-using Inner = InnerOf<codec::blob::Owned>;
+using Badge = BadgeOf<codec::blob::Owned>;
 
-/// Every kind of field: scalars, strings and sequences (empty ones too), a
-/// sequence of strings, of plain records, of records holding sequences, a
-/// nested record and a byte sequence.
+/// A struct template that holds no sequence: plain, and packed, but its writer
+/// form is another type than its view.
+template <template <typename> typename Seq>
+struct StampOf {
+    std::uint32_t seconds = 0;
+    std::uint32_t nanos = 0;
+};
+
+/// Every kind of field: scalars, a plain struct template, strings and
+/// sequences (empty ones too), a sequence of strings, of plain records, of
+/// plain struct templates, of records holding sequences, a nested record and a
+/// byte sequence.
 template <template <typename> typename Seq>
 struct SampleOf {
     bool enabled = false;
@@ -50,16 +59,16 @@ struct SampleOf {
     float ratio = 0;
     double precise = 0;
     Shade color = Shade::Red;
-    std::uint32_t first = 0;
-    std::uint32_t second = 0;
+    StampOf<Seq> stamp;
     Seq<char> text;
     Seq<char> empty_text;
     Seq<std::uint32_t> numbers;
     Seq<std::uint64_t> empty_numbers;
     Seq<Seq<char>> names;
     Seq<PaddedPoint> points;
+    Seq<StampOf<Seq>> stamps;
     Seq<LeafOf<Seq>> leaves;
-    InnerOf<Seq> inner;
+    BadgeOf<Seq> badge;
     Seq<std::uint8_t> bytes;
 };
 
@@ -74,16 +83,16 @@ inline Sample sample() {
         .ratio = 0.5f,
         .precise = 2.25,
         .color = Shade::Green,
-        .first = 11,
-        .second = 22,
+        .stamp = {.seconds = 11, .nanos = 22},
         .text = "hello",
         .empty_text = {},
         .numbers = {1, 2, 3},
         .empty_numbers = {},
         .names = {"a", "", "ccc"},
         .points = {{1, true, 2}, {3, false, 4}},
+        .stamps = {{5, 6}, {7, 8}},
         .leaves = {{"x", {1, 2}}, {"", {}}, {"zz", {9}}},
-        .inner = {42, "inner"},
+        .badge = {42, "badge"},
         .bytes = {1, 2, 3, 4, 5},
     };
 }
@@ -116,7 +125,8 @@ inline Probe probe() {
     };
 }
 
-/// The probe with an empty string and sequence: its root alone, 28 bytes.
+/// The probe with an empty string and sequence: its header and root alone, 28
+/// bytes.
 inline Probe empty_probe() {
     return {
         .flag = true,

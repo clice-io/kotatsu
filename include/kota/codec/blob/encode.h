@@ -5,8 +5,8 @@
 #include <cstring>
 #include <expected>
 #include <limits>
+#include <optional>
 #include <ranges>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -19,23 +19,32 @@ namespace kota::codec::blob {
 
 namespace detail {
 
-/// Lays a value out at the end of `bytes`; reserve grows them zeroed, so
+/// Lays a value out at the end of `bytes`; append grows them zeroed, so
 /// padding stays zero.
 struct Writer {
     std::vector<std::byte> bytes;
 
-    /// Room for `size` zeroed bytes at the next multiple of `align`.
-    std::size_t reserve(std::size_t size, std::size_t align) {
-        auto at = static_cast<std::size_t>(align_up(bytes.size(), align));
-        bytes.resize(at + size);
-        return at;
+    /// Whether a part would have ended past 4 GiB, where a Vec cannot point;
+    /// such a part is left out, and to_bytes fails.
+    bool oversized = false;
+
+    /// Where `size` zeroed bytes appended at the next multiple of `align`
+    /// start; none past 4 GiB.
+    std::optional<std::size_t> append(std::uint64_t size, std::uint64_t align) {
+        auto at = align_up(bytes.size(), align);
+        if(at + size > std::numeric_limits<std::uint32_t>::max()) {
+            oversized = true;
+            return std::nullopt;
+        }
+        bytes.resize(static_cast<std::size_t>(at + size));
+        return static_cast<std::size_t>(at);
     }
 
     void write(std::size_t at, const void* data, std::size_t size) {
         std::memcpy(bytes.data() + at, data, size);
     }
 
-    /// Write `value` as the view A at `at`, inside room already reserved, and
+    /// Write `value` as the view A at `at`, inside bytes already appended, and
     /// append its out-of-line parts.
     template <typename A, typename T>
     void store(std::size_t at, const T& value) {
@@ -49,62 +58,53 @@ struct Writer {
                 store<field_t<A, index()>>(at + meta::field_offset<A>(index()),
                                            meta::field_of<index()>(value));
             });
-        } else if constexpr(is_string_v<A>) {
-            std::string_view text(value);
-            if(text.empty()) {
-                return;
-            }
-            auto data = reserve(text.size(), 1);
-            write(data, text.data(), text.size());
-            write_vec(at, data, text.size());
         } else {
             using E = element_t<A>;
+            using Element = std::ranges::range_value_t<const T>;
             auto count = std::ranges::size(value);
             if(count == 0) {
                 return;
             }
-            auto data = reserve(count * sizeof(E), alignment);
-            write_vec(at, data, count);
-            // std::vector<bool> is no array of bools, so it goes element by
-            // element.
-            if constexpr(is_packed<E>() && std::ranges::contiguous_range<const T>) {
-                static_assert(std::is_same_v<std::ranges::range_value_t<const T>, E>,
-                              "a plain element is laid out as itself");
-                write(data, std::ranges::data(value), count * sizeof(E));
+            auto data = append(std::uint64_t(count) * sizeof(E), part_alignment_v<A>);
+            if(!data) {
+                return;
+            }
+            std::uint32_t pair[] = {static_cast<std::uint32_t>(*data - at),
+                                    static_cast<std::uint32_t>(count)};
+            write(at, pair, sizeof(pair));
+            // A plain struct template's writer form is not its view, and
+            // std::vector<bool> holds no bools, so those go element by
+            // element; each of libc++'s bit references converts to a bool.
+            if constexpr(is_packed<E>() && std::is_same_v<Element, E> &&
+                         std::ranges::contiguous_range<const T>) {
+                write(*data, std::ranges::data(value), count * sizeof(E));
             } else {
-                for(const auto& element: value) {
-                    store<E>(data, element);
-                    data += sizeof(E);
+                auto next = *data;
+                for(const Element& element: value) {
+                    store<E>(next, element);
+                    next += sizeof(E);
                 }
             }
         }
-    }
-
-private:
-    /// The Vec at `at`, of `length` elements at `data`. Its offset and length
-    /// are cut short in bytes of 4 GiB or more, which to_bytes rejects.
-    void write_vec(std::size_t at, std::size_t data, std::size_t length) {
-        std::uint32_t pair[] = {static_cast<std::uint32_t>(data - at),
-                                static_cast<std::uint32_t>(length)};
-        write(at, pair, sizeof(pair));
     }
 };
 
 }  // namespace detail
 
-/// Lays `value`, a record, out as a blob. std::vector's allocation is aligned
-/// to `alignment` at least, so the bytes read in place as they are. A blob holds less than
-/// 4 GiB: a value that needs more fails.
+/// Lays `value`, a record, out as a blob. std::vector allocates its bytes
+/// through operator new, which every supported platform aligns to 16, so they
+/// read in place as they are. A blob holds less than 4 GiB: a value that
+/// needs more fails.
 template <typename T>
 auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, rich_error> {
     using A = view_t<T>;
     static_assert(detail::kind_of<A>() == detail::Kind::Record, "a blob's root is a record");
     detail::Writer writer;
-    writer.reserve(detail::header_size, alignment);
-    constexpr std::uint32_t header[] = {detail::magic, detail::fingerprint<A>()};
-    writer.write(0, header, sizeof(header));
-    writer.store<A>(writer.reserve(sizeof(A), alignof(A)), value);
-    if(writer.bytes.size() > std::numeric_limits<std::uint32_t>::max()) {
+    writer.append(sizeof(detail::Header) + sizeof(A), alignment);
+    const detail::Header header{.magic = detail::magic, .fingerprint = detail::fingerprint_v<A>};
+    writer.write(0, &header, sizeof(header));
+    writer.store<A>(sizeof(detail::Header), value);
+    if(writer.oversized) {
         return std::unexpected(rich_error("a blob holds less than 4 GiB"));
     }
     return std::move(writer.bytes);

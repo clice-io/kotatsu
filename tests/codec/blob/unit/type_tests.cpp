@@ -1,11 +1,12 @@
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
 #include "codec/blob/harness/fixtures.h"
 #include "kota/zest/zest.h"
-#include "kota/codec/blob/type.h"
+#include "kota/codec/blob/blob.h"
 
 namespace kota::codec::blob {
 
@@ -34,6 +35,17 @@ ZEST_CASE(vec_is_two_words_read_in_place) {
     ZSTATIC_EXPECT(!std::is_copy_assignable_v<Vec<std::uint32_t>>);
     ZSTATIC_EXPECT(sizeof(Vec<std::uint64_t>) == 8);
     ZSTATIC_EXPECT(sizeof(Vec<char>) == 8);
+}
+
+ZEST_CASE(empty_vec_has_null_data) {
+    auto bytes = test::blob_of(test::empty_probe());
+    auto viewed = view<test::Probe>(bytes);
+    ZASSERT(viewed);
+    // Pointers compare as themselves.
+    ZEXPECT(((*viewed)->numbers.data() == nullptr));
+    ZEXPECT(((*viewed)->text.data() == nullptr));
+    ZEXPECT(((*viewed)->numbers.begin() == (*viewed)->numbers.end()));
+    ZEXPECT(std::string_view((*viewed)->text).empty());
 }
 
 };  // ZEST_SUITE(codec_blob_type)
