@@ -82,7 +82,10 @@ void set_u32(std::vector<std::byte>& bytes, std::size_t at, std::uint32_t value)
     std::memcpy(bytes.data() + at, &value, sizeof(value));
 }
 
-/// Where `part`, inside the root view of `bytes`, sits in them.
+/// Where `part`, inside the root view of `bytes`, sits in them. The tests
+/// change a copy at that offset: changed through `bytes` themselves, GCC
+/// follows the pointer back to the Vec it came from and reports a write past
+/// it (-Wstringop-overflow).
 std::size_t offset_of(std::span<const std::byte> bytes, const void* part) {
     return static_cast<std::size_t>(static_cast<const std::byte*>(part) - bytes.data());
 }
@@ -361,8 +364,9 @@ ZEST_CASE(misplaced_string_element_fails) {
     ZASSERT(viewed);
     ZASSERT((*viewed)->names.size() == 3U);
     auto at = offset_of(bytes, &(*viewed)->names[2]);
-    set_u32(bytes, at, 1);
-    auto misplaced = view<test::Sample>(bytes);
+    auto mutated = bytes;
+    set_u32(mutated, at, 1);
+    auto misplaced = view<test::Sample>(mutated);
     ZASSERT(!misplaced);
     ZEXPECT(misplaced.error().message == "a part is not where the layout puts it");
     ZEXPECT(misplaced.error().format_path() == "names[2]");
@@ -374,8 +378,9 @@ ZEST_CASE(misplaced_element_field_fails) {
     ZASSERT(viewed);
     ZASSERT((*viewed)->leaves.size() == 3U);
     auto at = offset_of(bytes, &(*viewed)->leaves[2].name);
-    set_u32(bytes, at, 1);
-    auto misplaced = view<test::Sample>(bytes);
+    auto mutated = bytes;
+    set_u32(mutated, at, 1);
+    auto misplaced = view<test::Sample>(mutated);
     ZASSERT(!misplaced);
     ZEXPECT(misplaced.error().message == "a part is not where the layout puts it");
     ZEXPECT(misplaced.error().format_path() == "leaves[2].name");
@@ -387,8 +392,9 @@ ZEST_CASE(bool_field_of_an_element_fails) {
     ZASSERT(viewed);
     ZASSERT((*viewed)->points.size() == 2U);
     auto at = offset_of(bytes, &(*viewed)->points[1].flag);
-    bytes[at] = std::byte{7};
-    auto bad_bool = view<test::Sample>(bytes);
+    auto mutated = bytes;
+    mutated[at] = std::byte{7};
+    auto bad_bool = view<test::Sample>(mutated);
     ZASSERT(!bad_bool);
     ZEXPECT(bad_bool.error().message == "a bool is neither 0 nor 1");
     ZEXPECT(bad_bool.error().format_path() == "points[1].flag");
