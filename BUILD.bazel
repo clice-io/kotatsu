@@ -31,6 +31,7 @@ kota_library(
     name = "codec",
     hdrs = ["include/kota/codec/macro.h"] + glob([
         "include/kota/codec/bincode/**",
+        "include/kota/codec/blob/**",
         "include/kota/codec/debug/**",
         "include/kota/codec/dyn/**",
         "include/kota/codec/visit/**",

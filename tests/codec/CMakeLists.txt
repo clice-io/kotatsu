@@ -1,6 +1,7 @@
 kota_add_module_tests(LIBS kota::codec)
 
 add_subdirectory(bincode)
+add_subdirectory(blob)
 add_subdirectory(debug)
 add_subdirectory(dyn)
 if(KOTA_CODEC_ENABLE_SIMDJSON)

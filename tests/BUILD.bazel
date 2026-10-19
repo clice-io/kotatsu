@@ -38,6 +38,7 @@ cc_library(
         "//:codec",
     ]),
     ("codec/bincode", [":codec_harness"]),
+    ("codec/blob", ["//:codec"]),
     ("codec/dyn", [":codec_harness"]),
     ("codec/fbs", [
         ":codec_harness",
@@ -87,6 +88,7 @@ cc_library(
     ("meta", "unit", [":fixtures"]),
     ("codec", "unit", [":codec_harness"]),
     ("codec/bincode", "unit", [":codec_bincode_harness"]),
+    ("codec/blob", "unit", [":codec_blob_harness"]),
     ("codec/debug", "unit", [":codec_harness"]),
     ("codec/dyn", "unit", [":codec_dyn_harness"]),
     ("codec/fbs", "unit", [":codec_fbs_harness"]),

@@ -22,7 +22,7 @@ A test's level is decided by what it touches, not by the module it tests.
 
 ## Layout
 
-Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/kota/<module>/`; the modules are `support`, `meta`, `codec` with one directory per backend (`codec/json`, `codec/toml`, `codec/fbs`, `codec/bincode`, `codec/dyn`, `codec/debug`), `deco`, `async`, `ipc` with `ipc/lsp`, `http` and `zest`. `tests/examples/` holds the tests of `examples/`, by the module an example shows (`tests/examples/async/`, `tests/examples/ipc/`): unit tests of what an example builds on, and the example programs run end to end. `tests/harness/` holds what every module's integration tests share.
+Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/kota/<module>/`; the modules are `support`, `meta`, `codec` with one directory per backend (`codec/json`, `codec/toml`, `codec/fbs`, `codec/bincode`, `codec/blob`, `codec/dyn`, `codec/debug`), `deco`, `async`, `ipc` with `ipc/lsp`, `http` and `zest`. `tests/examples/` holds the tests of `examples/`, by the module an example shows (`tests/examples/async/`, `tests/examples/ipc/`): unit tests of what an example builds on, and the example programs run end to end. `tests/harness/` holds what every module's integration tests share.
 
 ```
 tests/<module>/
@@ -46,7 +46,7 @@ tests/snapshots/<suite>/      snapshot files
 ```
 
 - The tests of header `<module>/a/b.h` are `unit/a/b_tests.cpp`. A large header's tests split by aspect, into `unit/a/b_<aspect>_tests.cpp` or into a directory `unit/a/b/<aspect>_tests.cpp`.
-- codec's protocol (`visit/`, `meta::repr`, attrs, config) is tested once, by a kit every backend runs: `codec/harness/visit/kit.h` holds the primitives and `Caps`, and each area (`values.h`, `attrs.h`, `repr.h`, `variants.h`, `probing.h`) registers its cases for a backend. A backend adapts itself in `codec/<backend>/harness/backend.h` and runs each area in `codec/<backend>/unit/visit/<area>_tests.cpp`, one `ZEST_CASE_GROUP` per file. Fixtures only the codec's tests use live in `codec/harness/fixtures/`.
+- codec's protocol (`visit/`, `meta::repr`, attrs, config) is tested once, by a kit every backend runs: `codec/harness/visit/kit.h` holds the primitives and `Caps`, and each area (`values.h`, `attrs.h`, `repr.h`, `variants.h`, `probing.h`) registers its cases for a backend. A backend adapts itself in `codec/<backend>/harness/backend.h` and runs each area in `codec/<backend>/unit/visit/<area>_tests.cpp`, one `ZEST_CASE_GROUP` per file; blob, which lays out the struct itself rather than speaking the protocol, has no `visit/` tests. Fixtures only the codec's tests use live in `codec/harness/fixtures/`.
 - Build options are checked once, where `tests/CMakeLists.txt` (or the parent module's `CMakeLists.txt`) adds the module's directory. `xmake.lua` mirrors the module list; `tests/BUILD.bazel` lists the modules too, building every test binary per module and level, with its snapshots and the files beside its sources as data.
 
 ## Dependencies
@@ -54,7 +54,7 @@ tests/snapshots/<suite>/      snapshot files
 What each module's headers include, and so what its tests may use:
 
 - `support`; `meta` on support; `deco` on meta.
-- `codec`: its core (`visit/`, `macro.h`) on meta; the backends `debug`, `dyn`, `toml` and `fbs` on the core; `bincode` and `json` on the core and `dyn`.
+- `codec`: its core (`visit/`, `macro.h`) on meta; the backends `blob`, `debug`, `dyn`, `toml` and `fbs` on the core; `bincode` and `json` on the core and `dyn`.
 - `async` on support; `ipc` on async and codec (`json`, `dyn`, `bincode`); `ipc/lsp` on ipc; `http` on async and codec `json`.
 - `zest` on all of the above that it checks, prints, parses or runs with. Every test includes zest; that is the one exception.
 
