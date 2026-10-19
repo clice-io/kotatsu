@@ -25,19 +25,22 @@ namespace detail {
 /// Checks bytes against a view's layout, part by part in the order the
 /// writer appends them.
 struct Checker {
-    Checker(std::span<const std::byte> bytes, std::size_t cursor) : bytes(bytes), cursor(cursor) {}
+    Checker(std::span<const std::byte> bytes, std::uint64_t cursor) :
+        bytes(bytes), cursor(cursor) {}
 
     std::span<const std::byte> bytes;
 
     /// Where the next out-of-line part begins, give or take its alignment.
-    std::size_t cursor;
+    /// Positions are 64-bit, so that a length near 2^32 cannot wrap past the
+    /// bounds where std::size_t is 32-bit.
+    std::uint64_t cursor;
 
     rich_error error;
 
     /// Check the view A at `at`, inside bytes already placed, and place its
     /// out-of-line parts.
     template <typename A>
-    bool check(std::size_t at) {
+    bool check(std::uint64_t at) {
         if constexpr(!needs_check<A>()) {
             return true;
         } else if constexpr(kind_of<A>() == Kind::Scalar) {
@@ -61,9 +64,9 @@ struct Checker {
                 return false;
             }
             if constexpr(needs_check<E>()) {
-                for(std::size_t i = 0; i < placed->length; ++i) {
+                for(std::uint64_t i = 0; i < placed->length; ++i) {
                     if(!check<E>(placed->at + i * sizeof(E))) {
-                        error.prepend_index(i);
+                        error.prepend_index(static_cast<std::size_t>(i));
                         return false;
                     }
                 }
@@ -74,8 +77,8 @@ struct Checker {
 
 private:
     struct Placed {
-        std::size_t at;
-        std::size_t length;
+        std::uint64_t at;
+        std::uint64_t length;
     };
 
     bool fail(std::string_view message) {
@@ -85,7 +88,7 @@ private:
 
     /// The part the Vec at `at` points to, of elements of `element` bytes:
     /// where the writer puts it, inside the bytes.
-    std::optional<Placed> place(std::size_t at, std::size_t element, std::size_t align) {
+    std::optional<Placed> place(std::uint64_t at, std::uint64_t element, std::uint64_t align) {
         std::uint32_t pair[2];
         std::memcpy(pair, bytes.data() + at, sizeof(pair));
         auto [offset, length] = pair;
@@ -101,7 +104,7 @@ private:
             fail("a part is not where the layout puts it");
             return std::nullopt;
         }
-        auto end = expected + std::size_t(length) * element;
+        auto end = expected + length * element;
         if(end > bytes.size()) {
             fail("a part runs past the end of the bytes");
             return std::nullopt;
@@ -137,8 +140,8 @@ void decode(const view_t<T>& in, T& out) {
 }  // namespace detail
 
 /// The root of `bytes` read in place, once they hold a blob of T in exactly
-/// its layout (see type.h): every read through it is then in bounds, with no
-/// further check. The bytes must start at `alignment`, and stay where they
+/// the layout type.h describes: every read through it is then in bounds,
+/// with no further check. The bytes must start at `alignment`, and stay where they
 /// are while the root is read.
 template <typename T>
 auto view(std::span<const std::byte> bytes) -> std::expected<const view_t<T>*, rich_error> {

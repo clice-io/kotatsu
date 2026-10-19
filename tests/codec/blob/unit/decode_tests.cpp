@@ -89,9 +89,9 @@ ZEST_CASE(view_reads_fields_in_place) {
 
     const auto& names = root.names;
     ZASSERT(names.size() == 3U);
-    ZEXPECT(names[0].str() == "a");
+    ZEXPECT(std::string_view(names[0]) == "a");
     ZEXPECT(names[1].empty());
-    ZEXPECT(names.back().str() == "ccc");
+    ZEXPECT(std::string_view(names.back()) == "ccc");
 
     ZASSERT(root.points.size() == 2U);
     ZEXPECT(root.points.front().flag);
@@ -99,13 +99,13 @@ ZEST_CASE(view_reads_fields_in_place) {
 
     const auto& leaves = root.leaves;
     ZASSERT(leaves.size() == 3U);
-    ZEXPECT(leaves[0].name.str() == "x");
+    ZEXPECT(std::string_view(leaves[0].name) == "x");
     ZEXPECT(std::ranges::equal(leaves[0].values, std::array<std::uint16_t, 2>{1, 2}));
     ZEXPECT(leaves[1].values.empty());
-    ZEXPECT(leaves[2].name.str() == "zz");
+    ZEXPECT(std::string_view(leaves[2].name) == "zz");
 
     ZEXPECT(root.inner.id == 42U);
-    ZEXPECT(root.inner.label.str() == "inner");
+    ZEXPECT(std::string_view(root.inner.label) == "inner");
 }
 
 ZEST_CASE(from_bytes_roundtrip) {
@@ -143,9 +143,13 @@ ZEST_CASE(byte_spans_read_alike) {
     auto viewed = view<test::Probe>(octets);
     ZASSERT(viewed);
     ZEXPECT(std::string_view((*viewed)->text) == "abc");
+    ZEXPECT((&view_verified<test::Probe>(octets) == *viewed));
     auto decoded = from_bytes<test::Probe>(octets);
     ZASSERT(decoded);
     ZEXPECT(*decoded == test::probe());
+    test::Probe out;
+    ZASSERT(from_bytes(octets, out));
+    ZEXPECT(out == test::probe());
 }
 
 ZEST_CASE(plain_sequences_sit_aligned_in_the_bytes) {
@@ -177,7 +181,7 @@ ZEST_CASE(nested_blob_reads_in_place) {
     const auto& held = (*viewed)->bytes;
     auto nested = view<test::Inner>(std::span(held.data(), held.size()));
     ZASSERT(nested);
-    ZEXPECT((*nested)->label.str() == "seven");
+    ZEXPECT(std::string_view((*nested)->label) == "seven");
 }
 
 ZEST_CASE(empty_vec_has_null_data) {
@@ -262,6 +266,18 @@ ZEST_CASE(enum_over_bool_byte_beyond_one_fails) {
     ZEXPECT(viewed.error().format_path() == "toggle");
 }
 
+ZEST_CASE(bool_element_beyond_one_fails) {
+    // The three bools sit at 16, after the root's Vec.
+    auto bytes = test::blob_of(test::Flags{
+        .flags = {true, false, true}
+    });
+    bytes[17] = std::byte{2};
+    auto viewed = view<test::Flags>(bytes);
+    ZASSERT(!viewed);
+    ZEXPECT(viewed.error().message == "a bool is neither 0 nor 1");
+    ZEXPECT(viewed.error().format_path() == "flags[1]");
+}
+
 ZEST_CASE(misplaced_part_fails) {
     // The string's bytes start at 28, 16 past its Vec at 12.
     auto bytes = test::blob_of(test::probe());
@@ -305,6 +321,12 @@ ZEST_CASE(error_path_names_the_element) {
     auto viewed = view<test::Sample>(original);
     ZASSERT(viewed);
     const auto& root = **viewed;
+
+    auto string = original;
+    set_u32(string, offset_of(original, &root.names[2]), 1);
+    auto misplaced_string = view<test::Sample>(string);
+    ZASSERT(!misplaced_string);
+    ZEXPECT(misplaced_string.error().format_path() == "names[2]");
 
     auto name = original;
     set_u32(name, offset_of(original, &root.leaves[2].name), 1);

@@ -19,14 +19,14 @@ namespace kota::codec::blob {
 
 namespace detail {
 
-/// Lays a value out at the end of `bytes`, which grow zeroed, so that padding
-/// is zero.
+/// Lays a value out at the end of `bytes`; reserve grows them zeroed, so
+/// padding stays zero.
 struct Writer {
     std::vector<std::byte> bytes;
 
     /// Room for `size` zeroed bytes at the next multiple of `align`.
     std::size_t reserve(std::size_t size, std::size_t align) {
-        auto at = align_up(bytes.size(), align);
+        auto at = static_cast<std::size_t>(align_up(bytes.size(), align));
         bytes.resize(at + size);
         return at;
     }
@@ -81,8 +81,8 @@ struct Writer {
     }
 
 private:
-    /// The Vec at `at`, of `length` elements at `data`: wrong in bytes of
-    /// 4 GiB or more, which to_bytes rejects.
+    /// The Vec at `at`, of `length` elements at `data`. Its offset and length
+    /// are cut short in bytes of 4 GiB or more, which to_bytes rejects.
     void write_vec(std::size_t at, std::size_t data, std::size_t length) {
         std::uint32_t pair[] = {static_cast<std::uint32_t>(data - at),
                                 static_cast<std::uint32_t>(length)};
@@ -92,8 +92,8 @@ private:
 
 }  // namespace detail
 
-/// Lays `value`, a record, out as a blob. std::vector allocates its bytes at
-/// `alignment`, so they read in place as they are. A blob holds less than
+/// Lays `value`, a record, out as a blob. std::vector's allocation is aligned
+/// to `alignment` at least, so the bytes read in place as they are. A blob holds less than
 /// 4 GiB: a value that needs more fails.
 template <typename T>
 auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, rich_error> {

@@ -112,11 +112,6 @@ public:
         return {data(), length};
     }
 
-    std::string str() const
-        requires std::is_same_v<T, char> {
-        return {data(), length};
-    }
-
 private:
     const T* first() const {
         return reinterpret_cast<const T*>(reinterpret_cast<const std::byte*>(this) + offset);
@@ -213,7 +208,7 @@ enum class Kind : std::uint8_t {
 template <typename A>
 consteval Kind kind_of() {
     if constexpr(is_scalar_v<A>) {
-        static_assert(alignof(A) <= alignment, "a sequence aligns its elements to 8 bytes at most");
+        static_assert(alignof(A) <= alignment, "a blob aligns what it holds to 8 bytes at most");
         return Kind::Scalar;
     } else if constexpr(is_vec_v<A>) {
         return Kind::Vec;
@@ -224,7 +219,7 @@ consteval Kind kind_of() {
         static_assert(std::is_empty_v<A> || field_count_v<A> > 0,
                       "reflection sees none of this struct's fields");
         static_assert(std::is_standard_layout_v<A>, "a record read in place is standard-layout");
-        static_assert(alignof(A) <= alignment, "a blob aligns its records to 8 bytes at most");
+        static_assert(alignof(A) <= alignment, "a blob aligns what it holds to 8 bytes at most");
         return Kind::Record;
     } else {
         static_assert(sizeof(A) == 0,
@@ -323,7 +318,7 @@ consteval std::uint32_t fingerprint(std::uint32_t hash = 2166136261u) {
     }
 }
 
-constexpr std::size_t align_up(std::size_t at, std::size_t align) {
+constexpr std::uint64_t align_up(std::uint64_t at, std::uint64_t align) {
     return (at + align - 1) / align * align;
 }
 

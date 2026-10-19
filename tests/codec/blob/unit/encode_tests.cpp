@@ -24,6 +24,7 @@ ZEST_CASE(probe_bytes_follow_the_layout) {
     auto bytes = test::blob_of(test::probe());
     ZASSERT(bytes.size() == 40U);
     ZEXPECT(u32_at(bytes, 0) == 0x424f4c42U);  // "BLOB"
+    ZEXPECT(u32_at(bytes, 4) == detail::fingerprint<view_t<test::Probe>>());
     ZEXPECT(bytes[8] == std::byte{1});
     // Each Vec counts from its own address: the string's from 12 to 28, the
     // sequence's from 20 to 32, the next multiple of 8 past the string.
@@ -32,6 +33,7 @@ ZEST_CASE(probe_bytes_follow_the_layout) {
     ZEXPECT(u32_at(bytes, 20) == 12U);
     ZEXPECT(u32_at(bytes, 24) == 2U);
     ZEXPECT(bytes[28] == std::byte{'a'});
+    ZEXPECT(bytes[29] == std::byte{'b'});
     ZEXPECT(bytes[30] == std::byte{'c'});
     ZEXPECT(u32_at(bytes, 32) == 1U);
     ZEXPECT(u32_at(bytes, 36) == 2U);
