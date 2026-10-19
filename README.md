@@ -61,14 +61,15 @@ All public APIs live under the `kota::` namespace, public headers under `include
 
 ### `codec` (`include/kota/codec/*`)
 
-- One visitor protocol shared by every backend (`codec/visit/`): `encode_value` / `decode_value` dispatch on a backend override (`serialize_visit` / `deserialize_visit`, specialized per visitor, as ipc does for its protocol types), then annotations and `meta::repr`, then `meta::type_kind`. A backend is a visitor; text backends read data-driven (by key, with speculative `try_read` for untagged variants), binary backends positionally.
-- Attributes and config apply the same on every backend: renames and aliases, skipping, flattening, defaults and required fields, `as` / `with` / `enum_string`, tagged variants (a tag wins over the variant type's own repr) and untagged ones picked by probing the input. `default_config<UserConfig>` supplies `enum_repr`, `nan_repr`, `deny_unknown_fields`, `detailed_error`, and takes `field_rename` / `enum_rename` policies; `human_readable = false` turns tagging off on a text backend (a binary backend cannot turn it on).
+- One visitor protocol shared by every backend but blob (`codec/visit/`): `encode_value` / `decode_value` dispatch on a backend override (`serialize_visit` / `deserialize_visit`, specialized per visitor, as ipc does for its protocol types), then annotations and `meta::repr`, then `meta::type_kind`. A backend is a visitor; text backends read data-driven (by key, with speculative `try_read` for untagged variants), binary backends positionally.
+- Attributes and config apply the same on every backend of the protocol: renames and aliases, skipping, flattening, defaults and required fields, `as` / `with` / `enum_string`, tagged variants (a tag wins over the variant type's own repr) and untagged ones picked by probing the input. `default_config<UserConfig>` supplies `enum_repr`, `nan_repr`, `deny_unknown_fields`, `detailed_error`, and takes `field_rename` / `enum_rename` policies; `human_readable = false` turns tagging off on a text backend (a binary backend cannot turn it on).
 - Errors: every encode and decode entry point returns `std::expected<…, rich_error>` (a FlatBuffers view that fails verification is an invalid view instead); a `rich_error` carries the message, the path from the root to the failing value (`a.b[3]`), and a source location where the backend knows one.
 - Backends:
   - JSON (`codec/json/`): simdjson-based `to_string` / `from_string`, `prettify`, `RawValue` for pass-through JSON, and JSON Schema generation (`schema<T>()`) that agrees with what the encoder writes.
   - TOML (`codec/toml/`): toml++-based `to_toml` / `from_toml` and `to_string` / `from_string`; values that are not tables are boxed under a root key.
   - dyn (`codec/dyn/`): `dyn::Value`, an ordered DOM (null, bool, signed and unsigned integers, double, string, `Array`, `Object`) with `Cursor` navigation; `to_dyn` / `from_dyn`. JSON, TOML and bincode read and write it as a document of their own (bincode behind a kind byte); JSON Schema generation and the LSP model use it.
   - Bincode (`codec/bincode/`): compact little-endian `to_bytes` / `from_bytes`, not self-describing: decode with the type and config that encoded.
+  - Blob (`codec/blob/`): zero-copy blobs read in place as the struct itself. A record holding strings or sequences is a struct template over its sequence type: over `blob::Owned` (`std::string`, `std::vector`) a writer fills it, and `blob::view_t<T>`, the same template over `blob::Vec` (an offset and a count), reads it where it lies. `to_bytes`; `view`, which checks untrusted bytes once against the layout (every part where the writer puts it and inside the bytes, every bool 0 or 1, nothing after the last part), and `view_verified`, which does not; `from_bytes` to copy the value out; `measure` for the bytes each field takes. The layout is a function of the type alone (no config, annotations or reprs), canonical, and without schema evolution: a fingerprint of the layout rejects a blob of another.
   - FlatBuffers (`codec/fbs/`): `to_bytes` / `from_bytes` with the layout computed from the type (no `.fbs` files), a decoder that verifies every access, and zero-copy views over a buffer verified once: `table_view` (`view[&T::field]`, the member located at compile time), `bound_view` (every member read once), `array_view` (a random-access range, contiguous over integer, `float`, `double`, `char`, `std::byte` and inline-struct elements, so `std::span` builds from it), `map_view`, `variant_view`, `tuple_view`.
   - debug (`codec/debug/`): Rust-Debug-style `to_string` for logs and test output; encode-only.
 
@@ -178,7 +179,7 @@ which kotatsu's headers see through `KOTA_ENABLE_EXCEPTIONS` and
 ```text
 include/kota/
   async/       # Coroutine runtime, event loop, I/O, sync primitives, cancellation
-  codec/       # Attribute-driven serde framework + JSON / Bincode / TOML / FlatBuffers backends
+  codec/       # Attribute-driven serde framework + JSON / Bincode / TOML / FlatBuffers backends, and zero-copy blobs
   deco/        # Declarative CLI layer on top of option + meta
   http/        # HTTP client on libcurl and the async runtime
   ipc/         # JSON-RPC peer, transport, codecs

@@ -195,6 +195,7 @@ if has_config("codec") then
 		add_includedirs("include", { public = true })
 		add_headerfiles(
 			"include/(kota/codec/bincode/**.h)",
+			"include/(kota/codec/blob/**.h)",
 			"include/(kota/codec/debug/**.h)",
 			"include/(kota/codec/visit/**.h)",
 			"include/(kota/codec/*.h)"
@@ -379,6 +380,7 @@ if has_config("test") and has_config("ztest") then
 	if has_config("codec") then
 		table.insert(test_modules, "codec")
 		table.insert(test_modules, "codec/bincode")
+		table.insert(test_modules, "codec/blob")
 		table.insert(test_modules, "codec/debug")
 		table.insert(test_modules, "codec/dyn")
 	end
