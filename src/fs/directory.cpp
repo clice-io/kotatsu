@@ -110,11 +110,16 @@ DWORD dispose(HANDLE handle) {
 }
 
 /// remove_all() of a verbatim path. The handle that decides whether to list
-/// an entry is the one it is deleted through, opened on the entry itself,
-/// so that a link put in its place meanwhile is deleted, never followed.
+/// an entry is the one that lists it and the one it is deleted through,
+/// opened on the entry itself, so that a link put in its place meanwhile is
+/// deleted, never followed.
 std::expected<std::uint64_t, std::error_code> remove_tree(const std::wstring& path) {
-    auto handle =
-        win32::try_open(path, DELETE | FILE_READ_ATTRIBUTES, FILE_FLAG_OPEN_REPARSE_POINT);
+    constexpr DWORD flags = FILE_FLAG_OPEN_REPARSE_POINT;
+    auto handle = win32::try_open(path, DELETE | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY, flags);
+    if(handle.get() == INVALID_HANDLE_VALUE && ::GetLastError() == ERROR_ACCESS_DENIED) {
+        // A file the caller may delete but not read.
+        handle = win32::try_open(path, DELETE | FILE_READ_ATTRIBUTES, flags);
+    }
     if(handle.get() == INVALID_HANDLE_VALUE) {
         auto error = ::GetLastError();
         if(error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) {
@@ -128,17 +133,9 @@ std::expected<std::uint64_t, std::error_code> remove_tree(const std::wstring& pa
     }
     std::uint64_t removed = 0;
     if(win32::type_of(info.FileAttributes, info.ReparseTag) == FileType::Directory) {
-        win32::Handle listing(
-            ::ReOpenFile(handle.get(),
-                         FILE_LIST_DIRECTORY,
-                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                         FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT));
-        if(listing.get() == INVALID_HANDLE_VALUE) {
-            return std::unexpected(windows::last_error());
-        }
         std::vector<std::string> names;
         auto error = for_each_entry<FILE_FULL_DIR_INFO>(
-            listing.get(),
+            handle.get(),
             FileFullDirectoryRestartInfo,
             FileFullDirectoryInfo,
             [&](const FILE_FULL_DIR_INFO&, std::string name) { names.push_back(std::move(name)); });
@@ -146,8 +143,7 @@ std::expected<std::uint64_t, std::error_code> remove_tree(const std::wstring& pa
             return std::unexpected(windows::to_error_code(error));
         }
         for(auto& name: names) {
-            auto child = path + L"\\" + *to_utf16<wchar_t>(name);
-            auto count = remove_tree(child);
+            auto count = remove_tree(path + L"\\" + *to_utf16<wchar_t>(name));
             if(!count) {
                 return count;
             }

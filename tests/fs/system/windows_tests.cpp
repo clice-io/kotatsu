@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <windows.h>
 
 #include "fs/harness/files.h"
 #include "kota/fs/directory.h"

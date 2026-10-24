@@ -40,7 +40,7 @@ struct StatBasicByName {
 };
 
 /// FileStatBasicByNameInfo, of FILE_INFO_BY_NAME_CLASS.
-constexpr int stat_basic_by_name = 0;
+constexpr int stat_basic_by_name = 3;
 
 using GetFileInformationByNameFn = BOOL(WINAPI*)(PCWSTR, int, PVOID, ULONG);
 
