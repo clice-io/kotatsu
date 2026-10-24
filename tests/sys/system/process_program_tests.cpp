@@ -239,6 +239,15 @@ ZEST_CASE(find_program_takes_a_name_with_a_separator_as_a_path) {
     ZEXPECT(find_program(dir.file("tool"), in({R"(C:\nowhere)"})) == program);
 }
 
+// In the current directory of its drive, not in a directory on that drive.
+ZEST_CASE(find_program_takes_a_drive_relative_name_as_a_path) {
+    test::make_program(dir, "", "tool.EXE");
+    test::make_program(dir, "elsewhere", "tool.EXE");
+    ScopedCurrentDir current(dir.path);
+    auto name = dir.root().substr(0, 2) + "tool";
+    ZEXPECT(find_program(name, in({dir.file("elsewhere")})) == name + ".EXE");
+}
+
 // What a Cygwin package installs for a link such as /usr/bin/cc, which
 // Windows cannot start: find_program gives the program it names, `.exe`
 // added.

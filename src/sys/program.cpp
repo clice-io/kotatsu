@@ -161,7 +161,10 @@ std::expected<std::string, std::error_code> find_program(std::string_view name,
 
 #ifdef _WIN32
     auto names = spellings(name, search);
-    if(fs::path::has_root(name) || name.find_first_of(R"(/\)") != std::string_view::npos) {
+    // A separator or a drive (`C:tool`, in that drive's current directory)
+    // makes it a path.
+    if(!fs::path::root(name).name.empty() ||
+       name.find_first_of(R"(/\)") != std::string_view::npos) {
         if(auto program = first(names)) {
             return std::move(*program);
         }
