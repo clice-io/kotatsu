@@ -21,7 +21,7 @@ namespace kota {
 
 namespace {
 
-// Files are set up and read back with test::write_file and test::read_file,
+// Files are set up and read back with test::write_text and test::read_text,
 // not kota::async.
 
 /// Waits, blocking this thread, until `dir` holds an entry; false if none
@@ -70,13 +70,13 @@ ZEST_CASE(write_then_read_back) {
     ZEXPECT(result->written == 10U);
     ZEXPECT(result->read == "kotatsu-fs");
     ZEXPECT(result->read_at_end == 0U);
-    ZEXPECT(test::read_file(path) == "kotatsu-fs");
+    ZEXPECT(test::read_text(path) == "kotatsu-fs");
 }
 
 ZEST_CASE(read_and_write_at_an_offset) {
     test::TempDir dir;
     auto path = dir.file("data.txt");
-    test::write_file(path, "hello world");
+    test::write_text(path, "hello world");
     auto patch = [&]() -> task<std::string, error> {
         int fd = co_await fs::async::open(path, O_RDWR).or_fail();
         co_await fs::async::write(fd, std::string_view("WORLD"), 6).or_fail();
@@ -89,7 +89,7 @@ ZEST_CASE(read_and_write_at_an_offset) {
     auto [result] = run(patch());
     ZASSERT(result.has_value());
     ZEXPECT(*result == "WORLD");
-    ZEXPECT(test::read_file(path) == "hello WORLD");
+    ZEXPECT(test::read_text(path) == "hello WORLD");
 }
 
 ZEST_CASE(open_of_a_missing_file_fails) {
@@ -102,7 +102,7 @@ ZEST_CASE(open_of_a_missing_file_fails) {
 ZEST_CASE(stat_and_fstat_describe_a_file) {
     test::TempDir dir;
     auto path = dir.file("data.txt");
-    test::write_file(path, "12345");
+    test::write_text(path, "12345");
     auto describe = [&]() -> task<std::pair<fs::async::file_stats, fs::async::file_stats>, error> {
         auto by_path = co_await fs::async::stat(path).or_fail();
         int fd = co_await fs::async::open(path, O_RDONLY).or_fail();
@@ -132,7 +132,7 @@ ZEST_CASE(stat_of_a_missing_file_fails) {
 
 ZEST_CASE(unlink_removes_a_file) {
     test::TempDir dir;
-    test::write_file(dir.path / "data.txt", "x");
+    test::write_text(dir.file("data.txt"), "x");
 
     auto [result] = run(fs::async::unlink(dir.file("data.txt"), loop));
     ZEXPECT(result.has_value());
@@ -148,12 +148,12 @@ ZEST_CASE(unlink_of_a_missing_file_fails) {
 
 ZEST_CASE(rename_moves_a_file) {
     test::TempDir dir;
-    test::write_file(dir.path / "from.txt", "moved");
+    test::write_text(dir.file("from.txt"), "moved");
 
     auto [result] = run(fs::async::rename(dir.file("from.txt"), dir.file("to.txt"), loop));
     ZEXPECT(result.has_value());
     ZEXPECT(!std::filesystem::exists(dir.path / "from.txt"));
-    ZEXPECT(test::read_file(dir.path / "to.txt") == "moved");
+    ZEXPECT(test::read_text(dir.file("to.txt")) == "moved");
 }
 
 ZEST_CASE(rename_of_a_missing_file_fails) {
@@ -166,27 +166,27 @@ ZEST_CASE(rename_of_a_missing_file_fails) {
 // A clone falls back to a copy where the filesystem cannot share blocks.
 ZEST_CASE(copyfile_copies_the_contents) {
     test::TempDir dir;
-    test::write_file(dir.path / "source.txt", "copied");
+    test::write_text(dir.file("source.txt"), "copied");
 
     auto [copied, cloned] = run(
         fs::async::copyfile(dir.file("source.txt"), dir.file("copy.txt"), {}, loop),
         fs::async::copyfile(dir.file("source.txt"), dir.file("clone.txt"), {.clone = true}, loop));
     ZEXPECT(copied.has_value());
-    ZEXPECT(test::read_file(dir.path / "copy.txt") == "copied");
+    ZEXPECT(test::read_text(dir.file("copy.txt")) == "copied");
     ZEXPECT(cloned.has_value());
-    ZEXPECT(test::read_file(dir.path / "clone.txt") == "copied");
+    ZEXPECT(test::read_text(dir.file("clone.txt")) == "copied");
 }
 
 ZEST_CASE(copyfile_onto_a_file_with_excl_fails) {
     test::TempDir dir;
-    test::write_file(dir.path / "source.txt", "copied");
-    test::write_file(dir.path / "taken.txt", "keep");
+    test::write_text(dir.file("source.txt"), "copied");
+    test::write_text(dir.file("taken.txt"), "keep");
 
     auto [result] = run(
         fs::async::copyfile(dir.file("source.txt"), dir.file("taken.txt"), {.excl = true}, loop));
     ZASSERT(result.has_error());
     ZEXPECT(result.error() == error::file_already_exists);
-    ZEXPECT(test::read_file(dir.path / "taken.txt") == "keep");
+    ZEXPECT(test::read_text(dir.file("taken.txt")) == "keep");
 }
 
 ZEST_CASE(mkstemp_creates_and_opens_a_new_file) {
@@ -214,7 +214,7 @@ ZEST_CASE(mkstemp_without_a_template_fails) {
 ZEST_CASE(ftruncate_fsync_and_fdatasync_act_on_a_descriptor) {
     test::TempDir dir;
     auto path = dir.file("data.txt");
-    test::write_file(path, "0123456789");
+    test::write_text(path, "0123456789");
     auto shrink = [&]() -> task<void, error> {
         int fd = co_await fs::async::open(path, O_RDWR).or_fail();
         co_await fs::async::ftruncate(fd, 4).or_fail();
@@ -225,12 +225,12 @@ ZEST_CASE(ftruncate_fsync_and_fdatasync_act_on_a_descriptor) {
 
     auto [result] = run(shrink());
     ZEXPECT(result.has_value());
-    ZEXPECT(test::read_file(path) == "0123");
+    ZEXPECT(test::read_text(path) == "0123");
 }
 
 ZEST_CASE(sendfile_copies_between_descriptors) {
     test::TempDir dir;
-    test::write_file(dir.path / "source.txt", "sent-bytes");
+    test::write_text(dir.file("source.txt"), "sent-bytes");
     auto send = [&]() -> task<std::int64_t, error> {
         int in = co_await fs::async::open(dir.file("source.txt"), O_RDONLY).or_fail();
         int out =
@@ -244,12 +244,12 @@ ZEST_CASE(sendfile_copies_between_descriptors) {
     auto [result] = run(send());
     ZASSERT(result.has_value());
     ZEXPECT(*result == 5);
-    ZEXPECT(test::read_file(dir.path / "target.txt") == "bytes");
+    ZEXPECT(test::read_text(dir.file("target.txt")) == "bytes");
 }
 
 ZEST_CASE(access_checks_that_a_file_exists) {
     test::TempDir dir;
-    test::write_file(dir.path / "data.txt", "x");
+    test::write_text(dir.file("data.txt"), "x");
 
     auto [result] = run(fs::async::access(dir.file("data.txt"), 0, loop));
     ZEXPECT(result.has_value());
@@ -268,7 +268,7 @@ ZEST_CASE(utime_and_futime_set_the_times) {
     using std::chrono::seconds;
     test::TempDir dir;
     auto path = dir.file("data.txt");
-    test::write_file(path, "x");
+    test::write_text(path, "x");
     auto touch = [&]() -> task<std::pair<fs::async::file_stats, fs::async::file_stats>, error> {
         co_await fs::async::utime(path, 1'000'000'000.0, 1'000'000'000.0).or_fail();
         auto by_path = co_await fs::async::stat(path).or_fail();
@@ -287,11 +287,11 @@ ZEST_CASE(utime_and_futime_set_the_times) {
 
 ZEST_CASE(link_adds_a_name_for_the_same_file) {
     test::TempDir dir;
-    test::write_file(dir.path / "data.txt", "linked");
+    test::write_text(dir.file("data.txt"), "linked");
 
     auto [result] = run(fs::async::link(dir.file("data.txt"), dir.file("alias.txt"), loop));
     ZEXPECT(result.has_value());
-    ZEXPECT(test::read_file(dir.path / "alias.txt") == "linked");
+    ZEXPECT(test::read_text(dir.file("alias.txt")) == "linked");
     ZEXPECT(std::filesystem::hard_link_count(dir.path / "data.txt") == 2U);
 }
 
@@ -304,7 +304,7 @@ ZEST_CASE(link_to_a_missing_file_fails) {
 
 ZEST_CASE(statfs_reports_the_filesystem) {
     test::TempDir dir;
-    auto [result] = run(fs::async::statfs(dir.path.string(), loop));
+    auto [result] = run(fs::async::statfs(dir.root(), loop));
     ZASSERT(result.has_value());
     ZEXPECT(result->bsize > 0U);
     ZEXPECT(result->blocks > 0U);
@@ -434,7 +434,7 @@ ZEST_CASE(mkdtemp_cancelled_too_late_removes_what_it_made) {
 
 ZEST_CASE(symlink_is_read_resolved_and_described_as_a_link) {
     test::TempDir dir;
-    test::write_file(dir.path / "target.txt", "x");
+    test::write_text(dir.file("target.txt"), "x");
     auto target = dir.file("target.txt");
     auto link = dir.file("link.txt");
 
@@ -475,7 +475,7 @@ ZEST_CASE(readlink_of_a_missing_link_fails) {
 ZEST_CASE(chmod_and_fchmod_set_the_mode) {
     test::TempDir dir;
     auto path = dir.file("data.txt");
-    test::write_file(path, "x");
+    test::write_text(path, "x");
     auto change = [&]() -> task<std::pair<std::uint64_t, std::uint64_t>, error> {
         co_await fs::async::chmod(path, 0600).or_fail();
         auto after_chmod = co_await fs::async::stat(path).or_fail();
@@ -497,7 +497,7 @@ ZEST_CASE(chown_fchown_and_lchown_to_the_owner_succeed) {
     test::TempDir dir;
     auto path = dir.file("data.txt");
     auto link = dir.file("link.txt");
-    test::write_file(path, "x");
+    test::write_text(path, "x");
     auto keep_owner = [&]() -> task<void, error> {
         auto stats = co_await fs::async::stat(path).or_fail();
         auto uid = static_cast<std::uint32_t>(stats.uid);

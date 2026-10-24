@@ -53,7 +53,7 @@ std::string trim_newlines(std::string text) {
 /// What `opts`, a shell command that writes to marker.txt, writes there when
 /// run in `dir`, or how it ended when it failed.
 task<std::string> marker_of(process::options opts, const test::TempDir& dir, event_loop& loop) {
-    opts.cwd = dir.path.string();
+    opts.cwd = dir.root();
     auto spawned = process::spawn(opts, loop);
     if(!spawned) {
         co_return std::format("spawn failed: {}", spawned.error().message());
@@ -65,7 +65,7 @@ task<std::string> marker_of(process::options opts, const test::TempDir& dir, eve
     if(!status->success()) {
         co_return status->to_string();
     }
-    co_return trim_newlines(test::read_file(dir.path / "marker.txt"));
+    co_return trim_newlines(test::read_text(dir.file("marker.txt")));
 }
 
 /// A shell command that writes variables `first` and `second` to marker.txt,
@@ -184,13 +184,15 @@ ZEST_CASE(stdout_goes_to_a_given_descriptor) {
 
     auto [status] = run(spawned->proc.wait());
     ZEXPECT(test::exit_status_of(status) == 0);
-    ZEXPECT(trim_newlines(test::read_file(dir.path / "stdout.txt")) == "kotatsu-fd");
+    ZEXPECT(trim_newlines(test::read_text(dir.file("stdout.txt"))) == "kotatsu-fd");
 }
 
 ZEST_CASE(stdout_goes_to_an_open_file) {
     test::TempDir dir;
     auto file = fs::File::open(dir.file("stdout.txt"), fs::OpenMode::Write);
     ZASSERT(file.has_value());
+    // The child writes from where the file stands.
+    ZEXPECT(!file->write("head-"));
     auto opts = shell(by_platform("printf kotatsu-file", "echo kotatsu-file"));
     opts.streams[1] = process::stdio::from_file(*file);
     auto spawned = process::spawn(opts, loop);
@@ -200,7 +202,7 @@ ZEST_CASE(stdout_goes_to_an_open_file) {
 
     auto [status] = run(spawned->proc.wait());
     ZEXPECT(test::exit_status_of(status) == 0);
-    ZEXPECT(trim_newlines(test::read_file(dir.path / "stdout.txt")) == "kotatsu-file");
+    ZEXPECT(trim_newlines(test::read_text(dir.file("stdout.txt"))) == "head-kotatsu-file");
 }
 
 ZEST_CASE(environment_and_directory_reach_the_child) {
@@ -210,13 +212,13 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
     auto opts = shell(by_platform(R"(printf "$KOTA_TEST_VALUE" > marker.txt)",
                                   ">marker.txt echo %KOTA_TEST_VALUE%"));
     opts.env = {"KOTA_TEST_VALUE=42"};
-    opts.cwd = dir.path.string();
+    opts.cwd = dir.root();
     auto spawned = process::spawn(opts, loop);
     ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
     ZEXPECT(test::exit_status_of(status) == 0);
-    ZEXPECT(trim_newlines(test::read_file(dir.path / "marker.txt")) == "42");
+    ZEXPECT(trim_newlines(test::read_text(dir.file("marker.txt"))) == "42");
 }
 
 // The changes go over the inherited environment: the child still has what
@@ -558,7 +560,7 @@ ZEST_CASE(cancelled_capture_kills_the_child) {
     auto reader = pipe::open(pid_fifo, loop);
     ZASSERT(reader.has_value());
     auto opts = shell("echo $$ > pid; exec cat < hold");
-    opts.cwd = dir.path.string();
+    opts.cwd = dir.root();
     cancellation_source source;
     auto canceller = [&]() -> task<std::optional<std::string>, error> {
         auto pid = co_await reader->read_line().or_fail();

@@ -38,7 +38,7 @@ struct Recording : zest::LoopFixture {
     /// fails the test.
     std::vector<Record> records() const {
         std::vector<Record> lines;
-        auto text = test::read_file(path);
+        auto text = test::read_text(path);
         std::string_view rest = text;
         while(!rest.empty()) {
             auto end = rest.find('\n');
@@ -89,7 +89,7 @@ ZEST_CASE(written_messages_are_passed_on_unrecorded) {
     auto [written] = run(transport.write_message("hello"));
     ZEXPECT(written.has_value());
     ZEXPECT(remote.drain() == std::vector<std::string>{"hello"});
-    ZEXPECT(test::read_file(path).empty());
+    ZEXPECT(test::read_text(path).empty());
 }
 
 ZEST_CASE(close_reaches_the_inner_transport) {
@@ -110,7 +110,7 @@ ZEST_CASE(unreadable_message_is_passed_on_unrecorded) {
     auto [read] = run(transport.read_message());
     ZASSERT(read.has_error());
     ZEXPECT(read.error().kind == ReadError::Kind::Oversized);
-    ZEXPECT(test::read_file(path).empty());
+    ZEXPECT(test::read_text(path).empty());
 }
 
 // A file that cannot be opened loses the recording, not the messages.

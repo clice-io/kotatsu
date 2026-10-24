@@ -1,7 +1,7 @@
 #pragma once
 
 // What system tests take from the operating system without kota::async:
-// TempDir from fs's harness, read_file() and write_file(), ScopedVariable in
+// TempDir, read_text() and write_text() from fs's harness, ScopedVariable in
 // the environment, stdin_reader() for a child that runs until its stdin
 // closes and exit_status_of() for how it ended, open_fd(), create_pipe(),
 // close_fd() and write_fd() on raw descriptors, and BusyPool, which holds
@@ -12,9 +12,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <latch>
 #include <optional>
 #include <string>
@@ -38,17 +35,6 @@ using ssize_t = SSIZE_T;
 #include "kota/async/async.h"
 
 namespace kota::test {
-
-/// The contents of `path`, read without kota::async.
-inline std::string read_file(const std::filesystem::path& path) {
-    std::ifstream in(path, std::ios::binary);
-    return {std::istreambuf_iterator<char>(in), {}};
-}
-
-/// Writes `text` to `path` without kota::async.
-inline void write_file(const std::filesystem::path& path, std::string_view text) {
-    std::ofstream(path, std::ios::binary) << text;
-}
 
 /// A variable of this process's environment, set for as long as this lives.
 struct ScopedVariable {
@@ -108,8 +94,7 @@ std::optional<std::int64_t> exit_status_of(const Waited& waited) {
 /// Opens the UTF-8 `path` with open()'s `flags` and `mode`, as a raw
 /// descriptor the loop's handles take.
 inline int open_fd(std::string_view path, int flags, int mode) {
-    std::filesystem::path wide(std::u8string(path.begin(), path.end()));
-    return ::_wopen(wide.c_str(), flags | _O_BINARY, mode);
+    return ::_wopen(std_path(path).c_str(), flags | _O_BINARY, mode);
 }
 
 inline int create_pipe(int fds[2]) {

@@ -708,7 +708,7 @@ ZEST_CASE(open_of_a_bad_descriptor_fails) {
 // reporting one at its end. Windows opens no handle but a pipe's.
 ZEST_CASE(read_of_a_file_fails) {
     test::TempDir dir;
-    test::write_file(dir.file("file.txt"), "text");
+    test::write_text(dir.file("file.txt"), "text");
     int file = test::open_fd(dir.file("file.txt"), O_RDONLY, 0);
     ZASSERT(file >= 0);
 
@@ -776,7 +776,7 @@ ZEST_CASE(open_of_a_file_to_write_writes_to_it) {
     auto [written] = run(writer());
     ZEXPECT(written.has_value());
     *opened = pipe();
-    ZEXPECT(test::read_file(dir.file("file.txt")) == "text");
+    ZEXPECT(test::read_text(dir.file("file.txt")) == "text");
 }
 #endif
 

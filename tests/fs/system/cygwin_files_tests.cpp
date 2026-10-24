@@ -15,7 +15,7 @@ namespace {
 
 using namespace std::literals;
 
-ZEST_SUITE(fs_cygwin_symlink) {
+ZEST_SUITE(fs_cygwin_files) {
 
 ZEST_CASE(read_symlink_reads_the_installer_spelling) {
     test::TempDir dir;
@@ -55,7 +55,7 @@ ZEST_CASE(runtime_dirs_keep_the_dll_search_order) {
                                              dir.file("cygwin/bin")});
 }
 
-};  // ZEST_SUITE(fs_cygwin_symlink)
+};  // ZEST_SUITE(fs_cygwin_files)
 
 }  // namespace
 
