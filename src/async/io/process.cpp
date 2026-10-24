@@ -272,17 +272,15 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
 #ifdef _WIN32
     // libuv takes a CRT descriptor, which owns the handle it wraps: each
     // file's handle is duplicated into one, closed once the child started.
-    std::vector<int> wrapped;
+    struct Wrapped {
+        std::vector<int> fds;
 
-    struct CloseWrapped {
-        std::vector<int>& fds;
-
-        ~CloseWrapped() {
+        ~Wrapped() {
             for(int fd: fds) {
                 ::_close(fd);
             }
         }
-    } close_wrapped{wrapped};
+    } wrapped;
 #endif
     for(std::size_t i = 0; i < opts.streams.size(); ++i) {
         const auto& config = opts.streams[i];
@@ -316,7 +314,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
                     ::CloseHandle(duplicate);
                     return outcome_error(error::too_many_open_files);
                 }
-                wrapped.push_back(container.data.fd);
+                wrapped.fds.push_back(container.data.fd);
 #else
                 container.data.fd = config.file_handle;
 #endif

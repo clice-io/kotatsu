@@ -113,21 +113,25 @@ IncludeCategories:
     Priority: 30
     SortPriority: 41
 
-  - Regex: '^["<](kota/async)/'
+  - Regex: '^["<](kota/fs)/'
     Priority: 30
     SortPriority: 42
 
-  - Regex: '^["<](kota/meta)/'
+  - Regex: '^["<](kota/async)/'
     Priority: 30
     SortPriority: 43
 
-  - Regex: '^["<](kota/codec)/'
+  - Regex: '^["<](kota/meta)/'
     Priority: 30
     SortPriority: 44
 
-  - Regex: '^["<](kota/ipc/lsp)/'
+  - Regex: '^["<](kota/codec)/'
     Priority: 30
     SortPriority: 45
+
+  - Regex: '^["<](kota/ipc/lsp)/'
+    Priority: 30
+    SortPriority: 46
 
   - Regex: "^<.*"
     Priority: 10

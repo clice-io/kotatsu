@@ -20,20 +20,13 @@ namespace kota::fs {
 
 namespace {
 
-/// What a closed File holds: CreateFileW never gives a null handle.
-#ifdef _WIN32
-constexpr File::native_handle_type closed_handle = nullptr;
-#else
-constexpr File::native_handle_type closed_handle = -1;
-#endif
-
 /// Bytes past which one read or write call takes a piece at a time: Windows
 /// counts in DWORD, POSIX in ssize_t, and either may stop short anyway.
 constexpr std::size_t largest_call = std::size_t{1} << 30;
 
 }  // namespace
 
-File::File(File&& other) noexcept : handle(std::exchange(other.handle, closed_handle)) {}
+File::File(File&& other) noexcept : handle(std::exchange(other.handle, closed)) {}
 
 File& File::operator=(File&& other) noexcept {
     std::swap(handle, other.handle);
@@ -45,7 +38,7 @@ File::~File() {
 }
 
 bool File::is_open() const {
-    return handle != closed_handle;
+    return handle != closed;
 }
 
 #ifdef _WIN32
@@ -112,7 +105,7 @@ std::error_code File::close() {
     if(!is_open()) {
         return {};
     }
-    auto closing = std::exchange(handle, closed_handle);
+    auto closing = std::exchange(handle, closed);
     return ::CloseHandle(closing) ? std::error_code() : windows::last_error();
 }
 
@@ -168,8 +161,7 @@ std::error_code File::close() {
     }
     // The descriptor is gone whatever close() returns, EINTR included: a
     // retry could close one another thread has opened since.
-    return ::close(std::exchange(handle, closed_handle)) == 0 ? std::error_code()
-                                                              : posix::last_error();
+    return ::close(std::exchange(handle, closed)) == 0 ? std::error_code() : posix::last_error();
 }
 
 #endif
@@ -211,27 +203,17 @@ std::error_code write_file(std::string_view path, std::string_view bytes) {
     return file->close();
 }
 
-std::error_code write_file_atomic(std::string_view path, std::string_view bytes) {
-    auto directory = path::parent(path);
-    auto sibling = create_temp_file(directory.empty() ? "." : directory,
-                                    std::string(path::filename(path)) + ".",
-                                    ".tmp");
-    if(!sibling) {
-        return sibling.error();
-    }
-    auto error = write_file(*sibling, bytes);
-    if(!error) {
-        error = rename(*sibling, path);
-    }
-    if(error) {
-        [[maybe_unused]] auto removed = remove(*sibling);
-    }
-    return error;
-}
+namespace {
 
-std::expected<std::string, std::error_code> create_temp_file(std::string_view directory,
-                                                             std::string_view prefix,
-                                                             std::string_view suffix) {
+struct TempFile {
+    File file;
+    std::string path;
+};
+
+/// create_temp_file(), the file left open for writing.
+std::expected<TempFile, std::error_code> open_temp_file(std::string_view directory,
+                                                        std::string_view prefix,
+                                                        std::string_view suffix) {
     constexpr std::string_view alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
     std::random_device device;
     std::uniform_int_distribution<std::size_t> pick(0, alphabet.size() - 1);
@@ -246,10 +228,7 @@ std::expected<std::string, std::error_code> create_temp_file(std::string_view di
         auto candidate = path::join(directory, name);
         auto file = File::open(candidate, OpenMode::CreateNew);
         if(file) {
-            if(auto closed = file->close()) {
-                return std::unexpected(closed);
-            }
-            return candidate;
+            return TempFile{std::move(*file), std::move(candidate)};
         }
         error = file.error();
         if(error != std::errc::file_exists) {
@@ -257,6 +236,40 @@ std::expected<std::string, std::error_code> create_temp_file(std::string_view di
         }
     }
     return std::unexpected(error);
+}
+
+}  // namespace
+
+std::error_code write_file_atomic(std::string_view path, std::string_view bytes) {
+    auto sibling =
+        open_temp_file(path::parent(path), std::string(path::filename(path)) + ".", ".tmp");
+    if(!sibling) {
+        return sibling.error();
+    }
+    auto error = sibling->file.write(bytes);
+    if(auto closed = sibling->file.close(); !error) {
+        error = closed;
+    }
+    if(!error) {
+        error = rename(sibling->path, path);
+    }
+    if(error) {
+        [[maybe_unused]] auto removed = remove(sibling->path);
+    }
+    return error;
+}
+
+std::expected<std::string, std::error_code> create_temp_file(std::string_view directory,
+                                                             std::string_view prefix,
+                                                             std::string_view suffix) {
+    auto created = open_temp_file(directory, prefix, suffix);
+    if(!created) {
+        return std::unexpected(created.error());
+    }
+    if(auto error = created->file.close()) {
+        return std::unexpected(error);
+    }
+    return std::move(created->path);
 }
 
 }  // namespace kota::fs

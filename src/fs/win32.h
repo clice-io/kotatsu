@@ -81,14 +81,22 @@ std::expected<std::wstring, std::error_code> fill_wide(Fill fill) {
     }
 }
 
+/// `path` in UTF-16, as it is: invalid_argument for a NUL in it, which would
+/// end it early.
+std::expected<std::wstring, std::error_code> widen(std::string_view path);
+
+/// What GetFullPathNameW resolves `path` to.
+std::expected<std::wstring, std::error_code> full_path(const std::wstring& path);
+
 /// A handle to what the native `path` names, existing, with every sharing
 /// mode so that it never refuses another process, and
 /// FILE_FLAG_BACKUP_SEMANTICS, which opening a directory needs, before
 /// `flags`. An invalid handle on failure, GetLastError() telling why.
 Handle try_open(const std::wstring& path, DWORD access, DWORD flags);
 
-/// The same, failing with an error code.
-std::expected<Handle, std::error_code> open(std::string_view path, DWORD access, DWORD flags);
+/// A handle to what `path` names, symlinks followed, failing with an error
+/// code.
+std::expected<Handle, std::error_code> open(std::string_view path, DWORD access);
 
 /// Whether a reparse tag makes a link a path is resolved through: a
 /// symlink, a junction, a WSL link. Other reparse points, such as cloud
@@ -121,10 +129,14 @@ inline FileId id_of(std::uint64_t volume, const FILE_ID_128& file) {
     return id;
 }
 
-/// `native`, a path native_path() gave, in the verbatim form, which any
-/// name appended with `\` keeps valid at any length: native_path() leaves
-/// a short absolute path as it is, already in the form Win32 resolves it to.
-std::wstring verbatim(std::wstring native);
+/// The ID of the file `handle` refers to.
+std::expected<FileId, std::error_code> file_id(HANDLE handle);
+
+/// `resolved`, a path in the form Win32 resolves paths to (native_path()
+/// leaves a short absolute one so), in the verbatim form, which any name
+/// appended with `\` keeps valid at any length. A device path stays as it
+/// is.
+std::wstring verbatim(std::wstring resolved);
 
 /// FILETIME ticks, 100 ns since 1601, as nanoseconds since the Unix epoch;
 /// zero, the time FAT keeps for a change it does not record, stays zero.

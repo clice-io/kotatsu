@@ -3,10 +3,10 @@
 #include <system_error>
 
 #include "fs/harness/files.h"
+#include "kota/zest/zest.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/path.h"
 #include "kota/fs/resolve.h"
-#include "kota/zest/zest.h"
 
 namespace kota::fs {
 

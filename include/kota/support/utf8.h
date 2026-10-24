@@ -21,9 +21,11 @@ struct UTF8Sequence {
     bool valid;
 };
 
-/// The sequence at the start of text, which is not empty. A code point is
-/// none overlong, a surrogate or past U+10FFFF.
-constexpr UTF8Sequence decode_utf8(std::string_view text) {
+namespace detail {
+
+/// decode_utf8(), taking a surrogate for a code point when `surrogates`
+/// says so: WTF-8, the superset that spells a lone one.
+constexpr UTF8Sequence decode_sequence(std::string_view text, bool surrogates) {
     constexpr char32_t replacement = 0xFFFD;
     auto lead = static_cast<unsigned char>(text[0]);
     if(lead < 0x80) {
@@ -42,7 +44,7 @@ constexpr UTF8Sequence decode_utf8(std::string_view text) {
         need = 3;
         code_point = lead & 0x0F;
         low = lead == 0xE0 ? 0xA0 : low;
-        high = lead == 0xED ? 0x9F : high;
+        high = lead == 0xED && !surrogates ? 0x9F : high;
     } else if(lead >= 0xF0 && lead <= 0xF4) {
         need = 4;
         code_point = lead & 0x07;
@@ -66,6 +68,14 @@ constexpr UTF8Sequence decode_utf8(std::string_view text) {
         return {.code_point = replacement, .length = length, .valid = false};
     }
     return {.code_point = code_point, .length = length, .valid = true};
+}
+
+}  // namespace detail
+
+/// The sequence at the start of text, which is not empty. A code point is
+/// none overlong, a surrogate or past U+10FFFF.
+constexpr UTF8Sequence decode_utf8(std::string_view text) {
+    return detail::decode_sequence(text, false);
 }
 
 /// Whether text is UTF-8: whole code points, none overlong, a surrogate or

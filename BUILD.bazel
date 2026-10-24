@@ -185,6 +185,7 @@ kota_library(
         ":async",
         ":codec",
         ":deco",
+        ":fs",
         ":meta",
         ":support",
         "@cpptrace",

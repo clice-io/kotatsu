@@ -1,6 +1,5 @@
 #include "kota/fs/directory.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -11,6 +10,8 @@
 #include "kota/fs/path.h"
 
 #ifdef _WIN32
+#include <concepts>
+
 #include "win32.h"
 #include "kota/support/utf16.h"
 #else
@@ -62,16 +63,14 @@ bool unsupported(DWORD error) {
 /// `visit` with its name, as the information class `Info` describes it. The
 /// error that ended the listing early, or ERROR_SUCCESS.
 template <typename Info, typename Visit>
-DWORD for_each_entry(HANDLE handle,
-                     FILE_INFO_BY_HANDLE_CLASS restart,
-                     FILE_INFO_BY_HANDLE_CLASS next,
-                     Visit visit) {
+DWORD for_each_entry(HANDLE handle, Visit visit) {
+    constexpr bool extended = std::same_as<Info, FILE_ID_EXTD_DIR_INFO>;
+    auto kind = extended ? FileIdExtdDirectoryRestartInfo : FileFullDirectoryRestartInfo;
     constexpr std::size_t buffer_size = 64 * 1024;
     // The entries hold 8-byte fields.
     auto buffer = std::make_unique<std::uint64_t[]>(buffer_size / sizeof(std::uint64_t));
-    auto kind = restart;
     while(::GetFileInformationByHandleEx(handle, kind, buffer.get(), buffer_size)) {
-        kind = next;
+        kind = extended ? FileIdExtdDirectoryInfo : FileFullDirectoryInfo;
         auto* at = reinterpret_cast<const char*>(buffer.get());
         while(true) {
             const auto& entry = *reinterpret_cast<const Info*>(at);
@@ -89,6 +88,23 @@ DWORD for_each_entry(HANDLE handle,
     // where no file matches.
     auto error = ::GetLastError();
     return error == ERROR_NO_MORE_FILES || error == ERROR_FILE_NOT_FOUND ? ERROR_SUCCESS : error;
+}
+
+/// A handle to list the directory `dir` through. The access to list a
+/// directory reads a file as well, so a file is told apart here.
+std::expected<win32::Handle, std::error_code> open_directory(std::string_view dir) {
+    auto handle = win32::open(dir, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES);
+    if(!handle) {
+        return handle;
+    }
+    FILE_BASIC_INFO info;
+    if(!::GetFileInformationByHandleEx(handle->get(), FileBasicInfo, &info, sizeof(info))) {
+        return std::unexpected(windows::last_error());
+    }
+    if(!(info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+        return std::unexpected(std::make_error_code(std::errc::not_a_directory));
+    }
+    return handle;
 }
 
 /// Deletes what `handle`, opened for DELETE, refers to: by POSIX semantics,
@@ -109,6 +125,12 @@ DWORD dispose(HANDLE handle) {
     return ::GetLastError();
 }
 
+/// Whether an open failed because nothing is there: a missing name, or a
+/// component that is a file rather than a directory.
+bool names_nothing(DWORD error) {
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
+}
+
 /// remove_all() of a verbatim path. The handle that decides whether to list
 /// an entry is the one that lists it and the one it is deleted through,
 /// opened on the entry itself, so that a link put in its place meanwhile is
@@ -116,13 +138,17 @@ DWORD dispose(HANDLE handle) {
 std::expected<std::uint64_t, std::error_code> remove_tree(const std::wstring& path) {
     constexpr DWORD flags = FILE_FLAG_OPEN_REPARSE_POINT;
     auto handle = win32::try_open(path, DELETE | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY, flags);
-    if(handle.get() == INVALID_HANDLE_VALUE && ::GetLastError() == ERROR_ACCESS_DENIED) {
-        // A file the caller may delete but not read.
-        handle = win32::try_open(path, DELETE | FILE_READ_ATTRIBUTES, flags);
+    if(handle.get() == INVALID_HANDLE_VALUE) {
+        // A file the caller may delete but not read, or that another process
+        // holds open for everything but reading.
+        if(auto error = ::GetLastError();
+           error == ERROR_ACCESS_DENIED || error == ERROR_SHARING_VIOLATION) {
+            handle = win32::try_open(path, DELETE | FILE_READ_ATTRIBUTES, flags);
+        }
     }
     if(handle.get() == INVALID_HANDLE_VALUE) {
         auto error = ::GetLastError();
-        if(error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) {
+        if(names_nothing(error)) {
             return 0;
         }
         return std::unexpected(windows::to_error_code(error));
@@ -136,14 +162,14 @@ std::expected<std::uint64_t, std::error_code> remove_tree(const std::wstring& pa
         std::vector<std::string> names;
         auto error = for_each_entry<FILE_FULL_DIR_INFO>(
             handle.get(),
-            FileFullDirectoryRestartInfo,
-            FileFullDirectoryInfo,
             [&](const FILE_FULL_DIR_INFO&, std::string name) { names.push_back(std::move(name)); });
         if(error != ERROR_SUCCESS) {
             return std::unexpected(windows::to_error_code(error));
         }
+        // A drive's root ends in its separator already.
+        auto directory = path.ends_with(L'\\') ? path : path + L'\\';
         for(auto& name: names) {
-            auto count = remove_tree(path + L"\\" + *to_utf16<wchar_t>(name));
+            auto count = remove_tree(directory + *to_utf16<wchar_t>(name));
             if(!count) {
                 return count;
             }
@@ -154,29 +180,6 @@ std::expected<std::uint64_t, std::error_code> remove_tree(const std::wstring& pa
         return std::unexpected(windows::to_error_code(error));
     }
     return removed + 1;
-}
-
-std::error_code create_link(std::string_view target, std::string_view link, DWORD flags) {
-    auto native = windows::native_path(link);
-    if(!native) {
-        return native.error();
-    }
-    // The target stays as written, relative or not; only `\` separates in it.
-    auto wide = to_utf16<wchar_t>(path::to_backslash(target));
-    if(!wide) {
-        return wide.error();
-    }
-    // Developer mode lets anyone create a link, but older systems reject the
-    // flag that asks for it.
-    constexpr DWORD unprivileged = 0x2;
-    if(::CreateSymbolicLinkW(native->c_str(), wide->c_str(), flags | unprivileged)) {
-        return {};
-    }
-    if(::GetLastError() == ERROR_INVALID_PARAMETER &&
-       ::CreateSymbolicLinkW(native->c_str(), wide->c_str(), flags)) {
-        return {};
-    }
-    return windows::last_error();
 }
 
 #else
@@ -233,86 +236,148 @@ std::expected<DirHandle, std::error_code> open_dir(std::string_view path) {
     return dir;
 }
 
-/// Removes everything in the directory `fd`, by names relative to it, so
-/// that a directory renamed or replaced by a link meanwhile is never left
-/// for what it points to. Adds what it removed to `removed`.
+/// Whether a call failed because nothing is there: a missing name, or a
+/// component that is a file rather than a directory.
+bool names_nothing(int error) {
+    return error == ENOENT || error == ENOTDIR;
+}
+
+std::error_code
+    remove_entry(int dir_fd, const char* name, unsigned char type, std::uint64_t& removed);
+
+/// Removes everything in the open directory `fd`, adding what it removed to
+/// `removed`.
 std::error_code remove_contents(int fd, std::uint64_t& removed) {
-    // fdopendir() takes the descriptor it is given.
-    int listed = ::dup(fd);
+    // fdopendir() takes the descriptor it is given. The names are all read
+    // before any is removed, so a level of the walk holds one descriptor.
+    int listed = ::fcntl(fd, F_DUPFD_CLOEXEC, 0);
     if(listed < 0) {
         return posix::last_error();
     }
     DirHandle dir(::fdopendir(listed));
     if(!dir) {
+        auto error = posix::last_error();
         ::close(listed);
-        return posix::last_error();
+        return error;
     }
     std::vector<std::pair<std::string, unsigned char>> entries;
-    if(auto error = for_each_entry(dir.get(), [&](std::string_view name, unsigned char type) {
-           entries.emplace_back(name, type);
-       })) {
+    auto error = for_each_entry(dir.get(), [&](std::string_view name, unsigned char type) {
+        entries.emplace_back(name, type);
+    });
+    dir.reset();
+    if(error) {
         return error;
     }
     for(auto& [name, type]: entries) {
-        bool directory = type == DT_DIR;
-        if(type == DT_UNKNOWN) {
-            struct stat info;
-            directory = ::fstatat(fd, name.c_str(), &info, AT_SYMLINK_NOFOLLOW) == 0 &&
-                        S_ISDIR(info.st_mode);
-        }
-        if(directory) {
-            int child = ::openat(fd, name.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-            if(child < 0) {
-                if(errno == ENOENT) {
-                    continue;
-                }
-                if(errno != ENOTDIR && errno != ELOOP) {
-                    return posix::last_error();
-                }
-                // No longer a directory: removed as a file below.
-                directory = false;
-            } else {
-                auto error = remove_contents(child, removed);
-                ::close(child);
-                if(error) {
-                    return error;
-                }
-            }
-        }
-        if(::unlinkat(fd, name.c_str(), directory ? AT_REMOVEDIR : 0) == 0) {
-            ++removed;
-        } else if(errno != ENOENT) {
-            return posix::last_error();
+        if(auto failed = remove_entry(fd, name.c_str(), type, removed)) {
+            return failed;
         }
     }
     return {};
 }
 
-std::error_code create_link(std::string_view target, std::string_view link) {
-    auto c_target = posix::c_path(target);
-    auto c_link = posix::c_path(link);
-    if(!c_target || !c_link) {
-        return std::make_error_code(std::errc::invalid_argument);
+/// Removes the entry `name` of the directory `dir_fd` and everything in it,
+/// by names relative to the directory each is in, never following a link:
+/// a directory replaced by a link meanwhile goes as the link. `type` is its
+/// d_type, DT_UNKNOWN for one not listed.
+std::error_code
+    remove_entry(int dir_fd, const char* name, unsigned char type, std::uint64_t& removed) {
+    bool directory = type == DT_DIR;
+    if(type == DT_UNKNOWN) {
+        struct stat info;
+        if(::fstatat(dir_fd, name, &info, AT_SYMLINK_NOFOLLOW) != 0) {
+            return names_nothing(errno) ? std::error_code() : posix::last_error();
+        }
+        directory = S_ISDIR(info.st_mode);
     }
-    return ::symlink(c_target->c_str(), c_link->c_str()) == 0 ? std::error_code()
-                                                              : posix::last_error();
+    if(directory) {
+        int fd = ::openat(dir_fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        if(fd >= 0) {
+            auto error = remove_contents(fd, removed);
+            ::close(fd);
+            if(error) {
+                return error;
+            }
+        } else if(errno == ENOENT) {
+            return {};
+        } else if(errno == ENOTDIR || errno == ELOOP) {
+            // No longer a directory: it goes as a file.
+            directory = false;
+        } else {
+            return posix::last_error();
+        }
+    }
+    if(::unlinkat(dir_fd, name, directory ? AT_REMOVEDIR : 0) == 0) {
+        ++removed;
+    } else if(errno != ENOENT) {
+        return posix::last_error();
+    }
+    return {};
+}
+
+/// `path` without its trailing separators, its root kept: through them the
+/// system follows a symlink the path ends in, and would remove what it
+/// points to.
+std::string_view without_trailing_separators(std::string_view path) {
+    auto end = path.size();
+    while(end > 1 && path[end - 1] == '/') {
+        --end;
+    }
+    return path.substr(0, end);
 }
 
 #endif
+
+std::error_code create_link(std::string_view target, std::string_view link, bool directory) {
+#ifdef _WIN32
+    auto native = windows::native_path(link);
+    if(!native) {
+        return native.error();
+    }
+    // The target stays as written, relative or not; only `\` separates in it.
+    auto wide = win32::widen(path::to_backslash(target));
+    if(!wide) {
+        return wide.error();
+    }
+    DWORD flags = directory ? SYMBOLIC_LINK_FLAG_DIRECTORY : 0;
+    // Developer mode lets anyone create a link, but older systems reject the
+    // flag that asks for it.
+    constexpr DWORD unprivileged = 0x2;
+    if(::CreateSymbolicLinkW(native->c_str(), wide->c_str(), flags | unprivileged)) {
+        return {};
+    }
+    if(::GetLastError() == ERROR_INVALID_PARAMETER &&
+       ::CreateSymbolicLinkW(native->c_str(), wide->c_str(), flags)) {
+        return {};
+    }
+    return windows::last_error();
+#else
+    // POSIX tells a link to a directory by its target alone.
+    static_cast<void>(directory);
+    auto c_target = posix::c_path(target);
+    if(!c_target) {
+        return c_target.error();
+    }
+    auto c_link = posix::c_path(link);
+    if(!c_link) {
+        return c_link.error();
+    }
+    return ::symlink(c_target->c_str(), c_link->c_str()) == 0 ? std::error_code()
+                                                              : posix::last_error();
+#endif
+}
 
 }  // namespace
 
 std::expected<std::vector<Entry>, std::error_code> read_dir(std::string_view dir) {
     std::vector<Entry> entries;
 #ifdef _WIN32
-    auto handle = win32::open(dir, FILE_LIST_DIRECTORY, 0);
+    auto handle = open_directory(dir);
     if(!handle) {
         return std::unexpected(handle.error());
     }
     auto error = for_each_entry<FILE_FULL_DIR_INFO>(
         handle->get(),
-        FileFullDirectoryRestartInfo,
-        FileFullDirectoryInfo,
         [&](const FILE_FULL_DIR_INFO& entry, std::string name) {
             // A reparse point's tag stands where the size of its extended
             // attributes would.
@@ -329,15 +394,13 @@ std::expected<std::vector<Entry>, std::error_code> read_dir(std::string_view dir
     }
     auto* handle = opened->get();
     auto error = for_each_entry(handle, [&](std::string_view name, unsigned char type) {
-        auto known = type_of(type);
-        if(known == FileType::Unknown) {
-            struct stat info;
-            if(::fstatat(::dirfd(handle), std::string(name).c_str(), &info, AT_SYMLINK_NOFOLLOW) ==
-               0) {
-                known = posix::make_status(info).type;
-            }
+        Entry entry{std::string(name), type_of(type)};
+        struct stat info;
+        if(entry.type == FileType::Unknown &&
+           ::fstatat(::dirfd(handle), entry.name.c_str(), &info, AT_SYMLINK_NOFOLLOW) == 0) {
+            entry.type = posix::make_status(info).type;
         }
-        entries.push_back({std::string(name), known});
+        entries.push_back(std::move(entry));
     });
     if(error) {
         return std::unexpected(error);
@@ -349,25 +412,17 @@ std::expected<std::vector<Entry>, std::error_code> read_dir(std::string_view dir
 std::expected<std::vector<StatusEntry>, std::error_code> read_dir_status(std::string_view dir) {
     std::vector<StatusEntry> entries;
 #ifdef _WIN32
-    auto handle = win32::open(dir, FILE_LIST_DIRECTORY, 0);
+    auto handle = open_directory(dir);
     if(!handle) {
         return std::unexpected(handle.error());
     }
     // The listing tells each file's ID on the directory's volume.
-    std::uint64_t volume = 0;
-    FILE_ID_INFO id;
-    BY_HANDLE_FILE_INFORMATION info;
-    if(::GetFileInformationByHandleEx(handle->get(), FileIdInfo, &id, sizeof(id))) {
-        volume = id.VolumeSerialNumber;
-    } else if(::GetFileInformationByHandle(handle->get(), &info)) {
-        volume = info.dwVolumeSerialNumber;
-    } else {
-        return std::unexpected(windows::last_error());
+    auto volume = win32::file_id(handle->get());
+    if(!volume) {
+        return std::unexpected(volume.error());
     }
     auto error = for_each_entry<FILE_ID_EXTD_DIR_INFO>(
         handle->get(),
-        FileIdExtdDirectoryRestartInfo,
-        FileIdExtdDirectoryInfo,
         [&](const FILE_ID_EXTD_DIR_INFO& entry, std::string name) {
             entries.push_back({
                 .name = std::move(name),
@@ -375,7 +430,7 @@ std::expected<std::vector<StatusEntry>, std::error_code> read_dir_status(std::st
                            .size = static_cast<std::uint64_t>(entry.EndOfFile.QuadPart),
                            .mtime_ns = win32::unix_ns(entry.LastWriteTime.QuadPart),
                            .ctime_ns = win32::unix_ns(entry.ChangeTime.QuadPart),
-                           .id = win32::id_of(volume, entry.FileId)},
+                           .id = win32::id_of(volume->device, entry.FileId)},
             });
         });
     if(error == ERROR_SUCCESS) {
@@ -456,11 +511,16 @@ std::expected<bool, std::error_code> create_directories(std::string_view path) {
         return made;
     }
     auto above = path::parent(path);
-    if(above.empty() || above.size() == path.size()) {
+    if(above.empty()) {
         return made;
     }
     auto parents = create_directories(above);
     if(!parents) {
+        // A file where a directory above should be, which POSIX says of the
+        // path below it.
+        if(parents.error() == std::errc::file_exists) {
+            return std::unexpected(std::make_error_code(std::errc::not_a_directory));
+        }
         return parents;
     }
     auto last = create_directory(path);
@@ -479,7 +539,7 @@ std::expected<bool, std::error_code> remove(std::string_view path) {
     auto handle = win32::try_open(*native, DELETE, FILE_FLAG_OPEN_REPARSE_POINT);
     if(handle.get() == INVALID_HANDLE_VALUE) {
         auto error = ::GetLastError();
-        if(error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) {
+        if(names_nothing(error)) {
             return false;
         }
         return std::unexpected(windows::to_error_code(error));
@@ -489,7 +549,7 @@ std::expected<bool, std::error_code> remove(std::string_view path) {
     }
     return true;
 #else
-    auto c_path = posix::c_path(path);
+    auto c_path = posix::c_path(without_trailing_separators(path));
     if(!c_path) {
         return std::unexpected(c_path.error());
     }
@@ -497,7 +557,7 @@ std::expected<bool, std::error_code> remove(std::string_view path) {
         return true;
     }
     auto error = errno;
-    if(error == ENOENT) {
+    if(names_nothing(error)) {
         return false;
     }
     // A directory: Linux says EISDIR, macOS EPERM, which a file may give for
@@ -506,6 +566,7 @@ std::expected<bool, std::error_code> remove(std::string_view path) {
         if(::rmdir(c_path->c_str()) == 0) {
             return true;
         }
+        // ENOTDIR: a file after all, which the first error is about.
         if(errno == ENOENT) {
             return false;
         }
@@ -518,6 +579,11 @@ std::expected<bool, std::error_code> remove(std::string_view path) {
 }
 
 std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) {
+    // Removing `.` or `..` would remove the directory a path is in, which
+    // the OS refuses only once its contents are gone.
+    if(auto name = path::filename(path); name == "." || name == "..") {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
 #ifdef _WIN32
     auto native = windows::native_path(path);
     if(!native) {
@@ -525,40 +591,27 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) 
     }
     return remove_tree(win32::verbatim(std::move(*native)));
 #else
-    auto found = symlink_status(path);
-    if(!found) {
-        if(found.error() == std::errc::no_such_file_or_directory) {
-            return 0;
-        }
-        return std::unexpected(found.error());
+    auto c_path = posix::c_path(without_trailing_separators(path));
+    if(!c_path) {
+        return std::unexpected(c_path.error());
     }
     std::uint64_t removed = 0;
-    if(found->type == FileType::Directory) {
-        int fd = ::open(std::string(path).c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-        if(fd >= 0) {
-            auto error = remove_contents(fd, removed);
-            ::close(fd);
-            if(error) {
-                return std::unexpected(error);
-            }
-        } else if(errno != ENOTDIR && errno != ELOOP) {
-            return std::unexpected(posix::last_error());
-        }
+    if(auto error = remove_entry(AT_FDCWD, c_path->c_str(), DT_UNKNOWN, removed)) {
+        return std::unexpected(error);
     }
-    auto gone = remove(path);
-    if(!gone) {
-        return std::unexpected(gone.error());
-    }
-    return removed + *gone;
+    return removed;
 #endif
 }
 
 std::error_code rename(std::string_view from, std::string_view to) {
 #ifdef _WIN32
     auto source = windows::native_path(from);
+    if(!source) {
+        return source.error();
+    }
     auto target = windows::native_path(to);
-    if(!source || !target) {
-        return source ? target.error() : source.error();
+    if(!target) {
+        return target.error();
     }
     auto handle = win32::try_open(*source, DELETE | SYNCHRONIZE, FILE_FLAG_OPEN_REPARSE_POINT);
     if(handle.get() == INVALID_HANDLE_VALUE) {
@@ -590,9 +643,12 @@ std::error_code rename(std::string_view from, std::string_view to) {
     return windows::last_error();
 #else
     auto source = posix::c_path(from);
+    if(!source) {
+        return source.error();
+    }
     auto target = posix::c_path(to);
-    if(!source || !target) {
-        return std::make_error_code(std::errc::invalid_argument);
+    if(!target) {
+        return target.error();
     }
     return ::rename(source->c_str(), target->c_str()) == 0 ? std::error_code()
                                                            : posix::last_error();
@@ -600,19 +656,11 @@ std::error_code rename(std::string_view from, std::string_view to) {
 }
 
 std::error_code create_symlink(std::string_view target, std::string_view link) {
-#ifdef _WIN32
-    return create_link(target, link, 0);
-#else
-    return create_link(target, link);
-#endif
+    return create_link(target, link, false);
 }
 
 std::error_code create_directory_symlink(std::string_view target, std::string_view link) {
-#ifdef _WIN32
-    return create_link(target, link, SYMBOLIC_LINK_FLAG_DIRECTORY);
-#else
-    return create_link(target, link);
-#endif
+    return create_link(target, link, true);
 }
 
 }  // namespace kota::fs

@@ -32,6 +32,13 @@ public:
     using native_handle_type = int;
 #endif
 
+    /// What a closed File holds: CreateFileW never gives a null handle.
+#ifdef _WIN32
+    static constexpr native_handle_type closed = nullptr;
+#else
+    static constexpr native_handle_type closed = -1;
+#endif
+
     File() = default;
 
     File(File&& other) noexcept;
@@ -63,11 +70,7 @@ public:
 private:
     explicit File(native_handle_type handle) : handle(handle) {}
 
-#ifdef _WIN32
-    native_handle_type handle = nullptr;
-#else
-    native_handle_type handle = -1;
-#endif
+    native_handle_type handle = closed;
 };
 
 /// The bytes of a file. Read, not mapped: on Windows a mapped file keeps an
@@ -79,7 +82,8 @@ std::error_code write_file(std::string_view path, std::string_view bytes);
 
 /// Writes `bytes` as the whole of a file through a sibling renamed over it,
 /// so a reader sees the old bytes or the new, never a part, and concurrent
-/// writers never mix. It does not wait for the bytes to reach the disk.
+/// writers never mix. A symlink at `path` is replaced, not written through.
+/// It does not wait for the bytes to reach the disk.
 std::error_code write_file_atomic(std::string_view path, std::string_view bytes);
 
 /// Creates an empty file in `directory`, named `prefix`, random characters

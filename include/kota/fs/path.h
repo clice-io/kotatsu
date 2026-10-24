@@ -65,6 +65,7 @@ struct Root {
 /// Whether `c` separates components.
 bool is_separator(char c, Style style = native_style);
 
+/// The root `p` starts with: its prefix and the separators after it.
 Root root(std::string_view p, Style style = native_style);
 
 /// Whether `p` names the same file whatever the current directory: on
@@ -81,13 +82,14 @@ bool has_root(std::string_view p, Style style = native_style);
 /// separators make none.
 std::vector<std::string_view> components(std::string_view p, Style style = native_style);
 
-/// The last name: `b` of `a/b` and of `a/b/`; empty when there is none
-/// (`/`, `C:`, ``).
+/// The last name: `b` of `a/b` and of `a/b/`; empty when there is none, as
+/// in `/` and `C:`.
 std::string_view filename(std::string_view p, Style style = native_style);
 
 /// `p` without its last name and the separators before it, its root kept:
-/// `a` of `a/b/`, `/` of `/a`, `C:` of `C:x`; empty when `p` has no name
-/// (`/`, `a` has the empty parent too).
+/// `a` of `a/b/`, `/` of `/a`, `C:` of `C:x`. Empty for a path of one
+/// relative name (`a`) and for one with no name (`/`): neither has a parent
+/// to walk up to.
 std::string_view parent(std::string_view p, Style style = native_style);
 
 /// The filename up to its extension: `archive.tar` of `archive.tar.gz`; a
@@ -155,7 +157,8 @@ bool is_within(std::string_view p, std::string_view ancestor, Style style = nati
 std::string to_slash(std::string_view p, Style style = native_style);
 
 /// A Windows path with each `/` turned into `\`, the way Windows programs
-/// print paths.
+/// print paths; a verbatim one, where `/` is a name's character, comes back
+/// as it is.
 std::string to_backslash(std::string_view p);
 
 }  // namespace kota::fs::path

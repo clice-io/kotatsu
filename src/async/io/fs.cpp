@@ -13,17 +13,13 @@ namespace kota::fs::async {
 
 namespace {
 
-/// Runs a libuv fs call synchronously; returns what it returned, which is
-/// an error below zero.
+/// Runs a libuv fs call synchronously, for a cleanup with no one to tell
+/// how it went.
 template <typename Submit, typename... Args>
-result<std::size_t> run_sync(Submit submit, Args... args) {
+void run_sync(Submit submit, Args... args) {
     uv_fs_t req;
-    auto status = submit(nullptr, &req, args..., nullptr);
+    submit(nullptr, &req, args..., nullptr);
     ::uv_fs_req_cleanup(&req);
-    if(status < 0) {
-        return outcome_error(error(status));
-    }
-    return static_cast<std::size_t>(status);
 }
 
 /// The value of a request that makes nothing.

@@ -8,6 +8,8 @@
 #include <string_view>
 #include <system_error>
 
+#include "kota/support/utf8.h"
+
 namespace kota {
 
 /// A UTF-16 code unit type: char16_t, or wchar_t where it is 16-bit (Windows).
@@ -65,50 +67,16 @@ std::expected<std::basic_string<Char>, std::error_code> to_utf16(std::string_vie
     std::basic_string<Char> result;
     result.reserve(text.size());
     for(std::size_t at = 0; at < text.size();) {
-        auto lead = static_cast<unsigned char>(text[at]);
-        if(lead < 0x80) {
-            result.push_back(static_cast<Char>(lead));
-            ++at;
-            continue;
-        }
-        // The range of the second byte narrows for the leads whose code
-        // points would be overlong or past U+10FFFF. Unlike UTF-8, `ED` takes
-        // A0..BF too: the lone surrogates.
-        std::size_t need = 0;
-        char32_t code_point = 0;
-        unsigned char low = 0x80;
-        unsigned char high = 0xBF;
-        if(lead >= 0xC2 && lead <= 0xDF) {
-            need = 2;
-            code_point = lead & 0x1F;
-        } else if(lead >= 0xE0 && lead <= 0xEF) {
-            need = 3;
-            code_point = lead & 0x0F;
-            low = lead == 0xE0 ? 0xA0 : low;
-        } else if(lead >= 0xF0 && lead <= 0xF4) {
-            need = 4;
-            code_point = lead & 0x07;
-            low = lead == 0xF0 ? 0x90 : low;
-            high = lead == 0xF4 ? 0x8F : high;
-        } else {
+        auto sequence = detail::decode_sequence(text.substr(at), true);
+        if(!sequence.valid) {
             return invalid;
         }
-        if(text.size() - at < need) {
-            return invalid;
-        }
-        for(std::size_t i = 1; i < need; ++i) {
-            auto next = static_cast<unsigned char>(text[at + i]);
-            if(next < low || next > high) {
-                return invalid;
-            }
-            code_point = (code_point << 6) | (next & 0x3F);
-            low = 0x80;
-            high = 0xBF;
-        }
+        at += sequence.length;
+        auto code_point = sequence.code_point;
         // A high surrogate right before a low one (`ED B0..BF`): CESU-8.
-        if(code_point >= 0xD800 && code_point <= 0xDBFF && text.size() - at - need >= 2 &&
-           static_cast<unsigned char>(text[at + need]) == 0xED &&
-           (static_cast<unsigned char>(text[at + need + 1]) & 0xF0) == 0xB0) {
+        if(code_point >= 0xD800 && code_point <= 0xDBFF && text.size() - at >= 2 &&
+           static_cast<unsigned char>(text[at]) == 0xED &&
+           (static_cast<unsigned char>(text[at + 1]) & 0xF0) == 0xB0) {
             return invalid;
         }
         if(code_point < 0x10000) {
@@ -118,7 +86,6 @@ std::expected<std::basic_string<Char>, std::error_code> to_utf16(std::string_vie
             result.push_back(static_cast<Char>(0xD800 + (code_point >> 10)));
             result.push_back(static_cast<Char>(0xDC00 + (code_point & 0x3FF)));
         }
-        at += need;
     }
     return result;
 }

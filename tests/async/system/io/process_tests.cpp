@@ -15,10 +15,10 @@
 
 #include "async/harness/io.h"
 #include "async/harness/os.h"
-#include "kota/fs/file.h"
 #include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/fs/file.h"
 #include "kota/async/async.h"
 
 namespace kota {

@@ -5,10 +5,10 @@
 #include <vector>
 
 #include "fs/harness/files.h"
+#include "kota/zest/zest.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/file.h"
 #include "kota/fs/status.h"
-#include "kota/zest/zest.h"
 
 namespace kota::fs {
 

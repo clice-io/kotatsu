@@ -62,11 +62,12 @@ struct Status {
 
 /// The status of what `path` names, symlinks followed.
 ///
-/// Windows has no status by name before Windows 11 24H2, where it is taken
-/// by name; elsewhere it opens the file, asking for no access, so that no
-/// sharing mode refuses it. A file no open reaches, such as a running
-/// system's page file, is asked through its directory's listing instead,
-/// which tells no change time, ID or links.
+/// Windows has a status by name from Windows 11 24H2 on, which this takes
+/// but for a link to follow or a file on another machine; otherwise it
+/// opens the file, asking for no access, so that no sharing mode refuses
+/// it. A file no open reaches, such as a running system's page file, is
+/// asked through its directory's listing instead, which tells no change
+/// time, ID or links.
 std::expected<Status, std::error_code> status(std::string_view path);
 
 /// The status of `path` itself: a symlink, or a junction on Windows, is not
@@ -89,7 +90,9 @@ bool is_directory(std::string_view path);
 /// error.
 bool is_symlink(std::string_view path);
 
-/// Whether `a` and `b` name the same file, symlinks followed: equal file IDs.
+/// Whether `a` and `b` name the same file, symlinks followed: equal file
+/// IDs. Fails with std::errc::not_supported for a file without one: a
+/// device, a pipe, a file only a directory listing reaches.
 std::expected<bool, std::error_code> equivalent(std::string_view a, std::string_view b);
 
 }  // namespace kota::fs

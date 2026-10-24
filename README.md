@@ -28,14 +28,14 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - pipes, TCP sockets, TCP acceptors, console / TTY streams
   - UDP sockets with multicast and per-packet send/recv
 - Child process API (`process::spawn`) with stdio piping, environment changes, async wait/kill, exit statuses that tell how the child ended, and resource-usage reporting; `process::capture` runs a child to its exit and returns its output, killing it if cancelled.
-- Async filesystem API covering the full libuv fs surface (stat / mkdir / scandir / chmod / link / rename / sendfile / utime / mkstemp / …).
+- Async filesystem API, `kota::fs::async`, covering the full libuv fs surface on libuv's thread pool (stat / mkdir / scandir / chmod / link / rename / sendfile / utime / mkstemp / …); `fs` below does the same synchronously, without libuv.
 - Libuv watcher wrappers: timer, idle, prepare, check, signal, plus a `sleep` helper.
 
 > **Filesystem-change notifications** are no longer provided. The former `fs_event`
 > watcher has been removed — the underlying platform backends proved hard to use and
 > unreliable across OSes. For change detection, build a periodic poll on top of the
 > existing primitives: a `kota::timer` firing at your desired interval combined with
-> `fs::stat` (comparing mtime / size) gives predictable, portable "did this path
+> `fs::status` (comparing mtime / size) gives predictable, portable "did this path
 > change?" semantics without the platform-specific pitfalls.
 
 - Blocking-work offload via `queue(fn, loop)` onto the libuv thread pool.
@@ -134,6 +134,16 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Failure reporting uses `std::source_location` to point at the failing expression.
 - `kota::zest::LoopFixture` (`kota/zest/async.h`, target `kota::zest::async`) for tests of `async` code: it owns an event loop, and its `run(tasks...)` runs the tasks until every one has finished and returns what each ended with, failing the test when they outlast its `watchdog`.
 
+### `fs` (`include/kota/fs/*`)
+
+Synchronous paths and files on UTF-8 strings, depending on `support` alone (no libuv, no async), so that a library injected into other processes can use it.
+
+- Lexical paths (`path.h`): roots, components, `join`, `normalize`, `relative`, `strip_prefix`, in the POSIX or the Windows style on any host. Windows roots follow drives, UNC shares, device and verbatim (`\\?\`) prefixes; `..` never climbs past a root.
+- Status (`status.h`): `status` / `symlink_status` with file IDs, change time and link counts; on Windows by name where the system allows, junctions and symlinks reported as links.
+- Directories and files (`directory.h`, `file.h`): `read_dir` (with statuses from the listing on Windows), `create_directories`, `remove` and `rename` with POSIX semantics on Windows, `remove_all` that never follows a link, `File`, `read_file`, `write_file_atomic`, `create_temp_file`.
+- Resolution (`resolve.h`): `canonical`, `weakly_canonical` for paths that may not exist yet, `absolute`, `current_dir`.
+- The Windows boundary (`windows.h`): UTF-8 paths as the wide, `\\?\`-prefixed paths the file functions take, and Win32 errors as `std::error_code`; Cygwin and MSYS2 mount tables (`cygwin.h`).
+
 ### `support` (`include/kota/support/*`)
 
 - Callable and function-signature traits (`function_traits.h`): `is_function_pointer_v`, `is_functor_v`, and `function_traits<Fn>` exposing `return_type`, `args_type`, `args_count`, plus `member_traits<M C::*>`.
@@ -142,13 +152,14 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - `small_vector<T, N>` / `hybrid_vector<T>` — SBO vectors with per-element-size tuned size types
   - `small_string<N>` — SBO string, shares layout with `small_vector<char>`
 - Compile-time string utilities: `string_ref`.
+- Text encodings: UTF-8 checks (`utf8.h`) and WTF-8 ↔ UTF-16 conversion (`utf16.h`), which keeps a Windows name's lone surrogates.
 - Naming-convention conversion (`naming.h`): identity, lower-snake, lower-camel, upper-camel, upper-snake.
 - Type-level utilities: `type_list<Ts...>`, `tuple_traits`, `type_traits`, `expected_try`, `comptime` helpers, and miscellaneous `memory` / `ranges` / `functional` adapters.
 
 ## Using kotatsu from Bazel
 
 kotatsu is a Bazel module (Bazel 9). The targets are one per module:
-`@kotatsu//:support`, `:meta`, `:codec` with the backends `:codec_json`,
+`@kotatsu//:support`, `:fs`, `:meta`, `:codec` with the backends `:codec_json`,
 `:codec_toml` and `:codec_flatbuffers`, `:option`, `:deco`, `:async`, `:ipc`
 with `:ipc_json` (JSON-RPC) and `:ipc_lsp`, and `:zest` with `:zest_async`;
 HTTP builds with CMake only for now.
@@ -181,6 +192,7 @@ include/kota/
   async/       # Coroutine runtime, event loop, I/O, sync primitives, cancellation
   codec/       # Attribute-driven serde framework + JSON / Bincode / TOML / FlatBuffers backends, and zero-copy blobs
   deco/        # Declarative CLI layer on top of option + meta
+  fs/          # Synchronous paths, file status, directories and files
   http/        # HTTP client on libcurl and the async runtime
   ipc/         # JSON-RPC peer, transport, codecs
     lsp/       # Generated LSP protocol model + URI / position / progress helpers
@@ -193,6 +205,7 @@ src/
   async/       # Async runtime implementations
   codec/       # Codec backend implementations (content / FlatBuffers)
   deco/        # Deco runtime and text rendering
+  fs/          # File system implementations, POSIX and Windows
   http/        # HTTP client implementation
   ipc/         # IPC peer and transport implementations
     lsp/       # URI / position implementations

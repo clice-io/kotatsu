@@ -5,9 +5,9 @@
 #include <vector>
 
 #include "fs/harness/files.h"
+#include "kota/zest/zest.h"
 #include "kota/fs/cygwin.h"
 #include "kota/fs/path.h"
-#include "kota/zest/zest.h"
 
 namespace kota::fs::cygwin {
 

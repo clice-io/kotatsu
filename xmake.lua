@@ -233,7 +233,7 @@ if has_config("ztest") then
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(kota/zest/**)")
 		add_rules("cl-flags")
-		add_deps("support", "deco", "async")
+		add_deps("support", "deco", "async", "fs")
 		add_packages("cpptrace", { public = true })
 		if is_plat("windows", "mingw") then
 			add_syslinks("shell32")

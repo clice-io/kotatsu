@@ -7,14 +7,14 @@
 #include <windows.h>
 
 #include "fs/harness/files.h"
+#include "kota/zest/zest.h"
+#include "kota/support/utf16.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/file.h"
 #include "kota/fs/path.h"
 #include "kota/fs/resolve.h"
 #include "kota/fs/status.h"
 #include "kota/fs/windows.h"
-#include "kota/zest/zest.h"
-#include "kota/support/utf16.h"
 
 namespace kota::fs::windows {
 

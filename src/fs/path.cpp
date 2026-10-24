@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstddef>
 
+#include "kota/support/string_ref.h"
+
 namespace kota::fs::path {
 
 namespace {
@@ -54,8 +56,8 @@ Root windows_prefix(std::string_view p) {
             auto found = p.find('\\', at);
             return found == std::string_view::npos ? p.size() : found;
         };
-        if(rest.size() >= 3 && ascii_lower(rest[0]) == 'u' && ascii_lower(rest[1]) == 'n' &&
-           ascii_lower(rest[2]) == 'c' && (rest.size() == 3 || rest[3] == '\\')) {
+        if(string_ref(rest).starts_with_insensitive("unc") &&
+           (rest.size() == 3 || rest[3] == '\\')) {
             auto server_end = component_end(std::min(p.size(), std::size_t{8}));
             auto share_end = server_end < p.size() ? component_end(server_end + 1) : server_end;
             return prefix_of(Prefix::VerbatimUNC, share_end);
@@ -114,7 +116,7 @@ bool same_prefix(const Root& a, const Root& b, Style style) {
     for(std::size_t i = 0; i < a.name.size(); ++i) {
         auto x = a.name[i];
         auto y = b.name[i];
-        if(is_separator(x, style) && is_separator(y, style)) {
+        if(separates(x, style, a.prefix) && separates(y, style, b.prefix)) {
             continue;
         }
         if(ascii_lower(x) != ascii_lower(y)) {
@@ -216,17 +218,12 @@ std::string_view filename(std::string_view p, Style style) {
 }
 
 std::string_view parent(std::string_view p, Style style) {
-    auto r = root(p, style);
-    auto root_end = r.name.size() + r.directory.size();
     auto name = filename(p, style);
     if(name.empty()) {
         return {};
     }
-    auto end = static_cast<std::size_t>(name.data() - p.data());
-    while(end > root_end && separates(p[end - 1], style, r.prefix)) {
-        --end;
-    }
-    return p.substr(0, end);
+    auto before = p.substr(0, static_cast<std::size_t>(name.data() - p.data()));
+    return before.substr(0, trimmed_end(before, root(p, style), style));
 }
 
 std::string_view stem(std::string_view p, Style style) {
@@ -412,7 +409,9 @@ std::string to_slash(std::string_view p, Style style) {
 
 std::string to_backslash(std::string_view p) {
     std::string result(p);
-    std::ranges::replace(result, '/', '\\');
+    if(!is_verbatim(root(p, Style::Windows).prefix)) {
+        std::ranges::replace(result, '/', '\\');
+    }
     return result;
 }
 

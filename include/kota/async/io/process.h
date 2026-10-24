@@ -80,7 +80,7 @@ public:
         int descriptor = -1;
 
         /// Handle to inherit when type == file.
-        fs::File::native_handle_type file_handle = {};
+        fs::File::native_handle_type file_handle = fs::File::closed;
 
         /// Child-readable flag when type == pipe.
         bool readable = false;  // from the child's perspective

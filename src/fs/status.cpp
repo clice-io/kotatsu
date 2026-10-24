@@ -79,7 +79,13 @@ std::expected<Status, std::error_code> handle_status(HANDLE handle) {
         case FILE_TYPE_DISK: break;
         case FILE_TYPE_CHAR: return Status{.type = FileType::Character};
         case FILE_TYPE_PIPE: return Status{.type = FileType::Fifo};
-        default: return std::unexpected(windows::last_error());
+        default: {
+            // FILE_TYPE_UNKNOWN, and an error only when one is set.
+            if(auto error = ::GetLastError(); error != NO_ERROR) {
+                return std::unexpected(windows::to_error_code(error));
+            }
+            return Status{.type = FileType::Unknown};
+        }
     }
     FILE_BASIC_INFO basic;
     FILE_STANDARD_INFO standard;
@@ -95,26 +101,16 @@ std::expected<Status, std::error_code> handle_status(HANDLE handle) {
         }
         tag = info.ReparseTag;
     }
-    FileId id;
-    FILE_ID_INFO file_id;
-    if(::GetFileInformationByHandleEx(handle, FileIdInfo, &file_id, sizeof(file_id))) {
-        id = win32::id_of(file_id.VolumeSerialNumber, file_id.FileId);
-    } else {
-        // A file system without 128-bit IDs (FAT): the 64-bit index, widened
-        // as the by-name query reports it.
-        BY_HANDLE_FILE_INFORMATION info;
-        if(!::GetFileInformationByHandle(handle, &info)) {
-            return std::unexpected(windows::last_error());
-        }
-        id = {.device = info.dwVolumeSerialNumber,
-              .file = (std::uint64_t(info.nFileIndexHigh) << 32) | info.nFileIndexLow};
+    auto id = win32::file_id(handle);
+    if(!id) {
+        return std::unexpected(id.error());
     }
     return Status{
         .type = win32::type_of(basic.FileAttributes, tag),
         .size = static_cast<std::uint64_t>(standard.EndOfFile.QuadPart),
         .mtime_ns = win32::unix_ns(basic.LastWriteTime.QuadPart),
         .ctime_ns = win32::unix_ns(basic.ChangeTime.QuadPart),
-        .id = id,
+        .id = *id,
         .links = standard.NumberOfLinks,
     };
 }
@@ -258,6 +254,11 @@ std::expected<bool, std::error_code> equivalent(std::string_view a, std::string_
     auto second = status(b);
     if(!second) {
         return std::unexpected(second.error());
+    }
+    // A device, a pipe and a file only a directory listing reaches have no
+    // ID to tell them apart.
+    if(first->id == FileId{} || second->id == FileId{}) {
+        return std::unexpected(std::make_error_code(std::errc::not_supported));
     }
     return first->id == second->id;
 }

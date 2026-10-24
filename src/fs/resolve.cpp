@@ -7,7 +7,6 @@
 
 #ifdef _WIN32
 #include "win32.h"
-#include "kota/support/utf16.h"
 #else
 #include <cerrno>
 #include <unistd.h>
@@ -19,7 +18,7 @@ namespace kota::fs {
 
 std::expected<std::string, std::error_code> canonical(std::string_view path) {
 #ifdef _WIN32
-    auto handle = win32::open(path, 0, 0);
+    auto handle = win32::open(path, 0);
     if(!handle) {
         return std::unexpected(handle.error());
     }
@@ -62,7 +61,7 @@ std::string weakly_canonical(std::string_view path) {
             return path::normalize(path::join(*real, rest));
         }
         auto above = path::parent(existing);
-        if(above.empty() || above.size() == existing.size()) {
+        if(above.empty()) {
             return path::normalize(*full);
         }
         existing = above;
@@ -74,16 +73,11 @@ std::expected<std::string, std::error_code> absolute(std::string_view path) {
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
 #ifdef _WIN32
-    if(path.find('\0') != std::string_view::npos) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
-    }
-    auto wide = to_utf16<wchar_t>(path);
+    auto wide = win32::widen(path);
     if(!wide) {
         return std::unexpected(wide.error());
     }
-    auto full = win32::fill_wide([&](wchar_t* buffer, DWORD size) {
-        return ::GetFullPathNameW(wide->c_str(), size, buffer, nullptr);
-    });
+    auto full = win32::full_path(*wide);
     if(!full) {
         return std::unexpected(full.error());
     }

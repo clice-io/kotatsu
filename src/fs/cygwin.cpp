@@ -4,23 +4,12 @@
 #include <cstddef>
 #include <ranges>
 
+#include "kota/support/string_ref.h"
+#include "kota/support/utf16.h"
 #include "kota/fs/file.h"
 #include "kota/fs/status.h"
-#include "kota/support/utf16.h"
 
 namespace kota::fs::cygwin {
-
-namespace {
-
-bool equals_insensitive(std::string_view a, std::string_view b) {
-    auto lower = [](char c) {
-        return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
-    };
-    return a.size() == b.size() &&
-           std::ranges::equal(a, b, [&](char x, char y) { return lower(x) == lower(y); });
-}
-
-}  // namespace
 
 bool is_posix_path(std::string_view path, path::Style style) {
     return path.starts_with('/') && !path::is_absolute(path, style);
@@ -58,14 +47,15 @@ std::string MountTable::to_windows(std::string_view posix) const {
         bool drive = directory.size() == 2 && directory[1] == ':';
         std::string_view rest = folded;
         auto head = rest.substr(0, point.size());
-        if(!(drive ? equals_insensitive(head, point) : head == point)) {
+        if(!(drive ? string_ref(head).equals_insensitive(point) : head == point)) {
             continue;
         }
         rest.remove_prefix(head.size());
         if(point != "/" && !rest.empty() && !rest.starts_with('/')) {
             continue;
         }
-        while(rest.starts_with('/')) {
+        // Normalized, it has one separator here at most.
+        if(rest.starts_with('/')) {
             rest.remove_prefix(1);
         }
         std::string windows = directory;
