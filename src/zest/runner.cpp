@@ -20,6 +20,7 @@
 #include "kota/zest/runner/run.h"
 #include "kota/zest/snapshot/snapshot.h"
 #include "kota/support/glob_pattern.h"
+#include "kota/sys/process.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -29,8 +30,6 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
-// shellapi.h builds on the declarations windows.h makes.
-#include <shellapi.h>
 #ifdef _MSC_VER
 #include <crtdbg.h>
 #include <cstdlib>
@@ -98,28 +97,6 @@ void silence_crash_dialogs() {
     _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
 #endif
-#endif
-}
-
-/// This program's argv, which workers start with.
-std::vector<std::string> program_args([[maybe_unused]] int argc,
-                                      [[maybe_unused]] const char* const* argv) {
-#ifdef _WIN32
-    // `argv` is in the ANSI code page, which may not hold every character of
-    // the command line; the wide one does, and workers are spawned from UTF-8.
-    int count = 0;
-    auto wide = CommandLineToArgvW(GetCommandLineW(), &count);
-    std::vector<std::string> args;
-    for(int i = 0; i < count; ++i) {
-        auto size = WideCharToMultiByte(CP_UTF8, 0, wide[i], -1, nullptr, 0, nullptr, nullptr);
-        std::string arg(static_cast<std::size_t>(size - 1), '\0');
-        WideCharToMultiByte(CP_UTF8, 0, wide[i], -1, arg.data(), size, nullptr, nullptr);
-        args.push_back(std::move(arg));
-    }
-    LocalFree(wide);
-    return args;
-#else
-    return {argv, argv + argc};
 #endif
 }
 
@@ -472,7 +449,7 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
         fatal_notice = nullptr;
     } else {
         PoolOptions pool{
-            .args = program_args(argc, argv),
+            .args = sys::arguments(argc, argv),
             .jobs = *options.jobs,
             .timeout = std::chrono::seconds(*options.timeout),
         };

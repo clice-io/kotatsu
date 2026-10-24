@@ -7,7 +7,6 @@
 #include "kota/async/io/process.h"
 #include "kota/async/io/request.h"
 #include "kota/async/io/stream.h"
-#include "kota/async/io/system.h"
 #include "kota/async/io/udp.h"
 #include "kota/async/io/watcher.h"
 #include "kota/async/runtime/cancellation.h"

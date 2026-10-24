@@ -15,10 +15,11 @@
 
 #include "execution.h"
 #include "kota/fs/file.h"
+#include "kota/sys/info.h"
+#include "kota/sys/process.h"
 #include "kota/async/io/loop.h"
 #include "kota/async/io/process.h"
 #include "kota/async/io/stream.h"
-#include "kota/async/io/system.h"
 #include "kota/async/io/watcher.h"
 #include "kota/async/runtime/task.h"
 
@@ -389,7 +390,7 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
     auto run_all = [&]() -> task<> {
         std::size_t next = 0;
         std::vector<task<>> workers;
-        auto jobs = options.jobs != 0 ? options.jobs : std::max(1u, sys::parallelism());
+        auto jobs = options.jobs != 0 ? options.jobs : sys::parallelism();
         auto count = std::min<std::size_t>(jobs, concurrent.size());
         for(std::size_t slot = 0; slot < count; ++slot) {
             workers.push_back(pool.drive(concurrent, next));

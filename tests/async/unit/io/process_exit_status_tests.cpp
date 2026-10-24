@@ -27,9 +27,12 @@ ZEST_CASE(to_string_tells_how_the_child_ended) {
 #ifdef _WIN32
 ZEST_CASE(to_string_names_a_windows_crash) {
     ZEXPECT(exit_status{.status = 0xC000'0005, .term_signal = 0}.to_string() ==
-            "exception 0xC0000005 (access violation)");
+            "exception 0xC0000005 (STATUS_ACCESS_VIOLATION)");
     ZEXPECT(exit_status{.status = 0xC000'0135, .term_signal = 0}.to_string() ==
-            "exception 0xC0000135");
+            "exception 0xC0000135 (STATUS_DLL_NOT_FOUND)");
+    // No status of the table.
+    ZEXPECT(exit_status{.status = 0xC000'0001, .term_signal = 0}.to_string() ==
+            "exception 0xC0000001");
 }
 #endif
 

@@ -1,8 +1,8 @@
 #pragma once
 
 // What system tests take from the operating system without kota::async:
-// TempDir, read_text() and write_text() from fs's harness, ScopedVariable in
-// the environment, stdin_reader() for a child that runs until its stdin
+// TempDir, read_text() and write_text() from fs's harness, ScopedEnv from
+// sys's harness, stdin_reader() for a child that runs until its stdin
 // closes and exit_status_of() for how it ended, open_fd(), create_pipe(),
 // close_fd() and write_fd() on raw descriptors, and BusyPool, which holds
 // libuv's thread pool busy.
@@ -31,35 +31,11 @@ using ssize_t = SSIZE_T;
 #endif
 
 #include "fs/harness/files.h"
+#include "sys/harness/env.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
 
 namespace kota::test {
-
-/// A variable of this process's environment, set for as long as this lives.
-struct ScopedVariable {
-    ScopedVariable(std::string name, const std::string& value) : name(std::move(name)) {
-#ifdef _WIN32
-        ::_putenv_s(this->name.c_str(), value.c_str());
-#else
-        ::setenv(this->name.c_str(), value.c_str(), 1);
-#endif
-    }
-
-    ScopedVariable(const ScopedVariable&) = delete;
-    ScopedVariable& operator=(const ScopedVariable&) = delete;
-
-    ~ScopedVariable() {
-#ifdef _WIN32
-        // An empty value removes it.
-        ::_putenv_s(name.c_str(), "");
-#else
-        ::unsetenv(name.c_str());
-#endif
-    }
-
-    const std::string name;
-};
 
 /// A child that reads its stdin pipe, so it runs until the pipe closes or it
 /// is killed: cat, or more.com on Windows.
