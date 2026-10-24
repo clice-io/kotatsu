@@ -9,6 +9,11 @@
 #include <span>
 #include <string_view>
 #include <utility>
+#include <vector>
+
+#ifdef _WIN32
+#include <io.h>
+#endif
 
 #include "stream_self.h"
 #include "kota/support/string_ref.h"
@@ -238,6 +243,10 @@ process::stdio process::stdio::from_fd(int fd) {
     return stdio{.type = kind::fd, .descriptor = fd};
 }
 
+process::stdio process::stdio::from_file(const fs::File& file) {
+    return stdio{.type = kind::file, .file_handle = file.native_handle()};
+}
+
 process::stdio process::stdio::pipe(bool readable, bool writable) {
     return stdio{.type = kind::pipe, .readable = readable, .writable = writable};
 }
@@ -260,6 +269,19 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
 
     std::array<pipe, 3> pipes;
     std::array<uv_stdio_container_t, 3> stdio_containers{};
+#ifdef _WIN32
+    // libuv takes a CRT descriptor, which owns the handle it wraps: each
+    // file's handle is duplicated into one, closed once the child started.
+    struct Wrapped {
+        std::vector<int> fds;
+
+        ~Wrapped() {
+            for(int fd: fds) {
+                ::_close(fd);
+            }
+        }
+    } wrapped;
+#endif
     for(std::size_t i = 0; i < opts.streams.size(); ++i) {
         const auto& config = opts.streams[i];
         auto& container = stdio_containers[i];
@@ -273,6 +295,31 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
                 container.flags = UV_INHERIT_FD;
                 container.data.fd = config.descriptor;
                 break;
+            case stdio::kind::file: {
+                container.flags = UV_INHERIT_FD;
+#ifdef _WIN32
+                HANDLE duplicate = nullptr;
+                if(!::DuplicateHandle(::GetCurrentProcess(),
+                                      config.file_handle,
+                                      ::GetCurrentProcess(),
+                                      &duplicate,
+                                      0,
+                                      FALSE,
+                                      DUPLICATE_SAME_ACCESS)) {
+                    return outcome_error(
+                        error(::uv_translate_sys_error(static_cast<int>(::GetLastError()))));
+                }
+                container.data.fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(duplicate), 0);
+                if(container.data.fd < 0) {
+                    ::CloseHandle(duplicate);
+                    return outcome_error(error::too_many_open_files);
+                }
+                wrapped.fds.push_back(container.data.fd);
+#else
+                container.data.fd = config.file_handle;
+#endif
+                break;
+            }
             case stdio::kind::pipe: {
                 int flags = UV_CREATE_PIPE;
                 if(config.readable) {

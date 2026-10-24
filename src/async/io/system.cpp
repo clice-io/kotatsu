@@ -6,7 +6,7 @@
 #include <charconv>
 #include <unistd.h>
 
-#include "kota/async/io/fs.h"
+#include "kota/fs/file.h"
 #elif defined(__APPLE__)
 #include <libproc.h>
 #include <mach/mach.h>
@@ -189,7 +189,7 @@ result<process_stat> process(int pid) {
 
     // Memory from /proc/<pid>/statm: "vsize_pages rss_pages ..." (all in pages).
     {
-        auto content = fs::sync::read_to_string(proc_path + "/statm");
+        auto content = fs::read_file(proc_path + "/statm");
         if(!content) {
             return outcome_error(error::no_such_process);
         }
@@ -209,7 +209,7 @@ result<process_stat> process(int pid) {
     // Format: "pid (comm) state ppid(4) ... minflt(10) cminflt(11)
     //          majflt(12) cmajflt(13) utime(14) stime(15) ..."
     {
-        auto content = fs::sync::read_to_string(proc_path + "/stat");
+        auto content = fs::read_file(proc_path + "/stat");
         if(content) {
             auto rp = content->rfind(')');
             if(rp != std::string::npos && rp + 1 < content->size()) {

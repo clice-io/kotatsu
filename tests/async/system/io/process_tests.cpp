@@ -18,6 +18,7 @@
 #include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/fs/file.h"
 #include "kota/async/async.h"
 
 namespace kota {
@@ -52,7 +53,7 @@ std::string trim_newlines(std::string text) {
 /// What `opts`, a shell command that writes to marker.txt, writes there when
 /// run in `dir`, or how it ended when it failed.
 task<std::string> marker_of(process::options opts, const test::TempDir& dir, event_loop& loop) {
-    opts.cwd = dir.path.string();
+    opts.cwd = dir.root();
     auto spawned = process::spawn(opts, loop);
     if(!spawned) {
         co_return std::format("spawn failed: {}", spawned.error().message());
@@ -64,7 +65,7 @@ task<std::string> marker_of(process::options opts, const test::TempDir& dir, eve
     if(!status->success()) {
         co_return status->to_string();
     }
-    co_return trim_newlines(test::read_file(dir.path / "marker.txt"));
+    co_return trim_newlines(test::read_text(dir.file("marker.txt")));
 }
 
 /// A shell command that writes variables `first` and `second` to marker.txt,
@@ -173,17 +174,35 @@ ZEST_CASE(stdin_pipe_feeds_the_child) {
 ZEST_CASE(stdout_goes_to_a_given_descriptor) {
     test::TempDir dir;
     auto path = dir.file("stdout.txt");
-    auto fd = fs::sync::open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    ZASSERT(fd.has_value());
+    int fd = test::open_fd(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    ZASSERT(fd >= 0);
     auto opts = shell(by_platform("printf kotatsu-fd", "echo kotatsu-fd"));
-    opts.streams[1] = process::stdio::from_fd(*fd);
+    opts.streams[1] = process::stdio::from_fd(fd);
     auto spawned = process::spawn(opts, loop);
-    ZEXPECT(!fs::sync::close(*fd));
+    ZEXPECT(test::close_fd(fd) == 0);
     ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
     ZEXPECT(test::exit_status_of(status) == 0);
-    ZEXPECT(trim_newlines(test::read_file(dir.path / "stdout.txt")) == "kotatsu-fd");
+    ZEXPECT(trim_newlines(test::read_text(dir.file("stdout.txt"))) == "kotatsu-fd");
+}
+
+ZEST_CASE(stdout_goes_to_an_open_file) {
+    test::TempDir dir;
+    auto file = fs::File::open(dir.file("stdout.txt"), fs::OpenMode::Write);
+    ZASSERT(file.has_value());
+    // The child writes from where the file stands.
+    ZEXPECT(!file->write("head-"));
+    auto opts = shell(by_platform("printf kotatsu-file", "echo kotatsu-file"));
+    opts.streams[1] = process::stdio::from_file(*file);
+    auto spawned = process::spawn(opts, loop);
+    // The child holds a handle of its own.
+    ZEXPECT(!file->close());
+    ZASSERT(spawned.has_value());
+
+    auto [status] = run(spawned->proc.wait());
+    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(trim_newlines(test::read_text(dir.file("stdout.txt"))) == "head-kotatsu-file");
 }
 
 ZEST_CASE(environment_and_directory_reach_the_child) {
@@ -193,13 +212,13 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
     auto opts = shell(by_platform(R"(printf "$KOTA_TEST_VALUE" > marker.txt)",
                                   ">marker.txt echo %KOTA_TEST_VALUE%"));
     opts.env = {"KOTA_TEST_VALUE=42"};
-    opts.cwd = dir.path.string();
+    opts.cwd = dir.root();
     auto spawned = process::spawn(opts, loop);
     ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
     ZEXPECT(test::exit_status_of(status) == 0);
-    ZEXPECT(trim_newlines(test::read_file(dir.path / "marker.txt")) == "42");
+    ZEXPECT(trim_newlines(test::read_text(dir.file("marker.txt"))) == "42");
 }
 
 // The changes go over the inherited environment: the child still has what
@@ -534,14 +553,14 @@ ZEST_CASE(cancelled_capture_kills_the_child) {
     test::TempDir dir;
     ZASSERT(::mkfifo(dir.file("pid").c_str(), 0600) == 0);
     ZASSERT(::mkfifo(dir.file("hold").c_str(), 0600) == 0);
-    auto pid_fifo = fs::sync::open(dir.file("pid"), O_RDWR, 0);
-    ZASSERT(pid_fifo.has_value());
-    auto hold = fs::sync::open(dir.file("hold"), O_RDWR, 0);
-    ZASSERT(hold.has_value());
-    auto reader = pipe::open(*pid_fifo, loop);
+    int pid_fifo = test::open_fd(dir.file("pid"), O_RDWR, 0);
+    ZASSERT(pid_fifo >= 0);
+    int hold = test::open_fd(dir.file("hold"), O_RDWR, 0);
+    ZASSERT(hold >= 0);
+    auto reader = pipe::open(pid_fifo, loop);
     ZASSERT(reader.has_value());
     auto opts = shell("echo $$ > pid; exec cat < hold");
-    opts.cwd = dir.path.string();
+    opts.cwd = dir.root();
     cancellation_source source;
     auto canceller = [&]() -> task<std::optional<std::string>, error> {
         auto pid = co_await reader->read_line().or_fail();
@@ -558,7 +577,7 @@ ZEST_CASE(cancelled_capture_kills_the_child) {
     const int why = errno;
     ZEXPECT(found == -1);
     ZEXPECT(why == ESRCH);
-    ZEXPECT(!fs::sync::close(*hold));
+    ZEXPECT(test::close_fd(hold) == 0);
 }
 #endif
 

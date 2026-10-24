@@ -89,7 +89,7 @@ ZEST_CASE(get_vterm_state_is_windows_only) {
 #ifndef _WIN32
 ZEST_CASE(open_on_a_regular_file_fails) {
     test::TempDir dir;
-    test::write_file(dir.path / "plain.txt", "plain");
+    test::write_text(dir.file("plain.txt"), "plain");
     int fd = ::open(dir.file("plain.txt").c_str(), O_RDONLY);
     ZASSERT(fd >= 0);
 

@@ -64,9 +64,11 @@ target_link_libraries(kota_zest PUBLIC
     kota::support
 )
 
-# Worker processes are started and driven through kota::async.
+# Worker processes are started and driven through kota::async, their logs
+# written through kota::fs.
 target_link_libraries(kota_zest PRIVATE
     kota::async
+    kota::fs
     $<$<PLATFORM_ID:Windows>:shell32>
 )
 
