@@ -574,7 +574,9 @@ std::error_code rename(std::string_view from, std::string_view to) {
     info->Flags = rename_replace | rename_posix_semantics | rename_ignore_readonly;
     info->RootDirectory = nullptr;
     info->FileNameLength = static_cast<DWORD>(name_bytes);
-    std::memcpy(info->FileName, target->c_str(), name_bytes + sizeof(wchar_t));
+    std::memcpy(buffer.data() + offsetof(RenameInfoEx, FileName),
+                target->c_str(),
+                name_bytes + sizeof(wchar_t));
     if(::SetFileInformationByHandle(handle.get(),
                                     rename_info_ex,
                                     info,

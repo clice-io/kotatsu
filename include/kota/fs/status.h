@@ -52,7 +52,7 @@ struct Status {
     /// (`cp -p`). Zero where the file system keeps none (FAT).
     std::int64_t ctime_ns = 0;
 
-    FileId id;
+    FileId id = {};
 
     /// The file's hard links; zero where the source does not tell.
     std::uint32_t links = 0;

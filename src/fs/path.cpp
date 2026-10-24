@@ -266,14 +266,14 @@ std::string join(std::string_view base, std::string_view p, Style style) {
     if(r.prefix != Prefix::None && !same_prefix(r, b, style)) {
         return std::string(p);
     }
+    // A rooted `\x` keeps only the base's prefix; anything else, its own
+    // prefix the base's, keeps the whole base.
+    auto rest = p.substr(r.name.size());
     std::string result;
-    std::string_view rest;
     if(!r.directory.empty()) {
         result.append(b.name);
-        rest = p.substr(r.name.size());
     } else {
         result.append(base);
-        rest = p.substr(r.name.size());
         bool ends_in_separator =
             base.size() > b.name.size() && separates(base.back(), style, b.prefix);
         if(!rest.empty() && !ends_in_separator &&
