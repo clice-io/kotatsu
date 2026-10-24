@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cstddef>
 #include <filesystem>
+#include <mutex>
 #include <set>
 #include <string>
 #include <string_view>
@@ -184,26 +185,35 @@ ZEST_CASE(write_file_atomic_never_shows_a_part) {
         return std::string(64 * 1024, static_cast<char>('a' + writer));
     };
     ZEXPECT(!write_file_atomic(file, text_of(0)));
-    constexpr int writers = 4;
-    std::atomic<int> failures = 0;
+    // The first error each side met, which a failure reports.
+    std::mutex mutex;
+    std::error_code read_error;
+    std::error_code write_error;
+    auto keep = [&](std::error_code& first, std::error_code error) {
+        std::lock_guard lock(mutex);
+        if(!first) {
+            first = error;
+        }
+    };
     std::atomic<int> parts = 0;
     std::atomic<bool> writing = true;
     std::thread reader([&] {
         while(writing) {
             auto content = read_file(file);
             if(!content) {
-                ++failures;
+                keep(read_error, content.error());
             } else if(*content != text_of(content->empty() ? 0 : content->front() - 'a')) {
                 ++parts;
             }
         }
     });
+    constexpr int writers = 4;
     std::vector<std::thread> threads;
     for(int writer = 0; writer < writers; ++writer) {
         threads.emplace_back([&, writer] {
             for(int i = 0; i < 20; ++i) {
-                if(write_file_atomic(file, text_of(writer))) {
-                    ++failures;
+                if(auto error = write_file_atomic(file, text_of(writer))) {
+                    keep(write_error, error);
                 }
             }
         });
@@ -213,8 +223,9 @@ ZEST_CASE(write_file_atomic_never_shows_a_part) {
     }
     writing = false;
     reader.join();
-    ZEXPECT(failures == 0);
-    ZEXPECT(parts == 0);
+    ZEXPECT(read_error == std::error_code());
+    ZEXPECT(write_error == std::error_code());
+    ZEXPECT(parts.load() == 0);
     auto entries = read_dir(dir.root());
     ZASSERT(entries.has_value());
     ZEXPECT(entries->size() == 1u);
