@@ -201,6 +201,13 @@ ZEST_CASE(write_file_atomic_never_shows_a_part) {
         while(writing) {
             auto content = read_file(file);
             if(!content) {
+#ifdef _WIN32
+                // An open that races a rename may fail on Windows.
+                if(content.error() == std::errc::permission_denied ||
+                   content.error() == std::errc::no_such_file_or_directory) {
+                    continue;
+                }
+#endif
                 keep(read_error, content.error());
             } else if(*content != text_of(content->empty() ? 0 : content->front() - 'a')) {
                 ++parts;

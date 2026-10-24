@@ -85,6 +85,11 @@ std::error_code write_file(std::string_view path, std::string_view bytes);
 /// concurrent writers never mix. A symlink at `path` is replaced, not
 /// written through. It does not wait for the bytes to reach the disk: after
 /// a crash of the system, `path` may hold the old bytes, the new, or none.
+///
+/// On Windows an open of `path` that races the rename may fail, with
+/// std::errc::permission_denied or no_such_file_or_directory, while the
+/// system swaps the files under the name: a reader that sees either while
+/// writers run tries again.
 std::error_code write_file_atomic(std::string_view path, std::string_view bytes);
 
 /// Creates an empty file in `directory`, named `prefix`, random characters
