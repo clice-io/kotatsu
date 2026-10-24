@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "kota/fs/file.h"
 #include "kota/async/io/loop.h"
 #include "kota/async/io/stream.h"
 #include "kota/async/runtime/task.h"
@@ -66,6 +67,8 @@ public:
             ignore,
             /// Inherit a given file descriptor.
             fd,
+            /// Inherit an open file's handle.
+            file,
             /// Create a pipe.
             pipe,
         };
@@ -75,6 +78,9 @@ public:
 
         /// Descriptor to inherit when type == fd.
         int descriptor = -1;
+
+        /// Handle to inherit when type == file.
+        fs::File::native_handle_type file_handle = {};
 
         /// Child-readable flag when type == pipe.
         bool readable = false;  // from the child's perspective
@@ -90,6 +96,11 @@ public:
 
         /// Duplicate the given descriptor into the child.
         static stdio from_fd(int fd);
+
+        /// Duplicate an open file's handle into the child, which reads it
+        /// or writes it from where the file stands; `file` may close once
+        /// the child has started.
+        static stdio from_file(const fs::File& file);
 
         /// Create a pipe; flags are from the child's perspective.
         static stdio pipe(bool readable, bool writable);

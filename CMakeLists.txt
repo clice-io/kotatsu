@@ -386,6 +386,7 @@ endif()
 
 add_subdirectory(src/meta)
 add_subdirectory(src/support)
+add_subdirectory(src/fs)
 add_subdirectory(src/codec)
 
 if(KOTA_ENABLE_DECO)

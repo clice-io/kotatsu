@@ -2,7 +2,6 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
-#include <fcntl.h>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -15,7 +14,7 @@
 #include <vector>
 
 #include "execution.h"
-#include "kota/async/io/fs.h"
+#include "kota/fs/file.h"
 #include "kota/async/io/loop.h"
 #include "kota/async/io/process.h"
 #include "kota/async/io/stream.h"
@@ -145,12 +144,12 @@ struct Pool {
         // Each worker gets a fresh log: a killed worker's leftover children may
         // still be writing to the old one.
         auto log = directory / std::format("{}.log", started++);
-        // O_EXCL: names never repeat within a run, so a file already there
-        // was planted by someone else.
-        auto fd = fs::sync::open(utf8(log), O_WRONLY | O_CREAT | O_EXCL, 0600);
-        if(!fd) {
+        // Created new: names never repeat within a run, so a file already
+        // there was planted by someone else.
+        auto file = fs::File::open(utf8(log), fs::OpenMode::CreateNew);
+        if(!file) {
             co_return std::unexpected(WorkerFailure{
-                .detail = std::format("cannot create {}: {}", utf8(log), fd.error().message()),
+                .detail = std::format("cannot create {}: {}", utf8(log), file.error().message()),
             });
         }
 
@@ -163,11 +162,11 @@ struct Pool {
                            protocol::worker_flag);
         spawn.streams = {
             process::stdio::pipe(true, true),
-            process::stdio::from_fd(*fd),
-            process::stdio::from_fd(*fd),
+            process::stdio::from_file(*file),
+            process::stdio::from_file(*file),
         };
         auto spawned = process::spawn(spawn);
-        [[maybe_unused]] auto closed = fs::sync::close(*fd);
+        [[maybe_unused]] auto closed = file->close();
         if(!spawned) {
             co_return std::unexpected(WorkerFailure{
                 .detail = std::format("cannot start a worker: {}", spawned.error().message()),

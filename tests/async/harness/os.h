@@ -1,11 +1,11 @@
 #pragma once
 
 // What system tests take from the operating system without kota::async:
-// TempDir, read_file() and write_file(), ScopedVariable in the environment,
-// stdin_reader() for a child that runs until its stdin closes and
-// exit_status_of() for how it ended, create_pipe(), close_fd() and
-// write_fd() on raw descriptors, and BusyPool, which holds libuv's thread
-// pool busy.
+// TempDir from fs's harness, read_file() and write_file(), ScopedVariable in
+// the environment, stdin_reader() for a child that runs until its stdin
+// closes and exit_status_of() for how it ended, open_fd(), create_pipe(),
+// close_fd() and write_fd() on raw descriptors, and BusyPool, which holds
+// libuv's thread pool busy.
 
 #include <algorithm>
 #include <atomic>
@@ -13,12 +13,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
-#include <format>
 #include <fstream>
 #include <iterator>
 #include <latch>
 #include <optional>
-#include <random>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -31,51 +29,15 @@
 #include <io.h>
 using ssize_t = SSIZE_T;
 #else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
+#include "fs/harness/files.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"
 
 namespace kota::test {
-
-/// A directory of its own under the system temp directory, removed with
-/// everything in it when this goes, or when a failed ZASSERT ends the process.
-struct TempDir {
-    TempDir() : path(create()) {}
-
-    ~TempDir() {
-        remove();
-    }
-
-    TempDir(const TempDir&) = delete;
-    TempDir& operator=(const TempDir&) = delete;
-
-    /// `name` inside the directory, as the string kota::async takes.
-    std::string file(std::string_view name) const {
-        return (path / name).string();
-    }
-
-    const std::filesystem::path path;
-
-private:
-    void remove() const {
-        std::error_code ignored;
-        std::filesystem::remove_all(path, ignored);
-    }
-
-    zest::FatalHook on_fatal{[this] { remove(); }};
-
-    static std::filesystem::path create() {
-        std::random_device random;
-        auto base = std::filesystem::temp_directory_path();
-        std::filesystem::path candidate;
-        do {
-            candidate = base / std::format("kota-{:08x}{:08x}", random(), random());
-        } while(!std::filesystem::create_directory(candidate));
-        return candidate;
-    }
-};
 
 /// The contents of `path`, read without kota::async.
 inline std::string read_file(const std::filesystem::path& path) {
@@ -143,6 +105,13 @@ std::optional<std::int64_t> exit_status_of(const Waited& waited) {
 // may exceed it.
 
 #ifdef _WIN32
+/// Opens the UTF-8 `path` with open()'s `flags` and `mode`, as a raw
+/// descriptor the loop's handles take.
+inline int open_fd(std::string_view path, int flags, int mode) {
+    std::filesystem::path wide(std::u8string(path.begin(), path.end()));
+    return ::_wopen(wide.c_str(), flags | _O_BINARY, mode);
+}
+
 inline int create_pipe(int fds[2]) {
     return _pipe(fds, 4096, _O_BINARY);
 }
@@ -155,6 +124,10 @@ inline ssize_t write_fd(int fd, const char* data, std::size_t len) {
     return _write(fd, data, static_cast<unsigned int>(len));
 }
 #else
+inline int open_fd(std::string_view path, int flags, int mode) {
+    return ::open(std::string(path).c_str(), flags | O_CLOEXEC, mode);
+}
+
 inline int create_pipe(int fds[2]) {
     return ::pipe(fds);
 }

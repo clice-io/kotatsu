@@ -189,6 +189,7 @@ function(kota_add_integration_tests)
 endfunction()
 
 add_subdirectory(support)
+add_subdirectory(fs)
 add_subdirectory(meta)
 add_subdirectory(codec)
 if(KOTA_ENABLE_DECO)
@@ -285,10 +286,10 @@ if(KOTA_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     endforeach()
 endif()
 
-# zest runs tests on worker processes it drives through kota::async, compares
-# with meta, prints with the debug codec, matches filters with support's glob
-# patterns and parses its options with deco, so the checks are staged and a
-# failed stage keeps the later ones from running:
+# zest runs tests on worker processes it drives through kota::async and logs
+# with kota::fs, compares with meta, prints with the debug codec, matches
+# filters with support's glob patterns and parses its options with deco, so
+# the checks are staged and a failed stage keeps the later ones from running:
 #   1. zest_bootstrap_*: the tests of what zest itself relies on run in this
 #      process, without the pool.
 #   2. zest_runner: the pool itself, end to end, against tests that crash,
@@ -305,7 +306,7 @@ add_test(NAME zest_bootstrap_unit
 add_test(NAME zest_bootstrap_system
     COMMAND system_tests
         --no-isolation
-        "--test-filter={async_io_fs,async_io_fs_sync,async_io_process,async_io_stream_pipe,async_io_system}.*"
+        "--test-filter={fs_file,async_io_fs,async_io_process,async_io_stream_pipe,async_io_system}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )

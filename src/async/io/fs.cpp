@@ -9,7 +9,7 @@
 #include "awaiter.h"
 #include "kota/support/functional.h"
 
-namespace kota::fs {
+namespace kota::fs::async {
 
 namespace {
 
@@ -447,51 +447,4 @@ task<void, error> close(int fd, event_loop& loop) {
     return fs_call(loop, ::uv_fs_close, fd);
 }
 
-result<int> sync::open(std::string_view path, int flags, int mode) {
-    auto fd = run_sync(::uv_fs_open, std::string(path).c_str(), flags, mode);
-    if(!fd) {
-        return outcome_error(fd.error());
-    }
-    return static_cast<int>(*fd);
-}
-
-result<std::size_t> sync::read(int fd, std::span<char> buf, std::int64_t offset) {
-    auto uv_buf = uv::buffer_of(buf);
-    return run_sync(::uv_fs_read, fd, &uv_buf, 1U, offset);
-}
-
-result<std::size_t> sync::write(int fd, std::span<const char> buf, std::int64_t offset) {
-    auto uv_buf = uv::buffer_of(buf);
-    return run_sync(::uv_fs_write, fd, &uv_buf, 1U, offset);
-}
-
-error sync::close(int fd) {
-    auto closed = run_sync(::uv_fs_close, fd);
-    return closed ? error() : closed.error();
-}
-
-result<std::string> sync::read_to_string(std::string_view path) {
-    auto fd = open(path, UV_FS_O_RDONLY);
-    if(!fd) {
-        return outcome_error(fd.error());
-    }
-
-    std::string content;
-    char buf[4096];
-    while(true) {
-        auto n = read(*fd, std::span<char>(buf, sizeof(buf)));
-        if(!n) {
-            close(*fd);
-            return outcome_error(n.error());
-        }
-        if(*n == 0) {
-            break;
-        }
-        content.append(buf, *n);
-    }
-
-    close(*fd);
-    return content;
-}
-
-}  // namespace kota::fs
+}  // namespace kota::fs::async

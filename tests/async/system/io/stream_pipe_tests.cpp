@@ -709,14 +709,14 @@ ZEST_CASE(open_of_a_bad_descriptor_fails) {
 ZEST_CASE(read_of_a_file_fails) {
     test::TempDir dir;
     test::write_file(dir.file("file.txt"), "text");
-    auto file = fs::sync::open(dir.file("file.txt"), O_RDONLY, 0);
-    ZASSERT(file.has_value());
+    int file = test::open_fd(dir.file("file.txt"), O_RDONLY, 0);
+    ZASSERT(file >= 0);
 
-    auto opened = pipe::open(*file, loop);
+    auto opened = pipe::open(file, loop);
 #ifdef _WIN32
     ZASSERT(opened.has_error());
     ZEXPECT(opened.error() == error::socket_operation_on_non_socket);
-    ZEXPECT(!fs::sync::close(*file));
+    ZEXPECT(test::close_fd(file) == 0);
 #else
     ZASSERT(opened.has_value());
     auto read_each_way = [&]() -> task<std::vector<error>> {
@@ -738,9 +738,9 @@ ZEST_CASE(read_of_a_file_fails) {
 // The null device as a child's ignored stdout is open for reading and
 // writing: writes to it go out, whether or not the loop can wait to read it.
 ZEST_CASE(open_of_the_null_device_to_read_and_write_writes_to_it) {
-    auto file = fs::sync::open("/dev/null", O_RDWR, 0);
-    ZASSERT(file.has_value());
-    auto opened = pipe::open(*file, loop);
+    int file = test::open_fd("/dev/null", O_RDWR, 0);
+    ZASSERT(file >= 0);
+    auto opened = pipe::open(file, loop);
     ZASSERT(opened.has_value());
     auto write_then_read = [&]() -> task<error, error> {
         std::string_view text = "text";
@@ -764,9 +764,9 @@ ZEST_CASE(open_of_the_null_device_to_read_and_write_writes_to_it) {
 // only for writing.
 ZEST_CASE(open_of_a_file_to_write_writes_to_it) {
     test::TempDir dir;
-    auto file = fs::sync::open(dir.file("file.txt"), O_CREAT | O_WRONLY, 0644);
-    ZASSERT(file.has_value());
-    auto opened = pipe::open(*file, loop);
+    int file = test::open_fd(dir.file("file.txt"), O_CREAT | O_WRONLY, 0644);
+    ZASSERT(file >= 0);
+    auto opened = pipe::open(file, loop);
     ZASSERT(opened.has_value());
     auto writer = [&]() -> task<void, error> {
         std::string_view text = "text";
@@ -784,14 +784,14 @@ ZEST_CASE(guess_handle_tells_a_pipe_from_a_file) {
     test::TempDir dir;
     int fds[2] = {-1, -1};
     ZASSERT(test::create_pipe(fds) == 0);
-    auto file = fs::sync::open(dir.file("file.txt"), O_CREAT | O_WRONLY, 0644);
+    int file = test::open_fd(dir.file("file.txt"), O_CREAT | O_WRONLY, 0644);
 
     auto pipe_kind = guess_handle(fds[0]);
     test::close_fd(fds[0]);
     test::close_fd(fds[1]);
-    ZASSERT(file.has_value());
-    auto file_kind = guess_handle(*file);
-    ZEXPECT(!fs::sync::close(*file));
+    ZASSERT(file >= 0);
+    auto file_kind = guess_handle(file);
+    ZEXPECT(test::close_fd(file) == 0);
     ZEXPECT(pipe_kind == handle_type::pipe);
     ZEXPECT(file_kind == handle_type::file);
     ZEXPECT(guess_handle(-1) == handle_type::unknown);

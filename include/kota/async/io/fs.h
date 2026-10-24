@@ -13,7 +13,9 @@
 #include "kota/async/runtime/task.h"
 #include "kota/async/vocab/error.h"
 
-namespace kota::fs {
+/// File operations on libuv's thread pool, as tasks; kota::fs does them
+/// synchronously.
+namespace kota::fs::async {
 
 using file_time = std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
 
@@ -297,24 +299,4 @@ task<std::size_t, error> write(int fd,
 /// Close a file descriptor asynchronously.
 task<void, error> close(int fd, event_loop& loop = event_loop::current());
 
-namespace sync {
-
-/// Open a file. Returns the fd on success.
-/// flags: UV_FS_O_RDONLY, UV_FS_O_WRONLY, UV_FS_O_RDWR, etc.
-result<int> open(std::string_view path, int flags, int mode = 0);
-
-/// Read up to buf.size() bytes from fd at offset (-1 = current position).
-result<std::size_t> read(int fd, std::span<char> buf, std::int64_t offset = -1);
-
-/// Write buf to fd at offset (-1 = current position).
-result<std::size_t> write(int fd, std::span<const char> buf, std::int64_t offset = -1);
-
-/// Close a file descriptor.
-error close(int fd);
-
-/// Convenience: read entire file into a string.
-result<std::string> read_to_string(std::string_view path);
-
-}  // namespace sync
-
-}  // namespace kota::fs
+}  // namespace kota::fs::async

@@ -32,7 +32,11 @@ cc_library(
     deps = deps + ["//:zest"],
 ) for module, deps in [
     ("support", ["//:support"]),
-    ("async", ["//:async"]),
+    ("fs", ["//:fs"]),
+    ("async", [
+        ":fs_harness",
+        "//:async",
+    ]),
     ("codec", [
         ":fixtures",
         "//:codec",
@@ -85,6 +89,8 @@ cc_library(
     deps = deps + ["//:zest"],
 ) for module, level, deps in [
     ("support", "unit", [":support_harness"]),
+    ("fs", "unit", ["//:fs"]),
+    ("fs", "system", [":fs_harness"]),
     ("meta", "unit", [":fixtures"]),
     ("codec", "unit", [":codec_harness"]),
     ("codec/bincode", "unit", [":codec_bincode_harness"]),

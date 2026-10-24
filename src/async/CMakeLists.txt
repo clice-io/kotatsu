@@ -45,6 +45,7 @@ target_include_directories(kota_async PUBLIC
 )
 
 target_link_libraries(kota_async PUBLIC
+    kota::fs
     libuv::libuv
 )
 

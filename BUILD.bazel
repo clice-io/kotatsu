@@ -22,6 +22,16 @@ kota_library(
 )
 
 kota_library(
+    name = "fs",
+    srcs = glob([
+        "src/fs/*.cpp",
+        "src/fs/*.h",
+    ]),
+    hdrs = glob(["include/kota/fs/**"]),
+    deps = [":support"],
+)
+
+kota_library(
     name = "meta",
     hdrs = glob(["include/kota/meta/**"]),
     deps = [":support"],
@@ -101,6 +111,7 @@ kota_library(
     ]),
     hdrs = glob(["include/kota/async/**"]),
     deps = [
+        ":fs",
         ":support",
         "@libuv",
     ],

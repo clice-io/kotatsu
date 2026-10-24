@@ -16,9 +16,9 @@ namespace kota {
 
 namespace {
 
-using Entries = std::vector<std::pair<std::string, fs::dirent::type>>;
+using Entries = std::vector<std::pair<std::string, fs::async::dirent::type>>;
 
-Entries sorted(std::vector<fs::dirent> entries) {
+Entries sorted(std::vector<fs::async::dirent> entries) {
     Entries out;
     for(auto& entry: entries) {
         out.emplace_back(std::move(entry.name), entry.kind);
@@ -40,9 +40,9 @@ ZEST_CASE(mkdir_makes_and_rmdir_removes_a_directory) {
     test::TempDir dir;
     auto path = dir.file("made");
     auto make_and_remove = [&]() -> task<bool, error> {
-        co_await fs::mkdir(path, 0755).or_fail();
+        co_await fs::async::mkdir(path, 0755).or_fail();
         bool made = std::filesystem::is_directory(path);
-        co_await fs::rmdir(path).or_fail();
+        co_await fs::async::rmdir(path).or_fail();
         co_return made;
     };
 
@@ -56,7 +56,7 @@ ZEST_CASE(mkdir_of_an_existing_directory_fails) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "taken");
 
-    auto [result] = run(fs::mkdir(dir.file("taken"), 0755, loop));
+    auto [result] = run(fs::async::mkdir(dir.file("taken"), 0755, loop));
     ZASSERT(result.has_error());
     ZEXPECT(result.error() == error::file_already_exists);
 }
@@ -66,14 +66,14 @@ ZEST_CASE(rmdir_of_a_directory_with_entries_fails) {
     std::filesystem::create_directory(dir.path / "full");
     test::write_file(dir.path / "full" / "file.txt", "x");
 
-    auto [result] = run(fs::rmdir(dir.file("full"), loop));
+    auto [result] = run(fs::async::rmdir(dir.file("full"), loop));
     ZASSERT(result.has_error());
     ZEXPECT(result.error() == error::directory_not_empty);
 }
 
 ZEST_CASE(rmdir_of_a_missing_directory_fails) {
     test::TempDir dir;
-    auto [result] = run(fs::rmdir(dir.file("missing"), loop));
+    auto [result] = run(fs::async::rmdir(dir.file("missing"), loop));
     ZASSERT(result.has_error());
     ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
@@ -82,7 +82,7 @@ ZEST_CASE(mkdtemp_makes_a_new_directory_each_time) {
     test::TempDir dir;
     auto tpl = dir.file("tmp-XXXXXX");
 
-    auto [first, second] = run(fs::mkdtemp(tpl, loop), fs::mkdtemp(tpl, loop));
+    auto [first, second] = run(fs::async::mkdtemp(tpl, loop), fs::async::mkdtemp(tpl, loop));
     ZASSERT(first.has_value());
     ZASSERT(second.has_value());
     ZEXPECT(*first != *second);
@@ -93,7 +93,7 @@ ZEST_CASE(mkdtemp_makes_a_new_directory_each_time) {
 
 ZEST_CASE(mkdtemp_in_a_missing_directory_fails) {
     test::TempDir dir;
-    auto [result] = run(fs::mkdtemp(dir.file("missing/tmpXXXXXX"), loop));
+    auto [result] = run(fs::async::mkdtemp(dir.file("missing/tmpXXXXXX"), loop));
     ZASSERT(result.has_error());
     ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
@@ -103,17 +103,17 @@ ZEST_CASE(scandir_lists_the_entries_with_their_kind) {
     test::write_file(dir.path / "file.txt", "x");
     std::filesystem::create_directory(dir.path / "sub");
 
-    auto [result] = run(fs::scandir(dir.path.string(), loop));
+    auto [result] = run(fs::async::scandir(dir.path.string(), loop));
     ZASSERT(result.has_value());
     ZEXPECT(sorted(std::move(*result)) == Entries{
-                                              {"file.txt", fs::dirent::type::file},
-                                              {"sub",      fs::dirent::type::dir },
+                                              {"file.txt", fs::async::dirent::type::file},
+                                              {"sub",      fs::async::dirent::type::dir },
     });
 }
 
 ZEST_CASE(scandir_of_a_missing_directory_fails) {
     test::TempDir dir;
-    auto [result] = run(fs::scandir(dir.file("missing"), loop));
+    auto [result] = run(fs::async::scandir(dir.file("missing"), loop));
     ZASSERT(result.has_error());
     ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
@@ -122,11 +122,11 @@ ZEST_CASE(opendir_and_readdir_walk_a_directory) {
     test::TempDir dir;
     test::write_file(dir.path / "a.txt", "x");
     test::write_file(dir.path / "b.txt", "x");
-    auto walk = [&]() -> task<std::vector<fs::dirent>, error> {
-        std::vector<fs::dirent> entries;
-        auto handle = co_await fs::opendir(dir.path.string()).or_fail();
+    auto walk = [&]() -> task<std::vector<fs::async::dirent>, error> {
+        std::vector<fs::async::dirent> entries;
+        auto handle = co_await fs::async::opendir(dir.path.string()).or_fail();
         while(true) {
-            auto batch = co_await fs::readdir(handle).or_fail();
+            auto batch = co_await fs::async::readdir(handle).or_fail();
             if(batch.empty()) {
                 break;
             }
@@ -138,14 +138,14 @@ ZEST_CASE(opendir_and_readdir_walk_a_directory) {
     auto [result] = run(walk());
     ZASSERT(result.has_value());
     ZEXPECT(sorted(std::move(*result)) == Entries{
-                                              {"a.txt", fs::dirent::type::file},
-                                              {"b.txt", fs::dirent::type::file},
+                                              {"a.txt", fs::async::dirent::type::file},
+                                              {"b.txt", fs::async::dirent::type::file},
     });
 }
 
 ZEST_CASE(opendir_of_a_missing_directory_fails) {
     test::TempDir dir;
-    auto [result] = run(fs::opendir(dir.file("missing"), loop));
+    auto [result] = run(fs::async::opendir(dir.file("missing"), loop));
     ZASSERT(result.has_error());
     ZEXPECT(result.error() == error::no_such_file_or_directory);
 }
@@ -153,14 +153,14 @@ ZEST_CASE(opendir_of_a_missing_directory_fails) {
 // A moved-from handle is as inert as a default-constructed one.
 ZEST_CASE(readdir_of_an_inert_handle_fails) {
     test::TempDir dir;
-    auto read_moved_from = [&]() -> task<std::vector<fs::dirent>, error> {
-        auto handle = co_await fs::opendir(dir.path.string()).or_fail();
+    auto read_moved_from = [&]() -> task<std::vector<fs::async::dirent>, error> {
+        auto handle = co_await fs::async::opendir(dir.path.string()).or_fail();
         auto taken = std::move(handle);
-        co_return co_await fs::readdir(handle);
+        co_return co_await fs::async::readdir(handle);
     };
-    fs::dir_handle inert;
+    fs::async::dir_handle inert;
 
-    auto [moved_from, never_opened] = run(read_moved_from(), fs::readdir(inert, loop));
+    auto [moved_from, never_opened] = run(read_moved_from(), fs::async::readdir(inert, loop));
     ZASSERT(moved_from.has_error());
     ZEXPECT(moved_from.error() == error::invalid_argument);
     ZASSERT(never_opened.has_error());
@@ -174,8 +174,8 @@ ZEST_CASE(dir_handle_closes_its_directory_when_dropped) {
     test::TempDir dir;
     const auto before = open_descriptors();
     auto open_two = [&]() -> task<std::ptrdiff_t, error> {
-        auto first = co_await fs::opendir(dir.path.string()).or_fail();
-        auto second = co_await fs::opendir(dir.path.string()).or_fail();
+        auto first = co_await fs::async::opendir(dir.path.string()).or_fail();
+        auto second = co_await fs::async::opendir(dir.path.string()).or_fail();
         first = std::move(second);
         co_return open_descriptors();
     };
