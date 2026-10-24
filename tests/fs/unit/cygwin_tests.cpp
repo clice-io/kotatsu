@@ -44,6 +44,12 @@ ZEST_CASE(parse_puts_the_longest_mount_point_first) {
     ZEXPECT(table->mounts.back() == std::pair<std::string, std::string>("/", "C:/cygwin64"));
 }
 
+ZEST_CASE(parse_takes_directories_with_backslashes) {
+    auto table = MountTable::parse("C:\\cygwin on / type ntfs (binary,auto)\n");
+    ZASSERT(table.has_value());
+    ZEXPECT(table->to_windows("/usr/bin") == "C:/cygwin/usr/bin");
+}
+
 ZEST_CASE(parse_without_a_root_mount_fails) {
     ZEXPECT(MountTable::parse("C:/cygwin64/bin on /usr/bin type ntfs (binary)\n") == std::nullopt);
     ZEXPECT(MountTable::parse("") == std::nullopt);
@@ -70,6 +76,16 @@ ZEST_CASE(to_windows_folds_dots_before_it_maps) {
     // `..` out of a mount point leaves the mount, as the runtime folds it.
     ZEXPECT(table->to_windows("/usr/lib/../include") == "C:/cygwin64/usr/include");
     ZEXPECT(table->to_windows("/usr/./bin//gcc") == "C:/cygwin64/bin/gcc");
+}
+
+ZEST_CASE(to_windows_keeps_a_share) {
+    auto table = MountTable::parse(cygwin_listing);
+    ZASSERT(table.has_value());
+    ZEXPECT(table->to_windows("//server/share/a/../b.c") == "//server/share/b.c");
+    // A share's name stays even where `..` would climb past it.
+    ZEXPECT(table->to_windows("//server/share/..") == "//server/share/");
+    // Three slashes or more are the root's.
+    ZEXPECT(table->to_windows("///usr/bin") == "C:/cygwin64/bin");
 }
 
 ZEST_CASE(to_windows_reads_msys_drives_at_the_root) {

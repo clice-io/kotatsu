@@ -28,7 +28,9 @@ std::optional<MountTable> MountTable::parse(std::string_view listing) {
             continue;
         }
         auto point = line.substr(on + 4, type - on - 4);
-        table.mounts.emplace_back(std::string(point), std::string(line.substr(0, on)));
+        // Cygwin may list a directory with backslashes.
+        table.mounts.emplace_back(std::string(point),
+                                  path::to_slash(line.substr(0, on), path::Style::Windows));
     }
     std::ranges::stable_sort(table.mounts, std::ranges::greater{}, [](const auto& mount) {
         return mount.first.size();
@@ -40,6 +42,11 @@ std::optional<MountTable> MountTable::parse(std::string_view listing) {
 }
 
 std::string MountTable::to_windows(std::string_view posix) const {
+    // `//server/share` names a share, as on Windows, which no mount covers.
+    if(posix.starts_with("//") && !posix.starts_with("///")) {
+        return path::to_slash(path::normalize(posix, path::DotDot::Fold, path::Style::Windows),
+                              path::Style::Windows);
+    }
     auto folded = path::normalize(posix, path::DotDot::Fold, path::Style::Posix);
     for(const auto& [point, directory]: mounts) {
         // A drive mounts as `C:`, at a point the runtime matches in either

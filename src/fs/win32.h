@@ -19,6 +19,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <winternl.h>
 
 #include "kota/fs/status.h"
 #include "kota/fs/windows.h"

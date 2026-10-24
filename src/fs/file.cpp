@@ -241,8 +241,18 @@ std::expected<TempFile, std::error_code> open_temp_file(std::string_view directo
 }  // namespace
 
 std::error_code write_file_atomic(std::string_view path, std::string_view bytes) {
-    auto sibling =
-        open_temp_file(path::parent(path), std::string(path::filename(path)) + ".", ".tmp");
+    // The sibling's name starts with the file's, cut short at a character's
+    // start so that a name near the file system's limit leaves room for the
+    // random part.
+    auto name = path::filename(path);
+    if(name.size() > 32) {
+        std::size_t end = 32;
+        while(end > 0 && (static_cast<unsigned char>(name[end]) & 0xC0) == 0x80) {
+            --end;
+        }
+        name = name.substr(0, end);
+    }
+    auto sibling = open_temp_file(path::parent(path), std::string(name) + ".", ".tmp");
     if(!sibling) {
         return sibling.error();
     }

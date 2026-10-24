@@ -81,9 +81,10 @@ std::expected<std::string, std::error_code> read_file(std::string_view path);
 std::error_code write_file(std::string_view path, std::string_view bytes);
 
 /// Writes `bytes` as the whole of a file through a sibling renamed over it,
-/// so a reader sees the old bytes or the new, never a part, and concurrent
-/// writers never mix. A symlink at `path` is replaced, not written through.
-/// It does not wait for the bytes to reach the disk.
+/// so a concurrent reader sees the old bytes or the new, never a part, and
+/// concurrent writers never mix. A symlink at `path` is replaced, not
+/// written through. It does not wait for the bytes to reach the disk: after
+/// a crash of the system, `path` may hold the old bytes, the new, or none.
 std::error_code write_file_atomic(std::string_view path, std::string_view bytes);
 
 /// Creates an empty file in `directory`, named `prefix`, random characters

@@ -163,6 +163,19 @@ ZEST_CASE(write_file_atomic_replaces_a_link) {
     ZEXPECT(!is_symlink(dir.file("link")));
 }
 
+ZEST_CASE(write_file_atomic_takes_a_name_near_the_limit) {
+    test::TempDir dir;
+    // 240 bytes, of 255 a component may hold: the sibling's name is cut
+    // short, here inside the eleventh character.
+    std::string name;
+    for(int i = 0; i < 11; ++i) {
+        name += "中";
+    }
+    name += std::string(207, 'a');
+    ZEXPECT(!write_file_atomic(path::join(dir.root(), name), "text"));
+    ZEXPECT(read_file(path::join(dir.root(), name)) == std::string("text"));
+}
+
 ZEST_CASE(write_file_atomic_never_shows_a_part) {
     test::TempDir dir;
     auto file = dir.file("file");

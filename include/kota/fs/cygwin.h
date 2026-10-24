@@ -34,7 +34,8 @@ struct MountTable {
 
     /// The Windows path, with forward slashes, that the POSIX path `posix`
     /// names. `.` and `..` fold first, as the runtime folds them, so `..`
-    /// out of a mount point leaves the mount.
+    /// out of a mount point leaves the mount; `//server/share/...` is the
+    /// share itself.
     std::string to_windows(std::string_view posix) const;
 };
 

@@ -10,6 +10,7 @@
 #include "kota/fs/path.h"
 
 #ifdef _WIN32
+#include <atomic>
 #include <concepts>
 
 #include "win32.h"
@@ -60,8 +61,8 @@ bool unsupported(DWORD error) {
 }
 
 /// Hands each entry the directory `handle` lists, `.` and `..` left out, to
-/// `visit` with its name, as the information class `Info` describes it. The
-/// error that ended the listing early, or ERROR_SUCCESS.
+/// `visit` with its UTF-16 name, as the information class `Info` describes
+/// it. The error that ended the listing early, or ERROR_SUCCESS.
 template <typename Info, typename Visit>
 DWORD for_each_entry(HANDLE handle, Visit visit) {
     constexpr bool extended = std::same_as<Info, FILE_ID_EXTD_DIR_INFO>;
@@ -76,7 +77,7 @@ DWORD for_each_entry(HANDLE handle, Visit visit) {
             const auto& entry = *reinterpret_cast<const Info*>(at);
             std::wstring_view name(entry.FileName, entry.FileNameLength / sizeof(wchar_t));
             if(name != L"." && name != L"..") {
-                visit(entry, from_utf16(name));
+                visit(entry, name);
             }
             if(entry.NextEntryOffset == 0) {
                 break;
@@ -131,45 +132,119 @@ bool names_nothing(DWORD error) {
     return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
 }
 
-/// remove_all() of a verbatim path. The handle that decides whether to list
-/// an entry is the one that lists it and the one it is deleted through,
-/// opened on the entry itself, so that a link put in its place meanwhile is
-/// deleted, never followed.
-std::expected<std::uint64_t, std::error_code> remove_tree(const std::wstring& path) {
-    constexpr DWORD flags = FILE_FLAG_OPEN_REPARSE_POINT;
-    auto handle = win32::try_open(path, DELETE | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY, flags);
+using NtCreateFileFn = NTSTATUS(NTAPI*)(PHANDLE,
+                                        ACCESS_MASK,
+                                        POBJECT_ATTRIBUTES,
+                                        PIO_STATUS_BLOCK,
+                                        PLARGE_INTEGER,
+                                        ULONG,
+                                        ULONG,
+                                        ULONG,
+                                        ULONG,
+                                        PVOID,
+                                        ULONG);
+using NtStatusToErrorFn = ULONG(NTAPI*)(NTSTATUS);
+
+/// NtCreateFile's disposition and options, which only the DDK names.
+constexpr ULONG nt_open_existing = 1;
+constexpr ULONG nt_synchronous_io = 0x20;
+constexpr ULONG nt_backup_intent = 0x4000;
+constexpr ULONG nt_open_reparse_point = 0x200000;
+
+/// The function `name` of ntdll, which every Windows has, looked up once.
+template <typename Function>
+Function from_ntdll(std::atomic<Function>& cache, const char* name) {
+    auto function = cache.load(std::memory_order_relaxed);
+    if(function == nullptr) {
+        auto found = ::GetProcAddress(::GetModuleHandleW(L"ntdll.dll"), name);
+        function = reinterpret_cast<Function>(reinterpret_cast<void (*)()>(found));
+        cache.store(function, std::memory_order_relaxed);
+    }
+    return function;
+}
+
+/// The entry `name` of the directory `parent`, itself when it is a link,
+/// opened through the parent's handle: Win32 opens names only from the
+/// root, through directories a rename may have replaced since. An invalid
+/// handle on failure, GetLastError() telling why.
+win32::Handle open_entry(HANDLE parent, std::wstring_view name, DWORD access) {
+    static constinit std::atomic<NtCreateFileFn> create = nullptr;
+    static constinit std::atomic<NtStatusToErrorFn> to_error = nullptr;
+    UNICODE_STRING object_name;
+    object_name.Length = static_cast<USHORT>(name.size() * sizeof(wchar_t));
+    object_name.MaximumLength = object_name.Length;
+    object_name.Buffer = const_cast<PWSTR>(name.data());
+    OBJECT_ATTRIBUTES attributes{};
+    attributes.Length = sizeof(attributes);
+    attributes.RootDirectory = parent;
+    attributes.ObjectName = &object_name;
+    IO_STATUS_BLOCK status_block{};
+    HANDLE handle = INVALID_HANDLE_VALUE;
+    auto status = from_ntdll(create, "NtCreateFile")(
+        &handle,
+        access | SYNCHRONIZE,
+        &attributes,
+        &status_block,
+        nullptr,
+        0,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nt_open_existing,
+        nt_synchronous_io | nt_backup_intent | nt_open_reparse_point,
+        nullptr,
+        0);
+    if(status < 0) {
+        ::SetLastError(from_ntdll(to_error, "RtlNtStatusToDosError")(status));
+        return win32::Handle();
+    }
+    return win32::Handle(handle);
+}
+
+/// Opens what remove_all() removes through `open(access)`: to list and
+/// delete it, or only to delete it when the caller may not read it or
+/// another process holds it open for everything but reading.
+template <typename Open>
+win32::Handle open_to_remove(Open open) {
+    auto handle = open(DELETE | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY);
     if(handle.get() == INVALID_HANDLE_VALUE) {
-        // A file the caller may delete but not read, or that another process
-        // holds open for everything but reading.
         if(auto error = ::GetLastError();
            error == ERROR_ACCESS_DENIED || error == ERROR_SHARING_VIOLATION) {
-            handle = win32::try_open(path, DELETE | FILE_READ_ATTRIBUTES, flags);
+            handle = open(DELETE | FILE_READ_ATTRIBUTES);
         }
     }
-    if(handle.get() == INVALID_HANDLE_VALUE) {
-        auto error = ::GetLastError();
-        if(names_nothing(error)) {
-            return 0;
-        }
-        return std::unexpected(windows::to_error_code(error));
-    }
+    return handle;
+}
+
+/// Removes what `handle`, from open_to_remove(), refers to, and for a
+/// directory everything in it. The handle that decides whether to list an
+/// entry lists it, opens each entry inside, and deletes it, so that no
+/// rename meanwhile makes the walk follow a link: a link put in a
+/// directory's place goes as the link, and a directory moved away goes
+/// with what it held.
+std::expected<std::uint64_t, std::error_code> remove_opened(const win32::Handle& handle) {
     FILE_ATTRIBUTE_TAG_INFO info;
     if(!::GetFileInformationByHandleEx(handle.get(), FileAttributeTagInfo, &info, sizeof(info))) {
         return std::unexpected(windows::last_error());
     }
     std::uint64_t removed = 0;
     if(win32::type_of(info.FileAttributes, info.ReparseTag) == FileType::Directory) {
-        std::vector<std::string> names;
+        std::vector<std::wstring> names;
         auto error = for_each_entry<FILE_FULL_DIR_INFO>(
             handle.get(),
-            [&](const FILE_FULL_DIR_INFO&, std::string name) { names.push_back(std::move(name)); });
+            [&](const FILE_FULL_DIR_INFO&, std::wstring_view name) { names.emplace_back(name); });
         if(error != ERROR_SUCCESS) {
             return std::unexpected(windows::to_error_code(error));
         }
-        // A drive's root ends in its separator already.
-        auto directory = path.ends_with(L'\\') ? path : path + L'\\';
-        for(auto& name: names) {
-            auto count = remove_tree(directory + *to_utf16<wchar_t>(name));
+        for(const auto& name: names) {
+            auto child = open_to_remove(
+                [&](DWORD access) { return open_entry(handle.get(), name, access); });
+            if(child.get() == INVALID_HANDLE_VALUE) {
+                // Gone since it was listed.
+                if(names_nothing(::GetLastError())) {
+                    continue;
+                }
+                return std::unexpected(windows::last_error());
+            }
+            auto count = remove_opened(child);
             if(!count) {
                 return count;
             }
@@ -378,11 +453,11 @@ std::expected<std::vector<Entry>, std::error_code> read_dir(std::string_view dir
     }
     auto error = for_each_entry<FILE_FULL_DIR_INFO>(
         handle->get(),
-        [&](const FILE_FULL_DIR_INFO& entry, std::string name) {
+        [&](const FILE_FULL_DIR_INFO& entry, std::wstring_view name) {
             // A reparse point's tag stands where the size of its extended
             // attributes would.
             entries.push_back(
-                {std::move(name), win32::type_of(entry.FileAttributes, entry.EaSize)});
+                {from_utf16(name), win32::type_of(entry.FileAttributes, entry.EaSize)});
         });
     if(error != ERROR_SUCCESS) {
         return std::unexpected(windows::to_error_code(error));
@@ -423,9 +498,9 @@ std::expected<std::vector<StatusEntry>, std::error_code> read_dir_status(std::st
     }
     auto error = for_each_entry<FILE_ID_EXTD_DIR_INFO>(
         handle->get(),
-        [&](const FILE_ID_EXTD_DIR_INFO& entry, std::string name) {
+        [&](const FILE_ID_EXTD_DIR_INFO& entry, std::wstring_view name) {
             entries.push_back({
-                .name = std::move(name),
+                .name = from_utf16(name),
                 .status = {.type = win32::type_of(entry.FileAttributes, entry.ReparsePointTag),
                            .size = static_cast<std::uint64_t>(entry.EndOfFile.QuadPart),
                            .mtime_ns = win32::unix_ns(entry.LastWriteTime.QuadPart),
@@ -589,7 +664,16 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) 
     if(!native) {
         return std::unexpected(native.error());
     }
-    return remove_tree(win32::verbatim(std::move(*native)));
+    auto handle = open_to_remove([&](DWORD access) {
+        return win32::try_open(*native, access, FILE_FLAG_OPEN_REPARSE_POINT);
+    });
+    if(handle.get() == INVALID_HANDLE_VALUE) {
+        if(names_nothing(::GetLastError())) {
+            return 0;
+        }
+        return std::unexpected(windows::last_error());
+    }
+    return remove_opened(handle);
 #else
     auto c_path = posix::c_path(without_trailing_separators(path));
     if(!c_path) {
