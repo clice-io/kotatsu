@@ -87,7 +87,8 @@ ZEST_CASE(weakly_canonical_takes_the_current_directory) {
     ZASSERT(cwd.has_value());
     auto real = canonical(*cwd);
     ZASSERT(real.has_value());
-    ZEXPECT(weakly_canonical("missing/./name") == path::join(*real, "missing/name"));
+    ZEXPECT(weakly_canonical("missing/./name") ==
+            path::normalize(path::join(*real, "missing/name")));
 }
 
 ZEST_CASE(absolute_takes_the_current_directory) {
