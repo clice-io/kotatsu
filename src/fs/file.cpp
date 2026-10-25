@@ -4,6 +4,7 @@
 #include <random>
 #include <utility>
 
+#include "kota/support/small_string.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/path.h"
 
@@ -33,40 +34,34 @@ bool refused(const OpenOptions& options) {
            (options.append && options.truncate && !options.create_new);
 }
 
-/// `prefix`, twelve random characters and `suffix`.
-std::string random_name(std::string_view prefix, std::string_view suffix) {
+/// Makes `make(path)` succeed with `path` a new random name in `directory`
+/// each time, while what it fails with says the name is taken: another
+/// process holds a hundred names only by design.
+template <typename Make>
+std::error_code with_random_name(StringBufferRef path,
+                                 std::string_view directory,
+                                 std::string_view prefix,
+                                 std::string_view suffix,
+                                 Make make) {
     constexpr std::string_view alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
     std::random_device device;
     std::uniform_int_distribution<std::size_t> pick(0, alphabet.size() - 1);
-    std::string name(prefix);
-    for(int i = 0; i < 12; ++i) {
-        name.push_back(alphabet[pick(device)]);
-    }
-    name.append(suffix);
-    return name;
-}
-
-/// What `make` makes of a new random name in `directory`, tried again with
-/// another while it fails with std::errc::file_exists: another process holds
-/// a hundred names only by design.
-template <typename Made, typename Make>
-std::expected<Made, std::error_code> with_random_name(std::string_view directory,
-                                                      std::string_view prefix,
-                                                      std::string_view suffix,
-                                                      Make make) {
+    small_string<64> name;
     std::error_code error;
     for(int attempt = 0; attempt < 100; ++attempt) {
-        auto candidate = path::join(directory, random_name(prefix, suffix));
-        auto made = make(candidate);
-        if(made) {
-            return std::move(*made);
+        name.assign(prefix);
+        for(int i = 0; i < 12; ++i) {
+            name.push_back(alphabet[pick(device)]);
         }
-        error = made.error();
+        name.append(suffix);
+        path.assign(directory);
+        path::push(path, name);
+        error = make(path.view());
         if(error != std::errc::file_exists) {
             break;
         }
     }
-    return std::unexpected(error);
+    return error;
 }
 
 #ifdef _WIN32
@@ -175,7 +170,7 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
     if(refused(options)) {
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
-    auto native = windows::to_native(path);
+    auto native = win32::native(path);
     if(!native) {
         return std::unexpected(native.error());
     }
@@ -409,30 +404,31 @@ std::error_code File::close() {
 
 #endif
 
-std::expected<std::string, std::error_code> read_file(std::string_view path) {
+std::error_code read_file(StringBufferRef out, std::string_view path) {
     auto file = File::open(path);
     if(!file) {
-        return std::unexpected(file.error());
+        return file.error();
     }
-    std::string content;
     // Files under /proc report no size, and any file may grow while read:
     // the end is where a read returns nothing.
     std::size_t at = 0;
+    auto buffer = out.resize(4096);
     while(true) {
-        if(at == content.size()) {
-            content.resize(std::max<std::size_t>(content.size() * 2, 4096));
+        if(at == buffer.size()) {
+            buffer = out.resize(buffer.size() * 2);
         }
-        auto count = file->read(std::span(content).subspan(at));
+        auto count = file->read(buffer.subspan(at));
         if(!count) {
-            return std::unexpected(count.error());
+            out.resize(at);
+            return count.error();
         }
         if(*count == 0) {
             break;
         }
         at += *count;
     }
-    content.resize(at);
-    return content;
+    out.resize(at);
+    return {};
 }
 
 std::error_code write_file(std::string_view path, std::string_view bytes) {
@@ -458,56 +454,56 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
         }
         name = name.substr(0, end);
     }
-    auto sibling = create_temp_file(path::parent(path), std::string(name) + ".", ".tmp");
-    if(!sibling) {
-        return sibling.error();
+    small_string<64> prefix(name);
+    prefix.push_back('.');
+    small_string<256> sibling;
+    auto file = create_temp_file(sibling, path::parent(path), prefix, ".tmp");
+    if(!file) {
+        return file.error();
     }
-    auto error = sibling->file.write(bytes);
-    if(auto closed = sibling->file.close(); !error) {
+    auto error = file->write(bytes);
+    if(auto closed = file->close(); !error) {
         error = closed;
     }
     if(!error) {
-        error = rename(sibling->path, path);
+        error = rename(sibling, path);
     }
     if(error) {
-        [[maybe_unused]] auto removed = remove(sibling->path);
+        [[maybe_unused]] auto removed = remove(sibling);
     }
     return error;
 }
 
-std::expected<TempFile, std::error_code> create_temp_file(std::string_view directory,
-                                                          std::string_view prefix,
-                                                          std::string_view suffix) {
-    return with_random_name<TempFile>(
-        directory,
-        prefix,
-        suffix,
-        [](std::string& candidate) -> std::expected<TempFile, std::error_code> {
-            auto file = File::open(candidate, {.read = true, .write = true, .create_new = true});
-            if(!file) {
-                return std::unexpected(file.error());
-            }
-            return TempFile{std::move(*file), std::move(candidate)};
-        });
+std::expected<File, std::error_code> create_temp_file(StringBufferRef path,
+                                                      std::string_view directory,
+                                                      std::string_view prefix,
+                                                      std::string_view suffix) {
+    File file;
+    auto error = with_random_name(path, directory, prefix, suffix, [&](std::string_view candidate) {
+        auto opened = File::open(candidate, {.read = true, .write = true, .create_new = true});
+        if(!opened) {
+            return opened.error();
+        }
+        file = std::move(*opened);
+        return std::error_code();
+    });
+    if(error) {
+        return std::unexpected(error);
+    }
+    return file;
 }
 
-std::expected<std::string, std::error_code> create_temp_directory(std::string_view directory,
-                                                                  std::string_view prefix) {
-    return with_random_name<std::string>(
-        directory,
-        prefix,
-        "",
-        [](std::string& candidate) -> std::expected<std::string, std::error_code> {
-            auto made = create_directory(candidate);
-            if(!made) {
-                return std::unexpected(made.error());
-            }
-            // A directory there already holds the name too.
-            if(!*made) {
-                return std::unexpected(std::make_error_code(std::errc::file_exists));
-            }
-            return std::move(candidate);
-        });
+std::error_code create_temp_directory(StringBufferRef path,
+                                      std::string_view directory,
+                                      std::string_view prefix) {
+    return with_random_name(path, directory, prefix, "", [](std::string_view candidate) {
+        auto made = create_directory(candidate);
+        if(!made) {
+            return made.error();
+        }
+        // A directory there already holds the name too.
+        return *made ? std::error_code() : std::make_error_code(std::errc::file_exists);
+    });
 }
 
 }  // namespace kota::fs

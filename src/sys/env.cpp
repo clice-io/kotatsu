@@ -45,7 +45,7 @@ std::optional<std::string> get_env(std::string_view name) {
         return std::nullopt;
     }
 #ifdef _WIN32
-    auto wide_name = to_utf16<wchar_t>(name);
+    auto wide_name = wide(name);
     if(!wide_name) {
         return std::nullopt;
     }
@@ -62,7 +62,7 @@ std::optional<std::string> get_env(std::string_view name) {
         // Too small, it asks for the size with the NUL.
         if(size < value.size()) {
             value.resize(size);
-            return from_utf16(std::wstring_view(value));
+            return narrow(std::wstring_view(value));
         }
         value.resize(size);
     }
@@ -82,11 +82,11 @@ std::error_code set_env(std::string_view name, std::string_view value) {
         return std::make_error_code(std::errc::invalid_argument);
     }
 #ifdef _WIN32
-    auto wide_name = to_utf16<wchar_t>(name);
+    auto wide_name = wide(name);
     if(!wide_name) {
         return wide_name.error();
     }
-    auto wide_value = to_utf16<wchar_t>(value);
+    auto wide_value = wide(value);
     if(!wide_value) {
         return wide_value.error();
     }
@@ -110,7 +110,7 @@ std::error_code unset_env(std::string_view name) {
         return std::make_error_code(std::errc::invalid_argument);
     }
 #ifdef _WIN32
-    auto wide_name = to_utf16<wchar_t>(name);
+    auto wide_name = wide(name);
     if(!wide_name) {
         return wide_name.error();
     }
@@ -147,7 +147,7 @@ std::vector<EnvVar> environment() {
     }
     for(const wchar_t* entry = block; *entry != L'\0';) {
         std::wstring_view text(entry);
-        add(from_utf16(text));
+        add(narrow(text));
         entry += text.size() + 1;
     }
     ::FreeEnvironmentStringsW(block);
@@ -172,8 +172,8 @@ bool env_name_equal(std::string_view left, std::string_view right) {
         return true;
     }
     // Past ASCII, as Windows folds case.
-    auto wide_left = to_utf16<wchar_t>(left);
-    auto wide_right = to_utf16<wchar_t>(right);
+    auto wide_left = wide(left);
+    auto wide_right = wide(right);
     return wide_left && wide_right &&
            ::CompareStringOrdinal(wide_left->data(),
                                   static_cast<int>(wide_left->size()),

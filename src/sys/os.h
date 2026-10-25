@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <expected>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -16,6 +17,7 @@
 #endif
 #include <windows.h>
 
+#include "kota/support/utf16.h"
 #include "kota/fs/windows.h"
 
 // Declared by the driver kit only; ntdll has it from Windows 2000 on.
@@ -69,6 +71,22 @@ struct Handle {
         return Handle(handle);
     }
 };
+
+/// `text` in UTF-16, for the Windows functions.
+inline std::expected<std::wstring, std::error_code> wide(std::string_view text) {
+    std::wstring result;
+    if(auto error = to_utf16(result, text)) {
+        return std::unexpected(error);
+    }
+    return result;
+}
+
+/// `text`, from the Windows functions, as WTF-8.
+inline std::string narrow(std::wstring_view text) {
+    std::string result;
+    from_utf16(result, text);
+    return result;
+}
 
 /// The directories CreateProcess searches for a program after this
 /// program's and the current one, before PATH: the system directory, the

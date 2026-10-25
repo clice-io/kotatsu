@@ -52,7 +52,7 @@ std::expected<Area, std::error_code> find_area() {
 #else
 
 std::expected<Area, std::error_code> find_area() {
-    auto stat = fs::read_file("/proc/self/stat");
+    auto stat = read_text("/proc/self/stat");
     if(!stat) {
         return std::unexpected(stat.error());
     }

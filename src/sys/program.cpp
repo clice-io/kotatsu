@@ -34,11 +34,11 @@ Candidate examine(const std::string& path) {
 #ifdef _WIN32
     // By name, without opening the file: the cheapest query, which a search
     // through every directory of PATH makes for each extension.
-    auto native = fs::windows::to_native(path);
-    if(!native) {
+    std::wstring native;
+    if(fs::windows::to_native(native, path)) {
         return Candidate::Missing;
     }
-    auto attributes = ::GetFileAttributesW(native->c_str());
+    auto attributes = ::GetFileAttributesW(native.c_str());
     if(attributes == INVALID_FILE_ATTRIBUTES) {
         return Candidate::Missing;
     }
@@ -104,14 +104,15 @@ std::optional<std::string> follow_cygwin_links(std::string path) {
     // Past it, a chain is taken to loop.
     constexpr int most_links = 16;
     for(int links = 0; links <= most_links; ++links) {
-        auto target = fs::cygwin::read_symlink(path);
-        if(!target) {
+        std::string target;
+        if(!fs::cygwin::read_symlink(target, path)) {
             return path;
         }
-        if(fs::cygwin::is_posix_path(*target)) {
+        if(fs::cygwin::is_posix_path(target)) {
             return std::nullopt;
         }
-        auto next = fs::path::join(fs::path::parent(path), *target);
+        std::string next(fs::path::parent(path));
+        fs::path::push(next, target);
         if(examine(next) != Candidate::Program) {
             next += ".exe";
             if(examine(next) != Candidate::Program) {
@@ -193,14 +194,16 @@ std::expected<std::string, std::error_code>
         }
         std::vector<std::string> candidates;
         for(const auto& spelling: names) {
-            candidates.push_back(fs::path::join(directory, spelling));
+            fs::path::push(candidates.emplace_back(directory), spelling);
         }
         if(auto program = first(candidates)) {
             return std::move(*program);
         }
 #else
         // An empty entry is the current directory.
-        if(auto program = first({fs::path::join(directory.empty() ? "." : directory, name)})) {
+        std::string candidate(directory.empty() ? "." : directory);
+        fs::path::push(candidate, name);
+        if(auto program = first({std::move(candidate)})) {
             return std::move(*program);
         }
 #endif
@@ -238,7 +241,7 @@ std::expected<std::string, std::error_code> known_directory(auto read) {
         }
         if(size < path.size()) {
             path.resize(size);
-            return from_utf16(std::wstring_view(path));
+            return narrow(std::wstring_view(path));
         }
         path.resize(size);
     }
@@ -257,7 +260,8 @@ std::expected<std::vector<std::string>, std::error_code> system_directories() {
     if(!windows) {
         return std::unexpected(windows.error());
     }
-    auto system16 = fs::path::join(*windows, "System");
+    std::string system16 = *windows;
+    fs::path::push(system16, "System");
     return std::vector<std::string>{std::move(*system), std::move(system16), std::move(*windows)};
 }
 

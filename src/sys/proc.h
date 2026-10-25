@@ -14,8 +14,11 @@
 #include "kota/support/string_ref.h"
 
 #ifdef __linux__
+#include <expected>
 #include <format>
+#include <system_error>
 
+#include "kota/support/small_string.h"
 #include "kota/fs/file.h"
 #endif
 
@@ -30,13 +33,26 @@ inline std::string proc_path(int pid, std::string_view file) {
     return std::format("/proc/{}/{}", pid, file);
 }
 
+/// The text of a file of /proc, on the stack while it is as short as most
+/// are.
+using ProcText = small_string<4096>;
+
+/// The text of the file at `path`.
+inline std::expected<ProcText, std::error_code> read_text(std::string_view path) {
+    ProcText text;
+    if(auto error = fs::read_file(text, path)) {
+        return std::unexpected(error);
+    }
+    return text;
+}
+
 /// The text of the file at `path`, for a cgroup::Reader.
 inline std::optional<std::string> read_cgroup_file(std::string_view path) {
-    auto text = fs::read_file(path);
-    if(!text) {
+    std::string text;
+    if(fs::read_file(text, path)) {
         return std::nullopt;
     }
-    return std::move(*text);
+    return text;
 }
 
 #endif

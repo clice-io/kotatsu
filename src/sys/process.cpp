@@ -16,7 +16,7 @@
 #include <crt_externs.h>
 #include <mach-o/dyld.h>
 #else
-#include "kota/fs/file.h"
+#include "proc.h"
 #endif
 
 namespace kota::sys {
@@ -64,7 +64,7 @@ std::expected<std::string, std::error_code> executable_path() {
         // Cut short, the path fills the buffer.
         if(size < path.size()) {
             path.resize(size);
-            return from_utf16(std::wstring_view(path));
+            return narrow(std::wstring_view(path));
         }
         path.resize(path.size() * 2);
     }
@@ -100,7 +100,7 @@ std::expected<std::string, std::error_code> executable_path() {
 const std::vector<std::string>& arguments() {
     const static std::vector<std::string> arguments = [] {
 #ifdef _WIN32
-        auto line = windows::split_command_line(from_utf16(std::wstring_view(::GetCommandLineW())));
+        auto line = windows::split_command_line(narrow(std::wstring_view(::GetCommandLineW())));
         // A program started with an empty command line has not even its name
         // in it: its executable stands for argv[0], as in Rust.
         if(line.empty()) {
@@ -115,7 +115,7 @@ const std::vector<std::string>& arguments() {
         return std::vector<std::string>(argv, argv + argc);
 #else
         std::vector<std::string> line;
-        auto text = fs::read_file("/proc/self/cmdline");
+        auto text = read_text("/proc/self/cmdline");
         if(!text) {
             return line;
         }

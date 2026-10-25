@@ -110,11 +110,11 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
         stats.involuntary_switches = static_cast<std::uint64_t>(own.ru_nivcsw);
     }
 #else
-    auto status = fs::read_file(proc_path(pid, "status"));
+    auto status = read_text(proc_path(pid, "status"));
     if(!status) {
         return std::unexpected(process_error(status.error()));
     }
-    auto stat = fs::read_file(proc_path(pid, "stat"));
+    auto stat = read_text(proc_path(pid, "stat"));
     if(!stat) {
         return std::unexpected(process_error(stat.error()));
     }
@@ -157,7 +157,7 @@ std::expected<std::uint64_t, std::error_code> resident_memory() {
     return info.resident_size;
 #else
     // "<size> <resident> ...", in pages.
-    auto statm = fs::read_file("/proc/self/statm");
+    auto statm = read_text("/proc/self/statm");
     if(!statm) {
         return std::unexpected(statm.error());
     }
@@ -252,7 +252,7 @@ std::expected<Memory, std::error_code> memory([[maybe_unused]] std::span<const P
     };
     return Memory{.total = total, .limit = total, .available = detail::mac_available(counts, own)};
 #else
-    auto meminfo = fs::read_file("/proc/meminfo");
+    auto meminfo = read_text("/proc/meminfo");
     if(!meminfo) {
         return std::unexpected(meminfo.error());
     }
@@ -263,7 +263,7 @@ std::expected<Memory, std::error_code> memory([[maybe_unused]] std::span<const P
         .available = field(*meminfo, "MemAvailable:").value_or(0) * 1024,
     };
     // Read afresh every time: the process may have moved.
-    if(auto membership = fs::read_file("/proc/self/cgroup")) {
+    if(auto membership = read_text("/proc/self/cgroup")) {
         if(auto cgroups = detail::cgroup::memory("/sys/fs/cgroup", *membership, read_cgroup_file)) {
             result.limit = std::min(result.limit, cgroups->limit);
             result.available = std::min(result.available, cgroups->available);
@@ -277,7 +277,7 @@ std::expected<int, std::error_code> oom_score_adjustment([[maybe_unused]] int pi
 #ifndef __linux__
     return std::unexpected(std::make_error_code(std::errc::not_supported));
 #else
-    auto text = fs::read_file(proc_path(pid, "oom_score_adj"));
+    auto text = read_text(proc_path(pid, "oom_score_adj"));
     if(!text) {
         return std::unexpected(process_error(text.error()));
     }

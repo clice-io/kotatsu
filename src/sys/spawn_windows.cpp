@@ -158,7 +158,7 @@ std::expected<std::wstring, std::error_code>
     environment_block(const std::vector<EnvVar>& variables) {
     std::wstring block;
     for(const auto& [name, value]: variables) {
-        auto entry = to_utf16<wchar_t>(std::format("{}={}", name, value));
+        auto entry = wide(std::format("{}={}", name, value));
         if(!entry) {
             return std::unexpected(entry.error());
         }
@@ -304,14 +304,14 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         }
     }
 
-    auto application = to_utf16<wchar_t>(*program);
+    auto application = wide(*program);
     if(!application) {
         return std::unexpected(application.error());
     }
-    auto line = to_utf16<wchar_t>(
-        !options.windows_command_line.empty() ? options.windows_command_line
-        : options.args.empty() ? windows::join_command_line(std::vector<std::string>{options.file})
-                               : windows::join_command_line(options.args));
+    auto line = wide(!options.windows_command_line.empty() ? options.windows_command_line
+                     : options.args.empty()
+                         ? windows::join_command_line(std::vector<std::string>{options.file})
+                         : windows::join_command_line(options.args));
     if(!line) {
         return std::unexpected(line.error());
     }
@@ -325,7 +325,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     }
     std::wstring cwd;
     if(!options.cwd.empty()) {
-        auto given = to_utf16<wchar_t>(options.cwd);
+        auto given = wide(options.cwd);
         if(!given) {
             return std::unexpected(given.error());
         }

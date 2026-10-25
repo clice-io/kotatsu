@@ -69,33 +69,36 @@ std::expected<Volume, std::error_code> volume(std::string_view path) {
 #ifdef _WIN32
     // GetVolumePathNameW reads the path as written: through a symlink only
     // once it has been followed.
-    auto real = canonical(path);
-    if(!real) {
-        return std::unexpected(real.error());
+    small_string<256> real;
+    if(auto error = canonical(real, path)) {
+        return std::unexpected(error);
     }
-    auto native = windows::to_native(*real);
+    auto native = win32::native(real);
     if(!native) {
         return std::unexpected(native.error());
     }
     // The root is no longer than the path and the separator it may add.
-    std::wstring root(native->size() + 2, L'\0');
+    win32::WidePath root;
+    root.resize(native->size() + 2);
     if(!::GetVolumePathNameW(native->c_str(), root.data(), static_cast<DWORD>(root.size()))) {
         return std::unexpected(windows::last_error());
     }
-    root.resize(std::wcslen(root.c_str()));
+    root.resize(std::wcslen(root.data()));
     // GetDriveTypeW tells a drive or a share only in its plain spelling.
-    auto plain = to_utf16<wchar_t>(windows::from_native(root));
-    if(!plain) {
-        return std::unexpected(plain.error());
+    small_string<256> spelled;
+    windows::from_native(spelled, std::wstring_view(root.data(), root.size()));
+    win32::WidePath plain;
+    if(auto error = win32::widen(plain, spelled)) {
+        return std::unexpected(error);
     }
     ULARGE_INTEGER available;
     ULARGE_INTEGER capacity;
     ULARGE_INTEGER free;
-    if(!::GetDiskFreeSpaceExW(plain->c_str(), &available, &capacity, &free)) {
+    if(!::GetDiskFreeSpaceExW(plain.c_str(), &available, &capacity, &free)) {
         return std::unexpected(windows::last_error());
     }
     wchar_t type[MAX_PATH + 1];
-    if(!::GetVolumeInformationW(plain->c_str(),
+    if(!::GetVolumeInformationW(plain.c_str(),
                                 nullptr,
                                 0,
                                 nullptr,
@@ -105,13 +108,14 @@ std::expected<Volume, std::error_code> volume(std::string_view path) {
                                 MAX_PATH + 1)) {
         return std::unexpected(windows::last_error());
     }
-    return Volume{
+    Volume found{
         .capacity = capacity.QuadPart,
         .free = free.QuadPart,
         .available = available.QuadPart,
-        .type = from_utf16(std::wstring_view(type)),
-        .remote = ::GetDriveTypeW(plain->c_str()) == DRIVE_REMOTE,
+        .remote = ::GetDriveTypeW(plain.c_str()) == DRIVE_REMOTE,
     };
+    from_utf16(found.type, std::wstring_view(type));
+    return found;
 #else
     auto c_path = posix::c_path(path);
     if(!c_path) {

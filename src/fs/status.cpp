@@ -122,11 +122,12 @@ bool names_nothing(DWORD error) {
 /// The status a directory's listing gives a file no open reaches: a page
 /// file, a directory the caller may list but not open. It has no change
 /// time, ID or links.
-std::expected<Status, std::error_code> listed_status(const std::wstring& path) {
+std::expected<Status, std::error_code> listed_status(win32::WidePath& path) {
     // A name with a wildcard would match others; Windows allows none.
-    auto name_start = path.find_last_of(L"\\/");
-    if(path.find_first_of(L"*?", name_start == std::wstring::npos ? 0 : name_start) !=
-       std::wstring::npos) {
+    std::wstring_view spelled(path.data(), path.size());
+    auto name_start = spelled.find_last_of(L"\\/");
+    if(spelled.find_first_of(L"*?", name_start == std::wstring_view::npos ? 0 : name_start) !=
+       std::wstring_view::npos) {
         return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
     }
     WIN32_FIND_DATAW data;
@@ -148,7 +149,7 @@ std::expected<Status, std::error_code> listed_status(const std::wstring& path) {
 }
 
 std::expected<Status, std::error_code> status_of(std::string_view path, bool follow) {
-    auto native = windows::to_native(path);
+    auto native = win32::native(path);
     if(!native) {
         return std::unexpected(native.error());
     }
@@ -173,7 +174,7 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
         }
     }
     DWORD flags = follow ? 0 : FILE_FLAG_OPEN_REPARSE_POINT;
-    auto handle = win32::try_open(*native, 0, flags);
+    auto handle = win32::try_open(native->c_str(), 0, flags);
     if(handle.get() != INVALID_HANDLE_VALUE) {
         return win32::handle_status(handle.get());
     }
@@ -186,7 +187,7 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
     } else if(error == ERROR_CANT_ACCESS_FILE && follow) {
         // A reparse point no path is resolved through, which still cannot be
         // opened as a file: a Unix socket, an app execution alias.
-        auto itself = win32::try_open(*native, 0, FILE_FLAG_OPEN_REPARSE_POINT);
+        auto itself = win32::try_open(native->c_str(), 0, FILE_FLAG_OPEN_REPARSE_POINT);
         if(itself.get() != INVALID_HANDLE_VALUE) {
             auto result = win32::handle_status(itself.get());
             if(result && result->type != FileType::Symlink) {

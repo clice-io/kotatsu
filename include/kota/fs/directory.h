@@ -7,6 +7,7 @@
 #include <system_error>
 #include <vector>
 
+#include "kota/support/string_buffer.h"
 #include "kota/fs/status.h"
 
 namespace kota::fs {
@@ -69,11 +70,11 @@ std::error_code create_symlink(std::string_view target, std::string_view link);
 /// The same for a directory, which Windows tells from a file's.
 std::error_code create_directory_symlink(std::string_view target, std::string_view link);
 
-/// The target of the symlink `path`, as it was written: on Windows with `\`
+/// Writes into `out` the target of the symlink `path`, as it was written: on Windows with `\`
 /// for `/`, as Windows keeps it, and for a junction the directory it
 /// names. Fails with std::errc::invalid_argument for a file that is no
 /// symlink, a Cygwin one included (cygwin::read_symlink reads those).
-std::expected<std::string, std::error_code> read_symlink(std::string_view path);
+std::error_code read_symlink(StringBufferRef out, std::string_view path);
 
 /// Creates `link`, another name of the existing file `target`, which must
 /// be no directory; a symlink at `target` gets the name itself, and is not

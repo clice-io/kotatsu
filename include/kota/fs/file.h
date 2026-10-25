@@ -8,6 +8,7 @@
 #include <string_view>
 #include <system_error>
 
+#include "kota/support/string_buffer.h"
 #include "kota/fs/status.h"
 
 namespace kota::fs {
@@ -150,9 +151,9 @@ private:
     native_handle_type handle = closed;
 };
 
-/// The bytes of a file. Read, not mapped: on Windows a mapped file keeps an
-/// editor from saving over it.
-std::expected<std::string, std::error_code> read_file(std::string_view path);
+/// Writes into `out` the bytes of a file. Read, not mapped: on Windows a
+/// mapped file keeps an editor from saving over it.
+std::error_code read_file(StringBufferRef out, std::string_view path);
 
 /// Writes `bytes` as the whole of a file, created or emptied first.
 std::error_code write_file(std::string_view path, std::string_view bytes);
@@ -169,22 +170,19 @@ std::error_code write_file(std::string_view path, std::string_view bytes);
 /// writers run tries again.
 std::error_code write_file_atomic(std::string_view path, std::string_view bytes);
 
-/// A file create_temp_file() made, open for reading and writing.
-struct TempFile {
-    File file;
-
-    std::string path;
-};
-
 /// Creates an empty file in `directory`, named `prefix`, random characters
-/// and `suffix`, and none of it there before. Nothing removes it.
-std::expected<TempFile, std::error_code> create_temp_file(std::string_view directory,
-                                                          std::string_view prefix,
-                                                          std::string_view suffix);
+/// and `suffix`, and none of it there before: the file, open for reading and
+/// writing, and its path written into `path`. Nothing removes it.
+std::expected<File, std::error_code> create_temp_file(StringBufferRef path,
+                                                      std::string_view directory,
+                                                      std::string_view prefix,
+                                                      std::string_view suffix);
 
 /// Creates an empty directory in `directory`, named `prefix` and random
-/// characters, and none of it there before: its path. Nothing removes it.
-std::expected<std::string, std::error_code> create_temp_directory(std::string_view directory,
-                                                                  std::string_view prefix);
+/// characters, and none of it there before, and writes its path into `path`.
+/// Nothing removes it.
+std::error_code create_temp_directory(StringBufferRef path,
+                                      std::string_view directory,
+                                      std::string_view prefix);
 
 }  // namespace kota::fs

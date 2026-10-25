@@ -26,7 +26,7 @@ std::expected<std::string, std::error_code> hostname() {
         auto size = static_cast<DWORD>(name.size());
         if(::GetComputerNameExW(ComputerNameDnsHostname, name.data(), &size)) {
             name.resize(size);
-            return from_utf16(std::wstring_view(name));
+            return narrow(std::wstring_view(name));
         }
         // Too small, it gives the size with the NUL.
         if(::GetLastError() != ERROR_MORE_DATA) {

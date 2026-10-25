@@ -218,7 +218,8 @@ ZEST_CASE(stdout_goes_to_a_given_descriptor) {
 
 ZEST_CASE(stdout_goes_to_an_open_file) {
     test::TempDir dir;
-    auto file = fs::File::open(dir.file("stdout.txt"), {.write = true, .truncate = true, .create = true});
+    auto file =
+        fs::File::open(dir.file("stdout.txt"), {.write = true, .truncate = true, .create = true});
     ZASSERT(file.has_value());
     // The child writes from where the file stands.
     ZEXPECT(!file->write("head-"));

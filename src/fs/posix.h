@@ -11,8 +11,8 @@
 #include <sys/stat.h>
 #include <system_error>
 
-#include "kota/fs/status.h"
 #include "kota/support/small_string.h"
+#include "kota/fs/status.h"
 
 namespace kota::fs::posix {
 

@@ -102,7 +102,7 @@ std::expected<std::vector<CPUCore>, std::error_code> cpu_cores() {
             };
             wchar_t name[256];
             if(processor_value(index, L"ProcessorNameString", RRF_RT_REG_SZ, name, sizeof(name))) {
-                core.model = string_ref(from_utf16(std::wstring_view(name))).trim();
+                core.model = string_ref(narrow(std::wstring_view(name))).trim();
             }
             cores.push_back(std::move(core));
         }
@@ -134,12 +134,12 @@ std::expected<std::vector<CPUCore>, std::error_code> cpu_cores() {
                     reinterpret_cast<vm_address_t>(info),
                     info_count * sizeof(integer_t));
 #else
-    auto stat = fs::read_file("/proc/stat");
+    auto stat = read_text("/proc/stat");
     if(!stat) {
         return std::unexpected(stat.error());
     }
     // Blocks of "key\t: value" lines, one per online CPU.
-    auto cpuinfo = fs::read_file("/proc/cpuinfo").value_or("");
+    auto cpuinfo = read_text("/proc/cpuinfo").value_or(ProcText());
     std::vector<std::string_view> blocks;
     for(auto block: std::views::split(std::string_view(cpuinfo), std::string_view("\n\n"))) {
         blocks.emplace_back(block.begin(), block.end());

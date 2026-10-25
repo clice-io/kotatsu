@@ -68,7 +68,7 @@ unsigned parallelism() {
             break;
         }
     }
-    if(auto membership = fs::read_file("/proc/self/cgroup")) {
+    if(auto membership = read_text("/proc/self/cgroup")) {
         // A quota may count more CPUs than any machine has.
         auto quota = detail::cgroup::cpu_quota("/sys/fs/cgroup", *membership, read_cgroup_file);
         if(quota && *quota < count) {
