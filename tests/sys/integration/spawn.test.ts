@@ -132,7 +132,7 @@ test(
 
 test(
   "child_inherits_every_inheritable_handle_when_asked",
-  { skip: process.platform !== "win32" && "Windows lists the handles" },
+  { skip: process.platform !== "win32" && "a Windows option" },
   async (t) => {
     const driver = await Driver.spawn(t, "sys_probe", ["handles", "all"]);
     const output = (await driver.jsonLines().receive()) as {

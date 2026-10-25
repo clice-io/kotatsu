@@ -415,8 +415,8 @@ int main() {
         print_line(std::format(R"({{"in_job":{}}})", in_job ? "true" : "false"));
         return 0;
     }
-    const bool all = arguments.size() == 3 && arguments[2] == "all";
-    if(command == "handles" && (arguments.size() == 2 || all)) {
+    if(const bool all = arguments.size() == 3 && arguments[2] == "all";
+       command == "handles" && (arguments.size() == 2 || all)) {
         SECURITY_ATTRIBUTES inherit{.nLength = sizeof(inherit),
                                     .lpSecurityDescriptor = nullptr,
                                     .bInheritHandle = TRUE};

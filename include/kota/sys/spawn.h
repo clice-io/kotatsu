@@ -120,10 +120,12 @@ struct CreationOptions {
     /// Windows: every inheritable handle of this process's reaches the
     /// child, as CreateProcess with bInheritHandles passes them, rather than
     /// its standard handles alone: for a program that starts another in its
-    /// place and passes on the handles it was given. One made inheritable on
-    /// another thread meanwhile reaches it too; the standard handles spawn
-    /// makes for other children never do. Ignored elsewhere, where every
-    /// descriptor without close-on-exec reaches the child.
+    /// place and passes on the handles it was given. An fs::File's is not
+    /// one until SetHandleInformation makes it so. One made inheritable on
+    /// another thread meanwhile reaches it too; the standard handles that
+    /// spawn makes for other children never do, every other spawn waiting
+    /// while this child is created. On POSIX every descriptor without
+    /// close-on-exec reaches the child anyway.
     bool windows_inherit_handles = false;
 };
 

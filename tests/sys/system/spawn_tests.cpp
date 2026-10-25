@@ -900,7 +900,7 @@ ZEST_CASE(windows_before_start_error_fails_the_spawn) {
 
 // Its standard handles are inheritable while it is created, and closed here
 // then: its stdout ends once it has gone.
-ZEST_CASE(inheriting_every_handle_keeps_the_standard_streams) {
+ZEST_CASE(windows_inherit_handles_keeps_the_standard_streams) {
     auto options = shell("echo inherited");
     options.creation.windows_inherit_handles = true;
     auto output = output_of(options);
@@ -912,21 +912,22 @@ ZEST_CASE(inheriting_every_handle_keeps_the_standard_streams) {
 // One started inheriting every handle while another is suspended gets none
 // of that one's standard handles, closed by then: the other's stdout ends
 // once the other has gone.
-ZEST_CASE(inheriting_every_handle_takes_none_of_another_childs) {
-    std::expected<Child, std::error_code> sorting;
+ZEST_CASE(windows_inherit_handles_takes_none_of_another_childs) {
+    std::expected<Child, std::error_code> reading;
     auto options = shell("exit 0");
     options.streams[1] = Stdio::pipe();
     options.windows_before_start = [&](void*, void*) {
-        // It runs until its stdin ends.
-        SpawnOptions inheriting{.program = "sort"};
+        // It reads its stdin until it closes, as this process does when it
+        // ends: none is left behind.
+        auto inheriting = shell("more");
         inheriting.creation.windows_inherit_handles = true;
-        inheriting.streams = {Stdio::pipe(), Stdio::ignore(), Stdio::ignore()};
-        sorting = spawn(inheriting);
+        inheriting.streams[0] = Stdio::pipe();
+        reading = spawn(inheriting);
         return std::error_code();
     };
     auto child = spawn(options);
     ZASSERT(child.has_value());
-    ZASSERT(sorting.has_value());
+    ZASSERT(reading.has_value());
     ZEXPECT(child->wait().has_value());
     auto end = child->take_pipe(1);
     const BOOL peeked = ::PeekNamedPipe(end, nullptr, 0, nullptr, nullptr, nullptr);
@@ -934,8 +935,10 @@ ZEST_CASE(inheriting_every_handle_takes_none_of_another_childs) {
     test::close_end(end);
     ZEXPECT(!peeked);
     ZEXPECT(error == ERROR_BROKEN_PIPE);
-    test::close_end(sorting->take_pipe(0));
-    auto status = sorting->wait();
+    // It still runs: the pipe broke for want of another holder.
+    ZEXPECT(reading->try_wait() == std::optional<ExitStatus>());
+    test::close_end(reading->take_pipe(0));
+    auto status = reading->wait();
     ZASSERT(status.has_value());
     ZEXPECT(status->success());
 }

@@ -1,6 +1,5 @@
 #ifdef _WIN32
 
-#include <algorithm>
 #include <array>
 #include <atomic>
 #include <csignal>
@@ -31,23 +30,23 @@ namespace kota::sys {
 
 namespace {
 
-/// A duplicate of `source`; none for a handle that is none, as the standard
-/// handles of a process without a console are.
+/// A duplicate of `source`, not inheritable; none for a handle that is
+/// none, as the standard handles of a process without a console are.
 std::expected<Handle, std::error_code> duplicate(HANDLE source) {
     if(source == nullptr || source == INVALID_HANDLE_VALUE) {
         return Handle();
     }
-    HANDLE duplicate = nullptr;
+    HANDLE copy = nullptr;
     if(!::DuplicateHandle(::GetCurrentProcess(),
                           source,
                           ::GetCurrentProcess(),
-                          &duplicate,
+                          &copy,
                           0,
                           FALSE,
                           DUPLICATE_SAME_ACCESS)) {
         return std::unexpected(fs::windows::last_error());
     }
-    return Handle(duplicate);
+    return Handle(copy);
 }
 
 #ifdef _MSC_VER
@@ -137,36 +136,11 @@ std::expected<Handle, std::error_code> null_device(bool read) {
     return Handle(handle);
 }
 
-/// Held while the standard handles of a child being created are
-/// inheritable, which they are only then: shared by children that inherit
-/// theirs alone, through a list, and alone by one that inherits every
-/// inheritable handle, which those of another would reach too.
+/// Held while a child's standard handles are inheritable, which they are
+/// only while it is created: shared by children that inherit theirs through
+/// a list, exclusive for one that inherits every inheritable handle, which
+/// would take another's too.
 constinit SRWLOCK inheritance = SRWLOCK_INIT;
-
-/// Holds `inheritance` while it lives, and closes `handles`, a child's
-/// standard handles, before it lets go of it.
-struct Inheriting {
-    std::array<Handle, 3>& handles;
-
-    bool alone;
-
-    Inheriting(std::array<Handle, 3>& handles, bool alone) : handles(handles), alone(alone) {
-        if(alone) {
-            ::AcquireSRWLockExclusive(&inheritance);
-        } else {
-            ::AcquireSRWLockShared(&inheritance);
-        }
-    }
-
-    ~Inheriting() {
-        handles = {};
-        if(alone) {
-            ::ReleaseSRWLockExclusive(&inheritance);
-        } else {
-            ::ReleaseSRWLockShared(&inheritance);
-        }
-    }
-};
 
 /// Whether `path` is a batch file, which CreateProcess runs through cmd,
 /// as Windows names it: trailing dots and spaces dropped.
@@ -442,14 +416,14 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         return std::unexpected(fs::windows::last_error());
     }
 
-    // The handles it inherits, unless it inherits every inheritable one:
-    // each once (the same one twice fails the list), none null.
-    const bool inherits_all = creation.windows_inherit_handles;
+    // The handles it inherits, none null, unless it inherits every
+    // inheritable one.
     std::vector<HANDLE> inherited;
-    for(const auto& handle: handles) {
-        if(!inherits_all && handle.handle != nullptr &&
-           std::ranges::find(inherited, handle.handle) == inherited.end()) {
-            inherited.push_back(handle.handle);
+    if(!creation.windows_inherit_handles) {
+        for(const auto& handle: handles) {
+            if(handle.handle != nullptr) {
+                inherited.push_back(handle.handle);
+            }
         }
     }
     SIZE_T size = 0;
@@ -513,9 +487,32 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     }
     PROCESS_INFORMATION created{};
     {
-        // The hook below runs once they are closed: a child it starts
-        // inheriting every handle gets none of them.
-        Inheriting inheriting(handles, inherits_all);
+        // Closed, and the lock let go, before the hook below runs: a child it
+        // starts inheriting every handle gets none of these, and does not
+        // wait for a lock this thread holds.
+        struct Inheriting {
+            std::array<Handle, 3>& handles;
+            bool exclusive;
+
+            Inheriting(std::array<Handle, 3>& handles, bool exclusive) :
+                handles(handles), exclusive(exclusive) {
+                if(exclusive) {
+                    ::AcquireSRWLockExclusive(&inheritance);
+                } else {
+                    ::AcquireSRWLockShared(&inheritance);
+                }
+            }
+
+            ~Inheriting() {
+                handles = {};
+                if(exclusive) {
+                    ::ReleaseSRWLockExclusive(&inheritance);
+                } else {
+                    ::ReleaseSRWLockShared(&inheritance);
+                }
+            }
+        } inheriting(handles, creation.windows_inherit_handles);
+
         for(const auto& handle: handles) {
             if(handle.handle != nullptr &&
                !::SetHandleInformation(handle.handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)) {
@@ -526,7 +523,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
                              line.data(),
                              nullptr,
                              nullptr,
-                             inherits_all || !inherited.empty(),
+                             creation.windows_inherit_handles || !inherited.empty(),
                              process_flags,
                              environment ? block.data() : nullptr,
                              cwd.empty() ? nullptr : cwd.c_str(),
