@@ -18,6 +18,10 @@
 #include "kota/fs/path.h"
 #include "kota/sys/process.h"
 
+#ifdef _WIN32
+#include "kota/fs/cygwin.h"
+#endif
+
 namespace kota::sys {
 
 namespace {
@@ -125,6 +129,17 @@ ZEST_CASE(find_program_finding_only_files_it_cannot_run_fails) {
     auto by_path = found(program);
     ZASSERT(!by_path.has_value());
     ZEXPECT(by_path.error() == std::errc::permission_denied);
+}
+
+// The first, for a message to name.
+ZEST_CASE(find_program_finding_only_files_it_cannot_run_names_the_first) {
+    auto first = test::make_program(dir, "first", "tool", false);
+    test::make_program(dir, "second", "tool", false);
+    test::ScopedEnv path("PATH",
+                         dir.file("first") + ":" + dir.file("second") + ":" + dir.file("third"));
+    std::string out;
+    ZEXPECT(find_program(out, "tool") == std::errc::permission_denied);
+    ZEXPECT(out == first);
 }
 
 /// The permissions of `path`, taken away until this goes.
@@ -251,15 +266,44 @@ ZEST_CASE(find_program_follows_a_cygwin_symlink) {
     ZEXPECT(found("cc", search) == program);
 }
 
+// The link, which says where it leads, for a message to name.
 ZEST_CASE(find_program_of_a_cygwin_symlink_to_a_posix_path_fails) {
     test::write_text(dir.file("cc"), "!<symlink>/usr/bin/gcc-13\0"sv);
     ProgramSearch search{
         .directories = {dir.root()},
         .extensions = {"", ".EXE"}
     };
-    auto result = found("cc", search);
-    ZASSERT(!result.has_value());
-    ZEXPECT(result.error() == std::errc::permission_denied);
+    std::string out;
+    ZEXPECT(find_program(out, "cc", search) == std::errc::permission_denied);
+    ZEXPECT(out == dir.file("cc"));
+    std::string target;
+    ZEXPECT(fs::cygwin::read_symlink(target, out));
+    ZEXPECT(target == "/usr/bin/gcc-13");
+}
+
+// The last link of a chain, the one that names the POSIX path.
+ZEST_CASE(find_program_of_a_cygwin_symlink_chain_to_a_posix_path_names_its_last_link) {
+    test::write_text(dir.file("cc"), "!<symlink>gcc\0"sv);
+    test::write_text(dir.file("gcc"), "!<symlink>/usr/bin/gcc-13\0"sv);
+    ProgramSearch search{
+        .directories = {dir.root()},
+        .extensions = {"", ".EXE"}
+    };
+    std::string out;
+    ZEXPECT(find_program(out, "cc", search) == std::errc::permission_denied);
+    ZEXPECT(out == dir.file("gcc"));
+}
+
+// The link, whose target is no file.
+ZEST_CASE(find_program_of_a_cygwin_symlink_to_nothing_names_the_link) {
+    test::write_text(dir.file("cc"), "!<symlink>gcc-13\0"sv);
+    ProgramSearch search{
+        .directories = {dir.root()},
+        .extensions = {"", ".EXE"}
+    };
+    std::string out;
+    ZEXPECT(find_program(out, "cc", search) == std::errc::permission_denied);
+    ZEXPECT(out == dir.file("cc"));
 }
 #endif
 

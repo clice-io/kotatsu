@@ -146,7 +146,8 @@ std::expected<std::vector<std::string>, std::error_code> create_process_director
 /// `directories`, by its rules: a name with a separator or a drive is a
 /// path, looked for nowhere else; `.exe` is added only to a name without an
 /// extension of its own; and a Cygwin symlink is the file it is, which
-/// CreateProcess cannot start. Errors as find_program's.
+/// CreateProcess cannot start. Errors, and what `out` names on
+/// permission_denied, as find_program's.
 std::error_code find_create_process_program(buffer_ref out,
                                             std::string_view name,
                                             string_list_ref directories);

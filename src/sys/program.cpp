@@ -17,6 +17,8 @@
 #include "kota/support/utf16.h"
 #include "kota/fs/cygwin.h"
 #else
+#include <fcntl.h>
+
 #include "kota/fs/status.h"
 #endif
 
@@ -55,7 +57,9 @@ Candidate examine(std::string_view path) {
                                                               : Candidate::Missing;
     }
     small_string<256> c_path(path);
-    if(status->type != fs::FileType::Regular || ::access(c_path.c_str(), X_OK) != 0) {
+    // By the effective IDs, which exec goes by, as access does not.
+    if(status->type != fs::FileType::Regular ||
+       ::faccessat(AT_FDCWD, c_path.c_str(), X_OK, AT_EACCESS) != 0) {
         return Candidate::Unrunnable;
     }
     return Candidate::Program;
@@ -106,13 +110,14 @@ std::vector<std::string> spellings(std::string_view name,
 
 /// Follows the Cygwin symlink at `path` to the program it names, in place:
 /// its target beside it, link after link, `.exe` added where the target has
-/// none; a program that is no link stays. False when a link names a POSIX
-/// path, which only its runtime's mount table maps, or nothing that runs, or
-/// the links loop.
+/// none; a program that is no link stays. False, `path` the link it stopped
+/// at, when a link names a POSIX path, which only its runtime's mount table
+/// maps, or nothing that runs, or the links loop.
 bool follow_cygwin_links(buffer_ref path) {
     // Past it, a chain is taken to loop.
     constexpr int most_links = 16;
     small_string<256> target;
+    small_string<256> link;
     for(int links = 0; links <= most_links; ++links) {
         if(!fs::cygwin::read_symlink(target, path.view())) {
             return true;
@@ -120,11 +125,13 @@ bool follow_cygwin_links(buffer_ref path) {
         if(fs::cygwin::is_posix_path(target)) {
             return false;
         }
+        link.assign(path.view());
         fs::path::pop(path);
         fs::path::push(path, target);
         if(examine(path.view()) != Candidate::Program) {
             path.append(".exe");
             if(examine(path.view()) != Candidate::Program) {
+                path.assign(link);
                 return false;
             }
         }
@@ -145,7 +152,9 @@ std::error_code find(buffer_ref out,
     if(name.empty()) {
         return std::make_error_code(std::errc::no_such_file_or_directory);
     }
-    bool found_unrunnable = false;
+    // The first file found that cannot be run, which permission_denied
+    // names.
+    small_string<256> unrunnable;
     // Whether the candidate in `out` is a program, which it then names.
     auto runs = [&] {
         switch(examine(out.view())) {
@@ -154,20 +163,25 @@ std::error_code find(buffer_ref out,
                 if(like_create_process || follow_cygwin_links(out)) {
                     return true;
                 }
-                found_unrunnable = true;
-                return false;
+                break;
 #else
                 return true;
 #endif
             }
-            case Candidate::Unrunnable: found_unrunnable = true; return false;
+            case Candidate::Unrunnable: break;
             case Candidate::Missing: return false;
         }
-        std::unreachable();
+        if(unrunnable.empty()) {
+            unrunnable.assign(out.view());
+        }
+        return false;
     };
     auto not_found = [&] {
-        return std::make_error_code(found_unrunnable ? std::errc::permission_denied
-                                                     : std::errc::no_such_file_or_directory);
+        if(unrunnable.empty()) {
+            return std::make_error_code(std::errc::no_such_file_or_directory);
+        }
+        out.assign(unrunnable);
+        return std::make_error_code(std::errc::permission_denied);
     };
 
 #ifdef _WIN32

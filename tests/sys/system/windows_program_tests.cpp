@@ -1,4 +1,5 @@
 #include <expected>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -60,6 +61,15 @@ ZEST_CASE(find_create_process_program_in_no_directory_fails) {
     auto result = found("cmd", {});
     ZASSERT(!result.has_value());
     ZEXPECT(result.error() == std::errc::no_such_file_or_directory);
+}
+
+// The first, for a message to name.
+ZEST_CASE(find_create_process_program_finding_only_a_directory_names_it) {
+    std::filesystem::create_directories(dir.path / "first" / "tool.exe");
+    std::vector<std::string> directories = {dir.file("first"), dir.file("second")};
+    std::string out;
+    ZEXPECT(find_create_process_program(out, "tool", directories) == std::errc::permission_denied);
+    ZEXPECT(out == dir.file(R"(first\tool.exe)"));
 }
 
 // What a Cygwin package installs for a link such as /usr/bin/cc, which
