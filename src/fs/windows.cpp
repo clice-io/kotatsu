@@ -176,7 +176,7 @@ void verbatim(basic_buffer_ref<wchar_t> path) {
     // A device path stays as Win32 takes it, CON and CONIN$ among them, but
     // for the length it limits: the verbatim prefix names the same NT path.
     if(held.starts_with(LR"(\\.\)")) {
-        if(held.size() >= short_path_limit) {
+        if(held.size() >= windows::short_path_limit) {
             path.chars()[2] = L'?';
         }
         return;

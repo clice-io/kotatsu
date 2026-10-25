@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #ifdef _WIN32
@@ -172,6 +173,7 @@ ZEST_CASE(read_to_end_reads_a_pipe_whole) {
     // A pipe reports no size: the buffer grows as it is read.
     test::TempDir dir;
     auto text = text_of(10'000);
+    std::string content;
 #ifdef _WIN32
     auto name = LR"(\\.\pipe\)" + test::std_path(path::filename(dir.root())).wstring();
     HANDLE writer = ::CreateNamedPipeW(name.c_str(),
@@ -191,20 +193,24 @@ ZEST_CASE(read_to_end_reads_a_pipe_whole) {
     ZEXPECT(::WriteFile(writer, text.data(), static_cast<DWORD>(text.size()), &written, nullptr));
     // The bytes stay to read once the writer is gone.
     ::CloseHandle(writer);
+    ZEXPECT(!file->read_to_end(content));
 #else
     auto fifo = dir.file("fifo");
     ZASSERT(::mkfifo(fifo.c_str(), 0600) == 0);
-    // Open for reading too, it waits for no reader, and lets the File open
-    // without waiting for a writer.
-    int writer = ::open(fifo.c_str(), O_RDWR | O_CLOEXEC);
-    ZASSERT(writer >= 0);
+    // Each end's open waits for the other's.
+    ssize_t written = 0;
+    std::thread writer([&] {
+        int fd = ::open(fifo.c_str(), O_WRONLY | O_CLOEXEC);
+        written = ::write(fd, text.data(), text.size());
+        ::close(fd);
+    });
     auto file = File::open(fifo);
     ZASSERT(file.has_value());
-    ZEXPECT(::write(writer, text.data(), text.size()) == static_cast<ssize_t>(text.size()));
-    ::close(writer);
+    auto error = file->read_to_end(content);
+    writer.join();
+    ZEXPECT(!error);
+    ZEXPECT(written == static_cast<ssize_t>(text.size()));
 #endif
-    std::string content;
-    ZEXPECT(!file->read_to_end(content));
     ZEXPECT(content == text);
 }
 
