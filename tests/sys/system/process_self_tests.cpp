@@ -1,3 +1,7 @@
+#include <filesystem>
+#include <string>
+
+#include "fs/harness/files.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/path.h"
@@ -17,10 +21,26 @@ ZEST_CASE(pid_is_a_process) {
 
 // CMake builds system_tests, Bazel a binary per module: sys_system_tests.
 ZEST_CASE(executable_path_names_this_program) {
-    auto path = executable_path();
-    ZASSERT(path.has_value());
-    ZEXPECT(fs::path::is_absolute(*path));
-    ZEXPECT(fs::path::stem(*path).ends_with("system_tests"));
+    std::string path;
+    ZASSERT(!executable_path(path));
+    ZEXPECT(fs::path::is_absolute(path));
+    ZEXPECT(fs::path::stem(path).ends_with("system_tests"));
+    ZEXPECT(std::filesystem::is_regular_file(test::std_path(path)));
+}
+
+// Linux names the image itself, which outlives its file; elsewhere the file.
+// sys_probe starts copies of itself through it.
+ZEST_CASE(self_executable_names_this_program) {
+    std::string self;
+    ZASSERT(!self_executable(self));
+#ifdef __linux__
+    ZEXPECT(self == "/proc/self/exe");
+#else
+    std::string path;
+    ZASSERT(!executable_path(path));
+    ZEXPECT(self == path);
+#endif
+    ZEXPECT(std::filesystem::is_regular_file(test::std_path(self)));
 }
 
 // Read from the system: the program's name first, as it was started.

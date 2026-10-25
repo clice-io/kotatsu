@@ -241,8 +241,7 @@ inline ancestors_view ancestors(std::string_view p, Style style = native_style) 
 // The functions below write a path into a buffer the caller gives, of any
 // type (std::string, small_string<N>, llvm::SmallString<N>): one buffer may
 // serve a loop of calls without allocating. Those that change a path change
-// it in place, as Rust's PathBuf does; a string_view they take must not view
-// the buffer they write.
+// it in place, as Rust's PathBuf does.
 
 /// Joins `p` onto `path`. An absolute `p`, and on Windows one with another
 /// prefix (`D:x` onto `C:\a`), takes its place; a rooted `\x` keeps its

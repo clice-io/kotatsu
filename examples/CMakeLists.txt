@@ -33,7 +33,7 @@ if(KOTA_ENABLE_ASYNC AND KOTA_CODEC_ENABLE_SIMDJSON)
 
     add_executable(spawn_worker ipc/spawn_worker.cpp)
     target_include_directories(spawn_worker PRIVATE "${PROJECT_SOURCE_DIR}/include")
-    target_link_libraries(spawn_worker PRIVATE kota::ipc)
+    target_link_libraries(spawn_worker PRIVATE kota::ipc kota::sys)
 else()
     message(STATUS "KOTA_ENABLE_ASYNC=OFF or KOTA_CODEC_ENABLE_SIMDJSON=OFF: skipping ipc examples")
 endif()

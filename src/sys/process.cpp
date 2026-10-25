@@ -1,10 +1,11 @@
 #include "kota/sys/process.h"
 
-#include <climits>
-#include <cstdlib>
-#include <memory>
+#include <cstdint>
+#include <string>
+#include <string_view>
 
 #include "os.h"
+#include "kota/support/small_string.h"
 
 #ifdef _WIN32
 // After windows.h, whose types it uses.
@@ -14,9 +15,14 @@
 #include "kota/sys/windows.h"
 #elif defined(__APPLE__)
 #include <crt_externs.h>
+#include <libproc.h>
 #include <mach-o/dyld.h>
+#include <sys/stat.h>
 #else
+#include <sys/stat.h>
+
 #include "proc.h"
+#include "kota/fs/directory.h"
 #endif
 
 namespace kota::sys {
@@ -53,48 +59,79 @@ int parent_pid() noexcept {
 #endif
 }
 
-std::expected<std::string, std::error_code> executable_path() {
+std::error_code executable_path(buffer_ref out) {
 #ifdef _WIN32
-    std::wstring path(MAX_PATH, L'\0');
+    // The image's name now, where GetModuleFileNameW keeps the one it was
+    // loaded by: Windows lets a running program's file be renamed.
+    small_wstring<264> path;
+    path.resize(MAX_PATH);
     while(true) {
-        auto size = ::GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
-        if(size == 0) {
-            return std::unexpected(fs::windows::last_error());
+        auto size = static_cast<DWORD>(path.size());
+        if(::QueryFullProcessImageNameW(::GetCurrentProcess(), 0, path.data(), &size)) {
+            from_utf16(out, std::wstring_view(path.data(), size));
+            return {};
         }
-        // Cut short, the path fills the buffer.
-        if(size < path.size()) {
-            std::string executable;
-            from_utf16(executable, std::wstring_view(path.data(), size));
-            return executable;
+        if(::GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+            return fs::windows::last_error();
         }
         path.resize(path.size() * 2);
     }
 #elif defined(__APPLE__)
-    std::uint32_t size = 0;
-    ::_NSGetExecutablePath(nullptr, &size);
-    std::string path(size, '\0');
-    // Given the size the first call asked for, it cannot fail.
-    ::_NSGetExecutablePath(path.data(), &size);
-    // The path the program was started by, which may be relative or a link.
-    std::unique_ptr<char, decltype(&std::free)> real(::realpath(path.c_str(), nullptr), &std::free);
-    if(!real) {
-        return std::unexpected(errno_code());
+    // The image's name now, absolute, where _NSGetExecutablePath keeps the
+    // one it was started by, which may be relative to a directory this
+    // process has left.
+    char path[PROC_PIDPATHINFO_MAXSIZE];
+    if(::proc_pidpath(::getpid(), path, sizeof(path)) <= 0) {
+        return std::make_error_code(std::errc::no_such_file_or_directory);
     }
-    return std::string(real.get());
+    // The name stays after a file was renamed over the image's: it is the
+    // image's only when it reaches the file the image's header is mapped
+    // from.
+    proc_regionwithpathinfo region{};
+    auto header = reinterpret_cast<std::uint64_t>(::_dyld_get_image_header(0));
+    const auto& image = region.prp_vip.vip_vi.vi_stat;
+    struct stat named;
+    if(::proc_pidinfo(::getpid(), PROC_PIDREGIONPATHINFO, header, &region, sizeof(region)) !=
+           static_cast<int>(sizeof(region)) ||
+       ::stat(path, &named) != 0 || static_cast<std::uint32_t>(named.st_dev) != image.vst_dev ||
+       named.st_ino != image.vst_ino) {
+        return std::make_error_code(std::errc::no_such_file_or_directory);
+    }
+    out.assign(path);
+    return {};
 #else
-    // The link's size says nothing in /proc: grow until the target fits.
-    std::string path(PATH_MAX, '\0');
-    while(true) {
-        auto size = ::readlink("/proc/self/exe", path.data(), path.size());
-        if(size < 0) {
-            return std::unexpected(errno_code());
-        }
-        if(static_cast<std::size_t>(size) < path.size()) {
-            path.resize(static_cast<std::size_t>(size));
-            return path;
-        }
-        path.resize(path.size() * 2);
+    if(auto error = fs::read_symlink(out, "/proc/self/exe")) {
+        return error;
     }
+    // The link names a removed file with this after it; a file of that name
+    // is the image only when it is the one the link reaches.
+    constexpr std::string_view removed = " (deleted)";
+    if(!out.view().ends_with(removed)) {
+        return {};
+    }
+    struct stat image;
+    struct stat named;
+    small_string<256> name(out.view());
+    if(::stat("/proc/self/exe", &image) != 0 || ::stat(name.c_str(), &named) != 0 ||
+       image.st_dev != named.st_dev || image.st_ino != named.st_ino) {
+        return std::make_error_code(std::errc::no_such_file_or_directory);
+    }
+    return {};
+#endif
+}
+
+std::error_code self_executable(buffer_ref out) {
+#if !defined(_WIN32) && !defined(__APPLE__)
+    // What exec of this link runs is the image itself, the file renamed or
+    // removed or not.
+    constexpr const char* self = "/proc/self/exe";
+    if(::access(self, X_OK) != 0) {
+        return errno_code();
+    }
+    out.assign(self);
+    return {};
+#else
+    return executable_path(out);
 #endif
 }
 
@@ -103,12 +140,15 @@ const std::vector<std::string>& arguments() {
 #ifdef _WIN32
         std::string text;
         from_utf16(text, std::wstring_view(::GetCommandLineW()));
-        auto line = windows::split_command_line(text);
+        std::vector<std::string> line;
+        for(auto argument: windows::split_command_line(text)) {
+            line.emplace_back(argument);
+        }
         // A program started with an empty command line has not even its name
         // in it: its executable stands for argv[0], as in Rust.
         if(line.empty()) {
-            if(auto executable = executable_path()) {
-                line.push_back(std::move(*executable));
+            if(std::string executable; !executable_path(executable)) {
+                line.push_back(std::move(executable));
             }
         }
         return line;

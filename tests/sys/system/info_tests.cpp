@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstddef>
+#include <string>
 #include <system_error>
 
 #ifdef __linux__
@@ -130,9 +131,9 @@ ZEST_CASE(os_names_the_system) {
 }
 
 ZEST_CASE(hostname_and_uptime_are_reported) {
-    auto host = hostname();
-    ZASSERT(host.has_value());
-    ZEXPECT(!host->empty());
+    std::string host;
+    ZEXPECT(!hostname(host));
+    ZEXPECT(!host.empty());
     ZEXPECT(uptime().count() > 0);
 }
 

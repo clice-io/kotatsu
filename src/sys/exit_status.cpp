@@ -18,14 +18,14 @@ std::string ExitStatus::to_string() const {
     }
 #ifdef _WIN32
     // A crash exits with its exception's NTSTATUS, an error or a warning.
-    const auto code = static_cast<std::uint32_t>(status);
-    if(code >= 0x8000'0000) {
-        auto name = windows::ntstatus_name(code);
-        return name.empty() ? std::format("exception 0x{:08X}", code)
-                            : std::format("exception 0x{:08X} ({})", code, name);
+    const auto exception = static_cast<std::uint32_t>(code);
+    if(exception >= 0x8000'0000) {
+        auto name = windows::ntstatus_name(exception);
+        return name.empty() ? std::format("exception 0x{:08X}", exception)
+                            : std::format("exception 0x{:08X} ({})", exception, name);
     }
 #endif
-    return std::format("exit code {}", status);
+    return std::format("exit code {}", code);
 }
 
 std::string_view signal_name(int signum) {

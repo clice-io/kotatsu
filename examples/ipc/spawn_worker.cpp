@@ -1,4 +1,3 @@
-#include <filesystem>
 #include <memory>
 #include <print>
 #include <string>
@@ -7,6 +6,7 @@
 #include <vector>
 
 #include "kota/ipc/codec/json.h"
+#include "kota/sys/process.h"
 #include "kota/async/async.h"
 
 namespace ipc = kota::ipc;
@@ -99,11 +99,9 @@ kota::task<void> run_parent_session(ipc::JSONPeer& peer,
         co_return;
     }
 
-    if(child_status->status != 0 || child_status->term_signal != 0) {
+    if(!child_status->success()) {
         if(outcome.error.empty()) {
-            outcome.error =
-                "worker exited unexpectedly: status=" + std::to_string(child_status->status) +
-                " signal=" + std::to_string(child_status->term_signal);
+            outcome.error = "worker exited unexpectedly: " + child_status->to_string();
         }
         co_return;
     }
@@ -157,11 +155,11 @@ int run_parent(std::string self_path) {
 
     for(std::size_t index = 0; index < plans.size(); ++index) {
         kota::process::options opts;
-        opts.file = self_path;
-        opts.args = {self_path, "--worker"};
+        opts.program = self_path;
+        opts.args = {"--worker"};
         opts.streams = {
-            kota::process::stdio::pipe(true, false),
-            kota::process::stdio::pipe(false, true),
+            kota::process::stdio::pipe(),
+            kota::process::stdio::pipe(),
             kota::process::stdio::inherit(),
         };
 
@@ -213,6 +211,10 @@ int main(int argc, char** argv) {
         return run_worker();
     }
 
-    auto self_path = std::filesystem::absolute(argv[0]).string();
+    std::string self_path;
+    if(auto error = kota::sys::self_executable(self_path)) {
+        std::println(stderr, "cannot find this program: {}", error.message());
+        return 1;
+    }
     return run_parent(std::move(self_path));
 }

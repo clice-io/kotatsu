@@ -23,34 +23,33 @@ namespace {
 
 #ifdef _WIN32
 
-std::expected<std::string, std::error_code> known_folder(const KNOWNFOLDERID& id) {
+std::error_code known_folder(buffer_ref out, const KNOWNFOLDERID& id) {
     wchar_t* path = nullptr;
     auto result = ::SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, nullptr, &path);
     // Freed whether or not it succeeded.
-    std::string folder;
     if(SUCCEEDED(result)) {
-        from_utf16(folder, std::wstring_view(path));
+        from_utf16(out, std::wstring_view(path));
     }
     ::CoTaskMemFree(path);
     if(FAILED(result)) {
         // A Win32 error wrapped in an HRESULT, or an HRESULT of its own.
         if(HRESULT_FACILITY(result) == FACILITY_WIN32) {
-            return std::unexpected(fs::windows::to_error_code(HRESULT_CODE(result)));
+            return fs::windows::to_error_code(HRESULT_CODE(result));
         }
-        return std::unexpected(std::error_code(static_cast<int>(result), std::system_category()));
+        return std::error_code(static_cast<int>(result), std::system_category());
     }
-    return folder;
+    return {};
 }
 
 #else
 
 /// Directory `relative` in the home directory.
-std::expected<std::string, std::error_code> in_home(std::string_view relative) {
-    auto home = home_dir();
-    if(home) {
-        fs::path::push(*home, relative);
+std::error_code in_home(buffer_ref out, std::string_view relative) {
+    if(auto error = home_dir(out)) {
+        return error;
     }
-    return home;
+    fs::path::push(out, relative);
+    return {};
 }
 
 #endif
@@ -59,27 +58,26 @@ std::expected<std::string, std::error_code> in_home(std::string_view relative) {
 
 /// The path in XDG variable `name` when it is absolute, else `fallback` in
 /// the home directory.
-std::expected<std::string, std::error_code> xdg_dir(std::string_view name,
-                                                    std::string_view fallback) {
-    if(auto value = get_env(name); value && fs::path::is_absolute(*value)) {
-        return std::move(*value);
+std::error_code xdg_dir(buffer_ref out, std::string_view name, std::string_view fallback) {
+    if(get_env(out, name) && fs::path::is_absolute(out.view())) {
+        return {};
     }
-    return in_home(fallback);
+    return in_home(out, fallback);
 }
 
 #endif
 
 }  // namespace
 
-std::expected<std::string, std::error_code> home_dir() {
+std::error_code home_dir(buffer_ref out) {
 #ifdef _WIN32
-    if(auto profile = get_env("USERPROFILE"); profile && !profile->empty()) {
-        return std::move(*profile);
+    if(get_env(out, "USERPROFILE") && !out.empty()) {
+        return {};
     }
-    return known_folder(FOLDERID_Profile);
+    return known_folder(out, FOLDERID_Profile);
 #else
-    if(auto home = get_env("HOME"); home && !home->empty()) {
-        return std::move(*home);
+    if(get_env(out, "HOME") && !out.empty()) {
+        return {};
     }
     passwd entry{};
     passwd* found = nullptr;
@@ -91,43 +89,44 @@ std::expected<std::string, std::error_code> home_dir() {
             continue;
         }
         if(error != 0) {
-            return std::unexpected(std::error_code(error, std::generic_category()));
+            return std::error_code(error, std::generic_category());
         }
         if(found == nullptr) {
-            return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
+            return std::make_error_code(std::errc::no_such_file_or_directory);
         }
-        return std::string(found->pw_dir);
+        out.assign(found->pw_dir);
+        return {};
     }
 #endif
 }
 
-std::expected<std::string, std::error_code> cache_dir() {
+std::error_code cache_dir(buffer_ref out) {
 #ifdef _WIN32
-    return known_folder(FOLDERID_LocalAppData);
+    return known_folder(out, FOLDERID_LocalAppData);
 #elif defined(__APPLE__)
-    return in_home("Library/Caches");
+    return in_home(out, "Library/Caches");
 #else
-    return xdg_dir("XDG_CACHE_HOME", ".cache");
+    return xdg_dir(out, "XDG_CACHE_HOME", ".cache");
 #endif
 }
 
-std::expected<std::string, std::error_code> config_dir() {
+std::error_code config_dir(buffer_ref out) {
 #ifdef _WIN32
-    return known_folder(FOLDERID_RoamingAppData);
+    return known_folder(out, FOLDERID_RoamingAppData);
 #elif defined(__APPLE__)
-    return in_home("Library/Application Support");
+    return in_home(out, "Library/Application Support");
 #else
-    return xdg_dir("XDG_CONFIG_HOME", ".config");
+    return xdg_dir(out, "XDG_CONFIG_HOME", ".config");
 #endif
 }
 
-std::expected<std::string, std::error_code> data_dir() {
+std::error_code data_dir(buffer_ref out) {
 #ifdef _WIN32
-    return known_folder(FOLDERID_LocalAppData);
+    return known_folder(out, FOLDERID_LocalAppData);
 #elif defined(__APPLE__)
-    return in_home("Library/Application Support");
+    return in_home(out, "Library/Application Support");
 #else
-    return xdg_dir("XDG_DATA_HOME", ".local/share");
+    return xdg_dir(out, "XDG_DATA_HOME", ".local/share");
 #endif
 }
 

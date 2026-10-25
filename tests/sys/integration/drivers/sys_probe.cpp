@@ -6,6 +6,12 @@
 //                         or null when it is unset
 //   parent                prints its parent's pid
 //   wait                  prints "ready" and exits once its stdin ends
+//   moved                 prints "ready", and once its stdin ends, the test
+//                         having moved or removed its file meanwhile,
+//                         {"path": <what executable_path writes, or null
+//                         when it fails>, "code": <the exit code of
+//                         `sys_probe parent` started by self_executable, or
+//                         null when it cannot be started>}
 //   other <pid>           sets the priority of process <pid> to BelowNormal and
 //                         prints what it reads back, as a number, and the
 //                         process's resident size
@@ -27,10 +33,10 @@
 //   report <argument>     prints {"arguments": <what sys::arguments reads>,
 //                         "cwd": <its working directory>, "value": <the
 //                         value of KOTA_PROBE_VALUE>}
-//   relay <cwd> <value> <argument>
-//                         starts `sys_probe report <argument>` in <cwd>,
-//                         KOTA_PROBE_VALUE set to <value>, and exits as it
-//                         does
+//   relay <cwd> <value> <argument> <arg0>
+//                         starts `sys_probe report <argument>` in <cwd>, its
+//                         argv[0] <arg0>, KOTA_PROBE_VALUE set to <value>,
+//                         and exits as it does
 //   orphan                starts `sys_probe hang`, exit_with_parent, its
 //                         stdout this one's, prints {"pid": <its pid>} and
 //                         exits once its stdin ends, unless killed first
@@ -223,11 +229,14 @@ std::string json(const std::vector<std::string>& arguments) {
     return line + "]";
 }
 
-/// `sys_probe <arguments...>`, its streams this one's.
+/// `sys_probe <arguments...>`, its streams this one's: no program, which
+/// spawn fails for, when this one's cannot be found.
 kota::sys::SpawnOptions probe(std::vector<std::string> arguments) {
-    auto self = kota::sys::executable_path();
-    arguments.insert(arguments.begin(), self ? *self : std::string());
-    return {.file = arguments.front(), .args = std::move(arguments)};
+    std::string self;
+    if(kota::sys::self_executable(self)) {
+        self.clear();
+    }
+    return {.program = std::move(self), .args = std::move(arguments)};
 }
 
 /// `sys_probe hang`, its stdout this one's: the test reads it to its end,
@@ -250,7 +259,11 @@ int run(const kota::sys::SpawnOptions& options) {
     if(!status) {
         return fail("wait", status.error());
     }
-    return static_cast<int>(status->status);
+    // A signal's end, as a shell tells it.
+    if(status->term_signal != 0) {
+        return 128 + status->term_signal;
+    }
+    return static_cast<int>(status->code);
 }
 
 }  // namespace
@@ -265,8 +278,8 @@ int main() {
         return 0;
     }
     if(command == "env" && arguments.size() == 3) {
-        auto value = sys::get_env(arguments[2]);
-        print_line(value ? json(*value) : "null");
+        std::string value;
+        print_line(sys::get_env(value, arguments[2]) ? json(value) : "null");
         return 0;
     }
     if(command == "parent") {
@@ -276,6 +289,22 @@ int main() {
     if(command == "wait") {
         print_line(R"("ready")");
         wait_for_stdin();
+        return 0;
+    }
+    if(command == "moved") {
+        print_line(R"("ready")");
+        wait_for_stdin();
+        std::string path;
+        const bool found = !sys::executable_path(path);
+        auto options = probe({"parent"});
+        options.streams[1] = sys::Stdio::ignore();
+        std::string code = "null";
+        if(auto child = sys::spawn(options)) {
+            if(auto status = child->wait()) {
+                code = std::to_string(status->code);
+            }
+        }
+        print_line(std::format(R"({{"path":{},"code":{}}})", found ? json(path) : "null", code));
         return 0;
     }
     if(command == "other" && arguments.size() == 3) {
@@ -316,15 +345,17 @@ int main() {
         if(auto error = kota::fs::current_dir(cwd)) {
             return fail("current_dir", error);
         }
-        auto value = sys::get_env("KOTA_PROBE_VALUE");
+        std::string value;
+        const bool set = sys::get_env(value, "KOTA_PROBE_VALUE");
         print_line(std::format(R"({{"arguments":{},"cwd":{},"value":{}}})",
                                json(arguments),
                                json(cwd),
-                               value ? json(*value) : "null"));
+                               set ? json(value) : "null"));
         return 0;
     }
-    if(command == "relay" && arguments.size() == 5) {
+    if(command == "relay" && arguments.size() == 6) {
         auto options = probe({"report", arguments[4]});
+        options.arg0 = arguments[5];
         options.cwd = arguments[2];
         options.env_changes = {
             {.name = "KOTA_PROBE_VALUE", .value = arguments[3]}
@@ -403,7 +434,7 @@ int main() {
         if(!status) {
             return fail("wait", status.error());
         }
-        print_line(std::format(R"({{"inherited":{}}})", status->status == 1 ? "true" : "false"));
+        print_line(std::format(R"({{"inherited":{}}})", status->code == 1 ? "true" : "false"));
         return 0;
     }
     if(command == "handle" && arguments.size() == 4) {

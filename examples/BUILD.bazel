@@ -13,7 +13,7 @@ package(default_visibility = ["//tests:__pkg__"])
     ("dump_dot", "dump_dot/dump_dot.cpp", ["//:async"]),
     ("jsonrpc_server", "ipc/stdio_server.cpp", ["//:ipc_json"]),
     ("jsonrpc_roundtrip", "ipc/scripted_roundtrip.cpp", ["//:ipc_json"]),
-    ("spawn_worker", "ipc/spawn_worker.cpp", ["//:ipc_json"]),
+    ("spawn_worker", "ipc/spawn_worker.cpp", ["//:ipc_json", "//:sys"]),
 ]]
 
 # build_system's graph, which its tests check.

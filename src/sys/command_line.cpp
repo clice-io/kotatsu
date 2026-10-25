@@ -8,131 +8,131 @@
 
 namespace kota::sys::windows {
 
-std::string quote_argument(std::string_view argument) {
+namespace {
+
+/// Appends `argument` to `out`, quoted as quote_argument() quotes it.
+void append_quoted(buffer_ref out, std::string_view argument) {
     if(!argument.empty() && argument.find_first_of(" \t\n\v\"") == std::string_view::npos) {
-        return std::string(argument);
+        out.append(argument);
+        return;
     }
-    std::string quoted = "\"";
+    out.push_back('"');
     std::size_t backslashes = 0;
+    auto put_backslashes = [&](std::size_t count) {
+        for(std::size_t i = 0; i < count; ++i) {
+            out.push_back('\\');
+        }
+    };
     for(char c: argument) {
         if(c == '\\') {
             ++backslashes;
             continue;
         }
         // Backslashes before a quote escape themselves, and one more the quote.
-        if(c == '"') {
-            quoted.append(backslashes * 2 + 1, '\\');
-        } else {
-            quoted.append(backslashes, '\\');
-        }
+        put_backslashes(c == '"' ? backslashes * 2 + 1 : backslashes);
         backslashes = 0;
-        quoted += c;
+        out.push_back(c);
     }
     // The closing quote must not be escaped.
-    quoted.append(backslashes * 2, '\\');
-    quoted += '"';
-    return quoted;
+    put_backslashes(backslashes * 2);
+    out.push_back('"');
 }
 
-std::string join_command_line(std::span<const std::string> arguments) {
-    std::string line;
+}  // namespace
+
+void quote_argument(buffer_ref out, std::string_view argument) {
+    out.clear();
+    append_quoted(out, argument);
+}
+
+void join_command_line(buffer_ref out, string_list_ref arguments) {
+    out.clear();
     for(std::size_t i = 0; i < arguments.size(); ++i) {
-        std::string_view argument = arguments[i];
+        auto argument = arguments[i];
         if(i != 0) {
-            line += ' ';
-            line += quote_argument(argument);
+            out.push_back(' ');
+            append_quoted(out, argument);
             continue;
         }
         assert(argument.find('"') == std::string_view::npos && "a program name holds no quote");
-        if(argument.empty() || argument.find_first_of(" \t") != std::string_view::npos) {
-            line += '"';
-            line += argument;
-            line += '"';
-        } else {
-            line += argument;
+        bool quote = argument.empty() || argument.find_first_of(" \t") != std::string_view::npos;
+        if(quote) {
+            out.push_back('"');
+        }
+        out.append(argument);
+        if(quote) {
+            out.push_back('"');
         }
     }
-    return line;
 }
 
-std::vector<std::string> split_command_line(std::string_view line) {
-    std::vector<std::string> arguments;
+split_command_line_view::iterator::iterator(std::string_view line) : rest(line) {
     if(line.empty()) {
-        return arguments;
+        done = true;
+        return;
     }
+    ++*this;
+}
+
+split_command_line_view::iterator& split_command_line_view::iterator::operator++() {
     auto blank = [](char c) {
         return c == ' ' || c == '\t';
     };
-    std::size_t at = 0;
-    auto skip_blanks = [&] {
-        while(at < line.size() && blank(line[at])) {
-            ++at;
-        }
-    };
-
-    // The program: no escapes, every quote toggles.
-    std::string current;
-    bool quoted = false;
-    for(; at < line.size(); ++at) {
-        char c = line[at];
-        if(c == '"') {
-            quoted = !quoted;
-        } else if(blank(c) && !quoted) {
-            break;
-        } else {
-            current += c;
-        }
+    if(!program && rest.empty()) {
+        done = true;
+        return *this;
     }
-    arguments.push_back(std::move(current));
-    skip_blanks();
-
-    current.clear();
-    quoted = false;
-    while(at < line.size()) {
-        char c = line[at];
-        if(blank(c) && !quoted) {
-            arguments.push_back(std::move(current));
-            current.clear();
-            skip_blanks();
-            continue;
-        }
-        if(c == '\\') {
-            std::size_t start = at;
-            while(at < line.size() && line[at] == '\\') {
-                ++at;
+    argument.clear();
+    bool quoted = false;
+    std::size_t at = 0;
+    if(program) {
+        // No escapes, every quote toggles.
+        program = false;
+        for(; at < rest.size() && (quoted || !blank(rest[at])); ++at) {
+            if(rest[at] == '"') {
+                quoted = !quoted;
+            } else {
+                argument.push_back(rest[at]);
             }
-            auto count = at - start;
-            if(at < line.size() && line[at] == '"') {
-                current.append(count / 2, '\\');
-                if(count % 2 == 1) {
-                    current += '"';
+        }
+    } else {
+        // It starts at what is no blank, and ends at a blank outside quotes,
+        // or at the end of the line, in quotes or not.
+        while(at < rest.size() && (quoted || !blank(rest[at]))) {
+            char c = rest[at];
+            if(c == '\\') {
+                std::size_t start = at;
+                while(at < rest.size() && rest[at] == '\\') {
                     ++at;
                 }
-            } else {
-                current.append(count, '\\');
+                auto count = at - start;
+                if(at < rest.size() && rest[at] == '"') {
+                    argument.append(count / 2, '\\');
+                    if(count % 2 == 1) {
+                        argument.push_back('"');
+                        ++at;
+                    }
+                } else {
+                    argument.append(count, '\\');
+                }
+                continue;
             }
-            continue;
-        }
-        ++at;
-        if(c != '"') {
-            current += c;
-        } else if(!quoted) {
-            quoted = true;
-        } else if(at == line.size()) {
-            // A quote ending the line leaves the argument in quotes.
-            break;
-        } else if(line[at] == '"') {
-            current += '"';
             ++at;
-        } else {
-            quoted = false;
+            if(c != '"') {
+                argument.push_back(c);
+            } else if(!quoted) {
+                quoted = true;
+            } else if(at < rest.size() && rest[at] == '"') {
+                argument.push_back('"');
+                ++at;
+            } else {
+                quoted = false;
+            }
         }
     }
-    // An argument in quotes at the end stands, empty as it may be.
-    if(!current.empty() || quoted) {
-        arguments.push_back(std::move(current));
-    }
-    return arguments;
+    auto next = rest.find_first_not_of(" \t", at);
+    rest = next == std::string_view::npos ? std::string_view() : rest.substr(next);
+    return *this;
 }
 
 }  // namespace kota::sys::windows

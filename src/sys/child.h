@@ -1,7 +1,7 @@
 #pragma once
 
-// What spawn does alike on every host: the child's environment, and the
-// file it runs.
+// What spawn does alike on every host: the child's environment, its
+// arguments, and the file it runs.
 
 #include <csignal>
 #include <expected>
@@ -28,7 +28,10 @@ inline constexpr int sigkill = SIGKILL;
 /// inherit this process's as it is.
 std::optional<std::vector<EnvVar>> child_environment(const SpawnOptions& options);
 
-/// The file the child runs: `options.file` as SpawnOptions::file says, PATH
+/// The child's argv: `arg0`, or `program`, then `args`.
+std::vector<std::string> child_arguments(const SpawnOptions& options);
+
+/// The file the child runs: `options.program` as SpawnOptions::program says, PATH
 /// read from `environment`, the child's (this process's when unset). A path
 /// relative to `options.cwd` is made absolute, for a child that changes to
 /// that directory before it runs the file.

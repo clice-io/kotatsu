@@ -81,18 +81,18 @@ std::expected<Handle, std::error_code> inheritable_descriptor(int fd) {
 }
 
 /// The two ends of a pipe: this process's, opened for overlapped I/O, and
-/// the child's, inheritable; flags from the child's side.
-std::expected<std::pair<Handle, Handle>, std::error_code> create_pipe(bool readable,
-                                                                      bool writable) {
+/// the child's, inheritable, which the child reads, writes, or both.
+std::expected<std::pair<Handle, Handle>, std::error_code> create_pipe(bool child_reads,
+                                                                      bool child_writes) {
     static std::atomic<unsigned> serial = 0;
     auto name = std::format(LR"(\\.\pipe\kota-{}-{})", ::GetCurrentProcessId(), serial++);
     // Ours reads too when the child only reads, as libuv's does: a shutdown
     // asks how much of what it wrote is left, which takes read access.
     DWORD open_mode = FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE | WRITE_DAC;
-    if(readable) {
+    if(child_reads) {
         open_mode |= PIPE_ACCESS_INBOUND | PIPE_ACCESS_OUTBOUND;
     }
-    if(writable) {
+    if(child_writes) {
         open_mode |= PIPE_ACCESS_INBOUND;
     }
     Handle ours(::CreateNamedPipeW(name.c_str(),
@@ -107,8 +107,8 @@ std::expected<std::pair<Handle, Handle>, std::error_code> create_pipe(bool reada
         return std::unexpected(fs::windows::last_error());
     }
     DWORD access = WRITE_DAC;
-    access |= readable ? GENERIC_READ : FILE_READ_ATTRIBUTES;
-    access |= writable ? GENERIC_WRITE : FILE_WRITE_ATTRIBUTES;
+    access |= child_reads ? GENERIC_READ : FILE_READ_ATTRIBUTES;
+    access |= child_writes ? GENERIC_WRITE : FILE_WRITE_ATTRIBUTES;
     SECURITY_ATTRIBUTES inherit{.nLength = sizeof(inherit),
                                 .lpSecurityDescriptor = nullptr,
                                 .bInheritHandle = TRUE};
@@ -191,7 +191,7 @@ std::chrono::microseconds microseconds(FILETIME time) {
 ExitStatus exit_status_of(HANDLE process, HANDLE job, bool tree, int killed_by) {
     DWORD code = 0;
     ::GetExitCodeProcess(process, &code);
-    ExitStatus status{.status = static_cast<std::int64_t>(code), .term_signal = killed_by};
+    ExitStatus status{.code = static_cast<std::int64_t>(code), .term_signal = killed_by};
     if(tree) {
         JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting{};
         ::QueryInformationJobObject(job,
@@ -304,11 +304,6 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     if(options.windows_command_line.empty() && is_batch_file(*program)) {
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
-    for(const auto& stream: options.streams) {
-        if(stream.kind == Stdio::Kind::Pipe && !stream.readable && !stream.writable) {
-            return std::unexpected(std::make_error_code(std::errc::invalid_argument));
-        }
-    }
 
     small_wstring<264> application;
     if(auto error = to_utf16(application, *program)) {
@@ -317,9 +312,12 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     std::string written;
     std::string_view command_line = options.windows_command_line;
     if(command_line.empty()) {
-        written = options.args.empty()
-                      ? windows::join_command_line(std::vector<std::string>{options.file})
-                      : windows::join_command_line(options.args);
+        auto arguments = child_arguments(options);
+        // The program's rule has no way to write a quote.
+        if(arguments[0].find('"') != std::string::npos) {
+            return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        }
+        windows::join_command_line(written, arguments);
         command_line = written;
     }
     std::wstring line;
@@ -377,7 +375,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
                 made = inheritable(stream.file);
                 break;
             case Stdio::Kind::Pipe: {
-                auto pipe = create_pipe(stream.readable, stream.writable);
+                auto pipe = create_pipe(stream.duplex || i == 0, stream.duplex || i != 0);
                 if(!pipe) {
                     return std::unexpected(pipe.error());
                 }
@@ -468,8 +466,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     startup.StartupInfo.hStdInput = handles[0].handle;
     startup.StartupInfo.hStdOutput = handles[1].handle;
     startup.StartupInfo.hStdError = handles[2].handle;
-    startup.StartupInfo.wShowWindow = static_cast<WORD>(
-        creation.windows_hide || creation.windows_hide_gui ? SW_HIDE : SW_SHOWDEFAULT);
+    startup.StartupInfo.wShowWindow =
+        static_cast<WORD>(creation.windows_hide_gui ? SW_HIDE : SW_SHOWDEFAULT);
     startup.lpAttributeList = attributes;
 
     DWORD process_flags = CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
@@ -479,8 +477,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     // A console without a window: the console programs it starts share it,
     // where a child without a console (DETACHED_PROCESS) has each of them
     // open one. libuv's rule: a stream of this process's keeps its console.
-    if(creation.detached ||
-       ((creation.windows_hide || creation.windows_hide_console) && !shares_streams)) {
+    if(creation.detached || (creation.windows_hide_console && !shares_streams)) {
         process_flags |= CREATE_NO_WINDOW;
     }
     if(options.windows_before_start) {

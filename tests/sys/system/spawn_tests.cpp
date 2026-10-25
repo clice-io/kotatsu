@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <expected>
@@ -56,20 +57,6 @@ std::string shell_path() {
 #endif
 }
 
-/// Runs `command` through the shell, its stdio ignored.
-SpawnOptions shell(std::string_view command) {
-    SpawnOptions options{
-        .file = shell_path(),
-#ifdef _WIN32
-        .args = {"cmd.exe", "/c", std::string(command)},
-#else
-        .args = {"sh", "-c", std::string(command)},
-#endif
-    };
-    options.streams = {Stdio::ignore(), Stdio::ignore(), Stdio::ignore()};
-    return options;
-}
-
 /// The shell spelled by host: `posix`, or `windows` for cmd.
 constexpr std::string_view by_platform([[maybe_unused]] std::string_view posix,
                                        [[maybe_unused]] std::string_view windows) {
@@ -80,6 +67,16 @@ constexpr std::string_view by_platform([[maybe_unused]] std::string_view posix,
 #endif
 }
 
+/// Runs `command` through the shell, its stdio ignored.
+SpawnOptions shell(std::string_view command) {
+    SpawnOptions options{
+        .program = shell_path(),
+        .args = {std::string(by_platform("-c", "/c")), std::string(command)},
+    };
+    options.streams = {Stdio::ignore(), Stdio::ignore(), Stdio::ignore()};
+    return options;
+}
+
 /// What `options` writes to its stdout, read through a pipe until the child
 /// and whatever else holds the pipe have gone, and how the child ended.
 struct Output {
@@ -88,7 +85,7 @@ struct Output {
 };
 
 Output output_of(SpawnOptions options) {
-    options.streams[1] = Stdio::pipe(false, true);
+    options.streams[1] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
     auto end = child->take_pipe(1);
@@ -123,7 +120,7 @@ ZEST_CASE(wait_reports_the_exit_code) {
     ZEXPECT(child->pid() > 0);
     auto status = child->wait();
     ZASSERT(status.has_value());
-    ZEXPECT(status->status == 3);
+    ZEXPECT(status->code == 3);
     ZEXPECT(status->term_signal == 0);
     ZEXPECT(!status->success());
     // Reaped once, the status stays.
@@ -134,7 +131,7 @@ ZEST_CASE(wait_reports_the_exit_code) {
 // The child reads its stdin until it closes.
 ZEST_CASE(try_wait_is_empty_while_the_child_runs) {
     auto options = shell(by_platform("cat", "more"));
-    options.streams[0] = Stdio::pipe(true, false);
+    options.streams[0] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
     ZEXPECT(child->try_wait() == std::optional<ExitStatus>());
@@ -146,7 +143,7 @@ ZEST_CASE(try_wait_is_empty_while_the_child_runs) {
 
 ZEST_CASE(kill_ends_a_running_child) {
     auto options = shell(by_platform("cat", "more"));
-    options.streams[0] = Stdio::pipe(true, false);
+    options.streams[0] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
     ZEXPECT(!child->kill(SIGTERM));
@@ -159,7 +156,7 @@ ZEST_CASE(kill_ends_a_running_child) {
 
 ZEST_CASE(kill_with_an_invalid_signal_fails) {
     auto options = shell(by_platform("cat", "more"));
-    options.streams[0] = Stdio::pipe(true, false);
+    options.streams[0] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
     ZEXPECT(child->kill(-1) == std::errc::invalid_argument);
@@ -191,7 +188,7 @@ ZEST_CASE(inert_child_fails) {
 
 ZEST_CASE(moved_from_child_is_inert) {
     auto options = shell("exit 2");
-    options.streams[1] = Stdio::pipe(false, true);
+    options.streams[1] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
     const int pid = child->pid();
@@ -207,12 +204,12 @@ ZEST_CASE(moved_from_child_is_inert) {
     test::close_end(end);
     auto status = assigned.wait();
     ZASSERT(status.has_value());
-    ZEXPECT(status->status == 2);
+    ZEXPECT(status->code == 2);
 }
 
 ZEST_CASE(take_pipe_gives_a_pipe_once) {
     auto options = shell("exit 0");
-    options.streams[1] = Stdio::pipe(false, true);
+    options.streams[1] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
     // Streams 0 and 2 are no pipes; 3 is no stream.
@@ -226,10 +223,30 @@ ZEST_CASE(take_pipe_gives_a_pipe_once) {
     ZEXPECT(child->wait().has_value());
 }
 
+// The child reads stdin's pipe and writes stdout's and stderr's.
+ZEST_CASE(pipe_takes_its_direction_from_its_stream) {
+    auto options = shell(by_platform("cat; echo err >&2", "more& echo err>&2"));
+    options.streams = {Stdio::pipe(), Stdio::pipe(), Stdio::pipe()};
+    auto child = spawn(options);
+    ZASSERT(child.has_value());
+    auto in = child->take_pipe(0);
+    auto out = child->take_pipe(1);
+    auto err = child->take_pipe(2);
+    ZEXPECT(test::write_all(in, "kotatsu-pipe\n"));
+    test::close_end(in);
+    ZEXPECT(trim_newlines(test::read_to_end(out)) == "kotatsu-pipe");
+    ZEXPECT(trim_newlines(test::read_to_end(err)) == "err");
+    test::close_end(out);
+    test::close_end(err);
+    auto status = child->wait();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->success());
+}
+
 // Signal 0 tells whether it runs.
 ZEST_CASE(kill_with_no_signal_tells_whether_it_runs) {
     auto options = shell(by_platform("cat", "more"));
-    options.streams[0] = Stdio::pipe(true, false);
+    options.streams[0] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
     ZEXPECT(!child->kill(0));
@@ -256,17 +273,17 @@ ZEST_CASE(try_wait_reaps_a_child_that_exited) {
     auto status = child->try_wait();
     ZASSERT(status.has_value());
     ZASSERT(status->has_value());
-    ZEXPECT((*status)->status == 4);
+    ZEXPECT((*status)->code == 4);
 }
 
 ZEST_CASE(spawn_of_a_missing_program_fails) {
     auto options = shell("exit 0");
-    options.file = dir.file("missing");
+    options.program = dir.file("missing");
     auto child = spawn(options);
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::no_such_file_or_directory);
     // Nowhere on PATH either.
-    options.file = "kotatsu-no-such-program";
+    options.program = "kotatsu-no-such-program";
     child = spawn(options);
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::no_such_file_or_directory);
@@ -278,14 +295,6 @@ ZEST_CASE(spawn_in_a_missing_directory_fails) {
     auto child = spawn(options);
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::no_such_file_or_directory);
-}
-
-ZEST_CASE(spawn_with_a_pipe_of_no_direction_fails) {
-    auto options = shell("exit 0");
-    options.streams[0] = Stdio::pipe(false, false);
-    auto child = spawn(options);
-    ZASSERT(!child.has_value());
-    ZEXPECT(child.error() == std::errc::invalid_argument);
 }
 
 ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
@@ -304,7 +313,7 @@ ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
     int freed = ::dup(0);
     ZASSERT(freed >= 0);
     ::close(freed);
-    options.streams = {Stdio::pipe(true, false), Stdio::from_fd(freed), Stdio::pipe(false, true)};
+    options.streams = {Stdio::pipe(), Stdio::from_fd(freed), Stdio::pipe()};
     child = spawn(options);
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::bad_file_descriptor);
@@ -382,15 +391,15 @@ ZEST_CASE(program_is_looked_for_in_the_childs_path) {
     std::filesystem::copy_file(test::std_path(shell_path()),
                                test::std_path(dir.file(R"(bin\kotatool.exe)")));
     SpawnOptions options{
-        .file = "kotatool",
-        .args = {"kotatool", "/c", "exit 5"},
+        .program = "kotatool",
+        .args = {"/c", "exit 5"},
     };
 #else
     std::filesystem::create_directories(test::std_path(dir.file("bin")));
     test::write_text(dir.file("bin/kotatool"), "#!/bin/sh\nexit 5\n");
     std::filesystem::permissions(test::std_path(dir.file("bin/kotatool")),
                                  std::filesystem::perms::owner_all);
-    SpawnOptions options{.file = "kotatool"};
+    SpawnOptions options{.program = "kotatool"};
 #endif
     options.cwd = dir.root();
     options.env_changes = {
@@ -400,7 +409,7 @@ ZEST_CASE(program_is_looked_for_in_the_childs_path) {
     ZASSERT(child.has_value());
     auto status = child->wait();
     ZASSERT(status.has_value());
-    ZEXPECT(status->status == 5);
+    ZEXPECT(status->code == 5);
 }
 
 ZEST_CASE(cpu_time_is_reported) {
@@ -411,6 +420,112 @@ ZEST_CASE(cpu_time_is_reported) {
     ZASSERT(status.has_value());
     ZEXPECT(status->success());
     ZEXPECT((status->user_time + status->system_time).count() > 0);
+}
+
+// What the buffers held before goes.
+ZEST_CASE(capture_returns_what_the_child_wrote_and_how_it_ended) {
+    std::string out = "stale";
+    std::string err = "stale";
+    auto status = capture(out,
+                          err,
+                          shell(by_platform("printf out; printf err >&2; exit 3",
+                                            "echo out& echo err>&2& exit /b 3")));
+    ZASSERT(status.has_value());
+    ZEXPECT(status->code == 3);
+    ZEXPECT(trim_newlines(out) == "out");
+    ZEXPECT(trim_newlines(err) == "err");
+}
+
+/// A child that fills stderr before it writes stdout, more than a pipe holds
+/// to each: `lines` times `err_line` and `out_line`, one of 'e's and one of
+/// 'o's.
+struct Flood {
+    SpawnOptions options;
+
+    std::string err_line;
+
+    std::string out_line;
+
+    std::size_t lines;
+};
+
+Flood flood() {
+#ifdef _WIN32
+    // cmd's loop is slow: fewer, longer lines.
+    std::string e(98, 'e');
+    std::string o(98, 'o');
+    constexpr std::string_view loop = "for /L %i in (1,1,2000) do @echo ";
+    return {
+        .options = shell(std::format("({0}{1}) 1>&2& {0}{2}", loop, e, o)),
+        .err_line = e + "\r\n",
+        .out_line = o + "\r\n",
+        .lines = 2000,
+    };
+#else
+    return {
+        .options = shell("yes eee | head -n 50000 >&2; yes ooo | head -n 50000"),
+        .err_line = "eee\n",
+        .out_line = "ooo\n",
+        .lines = 50000,
+    };
+#endif
+}
+
+std::string repeated(std::string_view line, std::size_t times) {
+    std::string text;
+    for(std::size_t i = 0; i < times; ++i) {
+        text += line;
+    }
+    return text;
+}
+
+// Reading one pipe after the other, the capture would wait on the first for
+// good.
+ZEST_CASE(capture_reads_both_streams_while_the_child_runs) {
+    auto [options, err_line, out_line, lines] = flood();
+    std::string out;
+    std::vector<char> err;
+    auto status = capture(out, err, options);
+    ZASSERT(status.has_value());
+    ZEXPECT(status->success());
+    ZEXPECT(out == repeated(out_line, lines));
+    ZEXPECT((std::string_view(err.data(), err.size()) == repeated(err_line, lines)));
+}
+
+// One buffer takes both, a read at a time.
+ZEST_CASE(capture_into_one_buffer_takes_both_streams) {
+    auto [options, err_line, out_line, lines] = flood();
+    std::string both;
+    auto status = capture(both, both, options);
+    ZASSERT(status.has_value());
+    ZEXPECT(status->success());
+    ZEXPECT(both.size() == (err_line.size() + out_line.size()) * lines);
+    ZEXPECT(std::ranges::count(both, 'e') == std::ranges::count(repeated(err_line, lines), 'e'));
+    ZEXPECT(std::ranges::count(both, 'o') == std::ranges::count(repeated(out_line, lines), 'o'));
+}
+
+// A child that reads its stdin to the end exits at once: there is nothing
+// to read, whatever the options asked for.
+ZEST_CASE(capture_gives_the_child_no_input) {
+    auto options = shell(by_platform("cat", "more"));
+    options.streams[0] = Stdio::pipe();
+    std::string out;
+    std::string err;
+    auto status = capture(out, err, options);
+    ZASSERT(status.has_value());
+    ZEXPECT(status->success());
+    ZEXPECT(trim_newlines(out).empty());
+    ZEXPECT(err.empty());
+}
+
+ZEST_CASE(capture_of_a_missing_program_fails) {
+    auto options = shell("exit 0");
+    options.program = dir.file("missing");
+    std::string out;
+    std::string err;
+    auto status = capture(out, err, options);
+    ZASSERT(!status.has_value());
+    ZEXPECT(status.error() == std::errc::no_such_file_or_directory);
 }
 
 ZEST_CASE(kill_tree_without_a_group_fails) {
@@ -436,7 +551,7 @@ ZEST_CASE(kill_tree_ends_the_childs_children) {
     auto options = shell(by_platform("sleep 1000 & echo started; wait",
                                      "start /b ping -n 1000 127.0.0.1 & ping -n 1000 127.0.0.1"));
     options.creation.process_group = true;
-    options.streams[1] = Stdio::pipe(false, true);
+    options.streams[1] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
     TreeKiller killer{*child};
@@ -455,7 +570,7 @@ ZEST_CASE(kill_tree_reaches_the_group_after_its_leader_exited) {
     auto options = shell(
         by_platform("sleep 1000 & echo started", "start /b ping -n 1000 127.0.0.1 & echo started"));
     options.creation.process_group = true;
-    options.streams[1] = Stdio::pipe(false, true);
+    options.streams[1] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
     TreeKiller killer{*child};
@@ -488,18 +603,47 @@ ZEST_CASE(kill_tree_of_an_empty_group_fails) {
 // kill -0 of the group the shell's pid names finds it only when it leads one.
 ZEST_CASE(process_group_makes_the_child_lead_its_group) {
     auto options = shell("kill -0 -$$");
-    ZEXPECT(status_of(options).status != 0);
+    ZEXPECT(status_of(options).code != 0);
     options.creation.process_group = true;
-    ZEXPECT(status_of(options).status == 0);
+    ZEXPECT(status_of(options).code == 0);
     options.creation = {.detached = true};
-    ZEXPECT(status_of(options).status == 0);
+    ZEXPECT(status_of(options).code == 0);
 }
 
-ZEST_CASE(argv0_need_not_be_the_program) {
+// A stream that ends early leaves the other read to its end.
+ZEST_CASE(capture_reads_on_past_a_stream_that_ended) {
+    std::string out;
+    std::string err;
+    auto status = capture(out, err, shell("printf out; exec >&-; yes eee | head -n 50000 >&2"));
+    ZASSERT(status.has_value());
+    ZEXPECT(status->success());
+    ZEXPECT(out == "out");
+    ZEXPECT(err.size() == 200000U);
+}
+
+// With -c and nothing after the command, the shell's $0 is its argv[0]: the
+// program, unless arg0 says otherwise.
+ZEST_CASE(arg0_need_not_be_the_program) {
     auto options = shell("echo \"$0\"");
-    options.args[0] = "kotatsu-zero";
-    auto output = output_of(options);
-    ZEXPECT(trim_newlines(output.text) == "kotatsu-zero");
+    ZEXPECT(trim_newlines(output_of(options).text) == options.program);
+    options.arg0 = "kotatsu z\xC3\xA9ro";
+    ZEXPECT(trim_newlines(output_of(options).text) == "kotatsu z\xC3\xA9ro");
+}
+
+// The child answers on its stdin what it read there. cmd has no plain way to
+// do so; zest's runner, which speaks to its workers this way, covers Windows.
+ZEST_CASE(duplex_pipe_is_read_and_written_by_both) {
+    auto options = shell(R"(read line; echo "$line-back" >&0)");
+    options.streams[0] = Stdio::duplex_pipe();
+    auto child = spawn(options);
+    ZASSERT(child.has_value());
+    auto end = child->take_pipe(0);
+    ZASSERT(test::write_all(end, "kotatsu\n"));
+    ZEXPECT(trim_newlines(test::read_to_end(end)) == "kotatsu-back");
+    test::close_end(end);
+    auto status = child->wait();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->success());
 }
 
 /// Writes an executable script `name` in the test's directory: `text`.
@@ -513,7 +657,7 @@ std::string write_script(std::string_view name, std::string_view text) {
 // A relative path is taken in the child's directory.
 ZEST_CASE(relative_program_is_in_the_childs_directory) {
     write_script("tool", "#!/bin/sh\nexit 6\n");
-    ZEXPECT(status_of({.file = "./tool", .cwd = dir.root()}).status == 6);
+    ZEXPECT(status_of({.program = "./tool", .cwd = dir.root()}).code == 6);
 }
 
 // The child changes to a relative directory once: the program is found
@@ -521,27 +665,27 @@ ZEST_CASE(relative_program_is_in_the_childs_directory) {
 ZEST_CASE(relative_directory_is_this_processs) {
     write_script("tool", "#!/bin/sh\nexit 6\n");
     auto relative = std::filesystem::relative(test::std_path(dir.root())).string();
-    ZEXPECT(status_of({.file = "./tool", .cwd = relative}).status == 6);
+    ZEXPECT(status_of({.program = "./tool", .cwd = relative}).code == 6);
     std::filesystem::create_directories(test::std_path(dir.file("bin")));
     write_script("bin/kotatool", "#!/bin/sh\nexit 7\n");
     ZEXPECT(status_of({
-                          .file = "kotatool",
+                          .program = "kotatool",
                           .env_changes = {{.name = "PATH", .value = "bin"}},
                           .cwd = relative,
                       })
-                .status == 7);
+                .code == 7);
 }
 
 // As execvp runs it.
 ZEST_CASE(script_without_an_interpreter_runs_in_the_shell) {
     auto path = write_script("plain", "exit 8\n");
-    ZEXPECT(status_of({.file = path}).status == 8);
+    ZEXPECT(status_of({.program = path}).code == 8);
 }
 
 ZEST_CASE(spawn_of_a_file_not_executable_fails) {
     auto path = dir.file("data");
     test::write_text(path, "#!/bin/sh\n");
-    auto child = spawn({.file = path});
+    auto child = spawn({.program = path});
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::permission_denied);
 }
@@ -576,7 +720,7 @@ ZEST_CASE(descriptor_with_close_on_exec_stays_here) {
 ZEST_CASE(signal_ends_the_child_with_it) {
     auto status = status_of(shell("kill -USR1 $$"));
     ZEXPECT(status.term_signal == SIGUSR1);
-    ZEXPECT(status.status == 0);
+    ZEXPECT(status.code == 0);
 }
 
 // What this process ignores and blocks the child does not: a shell cannot
@@ -657,7 +801,16 @@ ZEST_CASE(child_is_born_in_a_job) {
 ZEST_CASE(windows_command_line_is_taken_as_it_is) {
     auto options = shell("");
     options.windows_command_line = R"(cmd /c "exit 7")";
-    ZEXPECT(status_of(options).status == 7);
+    ZEXPECT(status_of(options).code == 7);
+}
+
+// The program's rule in a command line has no way to write a quote.
+ZEST_CASE(arg0_with_a_quote_fails) {
+    auto options = shell("exit 0");
+    options.arg0 = R"(a"b)";
+    auto child = spawn(options);
+    ZASSERT(!child.has_value());
+    ZEXPECT(child.error() == std::errc::invalid_argument);
 }
 
 // cmd would read the arguments by its own rules. Windows drops trailing dots
@@ -665,20 +818,20 @@ ZEST_CASE(windows_command_line_is_taken_as_it_is) {
 ZEST_CASE(batch_file_without_a_command_line_fails) {
     test::write_text(dir.file("tool.bat"), "@exit /b 4\r\n");
     for(auto name: {"tool.bat", "TOOL.CMD", "tool.bat.", "tool.bat "}) {
-        auto child = spawn({.file = dir.file(name)});
+        auto child = spawn({.program = dir.file(name)});
         ZASSERT(!child.has_value());
         ZEXPECT(child.error() == std::errc::invalid_argument);
     }
     // Found in PATH too.
     auto child = spawn({
-        .file = "tool.bat",
+        .program = "tool.bat",
         .env_changes = {{.name = "PATH", .value = dir.root()}},
     });
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::invalid_argument);
-    ZEXPECT(status_of({.file = dir.file("tool.bat"),
+    ZEXPECT(status_of({.program = dir.file("tool.bat"),
                        .windows_command_line = std::format(R"("{}")", dir.file("tool.bat"))})
-                .status == 4);
+                .code == 4);
 }
 
 // CreateProcess would look in the current directory first.
@@ -686,7 +839,7 @@ ZEST_CASE(program_is_not_looked_for_in_the_current_directory) {
     std::filesystem::copy_file(test::std_path(shell_path()),
                                test::std_path(dir.file("kotahere.exe")));
     auto child = spawn({
-        .file = "kotahere",
+        .program = "kotahere",
         .env_changes = {{.name = "PATH"}},
         .cwd = dir.root(),
     });

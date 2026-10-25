@@ -14,8 +14,10 @@ namespace kota::test {
 /// Variable `name` set to `value`, or removed for none, until this goes,
 /// which puts back what it was.
 struct ScopedEnv {
-    ScopedEnv(std::string name, std::optional<std::string_view> value) :
-        name(std::move(name)), previous(sys::get_env(this->name)) {
+    ScopedEnv(std::string name, std::optional<std::string_view> value) : name(std::move(name)) {
+        if(std::string held; sys::get_env(held, this->name)) {
+            previous = std::move(held);
+        }
         auto error = value ? sys::set_env(this->name, *value) : sys::unset_env(this->name);
         ZASSERT(!error);
     }

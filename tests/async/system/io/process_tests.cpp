@@ -56,8 +56,8 @@ constexpr std::string_view by_platform([[maybe_unused]] std::string_view posix,
 /// Runs `command` through the platform shell, its stdio ignored.
 process::options shell(std::string_view command) {
     process::options opts;
-    opts.file = by_platform("/bin/sh", "cmd.exe");
-    opts.args = {opts.file, std::string(by_platform("-c", "/c")), std::string(command)};
+    opts.program = by_platform("/bin/sh", "cmd.exe");
+    opts.args = {std::string(by_platform("-c", "/c")), std::string(command)};
     opts.streams = {process::stdio::ignore(), process::stdio::ignore(), process::stdio::ignore()};
     return opts;
 }
@@ -123,11 +123,11 @@ ZEST_CASE(wait_reports_the_exit_code) {
     ZEXPECT(success->proc.pid() > 0);
 
     auto [succeeded, failed] = run(success->proc.wait(), failure->proc.wait());
-    ZEXPECT(test::exit_status_of(succeeded) == 0);
+    ZEXPECT(test::exit_code_of(succeeded) == 0);
     ZASSERT(succeeded.has_value());
     ZEXPECT(succeeded->term_signal == 0);
     ZEXPECT(succeeded->success());
-    ZEXPECT(test::exit_status_of(failed) == 3);
+    ZEXPECT(test::exit_code_of(failed) == 3);
     ZASSERT(failed.has_value());
     ZEXPECT(!failed->success());
 }
@@ -142,12 +142,12 @@ ZEST_CASE(spawn_with_inherited_stdio_runs) {
     ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_code_of(status) == 0);
 }
 
 ZEST_CASE(spawn_of_a_missing_file_fails) {
     process::options opts;
-    opts.file = by_platform("/nonexistent/kotatsu-nope", R"(Z:\nonexistent\kotatsu-nope.exe)");
+    opts.program = by_platform("/nonexistent/kotatsu-nope", R"(Z:\nonexistent\kotatsu-nope.exe)");
 
     auto spawned = process::spawn(opts, loop);
     ZASSERT(spawned.has_error());
@@ -156,20 +156,20 @@ ZEST_CASE(spawn_of_a_missing_file_fails) {
 
 ZEST_CASE(stdout_pipe_carries_the_output) {
     auto opts = shell(by_platform("printf kotatsu-stdout", "echo kotatsu-stdout"));
-    opts.streams[1] = process::stdio::pipe(false, true);
+    opts.streams[1] = process::stdio::pipe();
     auto spawned = process::spawn(opts, loop);
     ZASSERT(spawned.has_value());
 
     auto [output, status] = run(spawned->stdout_pipe.read(), spawned->proc.wait());
     ZASSERT(output.has_value());
     ZEXPECT(trim_newlines(*output) == "kotatsu-stdout");
-    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_code_of(status) == 0);
 }
 
 ZEST_CASE(stderr_pipe_carries_the_errors) {
     auto opts = shell(by_platform("printf kotatsu-stderr 1>&2", "echo kotatsu-stderr 1>&2"));
-    opts.streams[1] = process::stdio::pipe(false, true);
-    opts.streams[2] = process::stdio::pipe(false, true);
+    opts.streams[1] = process::stdio::pipe();
+    opts.streams[2] = process::stdio::pipe();
     auto spawned = process::spawn(opts, loop);
     ZASSERT(spawned.has_value());
 
@@ -179,12 +179,12 @@ ZEST_CASE(stderr_pipe_carries_the_errors) {
     ZEXPECT(output.error() == error::end_of_file);
     ZASSERT(errors.has_value());
     ZEXPECT(zest::contains(*errors, "kotatsu-stderr"));
-    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_code_of(status) == 0);
 }
 
 ZEST_CASE(stdin_pipe_feeds_the_child) {
     auto opts = test::stdin_reader();
-    opts.streams[1] = process::stdio::pipe(false, true);
+    opts.streams[1] = process::stdio::pipe();
     auto spawned = process::spawn(opts, loop);
     ZASSERT(spawned.has_value());
     auto feed = [&]() -> task<void, error> {
@@ -197,7 +197,7 @@ ZEST_CASE(stdin_pipe_feeds_the_child) {
     ZEXPECT(fed.has_value());
     ZASSERT(output.has_value());
     ZEXPECT(trim_newlines(*output) == "kotatsu-stdin");
-    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_code_of(status) == 0);
 }
 
 ZEST_CASE(stdout_goes_to_a_given_descriptor) {
@@ -212,7 +212,7 @@ ZEST_CASE(stdout_goes_to_a_given_descriptor) {
     ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_code_of(status) == 0);
     ZEXPECT(trim_newlines(test::read_text(dir.file("stdout.txt"))) == "kotatsu-fd");
 }
 
@@ -231,7 +231,7 @@ ZEST_CASE(stdout_goes_to_an_open_file) {
     ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_code_of(status) == 0);
     ZEXPECT(trim_newlines(test::read_text(dir.file("stdout.txt"))) == "head-kotatsu-file");
 }
 
@@ -249,7 +249,7 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
     ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_code_of(status) == 0);
     ZEXPECT(trim_newlines(test::read_text(dir.file("marker.txt"))) == "42");
 }
 
@@ -341,9 +341,7 @@ ZEST_CASE(env_changes_match_names_without_regard_to_case) {
 // failed spawn.
 ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
     auto opts = shell("exit 0");
-    opts.streams = {process::stdio::pipe(true, false),
-                    process::stdio::from_fd(-1),
-                    process::stdio::ignore()};
+    opts.streams = {process::stdio::pipe(), process::stdio::from_fd(-1), process::stdio::ignore()};
 
     auto spawned = process::spawn(opts, loop);
     ZASSERT(spawned.has_error());
@@ -367,7 +365,7 @@ ZEST_CASE(detached_child_still_reports_its_exit) {
     ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    ZEXPECT(test::exit_status_of(status) == 7);
+    ZEXPECT(test::exit_code_of(status) == 7);
 }
 
 // The child runs until both waits have begun: its stdin closes after them.
@@ -380,7 +378,7 @@ ZEST_CASE(second_wait_while_one_is_pending_fails) {
     };
 
     auto [first, second, closed] = run(spawned->proc.wait(), spawned->proc.wait(), close_stdin());
-    ZEXPECT(test::exit_status_of(first) == 0);
+    ZEXPECT(test::exit_code_of(first) == 0);
     ZASSERT(second.has_error());
     ZEXPECT(second.error() == error::resource_busy_or_locked);
 }
@@ -400,8 +398,8 @@ ZEST_CASE(wait_after_the_exit_returns_the_same_status) {
     auto& [first, second] = *result;
     ZASSERT(first.has_value());
     ZASSERT(second.has_value());
-    ZEXPECT(first->status == 5);
-    ZEXPECT(second->status == 5);
+    ZEXPECT(first->code == 5);
+    ZEXPECT(second->code == 5);
 }
 
 ZEST_CASE(kill_ends_a_running_child) {
@@ -433,7 +431,7 @@ ZEST_CASE(kill_with_an_invalid_signal_fails) {
     spawned->stdin_pipe = pipe{};
 
     auto [status] = run(spawned->proc.wait());
-    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_code_of(status) == 0);
 }
 
 ZEST_CASE(kill_after_the_exit_fails) {
@@ -441,7 +439,7 @@ ZEST_CASE(kill_after_the_exit_fails) {
     ZASSERT(spawned.has_value());
 
     auto [status] = run(spawned->proc.wait());
-    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_code_of(status) == 0);
     ZEXPECT(spawned->proc.kill(SIGTERM) == error::no_such_process);
 }
 
@@ -462,7 +460,7 @@ ZEST_CASE(cancelled_wait_leaves_the_child_running) {
     spawned->stdin_pipe = pipe{};
     auto [status] = run(spawned->proc.wait());
     ZASSERT(status.has_value());
-    ZEXPECT(status->status == 0);
+    ZEXPECT(status->code == 0);
     ZEXPECT(status->term_signal == 0);
 }
 
@@ -514,9 +512,7 @@ ZEST_CASE(inert_process_fails) {
 // first, so the two reads cannot merge.
 ZEST_CASE(stdout_chunks_arrive_as_written) {
     auto opts = shell("printf chunk-one; read line; printf chunk-two");
-    opts.streams = {process::stdio::pipe(true, false),
-                    process::stdio::pipe(false, true),
-                    process::stdio::ignore()};
+    opts.streams = {process::stdio::pipe(), process::stdio::pipe(), process::stdio::ignore()};
     auto spawned = process::spawn(opts, loop);
     ZASSERT(spawned.has_value());
     auto read_chunks = [&]() -> task<std::pair<std::string, std::string>, error> {
@@ -534,7 +530,7 @@ ZEST_CASE(stdout_chunks_arrive_as_written) {
     ZASSERT(chunks.has_value());
     ZEXPECT(chunks->first == "chunk-one");
     ZEXPECT(chunks->second == "chunk-two");
-    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_code_of(status) == 0);
 }
 #endif
 
@@ -546,7 +542,7 @@ ZEST_CASE(capture_returns_what_the_child_wrote_and_how_it_ended) {
     ZASSERT(captured.has_value());
     ZEXPECT(trim_newlines(captured->stdout_data) == "out");
     ZEXPECT(zest::contains(captured->stderr_data, "err"));
-    ZEXPECT(captured->status.status == 3);
+    ZEXPECT(captured->status.code == 3);
 }
 
 // A child that reads its stdin to the end exits at once: there is nothing
@@ -560,7 +556,7 @@ ZEST_CASE(capture_gives_the_child_no_input) {
 
 ZEST_CASE(capture_of_a_missing_file_fails) {
     process::options opts;
-    opts.file = by_platform("/nonexistent/kotatsu-nope", R"(Z:\nonexistent\kotatsu-nope.exe)");
+    opts.program = by_platform("/nonexistent/kotatsu-nope", R"(Z:\nonexistent\kotatsu-nope.exe)");
 
     auto [captured] = run(process::capture(opts, loop));
     ZASSERT(captured.has_error());
@@ -634,7 +630,7 @@ ZEST_CASE(kill_tree_without_a_group_fails) {
     spawned->stdin_pipe = pipe{};
 
     auto [status] = run(spawned->proc.wait());
-    ZEXPECT(test::exit_status_of(status) == 0);
+    ZEXPECT(test::exit_code_of(status) == 0);
 }
 
 // The child leaves a command running that holds its stdout: the pipe ends
@@ -643,7 +639,7 @@ ZEST_CASE(kill_tree_ends_the_childs_children) {
     auto opts = shell(by_platform("sleep 1000 & echo started; wait",
                                   "start /b ping -n 1000 127.0.0.1 & ping -n 1000 127.0.0.1"));
     opts.creation.process_group = true;
-    opts.streams[1] = process::stdio::pipe(false, true);
+    opts.streams[1] = process::stdio::pipe();
     auto spawned = process::spawn(opts, loop);
     ZASSERT(spawned.has_value());
     auto kill_then_read = [&]() -> task<std::string, error> {
@@ -728,7 +724,7 @@ ZEST_CASE(children_of_uv_spawn_and_of_spawn_both_report) {
     ZASSERT(ours.has_value());
 
     auto [status] = run(ours->proc.wait());
-    ZEXPECT(test::exit_status_of(status) == 6);
+    ZEXPECT(test::exit_code_of(status) == 6);
     // Nothing of libuv's tells a task when it has reaped its child: the
     // loop turns until it has.
     for(int turns = 0; !theirs.seen && turns < 2000; ++turns) {
@@ -774,7 +770,7 @@ ZEST_CASE(exit_is_seen_without_pidfds) {
         own.schedule(waited);
         own.run();
         auto status = std::move(waited).catch_cancel().result();
-        ::_exit(status.has_value() && status->status == 7 ? 0 : 4);
+        ::_exit(status.has_value() && status->code == 7 ? 0 : 4);
     }
     int status = 0;
     ZASSERT(::waitpid(tester, &status, 0) == tester);

@@ -666,7 +666,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
 }
 
 task<process::capture_result, error> process::capture(options opts, event_loop& loop) {
-    opts.streams = {stdio::ignore(), stdio::pipe(false, true), stdio::pipe(false, true)};
+    opts.streams = {stdio::ignore(), stdio::pipe(), stdio::pipe()};
     auto spawned = spawn(opts, loop);
     if(!spawned) {
         co_await fail(spawned.error());
