@@ -6,6 +6,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <utility>
@@ -116,7 +117,10 @@ struct process::Self::Watch {
     std::vector<Self*> signaled;
 #endif
 
-    explicit Watch(uv_loop_t& loop) : loop(loop) {
+    explicit Watch(uv_loop_t& loop) noexcept : loop(loop) {}
+
+    /// Opens what wakes the loop, which close() closes.
+    void open() noexcept {
 #ifdef __linux__
         multiplexer = ::epoll_create1(EPOLL_CLOEXEC);
 #elif defined(__APPLE__)
@@ -146,9 +150,13 @@ struct process::Self::Watch {
         static auto& table = *new std::map<uv_loop_t*, Watch*>;
         std::scoped_lock lock(table_mutex);
         auto* native = loop.native_handle();
-        auto [entry, first] = table.try_emplace(native, nullptr);
-        if(first) {
-            entry->second = new Watch(*native);
+        // Null until the watch is made: an allocation that throws leaves it
+        // to the next spawn to make.
+        auto& entry = table[native];
+        if(entry == nullptr) {
+            // Opened once nothing can throw any more: a throw leaves no
+            // handle on the loop, nor a callback for a watch never made.
+            auto made = std::make_unique<Watch>(*native);
             // A loop made later at the same address starts afresh.
             loop.on_destroy([native] {
                 Watch* watch = nullptr;
@@ -158,8 +166,10 @@ struct process::Self::Watch {
                 }
                 watch->close();
             });
+            entry = made.release();
+            entry->open();
         }
-        return *entry->second;
+        return *entry;
     }
 
     /// Starts watching `self`'s child; the error when it cannot.
