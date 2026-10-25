@@ -1,9 +1,9 @@
 #pragma once
 
 // TempDir, a directory of a test's own, write_text() and read_text(),
-// make_junction() on Windows and ScopedPermissions elsewhere, all through
-// std::filesystem, fstreams and cmd rather than kota::fs, which the tests
-// check; linked() for a case that makes a symlink.
+// ScopedCurrentDir, make_junction() on Windows and ScopedPermissions
+// elsewhere, all through std::filesystem, fstreams and cmd rather than
+// kota::fs, which the tests check; linked() for a case that makes a symlink.
 
 #include <cstdlib>
 #include <filesystem>
@@ -23,7 +23,10 @@ namespace kota::test {
 /// A directory of its own under the system temp directory, removed with
 /// everything in it when this goes, or when a failed ZASSERT ends the process.
 struct TempDir {
-    TempDir() : path(create()) {}
+    TempDir() : path(create(std::filesystem::temp_directory_path())) {}
+
+    /// One under `base` rather than the system temp directory.
+    explicit TempDir(const std::filesystem::path& base) : path(create(base)) {}
 
     ~TempDir() {
         remove();
@@ -59,9 +62,8 @@ private:
 
     zest::FatalHook on_fatal{[this] { remove(); }};
 
-    static std::filesystem::path create() {
+    static std::filesystem::path create(const std::filesystem::path& base) {
         std::random_device random;
-        auto base = std::filesystem::temp_directory_path();
         std::filesystem::path candidate;
         do {
             candidate = base / std::format("kota-{:08x}{:08x}", random(), random());
@@ -97,6 +99,22 @@ inline bool linked(std::error_code error) {
     zest::skip();
     return false;
 }
+
+/// The current directory, put back when this goes.
+struct ScopedCurrentDir {
+    explicit ScopedCurrentDir(const std::filesystem::path& path) {
+        std::filesystem::current_path(path);
+    }
+
+    ScopedCurrentDir(const ScopedCurrentDir&) = delete;
+    ScopedCurrentDir& operator=(const ScopedCurrentDir&) = delete;
+
+    ~ScopedCurrentDir() {
+        std::filesystem::current_path(original);
+    }
+
+    std::filesystem::path original = std::filesystem::current_path();
+};
 
 #ifndef _WIN32
 /// The permissions of `path` replaced by `perms` for as long as this lives,

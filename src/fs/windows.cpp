@@ -90,6 +90,8 @@ std::error_code to_error_code(unsigned long code) {
             case ERROR_NEGATIVE_SEEK: return std::errc::invalid_argument;
             case ERROR_SEEK:
             case ERROR_CRC:
+            case ERROR_READ_FAULT:
+            case ERROR_WRITE_FAULT:
             case ERROR_IO_DEVICE: return std::errc::io_error;
             case ERROR_NOT_READY:
             case ERROR_DEV_NOT_EXIST: return std::errc::no_such_device;
@@ -168,7 +170,15 @@ std::error_code full_path(basic_buffer_ref<wchar_t> out, const wchar_t* path) {
 
 void verbatim(basic_buffer_ref<wchar_t> path) {
     auto held = path.view();
-    if(held.starts_with(LR"(\\?\)") || held.starts_with(LR"(\\.\)")) {
+    if(held.starts_with(LR"(\\?\)")) {
+        return;
+    }
+    // A device path stays as Win32 takes it, CON and CONIN$ among them, but
+    // for the length it limits: the verbatim prefix names the same NT path.
+    if(held.starts_with(LR"(\\.\)")) {
+        if(held.size() >= short_path_limit) {
+            path.chars()[2] = L'?';
+        }
         return;
     }
     // A share's `\\server` becomes `\\?\UNC\server`.
@@ -203,6 +213,28 @@ std::expected<Handle, std::error_code> open(std::string_view path, DWORD access)
         return std::unexpected(windows::last_error());
     }
     return handle;
+}
+
+std::error_code final_path(buffer_ref out, HANDLE handle) {
+    WidePath final;
+    if(auto error = fill_wide(final, [&](wchar_t* buffer, DWORD size) {
+           return ::GetFinalPathNameByHandleW(handle,
+                                              buffer,
+                                              size,
+                                              FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+       })) {
+        return error;
+    }
+    windows::from_native(out, final);
+    return {};
+}
+
+bool set_attributes(HANDLE handle, DWORD attributes) {
+    // Zero leaves the times as they are, and the attributes too: a file with
+    // none says so.
+    FILE_BASIC_INFO changed{};
+    changed.FileAttributes = attributes == 0 ? FILE_ATTRIBUTE_NORMAL : attributes;
+    return ::SetFileInformationByHandle(handle, FileBasicInfo, &changed, sizeof(changed));
 }
 
 std::expected<FileID, std::error_code> file_id(HANDLE handle) {

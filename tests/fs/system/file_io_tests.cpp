@@ -1,0 +1,277 @@
+#include <array>
+#include <cstddef>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <utility>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
+#include "fs/harness/files.h"
+#include "kota/zest/zest.h"
+#include "kota/support/small_string.h"
+#include "kota/support/utf16.h"
+#include "kota/fs/file.h"
+#include "kota/fs/path.h"
+
+namespace kota::fs {
+
+namespace {
+
+using namespace std::literals;
+
+/// A string that counts how often it is resized: what tells a read sized
+/// once from one that grows its buffer step by step.
+struct CountedBuffer {
+    char* data() {
+        return text.data();
+    }
+
+    std::size_t size() const {
+        return text.size();
+    }
+
+    void resize(std::size_t size) {
+        ++resizes;
+        text.resize(size);
+    }
+
+    std::string text;
+    int resizes = 0;
+};
+
+/// Text of `size` bytes that is no repetition of a short run.
+std::string text_of(std::size_t size) {
+    std::string text(size, '\0');
+    for(std::size_t i = 0; i < size; ++i) {
+        text[i] = static_cast<char>('a' + (i * 7 + i / 26) % 26);
+    }
+    return text;
+}
+
+/// The write end of a pipe set not to wait, as a File, with its read end
+/// left unread so that it fills; both closed when this goes.
+struct FullPipe {
+    FullPipe() {
+#ifdef _WIN32
+        // Pipe names live outside the file system: the directory's name
+        // keeps this one apart.
+        auto name = LR"(\\.\pipe\)" + test::std_path(path::filename(dir.root())).wstring();
+        reader = ::CreateNamedPipeW(name.c_str(),
+                                    PIPE_ACCESS_INBOUND,
+                                    PIPE_TYPE_BYTE | PIPE_WAIT,
+                                    1,
+                                    4096,
+                                    4096,
+                                    0,
+                                    nullptr);
+        ZASSERT(reader != INVALID_HANDLE_VALUE);
+        small_string<128> utf8_name;
+        from_utf16(utf8_name, std::wstring_view(name));
+        auto opened = File::open(utf8_name, {.write = true});
+        ZASSERT(opened.has_value());
+        writer = std::move(*opened);
+        DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
+        ZASSERT(::SetNamedPipeHandleState(writer.native_handle(), &mode, nullptr, nullptr));
+#else
+        auto fifo = dir.file("fifo");
+        ZASSERT(::mkfifo(fifo.c_str(), 0600) == 0);
+        // A reader there already lets the writer open without waiting.
+        reader = ::open(fifo.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+        ZASSERT(reader >= 0);
+        auto opened = File::open(fifo, {.write = true});
+        ZASSERT(opened.has_value());
+        writer = std::move(*opened);
+        int flags = ::fcntl(writer.native_handle(), F_GETFL);
+        ZASSERT(::fcntl(writer.native_handle(), F_SETFL, flags | O_NONBLOCK) == 0);
+#endif
+    }
+
+    ~FullPipe() {
+#ifdef _WIN32
+        ::CloseHandle(reader);
+#else
+        ::close(reader);
+#endif
+    }
+
+    FullPipe(const FullPipe&) = delete;
+    FullPipe& operator=(const FullPipe&) = delete;
+
+    /// Writes until the pipe takes nothing more: the error that says so.
+    std::error_code fill() {
+        std::string chunk(4096, 'x');
+        for(int i = 0; i < 1024; ++i) {
+            auto count = writer.write_some(chunk);
+            if(!count) {
+                return count.error();
+            }
+        }
+        return {};
+    }
+
+    test::TempDir dir;
+    File::native_handle_type reader;
+    File writer;
+};
+
+ZEST_SUITE(fs_file_io) {
+
+ZEST_CASE(read_to_end_reads_from_where_the_file_stands) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "hello world");
+    auto file = File::open(dir.file("file"));
+    ZASSERT(file.has_value());
+    std::array<char, 6> head{};
+    ZEXPECT(file->read(head) == 6u);
+    std::string rest;
+    ZEXPECT(!file->read_to_end(rest));
+    ZEXPECT(rest == "world");
+    ZEXPECT(!file->read_to_end(rest));
+    ZEXPECT(rest == "");
+}
+
+ZEST_CASE(read_to_end_writes_over_what_the_buffer_held) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "new\0text"sv);
+    auto file = File::open(dir.file("file"));
+    ZASSERT(file.has_value());
+    small_string<4> content("some old text");
+    ZEXPECT(!file->read_to_end(content));
+    ZEXPECT(std::string_view(content) == "new\0text"sv);
+}
+
+ZEST_CASE(read_to_end_sizes_its_buffer_once) {
+    test::TempDir dir;
+    auto text = text_of(1'000'000);
+    test::write_text(dir.file("large"), text);
+    auto file = File::open(dir.file("large"));
+    ZASSERT(file.has_value());
+    std::array<char, 1000> head{};
+    ZEXPECT(file->read(head) == 1000u);
+    CountedBuffer content;
+    ZEXPECT(!file->read_to_end(content));
+    ZEXPECT(content.text == std::string_view(text).substr(1000));
+    // Sized for what is left, then cut to what was read.
+    ZEXPECT(content.resizes == 2);
+}
+
+ZEST_CASE(read_to_end_reads_a_pipe_whole) {
+    // A pipe reports no size: the buffer grows as it is read.
+    test::TempDir dir;
+    auto text = text_of(10'000);
+#ifdef _WIN32
+    auto name = LR"(\\.\pipe\)" + test::std_path(path::filename(dir.root())).wstring();
+    HANDLE writer = ::CreateNamedPipeW(name.c_str(),
+                                       PIPE_ACCESS_OUTBOUND,
+                                       PIPE_TYPE_BYTE | PIPE_WAIT,
+                                       1,
+                                       65536,
+                                       65536,
+                                       0,
+                                       nullptr);
+    ZASSERT(writer != INVALID_HANDLE_VALUE);
+    small_string<128> utf8_name;
+    from_utf16(utf8_name, std::wstring_view(name));
+    auto file = File::open(utf8_name);
+    ZASSERT(file.has_value());
+    DWORD written = 0;
+    ZEXPECT(::WriteFile(writer, text.data(), static_cast<DWORD>(text.size()), &written, nullptr));
+    // The bytes stay to read once the writer is gone.
+    ::CloseHandle(writer);
+#else
+    auto fifo = dir.file("fifo");
+    ZASSERT(::mkfifo(fifo.c_str(), 0600) == 0);
+    // Open for reading too, it waits for no reader, and lets the File open
+    // without waiting for a writer.
+    int writer = ::open(fifo.c_str(), O_RDWR | O_CLOEXEC);
+    ZASSERT(writer >= 0);
+    auto file = File::open(fifo);
+    ZASSERT(file.has_value());
+    ZEXPECT(::write(writer, text.data(), text.size()) == static_cast<ssize_t>(text.size()));
+    ::close(writer);
+#endif
+    std::string content;
+    ZEXPECT(!file->read_to_end(content));
+    ZEXPECT(content == text);
+}
+
+ZEST_CASE(read_to_end_of_a_file_open_to_write_fails) {
+    test::TempDir dir;
+    auto file = File::open(dir.file("file"), {.write = true, .create = true});
+    ZASSERT(file.has_value());
+    std::string content;
+    auto error = file->read_to_end(content);
+#ifdef _WIN32
+    ZEXPECT(error == std::errc::permission_denied);
+#else
+    ZEXPECT(error == std::errc::bad_file_descriptor);
+#endif
+}
+
+ZEST_CASE(read_file_sizes_its_buffer_once) {
+    test::TempDir dir;
+    auto text = text_of(1'000'000);
+    test::write_text(dir.file("large"), text);
+    CountedBuffer content;
+    ZEXPECT(!read_file(content, dir.file("large")));
+    ZEXPECT(content.text == text);
+    ZEXPECT(content.resizes == 2);
+}
+
+#ifdef __linux__
+ZEST_CASE(read_file_reads_a_file_that_reports_no_size) {
+    std::string content;
+    ZEXPECT(!read_file(content, "/proc/self/status"));
+    ZEXPECT(zest::contains(content, "Pid:"));
+}
+#endif
+
+ZEST_CASE(write_some_writes_from_the_start) {
+    test::TempDir dir;
+    auto file = File::open(dir.file("file"), {.write = true, .create = true});
+    ZASSERT(file.has_value());
+    ZEXPECT(file->write_some("hello") == 5u);
+    ZEXPECT(file->write_some("") == 0u);
+    ZEXPECT(file->write_some(" world") == 6u);
+    ZEXPECT(!file->close());
+    ZEXPECT(test::read_text(dir.file("file")) == "hello world");
+}
+
+ZEST_CASE(write_some_to_a_full_pipe_fails) {
+    FullPipe pipe;
+    ZEXPECT(pipe.fill() == std::errc::resource_unavailable_try_again);
+}
+
+ZEST_CASE(write_to_a_full_pipe_fails) {
+    // Windows calls a write that took nothing a success: taken for progress,
+    // it would write forever.
+    FullPipe pipe;
+    ZEXPECT(pipe.fill() == std::errc::resource_unavailable_try_again);
+    ZEXPECT(pipe.writer.write("more") == std::errc::resource_unavailable_try_again);
+}
+
+ZEST_CASE(write_some_of_a_closed_file_fails) {
+    File file;
+    auto count = file.write_some("text");
+    ZASSERT(!count.has_value());
+    ZEXPECT(count.error() == std::errc::bad_file_descriptor);
+}
+
+};  // ZEST_SUITE(fs_file_io)
+
+}  // namespace
+
+}  // namespace kota::fs

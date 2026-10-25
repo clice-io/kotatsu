@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -32,7 +34,13 @@ struct StatusEntry {
 /// The entries of a directory with their statuses, as symlink_status()
 /// would give them. On Windows the listing itself holds them, so a large
 /// directory costs about what a few statuses do; it tells no link counts.
-std::expected<std::vector<StatusEntry>, std::error_code> read_dir_status(std::string_view dir);
+///
+/// At most `limit` entries: the listing stops there, and the rest goes
+/// unread. A caller that gives up on a directory past some size asks for
+/// one entry more, to see whether it is.
+std::expected<std::vector<StatusEntry>, std::error_code>
+    read_dir_status(std::string_view dir,
+                    std::size_t limit = std::numeric_limits<std::size_t>::max());
 
 /// Creates the directory `path`: true when it made it, false when a
 /// directory was there already.

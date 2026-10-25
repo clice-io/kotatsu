@@ -22,7 +22,8 @@ std::error_code last_error();
 
 /// Writes into `out` `path` as the Windows file functions take it, but for
 /// the NUL that ends it: UTF-16, and prefixed `\\?\` (`\\?\UNC\` for a
-/// share) so that its length is no limit. A path the prefix would change goes
+/// share, in place of `\\.\` for a device path past MAX_PATH) so that its
+/// length is no limit. A path the prefix would change goes
 /// through Win32's own resolution first, the resolution the plain spelling
 /// gets: a relative, rooted (`\x`) or drive-relative (`C:x`) path is taken
 /// against the current directory, `.` and `..` fold, trailing dots and spaces

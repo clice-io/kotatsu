@@ -130,6 +130,36 @@ ZEST_CASE(read_dir_status_matches_each_status) {
     }
 }
 
+ZEST_CASE(read_dir_status_stops_at_its_limit) {
+    test::TempDir dir;
+    std::vector<std::string> names = {"a", "b", "c", "d", "e"};
+    for(const auto& name: names) {
+        test::write_text(dir.file(name), name);
+    }
+    for(std::size_t limit = 0; limit <= names.size() + 1; ++limit) {
+        ZEST_CONTEXT("limit {}", limit);
+        auto entries = read_dir_status(dir.root(), limit);
+        ZASSERT(entries.has_value());
+        ZEXPECT(entries->size() == std::min(limit, names.size()));
+        // Whichever the system lists first, each once.
+        std::vector<std::string> listed;
+        for(const auto& entry: *entries) {
+            ZEXPECT(std::ranges::find(names, entry.name) != names.end());
+            ZEXPECT(entry.status.size == 1u);
+            listed.push_back(entry.name);
+        }
+        std::ranges::sort(listed);
+        ZEXPECT(std::ranges::adjacent_find(listed) == listed.end());
+    }
+}
+
+ZEST_CASE(read_dir_status_of_nothing_fails_at_any_limit) {
+    test::TempDir dir;
+    auto entries = read_dir_status(dir.file("missing"), 0);
+    ZASSERT(!entries.has_value());
+    ZEXPECT(entries.error() == std::errc::no_such_file_or_directory);
+}
+
 ZEST_CASE(create_directory_says_whether_it_made_one) {
     test::TempDir dir;
     ZEXPECT(create_directory(dir.file("new")) == true);
@@ -275,6 +305,33 @@ ZEST_CASE(remove_all_never_follows_a_junction) {
     test::make_junction(dir.file("tree/junction"), dir.file("outside"));
     ZEXPECT(remove_all(dir.file("tree")) == 2u);
     ZEXPECT(is_file(dir.file("outside/kept.txt")));
+}
+
+ZEST_CASE(remove_takes_a_junction_not_its_target) {
+    // Junctions, unlike symlinks, need no privilege, so CI makes them.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    test::write_text(dir.file("target/kept.txt"), "text");
+    test::make_junction(dir.file("junction"), dir.file("target"));
+    ZEXPECT(remove(dir.file("junction")) == true);
+    ZEXPECT(!symlink_status(dir.file("junction")).has_value());
+    ZEXPECT(is_file(dir.file("target/kept.txt")));
+}
+
+ZEST_CASE(remove_all_of_a_junction_takes_the_junction_alone) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    test::write_text(dir.file("target/kept.txt"), "text");
+    test::make_junction(dir.file("junction"), dir.file("target"));
+    ZEXPECT(remove_all(dir.file("junction")) == 1u);
+    ZEXPECT(!symlink_status(dir.file("junction")).has_value());
+    ZEXPECT(is_file(dir.file("target/kept.txt")));
+    // A dangling one too.
+    std::filesystem::create_directory(dir.path / "gone");
+    test::make_junction(dir.file("dangling"), dir.file("gone"));
+    std::filesystem::remove(dir.path / "gone");
+    ZEXPECT(remove(dir.file("dangling")) == true);
+    ZEXPECT(!symlink_status(dir.file("dangling")).has_value());
 }
 #else
 ZEST_CASE(remove_all_where_access_is_denied_fails) {

@@ -4,9 +4,12 @@
 
 #ifdef _WIN32
 #include <atomic>
+#include <ratio>
 
 #include "win32.h"
 #else
+#include <fcntl.h>
+
 #include "posix.h"
 #endif
 
@@ -52,6 +55,7 @@ std::expected<Status, std::error_code> win32::handle_status(HANDLE handle) {
         .ctime = win32::unix_time(basic.ChangeTime.QuadPart),
         .id = *id,
         .links = standard.NumberOfLinks,
+        .permissions = win32::permissions_of(basic.FileAttributes),
     };
 }
 
@@ -145,6 +149,7 @@ std::expected<Status, std::error_code> listed_status(win32::WidePath& path) {
         .type = win32::type_of(data.dwFileAttributes, data.dwReserved0),
         .size = (std::uint64_t(data.nFileSizeHigh) << 32) | data.nFileSizeLow,
         .mtime = win32::unix_time(ticks(data.ftLastWriteTime)),
+        .permissions = win32::permissions_of(data.dwFileAttributes),
     };
 }
 
@@ -167,6 +172,7 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
                     .ctime = win32::unix_time(info.ChangeTime.QuadPart),
                     .id = win32::id_of(info.VolumeSerialNumber.QuadPart, info.FileId128),
                     .links = info.NumberOfLinks,
+                    .permissions = win32::permissions_of(info.FileAttributes),
                 };
             }
         } else if(auto error = ::GetLastError(); names_nothing(error)) {
@@ -206,6 +212,16 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
         return std::unexpected(error);
     }
     struct stat info;
+    // A symlink the path ends in stays itself behind a separator, through
+    // which the system would follow it, as Windows does.
+    if(auto link = posix::without_trailing_separators(path); !follow && link != path) {
+        // No NUL in it, as there was none in `path`.
+        posix::CPath c_link;
+        [[maybe_unused]] auto checked = c_link.assign(link);
+        if(::lstat(c_link.c_str(), &info) == 0 && S_ISLNK(info.st_mode)) {
+            return posix::make_status(info);
+        }
+    }
     if((follow ? ::stat(c_path.c_str(), &info) : ::lstat(c_path.c_str(), &info)) != 0) {
         return std::unexpected(posix::last_error());
     }
@@ -225,6 +241,19 @@ std::expected<Status, std::error_code> symlink_status(std::string_view path) {
 }
 
 std::expected<bool, std::error_code> exists(std::string_view path) {
+#ifdef _WIN32
+    // The attributes by name, which open nothing before Windows 11 24H2 as
+    // status() would: a link to follow, or a file they do not reach, takes a
+    // status after all.
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, path)) {
+        return std::unexpected(error);
+    }
+    auto attributes = ::GetFileAttributesW(native.c_str());
+    if(attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+        return true;
+    }
+#endif
     auto found = status(path);
     if(found) {
         return true;
@@ -249,6 +278,85 @@ bool is_directory(std::string_view path) {
 bool is_symlink(std::string_view path) {
     auto found = symlink_status(path);
     return found && found->type == FileType::Symlink;
+}
+
+std::error_code set_times(std::string_view path, const FileTimes& times) {
+#ifdef _WIN32
+    // Every time nanoseconds since 1970 hold lies after 1601, FILETIME's
+    // start, which SetFileTime would take for leaving a time as it is.
+    auto file_time = [](const std::optional<std::chrono::sys_time<std::chrono::nanoseconds>>& time,
+                        FILETIME& out) -> FILETIME* {
+        if(!time) {
+            return nullptr;
+        }
+        using Ticks = std::chrono::duration<std::int64_t, std::ratio<1, 10'000'000>>;
+        auto ticks = static_cast<std::uint64_t>(
+            std::chrono::floor<Ticks>(time->time_since_epoch()).count() + win32::unix_epoch_ticks);
+        out.dwLowDateTime = static_cast<DWORD>(ticks);
+        out.dwHighDateTime = static_cast<DWORD>(ticks >> 32);
+        return &out;
+    };
+    auto handle = win32::open(path, FILE_WRITE_ATTRIBUTES);
+    if(!handle) {
+        return handle.error();
+    }
+    FILETIME accessed;
+    FILETIME modified;
+    if(!::SetFileTime(handle->get(),
+                      nullptr,
+                      file_time(times.accessed, accessed),
+                      file_time(times.modified, modified))) {
+        return windows::last_error();
+    }
+    return {};
+#else
+    auto spec_of = [](const std::optional<std::chrono::sys_time<std::chrono::nanoseconds>>& time) {
+        if(!time) {
+            return timespec{.tv_sec = 0, .tv_nsec = UTIME_OMIT};
+        }
+        auto since = time->time_since_epoch();
+        auto seconds = std::chrono::floor<std::chrono::seconds>(since);
+        return timespec{.tv_sec = static_cast<time_t>(seconds.count()),
+                        .tv_nsec = static_cast<long>((since - seconds).count())};
+    };
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return error;
+    }
+    timespec specs[2] = {spec_of(times.accessed), spec_of(times.modified)};
+    if(::utimensat(AT_FDCWD, c_path.c_str(), specs, 0) != 0) {
+        return posix::last_error();
+    }
+    return {};
+#endif
+}
+
+std::error_code set_permissions(std::string_view path, std::uint16_t permissions) {
+#ifdef _WIN32
+    auto handle = win32::open(path, FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES);
+    if(!handle) {
+        return handle.error();
+    }
+    FILE_BASIC_INFO info;
+    if(!::GetFileInformationByHandleEx(handle->get(), FileBasicInfo, &info, sizeof(info))) {
+        return windows::last_error();
+    }
+    auto attributes = permissions & 0222 ? info.FileAttributes & ~FILE_ATTRIBUTE_READONLY
+                                         : info.FileAttributes | FILE_ATTRIBUTE_READONLY;
+    if(attributes != info.FileAttributes && !win32::set_attributes(handle->get(), attributes)) {
+        return windows::last_error();
+    }
+    return {};
+#else
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return error;
+    }
+    if(::chmod(c_path.c_str(), static_cast<mode_t>(permissions & 07777)) != 0) {
+        return posix::last_error();
+    }
+    return {};
+#endif
 }
 
 std::expected<bool, std::error_code> equivalent(std::string_view a, std::string_view b) {

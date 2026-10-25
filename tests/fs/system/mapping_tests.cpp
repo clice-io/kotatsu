@@ -5,8 +5,10 @@
 
 #include "fs/harness/files.h"
 #include "kota/zest/zest.h"
+#include "kota/fs/directory.h"
 #include "kota/fs/file.h"
 #include "kota/fs/mapping.h"
+#include "kota/fs/status.h"
 
 namespace kota::fs {
 
@@ -64,6 +66,38 @@ ZEST_CASE(a_moved_mapping_keeps_its_bytes) {
     assigned = std::move(moved);
     ZEXPECT(moved.bytes().empty());
     ZEXPECT(assigned.bytes() == "text");
+}
+
+ZEST_CASE(remove_takes_a_mapped_file) {
+    // A cache that removes a PCH another process keeps mapped.
+    test::TempDir dir;
+    std::string content(64 * 1024, 'x');
+    test::write_text(dir.file("mapped"), content);
+    auto mapping = File::open(dir.file("mapped")).and_then(Mapping::map);
+    ZASSERT(mapping.has_value());
+    ZEXPECT(remove(dir.file("mapped")) == true);
+    ZEXPECT(exists(dir.file("mapped")) == false);
+    ZEXPECT(mapping->bytes() == content);
+    // The name is free for a new file at once.
+    ZEXPECT(!write_file(dir.file("mapped"), "new"));
+    ZEXPECT(test::read_text(dir.file("mapped")) == "new");
+}
+
+ZEST_CASE(a_mapped_file_can_be_replaced) {
+    test::TempDir dir;
+    std::string content(64 * 1024, 'x');
+    test::write_text(dir.file("mapped"), content);
+    auto file = File::open(dir.file("mapped"));
+    ZASSERT(file.has_value());
+    auto mapping = Mapping::map(*file);
+    ZASSERT(mapping.has_value());
+    ZEXPECT(!write_file_atomic(dir.file("mapped"), "new"));
+    ZEXPECT(test::read_text(dir.file("mapped")) == "new");
+    test::write_text(dir.file("newer"), "newer");
+    ZEXPECT(!rename(dir.file("newer"), dir.file("mapped")));
+    ZEXPECT(test::read_text(dir.file("mapped")) == "newer");
+    // The mapping keeps the file it mapped.
+    ZEXPECT(mapping->bytes() == content);
 }
 
 ZEST_CASE(map_of_a_file_open_to_write_fails) {

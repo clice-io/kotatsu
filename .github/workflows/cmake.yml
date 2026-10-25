@@ -141,6 +141,28 @@ jobs:
       - name: Install npm packages
         run: pixi run -e ${{ env.PIXI_ENV }} npm-ci
 
+      # fs's FAT tests (tests/fs/system/fat_tests.cpp) take a FAT32 and an
+      # exFAT volume, which refuse calls NTFS takes, from these images.
+      - name: Mount FAT volumes
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $script = Join-Path $env:RUNNER_TEMP "fat-volumes.txt"
+          $volumes = @(@{ fs = "fat32"; letter = "R" }, @{ fs = "exfat"; letter = "S" })
+          $lines = foreach ($volume in $volumes) {
+            $image = Join-Path $env:RUNNER_TEMP "$($volume.fs).vhdx"
+            "create vdisk file=`"$image`" maximum=100 type=expandable"
+            "select vdisk file=`"$image`""
+            "attach vdisk"
+            "create partition primary"
+            "format fs=$($volume.fs) quick"
+            "assign letter=$($volume.letter)"
+          }
+          Set-Content -Path $script -Value $lines
+          diskpart /s $script
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "KOTA_TEST_FAT_DIRS=R:\;S:\" >> $env:GITHUB_ENV
+
       # An entry cannot be overwritten, so each run saves a new one keyed on its
       # commit and restores the newest by prefix. GitHub keeps an entry to the
       # ref that saved it and searches the run's own ref before main's, so a

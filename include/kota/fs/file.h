@@ -78,7 +78,24 @@ public:
     /// many bytes it read, zero at the end of the file.
     std::expected<std::size_t, std::error_code> read(std::span<char> buffer);
 
-    /// Writes all of `bytes`.
+    /// Writes into `out` the bytes from where the last read stopped to the
+    /// end of the file, as read_file() does for a path: into a buffer sized
+    /// once from what the file reports it holds, read on past that until a
+    /// read returns nothing, so that a file that grows meanwhile, or one
+    /// that reports no size (a pipe, a file under /proc), is read whole.
+    std::error_code read_to_end(buffer_ref out);
+
+    /// Writes from the start of `bytes` what one call of the system takes,
+    /// where the last write or seek left off: how many bytes it wrote, which
+    /// a pipe or a terminal may make fewer than `bytes` holds. A pipe that
+    /// cannot take a byte without waiting, set not to wait (O_NONBLOCK, on
+    /// Windows PIPE_NOWAIT), fails with
+    /// std::errc::resource_unavailable_try_again.
+    std::expected<std::size_t, std::error_code> write_some(std::string_view bytes);
+
+    /// Writes all of `bytes`, write_some() after write_some(). What it wrote
+    /// before a failure stays written, and write_some() is the way to count
+    /// it.
     std::error_code write(std::string_view bytes);
 
     /// Moves where the next read or write starts to `offset` bytes from
@@ -91,6 +108,16 @@ public:
     /// The status of the open file, which a rename or a removal of its name
     /// does not change, as status() would give it for its path.
     std::expected<Status, std::error_code> status() const;
+
+    /// Writes into `out` the name the OS gives the open file, as canonical()
+    /// gives it for a path: absolute, every symlink followed, on Windows
+    /// with each name's on-disk case. A rename since gives the new name; a
+    /// file whose last name has been removed fails with
+    /// std::errc::no_such_file_or_directory. GetFinalPathNameByHandleW on
+    /// Windows, F_GETPATH on macOS, which for a file of several hard links
+    /// may give another of its names, and on Linux the link in
+    /// /proc/self/fd, which needs /proc mounted.
+    std::error_code canonical(buffer_ref out) const;
 
     /// Cuts the file short at `size` bytes, or extends it there with zeros;
     /// the position stays. Needs `write`: on Windows `append` does not
@@ -114,7 +141,8 @@ public:
     /// exclusive one, which keeps any other from taking either kind. Locks
     /// are advisory: they keep no one from reading or writing. A handle
     /// holds one lock at a time, and taking one replaces the one it holds;
-    /// closing the handle releases it. Each File::open is a handle of its
+    /// closing the File releases it, even where a copy of the handle stays
+    /// open, as a child process may hold one. Each File::open is a handle of its
     /// own, in this process too. flock on POSIX, which a network file system
     /// may not support; on Windows LockFileEx of a byte past any file's end,
     /// so that the file's bytes stay free to read and write, and which takes
@@ -139,9 +167,21 @@ public:
     /// Releases the lock this handle holds; holding none is no error.
     std::error_code unlock();
 
-    /// Closes the file, saying whether the system kept every write, which
-    /// some file systems tell only now; closing a closed file does nothing.
+    /// Releases the lock this File holds and closes the file, saying whether
+    /// the system kept every write, which some file systems tell only now;
+    /// closing a closed file does nothing. Windows would release the lock of
+    /// a closed handle only "some time later", and not while a copy of the
+    /// handle stays open: taking it again at once could fail.
     std::error_code close();
+
+    /// Gives up the handle as a file descriptor of the C runtime, which
+    /// `_write`, `_read` and `_close` take on Windows (`_open_osfhandle`,
+    /// binary mode), and on POSIX the descriptor itself: the File is closed
+    /// then, without releasing the lock it holds, and the descriptor the
+    /// caller's to close. On Windows it belongs to the C runtime kotatsu is
+    /// linked with, which with a static runtime is each module's own. On
+    /// failure the File keeps the handle.
+    std::expected<int, std::error_code> into_descriptor() &&;
 
     bool is_open() const;
 
@@ -154,10 +194,15 @@ private:
     explicit File(native_handle_type handle) : handle(handle) {}
 
     native_handle_type handle = closed;
+
+    /// Whether this File has taken a lock it may still hold, which close()
+    /// then releases.
+    bool locked = false;
 };
 
-/// Writes into `out` the bytes of a file. Read, not mapped: on Windows a
-/// mapped file keeps an editor from saving over it.
+/// Writes into `out` the bytes of a file, as File::read_to_end() reads
+/// them. Read, not mapped: on Windows a mapped file keeps an editor from
+/// saving over it.
 std::error_code read_file(buffer_ref out, std::string_view path);
 
 /// Writes `bytes` as the whole of a file, created or emptied first.
@@ -177,7 +222,9 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
 
 /// Creates an empty file in `directory`, named `prefix`, random characters
 /// and `suffix`, and none of it there before: the file, open for reading and
-/// writing, and its path written into `path`. Nothing removes it.
+/// writing, and its path written into `path`. Nothing removes it. A `prefix`
+/// or `suffix` with a separator in it, or on Windows a `:`, which would
+/// name a file elsewhere, fails with std::errc::invalid_argument.
 std::expected<File, std::error_code> create_temp_file(buffer_ref path,
                                                       std::string_view directory,
                                                       std::string_view prefix,
@@ -185,7 +232,8 @@ std::expected<File, std::error_code> create_temp_file(buffer_ref path,
 
 /// Creates an empty directory in `directory`, named `prefix` and random
 /// characters, and none of it there before, and writes its path into `path`.
-/// Nothing removes it.
+/// Nothing removes it. `prefix` is refused as create_temp_file() refuses
+/// it.
 std::error_code create_temp_directory(buffer_ref path,
                                       std::string_view directory,
                                       std::string_view prefix);

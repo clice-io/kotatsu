@@ -95,7 +95,9 @@ std::vector<std::string> runtime_dirs(std::string_view program, string_list_ref 
             dirs.emplace_back(dir);
         }
     };
-    add(path::parent(program));
+    // A program named without a directory is in the current one.
+    auto own = path::parent(program);
+    add(own.empty() && !program.empty() ? "." : own);
     for(auto dir: search_path) {
         add(dir);
     }
@@ -104,9 +106,11 @@ std::vector<std::string> runtime_dirs(std::string_view program, string_list_ref 
 
 bool read_symlink(buffer_ref out, std::string_view path) {
     constexpr std::string_view cookie = "!<symlink>";
-    // A symlink file holds a path; a program is far larger.
+    // A symlink file holds a path, at most Cygwin's longest (4096 bytes) in
+    // UTF-16 behind a BOM; a program is far larger.
+    constexpr std::size_t largest = cookie.size() + 2 + 2 * 4096;
     auto found = status(path);
-    if(!found || found->type != FileType::Regular || found->size > 4096) {
+    if(!found || found->type != FileType::Regular || found->size > largest) {
         return false;
     }
     small_string<512> bytes;

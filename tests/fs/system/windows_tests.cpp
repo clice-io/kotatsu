@@ -80,6 +80,45 @@ ZEST_CASE(to_native_resolves_a_path_relative_to_a_drive) {
 ZEST_CASE(to_native_prefixes_a_long_path) {
     std::string long_path = R"(C:\)" + std::string(300, 'a');
     ZEXPECT(native(long_path) == R"(\\?\)" + long_path);
+    // Win32 limits a device path too.
+    ZEXPECT(native(R"(\\.\)" + long_path) == R"(\\?\)" + long_path);
+}
+
+ZEST_CASE(a_long_device_path_works) {
+    test::TempDir dir;
+    std::string deep = dir.root();
+    while(deep.size() < 300) {
+        path::push(deep, "a-directory-name-of-some-length");
+    }
+    ZEXPECT(create_directories(deep) == true);
+    auto file = deep;
+    path::push(file, "file.txt");
+    ZEXPECT(!write_file(file, "text"));
+    std::string content;
+    ZEXPECT(!read_file(content, R"(\\.\)" + file));
+    ZEXPECT(content == "text");
+}
+
+ZEST_CASE(absolute_leaves_a_verbatim_path_as_it_is) {
+    test::TempDir dir;
+    // Win32 would fold the `..` and drop the dot; the file system keeps
+    // both names apart.
+    std::string dotted = R"(\\?\)" + dir.root();
+    path::push(dotted, "name.");
+    ZEXPECT(!write_file(dotted, "dotted"));
+    ZEXPECT(!write_file(dir.file("name"), "plain"));
+    std::string full;
+    ZEXPECT(!absolute(full, dotted));
+    ZEXPECT(full == dotted);
+    std::string up = R"(\\?\)" + dir.root() + R"(\..\x)";
+    ZEXPECT(!absolute(full, up));
+    ZEXPECT(full == up);
+    std::string real;
+    weakly_canonical(real, dotted);
+    std::string content;
+    ZEXPECT(!read_file(content, real));
+    ZEXPECT(content == "dotted");
+    ZEXPECT(remove(dotted) == true);
 }
 
 ZEST_CASE(to_native_of_what_names_nothing_fails) {
@@ -104,6 +143,13 @@ ZEST_CASE(errors_map_to_portable_codes) {
     ZEXPECT(to_error_code(ERROR_SHARING_VIOLATION) == std::errc::device_or_resource_busy);
     ZEXPECT(to_error_code(ERROR_ALREADY_EXISTS) == std::errc::file_exists);
     ZEXPECT(to_error_code(ERROR_DIR_NOT_EMPTY) == std::errc::directory_not_empty);
+    // Mapped by kotatsu, not left to what the standard library knows.
+    for(auto code: {ERROR_READ_FAULT, ERROR_WRITE_FAULT}) {
+        ZEST_CONTEXT("{}", code);
+        auto mapped = to_error_code(code);
+        ZEXPECT(mapped.category() == std::generic_category());
+        ZEXPECT(mapped == std::errc::io_error);
+    }
     // An error with no POSIX counterpart keeps its own code.
     auto own = to_error_code(ERROR_INVALID_EA_NAME);
     ZEXPECT(own.category() == std::system_category());

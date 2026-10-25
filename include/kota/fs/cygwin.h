@@ -42,7 +42,8 @@ struct MountTable {
 
 /// The directories that hold a Cygwin or MSYS2 runtime (cygwin1.dll,
 /// msys-2.0.dll) in the order Windows looks for `program`'s DLLs: its own
-/// directory, then each of `search_path`, PATH's directories. A program
+/// directory (`.` for a program named without one), then each of
+/// `search_path`, PATH's directories. A program
 /// loads the first; the others are where a POSIX path it printed may
 /// belong when PATH holds two runtimes.
 std::vector<std::string> runtime_dirs(std::string_view program, string_list_ref search_path);

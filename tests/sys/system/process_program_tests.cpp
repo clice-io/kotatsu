@@ -49,22 +49,6 @@ ProgramSearch in(std::initializer_list<std::string> directories) {
     return {.directories = directories};
 }
 
-/// The current directory, put back when this goes.
-struct ScopedCurrentDir {
-    explicit ScopedCurrentDir(const std::filesystem::path& path) {
-        std::filesystem::current_path(path);
-    }
-
-    ScopedCurrentDir(const ScopedCurrentDir&) = delete;
-    ScopedCurrentDir& operator=(const ScopedCurrentDir&) = delete;
-
-    ~ScopedCurrentDir() {
-        std::filesystem::current_path(original);
-    }
-
-    std::filesystem::path original = std::filesystem::current_path();
-};
-
 ZEST_SUITE(sys_process_program) {
 
 test::TempDir dir;
@@ -168,7 +152,7 @@ ZEST_CASE(find_program_takes_a_name_with_a_slash_as_a_path) {
 
 ZEST_CASE(find_program_reads_an_empty_entry_as_the_current_directory) {
     test::make_program(dir, "", "tool");
-    ScopedCurrentDir current(dir.path);
+    test::ScopedCurrentDir current(dir.path);
     ZEXPECT(found("tool", in({"/nowhere", ""})) == "./tool");
 }
 
@@ -218,7 +202,7 @@ ZEST_CASE(find_program_tries_the_name_as_it_is_for_an_empty_extension) {
 // The current directory is no entry of PATH's on Windows.
 ZEST_CASE(find_program_reads_an_empty_entry_as_nothing) {
     test::make_program(dir, "", "tool.EXE");
-    ScopedCurrentDir current(dir.path);
+    test::ScopedCurrentDir current(dir.path);
     auto result = found("tool", in({""}));
     ZASSERT(!result.has_value());
     ZEXPECT(result.error() == std::errc::no_such_file_or_directory);
@@ -233,7 +217,7 @@ ZEST_CASE(find_program_takes_a_name_with_a_separator_as_a_path) {
 ZEST_CASE(find_program_takes_a_drive_relative_name_as_a_path) {
     test::make_program(dir, "", "tool.EXE");
     test::make_program(dir, "elsewhere", "tool.EXE");
-    ScopedCurrentDir current(dir.path);
+    test::ScopedCurrentDir current(dir.path);
     auto name = dir.root().substr(0, 2) + "tool";
     ZEXPECT(found(name, in({dir.file("elsewhere")})) == name + ".EXE");
 }

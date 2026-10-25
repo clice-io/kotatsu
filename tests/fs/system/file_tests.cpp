@@ -238,6 +238,39 @@ ZEST_CASE(create_temp_file_in_nothing_fails) {
     ZEXPECT(created.error() == std::errc::no_such_file_or_directory);
 }
 
+ZEST_CASE(create_temp_file_named_elsewhere_fails) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "inside");
+    std::string temp;
+    std::vector<std::string_view> elsewhere = {
+        "../escaped-",
+        "a/b-",
+#ifdef _WIN32
+        R"(..\escaped-)",
+        "C:",
+        "file:stream-",
+#endif
+    };
+    for(auto name: elsewhere) {
+        ZEST_CONTEXT("{}", name);
+        auto prefixed = create_temp_file(temp, dir.file("inside"), name, "");
+        ZASSERT(!prefixed.has_value());
+        ZEXPECT(prefixed.error() == std::errc::invalid_argument);
+        auto suffixed = create_temp_file(temp, dir.file("inside"), "pre-", name);
+        ZASSERT(!suffixed.has_value());
+        ZEXPECT(suffixed.error() == std::errc::invalid_argument);
+        ZEXPECT(create_temp_directory(temp, dir.file("inside"), name) ==
+                std::errc::invalid_argument);
+    }
+    // Nothing was made, in the directory or beside it.
+    auto inside = read_dir(dir.file("inside"));
+    ZASSERT(inside.has_value());
+    ZEXPECT(inside->empty());
+    auto beside = read_dir(dir.root());
+    ZASSERT(beside.has_value());
+    ZEXPECT(beside->size() == 1u);
+}
+
 ZEST_CASE(create_temp_directory_makes_a_new_empty_directory) {
     test::TempDir dir;
     std::set<std::string> made;
