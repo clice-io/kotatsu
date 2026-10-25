@@ -22,6 +22,7 @@
 #include <iterator>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
+#include <sys/epoll.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -776,6 +777,48 @@ ZEST_CASE(exit_is_seen_without_pidfds) {
     ZASSERT(::waitpid(tester, &status, 0) == tester);
     ZEXPECT(WIFEXITED(status));
     ZEXPECT(WEXITSTATUS(status) == 0);
+}
+
+// epoll nests sets at most four deep: with the loop's own set four deep in
+// others, it refuses the loop the set of the pidfds, and SIGCHLD tells of
+// the exit.
+ZEST_CASE(exit_is_seen_when_the_loop_cannot_poll_the_pidfds) {
+    struct Sets {
+        std::vector<int> fds;
+
+        ~Sets() {
+            for(int fd: fds) {
+                ::close(fd);
+            }
+        }
+    } outer;
+
+    const int backend = ::uv_backend_fd(loop.native_handle());
+    int inner = backend;
+    while(outer.fds.size() < 4) {
+        const int set = ::epoll_create1(EPOLL_CLOEXEC);
+        ZASSERT(set >= 0);
+        outer.fds.push_back(set);
+        epoll_event event{.events = EPOLLIN, .data = {}};
+        ZASSERT(::epoll_ctl(set, EPOLL_CTL_ADD, inner, &event) == 0);
+        inner = set;
+    }
+    // An older kernel, which counts only the nesting below the set added,
+    // lets one more in.
+    const int probe = ::epoll_create1(EPOLL_CLOEXEC);
+    ZASSERT(probe >= 0);
+    epoll_event event{.events = EPOLLIN, .data = {}};
+    const bool refused = ::epoll_ctl(backend, EPOLL_CTL_ADD, probe, &event) != 0 && errno == ELOOP;
+    ::close(probe);
+    if(!refused) {
+        zest::skip();
+        return;
+    }
+
+    auto spawned = process::spawn(shell("exit 5"), loop);
+    ZASSERT(spawned.has_value());
+    auto [status] = run(spawned->proc.wait());
+    ZEXPECT(test::exit_code_of(status) == 5);
 }
 #endif
 

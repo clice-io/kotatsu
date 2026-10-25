@@ -13,10 +13,10 @@ namespace kota {
 
 /// A child process, started by sys::spawn, whose exit an event loop waits
 /// for: on Linux through a pidfd, or SIGCHLD where the kernel has none
-/// (before 5.3) or a sandbox forbids them; on macOS through kqueue; on
-/// Windows through the process handle. libuv's uv_spawn is not used: its
-/// SIGCHLD handler and its job object stay out of the way, and libuv reaps
-/// only children of its own.
+/// (before 5.3), a sandbox forbids them or the loop cannot poll them; on
+/// macOS through kqueue; on Windows through the process handle. libuv's
+/// uv_spawn is not used: its SIGCHLD handler and its job object stay out of
+/// the way, and libuv reaps only children of its own.
 ///
 /// wait() waits for the child to exit; the exit status stays, and every
 /// later wait() returns it at once. One wait() may be pending at a time; a

@@ -93,7 +93,8 @@ struct process::Self::Watch {
     int closing = 0;
 
 #ifndef _WIN32
-    /// The pidfds' epoll set or the kqueue, -1 where it cannot be had.
+    /// The pidfds' epoll set or the kqueue, -1 where it cannot be had or
+    /// the loop cannot poll it.
     int multiplexer = -1;
 
     uv_poll_t poll{};
@@ -127,8 +128,12 @@ struct process::Self::Watch {
         multiplexer = ::kqueue();
 #endif
 #ifndef _WIN32
+        // One the loop cannot poll is none, and SIGCHLD stands in: epoll
+        // refuses a set nested in the loop's past its limit.
+        if(multiplexer >= 0 && ::uv_poll_init(&loop, &poll, multiplexer) != 0) {
+            ::close(std::exchange(multiplexer, -1));
+        }
         if(multiplexer >= 0) {
-            ::uv_poll_init(&loop, &poll, multiplexer);
             poll.data = this;
             ::uv_poll_start(&poll, UV_READABLE, on_ready);
             ::uv_unref(reinterpret_cast<uv_handle_t*>(&poll));
