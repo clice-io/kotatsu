@@ -178,7 +178,8 @@ std::expected<ExitStatus, std::error_code> capture(buffer_ref out,
     }
 
     // Ends the child unless its streams were read to their end, and its
-    // group with it when it leads one: what it started may hold the pipes.
+    // group first when it leads one: what it started may hold the pipes. The
+    // child itself may have left the group.
     struct Ender {
         Child& child;
 
@@ -190,7 +191,10 @@ std::expected<ExitStatus, std::error_code> capture(buffer_ref out,
             if(read) {
                 return;
             }
-            [[maybe_unused]] auto killed = group ? child.kill_tree() : child.kill();
+            if(group) {
+                [[maybe_unused]] auto ended = child.kill_tree();
+            }
+            [[maybe_unused]] auto killed = child.kill();
             [[maybe_unused]] auto reaped = child.wait();
         }
     } ender{*child, options.creation.process_group || options.creation.detached};

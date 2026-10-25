@@ -169,9 +169,9 @@ struct SpawnOptions {
 
 /// How a child ended.
 struct ExitStatus {
-    /// Its exit code; 0 for one a signal ended, which `term_signal` says. On
-    /// Windows a child that crashed exits with the NTSTATUS of its exception,
-    /// such as 0xC0000005, unsigned.
+    /// Its exit code: on POSIX 0 for one a signal ended, which `term_signal`
+    /// says; on Windows 1 for one kill or kill_tree ended, and for one that
+    /// crashed the NTSTATUS of its exception, such as 0xC0000005, unsigned.
     std::int64_t code = 0;
 
     /// The signal that ended it, 0 if none. On Windows the signal its kill
@@ -335,7 +335,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options);
 /// until both end, which a process it started holding them puts off. The
 /// two may be one buffer, which takes what each read gives in turn. How the
 /// child ended. Fails as spawn() does, or with the error of a read, the
-/// child then killed, its group instead when it leads one, and reaped.
+/// child then killed, and its group first when it leads one, and reaped.
 std::expected<ExitStatus, std::error_code> capture(buffer_ref out,
                                                    buffer_ref err,
                                                    SpawnOptions options);

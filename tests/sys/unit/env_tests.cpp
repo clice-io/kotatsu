@@ -102,8 +102,9 @@ ZEST_CASE(split_paths_iterator_copies_keep_their_entry) {
     ++it;
     ZEXPECT(*copy == R"(C:\b)");
     ZEXPECT(*it == R"(C:\d)");
-    auto sizes = view | std::views::transform([](std::string_view entry) { return entry.size(); });
-    ZEXPECT(*sizes.begin() == 4U);
+    auto copies =
+        view | std::views::transform([](std::string_view entry) { return std::string(entry); });
+    ZEXPECT(*copies.begin() == R"(C:\b)");
 }
 
 ZEST_CASE(join_paths_reads_back_with_split_paths) {
