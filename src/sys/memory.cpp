@@ -19,11 +19,28 @@
 #include <mach/mach_time.h>
 #include <sys/resource.h>
 #include <sys/sysctl.h>
+#else
+#include <sys/resource.h>
+
+#include "kota/fs/directory.h"
 #endif
 
 namespace kota::sys {
 
 namespace {
+
+#ifndef _WIN32
+
+/// Sets the switches of `stats` to this process's, those of the threads that
+/// ended included.
+void count_own_switches(ProcessStats& stats) {
+    rusage own{};
+    ::getrusage(RUSAGE_SELF, &own);
+    stats.voluntary_switches = static_cast<std::uint64_t>(own.ru_nvcsw);
+    stats.involuntary_switches = static_cast<std::uint64_t>(own.ru_nivcsw);
+}
+
+#endif
 
 #ifdef _WIN32
 
@@ -59,6 +76,28 @@ std::error_code process_error(std::error_code error) {
         return std::make_error_code(std::errc::no_such_process);
     }
     return error;
+}
+
+/// Adds to `stats` the switches of the threads process `pid` has, which
+/// Linux counts each apart.
+std::error_code count_thread_switches(ProcessStats& stats, int pid) {
+    small_string<64> dir;
+    proc_path(dir, pid, "task");
+    auto threads = fs::read_dir(dir);
+    if(!threads) {
+        return process_error(threads.error());
+    }
+    for(const auto& thread: *threads) {
+        small_string<64> path{dir, "/", thread.name, "/status"};
+        ProcText status;
+        // A thread may end before it is read.
+        if(fs::read_file(status, path)) {
+            continue;
+        }
+        stats.voluntary_switches += field(status, "voluntary_ctxt_switches:").value_or(0);
+        stats.involuntary_switches += field(status, "nonvoluntary_ctxt_switches:").value_or(0);
+    }
+    return {};
 }
 
 #endif
@@ -105,10 +144,7 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
     stats.major_faults = std::uint32_t(task.pti_pageins);
     // Only a process's own switches are told apart.
     if(target == ::getpid()) {
-        rusage own{};
-        ::getrusage(RUSAGE_SELF, &own);
-        stats.voluntary_switches = static_cast<std::uint64_t>(own.ru_nvcsw);
-        stats.involuntary_switches = static_cast<std::uint64_t>(own.ru_nivcsw);
+        count_own_switches(stats);
     }
 #else
     ProcText status;
@@ -126,8 +162,12 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
     stats.memory = kilobytes("RssAnon:") + stats.swapped;
     stats.peak_memory = kilobytes("VmHWM:");
     stats.resident = kilobytes("VmRSS:");
-    stats.voluntary_switches = field(status, "voluntary_ctxt_switches:").value_or(0);
-    stats.involuntary_switches = field(status, "nonvoluntary_ctxt_switches:").value_or(0);
+    // Of another process, only the threads it has are there to count.
+    if(pid == 0 || pid == ::getpid()) {
+        count_own_switches(stats);
+    } else if(auto error = count_thread_switches(stats, pid)) {
+        return std::unexpected(error);
+    }
     auto number = [&](std::size_t index) {
         return leading_number(stat_field(stat, index)).value_or(0);
     };

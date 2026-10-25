@@ -14,7 +14,7 @@
 //                         null when it cannot be started>}
 //   other <pid>           sets the priority of process <pid> to BelowNormal and
 //                         prints what it reads back, as a number, and the
-//                         process's resident size
+//                         process's resident size and voluntary switches
 //   title <title> <times> sets the process title to <title> <times> over,
 //                         prints the arguments sys::arguments reads then, a
 //                         JSON array, and exits once its stdin ends
@@ -43,6 +43,10 @@
 //   orphan-thread         Linux: starts `sys_probe hang` exit_with_parent
 //                         from a thread that then ends, and prints
 //                         {"signal": <the signal that ended it>}
+//   switching             Linux: starts a thread that sleeps a thousand
+//                         times, prints {"switches": <the times that gave
+//                         the CPU up>} and exits once its stdin ends, the
+//                         thread there till then
 //   hooked                Linux: starts `sys_probe env KOTA_EXECVE_HOOKED`,
 //                         which this one's execve, as a hook preloaded into
 //                         it would, sets to 1, and exits as it does
@@ -67,6 +71,7 @@
 #include <cstdlib>
 #include <expected>
 #include <format>
+#include <future>
 #include <iterator>
 #include <string>
 #include <string_view>
@@ -88,6 +93,7 @@
 #include "kota/fs/windows.h"
 #include "kota/sys/console.h"
 #elif defined(__linux__)
+#include <sys/resource.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #endif
@@ -321,9 +327,10 @@ int main() {
         if(!stats) {
             return fail("process_stats", stats.error());
         }
-        print_line(std::format(R"({{"priority":{},"resident":{}}})",
+        print_line(std::format(R"({{"priority":{},"resident":{},"switches":{}}})",
                                static_cast<int>(*priority),
-                               stats->resident));
+                               stats->resident,
+                               stats->voluntary_switches));
         return 0;
     }
     if(command == "hang") {
@@ -384,6 +391,23 @@ int main() {
             return fail("wait", status.error());
         }
         print_line(std::format(R"({{"signal":{}}})", status->term_signal));
+        return 0;
+    }
+    if(command == "switching") {
+        std::promise<long> slept;
+        std::thread sleeper([&] {
+            rusage start{};
+            ::getrusage(RUSAGE_THREAD, &start);
+            for(int i = 0; i < 1000; ++i) {
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+            }
+            rusage end{};
+            ::getrusage(RUSAGE_THREAD, &end);
+            slept.set_value(end.ru_nvcsw - start.ru_nvcsw);
+            wait_for_stdin();
+        });
+        print_line(std::format(R"({{"switches":{}}})", slept.get_future().get()));
+        sleeper.join();
         return 0;
     }
     if(command == "hooked") {

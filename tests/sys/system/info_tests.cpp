@@ -1,10 +1,14 @@
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <system_error>
+#include <thread>
 
 #ifdef __linux__
 #include <sched.h>
+#include <sys/resource.h>
 #elif defined(__APPLE__)
 #include <mach/mach.h>
 #endif
@@ -50,6 +54,33 @@ ZEST_CASE(process_stats_of_a_missing_pid_fails) {
     ZASSERT(!stats.has_value());
     ZEXPECT(stats.error() == std::errc::no_such_process);
 }
+
+#ifdef __linux__
+// Linux counts each thread's switches apart from the others'.
+ZEST_CASE(process_stats_count_the_switches_of_every_thread) {
+    auto before = process_stats();
+    ZASSERT(before.has_value());
+    long slept = 0;
+    std::thread([&] {
+        rusage start{};
+        ::getrusage(RUSAGE_THREAD, &start);
+        for(int i = 0; i < 1000; ++i) {
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+        rusage end{};
+        ::getrusage(RUSAGE_THREAD, &end);
+        slept = end.ru_nvcsw - start.ru_nvcsw;
+    }).join();
+    // Each sleep gave the CPU up; the thread has ended since.
+    ZASSERT(slept >= 500);
+    auto after = process_stats();
+    ZASSERT(after.has_value());
+    ZEXPECT(after->voluntary_switches - before->voluntary_switches >= std::uint64_t(slept));
+    auto by_pid = process_stats(pid());
+    ZASSERT(by_pid.has_value());
+    ZEXPECT(by_pid->voluntary_switches >= after->voluntary_switches);
+}
+#endif
 
 ZEST_CASE(resident_memory_is_reported) {
     auto resident = resident_memory();

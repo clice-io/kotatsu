@@ -41,8 +41,9 @@ struct ProcessStats {
 
     std::uint64_t major_faults = 0;
 
-    /// Linux, and on macOS this process's: the times it gave up the CPU to
-    /// wait, and the times the scheduler took it away.
+    /// Linux, and on macOS this process's: the times its threads gave up the
+    /// CPU to wait, and the times the scheduler took it away; of another
+    /// process on Linux, only those of the threads it still has.
     std::uint64_t voluntary_switches = 0;
 
     std::uint64_t involuntary_switches = 0;
