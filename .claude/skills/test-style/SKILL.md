@@ -22,7 +22,7 @@ A test's level is decided by what it touches, not by the module it tests.
 
 ## Layout
 
-Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/kota/<module>/`; the modules are `support`, `fs`, `meta`, `codec` with one directory per backend (`codec/json`, `codec/toml`, `codec/fbs`, `codec/bincode`, `codec/blob`, `codec/dyn`, `codec/debug`), `deco`, `async`, `ipc` with `ipc/lsp`, `http` and `zest`. `tests/examples/` holds the tests of `examples/`, by the module an example shows (`tests/examples/async/`, `tests/examples/ipc/`): unit tests of what an example builds on, and the example programs run end to end. `tests/harness/` holds what every module's integration tests share.
+Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/kota/<module>/`; the modules are `support`, `fs`, `sys`, `meta`, `codec` with one directory per backend (`codec/json`, `codec/toml`, `codec/fbs`, `codec/bincode`, `codec/blob`, `codec/dyn`, `codec/debug`), `deco`, `async`, `ipc` with `ipc/lsp`, `http` and `zest`. `tests/examples/` holds the tests of `examples/`, by the module an example shows (`tests/examples/async/`, `tests/examples/ipc/`): unit tests of what an example builds on, and the example programs run end to end. `tests/harness/` holds what every module's integration tests share.
 
 ```
 tests/<module>/
@@ -53,9 +53,9 @@ tests/snapshots/<suite>/      snapshot files
 
 What each module's headers include, and so what its tests may use:
 
-- `support`; `fs` on support; `meta` on support; `deco` on meta.
+- `support`; `fs` on support; `sys` on fs; `meta` on support; `deco` on meta.
 - `codec`: its core (`visit/`, `macro.h`) on meta; the backends `blob`, `debug`, `dyn`, `toml` and `fbs` on the core; `bincode` and `json` on the core and `dyn`.
-- `async` on support and `fs`; `ipc` on async and codec (`json`, `dyn`, `bincode`); `ipc/lsp` on ipc; `http` on async and codec `json`.
+- `async` on support, `fs` and `sys`; `ipc` on async and codec (`json`, `dyn`, `bincode`); `ipc/lsp` on ipc; `http` on async and codec `json`.
 - `zest` on all of the above that it checks, prints, parses or runs with. Every test includes zest; that is the one exception.
 
 Rules:
@@ -118,7 +118,7 @@ A test in a bootstrap suite must not judge itself with what it tests: meta's com
 
 ## Determinism
 
-- Cases are independent. Each case runs on a fresh instance of its suite, so a case never clears or resets suite members, at its start or its end. Cases run in no set order, spread over worker processes that run at once, so a case never relies on another having run, or on its leftovers. A worker does run several cases one after another, so its process-wide state (globals and singletons, the environment, the current directory) is not fresh: a case that changes it restores it with an RAII guard such as `test::ScopedVariable`.
+- Cases are independent. Each case runs on a fresh instance of its suite, so a case never clears or resets suite members, at its start or its end. Cases run in no set order, spread over worker processes that run at once, so a case never relies on another having run, or on its leftovers. A worker does run several cases one after another, so its process-wide state (globals and singletons, the environment, the current directory) is not fresh: a case that changes it restores it with an RAII guard such as `test::ScopedEnv`.
 - Unit tests never order events by sleeping; they use events, latches or the loop's own ordering. A timer is fine as the subject of a test.
 - System tests order events the same way wherever they can: wait for the event, a relay or a semaphore that says the other side is ready. A wait is left only to show that something does not happen, with a comment saying so.
 - System tests bind port 0 and read the port back. A case that needs a port twice (a second bind to share it, or to find it in use) binds port 0 first and reuses the port it read back.

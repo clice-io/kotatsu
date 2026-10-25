@@ -1,0 +1,264 @@
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "os.h"
+#include "kota/support/string_ref.h"
+#include "kota/fs/path.h"
+#include "kota/sys/env.h"
+#include "kota/sys/process.h"
+
+#ifdef _WIN32
+#include "kota/support/utf16.h"
+#include "kota/fs/cygwin.h"
+#else
+#include "kota/fs/status.h"
+#endif
+
+namespace kota::sys {
+
+namespace {
+
+/// What a candidate file is to a search.
+enum class Candidate : std::uint8_t {
+    Missing,
+    /// There, but no program: a directory, or a file without execute
+    /// permission.
+    Unrunnable,
+    Program,
+};
+
+Candidate examine(const std::string& path) {
+#ifdef _WIN32
+    // By name, without opening the file: the cheapest query, which a search
+    // through every directory of PATH makes for each extension.
+    auto native = fs::windows::native_path(path);
+    if(!native) {
+        return Candidate::Missing;
+    }
+    auto attributes = ::GetFileAttributesW(native->c_str());
+    if(attributes == INVALID_FILE_ATTRIBUTES) {
+        return Candidate::Missing;
+    }
+    return attributes & FILE_ATTRIBUTE_DIRECTORY ? Candidate::Unrunnable : Candidate::Program;
+#else
+    auto status = fs::status(path);
+    if(!status) {
+        // A directory on the way that cannot be searched hides a program, as
+        // execvp's EACCES says.
+        return status.error() == std::errc::permission_denied ? Candidate::Unrunnable
+                                                              : Candidate::Missing;
+    }
+    if(status->type != fs::FileType::Regular || ::access(path.c_str(), X_OK) != 0) {
+        return Candidate::Unrunnable;
+    }
+    return Candidate::Program;
+#endif
+}
+
+/// The entries of the list in variable `name`, or of `fallback` when it is
+/// unset.
+std::vector<std::string> list_variable(std::string_view name, std::string_view fallback) {
+    auto value = get_env(name);
+    return split_paths(value ? std::string_view(*value) : fallback);
+}
+
+#ifdef _WIN32
+
+/// The names `name` is tried as in a directory, by the rules of `search`.
+std::vector<std::string> spellings(std::string_view name, const ProgramSearch& search) {
+    auto extensions = search.extensions;
+    if(extensions.empty() && search.like_create_process) {
+        extensions = {".exe"};
+    } else if(extensions.empty()) {
+        extensions = list_variable("PATHEXT", "");
+        std::erase(extensions, "");
+        if(extensions.empty()) {
+            extensions = {".COM", ".EXE", ".BAT", ".CMD"};
+        }
+    }
+    auto own = fs::path::extension(name);
+    bool as_is = !own.empty() && (search.like_create_process ||
+                                  std::ranges::any_of(extensions, [&](std::string_view extension) {
+                                      return string_ref(own).equals_insensitive(extension);
+                                  }));
+    if(as_is) {
+        return {std::string(name)};
+    }
+    std::vector<std::string> names;
+    for(const auto& extension: extensions) {
+        names.push_back(std::string(name) + extension);
+    }
+    return names;
+}
+
+/// The program the Cygwin symlink at `path`, a program itself when it is
+/// none, names: its target beside it, link after link, `.exe` added where
+/// the target has none. None when a link names a POSIX path, which only its
+/// runtime's mount table maps, or nothing that runs, or the links loop.
+std::optional<std::string> follow_cygwin_links(std::string path) {
+    // Past it, a chain is taken to loop.
+    constexpr int most_links = 16;
+    for(int links = 0; links <= most_links; ++links) {
+        auto target = fs::cygwin::read_symlink(path);
+        if(!target) {
+            return path;
+        }
+        if(fs::cygwin::is_posix_path(*target)) {
+            return std::nullopt;
+        }
+        auto next = fs::path::join(fs::path::parent(path), *target);
+        if(examine(next) != Candidate::Program) {
+            next += ".exe";
+            if(examine(next) != Candidate::Program) {
+                return std::nullopt;
+            }
+        }
+        path = std::move(next);
+    }
+    return std::nullopt;
+}
+
+#endif
+
+}  // namespace
+
+std::expected<std::string, std::error_code> find_program(std::string_view name,
+                                                         const ProgramSearch& search) {
+    if(name.empty()) {
+        return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
+    }
+    bool found_unrunnable = false;
+    // The first program among `candidates`.
+    auto first = [&](const std::vector<std::string>& candidates) -> std::optional<std::string> {
+        for(const auto& candidate: candidates) {
+            switch(examine(candidate)) {
+                case Candidate::Program: {
+#ifdef _WIN32
+                    if(search.like_create_process) {
+                        return candidate;
+                    }
+                    if(auto program = follow_cygwin_links(candidate)) {
+                        return program;
+                    }
+                    found_unrunnable = true;
+                    break;
+#else
+                    return candidate;
+#endif
+                }
+                case Candidate::Unrunnable: found_unrunnable = true; break;
+                case Candidate::Missing: break;
+            }
+        }
+        return std::nullopt;
+    };
+    auto not_found = [&] {
+        return std::unexpected(std::make_error_code(found_unrunnable
+                                                        ? std::errc::permission_denied
+                                                        : std::errc::no_such_file_or_directory));
+    };
+
+#ifdef _WIN32
+    auto names = spellings(name, search);
+    // A separator or a drive (`C:tool`, in that drive's current directory)
+    // makes it a path.
+    if(!fs::path::root(name).name.empty() ||
+       name.find_first_of(R"(/\)") != std::string_view::npos) {
+        if(auto program = first(names)) {
+            return std::move(*program);
+        }
+        return not_found();
+    }
+#else
+    if(name.find('/') != std::string_view::npos) {
+        if(auto program = first({std::string(name)})) {
+            return std::move(*program);
+        }
+        return not_found();
+    }
+#endif
+
+    auto directories = search.directories;
+    if(directories.empty()) {
+#ifdef _WIN32
+        directories = list_variable("PATH", "");
+#else
+        std::string fallback(::confstr(_CS_PATH, nullptr, 0), '\0');
+        ::confstr(_CS_PATH, fallback.data(), fallback.size());
+        fallback.pop_back();
+        directories = list_variable("PATH", fallback);
+#endif
+    }
+    for(const auto& directory: directories) {
+#ifdef _WIN32
+        if(directory.empty()) {
+            continue;
+        }
+        std::vector<std::string> candidates;
+        for(const auto& spelling: names) {
+            candidates.push_back(fs::path::join(directory, spelling));
+        }
+        if(auto program = first(candidates)) {
+            return std::move(*program);
+        }
+#else
+        // An empty entry is the current directory.
+        if(auto program = first({fs::path::join(directory.empty() ? "." : directory, name)})) {
+            return std::move(*program);
+        }
+#endif
+    }
+    return not_found();
+}
+
+#ifdef _WIN32
+
+std::expected<ProgramSearch, std::error_code> windows::create_process_search() {
+    auto executable = executable_path();
+    if(!executable) {
+        return std::unexpected(executable.error());
+    }
+    ProgramSearch search{
+        .directories = {std::string(fs::path::parent(*executable))},
+        .like_create_process = true,
+    };
+    // Each asks for the size with the NUL when it is too small.
+    auto directory = [](auto read) -> std::expected<std::string, std::error_code> {
+        std::wstring path(MAX_PATH, L'\0');
+        while(true) {
+            auto size = read(static_cast<DWORD>(path.size()), path.data());
+            if(size == 0) {
+                return std::unexpected(fs::windows::last_error());
+            }
+            if(size < path.size()) {
+                path.resize(size);
+                return from_utf16(std::wstring_view(path));
+            }
+            path.resize(size);
+        }
+    };
+    auto current =
+        directory([](DWORD size, wchar_t* buffer) { return ::GetCurrentDirectoryW(size, buffer); });
+    auto system =
+        directory([](DWORD size, wchar_t* buffer) { return ::GetSystemDirectoryW(buffer, size); });
+    auto windows =
+        directory([](DWORD size, wchar_t* buffer) { return ::GetWindowsDirectoryW(buffer, size); });
+    for(auto* found: {&current, &system, &windows}) {
+        if(!*found) {
+            return std::unexpected(found->error());
+        }
+    }
+    search.directories.push_back(std::move(*current));
+    search.directories.push_back(std::move(*system));
+    search.directories.push_back(fs::path::join(*windows, "System"));
+    search.directories.push_back(std::move(*windows));
+    for(auto& entry: list_variable("PATH", "")) {
+        search.directories.push_back(std::move(entry));
+    }
+    return search;
+}
+
+#endif
+
+}  // namespace kota::sys

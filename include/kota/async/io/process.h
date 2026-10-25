@@ -54,8 +54,8 @@ public:
         }
 
         /// How the child ended, for a person: "exit code 1", "signal 9
-        /// (SIGKILL)", or on Windows "exception 0xC0000005 (access
-        /// violation)".
+        /// (SIGKILL)", or on Windows "exception 0xC0000005
+        /// (STATUS_ACCESS_VIOLATION)".
         std::string to_string() const;
     };
 

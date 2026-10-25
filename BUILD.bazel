@@ -21,6 +21,34 @@ kota_library(
     hdrs = glob(["include/kota/support/**"]),
 )
 
+# One object per area: a program links only those it calls into, and on
+# Windows imports only their DLLs (catter's hook library, which runs in every
+# process a build starts, takes the environment and program lookup without the
+# rest). ntdll for parent_pid, parallelism, cpu_cores and uname; advapi32 for
+# the registry of cpu_cores and uname; shell32 and ole32 for the known folders
+# of dirs.
+kota_library(
+    name = "sys",
+    srcs = glob([
+        "src/sys/*.cpp",
+        "src/sys/*.h",
+    ]),
+    hdrs = glob(["include/kota/sys/**"]),
+    linkopts = select({
+        "@platforms//os:windows": [
+            "-ladvapi32",
+            "-lntdll",
+            "-lole32",
+            "-lshell32",
+        ],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":fs",
+        ":support",
+    ],
+)
+
 kota_library(
     name = "fs",
     srcs = glob([
@@ -113,6 +141,7 @@ kota_library(
     deps = [
         ":fs",
         ":support",
+        ":sys",
         "@libuv",
     ],
 )
@@ -177,10 +206,6 @@ kota_library(
         ["include/kota/zest/**"],
         exclude = ["include/kota/zest/async.h"],
     ),
-    linkopts = select({
-        "@platforms//os:windows": ["-lshell32"],
-        "//conditions:default": [],
-    }),
     deps = [
         ":async",
         ":codec",
@@ -188,6 +213,7 @@ kota_library(
         ":fs",
         ":meta",
         ":support",
+        ":sys",
         "@cpptrace",
     ],
 )

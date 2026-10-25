@@ -83,15 +83,37 @@ export class Driver {
     t: TestContext,
     name: string,
     args: string[] = [],
-    { stdin = "pipe", stdout = "pipe" }: { stdin?: Stdio; stdout?: Stdio } = {},
+    {
+      stdin = "pipe",
+      stdout = "pipe",
+      env,
+      windowsVerbatimArguments,
+    }: {
+      stdin?: Stdio;
+      stdout?: Stdio;
+      /** The driver's environment, the test's when unset. */
+      env?: NodeJS.ProcessEnv;
+      /** On Windows, `args` joined by spaces make the command line as they are. */
+      windowsVerbatimArguments?: boolean;
+    } = {},
   ): Promise<Driver> {
     const driver = new Driver(
       name,
-      spawn(driverPath(name), args, { stdio: [stdin, stdout, "pipe"] }),
+      spawn(driverPath(name), args, {
+        stdio: [stdin, stdout, "pipe"],
+        env,
+        windowsVerbatimArguments,
+      }),
     );
     t.after(() => driver.#abandon());
     await once(driver.#child, "spawn");
     return driver;
+  }
+
+  /** The driver's process id. */
+  get pid(): number {
+    assert.ok(this.#child.pid !== undefined, "the driver did not start");
+    return this.#child.pid;
   }
 
   /** The driver's input, for a channel in its protocol. */
