@@ -246,6 +246,41 @@ ZEST_CASE(cgroup_v2_finds_its_hierarchy_where_it_is_mounted) {
     ZEXPECT(cg.cpu_quota("0::/a\n") == 0.5);
 }
 
+// A container may be given a subtree of the hierarchy, mounted alone: its
+// cgroups lie under the mount's root, and the first mount of the hierarchy
+// need not be the one. A root that starts the path but is no cgroup above it
+// (/ten of /tenant) holds nothing of it.
+ZEST_CASE(cgroup_v2_reads_a_subtree_mounted_where_its_root_holds_the_cgroup) {
+    Hierarchy cg;
+    cg.mounts =
+        "30 21 0:26 /other /cg/other rw shared:5 - cgroup2 cgroup2 rw\n"
+        "31 21 0:26 /ten /cg/ten rw shared:5 - cgroup2 cgroup2 rw\n"
+        "32 21 0:26 /tenant /cg rw shared:5 - cgroup2 cgroup2 rw\n";
+    cg.add("worker/memory.max", 2 * GiB);
+    cg.add("worker/memory.current", GiB);
+    cg.add("worker/cpu.max", "50000 100000\n");
+
+    auto memory = cg.memory("0::/tenant/worker\n");
+    ZASSERT(memory.has_value());
+    ZEXPECT(memory->limit == 2 * GiB);
+    ZEXPECT(memory->available == GiB);
+    ZEXPECT(cg.cpu_quota("0::/tenant/worker\n") == 0.5);
+    // The mount's root itself.
+    cg.add("memory.max", GiB);
+    auto root = cg.memory("0::/tenant\n");
+    ZASSERT(root.has_value());
+    ZEXPECT(root->limit == GiB);
+}
+
+ZEST_CASE(cgroup_outside_every_mount_is_unset) {
+    Hierarchy cg;
+    cg.mounts = "31 21 0:26 /tenant /cg rw shared:5 - cgroup2 cgroup2 rw\n";
+    cg.add("memory.max", GiB);
+    cg.add("cpu.max", "50000 100000\n");
+    ZEXPECT(!cg.memory("0::/other\n").has_value());
+    ZEXPECT(!cg.cpu_quota("0::/other\n").has_value());
+}
+
 ZEST_CASE(cgroup_mount_point_with_a_blank_is_read) {
     Hierarchy cg;
     // mountinfo writes a blank as an octal escape.
@@ -254,6 +289,20 @@ ZEST_CASE(cgroup_mount_point_with_a_blank_is_read) {
     cg.add("my cgroups/a/memory.max", 2 * GiB);
 
     auto memory = cg.memory("0::/a\n");
+    ZASSERT(memory.has_value());
+    ZEXPECT(memory->limit == 2 * GiB);
+}
+
+ZEST_CASE(cgroup_mount_with_a_backslash_is_read) {
+    Hierarchy cg;
+    // A backslash is an octal escape too, in the root as in the point.
+    cg.mounts = R"(30 21 0:26 /a\134b /cg/c\134d rw shared:5 - cgroup2 cgroup2 rw)"
+                "\n";
+    cg.add(R"(c\d/e/memory.max)", 2 * GiB);
+
+    // /proc/self/cgroup writes it as it is.
+    auto memory = cg.memory(R"(0::/a\b/e)"
+                            "\n");
     ZASSERT(memory.has_value());
     ZEXPECT(memory->limit == 2 * GiB);
 }

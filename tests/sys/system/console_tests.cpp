@@ -156,8 +156,17 @@ ZEST_CASE(write_console_to_a_full_pipe_that_does_not_block_fails) {
     ZEXPECT(pipe.read_all().size() == taken);
 }
 
+// On Windows without ending the process, as the C runtime's check would.
 ZEST_CASE(write_console_to_no_descriptor_fails) {
-    ZEXPECT(write_console(-1, "text") == std::errc::bad_file_descriptor);
+    int closed = -1;
+    {
+        Pipe pipe;
+        closed = pipe.write.fd;
+    }
+    for(int fd: {-1, closed}) {
+        ZEST_CONTEXT("descriptor {}", fd);
+        ZEXPECT(write_console(fd, "text") == std::errc::bad_file_descriptor);
+    }
 }
 
 ZEST_CASE(is_pipe_holds_for_a_pipe) {
@@ -241,18 +250,20 @@ ZEST_CASE(is_console_holds_for_a_terminal) {
         return;
     }
     Descriptor terminal(::_open_osfhandle(reinterpret_cast<std::intptr_t>(console), _O_BINARY));
+    ZASSERT(terminal.fd >= 0);
 #else
     // A pseudo-terminal's other end, which a sandbox may not give.
     Descriptor master(::posix_openpt(O_RDWR | O_NOCTTY));
     const char* name = nullptr;
-    if(master.fd < 0 || ::grantpt(master.fd) != 0 || ::unlockpt(master.fd) != 0 ||
-       (name = ::ptsname(master.fd)) == nullptr) {
+    if(master.fd >= 0 && ::grantpt(master.fd) == 0 && ::unlockpt(master.fd) == 0) {
+        name = ::ptsname(master.fd);
+    }
+    Descriptor terminal(name == nullptr ? -1 : ::open(name, O_RDWR | O_NOCTTY));
+    if(terminal.fd < 0) {
         zest::skip();
         return;
     }
-    Descriptor terminal(::open(name, O_RDWR | O_NOCTTY));
 #endif
-    ZASSERT(terminal.fd >= 0);
     ZEXPECT(is_console(terminal.fd));
     ZEXPECT(!is_pipe(terminal.fd));
 }

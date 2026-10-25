@@ -66,13 +66,13 @@ std::expected<Handle, std::error_code> duplicate_standard(DWORD which) {
 /// standard stream the process does not have.
 std::expected<Handle, std::error_code> duplicate_descriptor(int fd) {
     auto handle = descriptor_handle(fd);
-    if(handle == -2) {
+    if(handle == reinterpret_cast<HANDLE>(-2)) {
         return Handle();
     }
-    if(handle == -1) {
+    if(handle == INVALID_HANDLE_VALUE) {
         return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
     }
-    return duplicate(reinterpret_cast<HANDLE>(handle));
+    return duplicate(handle);
 }
 
 /// The two ends of a pipe: this process's, opened for overlapped I/O, and
@@ -137,12 +137,22 @@ std::expected<Handle, std::error_code> null_device(bool read) {
 /// would take another's too.
 constinit SRWLOCK inheritance = SRWLOCK_INIT;
 
-/// Whether `path`, as fs::absolute writes it, its trailing dots and spaces
-/// dropped as Windows drops them, is a batch file, which CreateProcess runs
-/// through cmd: as Windows tells, by its end, a file named `.bat` too.
+/// Whether `path`, written by fs::absolute (which drops trailing dots and
+/// spaces, as Windows does), ends in `.bat` or `.cmd` in any case: Windows
+/// tells a batch file by its end, so a file named `.bat` is one too.
 bool is_batch_file(std::string_view path) {
     return string_ref(path).ends_with_insensitive(".bat") ||
            string_ref(path).ends_with_insensitive(".cmd");
+}
+
+/// Appends `c` to `out`, a `%` written `%%cd:~,%`, which cmd reads as the
+/// `%` and an empty substring of %cd%, not as the start of a variable's
+/// name.
+void append_batch_char(std::string& out, char c) {
+    if(c == '%') {
+        out.append("%%cd:~,");
+    }
+    out.push_back(c);
 }
 
 /// Appends `argument` to `out` as cmd is to pass it on to a batch file, by
@@ -150,9 +160,8 @@ bool is_batch_file(std::string_view path) {
 /// empty, ends in no backslash, which would escape a quote the script puts
 /// after it, and each ASCII character of it is a letter, a digit or one of
 /// `#$*+-./:?@\_` and none a control character; each quote doubled, and the
-/// backslashes before it as before the closing quote; each `%` written
-/// `%%cd:~,%`, which cmd reads as the `%` and an empty substring of %cd%,
-/// not as the start of a variable's name.
+/// backslashes before it as before the closing quote; each `%` as
+/// append_batch_char writes it.
 void append_batch_argument(std::string& out, std::string_view argument) {
     constexpr std::string_view unquoted = R"(#$*+-./:?@\_)";
     bool quote = argument.empty() || argument.ends_with('\\');
@@ -176,12 +185,10 @@ void append_batch_argument(std::string& out, std::string_view argument) {
             if(c == '"') {
                 out.append(backslashes, '\\');
                 out.push_back('"');
-            } else if(c == '%') {
-                out.append("%%cd:~,");
             }
             backslashes = 0;
         }
-        out.push_back(c);
+        append_batch_char(out, c);
     }
     if(quote) {
         out.append(backslashes, '\\');
@@ -192,15 +199,21 @@ void append_batch_argument(std::string& out, std::string_view argument) {
 /// Writes into `out` the command line that has cmd run batch file `script`
 /// with `arguments`, as Rust's Command writes it (make_bat_command_line):
 /// `cmd.exe /e:ON /v:OFF /d /c ""<script>" <argument>..."`, command
-/// extensions on, which append_batch_argument's `%` takes, and neither
-/// delayed expansion nor AutoRun commands; cmd drops the outer quotes.
+/// extensions on, which append_batch_char's `%` takes, and neither delayed
+/// expansion nor AutoRun commands; cmd drops the outer quotes. The script's
+/// `%` too is written as append_batch_char writes it: cmd would expand a
+/// variable named in its path.
 /// invalid_argument for an argument holding a carriage return or a newline,
 /// which would end the command there.
 std::error_code batch_command_line(std::string& out,
                                    std::string_view script,
                                    string_list_ref arguments) {
     assert(!script.contains('"') && "no Windows file name holds a quote");
-    out = std::format(R"(cmd.exe /e:ON /v:OFF /d /c ""{}")", script);
+    out = R"(cmd.exe /e:ON /v:OFF /d /c "")";
+    for(char c: script) {
+        append_batch_char(out, c);
+    }
+    out.push_back('"');
     for(auto argument: arguments) {
         if(argument.find_first_of("\r\n") != std::string_view::npos) {
             return std::make_error_code(std::errc::invalid_argument);

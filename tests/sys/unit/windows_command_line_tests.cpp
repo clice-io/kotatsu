@@ -193,8 +193,10 @@ ZEST_CASE(split_by_llvm_reads_llvms_cases) {
                       R"(\v)"});
     ZEXPECT(split(R"(clang -c -DFOO="""ABC""" x.cpp)", llvm) ==
             Arguments{"clang", "-c", R"(-DFOO="ABC")", "x.cpp"});
-    ZEXPECT(split("clang -Xclang foo\n\nfoo\"bar\"baz\n x.cpp\n", llvm) ==
-            Arguments{"clang", "-Xclang", "foo", "foobarbaz", "x.cpp"});
+    ZEXPECT(split("clang -Xclang foo\n\n"
+                  R"(foo"bar"baz)"
+                  "\n x.cpp\n",
+                  llvm) == Arguments{"clang", "-Xclang", "foo", "foobarbaz", "x.cpp"});
 }
 
 // LLVM's TokenizeWindowsCommandLineQuotedLastArgument.
@@ -229,10 +231,17 @@ ZEST_CASE(split_by_llvm_separates_at_line_ends_and_nuls) {
     ZEXPECT(split("a\r\nb\r\n", llvm) == Arguments{"a", "b"});
     ZEXPECT(split("a\nb\rc", llvm) == Arguments{"a", "b", "c"});
     ZEXPECT(split("a\0b\0"sv, llvm) == Arguments{"a", "b"});
-    // Not in quotes, where a NUL stays as LLVM's TokenizeWindowsCommandLineNoCopy
-    // keeps it: clang's argv, of C strings, would end the argument there.
-    ZEXPECT(split("\"a\nb\r\n\" c", llvm) == Arguments{"a\nb\r\n", "c"});
-    ZEXPECT(split("\"a\0b\" c"sv, llvm) == (Arguments{"a\0b"s, "c"}));
+    // In quotes a line end or a NUL separates nothing; a NUL stays, as
+    // TokenizeWindowsCommandLineNoCopy keeps it: clang's argv, of C strings,
+    // would end the argument there.
+    ZEXPECT(split(R"("a)"
+                  "\nb\r\n"
+                  R"(" c)",
+                  llvm) == Arguments{"a\nb\r\n", "c"});
+    ZEXPECT(split(R"("a)"
+                  "\0"
+                  R"(b" c)"sv,
+                  llvm) == (Arguments{"a\0b"s, "c"}));
 }
 
 // Inside quotes, as in the C runtime's arguments.
@@ -251,8 +260,11 @@ ZEST_CASE(split_by_llvm_keeps_backslashes_at_the_end) {
 ZEST_CASE(split_by_llvm_full_reads_llvms_cases) {
     ZEXPECT(split(R"("C:\Program Files\Whatever\"clang.exe z.c -DY=\"x\")", llvm_full) ==
             Arguments{R"(C:\Program Files\Whatever\clang.exe)", "z.c", R"(-DY="x")"});
-    ZEXPECT(split("\"a\\\"b c\\\"d\n\"e\\\"f g\\\"h\n", llvm_full) ==
-            Arguments{R"(a\b)", R"(c"d)", R"(e\f)", R"(g"h)"});
+    ZEXPECT(split(R"("a\"b c\"d)"
+                  "\n"
+                  R"("e\"f g\"h)"
+                  "\n",
+                  llvm_full) == Arguments{R"(a\b)", R"(c"d)", R"(e\f)", R"(g"h)"});
     ZEXPECT(split(R"(\\server\share\subdir\clang.exe)", llvm_full) ==
             Arguments{R"(\\server\share\subdir\clang.exe)"});
 }
@@ -271,11 +283,22 @@ ZEST_CASE(split_by_llvm_full_reads_a_program_after_a_newline_that_ends_an_argume
                   "\n"
                   R"(q\"x)",
                   llvm_full) == Arguments{"p", R"(a"b)", R"(q\x)"});
-    ZEXPECT(split("p a\n\nq\\\"x", llvm_full) == Arguments{"p", "a", R"(q\x)"});
-    ZEXPECT(split("p a\r\nq\\\"x", llvm_full) == Arguments{"p", "a", R"(q"x)"});
-    ZEXPECT(split("p a \nq\\\"x", llvm_full) == Arguments{"p", "a", R"(q"x)"});
+    ZEXPECT(split("p a\n\n"
+                  R"(q\"x)",
+                  llvm_full) == Arguments{"p", "a", R"(q\x)"});
+    ZEXPECT(split("p a\r\n"
+                  R"(q\"x)",
+                  llvm_full) == Arguments{"p", "a", R"(q"x)"});
+    ZEXPECT(split("p a \n"
+                  R"(q\"x)",
+                  llvm_full) == Arguments{"p", "a", R"(q"x)"});
     // In quotes a newline ends nothing.
-    ZEXPECT(split("p \"a\n\"q\\\"x", llvm_full) == Arguments{"p", "a\nq\"x"});
+    ZEXPECT(split(R"(p "a)"
+                  "\n"
+                  R"("q\"x)",
+                  llvm_full) == Arguments{"p",
+                                          "a\n"
+                                          R"(q"x)"});
 }
 
 };  // ZEST_SUITE(sys_windows_command_line)

@@ -1,8 +1,9 @@
 #pragma once
 
-// Reading what a child writes to a pipe sys::spawn made, and writing what it
-// reads, without an event loop: read_some(), read_to_end() and write_all() on
-// the end Child::take_pipe gives.
+// Starting the shell, shell(), and reading what a child writes to a pipe
+// sys::spawn made, and writing what it reads, without an event loop:
+// read_some(), read_to_end() and write_all() on the end Child::take_pipe
+// gives.
 
 #include <string>
 #include <string_view>
@@ -21,8 +22,48 @@
 #endif
 
 #include "kota/fs/file.h"
+#include "kota/fs/path.h"
+#include "kota/sys/spawn.h"
+
+#ifdef _WIN32
+#include "kota/fs/windows.h"
+#endif
 
 namespace kota::test {
+
+/// The shell, by its full path: an environment given need hold no PATH.
+inline std::string shell_path() {
+#ifdef _WIN32
+    wchar_t directory[MAX_PATH];
+    auto size = ::GetSystemDirectoryW(directory, MAX_PATH);
+    std::string path;
+    fs::windows::from_native(path, std::wstring_view(directory, size));
+    fs::path::push(path, "cmd.exe");
+    return path;
+#else
+    return "/bin/sh";
+#endif
+}
+
+/// The shell spelled by host: `posix`, or `windows` for cmd.
+constexpr std::string_view by_platform([[maybe_unused]] std::string_view posix,
+                                       [[maybe_unused]] std::string_view windows) {
+#ifdef _WIN32
+    return windows;
+#else
+    return posix;
+#endif
+}
+
+/// Runs `command` through the shell, its stdio ignored.
+inline sys::SpawnOptions shell(std::string_view command) {
+    sys::SpawnOptions options{
+        .program = shell_path(),
+        .args = {std::string(by_platform("-c", "/c")), std::string(command)},
+    };
+    options.streams = {sys::Stdio::ignore(), sys::Stdio::ignore(), sys::Stdio::ignore()};
+    return options;
+}
 
 /// What the next read of pipe end `end` gives; empty at its end.
 inline std::string read_some(fs::File::native_handle_type end) {

@@ -13,6 +13,7 @@
 #ifdef __linux__
 #include <cerrno>
 #include <cstddef>
+#include <fcntl.h>
 #include <iterator>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
@@ -154,6 +155,7 @@ ZEST_CASE(find_program_finding_only_files_it_cannot_run_names_the_first) {
 ZEST_CASE(find_program_where_faccessat2_is_refused_finds_the_program) {
     auto program = test::make_program(dir, "", "tool");
     bool filtered = false;
+    bool refused = false;
     std::error_code error;
     std::string out;
     // A filter of this thread's alone, which goes with it.
@@ -167,6 +169,8 @@ ZEST_CASE(find_program_where_faccessat2_is_refused_finds_the_program) {
         sock_fprog bpf{.len = static_cast<unsigned short>(std::size(filter)), .filter = filter};
         filtered = ::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == 0 &&
                    ::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &bpf) == 0;
+        refused =
+            ::syscall(faccessat2_number, AT_FDCWD, ".", X_OK, AT_EACCESS) == -1 && errno == EPERM;
         error = find_program(out, "tool", in({dir.root()}));
     }).join();
     // A kernel built without seccomp filters has none to set.
@@ -174,26 +178,11 @@ ZEST_CASE(find_program_where_faccessat2_is_refused_finds_the_program) {
         zest::skip();
         return;
     }
+    ZEXPECT(refused);
     ZEXPECT(!error);
     ZEXPECT(out == program);
 }
 #endif
-
-/// The permissions of `path`, taken away until this goes.
-struct ScopedNoPermissions {
-    explicit ScopedNoPermissions(std::filesystem::path path) : path(std::move(path)) {
-        std::filesystem::permissions(this->path, std::filesystem::perms::none);
-    }
-
-    ScopedNoPermissions(const ScopedNoPermissions&) = delete;
-    ScopedNoPermissions& operator=(const ScopedNoPermissions&) = delete;
-
-    ~ScopedNoPermissions() {
-        std::filesystem::permissions(this->path, std::filesystem::perms::owner_all);
-    }
-
-    std::filesystem::path path;
-};
 
 // A directory that cannot be searched may hide a program, as execvp's
 // EACCES says.
@@ -204,7 +193,7 @@ ZEST_CASE(find_program_behind_a_directory_it_cannot_search_fails) {
         return;
     }
     test::make_program(dir, "locked", "tool");
-    ScopedNoPermissions locked(dir.path / "locked");
+    test::ScopedPermissions locked(dir.path / "locked", std::filesystem::perms::none);
     auto result = found("tool", in({dir.file("locked")}));
     ZASSERT(!result.has_value());
     ZEXPECT(result.error() == std::errc::permission_denied);

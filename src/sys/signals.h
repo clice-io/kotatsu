@@ -4,10 +4,14 @@
 
 #include <atomic>
 
+#ifdef __APPLE__
+#include <mutex>
+#endif
+
 namespace kota::sys {
 
-/// SIGPIPE was at its default until kotatsu ignored it: a child started with
-/// keep_signals gets the default back.
+/// SIGPIPE was at its default when kotatsu ignored it, noted before it does:
+/// a child started with keep_signals gets the default back.
 extern std::atomic<bool> sigpipe_was_default;
 
 /// On Linux, SIGCHLD was ignored until spawn set it to its default: a child
@@ -15,6 +19,15 @@ extern std::atomic<bool> sigpipe_was_default;
 /// default this process set itself since among them, which nothing tells
 /// apart.
 extern std::atomic<bool> sigchld_was_ignored;
+
+#ifdef __APPLE__
+/// Held while a pipe is made and until posix_spawn has started the child it
+/// is for: macOS sets close-on-exec only after it makes one, which another
+/// of these spawns would otherwise give its child. Held too while
+/// ignore_sigpipe ignores SIGPIPE, so that the child posix_spawn starts
+/// reads sigpipe_was_default as it stood with SIGPIPE's action.
+extern std::mutex spawning;
+#endif
 
 /// Sets SIGCHLD to its default when it is ignored, and clears SA_NOCLDWAIT
 /// from its action, a handler kept: either has the system reap a child, and

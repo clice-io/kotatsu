@@ -49,7 +49,8 @@ const std::vector<std::string>& arguments();
 
 /// Sets the title `ps` shows for this process: the memory of its arguments
 /// is overwritten with `title`, cut to their length, and on Linux the name
-/// `top` shows, as set_process_name sets it, unless `title` is empty.
+/// `top` shows, as set_process_name sets it, unless nothing of `title` is
+/// left for it, as of an empty one.
 /// not_supported on Windows, which has no such title (its console's is
 /// shared with the processes before this one). Not thread-safe against
 /// readers of main's argv.

@@ -17,13 +17,6 @@ namespace kota::sys {
 
 namespace {
 
-/// The handle of descriptor `fd`. One not open has INVALID_HANDLE_VALUE, and
-/// a standard stream without a handle -2: the pseudo-handles of this process
-/// and this thread, neither a console nor a pipe.
-HANDLE handle_of(int fd) noexcept {
-    return reinterpret_cast<HANDLE>(descriptor_handle(fd));
-}
-
 bool is_console_handle(HANDLE handle) noexcept {
     DWORD mode = 0;
     return ::GetConsoleMode(handle, &mode) != 0;
@@ -81,7 +74,7 @@ std::error_code write_bytes(HANDLE handle, std::string_view text) noexcept {
 
 std::error_code write_console(int fd, std::string_view text) noexcept {
 #ifdef _WIN32
-    auto handle = handle_of(fd);
+    auto handle = descriptor_handle(fd);
     if(handle == INVALID_HANDLE_VALUE) {
         return std::make_error_code(std::errc::bad_file_descriptor);
     }
@@ -106,7 +99,7 @@ std::error_code write_console(int fd, std::string_view text) noexcept {
 
 bool is_console(int fd) noexcept {
 #ifdef _WIN32
-    return is_console_handle(handle_of(fd));
+    return is_console_handle(descriptor_handle(fd));
 #else
     return ::isatty(fd) == 1;
 #endif
@@ -114,7 +107,7 @@ bool is_console(int fd) noexcept {
 
 bool is_pipe(int fd) noexcept {
 #ifdef _WIN32
-    return ::GetFileType(handle_of(fd)) == FILE_TYPE_PIPE;
+    return ::GetFileType(descriptor_handle(fd)) == FILE_TYPE_PIPE;
 #else
     struct stat status;
     return ::fstat(fd, &status) == 0 && (S_ISFIFO(status.st_mode) || S_ISSOCK(status.st_mode));

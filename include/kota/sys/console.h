@@ -4,8 +4,8 @@
 #include <system_error>
 
 // What a descriptor is, and writing text to it. On Windows a descriptor that
-// is not open ends no process here, as the C runtime's check of it would;
-// MSVC's debug runtime (/MDd, /MTd) still reports that check's failed
+// is not open does not end the process, as the C runtime's own check of it
+// would; MSVC's debug runtime (/MDd, /MTd) still reports that check's failed
 // assertion first, in a dialog that waits for an answer unless
 // _CrtSetReportMode sends its reports elsewhere.
 

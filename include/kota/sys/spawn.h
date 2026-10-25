@@ -150,11 +150,10 @@ struct SpawnOptions {
     /// as CreateProcess, in this program's directory and the current one
     /// first, PATH unset searching the system's directories; a path without
     /// an extension takes `.exe` too, which CreateProcess would not add, when
-    /// that file is there. A `.bat` or `.cmd`
-    /// file runs as Rust's Command runs one, by the system's cmd.exe, `args`
-    /// written so that cmd passes them on as they are: a program the script
-    /// starts with %* reads each as given, no variable expanded in it, no
-    /// command of it run.
+    /// that file is there. A `.bat` or `.cmd` file runs as Rust's Command
+    /// runs one, by the system's cmd.exe, `args` written so that cmd passes
+    /// them on as they are: a program the script starts with %* reads each
+    /// as given, no variable expanded in it, no command of it run.
     std::string program = {};
 
     /// The arguments after argv[0].

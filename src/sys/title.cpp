@@ -68,6 +68,23 @@ std::expected<Area, std::error_code> find_area() {
 
 #endif
 
+#ifdef __linux__
+
+/// What Linux keeps of `name` for a thread's: its first 15 bytes, cut back
+/// to a character's start when they would cut one.
+std::string_view kept_name(std::string_view name) {
+    if(name.size() > 15) {
+        std::size_t end = 15;
+        while(end > 0 && (static_cast<unsigned char>(name[end]) & 0xC0) == 0x80) {
+            --end;
+        }
+        name = name.substr(0, end);
+    }
+    return name;
+}
+
+#endif
+
 }  // namespace
 
 #endif
@@ -90,8 +107,9 @@ std::error_code set_process_title([[maybe_unused]] std::string_view given) {
     std::memcpy(area->start, title.data(), length);
     std::memset(area->start + length, '\0', area->size - length);
 #ifdef __linux__
-    // An empty title leaves the name as it was.
-    if(!title.empty()) {
+    // One of which nothing is left for the name, as an empty one, leaves the
+    // name as it was.
+    if(!kept_name(title).empty()) {
         return set_process_name(title);
     }
 #endif
@@ -101,19 +119,12 @@ std::error_code set_process_title([[maybe_unused]] std::string_view given) {
 
 std::error_code set_process_name([[maybe_unused]] std::string_view name) {
 #ifdef __linux__
-    // Linux keeps 15 bytes; a character they would cut goes whole.
-    if(name.size() > 15) {
-        std::size_t end = 15;
-        while(end > 0 && (static_cast<unsigned char>(name[end]) & 0xC0) == 0x80) {
-            --end;
-        }
-        name = name.substr(0, end);
-    }
-    if(name.empty()) {
+    auto kept = kept_name(name);
+    if(kept.empty()) {
         return std::make_error_code(std::errc::invalid_argument);
     }
     // The name of the main thread, which is the process's in top and pgrep.
-    return fs::write_file("/proc/self/comm", name);
+    return fs::write_file("/proc/self/comm", kept);
 #else
     return std::make_error_code(std::errc::not_supported);
 #endif

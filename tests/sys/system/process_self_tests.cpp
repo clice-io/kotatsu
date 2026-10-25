@@ -14,16 +14,22 @@
 #else
 #include <csignal>
 #include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 #include "fs/harness/files.h"
 #include "sys/harness/pids.h"
+#include "sys/harness/spawn.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/file.h"
 #include "kota/fs/path.h"
 #include "kota/sys/process.h"
 #include "kota/sys/spawn.h"
+
+#ifdef _WIN32
+#include "kota/support/utf16.h"
+#endif
 
 namespace kota::sys {
 
@@ -47,8 +53,12 @@ struct UnopenableProcess {
         };
         STARTUPINFOW startup{};
         startup.cb = sizeof(startup);
+        // The system's cmd.exe, which CreateProcess would look for in the
+        // current directory first.
+        std::wstring program;
+        ZASSERT(!to_utf16(program, test::shell_path()));
         wchar_t command[] = L"cmd.exe /c exit";
-        ZASSERT(::CreateProcessW(nullptr,
+        ZASSERT(::CreateProcessW(program.c_str(),
                                  command,
                                  &attributes,
                                  nullptr,
@@ -108,21 +118,6 @@ struct ScopedNoDebugPrivilege {
 };
 #endif
 
-/// A child that exits at once, its streams ignored.
-SpawnOptions exit_at_once() {
-    SpawnOptions options{
-#ifdef _WIN32
-        .program = "cmd",
-        .args = {"/c", "exit 0"},
-#else
-        .program = "sh",
-        .args = {"-c", "exit 0"},
-#endif
-    };
-    options.streams = {Stdio::ignore(), Stdio::ignore(), Stdio::ignore()};
-    return options;
-}
-
 #ifdef __linux__
 /// The name of this process's main thread.
 std::string main_thread_name() {
@@ -137,6 +132,11 @@ std::string main_thread_name() {
 
 /// This process's name, put back when this goes.
 struct ScopedProcessName {
+    ScopedProcessName() = default;
+
+    ScopedProcessName(const ScopedProcessName&) = delete;
+    ScopedProcessName& operator=(const ScopedProcessName&) = delete;
+
     ~ScopedProcessName() {
         set_process_name(previous);
     }
@@ -198,7 +198,7 @@ ZEST_CASE(process_alive_of_no_pid_is_false) {
 }
 
 ZEST_CASE(process_alive_of_a_child_waited_for_is_false) {
-    auto child = spawn(exit_at_once());
+    auto child = spawn(test::shell("exit 0"));
     ZASSERT(child.has_value());
     ZASSERT(child->wait().has_value());
     ZEXPECT(!process_alive(child->pid()));
@@ -221,7 +221,7 @@ ZEST_CASE(process_alive_holds_for_a_process_this_one_may_not_open) {
 #else
 // One that has exited and is not yet waited for.
 ZEST_CASE(process_alive_holds_for_a_zombie) {
-    auto child = spawn(exit_at_once());
+    auto child = spawn(test::shell("exit 0"));
     ZASSERT(child.has_value());
     siginfo_t info{};
     ZASSERT(::waitid(P_PID, static_cast<id_t>(child->pid()), &info, WEXITED | WNOWAIT) == 0);
@@ -270,6 +270,26 @@ ZEST_CASE(set_process_name_of_nothing_fails) {
     // None of the 15 bytes kept starts a character.
     ZEXPECT(set_process_name(std::string(16, '\x80')) == std::errc::invalid_argument);
     ZEXPECT(main_thread_name() == restore.previous);
+}
+
+// One of which nothing is left for the name, as of bytes that start no
+// character, leaves the name as an empty one does: in a child of this
+// process, whose arguments it rewrites.
+ZEST_CASE(set_process_title_with_nothing_for_the_name_leaves_it) {
+    auto child = ::fork();
+    ZASSERT(child >= 0);
+    if(child == 0) {
+        std::string before;
+        std::string after;
+        bool kept = !fs::read_file(before, "/proc/self/comm") &&
+                    !set_process_title(std::string(16, '\x80')) &&
+                    !fs::read_file(after, "/proc/self/comm") && after == before;
+        ::_exit(kept ? 0 : 1);
+    }
+    int status = 0;
+    ZASSERT(::waitpid(child, &status, 0) == child);
+    ZEXPECT(WIFEXITED(status));
+    ZEXPECT(WEXITSTATUS(status) == 0);
 }
 #else
 ZEST_CASE(set_process_name_off_linux_fails) {

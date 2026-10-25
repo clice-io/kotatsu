@@ -13,15 +13,16 @@
 #ifdef _WIN32
 // After windows.h, whose types it uses.
 #include <psapi.h>
-#elif defined(__APPLE__)
+#else
+#include <sys/resource.h>
+#endif
+
+#ifdef __APPLE__
 #include <libproc.h>
 #include <mach/mach.h>
 #include <mach/mach_time.h>
-#include <sys/resource.h>
 #include <sys/sysctl.h>
-#else
-#include <sys/resource.h>
-
+#elif !defined(_WIN32)
 #include "kota/fs/directory.h"
 #endif
 

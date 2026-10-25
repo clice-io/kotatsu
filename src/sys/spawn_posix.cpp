@@ -292,11 +292,6 @@ int open_pidfd([[maybe_unused]] pid_t pid) {
 
 #else
 
-/// Held while a pipe is made and until posix_spawn has started the child it
-/// is for: macOS sets close-on-exec only after it makes one, which another
-/// of these spawns would otherwise give its child.
-std::mutex spawning;
-
 /// Waits for process `pid` to exit, through kqueue: a wait4 that blocks
 /// waits for good on macOS for a child the system reaps itself, SIGCHLD
 /// ignored. A zombie, or a process exiting, is none kqueue knows of.

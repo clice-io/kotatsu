@@ -58,13 +58,41 @@ std::optional<Membership> find(std::string_view membership, std::string_view con
     return std::nullopt;
 }
 
-/// Where `mounts`, a /proc/<pid>/mountinfo text, mounts the v1 hierarchy of
-/// `controller`, or with an empty controller the v2 one.
-std::optional<std::string> mount_point(std::string_view mounts, std::string_view controller) {
+/// A path of mountinfo, whose blanks and backslashes are octal escapes
+/// ("\040", "\134").
+std::string unescape(std::string_view escaped) {
+    std::string path;
+    for(std::size_t i = 0; i < escaped.size(); ++i) {
+        if(escaped[i] != '\\') {
+            path += escaped[i];
+            continue;
+        }
+        auto digits = escaped.substr(i + 1, 3);
+        unsigned char code = 0;
+        std::from_chars(digits.data(), digits.data() + digits.size(), code, 8);
+        path += static_cast<char>(code);
+        i += digits.size();
+    }
+    return path;
+}
+
+/// A process's cgroup in a hierarchy: the directory of the mount that holds
+/// it, and the cgroup's own.
+struct Place {
+    std::string top;
+    std::string dir;
+};
+
+/// Where `mounts`, a /proc/<pid>/mountinfo text, has cgroup `path` of the v1
+/// hierarchy of `controller`, or with an empty controller of the v2 one: in
+/// the first mount of it whose root, the cgroup it shows at its point, is
+/// `path` or above it, as Rust's std finds a cgroup.
+std::optional<Place> mounted(std::string_view mounts,
+                             std::string_view controller,
+                             std::string_view path) {
     // "<id> <parent> <device> <root> <point> <options> [<tag>...] - <type>
     // <source> <super options>", a v1 hierarchy's controllers among the
-    // super options ("rw,cpu,cpuacct"). A path's blanks and backslashes are
-    // octal escapes ("\040").
+    // super options ("rw,cpu,cpuacct").
     for(auto range: std::views::split(mounts, '\n')) {
         std::string_view line(range.begin(), range.end());
         auto separator = line.find(" - ");
@@ -78,34 +106,22 @@ std::optional<std::string> mount_point(std::string_view mounts, std::string_view
                : type != "cgroup" || !has_controller(word(filesystem, 2), controller)) {
             continue;
         }
-        auto escaped = word(line, 4);
-        std::string point;
-        for(std::size_t i = 0; i < escaped.size(); ++i) {
-            if(escaped[i] != '\\') {
-                point += escaped[i];
-                continue;
-            }
-            auto digits = escaped.substr(i + 1, 3);
-            unsigned char code = 0;
-            std::from_chars(digits.data(), digits.data() + digits.size(), code, 8);
-            point += static_cast<char>(code);
-            i += digits.size();
+        // The root as `path` is written, the hierarchy's own empty.
+        auto root = unescape(word(line, 3));
+        std::string_view above = string_ref(root).rtrim('/');
+        if(!path.starts_with(above) || (path.size() > above.size() && path[above.size()] != '/')) {
+            continue;
         }
-        return point;
+        auto point = unescape(word(line, 4));
+        auto dir = point + std::string(path.substr(above.size()));
+        return Place{.top = std::move(point), .dir = std::move(dir)};
     }
     return std::nullopt;
 }
 
-/// A process's cgroup in a hierarchy: the directory of the hierarchy's root,
-/// and the cgroup's own.
-struct Place {
-    std::string top;
-    std::string dir;
-};
-
 /// The cgroup of the process whose /proc/<pid>/cgroup reads `membership`
 /// in the v1 hierarchy of `controller`, or with an empty controller in the
-/// v2 one; unset when it is in none, or `mounts` mounts none.
+/// v2 one; unset when it is in none, or `mounts` has none that holds it.
 std::optional<Place> place(std::string_view mounts,
                            std::string_view membership,
                            std::string_view controller) {
@@ -113,11 +129,7 @@ std::optional<Place> place(std::string_view mounts,
     if(!joined) {
         return std::nullopt;
     }
-    auto top = mount_point(mounts, controller);
-    if(!top) {
-        return std::nullopt;
-    }
-    return Place{.top = *top, .dir = *top + std::string(joined->path)};
+    return mounted(mounts, controller, joined->path);
 }
 
 /// A number file; unset for "max", -1 or a file that cannot be read.
