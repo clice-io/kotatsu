@@ -153,4 +153,4 @@ private:
 
 /// Its iterators refer to the strings, not to it.
 template <>
-inline bool std::ranges::enable_borrowed_range<kota::string_list_ref> = true;
+constexpr inline bool std::ranges::enable_borrowed_range<kota::string_list_ref> = true;

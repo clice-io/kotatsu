@@ -104,6 +104,8 @@ ZEST_CASE(assign_takes_text_that_views_the_buffer) {
     ZEXPECT(text == "cdef");
     ref.assign(ref.view().substr(1, 2));
     ZEXPECT(text == "de");
+    ref.assign(ref.view().substr(0, 1));
+    ZEXPECT(text == "d");
 }
 
 ZEST_CASE(a_small_string_grows_past_its_inline_capacity) {
