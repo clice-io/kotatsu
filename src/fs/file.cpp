@@ -479,6 +479,10 @@ std::error_code File::canonical(buffer_ref out) const {
     out.assign(buffer);
     return {};
 #else
+    // /proc would call a closed one's link missing.
+    if(!is_open()) {
+        return std::make_error_code(std::errc::bad_file_descriptor);
+    }
     char link[32];
     auto end = std::format_to_n(link, sizeof(link), "/proc/self/fd/{}", handle).out;
     if(auto error = read_symlink(out, std::string_view(link, end))) {
