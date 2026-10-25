@@ -30,6 +30,8 @@ void Child::swap(Child& other) noexcept {
 #ifdef _WIN32
     std::swap(job, other.job);
     std::swap(killed_by, other.killed_by);
+#else
+    std::swap(lost, other.lost);
 #endif
 }
 
@@ -123,7 +125,18 @@ std::expected<std::string, std::error_code>
         path = get_env("PATH");
     }
 #ifdef _WIN32
-    auto directories = path ? split_paths(*path) : std::vector<std::string>();
+    // Without PATH the system's directories, which CreateProcess searches
+    // too, as POSIX has confstr(_CS_PATH)'s.
+    std::vector<std::string> directories;
+    if(path) {
+        directories = split_paths(*path);
+    } else {
+        auto system = system_directories();
+        if(!system) {
+            return std::unexpected(system.error());
+        }
+        directories = std::move(*system);
+    }
 #else
     auto directories = split_paths(path ? *path : default_path());
 #endif

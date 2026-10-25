@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -22,6 +23,7 @@
 #include <crt_externs.h>
 #include <mutex>
 #include <spawn.h>
+#include <sys/event.h>
 #else
 #include <sys/prctl.h>
 #include <sys/syscall.h>
@@ -238,6 +240,38 @@ int open_pidfd([[maybe_unused]] pid_t pid) {
 /// of these spawns would otherwise give its child.
 std::mutex spawning;
 
+/// Waits for process `pid` to exit, through kqueue: a wait4 that blocks
+/// waits for good on macOS for a child the system reaps itself, SIGCHLD
+/// ignored. A zombie, or a process exiting, is none kqueue knows of.
+std::error_code wait_for_exit(pid_t pid) {
+    Descriptor queue(::kqueue());
+    if(queue.fd < 0) {
+        return errno_code();
+    }
+    struct kevent change;
+    EV_SET(&change,
+           static_cast<uintptr_t>(pid),
+           EVFILT_PROC,
+           EV_ADD | EV_ONESHOT,
+           NOTE_EXIT,
+           0,
+           nullptr);
+    struct kevent event;
+    while(true) {
+        int got = ::kevent(queue.fd, &change, 1, &event, 1, nullptr);
+        if(got < 0 && errno == EINTR) {
+            continue;
+        }
+        if(got < 0) {
+            return errno == ESRCH ? std::error_code() : errno_code();
+        }
+        if((event.flags & EV_ERROR) && event.data != ESRCH) {
+            return {static_cast<int>(event.data), std::generic_category()};
+        }
+        return {};
+    }
+}
+
 #endif
 
 }  // namespace
@@ -257,27 +291,47 @@ std::error_code Child::reap(bool block) {
     if(exited) {
         return {};
     }
-    int status = 0;
-    rusage usage{};
-    pid_t reaped = 0;
-    do {
-        reaped = ::wait4(id, &status, block ? 0 : WNOHANG, &usage);
-    } while(reaped < 0 && errno == EINTR);
-    if(reaped < 0) {
-        return errno_code();
+#ifdef __APPLE__
+    // Once it has exited, wait4 need not block but for the moment the child
+    // takes to become a zombie.
+    if(block) {
+        if(auto error = wait_for_exit(id)) {
+            return error;
+        }
     }
-    if(reaped > 0) {
-        exited = exit_status_of(status, usage);
+    const int options = WNOHANG;
+#else
+    const int options = block ? 0 : WNOHANG;
+#endif
+    while(true) {
+        int status = 0;
+        rusage usage{};
+        pid_t reaped = ::wait4(id, &status, options, &usage);
+        if(reaped < 0 && errno == EINTR) {
+            continue;
+        }
+        if(reaped < 0) {
+            lost = errno == ECHILD;
+            return errno_code();
+        }
+        if(reaped > 0) {
+            exited = exit_status_of(status, usage);
+            return {};
+        }
+        if(!block) {
+            return {};
+        }
+        std::this_thread::yield();
     }
-    return {};
 }
 
 std::error_code Child::kill(int signum) {
     if(id < 0) {
         return std::make_error_code(std::errc::invalid_argument);
     }
-    // Once it is reaped its pid may be another process's.
-    if(exited) {
+    // Once it is reaped, by this process or another, its pid may be
+    // another process's.
+    if(exited || lost) {
         return std::make_error_code(std::errc::no_such_process);
     }
 #ifdef SYS_pidfd_send_signal

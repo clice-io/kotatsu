@@ -783,28 +783,45 @@ ZEST_CASE(exit_is_seen_without_pidfds) {
 #endif
 
 #ifndef _WIN32
-// The shell holds a FIFO the test reads, open before it tells its pid, and
-// its command holds it too: the FIFO ends only once the cancel has killed
-// the group. The capture itself ends with the shell.
+// The shell and its command inherit the end of a pipe the test reads, which
+// has no close-on-exec: it ends only once the cancel has killed the group,
+// both of them. The capture itself ends with the shell.
 ZEST_CASE(cancelled_capture_kills_the_group) {
     test::TempDir dir;
     ZASSERT(::mkfifo(dir.file("pid").c_str(), 0600) == 0);
-    ZASSERT(::mkfifo(dir.file("hold").c_str(), 0600) == 0);
     int pid_fifo = test::open_fd(dir.file("pid"), O_RDWR, 0);
     ZASSERT(pid_fifo >= 0);
-    // Open for reading first, so that the shell's open does not wait.
-    int hold_fifo = test::open_fd(dir.file("hold"), O_RDONLY | O_NONBLOCK, 0);
-    ZASSERT(hold_fifo >= 0);
+    int hold[2];
+    ZASSERT(::pipe(hold) == 0);
+    ZASSERT(::fcntl(hold[0], F_SETFD, FD_CLOEXEC) == 0);
     auto reader = pipe::open(pid_fifo, loop);
     ZASSERT(reader.has_value());
-    auto hold = pipe::open(hold_fifo, loop);
-    ZASSERT(hold.has_value());
-    auto opts = shell("exec 3> hold; sleep 1000 & echo $$ > pid; wait");
+    auto held = pipe::open(hold[0], loop);
+    ZASSERT(held.has_value());
+
+    // What the cancel left running ends with the test.
+    struct Cleanup {
+        int end;
+        int group = -1;
+
+        ~Cleanup() {
+            if(end >= 0) {
+                ::close(end);
+            }
+            if(group > 0) {
+                ::killpg(group, SIGKILL);
+            }
+        }
+    } cleanup{hold[1]};
+
+    auto opts = shell("sleep 1000 & echo $$ > pid; wait");
     opts.cwd = dir.root();
     opts.creation.process_group = true;
     cancellation_source source;
     auto canceller = [&]() -> task<std::optional<std::string>, error> {
         auto pid = co_await reader->read_line().or_fail();
+        // The shell has it: this process's goes.
+        ::close(std::exchange(cleanup.end, -1));
         source.cancel();
         co_return pid;
     };
@@ -814,24 +831,14 @@ ZEST_CASE(cancelled_capture_kills_the_group) {
     ZEXPECT(captured.is_cancelled());
     ZASSERT(pid.has_value());
     ZASSERT(pid->has_value());
-    const int group = std::stoi(**pid);
-    ZEXPECT(reaped(group));
+    cleanup.group = std::stoi(**pid);
+    ZEXPECT(reaped(cleanup.group));
 
-    // What the cancel left running ends with the test.
-    struct GroupKiller {
-        int group;
-        bool gone = false;
-
-        ~GroupKiller() {
-            if(!gone) {
-                ::killpg(group, SIGKILL);
-            }
-        }
-    } killer{group};
-
-    auto [rest] = run(hold->read_to_end());
+    auto [rest] = run(held->read_to_end());
     ZEXPECT(rest.has_value());
-    killer.gone = rest.has_value();
+    if(rest.has_value()) {
+        cleanup.group = -1;
+    }
 }
 #endif
 

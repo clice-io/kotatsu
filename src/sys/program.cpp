@@ -225,42 +225,59 @@ std::expected<std::string, std::error_code> find_program(std::string_view name,
 
 #ifdef _WIN32
 
+namespace {
+
+/// A directory a Win32 call `read` gives, which asks for the size with the
+/// NUL when the buffer is too small.
+std::expected<std::string, std::error_code> known_directory(auto read) {
+    std::wstring path(MAX_PATH, L'\0');
+    while(true) {
+        auto size = read(static_cast<DWORD>(path.size()), path.data());
+        if(size == 0) {
+            return std::unexpected(fs::windows::last_error());
+        }
+        if(size < path.size()) {
+            path.resize(size);
+            return from_utf16(std::wstring_view(path));
+        }
+        path.resize(size);
+    }
+}
+
+}  // namespace
+
+std::expected<std::vector<std::string>, std::error_code> system_directories() {
+    auto system = known_directory(
+        [](DWORD size, wchar_t* buffer) { return ::GetSystemDirectoryW(buffer, size); });
+    if(!system) {
+        return std::unexpected(system.error());
+    }
+    auto windows = known_directory(
+        [](DWORD size, wchar_t* buffer) { return ::GetWindowsDirectoryW(buffer, size); });
+    if(!windows) {
+        return std::unexpected(windows.error());
+    }
+    auto system16 = fs::path::join(*windows, "System");
+    return std::vector<std::string>{std::move(*system), std::move(system16), std::move(*windows)};
+}
+
 std::expected<std::vector<std::string>, std::error_code> windows::create_process_directories() {
     auto executable = executable_path();
     if(!executable) {
         return std::unexpected(executable.error());
     }
-    std::vector<std::string> directories = {std::string(fs::path::parent(*executable))};
-    // Each asks for the size with the NUL when it is too small.
-    auto directory = [](auto read) -> std::expected<std::string, std::error_code> {
-        std::wstring path(MAX_PATH, L'\0');
-        while(true) {
-            auto size = read(static_cast<DWORD>(path.size()), path.data());
-            if(size == 0) {
-                return std::unexpected(fs::windows::last_error());
-            }
-            if(size < path.size()) {
-                path.resize(size);
-                return from_utf16(std::wstring_view(path));
-            }
-            path.resize(size);
-        }
-    };
-    auto current =
-        directory([](DWORD size, wchar_t* buffer) { return ::GetCurrentDirectoryW(size, buffer); });
-    auto system =
-        directory([](DWORD size, wchar_t* buffer) { return ::GetSystemDirectoryW(buffer, size); });
-    auto windows =
-        directory([](DWORD size, wchar_t* buffer) { return ::GetWindowsDirectoryW(buffer, size); });
-    for(auto* found: {&current, &system, &windows}) {
-        if(!*found) {
-            return std::unexpected(found->error());
-        }
+    auto current = known_directory(
+        [](DWORD size, wchar_t* buffer) { return ::GetCurrentDirectoryW(size, buffer); });
+    if(!current) {
+        return std::unexpected(current.error());
     }
-    directories.push_back(std::move(*current));
-    directories.push_back(std::move(*system));
-    directories.push_back(fs::path::join(*windows, "System"));
-    directories.push_back(std::move(*windows));
+    auto system = system_directories();
+    if(!system) {
+        return std::unexpected(system.error());
+    }
+    std::vector<std::string> directories = {std::string(fs::path::parent(*executable)),
+                                            std::move(*current)};
+    directories.insert(directories.end(), system->begin(), system->end());
     for(auto& entry: list_variable("PATH", "")) {
         directories.push_back(std::move(entry));
     }

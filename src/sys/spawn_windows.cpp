@@ -48,6 +48,7 @@ std::expected<Handle, std::error_code> inheritable(HANDLE source) {
     return Handle(duplicate);
 }
 
+#ifdef _MSC_VER
 /// Does nothing, for _get_osfhandle: the C runtime would end the process
 /// for a descriptor not open.
 void ignore_invalid_parameter(const wchar_t*,
@@ -55,13 +56,19 @@ void ignore_invalid_parameter(const wchar_t*,
                               const wchar_t*,
                               unsigned int,
                               std::uintptr_t) {}
+#endif
 
 /// The handle of C runtime descriptor `fd`, inheritable; none for a
 /// standard stream the process does not have.
 std::expected<Handle, std::error_code> inheritable_descriptor(int fd) {
+#ifdef _MSC_VER
     auto previous = ::_set_thread_local_invalid_parameter_handler(ignore_invalid_parameter);
     auto handle = ::_get_osfhandle(fd);
     ::_set_thread_local_invalid_parameter_handler(previous);
+#else
+    // MinGW's runtime says EBADF and nothing more.
+    auto handle = ::_get_osfhandle(fd);
+#endif
     // -2: a standard stream without a handle.
     if(handle == -2) {
         return Handle();
@@ -267,10 +274,13 @@ std::error_code Child::kill_tree(int signum) {
     if(signum == 0) {
         return {};
     }
+    // The signal ends the child only if it still runs: a tree may outlive
+    // it.
+    const bool runs = !exited && ::WaitForSingleObject(handle, 0) == WAIT_TIMEOUT;
     if(!::TerminateJobObject(job, 1)) {
         return fs::windows::last_error();
     }
-    if(!exited) {
+    if(runs) {
         killed_by = signum;
     }
     return {};
@@ -338,23 +348,18 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         const auto& stream = options.streams[i];
         std::expected<Handle, std::error_code> made = Handle();
         switch(stream.kind) {
-            case Stdio::Kind::Inherit:
-                shares_streams = true;
-                made = inheritable(::GetStdHandle(standard[i]));
-                break;
+            case Stdio::Kind::Inherit: made = inheritable(::GetStdHandle(standard[i])); break;
             case Stdio::Kind::Ignore: made = null_device(i == 0); break;
             case Stdio::Kind::FD:
                 if(stream.fd < 0) {
                     return std::unexpected(std::make_error_code(std::errc::invalid_argument));
                 }
-                shares_streams = true;
                 made = inheritable_descriptor(stream.fd);
                 break;
             case Stdio::Kind::File:
                 if(stream.file == fs::File::closed) {
                     return std::unexpected(std::make_error_code(std::errc::invalid_argument));
                 }
-                shares_streams = true;
                 made = inheritable(stream.file);
                 break;
             case Stdio::Kind::Pipe: {
@@ -371,6 +376,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
             return std::unexpected(made.error());
         }
         handles[i] = std::move(*made);
+        // One of this process's streams, if it has one there.
+        shares_streams |= stream.kind != Stdio::Kind::Ignore && handles[i].handle != nullptr;
     }
 
     // A job of its own: it ends a child that crashes rather than show

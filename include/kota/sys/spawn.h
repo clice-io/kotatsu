@@ -122,16 +122,19 @@ struct SpawnOptions {
     /// PATH, a relative entry relative to `cwd` too. On POSIX by
     /// find_program's rules, PATH unset searching confstr(_CS_PATH)'s
     /// directories, and a file without a #! line run by /bin/sh, as execvp
-    /// does; on Windows by find_create_process_program's, in PATH alone: not,
-    /// as CreateProcess, in this program's directory, the current one or the
-    /// system's. A `.bat` or `.cmd` file runs only with a
-    /// windows_command_line, which says how cmd is to read its arguments.
+    /// does; on Windows by find_create_process_program's, in PATH alone, not,
+    /// as CreateProcess, in this program's directory and the current one
+    /// first; PATH unset searching the system's directories. A `.bat` or
+    /// `.cmd` file runs only with a windows_command_line, which says how cmd
+    /// is to read its arguments.
     std::string file = {};
 
     /// argv, argv[0] first, which need not be `file`; `file` when empty.
     std::vector<std::string> args = {};
 
-    /// The child's environment; unset, this process's.
+    /// The child's environment; unset, this process's. Given, it is the
+    /// child's as it is, in its order, on Windows too: nothing is added,
+    /// though some programs fail without SYSTEMROOT.
     std::optional<std::vector<EnvVar>> env = {};
 
     /// Changes made, in order, to `env`, or to this process's; the last of a
@@ -297,6 +300,9 @@ private:
     int killed_by = 0;
 #else
     static constexpr native_handle_type invalid_handle = -1;
+
+    /// Another reaped it, as SIGCHLD set to SIG_IGN makes the system do.
+    bool lost = false;
 #endif
 };
 

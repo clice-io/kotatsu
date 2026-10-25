@@ -5,6 +5,7 @@
 #include <string>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -68,6 +69,11 @@ struct Handle {
         return Handle(handle);
     }
 };
+
+/// The directories CreateProcess searches for a program after this
+/// program's and the current one, before PATH: the system directory, the
+/// 16-bit system directory and the Windows directory.
+std::expected<std::vector<std::string>, std::error_code> system_directories();
 #else
 /// The error errno holds.
 inline std::error_code errno_code() {
