@@ -17,8 +17,18 @@ namespace {
 constexpr std::uint64_t MiB = std::uint64_t(1) << 20;
 constexpr std::uint64_t GiB = std::uint64_t(1) << 30;
 
-/// A cgroup hierarchy in memory, mounted at /cg.
+/// Cgroup hierarchies in memory, mounted under /cg.
 struct Hierarchy {
+    /// What /proc/self/mountinfo reads: v2 at /cg, v1's memory controller at
+    /// /cg/memory, and its cpu and cpuacct ones together at /cg/cpu,cpuacct.
+    std::string mounts =
+        "25 21 0:22 / /cg rw,nosuid,nodev,noexec,relatime shared:4 - cgroup2 cgroup2 "
+        "rw,nsdelegate,memory_recursiveprot\n"
+        "33 21 0:28 / /cg/memory rw,nosuid,nodev,noexec,relatime shared:15 - cgroup cgroup "
+        "rw,memory\n"
+        "34 21 0:29 / /cg/cpu,cpuacct rw,nosuid,nodev,noexec,relatime shared:16 - cgroup cgroup "
+        "rw,cpu,cpuacct\n";
+
     std::map<std::string, std::string, std::less<>> files;
 
     void add(std::string_view path, std::string text) {
@@ -38,11 +48,11 @@ struct Hierarchy {
     }
 
     std::optional<cgroup::MemoryLimit> memory(std::string_view membership) const {
-        return cgroup::memory("/cg", membership, *this);
+        return cgroup::memory(mounts, membership, *this);
     }
 
     std::optional<double> cpu_quota(std::string_view membership) const {
-        return cgroup::cpu_quota("/cg", membership, *this);
+        return cgroup::cpu_quota(mounts, membership, *this);
     }
 };
 
@@ -179,17 +189,17 @@ ZEST_CASE(cgroup_cpu_quota_takes_the_least_of_every_level) {
 
 ZEST_CASE(cgroup_cpu_quota_reads_v1) {
     Hierarchy cg;
-    cg.add("cpu/docker/cpu.cfs_quota_us", "200000\n");
-    cg.add("cpu/docker/cpu.cfs_period_us", "100000\n");
-    cg.add("cpu/docker/abc/cpu.cfs_quota_us", "-1\n");
-    cg.add("cpu/docker/abc/cpu.cfs_period_us", "100000\n");
+    cg.add("cpu,cpuacct/docker/cpu.cfs_quota_us", "200000\n");
+    cg.add("cpu,cpuacct/docker/cpu.cfs_period_us", "100000\n");
+    cg.add("cpu,cpuacct/docker/abc/cpu.cfs_quota_us", "-1\n");
+    cg.add("cpu,cpuacct/docker/abc/cpu.cfs_period_us", "100000\n");
     ZEXPECT(cg.cpu_quota("3:cpu,cpuacct:/docker/abc\n2:memory:/docker/abc\n") == 2.0);
 }
 
 ZEST_CASE(cgroup_cpu_quota_reads_a_container_at_the_root) {
     Hierarchy cg;
-    cg.add("cpu/cpu.cfs_quota_us", "50000\n");
-    cg.add("cpu/cpu.cfs_period_us", "100000\n");
+    cg.add("cpu,cpuacct/cpu.cfs_quota_us", "50000\n");
+    cg.add("cpu,cpuacct/cpu.cfs_period_us", "100000\n");
     ZEXPECT(cg.cpu_quota("3:cpu,cpuacct:/docker/abc\n") == 0.5);
 }
 
@@ -204,6 +214,62 @@ ZEST_CASE(cgroup_cpu_quota_without_one_is_unset) {
     // Neither does a quota without its period.
     cg.add("b/cpu.max", "50000\n");
     ZEXPECT(!cg.cpu_quota("0::/b\n").has_value());
+}
+
+// Controllers may share a v1 hierarchy, mounted under any name.
+ZEST_CASE(cgroup_v1_finds_a_hierarchy_where_it_is_mounted) {
+    Hierarchy cg;
+    cg.mounts = "40 21 0:35 / /cg/cpu,memory rw,relatime shared:20 - cgroup hier1 rw,cpu,memory\n";
+    cg.add("cpu,memory/a/memory.limit_in_bytes", 2 * GiB);
+    cg.add("cpu,memory/a/memory.usage_in_bytes", GiB);
+    cg.add("cpu,memory/a/cpu.cfs_quota_us", "50000\n");
+    cg.add("cpu,memory/a/cpu.cfs_period_us", "100000\n");
+
+    auto memory = cg.memory("4:cpu,memory:/a\n");
+    ZASSERT(memory.has_value());
+    ZEXPECT(memory->limit == 2 * GiB);
+    ZEXPECT(memory->available == GiB);
+    ZEXPECT(cg.cpu_quota("4:cpu,memory:/a\n") == 0.5);
+}
+
+// Hybrid mode mounts v2 beside the v1 hierarchies.
+ZEST_CASE(cgroup_v2_finds_its_hierarchy_where_it_is_mounted) {
+    Hierarchy cg;
+    cg.mounts = "30 21 0:26 / /cg/unified rw,relatime shared:5 - cgroup2 cgroup2 rw,nsdelegate\n";
+    cg.add("unified/a/memory.max", 2 * GiB);
+    cg.add("unified/a/memory.current", GiB);
+    cg.add("unified/a/cpu.max", "50000 100000\n");
+
+    auto memory = cg.memory("0::/a\n");
+    ZASSERT(memory.has_value());
+    ZEXPECT(memory->limit == 2 * GiB);
+    ZEXPECT(cg.cpu_quota("0::/a\n") == 0.5);
+}
+
+ZEST_CASE(cgroup_mount_point_with_a_blank_is_read) {
+    Hierarchy cg;
+    // mountinfo writes a blank as an octal escape.
+    cg.mounts = R"(30 21 0:26 / /cg/my\040cgroups rw shared:5 - cgroup2 cgroup2 rw)"
+                "\n";
+    cg.add("my cgroups/a/memory.max", 2 * GiB);
+
+    auto memory = cg.memory("0::/a\n");
+    ZASSERT(memory.has_value());
+    ZEXPECT(memory->limit == 2 * GiB);
+}
+
+ZEST_CASE(cgroup_without_its_hierarchy_mounted_is_unset) {
+    Hierarchy cg;
+    // cpuacct is not the cpu controller.
+    cg.mounts = "34 21 0:29 / /cg/cpuacct rw shared:16 - cgroup cgroup rw,cpuacct\n";
+    cg.add("memory/a/memory.limit_in_bytes", 2 * GiB);
+    cg.add("memory/a/memory.usage_in_bytes", GiB);
+    cg.add("cpuacct/a/cpu.cfs_quota_us", "50000\n");
+    cg.add("cpuacct/a/cpu.cfs_period_us", "100000\n");
+    cg.add("a/memory.max", 2 * GiB);
+    ZEXPECT(!cg.memory("12:memory:/a\n").has_value());
+    ZEXPECT(!cg.cpu_quota("3:cpu:/a\n").has_value());
+    ZEXPECT(!cg.memory("0::/a\n").has_value());
 }
 
 ZEST_CASE(mac_available_leaves_out_file_pages) {

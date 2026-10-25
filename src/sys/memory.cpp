@@ -306,8 +306,11 @@ std::expected<Memory, std::error_code> memory([[maybe_unused]] std::span<const P
         .available = field(meminfo, "MemAvailable:").value_or(0) * 1024,
     };
     // Read afresh every time: the process may have moved.
-    if(ProcText membership; !fs::read_file(membership, "/proc/self/cgroup")) {
-        if(auto cgroups = detail::cgroup::memory("/sys/fs/cgroup", membership, read_cgroup_file)) {
+    ProcText membership;
+    ProcText mounts;
+    if(!fs::read_file(membership, "/proc/self/cgroup") &&
+       !fs::read_file(mounts, "/proc/self/mountinfo")) {
+        if(auto cgroups = detail::cgroup::memory(mounts, membership, read_cgroup_file)) {
             result.limit = std::min(result.limit, cgroups->limit);
             result.available = std::min(result.available, cgroups->available);
         }

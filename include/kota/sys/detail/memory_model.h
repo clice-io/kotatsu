@@ -32,15 +32,18 @@ struct MemoryLimit {
 };
 
 /// The memory cgroups of a process whose /proc/<pid>/cgroup reads
-/// `membership`, with the hierarchy mounted at `root`: every level up to the
+/// `membership` and /proc/<pid>/mountinfo `mounts`: every level up to the
 /// root, under cgroup v2 (memory.max, memory.high) or v1 (the memory
-/// controller's memory.limit_in_bytes). Unset when no level has a limit.
-std::optional<MemoryLimit> memory(std::string_view root, std::string_view membership, Reader read);
+/// controller's memory.limit_in_bytes). Unset when no level has a limit, or
+/// the hierarchy is not mounted.
+std::optional<MemoryLimit> memory(std::string_view mounts,
+                                  std::string_view membership,
+                                  Reader read);
 
 /// The least CPU quota, in CPUs, of every level of those cgroups: v2's
 /// cpu.max, v1's cpu.cfs_quota_us over cpu.cfs_period_us. Unset when no
 /// level has one.
-std::optional<double> cpu_quota(std::string_view root, std::string_view membership, Reader read);
+std::optional<double> cpu_quota(std::string_view mounts, std::string_view membership, Reader read);
 
 }  // namespace cgroup
 

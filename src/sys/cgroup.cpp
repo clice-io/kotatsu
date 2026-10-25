@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <charconv>
 #include <cstdint>
 #include <optional>
 #include <ranges>
@@ -57,6 +58,68 @@ std::optional<Membership> find(std::string_view membership, std::string_view con
     return std::nullopt;
 }
 
+/// Where `mounts`, a /proc/<pid>/mountinfo text, mounts the v1 hierarchy of
+/// `controller`, or with an empty controller the v2 one.
+std::optional<std::string> mount_point(std::string_view mounts, std::string_view controller) {
+    // "<id> <parent> <device> <root> <point> <options> [<tag>...] - <type>
+    // <source> <super options>", a v1 hierarchy's controllers among the
+    // super options ("rw,cpu,cpuacct"). A path's blanks and backslashes are
+    // octal escapes ("\040").
+    for(auto range: std::views::split(mounts, '\n')) {
+        std::string_view line(range.begin(), range.end());
+        auto separator = line.find(" - ");
+        if(separator == std::string_view::npos) {
+            continue;
+        }
+        auto filesystem = line.substr(separator + 3);
+        auto type = word(filesystem, 0);
+        if(controller.empty()
+               ? type != "cgroup2"
+               : type != "cgroup" || !has_controller(word(filesystem, 2), controller)) {
+            continue;
+        }
+        auto escaped = word(line, 4);
+        std::string point;
+        for(std::size_t i = 0; i < escaped.size(); ++i) {
+            if(escaped[i] != '\\') {
+                point += escaped[i];
+                continue;
+            }
+            auto digits = escaped.substr(i + 1, 3);
+            unsigned char code = 0;
+            std::from_chars(digits.data(), digits.data() + digits.size(), code, 8);
+            point += static_cast<char>(code);
+            i += digits.size();
+        }
+        return point;
+    }
+    return std::nullopt;
+}
+
+/// A process's cgroup in a hierarchy: the directory of the hierarchy's root,
+/// and the cgroup's own.
+struct Place {
+    std::string top;
+    std::string dir;
+};
+
+/// The cgroup of the process whose /proc/<pid>/cgroup reads `membership`
+/// in the v1 hierarchy of `controller`, or with an empty controller in the
+/// v2 one; unset when it is in none, or `mounts` mounts none.
+std::optional<Place> place(std::string_view mounts,
+                           std::string_view membership,
+                           std::string_view controller) {
+    auto joined = find(membership, controller);
+    if(!joined) {
+        return std::nullopt;
+    }
+    auto top = mount_point(mounts, controller);
+    if(!top) {
+        return std::nullopt;
+    }
+    return Place{.top = *top, .dir = *top + std::string(joined->path)};
+}
+
 /// A number file; unset for "max", -1 or a file that cannot be read.
 std::optional<std::uint64_t> number(Reader read, const std::string& path) {
     auto text = read(path);
@@ -92,7 +155,9 @@ constexpr std::uint64_t unlimited = std::uint64_t(1) << 62;
 
 }  // namespace
 
-std::optional<MemoryLimit> memory(std::string_view root, std::string_view membership, Reader read) {
+std::optional<MemoryLimit> memory(std::string_view mounts,
+                                  std::string_view membership,
+                                  Reader read) {
     std::optional<MemoryLimit> tightest;
     auto add = [&](std::uint64_t limit, std::uint64_t available) {
         if(!tightest) {
@@ -103,15 +168,13 @@ std::optional<MemoryLimit> memory(std::string_view root, std::string_view member
         }
     };
 
-    if(auto v1 = find(membership, "memory")) {
-        auto top = std::string(root) + "/memory";
-        auto dir = top + std::string(v1->path);
+    if(auto v1 = place(mounts, membership, "memory")) {
         // A container without a cgroup namespace has its own cgroup mounted
         // at the hierarchy's root, under the path the host knows it by.
-        if(!read(dir + "/memory.usage_in_bytes")) {
-            dir = top;
+        if(!read(v1->dir + "/memory.usage_in_bytes")) {
+            v1->dir = v1->top;
         }
-        each_level(dir, top, [&](const std::string& level) {
+        each_level(v1->dir, v1->top, [&](const std::string& level) {
             auto limit = number(read, level + "/memory.limit_in_bytes");
             if(!limit || *limit >= unlimited) {
                 return;
@@ -127,8 +190,8 @@ std::optional<MemoryLimit> memory(std::string_view root, std::string_view member
         return tightest;
     }
 
-    if(auto v2 = find(membership, "")) {
-        each_level(std::string(root) + std::string(v2->path), root, [&](const std::string& level) {
+    if(auto v2 = place(mounts, membership, "")) {
+        each_level(v2->dir, v2->top, [&](const std::string& level) {
             auto max = number(read, level + "/memory.max");
             auto high = number(read, level + "/memory.high");
             if(!max && !high) {
@@ -147,20 +210,18 @@ std::optional<MemoryLimit> memory(std::string_view root, std::string_view member
     return tightest;
 }
 
-std::optional<double> cpu_quota(std::string_view root, std::string_view membership, Reader read) {
+std::optional<double> cpu_quota(std::string_view mounts, std::string_view membership, Reader read) {
     std::optional<double> tightest;
     auto add = [&](std::uint64_t quota, std::uint64_t period) {
         auto cpus = static_cast<double>(quota) / static_cast<double>(period);
         tightest = std::min(tightest.value_or(cpus), cpus);
     };
 
-    if(auto v1 = find(membership, "cpu")) {
-        auto top = std::string(root) + "/cpu";
-        auto dir = top + std::string(v1->path);
-        if(!read(dir + "/cpu.cfs_period_us")) {
-            dir = top;
+    if(auto v1 = place(mounts, membership, "cpu")) {
+        if(!read(v1->dir + "/cpu.cfs_period_us")) {
+            v1->dir = v1->top;
         }
-        each_level(dir, top, [&](const std::string& level) {
+        each_level(v1->dir, v1->top, [&](const std::string& level) {
             // -1 when the level has none.
             auto quota = number(read, level + "/cpu.cfs_quota_us");
             auto period = number(read, level + "/cpu.cfs_period_us");
@@ -171,8 +232,8 @@ std::optional<double> cpu_quota(std::string_view root, std::string_view membersh
         return tightest;
     }
 
-    if(auto v2 = find(membership, "")) {
-        each_level(std::string(root) + std::string(v2->path), root, [&](const std::string& level) {
+    if(auto v2 = place(mounts, membership, "")) {
+        each_level(v2->dir, v2->top, [&](const std::string& level) {
             // "<quota> <period>", the quota "max" when the level has none.
             auto text = read(level + "/cpu.max");
             if(!text) {
