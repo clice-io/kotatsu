@@ -1,9 +1,11 @@
 #pragma once
 
-// Reading what a child writes to a pipe sys::spawn made, without an event
-// loop: read_some() and read_to_end() on the end Child::take_pipe gives.
+// Reading what a child writes to a pipe sys::spawn made, and writing what it
+// reads, without an event loop: read_some(), read_to_end() and write_all() on
+// the end Child::take_pipe gives.
 
 #include <string>
+#include <string_view>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -58,6 +60,28 @@ inline std::string read_to_end(fs::File::native_handle_type end) {
         }
         text += chunk;
     }
+}
+
+/// Writes all of `text` to pipe end `end`: whether it could.
+inline bool write_all(fs::File::native_handle_type end, std::string_view text) {
+#ifdef _WIN32
+    // Overlapped, as read_some() says.
+    OVERLAPPED overlapped{};
+    overlapped.hEvent = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    DWORD wrote = 0;
+    const bool written =
+        (::WriteFile(end, text.data(), static_cast<DWORD>(text.size()), nullptr, &overlapped) ||
+         ::GetLastError() == ERROR_IO_PENDING) &&
+        ::GetOverlappedResult(end, &overlapped, &wrote, TRUE) && wrote == text.size();
+    ::CloseHandle(overlapped.hEvent);
+    return written;
+#else
+    ssize_t wrote = 0;
+    do {
+        wrote = ::write(end, text.data(), text.size());
+    } while(wrote < 0 && errno == EINTR);
+    return wrote == static_cast<ssize_t>(text.size());
+#endif
 }
 
 /// Closes pipe end `end`.

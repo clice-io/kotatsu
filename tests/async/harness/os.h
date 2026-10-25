@@ -42,24 +42,22 @@ namespace kota::test {
 inline process::options stdin_reader() {
     process::options opts;
 #ifdef _WIN32
-    opts.file = "more.com";
+    opts.program = "more.com";
 #else
-    opts.file = "/bin/cat";
+    opts.program = "/bin/cat";
 #endif
-    opts.streams = {process::stdio::pipe(true, false),
-                    process::stdio::ignore(),
-                    process::stdio::ignore()};
+    opts.streams = {process::stdio::pipe(), process::stdio::ignore(), process::stdio::ignore()};
     return opts;
 }
 
-/// The exit status that run() reports for a process::wait(), if the wait
+/// The exit code that run() reports for a process::wait(), if the wait
 /// ended with one.
 template <typename Waited>
 std::optional<std::int64_t> exit_status_of(const Waited& waited) {
     if(!waited.has_value()) {
         return std::nullopt;
     }
-    return waited->status;
+    return waited->code;
 }
 
 // Windows pipes have a 4 KB buffer: writing more than that before the loop

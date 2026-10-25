@@ -1,8 +1,11 @@
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/support/small_string.h"
+#include "kota/support/string_list_ref.h"
 #include "kota/sys/windows.h"
 
 namespace kota::sys::windows {
@@ -11,36 +14,58 @@ namespace {
 
 using Arguments = std::vector<std::string>;
 
+/// `argument` as quote_argument writes it.
+std::string quoted(std::string_view argument) {
+    std::string out;
+    quote_argument(out, argument);
+    return out;
+}
+
+/// The command line join_command_line writes of `arguments`.
+std::string joined(string_list_ref arguments) {
+    std::string out;
+    join_command_line(out, arguments);
+    return out;
+}
+
 ZEST_SUITE(sys_windows_command_line) {
 
 ZEST_CASE(quote_leaves_a_plain_argument) {
-    ZEXPECT(quote_argument("plain") == "plain");
-    ZEXPECT(quote_argument(R"(C:\dir\file)") == R"(C:\dir\file)");
-    ZEXPECT(quote_argument("caf\xC3\xA9") == "caf\xC3\xA9");
+    ZEXPECT(quoted("plain") == "plain");
+    ZEXPECT(quoted(R"(C:\dir\file)") == R"(C:\dir\file)");
+    ZEXPECT(quoted("caf\xC3\xA9") == "caf\xC3\xA9");
 }
 
 ZEST_CASE(quote_wraps_an_empty_or_blank_argument) {
-    ZEXPECT(quote_argument("") == R"("")");
-    ZEXPECT(quote_argument("a b") == R"("a b")");
-    ZEXPECT(quote_argument("a\tb") == "\"a\tb\"");
-    ZEXPECT(quote_argument("a\nb") == "\"a\nb\"");
-    ZEXPECT(quote_argument("a\vb") == "\"a\vb\"");
+    ZEXPECT(quoted("") == R"("")");
+    ZEXPECT(quoted("a b") == R"("a b")");
+    ZEXPECT(quoted("a\tb") == "\"a\tb\"");
+    ZEXPECT(quoted("a\nb") == "\"a\nb\"");
+    ZEXPECT(quoted("a\vb") == "\"a\vb\"");
 }
 
 ZEST_CASE(quote_escapes_quotes_and_the_backslashes_before_them) {
-    ZEXPECT(quote_argument(R"(a"b)") == R"("a\"b")");
-    ZEXPECT(quote_argument(R"(a\"b)") == R"("a\\\"b")");
+    ZEXPECT(quoted(R"(a"b)") == R"("a\"b")");
+    ZEXPECT(quoted(R"(a\"b)") == R"("a\\\"b")");
     // Before the closing quote, backslashes double.
-    ZEXPECT(quote_argument(R"(C:\dir with space\)") == R"("C:\dir with space\\")");
+    ZEXPECT(quoted(R"(C:\dir with space\)") == R"("C:\dir with space\\")");
     // Elsewhere they stay as they are.
-    ZEXPECT(quote_argument(R"(a\\b c)") == R"("a\\b c")");
+    ZEXPECT(quoted(R"(a\\b c)") == R"("a\\b c")");
 }
 
 ZEST_CASE(join_quotes_the_program_without_escapes) {
     Arguments arguments{R"(C:\Program Files\x.exe)", "a b", "", R"(c")"};
-    ZEXPECT(join_command_line(arguments) == R"("C:\Program Files\x.exe" "a b" "" "c\"")");
-    ZEXPECT(join_command_line(Arguments{R"(C:\x.exe)"}) == R"(C:\x.exe)");
-    ZEXPECT(join_command_line(Arguments{}) == "");
+    ZEXPECT(joined(arguments) == R"("C:\Program Files\x.exe" "a b" "" "c\"")");
+    ZEXPECT(joined(Arguments{R"(C:\x.exe)"}) == R"(C:\x.exe)");
+    ZEXPECT(joined(Arguments{}) == "");
+}
+
+ZEST_CASE(quote_and_join_write_over_what_the_buffer_held) {
+    small_string<8> out("previous");
+    quote_argument(out, "a b c d e");
+    ZEXPECT(std::string_view(out) == R"("a b c d e")");
+    join_command_line(out, {R"(C:\x.exe)", "a b"});
+    ZEXPECT(std::string_view(out) == R"(C:\x.exe "a b")");
 }
 
 ZEST_CASE(split_reads_the_program_by_its_own_rule) {
@@ -112,7 +137,7 @@ ZEST_CASE(split_reads_back_what_join_writes) {
         "caf\xC3\xA9 \xF0\x9F\x98\x80",
         "*",
     };
-    ZEXPECT(split_command_line(join_command_line(arguments)) == arguments);
+    ZEXPECT(split_command_line(joined(arguments)) == arguments);
 }
 
 };  // ZEST_SUITE(sys_windows_command_line)

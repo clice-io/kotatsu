@@ -223,11 +223,14 @@ std::string json(const std::vector<std::string>& arguments) {
     return line + "]";
 }
 
-/// `sys_probe <arguments...>`, its streams this one's.
+/// `sys_probe <arguments...>`, its streams this one's: no program, which
+/// spawn fails for, when this one's cannot be found.
 kota::sys::SpawnOptions probe(std::vector<std::string> arguments) {
-    auto self = kota::sys::executable_path();
-    arguments.insert(arguments.begin(), self ? *self : std::string());
-    return {.file = arguments.front(), .args = std::move(arguments)};
+    std::string self;
+    if(kota::sys::self_executable(self)) {
+        self.clear();
+    }
+    return {.program = std::move(self), .args = std::move(arguments)};
 }
 
 /// `sys_probe hang`, its stdout this one's: the test reads it to its end,
@@ -250,7 +253,7 @@ int run(const kota::sys::SpawnOptions& options) {
     if(!status) {
         return fail("wait", status.error());
     }
-    return static_cast<int>(status->status);
+    return static_cast<int>(status->code);
 }
 
 }  // namespace
@@ -265,8 +268,8 @@ int main() {
         return 0;
     }
     if(command == "env" && arguments.size() == 3) {
-        auto value = sys::get_env(arguments[2]);
-        print_line(value ? json(*value) : "null");
+        std::string value;
+        print_line(sys::get_env(value, arguments[2]) ? json(value) : "null");
         return 0;
     }
     if(command == "parent") {
@@ -316,11 +319,12 @@ int main() {
         if(auto error = kota::fs::current_dir(cwd)) {
             return fail("current_dir", error);
         }
-        auto value = sys::get_env("KOTA_PROBE_VALUE");
+        std::string value;
+        const bool set = sys::get_env(value, "KOTA_PROBE_VALUE");
         print_line(std::format(R"({{"arguments":{},"cwd":{},"value":{}}})",
                                json(arguments),
                                json(cwd),
-                               value ? json(*value) : "null"));
+                               set ? json(value) : "null"));
         return 0;
     }
     if(command == "relay" && arguments.size() == 5) {
@@ -403,7 +407,7 @@ int main() {
         if(!status) {
             return fail("wait", status.error());
         }
-        print_line(std::format(R"({{"inherited":{}}})", status->status == 1 ? "true" : "false"));
+        print_line(std::format(R"({{"inherited":{}}})", status->code == 1 ? "true" : "false"));
         return 0;
     }
     if(command == "handle" && arguments.size() == 4) {

@@ -1,10 +1,13 @@
 #include <algorithm>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 
 #include "sys/harness/env.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/support/small_string.h"
 #include "kota/sys/env.h"
 
 namespace kota::sys {
@@ -13,24 +16,33 @@ namespace {
 
 constexpr std::string_view name = "KOTA_SYS_TEST_VARIABLE";
 
+/// The value of `variable`, if it has one.
+std::optional<std::string> value_of(std::string_view variable) {
+    std::string value;
+    if(!get_env(value, variable)) {
+        return std::nullopt;
+    }
+    return value;
+}
+
 ZEST_SUITE(sys_env_variables) {
 
 ZEST_CASE(set_env_is_read_back) {
     test::ScopedEnv variable(std::string(name), "value");
-    ZEXPECT(get_env(name) == "value");
+    ZEXPECT(value_of(name) == "value");
     ZEXPECT(!set_env(name, "caf\xC3\xA9 \xF0\x9F\x98\x80"));
-    ZEXPECT(get_env(name) == "caf\xC3\xA9 \xF0\x9F\x98\x80");
+    ZEXPECT(value_of(name) == "caf\xC3\xA9 \xF0\x9F\x98\x80");
 }
 
 ZEST_CASE(set_env_to_empty_keeps_the_variable) {
     test::ScopedEnv variable(std::string(name), "");
-    ZEXPECT(get_env(name) == "");
+    ZEXPECT(value_of(name) == "");
 }
 
 ZEST_CASE(unset_env_removes_the_variable) {
     test::ScopedEnv variable(std::string(name), "value");
     ZEXPECT(!unset_env(name));
-    ZEXPECT(!get_env(name).has_value());
+    ZEXPECT(!value_of(name).has_value());
     // There is none any more.
     ZEXPECT(!unset_env(name));
 }
@@ -55,15 +67,30 @@ ZEST_CASE(unset_env_of_an_invalid_name_fails) {
 
 ZEST_CASE(get_env_of_an_invalid_name_is_unset) {
     test::ScopedEnv variable(std::string(name), "value");
-    ZEXPECT(!get_env("A=B").has_value());
+    ZEXPECT(!value_of("A=B").has_value());
     // Not the variable the name before the NUL names.
-    ZEXPECT(!get_env(std::string(name) + std::string(1, '\0')).has_value());
+    ZEXPECT(!value_of(std::string(name) + std::string(1, '\0')).has_value());
+}
+
+ZEST_CASE(get_env_of_an_unset_variable_leaves_the_buffer) {
+    test::ScopedEnv variable(std::string(name), std::nullopt);
+    std::string value = "kept";
+    ZEXPECT(!get_env(value, name));
+    ZEXPECT(value == "kept");
+}
+
+// Into any buffer, over what it held.
+ZEST_CASE(get_env_writes_over_what_the_buffer_held) {
+    test::ScopedEnv variable(std::string(name), "value");
+    small_string<8> value("some old text");
+    ZEXPECT(get_env(value, name));
+    ZEXPECT(std::string_view(value) == "value");
 }
 
 ZEST_CASE(get_env_reads_a_long_value) {
     std::string value(5000, 'v');
     test::ScopedEnv variable(std::string(name), value);
-    ZEXPECT(get_env(name) == value);
+    ZEXPECT(value_of(name) == value);
 }
 
 ZEST_CASE(environment_lists_every_variable) {
@@ -75,13 +102,13 @@ ZEST_CASE(environment_lists_every_variable) {
 #ifdef _WIN32
 ZEST_CASE(get_env_ignores_case_on_windows) {
     test::ScopedEnv variable(std::string(name), "value");
-    ZEXPECT(get_env("kota_sys_test_variable") == "value");
+    ZEXPECT(value_of("kota_sys_test_variable") == "value");
 }
 
 // What cmd keeps the current directory of each drive in.
 ZEST_CASE(set_env_takes_a_drive_variable_on_windows) {
     test::ScopedEnv variable("=Q:", R"(Q:\dir)");
-    ZEXPECT(get_env("=Q:") == R"(Q:\dir)");
+    ZEXPECT(value_of("=Q:") == R"(Q:\dir)");
     ZEXPECT(zest::contains(environment(), EnvVar{.name = "=Q:", .value = R"(Q:\dir)"}));
 }
 

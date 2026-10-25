@@ -1,3 +1,4 @@
+#include <expected>
 #include <filesystem>
 #include <initializer_list>
 #include <string>
@@ -33,6 +34,16 @@ std::string program_file(std::string_view name) {
 #endif
 }
 
+/// The file find_program finds for `name`, or its error.
+std::expected<std::string, std::error_code> found(std::string_view name,
+                                                  const ProgramSearch& search = {}) {
+    std::string out;
+    if(auto error = find_program(out, name, search)) {
+        return std::unexpected(error);
+    }
+    return out;
+}
+
 /// A search of `directories` alone.
 ProgramSearch in(std::initializer_list<std::string> directories) {
     return {.directories = directories};
@@ -65,22 +76,22 @@ test::ScopedEnv pathext{"PATHEXT", ".COM;.EXE;.BAT;.CMD"};
 ZEST_CASE(find_program_takes_the_first_directory_that_has_it) {
     auto search = in({dir.file("first"), dir.file("second")});
     auto second = test::make_program(dir, "second", program_file("tool"));
-    ZEXPECT(find_program("tool", search) == second);
+    ZEXPECT(found("tool", search) == second);
     auto first = test::make_program(dir, "first", program_file("tool"));
-    ZEXPECT(find_program("tool", search) == first);
+    ZEXPECT(found("tool", search) == first);
 }
 
 ZEST_CASE(find_program_searches_path_by_default) {
     auto program = test::make_program(dir, "bin", program_file("tool"));
     test::ScopedEnv path("PATH", dir.file("bin"));
-    ZEXPECT(find_program("tool") == program);
+    ZEXPECT(found("tool") == program);
 }
 
 ZEST_CASE(find_program_of_a_missing_program_fails) {
-    auto found = find_program("missing", in({dir.root()}));
-    ZASSERT(!found.has_value());
-    ZEXPECT(found.error() == std::errc::no_such_file_or_directory);
-    auto empty = find_program("");
+    auto result = found("missing", in({dir.root()}));
+    ZASSERT(!result.has_value());
+    ZEXPECT(result.error() == std::errc::no_such_file_or_directory);
+    auto empty = found("");
     ZASSERT(!empty.has_value());
     ZEXPECT(empty.error() == std::errc::no_such_file_or_directory);
 }
@@ -88,30 +99,30 @@ ZEST_CASE(find_program_of_a_missing_program_fails) {
 ZEST_CASE(find_program_skips_a_directory_of_its_name) {
     std::filesystem::create_directories(dir.path / "first" / program_file("tool"));
     auto program = test::make_program(dir, "second", program_file("tool"));
-    ZEXPECT(find_program("tool", in({dir.file("first"), dir.file("second")})) == program);
+    ZEXPECT(found("tool", in({dir.file("first"), dir.file("second")})) == program);
 }
 
 // Something of that name is there, as execvp's EACCES says.
 ZEST_CASE(find_program_finding_only_a_directory_fails) {
     std::filesystem::create_directories(dir.path / program_file("tool"));
-    auto found = find_program("tool", in({dir.root()}));
-    ZASSERT(!found.has_value());
-    ZEXPECT(found.error() == std::errc::permission_denied);
+    auto result = found("tool", in({dir.root()}));
+    ZASSERT(!result.has_value());
+    ZEXPECT(result.error() == std::errc::permission_denied);
 }
 
 #ifndef _WIN32
 ZEST_CASE(find_program_skips_a_file_it_cannot_run) {
     test::make_program(dir, "first", "tool", false);
     auto program = test::make_program(dir, "second", "tool");
-    ZEXPECT(find_program("tool", in({dir.file("first"), dir.file("second")})) == program);
+    ZEXPECT(found("tool", in({dir.file("first"), dir.file("second")})) == program);
 }
 
 ZEST_CASE(find_program_finding_only_files_it_cannot_run_fails) {
     auto program = test::make_program(dir, "first", "tool", false);
-    auto found = find_program("tool", in({dir.file("first")}));
-    ZASSERT(!found.has_value());
-    ZEXPECT(found.error() == std::errc::permission_denied);
-    auto by_path = find_program(program);
+    auto result = found("tool", in({dir.file("first")}));
+    ZASSERT(!result.has_value());
+    ZEXPECT(result.error() == std::errc::permission_denied);
+    auto by_path = found(program);
     ZASSERT(!by_path.has_value());
     ZEXPECT(by_path.error() == std::errc::permission_denied);
 }
@@ -142,53 +153,53 @@ ZEST_CASE(find_program_behind_a_directory_it_cannot_search_fails) {
     }
     test::make_program(dir, "locked", "tool");
     ScopedNoPermissions locked(dir.path / "locked");
-    auto found = find_program("tool", in({dir.file("locked")}));
-    ZASSERT(!found.has_value());
-    ZEXPECT(found.error() == std::errc::permission_denied);
+    auto result = found("tool", in({dir.file("locked")}));
+    ZASSERT(!result.has_value());
+    ZEXPECT(result.error() == std::errc::permission_denied);
 }
 
 ZEST_CASE(find_program_takes_a_name_with_a_slash_as_a_path) {
     auto program = test::make_program(dir, "", "tool");
-    ZEXPECT(find_program(program, in({"/nowhere"})) == program);
-    auto found = find_program("./not-there/tool");
-    ZASSERT(!found.has_value());
-    ZEXPECT(found.error() == std::errc::no_such_file_or_directory);
+    ZEXPECT(found(program, in({"/nowhere"})) == program);
+    auto result = found("./not-there/tool");
+    ZASSERT(!result.has_value());
+    ZEXPECT(result.error() == std::errc::no_such_file_or_directory);
 }
 
 ZEST_CASE(find_program_reads_an_empty_entry_as_the_current_directory) {
     test::make_program(dir, "", "tool");
     ScopedCurrentDir current(dir.path);
-    ZEXPECT(find_program("tool", in({"/nowhere", ""})) == "./tool");
+    ZEXPECT(found("tool", in({"/nowhere", ""})) == "./tool");
 }
 
 // confstr(_CS_PATH), where every system has a shell.
 ZEST_CASE(find_program_without_path_searches_the_systems_directories) {
     test::ScopedEnv path("PATH", std::nullopt);
-    auto found = find_program("sh");
-    ZASSERT(found.has_value());
-    ZEXPECT(found->ends_with("/sh"));
+    auto result = found("sh");
+    ZASSERT(result.has_value());
+    ZEXPECT(result->ends_with("/sh"));
 }
 #else
 ZEST_CASE(find_program_tries_each_extension_in_a_directory_first) {
     auto program = test::make_program(dir, "first", "tool.BAT");
     test::make_program(dir, "second", "tool.EXE");
     // Directory by directory, not extension by extension.
-    ZEXPECT(find_program("tool", in({dir.file("first"), dir.file("second")})) == program);
+    ZEXPECT(found("tool", in({dir.file("first"), dir.file("second")})) == program);
 }
 
 ZEST_CASE(find_program_takes_a_listed_extension_as_it_is) {
     auto program = test::make_program(dir, "", "tool.exe");
     test::make_program(dir, "", "tool.exe.COM");
-    ZEXPECT(find_program("tool.exe", in({dir.root()})) == program);
+    ZEXPECT(found("tool.exe", in({dir.root()})) == program);
     // An extension not listed is no program's.
     auto python = test::make_program(dir, "", "python3.12.EXE");
-    ZEXPECT(find_program("python3.12", in({dir.root()})) == python);
+    ZEXPECT(found("python3.12", in({dir.root()})) == python);
 }
 
 ZEST_CASE(find_program_with_an_empty_pathext_takes_the_usual_extensions) {
     test::ScopedEnv empty("PATHEXT", ";");
     auto program = test::make_program(dir, "", "tool.EXE");
-    ZEXPECT(find_program("tool", in({dir.root()})) == program);
+    ZEXPECT(found("tool", in({dir.root()})) == program);
 }
 
 ZEST_CASE(find_program_tries_the_name_as_it_is_for_an_empty_extension) {
@@ -197,25 +208,25 @@ ZEST_CASE(find_program_tries_the_name_as_it_is_for_an_empty_extension) {
         .directories = {dir.root()},
         .extensions = {"", ".exe"}
     };
-    ZEXPECT(find_program("tool", search) == program);
+    ZEXPECT(found("tool", search) == program);
     search.extensions = {".exe"};
-    auto found = find_program("tool", search);
-    ZASSERT(!found.has_value());
-    ZEXPECT(found.error() == std::errc::no_such_file_or_directory);
+    auto result = found("tool", search);
+    ZASSERT(!result.has_value());
+    ZEXPECT(result.error() == std::errc::no_such_file_or_directory);
 }
 
 // The current directory is no entry of PATH's on Windows.
 ZEST_CASE(find_program_reads_an_empty_entry_as_nothing) {
     test::make_program(dir, "", "tool.EXE");
     ScopedCurrentDir current(dir.path);
-    auto found = find_program("tool", in({""}));
-    ZASSERT(!found.has_value());
-    ZEXPECT(found.error() == std::errc::no_such_file_or_directory);
+    auto result = found("tool", in({""}));
+    ZASSERT(!result.has_value());
+    ZEXPECT(result.error() == std::errc::no_such_file_or_directory);
 }
 
 ZEST_CASE(find_program_takes_a_name_with_a_separator_as_a_path) {
     auto program = test::make_program(dir, "", "tool.EXE");
-    ZEXPECT(find_program(dir.file("tool"), in({R"(C:\nowhere)"})) == program);
+    ZEXPECT(found(dir.file("tool"), in({R"(C:\nowhere)"})) == program);
 }
 
 // In the current directory of its drive, not in a directory on that drive.
@@ -224,7 +235,7 @@ ZEST_CASE(find_program_takes_a_drive_relative_name_as_a_path) {
     test::make_program(dir, "elsewhere", "tool.EXE");
     ScopedCurrentDir current(dir.path);
     auto name = dir.root().substr(0, 2) + "tool";
-    ZEXPECT(find_program(name, in({dir.file("elsewhere")})) == name + ".EXE");
+    ZEXPECT(found(name, in({dir.file("elsewhere")})) == name + ".EXE");
 }
 
 // What a Cygwin package installs for a link such as /usr/bin/cc, which
@@ -237,7 +248,7 @@ ZEST_CASE(find_program_follows_a_cygwin_symlink) {
         .directories = {dir.root()},
         .extensions = {"", ".EXE"}
     };
-    ZEXPECT(find_program("cc", search) == program);
+    ZEXPECT(found("cc", search) == program);
 }
 
 ZEST_CASE(find_program_of_a_cygwin_symlink_to_a_posix_path_fails) {
@@ -246,9 +257,9 @@ ZEST_CASE(find_program_of_a_cygwin_symlink_to_a_posix_path_fails) {
         .directories = {dir.root()},
         .extensions = {"", ".EXE"}
     };
-    auto found = find_program("cc", search);
-    ZASSERT(!found.has_value());
-    ZEXPECT(found.error() == std::errc::permission_denied);
+    auto result = found("cc", search);
+    ZASSERT(!result.has_value());
+    ZEXPECT(result.error() == std::errc::permission_denied);
 }
 #endif
 
