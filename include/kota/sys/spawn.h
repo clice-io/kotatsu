@@ -23,8 +23,8 @@ namespace kota::sys {
 /// How a child's standard stream is set up.
 struct Stdio {
     enum class Kind : std::uint8_t {
-        /// This process's own stream; on Windows none where it has none
-        /// open.
+        /// This process's own stream; closed in the child where this process
+        /// has it closed, as a program may be started with one.
         Inherit,
         /// None: /dev/null, or NUL on Windows.
         Ignore,
@@ -109,6 +109,16 @@ struct CreationOptions {
     /// Child is destroyed. not_supported on macOS, which has nothing to do it
     /// with.
     bool exit_with_parent = false;
+
+    /// POSIX: the child starts with the signals as exec leaves them, rather
+    /// than each at its default and none blocked: those this process ignores
+    /// stay ignored, those it handles go back to their defaults, and the
+    /// calling thread's signal mask is kept; for a wrapper that stands in for
+    /// the program it starts: nohup's ignored SIGHUP reaches it. What kotatsu
+    /// itself changed goes back: SIGPIPE, which an event loop ignores, to its
+    /// default, and on Linux SIGCHLD, which spawn stops ignoring, to ignored.
+    /// Ignored on Windows.
+    bool keep_signals = false;
 
     /// Windows: no console window, and none for the console programs it
     /// starts, when no stream is this process's. Ignored elsewhere, as the
@@ -264,7 +274,8 @@ public:
 
     /// Waits for the child to exit, and reaps it. Once it has been reaped,
     /// the status it ended with. no_child_process when another reaped it, as
-    /// SIGCHLD set to SIG_IGN makes the system do.
+    /// a waitpid(-1) elsewhere in this process does, or SIGCHLD ignored since
+    /// it started.
     std::expected<ExitStatus, std::error_code> wait();
 
     /// The status it ended with when it has exited, reaping it; unset while
@@ -328,17 +339,22 @@ private:
 #else
     static constexpr native_handle_type invalid_handle = -1;
 
-    /// Another reaped it, as SIGCHLD set to SIG_IGN makes the system do.
+    /// Another reaped it.
     bool lost = false;
 #endif
 };
 
-/// Starts a child as `options` say. On POSIX its signal handlers are reset
-/// and its signal mask cleared; the descriptors this process has without
-/// close-on-exec reach it, as make's jobserver needs. On Windows it inherits
-/// its three standard handles alone, unless windows_inherit_handles, and is
-/// born in a job object of its own, nested in any this process is in, which
-/// ends it rather than show a dialog when it crashes.
+/// Starts a child as `options` say. On POSIX each signal starts at its
+/// default and none blocked, unless keep_signals; the descriptors this
+/// process has without close-on-exec reach it, as make's jobserver needs.
+/// SIGCHLD ignored, or its action set SA_NOCLDWAIT, would have the system
+/// reap the child, its exit status with it: spawn sets an ignored SIGCHLD to
+/// its default and clears SA_NOCLDWAIT, for this whole process, as uv_spawn
+/// does. On Windows
+/// it inherits its three standard handles alone, unless
+/// windows_inherit_handles, and is born in a job object of its own, nested in
+/// any this process is in, which ends it rather than show a dialog when it
+/// crashes.
 /// no_such_file_or_directory or permission_denied for a program not found,
 /// as find_program; invalid_argument for a negative descriptor, a closed
 /// file, a string with a NUL, which the child would get cut short, or, on
