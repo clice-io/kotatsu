@@ -33,6 +33,22 @@ ZEST_CASE(read_symlink_reads_the_runtime_spelling) {
     ZEXPECT(target == "/usr/\xC3\xA9");
 }
 
+ZEST_CASE(read_symlink_reads_a_long_target) {
+    // Past 4096 bytes in UTF-16, as a target of 3000 characters is.
+    test::TempDir dir;
+    std::string target(3000, 'a');
+    std::string bytes = "!<symlink>\xFF\xFE";
+    for(char c: target) {
+        bytes.push_back(c);
+        bytes.push_back('\0');
+    }
+    bytes.append(2, '\0');
+    test::write_text(dir.file("link"), bytes);
+    std::string read;
+    ZEXPECT(read_symlink(read, dir.file("link")));
+    ZEXPECT(read == target);
+}
+
 ZEST_CASE(read_symlink_of_anything_else_fails) {
     test::TempDir dir;
     test::write_text(dir.file("plain"), "int main() {}");
@@ -58,6 +74,13 @@ ZEST_CASE(runtime_dirs_keep_the_dll_search_order) {
     ZEXPECT(dirs == std::vector<std::string>{dir.file("tool"),
                                              dir.file("msys/usr/bin"),
                                              dir.file("cygwin/bin")});
+}
+
+ZEST_CASE(runtime_dirs_take_a_bare_program_as_in_the_current_directory) {
+    test::TempDir dir;
+    test::write_text(dir.file("cygwin1.dll"), "");
+    test::ScopedCurrentDir here(dir.path);
+    ZEXPECT(runtime_dirs("gcc.exe", std::vector<std::string>{}) == std::vector<std::string>{"."});
 }
 
 };  // ZEST_SUITE(fs_cygwin_files)

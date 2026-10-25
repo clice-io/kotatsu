@@ -3,11 +3,13 @@
 #ifdef _WIN32
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <expected>
+#include <limits>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -25,9 +27,25 @@
 #include "kota/support/buffer_ref.h"
 #include "kota/support/small_string.h"
 #include "kota/fs/status.h"
+#include "kota/fs/volume.h"
 #include "kota/fs/windows.h"
 
 namespace kota::fs::win32 {
+
+/// The function `name` of ntdll, which every Windows has, looked up once.
+template <typename Function>
+Function from_ntdll(std::atomic<Function>& cache, const char* name) {
+    auto function = cache.load(std::memory_order_relaxed);
+    if(function == nullptr) {
+        auto found = ::GetProcAddress(::GetModuleHandleW(L"ntdll.dll"), name);
+        function = reinterpret_cast<Function>(reinterpret_cast<void (*)()>(found));
+        cache.store(function, std::memory_order_relaxed);
+    }
+    return function;
+}
+
+/// The Win32 error an NTSTATUS stands for.
+DWORD dos_error(NTSTATUS status);
 
 /// A handle closed when this goes.
 class Handle {
@@ -131,12 +149,37 @@ inline FileType type_of(DWORD attributes, DWORD tag) {
     return attributes & FILE_ATTRIBUTE_DIRECTORY ? FileType::Directory : FileType::Regular;
 }
 
+/// The ID of a file from a source that tells a 64-bit volume serial
+/// number, of which FileID keeps the 32 bits every source tells.
 inline FileID id_of(std::uint64_t volume, const FILE_ID_128& file) {
-    FileID id{.device = volume};
+    FileID id{.device = static_cast<std::uint32_t>(volume)};
     std::memcpy(&id.file, file.Identifier, sizeof(id.file));
     std::memcpy(&id.file_high, file.Identifier + sizeof(id.file), sizeof(id.file_high));
     return id;
 }
+
+/// Writes into `out` the name the OS gives the file `handle` refers to,
+/// as canonical() gives it.
+std::error_code final_path(buffer_ref out, HANDLE handle);
+
+/// The POSIX permissions Status gives a file with these attributes.
+constexpr std::uint16_t permissions_of(DWORD attributes) {
+    std::uint16_t readable = attributes & FILE_ATTRIBUTE_DIRECTORY ? 0555 : 0444;
+    return attributes & FILE_ATTRIBUTE_READONLY ? readable : readable | 0222;
+}
+
+/// Sets the attributes of the file `handle`, open to write them, to
+/// `attributes`, a file's times left as they are: false on failure,
+/// GetLastError() telling why.
+bool set_attributes(HANDLE handle, DWORD attributes);
+
+/// The reparse tag of the file `handle` refers to, which has `attributes`:
+/// zero for one that is no reparse point, without asking, since FAT, which
+/// keeps none, refuses the question.
+std::expected<DWORD, std::error_code> reparse_tag(HANDLE handle, DWORD attributes);
+
+/// The volume the file `handle` refers to lives on, as volume() tells it.
+std::expected<Volume, std::error_code> volume_of(HANDLE handle);
 
 /// The ID of the file `handle` refers to.
 std::expected<FileID, std::error_code> file_id(HANDLE handle);
@@ -146,15 +189,29 @@ std::expected<Status, std::error_code> handle_status(HANDLE handle);
 
 /// Rewrites `path`, in the form Win32 resolves paths to (to_native() leaves
 /// a short absolute one so), in the verbatim form, which any name appended
-/// with `\` keeps valid at any length. A device path stays as it is.
+/// with `\` keeps valid at any length. A device path (`\\.\`) stays as it
+/// is but for one too long for Win32, which takes `\\?\`.
 void verbatim(basic_buffer_ref<wchar_t> path);
 
-/// FILETIME ticks, 100 ns since 1601, as a time; zero, the time FAT keeps
-/// for a change it does not record, is the Unix epoch.
+/// FILETIME ticks, 100 ns since 1601, of the Unix epoch.
+constexpr std::int64_t unix_epoch_ticks = 116'444'736'000'000'000;
+
+/// FILETIME ticks as a time, the nearest one nanoseconds hold for one
+/// before 1677 or after 2262; zero, the time FAT keeps for a change it does
+/// not record, is the Unix epoch.
 constexpr std::chrono::sys_time<std::chrono::nanoseconds> unix_time(std::int64_t ticks) {
-    constexpr std::int64_t unix_epoch = 116'444'736'000'000'000;
-    return std::chrono::sys_time<std::chrono::nanoseconds>(
-        std::chrono::nanoseconds(ticks == 0 ? 0 : (ticks - unix_epoch) * 100));
+    using Time = std::chrono::sys_time<std::chrono::nanoseconds>;
+    constexpr std::int64_t reach = std::numeric_limits<std::int64_t>::max() / 100;
+    if(ticks == 0) {
+        return Time();
+    }
+    if(ticks < unix_epoch_ticks - reach) {
+        return Time::min();
+    }
+    if(ticks > unix_epoch_ticks + reach) {
+        return Time::max();
+    }
+    return Time(std::chrono::nanoseconds((ticks - unix_epoch_ticks) * 100));
 }
 
 }  // namespace kota::fs::win32

@@ -3,12 +3,10 @@
 #include <utility>
 
 #ifdef _WIN32
-#include <cwchar>
+#include <atomic>
 
 #include "win32.h"
-#include "kota/support/small_string.h"
 #include "kota/support/utf16.h"
-#include "kota/fs/resolve.h"
 #else
 #include <algorithm>
 #include <format>
@@ -66,67 +64,72 @@ constexpr Kind kinds[] = {
 
 #endif
 
-std::expected<Volume, std::error_code> volume(std::string_view path) {
 #ifdef _WIN32
-    // GetVolumePathNameW reads the path as written: through a symlink only
-    // once it has been followed.
-    small_string<256> real;
-    if(auto error = canonical(real, path)) {
+
+std::expected<Volume, std::error_code> win32::volume_of(HANDLE handle) {
+    // FILE_FS_FULL_SIZE_INFORMATION and FILE_FS_DEVICE_INFORMATION, which
+    // only the DDK declares: what GetDiskFreeSpaceExW and GetDriveTypeW ask
+    // of a volume's root, asked of the open file, without opening the root.
+    struct FullSize {
+        LARGE_INTEGER total;
+        LARGE_INTEGER caller_available;
+        LARGE_INTEGER actual_available;
+        ULONG sectors_per_unit;
+        ULONG bytes_per_sector;
+    };
+
+    struct Device {
+        ULONG type;
+        ULONG characteristics;
+    };
+
+    constexpr int full_size_information = 7;
+    constexpr int device_information = 4;
+    constexpr ULONG remote_device = 0x10;
+    using QueryFn = NTSTATUS(NTAPI*)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, int);
+    static constinit std::atomic<QueryFn> query = nullptr;
+    auto ask = [&](void* info, ULONG size, int kind) {
+        IO_STATUS_BLOCK block{};
+        auto status =
+            from_ntdll(query, "NtQueryVolumeInformationFile")(handle, &block, info, size, kind);
+        return status < 0 ? windows::to_error_code(dos_error(status)) : std::error_code();
+    };
+    FullSize size;
+    if(auto error = ask(&size, sizeof(size), full_size_information)) {
         return std::unexpected(error);
     }
-    win32::WidePath native;
-    if(auto error = windows::to_native(native, real)) {
+    Device device;
+    if(auto error = ask(&device, sizeof(device), device_information)) {
         return std::unexpected(error);
-    }
-    // The root is no longer than the path and the separator it may add.
-    win32::WidePath root;
-    root.resize(native.size() + 2);
-    if(!::GetVolumePathNameW(native.c_str(), root.data(), static_cast<DWORD>(root.size()))) {
-        return std::unexpected(windows::last_error());
-    }
-    root.resize(std::wcslen(root.data()));
-    // GetDriveTypeW tells a drive or a share only in its plain spelling.
-    small_string<256> spelled;
-    windows::from_native(spelled, root);
-    win32::WidePath plain;
-    if(auto error = win32::widen(plain, spelled)) {
-        return std::unexpected(error);
-    }
-    ULARGE_INTEGER available;
-    ULARGE_INTEGER capacity;
-    ULARGE_INTEGER free;
-    if(!::GetDiskFreeSpaceExW(plain.c_str(), &available, &capacity, &free)) {
-        return std::unexpected(windows::last_error());
     }
     wchar_t type[MAX_PATH + 1];
-    if(!::GetVolumeInformationW(plain.c_str(),
-                                nullptr,
-                                0,
-                                nullptr,
-                                nullptr,
-                                nullptr,
-                                type,
-                                MAX_PATH + 1)) {
+    if(!::GetVolumeInformationByHandleW(handle,
+                                        nullptr,
+                                        0,
+                                        nullptr,
+                                        nullptr,
+                                        nullptr,
+                                        type,
+                                        MAX_PATH + 1)) {
         return std::unexpected(windows::last_error());
     }
+    auto unit = static_cast<std::uint64_t>(size.sectors_per_unit) * size.bytes_per_sector;
     Volume found{
-        .capacity = capacity.QuadPart,
-        .free = free.QuadPart,
-        .available = available.QuadPart,
+        .capacity = static_cast<std::uint64_t>(size.total.QuadPart) * unit,
+        .free = static_cast<std::uint64_t>(size.actual_available.QuadPart) * unit,
+        .available = static_cast<std::uint64_t>(size.caller_available.QuadPart) * unit,
         .type = {},
-        .remote = ::GetDriveTypeW(plain.c_str()) == DRIVE_REMOTE,
+        .remote = (device.characteristics & remote_device) != 0,
     };
     from_utf16(found.type, std::wstring_view(type));
     return found;
+}
+
 #else
-    posix::CPath c_path;
-    if(auto error = c_path.assign(path)) {
-        return std::unexpected(error);
-    }
-    struct statfs info;
-    if(::statfs(c_path.c_str(), &info) != 0) {
-        return std::unexpected(posix::last_error());
-    }
+
+namespace {
+
+Volume volume_from(const struct statfs& info) {
 #ifdef __APPLE__
     std::uint64_t unit = info.f_bsize;
     std::string type = info.f_fstypename;
@@ -149,6 +152,37 @@ std::expected<Volume, std::error_code> volume(std::string_view path) {
         .type = std::move(type),
         .remote = remote,
     };
+}
+
+}  // namespace
+
+std::expected<Volume, std::error_code> posix::volume_of(int fd) {
+    struct statfs info;
+    if(::fstatfs(fd, &info) != 0) {
+        return std::unexpected(posix::last_error());
+    }
+    return volume_from(info);
+}
+
+#endif
+
+std::expected<Volume, std::error_code> volume(std::string_view path) {
+#ifdef _WIN32
+    auto handle = win32::open(path, FILE_READ_ATTRIBUTES);
+    if(!handle) {
+        return std::unexpected(handle.error());
+    }
+    return win32::volume_of(handle->get());
+#else
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return std::unexpected(error);
+    }
+    struct statfs info;
+    if(::statfs(c_path.c_str(), &info) != 0) {
+        return std::unexpected(posix::last_error());
+    }
+    return volume_from(info);
 #endif
 }
 

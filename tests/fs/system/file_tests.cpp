@@ -10,6 +10,7 @@
 #include <thread>
 #include <vector>
 
+#include "fs/harness/dir.h"
 #include "fs/harness/files.h"
 #include "kota/zest/zest.h"
 #include "kota/support/small_string.h"
@@ -53,10 +54,7 @@ ZEST_CASE(read_file_writes_over_what_the_buffer_held) {
 
 ZEST_CASE(read_file_reads_past_its_buffer) {
     test::TempDir dir;
-    std::string large(100'000, '\0');
-    for(std::size_t i = 0; i < large.size(); ++i) {
-        large[i] = static_cast<char>('a' + i % 26);
-    }
+    auto large = test::text_of(100'000);
     test::write_text(dir.file("large"), large);
     std::string content;
     ZEXPECT(!read_file(content, dir.file("large")));
@@ -65,6 +63,24 @@ ZEST_CASE(read_file_reads_past_its_buffer) {
     ZEXPECT(!read_file(content, dir.file("empty")));
     ZEXPECT(content == "");
 }
+
+ZEST_CASE(read_file_sizes_its_buffer_once) {
+    test::TempDir dir;
+    auto text = test::text_of(1'000'000);
+    test::write_text(dir.file("large"), text);
+    test::CountedBuffer content;
+    ZEXPECT(!read_file(content, dir.file("large")));
+    ZEXPECT(content.text == text);
+    ZEXPECT(content.resizes == 2);
+}
+
+#ifdef __linux__
+ZEST_CASE(read_file_reads_a_file_that_reports_no_size) {
+    std::string content;
+    ZEXPECT(!read_file(content, "/proc/self/status"));
+    ZEXPECT(zest::contains(content, "Pid:"));
+}
+#endif
 
 ZEST_CASE(read_file_of_nothing_fails) {
     test::TempDir dir;
@@ -90,9 +106,7 @@ ZEST_CASE(write_file_atomic_replaces_the_whole_file) {
     ZEXPECT(!write_file_atomic(dir.file("file"), "new"));
     ZEXPECT(test::read_text(dir.file("file")) == "new");
     // The sibling it wrote through is gone.
-    auto entries = read_dir(dir.root());
-    ZASSERT(entries.has_value());
-    ZEXPECT(entries->size() == 1u);
+    ZEXPECT(test::entries_of(dir.root()).size() == 1u);
 }
 
 ZEST_CASE(write_file_atomic_replaces_a_link) {
@@ -180,9 +194,7 @@ ZEST_CASE(write_file_atomic_never_shows_a_part) {
     ZEXPECT(read_error == std::error_code());
     ZEXPECT(write_error == std::error_code());
     ZEXPECT(parts.load() == 0);
-    auto entries = read_dir(dir.root());
-    ZASSERT(entries.has_value());
-    ZEXPECT(entries->size() == 1u);
+    ZEXPECT(test::entries_of(dir.root()).size() == 1u);
 }
 
 ZEST_CASE(write_file_atomic_over_a_directory_fails) {
@@ -196,9 +208,7 @@ ZEST_CASE(write_file_atomic_over_a_directory_fails) {
     ZEXPECT(error == std::errc::is_a_directory);
 #endif
     // The sibling it wrote through is gone.
-    auto entries = read_dir(dir.root());
-    ZASSERT(entries.has_value());
-    ZEXPECT(entries->size() == 1u);
+    ZEXPECT(test::entries_of(dir.root()).size() == 1u);
 }
 
 ZEST_CASE(create_temp_file_opens_a_new_empty_file) {
@@ -238,6 +248,35 @@ ZEST_CASE(create_temp_file_in_nothing_fails) {
     ZEXPECT(created.error() == std::errc::no_such_file_or_directory);
 }
 
+ZEST_CASE(create_temp_file_named_elsewhere_fails) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "inside");
+    std::string temp;
+    std::vector<std::string_view> elsewhere = {
+        "../escaped-",
+        "a/b-",
+#ifdef _WIN32
+        R"(..\escaped-)",
+        "C:",
+        "file:stream-",
+#endif
+    };
+    for(auto name: elsewhere) {
+        ZEST_CONTEXT("{}", name);
+        auto prefixed = create_temp_file(temp, dir.file("inside"), name, "");
+        ZASSERT(!prefixed.has_value());
+        ZEXPECT(prefixed.error() == std::errc::invalid_argument);
+        auto suffixed = create_temp_file(temp, dir.file("inside"), "pre-", name);
+        ZASSERT(!suffixed.has_value());
+        ZEXPECT(suffixed.error() == std::errc::invalid_argument);
+        ZEXPECT(create_temp_directory(temp, dir.file("inside"), name) ==
+                std::errc::invalid_argument);
+    }
+    // Nothing was made, in the directory or beside it.
+    ZEXPECT(test::entries_of(dir.file("inside")).empty());
+    ZEXPECT(test::entries_of(dir.root()).size() == 1u);
+}
+
 ZEST_CASE(create_temp_directory_makes_a_new_empty_directory) {
     test::TempDir dir;
     std::set<std::string> made;
@@ -247,9 +286,7 @@ ZEST_CASE(create_temp_directory_makes_a_new_empty_directory) {
         ZEXPECT(path::parent(temp) == dir.root());
         ZEXPECT(zest::starts_with(path::filename(temp), "pre-"));
         ZEXPECT(is_directory(temp));
-        auto entries = read_dir(temp);
-        ZASSERT(entries.has_value());
-        ZEXPECT(entries->empty());
+        ZEXPECT(test::entries_of(temp).empty());
         made.insert(temp);
     }
     ZEXPECT(made.size() == 8u);

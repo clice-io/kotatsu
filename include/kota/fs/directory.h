@@ -1,38 +1,135 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <iterator>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <vector>
+#include <utility>
 
 #include "kota/support/buffer_ref.h"
 #include "kota/fs/status.h"
+#include "kota/fs/volume.h"
 
 namespace kota::fs {
 
-/// An entry of a directory: its name, and its type with a link not
-/// followed.
+namespace detail {
+
+/// A directory open for listing, which the DirStream that reads it shares
+/// with the entries it gave, as they ask for their statuses.
+struct OpenDirectory;
+
+}  // namespace detail
+
+/// An entry of a directory.
 struct DirEntry {
     std::string name;
+
+    /// Its type, a link not followed.
     FileType type = FileType::Unknown;
+
+    /// Its status, as symlink_status() gives it. On Windows the listing
+    /// holds it, as it was when listed, so that a large directory costs about
+    /// what a few statuses do, though without the link count. Elsewhere, and
+    /// on a Windows file system that lists no IDs (FAT), the system is asked
+    /// when this is called, through the directory, which stays open while an
+    /// entry of it lives: an entry removed since fails with
+    /// no_such_file_or_directory, and one on FAT that no open reaches gets
+    /// what the listing told, without an ID or the link count.
+    std::expected<Status, std::error_code> status() const;
+
+private:
+    friend class DirStream;
+
+    /// The directory to ask its status through; on Windows only where the
+    /// listing told not all of it.
+    std::shared_ptr<detail::OpenDirectory> directory;
+
+#ifdef _WIN32
+    /// What the listing told of the status: all of it, or on a file system
+    /// that lists no IDs (FAT) all but the ID and links, which `status()`
+    /// then opens the entry for.
+    Status listed;
+#endif
 };
 
 /// The entries of a directory, `.` and `..` left out, in the order the
-/// system lists them.
-std::expected<std::vector<DirEntry>, std::error_code> read_dir(std::string_view dir);
+/// system lists them, each read when the stream goes on to it: a range to go
+/// through once, of entries, or of the error that ends it. Taking part of it
+/// leaves the rest unread, but for the entry after it: std::views::take(n)
+/// reads n + 1, as it does of std::views::istream.
+class DirStream {
+public:
+    class iterator {
+    public:
+        using value_type = std::expected<DirEntry, std::error_code>;
+        using difference_type = std::ptrdiff_t;
+        using iterator_concept = std::input_iterator_tag;
 
-/// An entry of a directory with its status, a link not followed.
-struct StatusEntry {
-    std::string name;
-    Status status;
+        value_type& operator*() const {
+            return stream->current;
+        }
+
+        iterator& operator++() {
+            stream->advance();
+            return *this;
+        }
+
+        void operator++(int) {
+            ++*this;
+        }
+
+        bool operator==(std::default_sentinel_t) const {
+            return stream->done;
+        }
+
+    private:
+        friend class DirStream;
+
+        explicit iterator(DirStream* stream) : stream(stream) {}
+
+        DirStream* stream;
+    };
+
+    DirStream(DirStream&&) noexcept = default;
+
+    DirStream& operator=(DirStream&&) noexcept = default;
+
+    /// Where the stream stands, its first entry read the first time.
+    iterator begin();
+
+    std::default_sentinel_t end() const {
+        return {};
+    }
+
+    /// The volume the directory lives on, as volume() tells it, asked of the
+    /// open directory rather than by name.
+    std::expected<Volume, std::error_code> volume() const;
+
+private:
+    friend std::expected<DirStream, std::error_code> read_dir(std::string_view dir);
+
+    explicit DirStream(std::shared_ptr<detail::OpenDirectory> directory) :
+        directory(std::move(directory)) {}
+
+    /// Reads the next entry into `current`, or after an error, or at the
+    /// end, ends the stream.
+    void advance();
+
+    std::shared_ptr<detail::OpenDirectory> directory;
+
+    std::expected<DirEntry, std::error_code> current;
+
+    bool started = false;
+
+    bool done = false;
 };
 
-/// The entries of a directory with their statuses, as symlink_status()
-/// would give them. On Windows the listing itself holds them, so a large
-/// directory costs about what a few statuses do; it tells no link counts.
-std::expected<std::vector<StatusEntry>, std::error_code> read_dir_status(std::string_view dir);
+/// Opens the directory `dir` to list its entries.
+std::expected<DirStream, std::error_code> read_dir(std::string_view dir);
 
 /// Creates the directory `path`: true when it made it, false when a
 /// directory was there already.

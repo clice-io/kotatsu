@@ -8,6 +8,7 @@
 #include "kota/zest/zest.h"
 #include "kota/support/small_string.h"
 #include "kota/fs/directory.h"
+#include "kota/fs/file.h"
 #include "kota/fs/path.h"
 #include "kota/fs/resolve.h"
 
@@ -173,6 +174,33 @@ ZEST_CASE(absolute_follows_the_platform_rules) {
     ZEXPECT(made == "/a/b/../c");
 #endif
 }
+
+#ifdef _WIN32
+ZEST_CASE(absolute_keeps_the_names_of_a_verbatim_path) {
+    test::TempDir dir;
+    // Win32 would fold the `..` and drop the dot; the file system keeps
+    // both names apart.
+    std::string dotted = R"(\\?\)" + dir.root();
+    path::push(dotted, "name.");
+    ZEXPECT(!write_file(dotted, "dotted"));
+    ZEXPECT(!write_file(dir.file("name"), "plain"));
+    std::string full;
+    ZEXPECT(!absolute(full, dotted));
+    ZEXPECT(full == dotted);
+    std::string up = R"(\\?\)" + dir.root() + R"(\..\x)";
+    ZEXPECT(!absolute(full, up));
+    ZEXPECT(full == up);
+    // Where the plain spelling names the same file, without the prefix.
+    ZEXPECT(!absolute(full, R"(\\?\)" + dir.root()));
+    ZEXPECT(full == dir.root());
+    std::string real;
+    weakly_canonical(real, dotted);
+    std::string content;
+    ZEXPECT(!read_file(content, real));
+    ZEXPECT(content == "dotted");
+    ZEXPECT(remove(dotted) == true);
+}
+#endif
 
 ZEST_CASE(absolute_of_nothing_fails) {
     std::string made;

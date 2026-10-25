@@ -59,6 +59,23 @@ ZEST_CASE(parse_takes_directories_with_backslashes) {
     ZEXPECT(windows_of(*table, "/usr/bin") == "C:/cygwin/usr/bin");
 }
 
+ZEST_CASE(parse_takes_names_with_spaces) {
+    // A toolchain's Cygwin under Program Files (Andes), and a user's mount
+    // point with a space.
+    auto table = MountTable::parse(
+        "C:/Program Files/Andes Tech/cygwin/bin on /usr/bin type ntfs (binary,auto)\n"
+        "C:/Program Files/Andes Tech/cygwin on / type ntfs (binary,auto)\n"
+        "D:/My Sources on /home/me/my sources type ntfs (binary,user)\n"
+        "C: on /cygdrive/c type ntfs (binary,posix=0,user,noumount,auto)\n");
+    ZASSERT(table.has_value());
+    ZASSERT(table->mounts.size() == 4);
+    ZEXPECT(windows_of(*table, "/usr/include/stdio.h") ==
+            "C:/Program Files/Andes Tech/cygwin/usr/include/stdio.h");
+    ZEXPECT(windows_of(*table, "/usr/bin/gcc") == "C:/Program Files/Andes Tech/cygwin/bin/gcc");
+    ZEXPECT(windows_of(*table, "/home/me/my sources/a.c") == "D:/My Sources/a.c");
+    ZEXPECT(windows_of(*table, "/cygdrive/c/Program Files/x") == "C:/Program Files/x");
+}
+
 ZEST_CASE(parse_without_a_root_mount_fails) {
     ZEXPECT(MountTable::parse("C:/cygwin64/bin on /usr/bin type ntfs (binary)\n") == std::nullopt);
     ZEXPECT(MountTable::parse("") == std::nullopt);

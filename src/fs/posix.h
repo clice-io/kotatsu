@@ -5,12 +5,14 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
+#include <expected>
 #include <string_view>
 #include <sys/stat.h>
 #include <system_error>
 
 #include "kota/support/small_string.h"
 #include "kota/fs/status.h"
+#include "kota/fs/volume.h"
 
 namespace kota::fs::posix {
 
@@ -41,6 +43,19 @@ private:
     small_string<256> text;
 };
 
+/// The volume the file `fd` refers to lives on, as volume() tells it.
+std::expected<Volume, std::error_code> volume_of(int fd);
+
+/// `path` without its trailing separators, its root kept: through them the
+/// system follows a symlink the path ends in.
+inline std::string_view without_trailing_separators(std::string_view path) {
+    auto end = path.size();
+    while(end > 1 && path[end - 1] == '/') {
+        --end;
+    }
+    return path.substr(0, end);
+}
+
 inline Status make_status(const struct stat& info) {
     auto type = S_ISREG(info.st_mode)    ? FileType::Regular
                 : S_ISDIR(info.st_mode)  ? FileType::Directory
@@ -57,9 +72,23 @@ inline Status make_status(const struct stat& info) {
     const auto& mtime = info.st_mtim;
     const auto& ctime = info.st_ctim;
 #endif
+    // A time nanoseconds do not hold, before 1677 or after 2262, is the
+    // nearest one they do. Before 1970 a second moves into the nanoseconds,
+    // so that the earliest seconds do not overflow before they are added.
     auto time_of = [](const struct timespec& time) {
-        return std::chrono::sys_time<std::chrono::nanoseconds>(
-            std::chrono::seconds(time.tv_sec) + std::chrono::nanoseconds(time.tv_nsec));
+        using Time = std::chrono::sys_time<std::chrono::nanoseconds>;
+        std::int64_t seconds = time.tv_sec;
+        std::int64_t nanoseconds = time.tv_nsec;
+        if(seconds < 0) {
+            seconds += 1;
+            nanoseconds -= 1'000'000'000;
+        }
+        std::int64_t since;
+        if(__builtin_mul_overflow(seconds, 1'000'000'000, &since) ||
+           __builtin_add_overflow(since, nanoseconds, &since)) {
+            return time.tv_sec < 0 ? Time::min() : Time::max();
+        }
+        return Time(std::chrono::nanoseconds(since));
     };
     return Status{
         .type = type,
@@ -69,6 +98,7 @@ inline Status make_status(const struct stat& info) {
         .id = {.device = static_cast<std::uint64_t>(info.st_dev),
                .file = static_cast<std::uint64_t>(info.st_ino)},
         .links = static_cast<std::uint32_t>(info.st_nlink),
+        .permissions = static_cast<std::uint16_t>(info.st_mode & 07777),
     };
 }
 

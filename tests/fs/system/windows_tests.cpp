@@ -4,9 +4,10 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <windows.h>
 
+#include "fs/harness/dir.h"
 #include "fs/harness/files.h"
+#include "fs/harness/win32.h"
 #include "kota/zest/zest.h"
 #include "kota/support/utf16.h"
 #include "kota/fs/directory.h"
@@ -80,6 +81,26 @@ ZEST_CASE(to_native_resolves_a_path_relative_to_a_drive) {
 ZEST_CASE(to_native_prefixes_a_long_path) {
     std::string long_path = R"(C:\)" + std::string(300, 'a');
     ZEXPECT(native(long_path) == R"(\\?\)" + long_path);
+    // Win32 limits a device path too.
+    ZEXPECT(native(R"(\\.\)" + long_path) == R"(\\?\)" + long_path);
+}
+
+ZEST_CASE(read_file_takes_a_long_device_path) {
+    test::TempDir dir;
+    std::string deep = dir.root();
+    while(deep.size() < 300) {
+        path::push(deep, "a-directory-name-of-some-length");
+    }
+    ZEXPECT(create_directories(deep) == true);
+    auto file = deep;
+    path::push(file, "file.txt");
+    ZEXPECT(!write_file(file, "text"));
+    std::string content;
+    ZEXPECT(!read_file(content, R"(\\.\)" + file));
+    ZEXPECT(content == "text");
+    // MinGW's std::filesystem, which TempDir removes with, loops on a path
+    // this long.
+    ZEXPECT(remove_all(dir.file("a-directory-name-of-some-length")).has_value());
 }
 
 ZEST_CASE(to_native_of_what_names_nothing_fails) {
@@ -104,6 +125,13 @@ ZEST_CASE(errors_map_to_portable_codes) {
     ZEXPECT(to_error_code(ERROR_SHARING_VIOLATION) == std::errc::device_or_resource_busy);
     ZEXPECT(to_error_code(ERROR_ALREADY_EXISTS) == std::errc::file_exists);
     ZEXPECT(to_error_code(ERROR_DIR_NOT_EMPTY) == std::errc::directory_not_empty);
+    // Mapped by kotatsu, not left to what the standard library knows.
+    for(auto code: {ERROR_READ_FAULT, ERROR_WRITE_FAULT}) {
+        ZEST_CONTEXT("{}", code);
+        auto mapped = to_error_code(code);
+        ZEXPECT(mapped.category() == std::generic_category());
+        ZEXPECT(mapped == std::errc::io_error);
+    }
     // An error with no POSIX counterpart keeps its own code.
     auto own = to_error_code(ERROR_INVALID_EA_NAME);
     ZEXPECT(own.category() == std::system_category());
@@ -130,10 +158,10 @@ ZEST_CASE(paths_longer_than_max_path_work) {
     path::push(moved, "moved.txt");
     ZEXPECT(!rename(file, moved));
     ZEXPECT(!write_file_atomic(moved, "new"));
-    auto entries = read_dir_status(deep);
-    ZASSERT(entries.has_value());
-    ZASSERT(entries->size() == 1u);
-    ZEXPECT(entries->front().name == "moved.txt");
+    auto entries = test::entries_of(deep);
+    ZASSERT(entries.size() == 1u);
+    ZEXPECT(entries.front().name == "moved.txt");
+    ZEXPECT(entries.front().status().has_value());
     std::string real;
     ZEXPECT(!canonical(real, moved));
     ZEXPECT(remove(moved) == true);
@@ -149,10 +177,9 @@ ZEST_CASE(verbatim_paths_reach_names_win32_would_change) {
     ZEXPECT(!write_file(dotted, "text"));
     ZEXPECT(is_file(dotted));
     ZEXPECT(!is_file(dir.file("name")));
-    auto entries = read_dir(dir.root());
-    ZASSERT(entries.has_value());
-    ZASSERT(entries->size() == 1u);
-    ZEXPECT(entries->front().name == "name.");
+    auto entries = test::entries_of(dir.root());
+    ZASSERT(entries.size() == 1u);
+    ZEXPECT(entries.front().name == "name.");
     ZEXPECT(remove(dotted) == true);
 }
 
@@ -162,10 +189,9 @@ ZEST_CASE(names_that_are_no_unicode_roundtrip) {
     auto lone = dir.root();
     path::push(lone, "\xED\xA0\x80");
     ZEXPECT(!write_file(lone, "text"));
-    auto entries = read_dir(dir.root());
-    ZASSERT(entries.has_value());
-    ZASSERT(entries->size() == 1u);
-    ZEXPECT(entries->front().name == "\xED\xA0\x80");
+    auto entries = test::entries_of(dir.root());
+    ZASSERT(entries.size() == 1u);
+    ZEXPECT(entries.front().name == "\xED\xA0\x80");
     std::string content;
     ZEXPECT(!read_file(content, lone));
     ZEXPECT(content == "text");
