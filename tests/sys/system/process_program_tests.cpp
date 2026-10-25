@@ -10,6 +10,17 @@
 #include <unistd.h>
 #endif
 
+#ifdef __linux__
+#include <cerrno>
+#include <cstddef>
+#include <iterator>
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>
+#include <thread>
+#endif
+
 #include "fs/harness/files.h"
 #include "sys/harness/env.h"
 #include "sys/harness/program.h"
@@ -53,21 +64,15 @@ ProgramSearch in(std::initializer_list<std::string> directories) {
     return {.directories = directories};
 }
 
-/// The current directory, put back when this goes.
-struct ScopedCurrentDir {
-    explicit ScopedCurrentDir(const std::filesystem::path& path) {
-        std::filesystem::current_path(path);
-    }
-
-    ScopedCurrentDir(const ScopedCurrentDir&) = delete;
-    ScopedCurrentDir& operator=(const ScopedCurrentDir&) = delete;
-
-    ~ScopedCurrentDir() {
-        std::filesystem::current_path(original);
-    }
-
-    std::filesystem::path original = std::filesystem::current_path();
-};
+#if defined(__linux__) && !defined(__alpha__) && !defined(__mips__)
+#ifdef SYS_faccessat2
+constexpr unsigned faccessat2_number = SYS_faccessat2;
+#else
+// Its number on every architecture but Alpha's and MIPS's, for headers older
+// than Linux 5.8.
+constexpr unsigned faccessat2_number = 439;
+#endif
+#endif
 
 ZEST_SUITE(sys_process_program) {
 
@@ -142,6 +147,38 @@ ZEST_CASE(find_program_finding_only_files_it_cannot_run_names_the_first) {
     ZEXPECT(out == first);
 }
 
+#if defined(__linux__) && !defined(__alpha__) && !defined(__mips__)
+// A sandbox made before faccessat2 (Linux 5.8), such as Docker's before
+// 20.10.6, refuses it with EPERM, which glibc's faccessat calls from 2.33 on:
+// a program is found all the same.
+ZEST_CASE(find_program_where_faccessat2_is_refused_finds_the_program) {
+    auto program = test::make_program(dir, "", "tool");
+    bool filtered = false;
+    std::error_code error;
+    std::string out;
+    // A filter of this thread's alone, which goes with it.
+    std::thread([&] {
+        sock_filter filter[] = {
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, nr)),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, faccessat2_number, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        };
+        sock_fprog bpf{.len = static_cast<unsigned short>(std::size(filter)), .filter = filter};
+        filtered = ::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == 0 &&
+                   ::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &bpf) == 0;
+        error = find_program(out, "tool", in({dir.root()}));
+    }).join();
+    // A kernel built without seccomp filters has none to set.
+    if(!filtered) {
+        zest::skip();
+        return;
+    }
+    ZEXPECT(!error);
+    ZEXPECT(out == program);
+}
+#endif
+
 /// The permissions of `path`, taken away until this goes.
 struct ScopedNoPermissions {
     explicit ScopedNoPermissions(std::filesystem::path path) : path(std::move(path)) {
@@ -183,7 +220,7 @@ ZEST_CASE(find_program_takes_a_name_with_a_slash_as_a_path) {
 
 ZEST_CASE(find_program_reads_an_empty_entry_as_the_current_directory) {
     test::make_program(dir, "", "tool");
-    ScopedCurrentDir current(dir.path);
+    test::ScopedCurrentDir current(dir.path);
     ZEXPECT(found("tool", in({"/nowhere", ""})) == "./tool");
 }
 
@@ -233,7 +270,7 @@ ZEST_CASE(find_program_tries_the_name_as_it_is_for_an_empty_extension) {
 // The current directory is no entry of PATH's on Windows.
 ZEST_CASE(find_program_reads_an_empty_entry_as_nothing) {
     test::make_program(dir, "", "tool.EXE");
-    ScopedCurrentDir current(dir.path);
+    test::ScopedCurrentDir current(dir.path);
     auto result = found("tool", in({""}));
     ZASSERT(!result.has_value());
     ZEXPECT(result.error() == std::errc::no_such_file_or_directory);
@@ -248,7 +285,7 @@ ZEST_CASE(find_program_takes_a_name_with_a_separator_as_a_path) {
 ZEST_CASE(find_program_takes_a_drive_relative_name_as_a_path) {
     test::make_program(dir, "", "tool.EXE");
     test::make_program(dir, "elsewhere", "tool.EXE");
-    ScopedCurrentDir current(dir.path);
+    test::ScopedCurrentDir current(dir.path);
     auto name = dir.root().substr(0, 2) + "tool";
     ZEXPECT(found(name, in({dir.file("elsewhere")})) == name + ".EXE");
 }
@@ -294,7 +331,7 @@ ZEST_CASE(find_program_of_a_cygwin_symlink_chain_to_a_posix_path_names_its_last_
     ZEXPECT(out == dir.file("gcc"));
 }
 
-// The link, whose target is no file.
+// The link, whose target is no file; the last of a chain.
 ZEST_CASE(find_program_of_a_cygwin_symlink_to_nothing_names_the_link) {
     test::write_text(dir.file("cc"), "!<symlink>gcc-13\0"sv);
     ProgramSearch search{
@@ -304,6 +341,24 @@ ZEST_CASE(find_program_of_a_cygwin_symlink_to_nothing_names_the_link) {
     std::string out;
     ZEXPECT(find_program(out, "cc", search) == std::errc::permission_denied);
     ZEXPECT(out == dir.file("cc"));
+    test::write_text(dir.file("c++"), "!<symlink>cc\0"sv);
+    ZEXPECT(find_program(out, "c++", search) == std::errc::permission_denied);
+    ZEXPECT(out == dir.file("cc"));
+}
+
+// The link found, links that loop having no last.
+ZEST_CASE(find_program_of_cygwin_symlinks_that_loop_names_the_first) {
+    test::write_text(dir.file("cc"), "!<symlink>gcc\0"sv);
+    test::write_text(dir.file("gcc"), "!<symlink>cc\0"sv);
+    ProgramSearch search{
+        .directories = {dir.root()},
+        .extensions = {"", ".EXE"}
+    };
+    std::string out;
+    ZEXPECT(find_program(out, "cc", search) == std::errc::permission_denied);
+    ZEXPECT(out == dir.file("cc"));
+    ZEXPECT(find_program(out, "gcc", search) == std::errc::permission_denied);
+    ZEXPECT(out == dir.file("gcc"));
 }
 #endif
 

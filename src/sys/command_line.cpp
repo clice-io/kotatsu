@@ -89,20 +89,20 @@ void join_command_line(buffer_ref out, string_list_ref arguments) {
 }
 
 split_command_line_view::iterator::iterator(std::string_view line, CommandLineRules rules) :
-    rest(line), rules(rules), program(rules != CommandLineRules::Clang) {
+    rest(line), rules(rules), program(rules != CommandLineRules::LLVM) {
     ++*this;
 }
 
 split_command_line_view::iterator& split_command_line_view::iterator::operator++() {
     const bool crt = rules == CommandLineRules::CRT;
-    // The C runtime's program alone reads every quote as a toggle.
-    const bool toggles = crt && program;
+    // The C runtime's program starts at the first character, a blank too,
+    // and reads every quote as a toggle.
+    const bool crt_program = crt && program;
     auto separates = [&](char c) {
         return c == ' ' || c == '\t' || (!crt && (c == '\r' || c == '\n' || c == '\0'));
     };
     std::size_t at = 0;
-    // The C runtime's program starts at the first character, a blank too.
-    if(!toggles) {
+    if(!crt_program) {
         while(at < rest.size() && separates(rest[at])) {
             ++at;
         }
@@ -121,7 +121,7 @@ split_command_line_view::iterator& split_command_line_view::iterator::operator++
             at = read_backslashes(rest, at, argument);
         } else if(c != '"') {
             argument.push_back(c);
-        } else if(quoted && !toggles && at + 1 < rest.size() && rest[at + 1] == '"') {
+        } else if(quoted && !crt_program && at + 1 < rest.size() && rest[at + 1] == '"') {
             argument.push_back('"');
             ++at;
         } else {
@@ -130,7 +130,7 @@ split_command_line_view::iterator& split_command_line_view::iterator::operator++
     }
     // As LLVM reads it, a command starts after a newline that ends an
     // argument, not after one that a blank comes before.
-    program = rules == CommandLineRules::ClangFull && at < rest.size() && rest[at] == '\n';
+    program = rules == CommandLineRules::LLVMFull && at < rest.size() && rest[at] == '\n';
     rest.remove_prefix(at);
     return *this;
 }

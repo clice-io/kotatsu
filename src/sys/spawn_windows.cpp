@@ -8,7 +8,6 @@
 #include <cstdlib>
 #include <format>
 #include <io.h>
-#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -17,6 +16,7 @@
 #include "child.h"
 #include "os.h"
 #include "kota/support/small_string.h"
+#include "kota/support/string_list_ref.h"
 #include "kota/support/string_ref.h"
 #include "kota/support/utf16.h"
 #include "kota/fs/path.h"
@@ -159,11 +159,10 @@ constinit SRWLOCK inheritance = SRWLOCK_INIT;
 
 /// Whether `path`, as fs::absolute writes it, its trailing dots and spaces
 /// dropped as Windows drops them, is a batch file, which CreateProcess runs
-/// through cmd.
+/// through cmd: as Windows tells, by its end, a file named `.bat` too.
 bool is_batch_file(std::string_view path) {
-    auto extension = fs::path::extension(path);
-    return string_ref(extension).equals_insensitive(".bat") ||
-           string_ref(extension).equals_insensitive(".cmd");
+    return string_ref(path).ends_with_insensitive(".bat") ||
+           string_ref(path).ends_with_insensitive(".cmd");
 }
 
 /// Appends `argument` to `out` as cmd is to pass it on to a batch file, by
@@ -219,13 +218,11 @@ void append_batch_argument(std::string& out, std::string_view argument) {
 /// which would end the command there.
 std::error_code batch_command_line(std::string& out,
                                    std::string_view script,
-                                   std::span<const std::string> arguments) {
-    // A file found by name holds no quote, and one named .bat or .cmd ends
-    // in no backslash.
-    assert(!script.contains('"') && !script.ends_with('\\') && "a batch file's name");
+                                   string_list_ref arguments) {
+    assert(!script.contains('"') && "no Windows file name holds a quote");
     out = std::format(R"(cmd.exe /e:ON /v:OFF /d /c ""{}")", script);
-    for(const auto& argument: arguments) {
-        if(argument.find_first_of("\r\n") != std::string::npos) {
+    for(auto argument: arguments) {
+        if(argument.find_first_of("\r\n") != std::string_view::npos) {
             return std::make_error_code(std::errc::invalid_argument);
         }
         out.push_back(' ');
@@ -399,11 +396,9 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
             // cmd, which CreateProcess would run with a line written for the
             // C runtime, reads the arguments by its own rules, which that
             // quoting does not keep from running a command of theirs.
-            auto system = system_directories();
-            if(!system) {
-                return std::unexpected(system.error());
+            if(auto error = system_directory(cmd)) {
+                return std::unexpected(error);
             }
-            cmd = std::move((*system)[0]);
             fs::path::push(cmd, "cmd.exe");
             application = cmd;
             if(auto error = batch_command_line(written, file, options.args)) {

@@ -8,6 +8,7 @@
 #include "kota/support/string_list_ref.h"
 #include "kota/fs/path.h"
 #include "kota/fs/resolve.h"
+#include "kota/fs/status.h"
 #include "kota/sys/process.h"
 #include "kota/sys/windows.h"
 
@@ -155,9 +156,14 @@ std::expected<std::string, std::error_code>
     };
     if(is_path) {
 #ifdef _WIN32
-        // `.exe` added as to a name looked for, where CreateProcess adds none
-        // to the path it is given.
-        return create_process_program(in_cwd(file), {});
+        // CreateProcess adds no `.exe` to a path; add it as to a name it
+        // looks for, the path running as it is when only that is there.
+        auto path = in_cwd(file);
+        auto program = create_process_program(path, {});
+        if(!program && fs::is_file(path)) {
+            return path;
+        }
+        return program;
 #else
         return in_cwd(file);
 #endif

@@ -44,16 +44,18 @@ enum class CommandLineRules : std::uint8_t {
     /// quotes make one, and other backslashes are literal. An empty line has
     /// no arguments, and one that starts with a blank an empty program.
     CRT,
-    /// LLVM's cl::TokenizeWindowsCommandLine, which clang reads a compilation
-    /// database's commands and a response file by: each argument by the
-    /// CRT's rules for those after the program, none being the program, but
-    /// that carriage returns, newlines and NULs separate them too, and that
-    /// separators before the first make no empty one.
-    Clang,
-    /// LLVM's cl::TokenizeWindowsCommandLineFull: Clang's rules, but that the
-    /// first argument, and each after one that a newline ends, is a program,
-    /// read without escapes, two quotes inside quotes still making one.
-    ClangFull,
+    /// LLVM's cl::TokenizeWindowsCommandLine, by which clang reads a
+    /// compilation database's commands and a clang-cl response file (only
+    /// clang-cl, or --rsp-quoting=windows, reads response files so): each
+    /// argument by the CRT's rules for those after the program, none being
+    /// the program, but that carriage returns, newlines and NULs separate
+    /// them too, and that separators before the first make no empty one.
+    LLVM,
+    /// LLVM's cl::TokenizeWindowsCommandLineFull, by which an LLVM tool reads
+    /// its own command line on Windows: LLVM's rules, but that the first
+    /// argument, and each after one that a newline ends, is a program, read
+    /// without escapes, two quotes inside quotes still making one.
+    LLVMFull,
 };
 
 /// The arguments of a command line, as split_command_line() gives them: a
@@ -94,6 +96,7 @@ public:
         /// The argument, its quotes and escapes read.
         small_string<256> argument;
 
+        /// The rules the line is read by.
         CommandLineRules rules = CommandLineRules::CRT;
 
         /// Whether the next argument is a program, read by its own rule.

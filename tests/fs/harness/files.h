@@ -1,9 +1,9 @@
 #pragma once
 
 // TempDir, a directory of a test's own, write_text() and read_text(),
-// make_junction() on Windows and ScopedPermissions elsewhere, all through
-// std::filesystem, fstreams and cmd rather than kota::fs, which the tests
-// check; linked() for a case that makes a symlink.
+// ScopedCurrentDir, make_junction() on Windows and ScopedPermissions
+// elsewhere, all through std::filesystem, fstreams and cmd rather than
+// kota::fs, which the tests check; linked() for a case that makes a symlink.
 
 #include <cstdlib>
 #include <filesystem>
@@ -97,6 +97,23 @@ inline bool linked(std::error_code error) {
     zest::skip();
     return false;
 }
+
+/// The current directory `path` until this goes, which puts back the one
+/// before.
+struct ScopedCurrentDir {
+    explicit ScopedCurrentDir(const std::filesystem::path& path) {
+        std::filesystem::current_path(path);
+    }
+
+    ScopedCurrentDir(const ScopedCurrentDir&) = delete;
+    ScopedCurrentDir& operator=(const ScopedCurrentDir&) = delete;
+
+    ~ScopedCurrentDir() {
+        std::filesystem::current_path(original);
+    }
+
+    std::filesystem::path original = std::filesystem::current_path();
+};
 
 #ifndef _WIN32
 /// The permissions of `path` replaced by `perms` for as long as this lives,

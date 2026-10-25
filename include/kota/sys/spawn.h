@@ -146,10 +146,11 @@ struct SpawnOptions {
     /// PATH, a relative entry relative to `cwd` too. On POSIX by
     /// find_program's rules, PATH unset searching confstr(_CS_PATH)'s
     /// directories, and a file without a #! line run by /bin/sh, as execvp
-    /// does; on Windows by find_create_process_program's, `.exe` added to a
-    /// path too when it has no extension, in PATH alone, not, as
-    /// CreateProcess, in this program's directory and the current one first;
-    /// PATH unset searching the system's directories. A `.bat` or `.cmd`
+    /// does; on Windows by find_create_process_program's, in PATH alone, not,
+    /// as CreateProcess, in this program's directory and the current one
+    /// first, PATH unset searching the system's directories; a path without
+    /// an extension takes `.exe` too, which CreateProcess would not add, when
+    /// that file is there. A `.bat` or `.cmd`
     /// file runs as Rust's Command runs one, by the system's cmd.exe, `args`
     /// written so that cmd passes them on as they are: a program the script
     /// starts with %* reads each as given, no variable expanded in it, no
@@ -161,7 +162,7 @@ struct SpawnOptions {
 
     /// argv[0], which need not be `program`; `program` when unset. On
     /// Windows it holds no quote, which a command line has no way to write
-    /// for it, and a batch file has none, its %0 being the script.
+    /// for it; a batch file does not get it: its %0 is the script.
     std::optional<std::string> arg0 = {};
 
     /// The child's environment; unset, this process's. Given, it is the

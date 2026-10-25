@@ -382,13 +382,18 @@ ZEST_CASE(spawn_of_text_with_a_nul_fails) {
     ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
     options = given;
     options.env = environment();
+    options.env->push_back({.name = "KOTA" + nul, .value = "a"});
+    ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
+    options = given;
+    options.env = environment();
     options.env->push_back({.name = "KOTA_NUL", .value = "a" + nul});
     ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
     options = given;
     options.env_changes = {
-        {.name = "KOTA_NUL=a" + nul, .value = "b"}
+        {.name = "KOTA" + nul, .value = "a"}
     };
     ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
+    options = given;
     options.env_changes = {
         {.name = "KOTA_NUL", .value = "a" + nul}
     };
@@ -1040,8 +1045,38 @@ ZEST_CASE(batch_file_runs) {
 
 // cmd's %0 is the script: argv[0] is written nowhere, and may hold a quote.
 ZEST_CASE(batch_file_takes_no_arg0) {
+    auto script = dir.file("tool.bat");
+    test::write_text(script,
+                     std::format("@if /i \"%~f0\"==\"{}\" exit /b 4\r\n@exit /b 1\r\n", script));
+    ZEXPECT(status_of({.program = script, .arg0 = R"(a"b)"}).code == 4);
+}
+
+// Windows takes a name that ends in `.bat` for a batch file, though its
+// stem would be all of it: cmd reads the arguments of `.bat` too.
+ZEST_CASE(batch_file_named_by_its_extension_alone_gets_its_arguments_escaped) {
+    test::write_text(dir.file(".bat"), "@rem\r\n");
+    for(auto name: {".bat.", ".bat"}) {
+        ZEST_CONTEXT("{}", name);
+        auto output = output_of({.program = dir.file(name), .args = {R"("&echo injected)"}});
+        ZEXPECT(!zest::contains(output.text, "injected"));
+        ZASSERT(output.status.has_value());
+        ZEXPECT(output.status->success());
+    }
+    auto output = output_of({
+        .program = ".bat.",
+        .args = {R"("&echo injected)"},
+        .env_changes = {{.name = "PATH", .value = dir.root()}},
+    });
+    ZEXPECT(!zest::contains(output.text, "injected"));
+}
+
+// The system directory's cmd.exe, not one where CreateProcess would look for
+// a name.
+ZEST_CASE(batch_file_runs_the_systems_cmd) {
     test::write_text(dir.file("tool.bat"), "@exit /b 4\r\n");
-    ZEXPECT(status_of({.program = dir.file("tool.bat"), .arg0 = R"(a"b)"}).code == 4);
+    test::write_text(dir.file("cmd.exe"), "no program");
+    test::ScopedCurrentDir current(dir.path);
+    ZEXPECT(status_of({.program = dir.file("tool.bat")}).code == 4);
 }
 
 // cmd would end its command there.
@@ -1092,7 +1127,7 @@ ZEST_CASE(program_is_not_looked_for_in_the_current_directory) {
 }
 
 // As find_create_process_program takes it, which CreateProcess does not for
-// the path it is given to start.
+// the path it is given to start; the path as it is when only that is there.
 ZEST_CASE(program_path_without_an_extension_takes_exe) {
     std::filesystem::create_directories(test::std_path(dir.file("bin")));
     std::filesystem::copy_file(test::std_path(shell_path()),
@@ -1110,6 +1145,28 @@ ZEST_CASE(program_path_without_an_extension_takes_exe) {
                           .cwd = dir.root()
     })
                 .code == 6);
+    // Before a file without it, which is no program.
+    test::write_text(dir.file(R"(bin\kotatool)"), "no program");
+    ZEXPECT(status_of({
+                          .program = dir.file(R"(bin\kotatool)"),
+                          .args = {"/c", "exit 7"}
+    })
+                .code == 7);
+}
+
+ZEST_CASE(program_path_without_an_extension_runs_as_it_is_without_an_exe) {
+    std::filesystem::create_directories(test::std_path(dir.file("bin")));
+    std::filesystem::copy_file(test::std_path(shell_path()),
+                               test::std_path(dir.file(R"(bin\kotaplain)")));
+    ZEXPECT(status_of({
+                          .program = dir.file(R"(bin\kotaplain)"),
+                          .args = {"/c", "exit 5"}
+    })
+                .code == 5);
+    // Neither there.
+    auto child = spawn({.program = dir.file(R"(bin\missing)")});
+    ZASSERT(!child.has_value());
+    ZEXPECT(child.error() == std::errc::no_such_file_or_directory);
 }
 
 // Its job closes with the Child.

@@ -56,13 +56,18 @@ Candidate examine(std::string_view path) {
         return status.error() == std::errc::permission_denied ? Candidate::Unrunnable
                                                               : Candidate::Missing;
     }
-    small_string<256> c_path(path);
-    // By the effective IDs, which exec goes by, as access does not.
-    if(status->type != fs::FileType::Regular ||
-       ::faccessat(AT_FDCWD, c_path.c_str(), X_OK, AT_EACCESS) != 0) {
+    if(status->type != fs::FileType::Regular) {
         return Candidate::Unrunnable;
     }
-    return Candidate::Program;
+    small_string<256> c_path(path);
+    // By the effective IDs, which exec goes by, where access takes the real
+    // ones; through access while they are the same: glibc's faccessat calls
+    // faccessat2 from 2.33 on, which a sandbox older than it (Docker's
+    // before 20.10.6) refuses with EPERM.
+    const bool same_ids = ::getuid() == ::geteuid() && ::getgid() == ::getegid();
+    const int checked = same_ids ? ::access(c_path.c_str(), X_OK)
+                                 : ::faccessat(AT_FDCWD, c_path.c_str(), X_OK, AT_EACCESS);
+    return checked == 0 ? Candidate::Program : Candidate::Unrunnable;
 #endif
 }
 
@@ -110,12 +115,13 @@ std::vector<std::string> spellings(std::string_view name,
 
 /// Follows the Cygwin symlink at `path` to the program it names, in place:
 /// its target beside it, link after link, `.exe` added where the target has
-/// none; a program that is no link stays. False, `path` the link it stopped
-/// at, when a link names a POSIX path, which only its runtime's mount table
-/// maps, or nothing that runs, or the links loop.
+/// none; a program that is no link stays. False when a link names a POSIX
+/// path, which only its runtime's mount table maps, or nothing that runs,
+/// `path` then that link, or when the links loop, `path` then the first.
 bool follow_cygwin_links(buffer_ref path) {
     // Past it, a chain is taken to loop.
     constexpr int most_links = 16;
+    const small_string<256> first(path.view());
     small_string<256> target;
     small_string<256> link;
     for(int links = 0; links <= most_links; ++links) {
@@ -136,6 +142,7 @@ bool follow_cygwin_links(buffer_ref path) {
             }
         }
     }
+    path.assign(first);
     return false;
 }
 
@@ -271,11 +278,15 @@ std::error_code known_directory(buffer_ref out, auto read) {
 
 }  // namespace
 
+std::error_code system_directory(buffer_ref out) {
+    return known_directory(out, [](DWORD size, wchar_t* buffer) {
+        return ::GetSystemDirectoryW(buffer, size);
+    });
+}
+
 std::expected<std::vector<std::string>, std::error_code> system_directories() {
     std::vector<std::string> directories(3);
-    if(auto error = known_directory(directories[0], [](DWORD size, wchar_t* buffer) {
-           return ::GetSystemDirectoryW(buffer, size);
-       })) {
+    if(auto error = system_directory(directories[0])) {
         return std::unexpected(error);
     }
     if(auto error = known_directory(directories[2], [](DWORD size, wchar_t* buffer) {

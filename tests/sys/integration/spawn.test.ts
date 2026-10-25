@@ -198,7 +198,9 @@ const BATCH_ARGUMENTS = [
   ['hello^"world', "hello &echo oh no >file.txt"],
   ["%%", "^", "<", ">", "|", "(", ")", "!", "a b"],
   ["trailing\\", "", "C:\\dir with space\\"],
-  ["ünï 測試 ✓", "caf\u00e9\u0085"],
+  ['a\\"b', '\\"', 'a\\\\"b c'],
+  ["a\tb", "a,b", "a;b", "="],
+  ["ünï 測試 ✓", "caf\u00e9\u0085", "測試"],
 ];
 
 // Each passes on what it was given as Rust's tests' scripts do: all at once,
@@ -227,11 +229,12 @@ for (const { file, runAs, passed } of BATCH_SCRIPTS) {
         `@"${driverPath("sys_probe")}" arguments ${passed}\r\n`,
       );
       for (const args of BATCH_ARGUMENTS) {
-        const driver = await Driver.spawn(t, "sys_probe", [
-          "spawn",
-          join(directory, runAs),
-          ...args,
-        ]);
+        const driver = await Driver.spawn(
+          t,
+          "sys_probe",
+          ["spawn", join(directory, runAs), ...args],
+          { cwd: directory },
+        );
         const output = await driver.output();
         await driver.expectExit(0);
         // One line, of the probe the script started: cmd ran nothing else.
@@ -243,7 +246,8 @@ for (const { file, runAs, passed } of BATCH_SCRIPTS) {
           received.pop();
         }
         assert.deepEqual(received, args);
-        assert.equal(existsSync("file.txt"), false);
+        // Where the commands of Rust's cases would write.
+        assert.equal(existsSync(join(directory, "file.txt")), false);
       }
     },
   );
