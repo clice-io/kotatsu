@@ -95,7 +95,7 @@ private:
     };
 
     template <typename Buffer>
-    static Ops ops_of = {
+    static constexpr Ops ops_of = {
         .chars = [](void* buffer) -> std::span<Char> {
             auto& held = *static_cast<Buffer*>(buffer);
             return {held.data(), static_cast<std::size_t>(held.size())};
