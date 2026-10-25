@@ -5,7 +5,7 @@
 #include <string_view>
 #include <system_error>
 
-#include "kota/support/string_buffer.h"
+#include "kota/support/buffer_ref.h"
 
 /// Where kotatsu's UTF-8 paths meet the Windows API: the wide paths its file
 /// functions take, and its errors as std::error_code.
@@ -29,11 +29,11 @@ std::error_code last_error();
 /// go. A short absolute path needs no prefix and comes out as it is, as does
 /// a verbatim one. Fails with std::errc::invalid_argument on a NUL, and with
 /// std::errc::illegal_byte_sequence on text that is not WTF-8.
-std::error_code to_native(BasicStringBufferRef<wchar_t> out, std::string_view path);
+std::error_code to_native(basic_buffer_ref<wchar_t> out, std::string_view path);
 
 /// Writes into `out` a path Windows gave, as WTF-8, without the `\\?\` or
 /// `\\?\UNC\` prefix wherever the plain spelling names the same file.
-void from_native(StringBufferRef out, std::wstring_view path);
+void from_native(buffer_ref out, std::wstring_view path);
 
 }  // namespace kota::fs::windows
 

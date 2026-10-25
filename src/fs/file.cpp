@@ -38,7 +38,7 @@ bool refused(const OpenOptions& options) {
 /// each time, while what it fails with says the name is taken: another
 /// process holds a hundred names only by design.
 template <typename Make>
-std::error_code with_random_name(StringBufferRef path,
+std::error_code with_random_name(buffer_ref path,
                                  std::string_view directory,
                                  std::string_view prefix,
                                  std::string_view suffix,
@@ -170,9 +170,9 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
     if(refused(options)) {
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
-    auto native = win32::native(path);
-    if(!native) {
-        return std::unexpected(native.error());
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, path)) {
+        return std::unexpected(error);
     }
     // Any handle tells its status, which takes the right to read the
     // attributes.
@@ -189,7 +189,7 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
                                            : OPEN_EXISTING;
     // A new file takes the place of nothing, a dangling symlink included.
     DWORD flags = options.create_new ? FILE_FLAG_OPEN_REPARSE_POINT : 0;
-    HANDLE handle = ::CreateFileW(native->c_str(),
+    HANDLE handle = ::CreateFileW(native.c_str(),
                                   access,
                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                   nullptr,
@@ -297,9 +297,9 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
     if(refused(options)) {
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
-    auto c_path = posix::c_path(path);
-    if(!c_path) {
-        return std::unexpected(c_path.error());
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return std::unexpected(error);
     }
     bool writes = options.write || options.append;
     int flags = O_CLOEXEC | (!writes ? O_RDONLY : options.read ? O_RDWR : O_WRONLY);
@@ -313,7 +313,7 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
     }
     int fd;
     do {
-        fd = ::open(c_path->c_str(), flags, 0666);
+        fd = ::open(c_path.c_str(), flags, 0666);
     } while(fd < 0 && errno == EINTR);
     if(fd < 0) {
         return std::unexpected(posix::last_error());
@@ -404,7 +404,7 @@ std::error_code File::close() {
 
 #endif
 
-std::error_code read_file(StringBufferRef out, std::string_view path) {
+std::error_code read_file(buffer_ref out, std::string_view path) {
     auto file = File::open(path);
     if(!file) {
         return file.error();
@@ -474,7 +474,7 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
     return error;
 }
 
-std::expected<File, std::error_code> create_temp_file(StringBufferRef path,
+std::expected<File, std::error_code> create_temp_file(buffer_ref path,
                                                       std::string_view directory,
                                                       std::string_view prefix,
                                                       std::string_view suffix) {
@@ -493,7 +493,7 @@ std::expected<File, std::error_code> create_temp_file(StringBufferRef path,
     return file;
 }
 
-std::error_code create_temp_directory(StringBufferRef path,
+std::error_code create_temp_directory(buffer_ref path,
                                       std::string_view directory,
                                       std::string_view prefix) {
     return with_random_name(path, directory, prefix, "", [](std::string_view candidate) {

@@ -52,12 +52,12 @@ std::expected<Area, std::error_code> find_area() {
 #else
 
 std::expected<Area, std::error_code> find_area() {
-    auto stat = read_text("/proc/self/stat");
-    if(!stat) {
-        return std::unexpected(stat.error());
+    ProcText stat;
+    if(auto error = fs::read_file(stat, "/proc/self/stat")) {
+        return std::unexpected(error);
     }
-    auto start = leading_number(stat_field(*stat, 48));
-    auto end = leading_number(stat_field(*stat, 49));
+    auto start = leading_number(stat_field(stat, 48));
+    auto end = leading_number(stat_field(stat, 49));
     // Linux has them from 3.5 on. A program started without arguments has
     // an empty area, and some emulations of /proc give zeros.
     if(!start || !end || *end <= *start) {

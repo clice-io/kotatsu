@@ -110,7 +110,7 @@ std::error_code last_error() {
     return to_error_code(::GetLastError());
 }
 
-std::error_code to_native(BasicStringBufferRef<wchar_t> out, std::string_view path) {
+std::error_code to_native(basic_buffer_ref<wchar_t> out, std::string_view path) {
     if(auto error = win32::widen(out, path)) {
         return error;
     }
@@ -128,7 +128,7 @@ std::error_code to_native(BasicStringBufferRef<wchar_t> out, std::string_view pa
     return {};
 }
 
-void from_native(StringBufferRef out, std::wstring_view path) {
+void from_native(buffer_ref out, std::wstring_view path) {
     win32::WidePath plain;
     if(path.starts_with(LR"(\\?\UNC\)")) {
         plain.append(2, L'\\');
@@ -143,7 +143,7 @@ void from_native(StringBufferRef out, std::wstring_view path) {
     // only where that resolution changes nothing.
     win32::WidePath resolved;
     if(!win32::full_path(resolved, plain.c_str()) && std::ranges::equal(resolved, plain)) {
-        from_utf16(out, std::wstring_view(plain.data(), plain.size()));
+        from_utf16(out, plain);
         return;
     }
     from_utf16(out, path);
@@ -153,28 +153,20 @@ void from_native(StringBufferRef out, std::wstring_view path) {
 
 namespace kota::fs::win32 {
 
-std::expected<WidePath, std::error_code> native(std::string_view path) {
-    WidePath result;
-    if(auto error = windows::to_native(result, path)) {
-        return std::unexpected(error);
-    }
-    return result;
-}
-
-std::error_code widen(BasicStringBufferRef<wchar_t> out, std::string_view path) {
+std::error_code widen(basic_buffer_ref<wchar_t> out, std::string_view path) {
     if(path.find('\0') != std::string_view::npos) {
         return std::make_error_code(std::errc::invalid_argument);
     }
     return to_utf16(out, path);
 }
 
-std::error_code full_path(BasicStringBufferRef<wchar_t> out, const wchar_t* path) {
+std::error_code full_path(basic_buffer_ref<wchar_t> out, const wchar_t* path) {
     return fill_wide(out, [&](wchar_t* buffer, DWORD size) {
         return ::GetFullPathNameW(path, size, buffer, nullptr);
     });
 }
 
-void verbatim(BasicStringBufferRef<wchar_t> path) {
+void verbatim(basic_buffer_ref<wchar_t> path) {
     auto held = path.view();
     if(held.starts_with(LR"(\\?\)") || held.starts_with(LR"(\\.\)")) {
         return;
@@ -202,11 +194,11 @@ Handle try_open(const wchar_t* path, DWORD access, DWORD flags) {
 }
 
 std::expected<Handle, std::error_code> open(std::string_view path, DWORD access) {
-    auto native = win32::native(path);
-    if(!native) {
-        return std::unexpected(native.error());
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, path)) {
+        return std::unexpected(error);
     }
-    auto handle = try_open(native->c_str(), access, 0);
+    auto handle = try_open(native.c_str(), access, 0);
     if(handle.get() == INVALID_HANDLE_VALUE) {
         return std::unexpected(windows::last_error());
     }

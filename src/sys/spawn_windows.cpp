@@ -157,12 +157,17 @@ bool is_batch_file(std::string_view path) {
 std::expected<std::wstring, std::error_code>
     environment_block(const std::vector<EnvVar>& variables) {
     std::wstring block;
+    small_wstring<256> text;
     for(const auto& [name, value]: variables) {
-        auto entry = wide(std::format("{}={}", name, value));
-        if(!entry) {
-            return std::unexpected(entry.error());
+        if(auto error = to_utf16(text, name)) {
+            return std::unexpected(error);
         }
-        block += *entry;
+        block.append(text);
+        block += L'=';
+        if(auto error = to_utf16(text, value)) {
+            return std::unexpected(error);
+        }
+        block.append(text);
         block += L'\0';
     }
     // An empty block is two NULs.
@@ -304,16 +309,17 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         }
     }
 
-    auto application = wide(*program);
-    if(!application) {
-        return std::unexpected(application.error());
+    small_wstring<264> application;
+    if(auto error = to_utf16(application, *program)) {
+        return std::unexpected(error);
     }
-    auto line = wide(!options.windows_command_line.empty() ? options.windows_command_line
-                     : options.args.empty()
-                         ? windows::join_command_line(std::vector<std::string>{options.file})
-                         : windows::join_command_line(options.args));
-    if(!line) {
-        return std::unexpected(line.error());
+    std::wstring line;
+    if(auto error = to_utf16(line,
+                             !options.windows_command_line.empty() ? options.windows_command_line
+                             : options.args.empty()                ? windows::join_command_line(
+                                                          std::vector<std::string>{options.file})
+                                                    : windows::join_command_line(options.args))) {
+        return std::unexpected(error);
     }
     std::wstring block;
     if(environment) {
@@ -325,11 +331,9 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     }
     std::wstring cwd;
     if(!options.cwd.empty()) {
-        auto given = wide(options.cwd);
-        if(!given) {
-            return std::unexpected(given.error());
+        if(auto error = to_utf16(cwd, options.cwd)) {
+            return std::unexpected(error);
         }
-        cwd = std::move(*given);
         // CreateProcess takes no longer one, as libuv found.
         if(cwd.size() >= MAX_PATH) {
             auto size = ::GetShortPathNameW(cwd.c_str(), nullptr, 0);
@@ -478,8 +482,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         process_flags |= CREATE_SUSPENDED;
     }
     PROCESS_INFORMATION created{};
-    if(!::CreateProcessW(application->c_str(),
-                         line->data(),
+    if(!::CreateProcessW(application.c_str(),
+                         line.data(),
                          nullptr,
                          nullptr,
                          !inherited.empty(),

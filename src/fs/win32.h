@@ -23,8 +23,8 @@
 #include <winioctl.h>
 #include <winternl.h>
 
-#include "kota/support/small_vector.h"
-#include "kota/support/string_buffer.h"
+#include "kota/support/buffer_ref.h"
+#include "kota/support/small_string.h"
 #include "kota/fs/status.h"
 #include "kota/fs/windows.h"
 
@@ -58,16 +58,8 @@ private:
     HANDLE value = INVALID_HANDLE_VALUE;
 };
 
-/// A wide path, on the stack while it is as short as most are; c_str() ends
-/// it with the NUL the Windows functions take.
-class WidePath : public small_vector<wchar_t, 264> {
-public:
-    const wchar_t* c_str() {
-        push_back(L'\0');
-        pop_back();
-        return data();
-    }
-};
+/// A wide path, on the stack while it is as short as most are.
+using WidePath = small_wstring<264>;
 
 /// Writes into `out` the text a Win32 function writes into a buffer it is
 /// given the size of, in UTF-16 units: `fill(buffer, size)` returns how many
@@ -75,7 +67,7 @@ public:
 /// with or without the terminator, and 0 on failure. The buffer grows until
 /// it fits.
 template <typename Fill>
-std::error_code fill_wide(BasicStringBufferRef<wchar_t> out, Fill fill) {
+std::error_code fill_wide(basic_buffer_ref<wchar_t> out, Fill fill) {
     auto buffer = out.resize(MAX_PATH);
     while(true) {
         // An empty result succeeds with 0 too, and clears no error itself.
@@ -99,15 +91,12 @@ std::error_code fill_wide(BasicStringBufferRef<wchar_t> out, Fill fill) {
     }
 }
 
-/// to_native() of `path`, on the stack while it is as short as most are.
-std::expected<WidePath, std::error_code> native(std::string_view path);
-
 /// Writes into `out` `path` in UTF-16, as it is: invalid_argument for a NUL
 /// in it, which would end it early.
-std::error_code widen(BasicStringBufferRef<wchar_t> out, std::string_view path);
+std::error_code widen(basic_buffer_ref<wchar_t> out, std::string_view path);
 
 /// Writes into `out` what GetFullPathNameW resolves `path` to.
-std::error_code full_path(BasicStringBufferRef<wchar_t> out, const wchar_t* path);
+std::error_code full_path(basic_buffer_ref<wchar_t> out, const wchar_t* path);
 
 /// A handle to what the native `path` names, existing, with every sharing
 /// mode so that it never refuses another process, and
@@ -159,7 +148,7 @@ std::expected<Status, std::error_code> handle_status(HANDLE handle);
 /// Rewrites `path`, in the form Win32 resolves paths to (to_native() leaves
 /// a short absolute one so), in the verbatim form, which any name appended
 /// with `\` keeps valid at any length. A device path stays as it is.
-void verbatim(BasicStringBufferRef<wchar_t> path);
+void verbatim(basic_buffer_ref<wchar_t> path);
 
 /// FILETIME ticks, 100 ns since 1601, as a time; zero, the time FAT keeps
 /// for a change it does not record, is the Unix epoch.

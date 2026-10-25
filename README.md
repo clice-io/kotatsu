@@ -138,7 +138,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 
 Synchronous paths and files on UTF-8 strings, depending on `support` alone (no libuv, no async), so that a library injected into other processes can use it.
 
-- Strings out and in: what produces a path or text writes it into a buffer the caller gives, of any type (`std::string`, `small_string<N>`, `llvm::SmallString<N>`) through `StringBufferRef`, so that a loop of calls can reuse one buffer and allocate nothing; a list of strings goes in as a `StringListRef` of whatever the caller holds.
+- Strings out and in: what produces a path or text writes it into a buffer the caller gives, of any type (`std::string`, `small_string<N>`, `llvm::SmallString<N>`) through `buffer_ref`, so that a loop of calls can reuse one buffer and allocate nothing; a list of strings goes in as a `string_list_ref` of whatever the caller holds.
 - Lexical paths (`path.h`): roots, `components` and `ancestors` as lazy views, and Rust's `PathBuf` operations in place on a buffer (`push`, `pop`, `set_file_name`, `set_extension`, `normalize`), `relative`, `strip_prefix`, in the POSIX or the Windows style on any host. Windows roots follow drives, UNC shares, device and verbatim (`\\?\`) prefixes; `..` never climbs past a root.
 - Status (`status.h`): `status` / `symlink_status` with file IDs, change time and link counts; on Windows by name where the system allows, junctions and symlinks reported as links.
 - Directories and links (`directory.h`): `read_dir` (with statuses from the listing on Windows), `create_directories`, `remove` and `rename` with POSIX semantics on Windows, `remove_all` that never follows a link, symlinks (`create_symlink`, `read_symlink`, junctions on Windows) and hard links.
@@ -156,7 +156,7 @@ Synchronous paths and files on UTF-8 strings, depending on `support` alone (no l
   - `small_string<N>` — SBO string, shares layout with `small_vector<char>`
 - Compile-time string utilities: `string_ref`.
 - Text encodings: UTF-8 checks (`utf8.h`) and WTF-8 ↔ UTF-16 conversion (`utf16.h`), which keeps a Windows name's lone surrogates.
-- Type-erased string references (`string_buffer.h`, `string_list.h`): `StringBufferRef`, any contiguous resizable buffer of characters for a function to write into, and `StringListRef`, any contiguous range of string-likes for a function to read.
+- Type-erased string references (`buffer_ref.h`, `string_list_ref.h`): `buffer_ref`, any contiguous resizable buffer of characters for a function to write into, and `string_list_ref`, any contiguous range of string-likes for a function to read.
 - Naming-convention conversion (`naming.h`): identity, lower-snake, lower-camel, upper-camel, upper-snake.
 - Type-level utilities: `type_list<Ts...>`, `tuple_traits`, `type_traits`, `expected_try`, `comptime` helpers, and miscellaneous `memory` / `ranges` / `functional` adapters.
 

@@ -43,7 +43,7 @@ std::optional<MountTable> MountTable::parse(std::string_view listing) {
     return table;
 }
 
-void MountTable::to_windows(StringBufferRef out, std::string_view posix) const {
+void MountTable::to_windows(buffer_ref out, std::string_view posix) const {
     // `//server/share` names a share, as on Windows, which no mount covers.
     if(posix.starts_with("//") && !posix.starts_with("///")) {
         out.assign(posix);
@@ -82,7 +82,7 @@ void MountTable::to_windows(StringBufferRef out, std::string_view posix) const {
     out.assign(folded);
 }
 
-std::vector<std::string> runtime_dirs(std::string_view program, StringListRef search_path) {
+std::vector<std::string> runtime_dirs(std::string_view program, string_list_ref search_path) {
     std::vector<std::string> dirs;
     small_string<256> runtime;
     auto holds = [&](std::string_view dir, std::string_view name) {
@@ -102,7 +102,7 @@ std::vector<std::string> runtime_dirs(std::string_view program, StringListRef se
     return dirs;
 }
 
-bool read_symlink(StringBufferRef out, std::string_view path) {
+bool read_symlink(buffer_ref out, std::string_view path) {
     constexpr std::string_view cookie = "!<symlink>";
     // A symlink file holds a path; a program is far larger.
     auto found = status(path);

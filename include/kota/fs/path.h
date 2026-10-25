@@ -7,7 +7,7 @@
 #include <ranges>
 #include <string_view>
 
-#include "kota/support/string_buffer.h"
+#include "kota/support/buffer_ref.h"
 
 /// Paths as text: UTF-8 (WTF-8 on Windows) strings taken apart, joined and
 /// normalized without asking the operating system. Nothing here reads the
@@ -248,20 +248,21 @@ inline Ancestors ancestors(std::string_view p, Style style = native_style) {
 /// prefix (`D:x` onto `C:\a`), takes its place; a rooted `\x` keeps its
 /// prefix; anything else goes after it, behind the separator it already
 /// uses, or `p` uses, or `/`.
-void push(StringBufferRef path, std::string_view p, Style style = native_style);
+void push(buffer_ref path, std::string_view p, Style style = native_style);
 
-/// Cuts `path` to its parent(); false, leaving it as it is, when it has
-/// none.
-bool pop(StringBufferRef path, Style style = native_style);
+/// Cuts `path` to its parent(), the empty one of a single relative name
+/// (`a`) included; false, leaving it as it is, when it has no filename to
+/// cut (`/`, `C:`, ``).
+bool pop(buffer_ref path, Style style = native_style);
 
 /// Replaces the filename of `path` by `name`, or joins `name` onto a path
 /// without one, as push() does.
-void set_file_name(StringBufferRef path, std::string_view name, Style style = native_style);
+void set_file_name(buffer_ref path, std::string_view name, Style style = native_style);
 
 /// Replaces the extension of `path`'s filename by `ext`, which gains a
 /// leading dot when it has none; an empty `ext` removes the extension.
 /// False, leaving it as it is, for a path without a filename.
-bool set_extension(StringBufferRef path, std::string_view ext, Style style = native_style);
+bool set_extension(buffer_ref path, std::string_view ext, Style style = native_style);
 
 /// What normalize() does with `..`.
 enum class DotDot : std::uint8_t {
@@ -277,7 +278,7 @@ enum class DotDot : std::uint8_t {
 /// root, a UNC share included, but stays in a relative path and after a bare
 /// drive (`C:..`), whose directory is unknown. A path left without a
 /// component is `.`; an empty one stays empty.
-void normalize(StringBufferRef path, DotDot dot_dot = DotDot::Fold, Style style = native_style);
+void normalize(buffer_ref path, DotDot dot_dot = DotDot::Fold, Style style = native_style);
 
 /// Writes into `out` the relative path that leads from `base` to `p`, both
 /// taken as written (normalize() them first): `../c` for `a/c` from `a/b`,
@@ -285,10 +286,8 @@ void normalize(StringBufferRef path, DotDot dot_dot = DotDot::Fold, Style style 
 /// told: the roots differ (prefixes compare in either case), or `base` has a
 /// `..` past the part the two share, which climbs out of a directory whose
 /// name neither spells.
-bool relative(StringBufferRef out,
-              std::string_view p,
-              std::string_view base,
-              Style style = native_style);
+bool
+    relative(buffer_ref out, std::string_view p, std::string_view base, Style style = native_style);
 
 /// The rest of `p` after the components of `prefix`, without the separators
 /// before it: `c/d` of `a/b/c/d` under `a/b`, empty for `a/b` itself; none
@@ -303,11 +302,11 @@ bool is_within(std::string_view p, std::string_view ancestor, Style style = nati
 
 /// Turns each `\` of `path` into `/` where `\` separates: in a Windows
 /// path that is not verbatim. Any other path stays as it is.
-void to_slash(StringBufferRef path, Style style = native_style);
+void to_slash(buffer_ref path, Style style = native_style);
 
 /// Turns each `/` of a Windows `path` into `\`, the way Windows programs
 /// print paths; a verbatim one, where `/` is a name's character, stays as it
 /// is.
-void to_backslash(StringBufferRef path);
+void to_backslash(buffer_ref path);
 
 }  // namespace kota::fs::path

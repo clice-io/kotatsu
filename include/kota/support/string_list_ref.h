@@ -15,31 +15,31 @@ namespace kota {
 /// small_string<N> or llvm::StringRef. What a function that reads a list of
 /// strings takes, so that its caller passes the list it has as it is. It
 /// refers to the range as std::span does, and must not outlive it.
-class StringListRef {
+class string_list_ref {
     using Element = std::string_view (*)(const void* first, std::size_t index);
 
 public:
     template <std::ranges::contiguous_range Range>
         requires std::ranges::sized_range<Range> &&
                      std::convertible_to<const std::ranges::range_value_t<Range>&, std::string_view>
-    constexpr StringListRef(const Range& range) noexcept :
+    string_list_ref(const Range& range) noexcept :
         first(std::ranges::data(range)), count(std::ranges::size(range)),
         at(&element<std::ranges::range_value_t<Range>>) {}
 
     /// The strings of a braced list, which lives until the end of the full
     /// expression it is written in.
-    constexpr StringListRef(std::initializer_list<std::string_view> list) noexcept :
+    string_list_ref(std::initializer_list<std::string_view> list) noexcept :
         first(list.begin()), count(list.size()), at(&element<std::string_view>) {}
 
-    constexpr std::size_t size() const noexcept {
+    std::size_t size() const noexcept {
         return count;
     }
 
-    constexpr bool empty() const noexcept {
+    bool empty() const noexcept {
         return count == 0;
     }
 
-    constexpr std::string_view operator[](std::size_t index) const {
+    std::string_view operator[](std::size_t index) const {
         return at(first, index);
     }
 
@@ -49,45 +49,45 @@ public:
         using value_type = std::string_view;
         using difference_type = std::ptrdiff_t;
 
-        constexpr iterator() = default;
+        iterator() = default;
 
-        constexpr std::string_view operator*() const {
+        std::string_view operator*() const {
             return at(first, index);
         }
 
-        constexpr std::string_view operator[](difference_type offset) const {
+        std::string_view operator[](difference_type offset) const {
             return at(first,
                       static_cast<std::size_t>(static_cast<difference_type>(index) + offset));
         }
 
-        constexpr iterator& operator++() {
+        iterator& operator++() {
             ++index;
             return *this;
         }
 
-        constexpr iterator operator++(int) {
+        iterator operator++(int) {
             auto old = *this;
             ++index;
             return old;
         }
 
-        constexpr iterator& operator--() {
+        iterator& operator--() {
             --index;
             return *this;
         }
 
-        constexpr iterator operator--(int) {
+        iterator operator--(int) {
             auto old = *this;
             --index;
             return old;
         }
 
-        constexpr iterator& operator+=(difference_type offset) {
+        iterator& operator+=(difference_type offset) {
             index = static_cast<std::size_t>(static_cast<difference_type>(index) + offset);
             return *this;
         }
 
-        constexpr iterator& operator-=(difference_type offset) {
+        iterator& operator-=(difference_type offset) {
             return *this += -offset;
         }
 
@@ -116,9 +116,9 @@ public:
         }
 
     private:
-        friend class StringListRef;
+        friend class string_list_ref;
 
-        constexpr iterator(const StringListRef& list, std::size_t index) :
+        iterator(const string_list_ref& list, std::size_t index) :
             first(list.first), at(list.at), index(index) {}
 
         const void* first = nullptr;
@@ -128,17 +128,17 @@ public:
         std::size_t index = 0;
     };
 
-    constexpr iterator begin() const {
+    iterator begin() const {
         return {*this, 0};
     }
 
-    constexpr iterator end() const {
+    iterator end() const {
         return {*this, count};
     }
 
 private:
     template <typename String>
-    constexpr static std::string_view element(const void* first, std::size_t index) {
+    static std::string_view element(const void* first, std::size_t index) {
         return static_cast<const String*>(first)[index];
     }
 
@@ -153,4 +153,4 @@ private:
 
 /// Its iterators refer to the strings, not to it.
 template <>
-constexpr inline bool std::ranges::enable_borrowed_range<kota::StringListRef> = true;
+inline bool std::ranges::enable_borrowed_range<kota::string_list_ref> = true;

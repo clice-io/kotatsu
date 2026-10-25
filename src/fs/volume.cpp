@@ -74,20 +74,20 @@ std::expected<Volume, std::error_code> volume(std::string_view path) {
     if(auto error = canonical(real, path)) {
         return std::unexpected(error);
     }
-    auto native = win32::native(real);
-    if(!native) {
-        return std::unexpected(native.error());
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, real)) {
+        return std::unexpected(error);
     }
     // The root is no longer than the path and the separator it may add.
     win32::WidePath root;
-    root.resize(native->size() + 2);
-    if(!::GetVolumePathNameW(native->c_str(), root.data(), static_cast<DWORD>(root.size()))) {
+    root.resize(native.size() + 2);
+    if(!::GetVolumePathNameW(native.c_str(), root.data(), static_cast<DWORD>(root.size()))) {
         return std::unexpected(windows::last_error());
     }
     root.resize(std::wcslen(root.data()));
     // GetDriveTypeW tells a drive or a share only in its plain spelling.
     small_string<256> spelled;
-    windows::from_native(spelled, std::wstring_view(root.data(), root.size()));
+    windows::from_native(spelled, root);
     win32::WidePath plain;
     if(auto error = win32::widen(plain, spelled)) {
         return std::unexpected(error);
@@ -119,12 +119,12 @@ std::expected<Volume, std::error_code> volume(std::string_view path) {
     from_utf16(found.type, std::wstring_view(type));
     return found;
 #else
-    auto c_path = posix::c_path(path);
-    if(!c_path) {
-        return std::unexpected(c_path.error());
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return std::unexpected(error);
     }
     struct statfs info;
-    if(::statfs(c_path->c_str(), &info) != 0) {
+    if(::statfs(c_path.c_str(), &info) != 0) {
         return std::unexpected(posix::last_error());
     }
 #ifdef __APPLE__

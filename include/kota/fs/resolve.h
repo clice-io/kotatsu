@@ -3,7 +3,7 @@
 #include <string_view>
 #include <system_error>
 
-#include "kota/support/string_buffer.h"
+#include "kota/support/buffer_ref.h"
 
 // The functions here write a path into a buffer the caller gives, as
 // path::push() does; the path they take may view that buffer.
@@ -14,7 +14,7 @@ namespace kota::fs {
 /// absolute, every symlink followed; on Windows also with each name's on-disk case and long
 /// form, and through junctions and substituted drives. Asks for no access,
 /// so a file the caller may not read resolves too.
-std::error_code canonical(StringBufferRef out, std::string_view path);
+std::error_code canonical(buffer_ref out, std::string_view path);
 
 /// Writes into `out` canonical() of the longest part of `path` that exists, with the rest
 /// appended and normalized, `..` folded: one name for every spelling of a
@@ -27,7 +27,7 @@ std::error_code canonical(StringBufferRef out, std::string_view path);
 /// an existing file where the OS would fail: `missing/../a` gives `a`. It
 /// never fails: a part the OS cannot resolve, for any reason, is taken as
 /// not existing.
-void weakly_canonical(StringBufferRef out, std::string_view path);
+void weakly_canonical(buffer_ref out, std::string_view path);
 
 /// Writes into `out` `path` made absolute against the current directory,
 /// symlinks left alone. On Windows by Win32's own rules, which fold `.` and `..`, take a
@@ -36,9 +36,9 @@ void weakly_canonical(StringBufferRef out, std::string_view path);
 /// `.` and doubled separators folded, but `..` kept, which a symlink before
 /// it would make name another directory. Fails with
 /// std::errc::invalid_argument on an empty path.
-std::error_code absolute(StringBufferRef out, std::string_view path);
+std::error_code absolute(buffer_ref out, std::string_view path);
 
 /// Writes into `out` the current directory, as the OS reports it.
-std::error_code current_dir(StringBufferRef out);
+std::error_code current_dir(buffer_ref out);
 
 }  // namespace kota::fs

@@ -5,7 +5,7 @@
 #include <string_view>
 #include <system_error>
 
-#include "kota/support/string_buffer.h"
+#include "kota/support/buffer_ref.h"
 #include "kota/support/utf8.h"
 
 namespace kota {
@@ -13,7 +13,7 @@ namespace kota {
 namespace detail {
 
 template <typename Char>
-void from_utf16(StringBufferRef out, std::basic_string_view<Char> text) {
+void from_utf16(buffer_ref out, std::basic_string_view<Char> text) {
     // Three bytes at most for a unit, four for a pair of them.
     auto chars = out.resize(text.size() * 3);
     std::size_t length = 0;
@@ -51,7 +51,7 @@ void from_utf16(StringBufferRef out, std::basic_string_view<Char> text) {
 }
 
 template <typename Char>
-std::error_code to_utf16(BasicStringBufferRef<Char> out, std::string_view text) {
+std::error_code to_utf16(basic_buffer_ref<Char> out, std::string_view text) {
     // A unit at most for each byte.
     auto units = out.resize(text.size());
     std::size_t length = 0;
@@ -91,24 +91,24 @@ std::error_code to_utf16(BasicStringBufferRef<Char> out, std::string_view text) 
 /// sequence cut short, an overlong form, a code point past U+10FFFF, and a
 /// surrogate pair spelled as two lone surrogates (CESU-8), which UTF-8
 /// spells in four bytes. A NUL converts like any code point.
-inline std::error_code to_utf16(BasicStringBufferRef<char16_t> out, std::string_view text) {
+inline std::error_code to_utf16(basic_buffer_ref<char16_t> out, std::string_view text) {
     return detail::to_utf16(out, text);
 }
 
 /// Writes `text` into `out` as WTF-8: UTF-8, with each lone surrogate, which
 /// a Windows name may hold, in the three bytes to_utf16() reads back as that
 /// surrogate.
-inline void from_utf16(StringBufferRef out, std::u16string_view text) {
+inline void from_utf16(buffer_ref out, std::u16string_view text) {
     detail::from_utf16(out, text);
 }
 
 #if WCHAR_MAX <= 0xFFFF
 /// The same, for the wide strings of the Windows API.
-inline std::error_code to_utf16(BasicStringBufferRef<wchar_t> out, std::string_view text) {
+inline std::error_code to_utf16(basic_buffer_ref<wchar_t> out, std::string_view text) {
     return detail::to_utf16(out, text);
 }
 
-inline void from_utf16(StringBufferRef out, std::wstring_view text) {
+inline void from_utf16(buffer_ref out, std::wstring_view text) {
     detail::from_utf16(out, text);
 }
 #endif

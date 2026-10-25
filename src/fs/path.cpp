@@ -242,7 +242,7 @@ std::string_view extension(std::string_view p, Style style) {
     return dot == std::string_view::npos ? std::string_view() : name.substr(dot);
 }
 
-void push(StringBufferRef path, std::string_view p, Style style) {
+void push(buffer_ref path, std::string_view p, Style style) {
     auto base = path.view();
     if(base.empty() || is_absolute(p, style)) {
         path.assign(p);
@@ -283,7 +283,7 @@ void push(StringBufferRef path, std::string_view p, Style style) {
     }
 }
 
-bool pop(StringBufferRef path, Style style) {
+bool pop(buffer_ref path, Style style) {
     auto p = path.view();
     if(filename(p, style).empty()) {
         return false;
@@ -292,12 +292,12 @@ bool pop(StringBufferRef path, Style style) {
     return true;
 }
 
-void set_file_name(StringBufferRef path, std::string_view name, Style style) {
+void set_file_name(buffer_ref path, std::string_view name, Style style) {
     pop(path, style);
     push(path, name, style);
 }
 
-bool set_extension(StringBufferRef path, std::string_view ext, Style style) {
+bool set_extension(buffer_ref path, std::string_view ext, Style style) {
     auto p = path.view();
     auto name = filename(p, style);
     if(name.empty()) {
@@ -314,7 +314,7 @@ bool set_extension(StringBufferRef path, std::string_view ext, Style style) {
     return true;
 }
 
-void normalize(StringBufferRef path, DotDot dot_dot, Style style) {
+void normalize(buffer_ref path, DotDot dot_dot, Style style) {
     auto p = path.view();
     if(p.empty()) {
         return;
@@ -362,7 +362,7 @@ void normalize(StringBufferRef path, DotDot dot_dot, Style style) {
     path.resize(length);
 }
 
-bool relative(StringBufferRef out, std::string_view p, std::string_view base, Style style) {
+bool relative(buffer_ref out, std::string_view p, std::string_view base, Style style) {
     auto pr = root(p, style);
     auto br = root(base, style);
     if(!same_root(pr, br, style)) {
@@ -429,13 +429,13 @@ bool is_within(std::string_view p, std::string_view ancestor, Style style) {
     return strip_prefix(p, ancestor, style).has_value();
 }
 
-void to_slash(StringBufferRef path, Style style) {
+void to_slash(buffer_ref path, Style style) {
     if(style == Style::Windows && !is_verbatim(root(path.view(), style).prefix)) {
         std::ranges::replace(path.chars(), '\\', '/');
     }
 }
 
-void to_backslash(StringBufferRef path) {
+void to_backslash(buffer_ref path) {
     if(!is_verbatim(root(path.view(), Style::Windows).prefix)) {
         std::ranges::replace(path.chars(), '/', '\\');
     }

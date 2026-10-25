@@ -6,8 +6,8 @@
 #include <utility>
 #include <vector>
 
-#include "kota/support/string_buffer.h"
-#include "kota/support/string_list.h"
+#include "kota/support/buffer_ref.h"
+#include "kota/support/string_list_ref.h"
 #include "kota/fs/path.h"
 
 /// The POSIX paths Cygwin and MSYS2 programs print and take on Windows.
@@ -37,7 +37,7 @@ struct MountTable {
     /// POSIX path `posix` names. `.` and `..` fold first, as the runtime
     /// folds them, so `..` out of a mount point leaves the mount;
     /// `//server/share/...` is the share itself.
-    void to_windows(StringBufferRef out, std::string_view posix) const;
+    void to_windows(buffer_ref out, std::string_view posix) const;
 };
 
 /// The directories that hold a Cygwin or MSYS2 runtime (cygwin1.dll,
@@ -45,12 +45,12 @@ struct MountTable {
 /// directory, then each of `search_path`, PATH's directories. A program
 /// loads the first; the others are where a POSIX path it printed may
 /// belong when PATH holds two runtimes.
-std::vector<std::string> runtime_dirs(std::string_view program, StringListRef search_path);
+std::vector<std::string> runtime_dirs(std::string_view program, string_list_ref search_path);
 
 /// Writes into `out` the target of the Cygwin symlink at `path`, a file
 /// holding the cookie `!<symlink>` and the target, which the package
 /// installer writes for a package's links (`/usr/bin/cc`) and Windows cannot
 /// follow. False, leaving `out` as it is, when `path` is no such file.
-bool read_symlink(StringBufferRef out, std::string_view path);
+bool read_symlink(buffer_ref out, std::string_view path);
 
 }  // namespace kota::fs::cygwin

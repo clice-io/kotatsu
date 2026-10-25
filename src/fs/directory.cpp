@@ -302,11 +302,11 @@ struct DirCloser {
 using DirHandle = std::unique_ptr<DIR, DirCloser>;
 
 std::expected<DirHandle, std::error_code> open_dir(std::string_view path) {
-    auto c_path = posix::c_path(path);
-    if(!c_path) {
-        return std::unexpected(c_path.error());
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return std::unexpected(error);
     }
-    DirHandle dir(::opendir(c_path->c_str()));
+    DirHandle dir(::opendir(c_path.c_str()));
     if(!dir) {
         return std::unexpected(posix::last_error());
     }
@@ -407,9 +407,9 @@ std::string_view without_trailing_separators(std::string_view path) {
 
 std::error_code create_link(std::string_view target, std::string_view link, bool directory) {
 #ifdef _WIN32
-    auto native = win32::native(link);
-    if(!native) {
-        return native.error();
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, link)) {
+        return error;
     }
     // The target stays as written, relative or not; only `\` separates in it.
     small_string<256> spelled(target);
@@ -422,27 +422,27 @@ std::error_code create_link(std::string_view target, std::string_view link, bool
     // Developer mode lets anyone create a link, but older systems reject the
     // flag that asks for it.
     constexpr DWORD unprivileged = 0x2;
-    if(::CreateSymbolicLinkW(native->c_str(), wide.c_str(), flags | unprivileged)) {
+    if(::CreateSymbolicLinkW(native.c_str(), wide.c_str(), flags | unprivileged)) {
         return {};
     }
     if(::GetLastError() == ERROR_INVALID_PARAMETER &&
-       ::CreateSymbolicLinkW(native->c_str(), wide.c_str(), flags)) {
+       ::CreateSymbolicLinkW(native.c_str(), wide.c_str(), flags)) {
         return {};
     }
     return windows::last_error();
 #else
     // POSIX tells a link to a directory by its target alone.
     static_cast<void>(directory);
-    auto c_target = posix::c_path(target);
-    if(!c_target) {
-        return c_target.error();
+    posix::CPath c_target;
+    if(auto error = c_target.assign(target)) {
+        return error;
     }
-    auto c_link = posix::c_path(link);
-    if(!c_link) {
-        return c_link.error();
+    posix::CPath c_link;
+    if(auto error = c_link.assign(link)) {
+        return error;
     }
-    return ::symlink(c_target->c_str(), c_link->c_str()) == 0 ? std::error_code()
-                                                              : posix::last_error();
+    return ::symlink(c_target.c_str(), c_link.c_str()) == 0 ? std::error_code()
+                                                            : posix::last_error();
 #endif
 }
 
@@ -561,20 +561,20 @@ std::expected<std::vector<StatusEntry>, std::error_code> read_dir_status(std::st
 
 std::expected<bool, std::error_code> create_directory(std::string_view path) {
 #ifdef _WIN32
-    auto native = win32::native(path);
-    if(!native) {
-        return std::unexpected(native.error());
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, path)) {
+        return std::unexpected(error);
     }
-    if(::CreateDirectoryW(native->c_str(), nullptr)) {
+    if(::CreateDirectoryW(native.c_str(), nullptr)) {
         return true;
     }
     auto error = windows::last_error();
 #else
-    auto c_path = posix::c_path(path);
-    if(!c_path) {
-        return std::unexpected(c_path.error());
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return std::unexpected(error);
     }
-    if(::mkdir(c_path->c_str(), 0777) == 0) {
+    if(::mkdir(c_path.c_str(), 0777) == 0) {
         return true;
     }
     auto error = posix::last_error();
@@ -614,11 +614,11 @@ std::expected<bool, std::error_code> create_directories(std::string_view path) {
 
 std::expected<bool, std::error_code> remove(std::string_view path) {
 #ifdef _WIN32
-    auto native = win32::native(path);
-    if(!native) {
-        return std::unexpected(native.error());
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, path)) {
+        return std::unexpected(error);
     }
-    auto handle = win32::try_open(native->c_str(), DELETE, FILE_FLAG_OPEN_REPARSE_POINT);
+    auto handle = win32::try_open(native.c_str(), DELETE, FILE_FLAG_OPEN_REPARSE_POINT);
     if(handle.get() == INVALID_HANDLE_VALUE) {
         auto error = ::GetLastError();
         if(names_nothing(error)) {
@@ -631,11 +631,11 @@ std::expected<bool, std::error_code> remove(std::string_view path) {
     }
     return true;
 #else
-    auto c_path = posix::c_path(without_trailing_separators(path));
-    if(!c_path) {
-        return std::unexpected(c_path.error());
+    posix::CPath c_path;
+    if(auto error = c_path.assign(without_trailing_separators(path))) {
+        return std::unexpected(error);
     }
-    if(::unlink(c_path->c_str()) == 0) {
+    if(::unlink(c_path.c_str()) == 0) {
         return true;
     }
     auto error = errno;
@@ -645,7 +645,7 @@ std::expected<bool, std::error_code> remove(std::string_view path) {
     // A directory: Linux says EISDIR, macOS EPERM, which a file may give for
     // want of permission too.
     if(error == EISDIR || error == EPERM) {
-        if(::rmdir(c_path->c_str()) == 0) {
+        if(::rmdir(c_path.c_str()) == 0) {
             return true;
         }
         // ENOTDIR: a file after all, which the first error is about.
@@ -667,12 +667,12 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) 
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
 #ifdef _WIN32
-    auto native = win32::native(path);
-    if(!native) {
-        return std::unexpected(native.error());
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, path)) {
+        return std::unexpected(error);
     }
     auto handle = open_to_remove([&](DWORD access) {
-        return win32::try_open(native->c_str(), access, FILE_FLAG_OPEN_REPARSE_POINT);
+        return win32::try_open(native.c_str(), access, FILE_FLAG_OPEN_REPARSE_POINT);
     });
     if(handle.get() == INVALID_HANDLE_VALUE) {
         if(names_nothing(::GetLastError())) {
@@ -682,12 +682,12 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) 
     }
     return remove_opened(handle);
 #else
-    auto c_path = posix::c_path(without_trailing_separators(path));
-    if(!c_path) {
-        return std::unexpected(c_path.error());
+    posix::CPath c_path;
+    if(auto error = c_path.assign(without_trailing_separators(path))) {
+        return std::unexpected(error);
     }
     std::uint64_t removed = 0;
-    if(auto error = remove_entry(AT_FDCWD, c_path->c_str(), DT_UNKNOWN, removed)) {
+    if(auto error = remove_entry(AT_FDCWD, c_path.c_str(), DT_UNKNOWN, removed)) {
         return std::unexpected(error);
     }
     return removed;
@@ -696,27 +696,27 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) 
 
 std::error_code rename(std::string_view from, std::string_view to) {
 #ifdef _WIN32
-    auto source = win32::native(from);
-    if(!source) {
-        return source.error();
+    win32::WidePath source;
+    if(auto error = windows::to_native(source, from)) {
+        return error;
     }
-    auto target = win32::native(to);
-    if(!target) {
-        return target.error();
+    win32::WidePath target;
+    if(auto error = windows::to_native(target, to)) {
+        return error;
     }
     auto handle =
-        win32::try_open(source->c_str(), DELETE | SYNCHRONIZE, FILE_FLAG_OPEN_REPARSE_POINT);
+        win32::try_open(source.c_str(), DELETE | SYNCHRONIZE, FILE_FLAG_OPEN_REPARSE_POINT);
     if(handle.get() == INVALID_HANDLE_VALUE) {
         return windows::last_error();
     }
-    auto name_bytes = target->size() * sizeof(wchar_t);
+    auto name_bytes = target.size() * sizeof(wchar_t);
     std::vector<std::byte> buffer(offsetof(RenameInfoEx, FileName) + name_bytes + sizeof(wchar_t));
     auto* info = reinterpret_cast<RenameInfoEx*>(buffer.data());
     info->Flags = rename_replace | rename_posix_semantics | rename_ignore_readonly;
     info->RootDirectory = nullptr;
     info->FileNameLength = static_cast<DWORD>(name_bytes);
     std::memcpy(buffer.data() + offsetof(RenameInfoEx, FileName),
-                target->c_str(),
+                target.c_str(),
                 name_bytes + sizeof(wchar_t));
     if(::SetFileInformationByHandle(handle.get(),
                                     rename_info_ex,
@@ -729,21 +729,20 @@ std::error_code rename(std::string_view from, std::string_view to) {
     }
     // A file system without POSIX renames (FAT).
     handle = win32::Handle();
-    if(::MoveFileExW(source->c_str(), target->c_str(), MOVEFILE_REPLACE_EXISTING)) {
+    if(::MoveFileExW(source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         return {};
     }
     return windows::last_error();
 #else
-    auto source = posix::c_path(from);
-    if(!source) {
-        return source.error();
+    posix::CPath source;
+    if(auto error = source.assign(from)) {
+        return error;
     }
-    auto target = posix::c_path(to);
-    if(!target) {
-        return target.error();
+    posix::CPath target;
+    if(auto error = target.assign(to)) {
+        return error;
     }
-    return ::rename(source->c_str(), target->c_str()) == 0 ? std::error_code()
-                                                           : posix::last_error();
+    return ::rename(source.c_str(), target.c_str()) == 0 ? std::error_code() : posix::last_error();
 #endif
 }
 
@@ -755,13 +754,13 @@ std::error_code create_directory_symlink(std::string_view target, std::string_vi
     return create_link(target, link, true);
 }
 
-std::error_code read_symlink(StringBufferRef out, std::string_view path) {
+std::error_code read_symlink(buffer_ref out, std::string_view path) {
 #ifdef _WIN32
-    auto native = win32::native(path);
-    if(!native) {
-        return native.error();
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, path)) {
+        return error;
     }
-    auto handle = win32::try_open(native->c_str(), 0, FILE_FLAG_OPEN_REPARSE_POINT);
+    auto handle = win32::try_open(native.c_str(), 0, FILE_FLAG_OPEN_REPARSE_POINT);
     if(handle.get() == INVALID_HANDLE_VALUE) {
         return windows::last_error();
     }
@@ -842,14 +841,14 @@ std::error_code read_symlink(StringBufferRef out, std::string_view path) {
         default: return std::make_error_code(std::errc::invalid_argument);
     }
 #else
-    auto c_path = posix::c_path(path);
-    if(!c_path) {
-        return c_path.error();
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return error;
     }
     // A link's size says nothing in /proc: grow until the target fits.
     auto target = out.resize(256);
     while(true) {
-        auto size = ::readlink(c_path->c_str(), target.data(), target.size());
+        auto size = ::readlink(c_path.c_str(), target.data(), target.size());
         if(size < 0) {
             out.clear();
             return posix::last_error();
@@ -865,29 +864,29 @@ std::error_code read_symlink(StringBufferRef out, std::string_view path) {
 
 std::error_code create_hard_link(std::string_view target, std::string_view link) {
 #ifdef _WIN32
-    auto native_target = win32::native(target);
-    if(!native_target) {
-        return native_target.error();
+    win32::WidePath native_target;
+    if(auto error = windows::to_native(native_target, target)) {
+        return error;
     }
-    auto native_link = win32::native(link);
-    if(!native_link) {
-        return native_link.error();
+    win32::WidePath native_link;
+    if(auto error = windows::to_native(native_link, link)) {
+        return error;
     }
-    if(!::CreateHardLinkW(native_link->c_str(), native_target->c_str(), nullptr)) {
+    if(!::CreateHardLinkW(native_link.c_str(), native_target.c_str(), nullptr)) {
         return windows::last_error();
     }
     return {};
 #else
-    auto c_target = posix::c_path(target);
-    if(!c_target) {
-        return c_target.error();
+    posix::CPath c_target;
+    if(auto error = c_target.assign(target)) {
+        return error;
     }
-    auto c_link = posix::c_path(link);
-    if(!c_link) {
-        return c_link.error();
+    posix::CPath c_link;
+    if(auto error = c_link.assign(link)) {
+        return error;
     }
     // Not link(), which follows a symlink on macOS.
-    if(::linkat(AT_FDCWD, c_target->c_str(), AT_FDCWD, c_link->c_str(), 0) != 0) {
+    if(::linkat(AT_FDCWD, c_target.c_str(), AT_FDCWD, c_link.c_str(), 0) != 0) {
         return posix::last_error();
     }
     return {};

@@ -149,13 +149,13 @@ std::expected<Status, std::error_code> listed_status(win32::WidePath& path) {
 }
 
 std::expected<Status, std::error_code> status_of(std::string_view path, bool follow) {
-    auto native = win32::native(path);
-    if(!native) {
-        return std::unexpected(native.error());
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, path)) {
+        return std::unexpected(error);
     }
     if(auto query = by_name()) {
         StatBasicByName info;
-        if(query(native->c_str(), stat_basic_by_name, &info, sizeof(info))) {
+        if(query(native.c_str(), stat_basic_by_name, &info, sizeof(info))) {
             // A link to follow takes an open, and so does a remote file: a
             // network file system answers the query with less care.
             bool link = info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
@@ -174,20 +174,20 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
         }
     }
     DWORD flags = follow ? 0 : FILE_FLAG_OPEN_REPARSE_POINT;
-    auto handle = win32::try_open(native->c_str(), 0, flags);
+    auto handle = win32::try_open(native.c_str(), 0, flags);
     if(handle.get() != INVALID_HANDLE_VALUE) {
         return win32::handle_status(handle.get());
     }
     auto error = ::GetLastError();
     if(error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED) {
-        auto listed = listed_status(*native);
+        auto listed = listed_status(native);
         if(listed && !(follow && listed->type == FileType::Symlink)) {
             return listed;
         }
     } else if(error == ERROR_CANT_ACCESS_FILE && follow) {
         // A reparse point no path is resolved through, which still cannot be
         // opened as a file: a Unix socket, an app execution alias.
-        auto itself = win32::try_open(native->c_str(), 0, FILE_FLAG_OPEN_REPARSE_POINT);
+        auto itself = win32::try_open(native.c_str(), 0, FILE_FLAG_OPEN_REPARSE_POINT);
         if(itself.get() != INVALID_HANDLE_VALUE) {
             auto result = win32::handle_status(itself.get());
             if(result && result->type != FileType::Symlink) {
@@ -201,12 +201,12 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
 #else
 
 std::expected<Status, std::error_code> status_of(std::string_view path, bool follow) {
-    auto c_path = posix::c_path(path);
-    if(!c_path) {
-        return std::unexpected(c_path.error());
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return std::unexpected(error);
     }
     struct stat info;
-    if((follow ? ::stat(c_path->c_str(), &info) : ::lstat(c_path->c_str(), &info)) != 0) {
+    if((follow ? ::stat(c_path.c_str(), &info) : ::lstat(c_path.c_str(), &info)) != 0) {
         return std::unexpected(posix::last_error());
     }
     return posix::make_status(info);

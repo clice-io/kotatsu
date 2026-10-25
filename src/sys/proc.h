@@ -14,10 +14,9 @@
 #include "kota/support/string_ref.h"
 
 #ifdef __linux__
-#include <expected>
-#include <format>
 #include <system_error>
 
+#include "kota/support/buffer_ref.h"
 #include "kota/support/small_string.h"
 #include "kota/fs/file.h"
 #endif
@@ -25,25 +24,31 @@
 namespace kota::sys {
 
 #ifdef __linux__
-/// The path of `file` in the /proc directory of process `pid`, this one for 0.
-inline std::string proc_path(int pid, std::string_view file) {
+/// Writes into `out` the path of `file` in the /proc directory of process
+/// `pid`, this one for 0.
+inline void proc_path(buffer_ref out, int pid, std::string_view file) {
+    out.assign("/proc/");
     if(pid == 0) {
-        return std::format("/proc/self/{}", file);
+        out.append("self");
+    } else {
+        char digits[16];
+        auto end = std::to_chars(digits, digits + sizeof(digits), pid).ptr;
+        out.append(std::string_view(digits, static_cast<std::size_t>(end - digits)));
     }
-    return std::format("/proc/{}/{}", pid, file);
+    out.push_back('/');
+    out.append(file);
 }
 
 /// The text of a file of /proc, on the stack while it is as short as most
 /// are.
 using ProcText = small_string<4096>;
 
-/// The text of the file at `path`.
-inline std::expected<ProcText, std::error_code> read_text(std::string_view path) {
-    ProcText text;
-    if(auto error = fs::read_file(text, path)) {
-        return std::unexpected(error);
-    }
-    return text;
+/// Writes into `out` the text of `file` in the /proc directory of process
+/// `pid`, this one for 0.
+inline std::error_code read_proc(buffer_ref out, int pid, std::string_view file) {
+    small_string<64> path;
+    proc_path(path, pid, file);
+    return fs::read_file(out, path);
 }
 
 /// The text of the file at `path`, for a cgroup::Reader.

@@ -17,7 +17,7 @@
 
 namespace kota::fs {
 
-std::error_code canonical(StringBufferRef out, std::string_view path) {
+std::error_code canonical(buffer_ref out, std::string_view path) {
 #ifdef _WIN32
     auto handle = win32::open(path, 0);
     if(!handle) {
@@ -32,14 +32,14 @@ std::error_code canonical(StringBufferRef out, std::string_view path) {
        })) {
         return error;
     }
-    windows::from_native(out, std::wstring_view(final.data(), final.size()));
+    windows::from_native(out, final);
     return {};
 #else
-    auto c_path = posix::c_path(path);
-    if(!c_path) {
-        return c_path.error();
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return error;
     }
-    std::unique_ptr<char, decltype(&std::free)> real(::realpath(c_path->c_str(), nullptr),
+    std::unique_ptr<char, decltype(&std::free)> real(::realpath(c_path.c_str(), nullptr),
                                                      &std::free);
     if(!real) {
         return posix::last_error();
@@ -49,7 +49,7 @@ std::error_code canonical(StringBufferRef out, std::string_view path) {
 #endif
 }
 
-void weakly_canonical(StringBufferRef out, std::string_view path) {
+void weakly_canonical(buffer_ref out, std::string_view path) {
     small_string<256> full;
     if(absolute(full, path)) {
         out.assign(path);
@@ -75,7 +75,7 @@ void weakly_canonical(StringBufferRef out, std::string_view path) {
     out.assign(real);
 }
 
-std::error_code absolute(StringBufferRef out, std::string_view path) {
+std::error_code absolute(buffer_ref out, std::string_view path) {
     if(path.empty()) {
         return std::make_error_code(std::errc::invalid_argument);
     }
@@ -88,7 +88,7 @@ std::error_code absolute(StringBufferRef out, std::string_view path) {
     if(auto error = win32::full_path(full, wide.c_str())) {
         return error;
     }
-    windows::from_native(out, std::wstring_view(full.data(), full.size()));
+    windows::from_native(out, full);
     return {};
 #else
     if(path::is_absolute(path)) {
@@ -106,7 +106,7 @@ std::error_code absolute(StringBufferRef out, std::string_view path) {
 #endif
 }
 
-std::error_code current_dir(StringBufferRef out) {
+std::error_code current_dir(buffer_ref out) {
 #ifdef _WIN32
     win32::WidePath cwd;
     if(auto error = win32::fill_wide(cwd, [](wchar_t* buffer, DWORD size) {
@@ -114,7 +114,7 @@ std::error_code current_dir(StringBufferRef out) {
        })) {
         return error;
     }
-    windows::from_native(out, std::wstring_view(cwd.data(), cwd.size()));
+    windows::from_native(out, cwd);
     return {};
 #else
     auto buffer = out.resize(256);

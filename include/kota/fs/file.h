@@ -8,7 +8,7 @@
 #include <string_view>
 #include <system_error>
 
-#include "kota/support/string_buffer.h"
+#include "kota/support/buffer_ref.h"
 #include "kota/fs/status.h"
 
 namespace kota::fs {
@@ -153,7 +153,7 @@ private:
 
 /// Writes into `out` the bytes of a file. Read, not mapped: on Windows a
 /// mapped file keeps an editor from saving over it.
-std::error_code read_file(StringBufferRef out, std::string_view path);
+std::error_code read_file(buffer_ref out, std::string_view path);
 
 /// Writes `bytes` as the whole of a file, created or emptied first.
 std::error_code write_file(std::string_view path, std::string_view bytes);
@@ -173,7 +173,7 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
 /// Creates an empty file in `directory`, named `prefix`, random characters
 /// and `suffix`, and none of it there before: the file, open for reading and
 /// writing, and its path written into `path`. Nothing removes it.
-std::expected<File, std::error_code> create_temp_file(StringBufferRef path,
+std::expected<File, std::error_code> create_temp_file(buffer_ref path,
                                                       std::string_view directory,
                                                       std::string_view prefix,
                                                       std::string_view suffix);
@@ -181,7 +181,7 @@ std::expected<File, std::error_code> create_temp_file(StringBufferRef path,
 /// Creates an empty directory in `directory`, named `prefix` and random
 /// characters, and none of it there before, and writes its path into `path`.
 /// Nothing removes it.
-std::error_code create_temp_directory(StringBufferRef path,
+std::error_code create_temp_directory(buffer_ref path,
                                       std::string_view directory,
                                       std::string_view prefix);
 

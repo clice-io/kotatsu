@@ -21,15 +21,27 @@ inline std::error_code last_error() {
     return std::error_code(errno, std::generic_category());
 }
 
-/// `path` as the system calls take it, through c_str(), on the stack when it
-/// is no longer than most paths are; a NUL inside, which would cut it short,
-/// fails.
-inline std::expected<small_string<256>, std::error_code> c_path(std::string_view path) {
-    if(path.find('\0') != std::string_view::npos) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+/// A path as the system calls take it, NUL-terminated, on the stack while
+/// it is no longer than most paths are.
+class CPath {
+public:
+    /// Takes `path`: invalid_argument for a NUL inside, which would cut it
+    /// short.
+    std::error_code assign(std::string_view path) {
+        if(path.find('\0') != std::string_view::npos) {
+            return std::make_error_code(std::errc::invalid_argument);
+        }
+        text.assign(path);
+        return {};
     }
-    return small_string<256>(path);
-}
+
+    const char* c_str() {
+        return text.c_str();
+    }
+
+private:
+    small_string<256> text;
+};
 
 inline Status make_status(const struct stat& info) {
     auto type = S_ISREG(info.st_mode)    ? FileType::Regular

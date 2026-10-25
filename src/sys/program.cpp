@@ -240,8 +240,9 @@ std::expected<std::string, std::error_code> known_directory(auto read) {
             return std::unexpected(fs::windows::last_error());
         }
         if(size < path.size()) {
-            path.resize(size);
-            return narrow(std::wstring_view(path));
+            std::string directory;
+            from_utf16(directory, std::wstring_view(path.data(), size));
+            return directory;
         }
         path.resize(size);
     }
