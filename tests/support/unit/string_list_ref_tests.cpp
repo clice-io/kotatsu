@@ -1,9 +1,12 @@
 #include <algorithm>
 #include <array>
 #include <iterator>
+#include <list>
 #include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "kota/zest/zest.h"
@@ -44,6 +47,20 @@ ZEST_CASE(refers_to_a_list_of_any_string_type) {
     ZEXPECT(copied(views) == Strings{"a", "bc"});
     ZEXPECT(copied(pointers) == Strings{"a", "bc"});
     ZEXPECT(copied(small_strings) == Strings{"a", "bc"});
+}
+
+ZEST_CASE(refers_to_a_span_and_an_array) {
+    Strings strings{"a", "bc"};
+    std::span<const std::string> span(strings);
+    const char* pointers[] = {"a", "bc"};
+    ZEXPECT(copied(span) == Strings{"a", "bc"});
+    ZEXPECT(copied(pointers) == Strings{"a", "bc"});
+}
+
+ZEST_CASE(takes_only_a_contiguous_range_of_strings) {
+    ZSTATIC_EXPECT(!std::is_convertible_v<const std::list<std::string>&, string_list_ref>);
+    ZSTATIC_EXPECT(!std::is_convertible_v<const std::vector<int>&, string_list_ref>);
+    ZSTATIC_EXPECT(!std::is_convertible_v<const std::vector<std::u16string>&, string_list_ref>);
 }
 
 ZEST_CASE(refers_to_a_braced_list) {

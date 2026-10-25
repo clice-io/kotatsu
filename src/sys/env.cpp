@@ -6,6 +6,7 @@
 #include <string>
 
 #include "os.h"
+#include "kota/support/small_string.h"
 #include "kota/support/string_ref.h"
 
 #ifdef _WIN32

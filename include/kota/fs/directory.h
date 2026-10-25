@@ -70,10 +70,12 @@ std::error_code create_symlink(std::string_view target, std::string_view link);
 /// The same for a directory, which Windows tells from a file's.
 std::error_code create_directory_symlink(std::string_view target, std::string_view link);
 
-/// Writes into `out` the target of the symlink `path`, as it was written: on Windows with `\`
-/// for `/`, as Windows keeps it, and for a junction the directory it
-/// names. Fails with std::errc::invalid_argument for a file that is no
-/// symlink, a Cygwin one included (cygwin::read_symlink reads those).
+/// Writes into `out` the target of the symlink `path`, as it was written:
+/// on Windows with `\` for `/`, as Windows keeps it, and for a junction the
+/// directory it names; where the link keeps only the name the system
+/// follows, that name. Fails with std::errc::invalid_argument for a file
+/// that is no symlink, a Cygwin one included (cygwin::read_symlink reads
+/// those).
 std::error_code read_symlink(buffer_ref out, std::string_view path);
 
 /// Creates `link`, another name of the existing file `target`, which must

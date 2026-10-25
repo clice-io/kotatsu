@@ -143,6 +143,15 @@ ZEST_CASE(absolute_takes_the_current_directory) {
     ZEXPECT(made == normalized);
 }
 
+// The path may view the buffer the result goes to.
+ZEST_CASE(absolute_resolves_in_place) {
+    std::string made;
+    ZASSERT(!absolute(made, "some/name"));
+    std::string p = "some/name";
+    ZEXPECT(!absolute(p, p));
+    ZEXPECT(p == made);
+}
+
 ZEST_CASE(absolute_follows_the_platform_rules) {
     std::string made;
 #ifdef _WIN32

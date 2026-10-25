@@ -131,7 +131,7 @@ process(result.value());
 ## Naming Conventions
 
 - **Variables, member fields, function names**: `snake_case`. Class member fields do NOT use any special suffix/prefix (no trailing `_`, no `m_` prefix).
-- **Class names, template parameter names, enum names**: `PascalCase`. Exception: some class names also use `snake_case` — follow the existing style in the module.
+- **Class names, template parameter names, enum names**: `PascalCase`. Exception: some class names also use `snake_case` — follow the existing style in the module — and so do types modelled on the standard library's views and references: `string_ref`, `function_ref`, `buffer_ref`, `string_list_ref`, `components_view`, `table_view`.
 - **Enum values**: `PascalCase`.
 - Doc comments on declarations use `///`.
 
@@ -202,4 +202,4 @@ process(result.value());
 
 - For string parameters, prefer `std::string_view` > `const std::string&`.
 - For array/span parameters, prefer `std::span` > `const std::vector&`.
-- A function that produces text, such as a path or what the system reports, writes it into a `buffer_ref` parameter (`support/buffer_ref.h`) rather than returning `std::string`: the caller picks the buffer (`std::string`, `small_string<N>`, `llvm::SmallString<N>`) and may reuse it across calls. A function that reads a list of strings takes a `string_list_ref` (`support/string_list_ref.h`). A sequence drawn from an input, such as a path's components, is a lazy view of it; lists of records (directory entries, environment variables) stay `std::vector`. fs and sys follow this.
+- A function that produces text, such as a path or what the system reports, writes it into a `buffer_ref` parameter (`support/buffer_ref.h`) rather than returning `std::string`: the caller picks the buffer (`std::string`, `small_string<N>`, `llvm::SmallString<N>`) and may reuse it across calls. A function that reads a list of strings takes a `string_list_ref` (`support/string_list_ref.h`). A sequence drawn from an input, such as a path's components, is a lazy view of it; lists of records (directory entries, environment variables) stay `std::vector`. fs follows this.

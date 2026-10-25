@@ -343,6 +343,15 @@ ZEST_CASE(read_symlink_gives_the_target_as_written) {
     ZEXPECT(!create_symlink("missing", dir.file("dangling")));
     ZEXPECT(!read_symlink(target, dir.file("dangling")));
     ZEXPECT(target == "missing");
+    std::filesystem::create_directory(dir.path / "sub");
+    test::write_text(dir.file("sub/target"), "text");
+    ZEXPECT(!create_symlink("sub/target", dir.file("nested")));
+    ZEXPECT(!read_symlink(target, dir.file("nested")));
+#ifdef _WIN32
+    ZEXPECT(target == R"(sub\target)");
+#else
+    ZEXPECT(target == "sub/target");
+#endif
 }
 
 ZEST_CASE(read_symlink_of_a_file_fails) {
@@ -351,6 +360,12 @@ ZEST_CASE(read_symlink_of_a_file_fails) {
     std::string target;
     ZEXPECT(read_symlink(target, dir.file("file")) == std::errc::invalid_argument);
     ZEXPECT(read_symlink(target, dir.file("missing")) == std::errc::no_such_file_or_directory);
+}
+
+ZEST_CASE(read_symlink_of_a_directory_fails) {
+    test::TempDir dir;
+    std::string target;
+    ZEXPECT(read_symlink(target, dir.root()) == std::errc::invalid_argument);
 }
 
 #ifdef _WIN32
@@ -396,6 +411,18 @@ ZEST_CASE(create_hard_link_over_a_file_fails) {
     ZEXPECT(create_hard_link(dir.file("missing"), dir.file("other")) ==
             std::errc::no_such_file_or_directory);
     ZEXPECT(test::read_text(dir.file("taken")) == "old");
+}
+
+ZEST_CASE(create_hard_link_to_a_directory_fails) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "sub");
+    auto error = create_hard_link(dir.file("sub"), dir.file("other"));
+#ifdef _WIN32
+    ZEXPECT(error == std::errc::permission_denied);
+#else
+    ZEXPECT(error == std::errc::operation_not_permitted);
+#endif
+    ZEXPECT(exists(dir.file("other")) == false);
 }
 
 ZEST_CASE(rename_of_nothing_fails) {

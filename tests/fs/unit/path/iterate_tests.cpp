@@ -31,10 +31,10 @@ Names collected(View view) {
 ZEST_SUITE(fs_path_iterate) {
 
 ZEST_CASE(views_are_forward_ranges) {
-    ZSTATIC_EXPECT(std::ranges::view<Components>);
-    ZSTATIC_EXPECT(std::ranges::forward_range<Components>);
-    ZSTATIC_EXPECT(std::ranges::view<Ancestors>);
-    ZSTATIC_EXPECT(std::ranges::forward_range<Ancestors>);
+    ZSTATIC_EXPECT(std::ranges::view<components_view>);
+    ZSTATIC_EXPECT(std::ranges::forward_range<components_view>);
+    ZSTATIC_EXPECT(std::ranges::view<ancestors_view>);
+    ZSTATIC_EXPECT(std::ranges::forward_range<ancestors_view>);
 }
 
 ZEST_CASE(components_are_the_names_after_the_root) {
@@ -46,8 +46,15 @@ ZEST_CASE(components_are_the_names_after_the_root) {
     ZEXPECT(collected(components(R"(\\server\share\a)", windows)) == Names{"a"});
     // Only `\` separates past `\\?\`.
     ZEXPECT(collected(components(R"(\\?\C:\a/b\..)", windows)) == Names{"a/b", ".."});
+    ZEXPECT(collected(components(R"(\\?\UNC\server\share\a\b)", windows)) == Names{"a", "b"});
     ZEXPECT(components("/", posix).empty());
     ZEXPECT(components("", posix).empty());
+}
+
+ZEST_CASE(components_of_a_root_alone_are_none) {
+    ZEXPECT(components(R"(C:\)", windows).empty());
+    ZEXPECT(components("C:", windows).empty());
+    ZEXPECT(components(R"(\\server\share\)", windows).empty());
 }
 
 ZEST_CASE(components_view_the_path_they_read) {
@@ -65,7 +72,12 @@ ZEST_CASE(ancestors_walk_up_from_the_path_itself) {
     ZEXPECT(collected(ancestors("a/b/", posix)) == Names{"a/b/", "a"});
     ZEXPECT(collected(ancestors("/a", posix)) == Names{"/a", "/"});
     ZEXPECT(collected(ancestors("/", posix)) == Names{"/"});
+    ZEXPECT(collected(ancestors("a", posix)) == Names{"a"});
     ZEXPECT(collected(ancestors(R"(C:\a)", windows)) == Names{R"(C:\a)", R"(C:\)"});
+    ZEXPECT(collected(ancestors(R"(C:\)", windows)) == Names{R"(C:\)"});
+    ZEXPECT(collected(ancestors("C:a", windows)) == Names{"C:a", "C:"});
+    ZEXPECT(collected(ancestors(R"(\\server\share\a)", windows)) ==
+            Names{R"(\\server\share\a)", R"(\\server\share\)"});
     ZEXPECT(ancestors("", posix).empty());
 }
 

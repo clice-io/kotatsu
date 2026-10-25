@@ -20,9 +20,9 @@ struct Volume {
     /// some for the administrator, or a quota limits the user.
     std::uint64_t available = 0;
 
-    /// Its kind, as the system names it: "ext4", "btrfs", "tmpfs", "nfs",
+    /// Its type, as the system names it: "ext4", "btrfs", "tmpfs", "nfs",
     /// "9p", "fuse" on Linux; "apfs", "smbfs" on macOS; "NTFS", "ReFS",
-    /// "FAT32" on Windows. On Linux a kind it does not know is its magic
+    /// "FAT32" on Windows. On Linux a type it does not know is its magic
     /// number in hex ("0x1234abcd").
     std::string type;
 

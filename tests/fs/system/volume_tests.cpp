@@ -19,6 +19,7 @@ ZEST_CASE(volume_tells_space_and_kind) {
     ZEXPECT(found->free <= found->capacity);
     ZEXPECT(found->available <= found->free);
     ZEXPECT(!found->type.empty());
+    // The system temp directory of the machines the suite runs on is local.
     ZEXPECT(!found->remote);
 }
 

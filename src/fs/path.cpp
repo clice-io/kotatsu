@@ -93,7 +93,7 @@ using Names = small_vector<std::string_view, 32>;
 /// The names after the root of `p`.
 Names names_after(std::string_view p, Style style) {
     Names names;
-    for(auto name: Components(p, style)) {
+    for(auto name: components(p, style)) {
         names.push_back(name);
     }
     return names;
@@ -189,12 +189,15 @@ bool has_root(std::string_view p, Style style) {
     return rooted(root(p, style));
 }
 
-Components::iterator::iterator(std::string_view path, Style style, Prefix prefix, std::size_t at) :
+components_view::iterator::iterator(std::string_view path,
+                                    Style style,
+                                    Prefix prefix,
+                                    std::size_t at) :
     path(path), style(style), prefix(prefix), start(at), end(at) {
     ++*this;
 }
 
-Components::iterator& Components::iterator::operator++() {
+components_view::iterator& components_view::iterator::operator++() {
     start = end;
     while(start < path.size() && separates(path[start], style, prefix)) {
         ++start;
@@ -206,7 +209,7 @@ Components::iterator& Components::iterator::operator++() {
     return *this;
 }
 
-Components::iterator Components::begin() const {
+components_view::iterator components_view::begin() const {
     auto r = root(path, style);
     return {path, style, r.prefix, r.name.size() + r.directory.size()};
 }
@@ -300,7 +303,8 @@ void set_file_name(buffer_ref path, std::string_view name, Style style) {
 bool set_extension(buffer_ref path, std::string_view ext, Style style) {
     auto p = path.view();
     auto name = filename(p, style);
-    if(name.empty()) {
+    // An extension would make `.` and `..` names of their own.
+    if(name.empty() || name == "." || name == "..") {
         return false;
     }
     auto name_start = static_cast<std::size_t>(name.data() - p.data());
@@ -322,7 +326,7 @@ void normalize(buffer_ref path, DotDot dot_dot, Style style) {
     auto r = root(p, style);
     bool climbs_stop = rooted(r);
     Names kept;
-    for(auto name: Components(p, style)) {
+    for(auto name: components(p, style)) {
         if(name == ".") {
             continue;
         }

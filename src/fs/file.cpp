@@ -46,6 +46,8 @@ std::error_code with_random_name(buffer_ref path,
     constexpr std::string_view alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
     std::random_device device;
     std::uniform_int_distribution<std::size_t> pick(0, alphabet.size() - 1);
+    // The directory may view `path`, which each name tried rewrites.
+    small_string<256> parent(directory);
     small_string<64> name;
     std::error_code error;
     for(int attempt = 0; attempt < 100; ++attempt) {
@@ -54,7 +56,7 @@ std::error_code with_random_name(buffer_ref path,
             name.push_back(alphabet[pick(device)]);
         }
         name.append(suffix);
-        path.assign(directory);
+        path.assign(parent);
         path::push(path, name);
         error = make(path.view());
         if(error != std::errc::file_exists) {
@@ -75,6 +77,11 @@ OVERLAPPED lock_byte() {
     return at;
 }
 
+/// The flags of the locks take_lock() takes.
+constexpr DWORD exclusive = LOCKFILE_EXCLUSIVE_LOCK;
+constexpr DWORD shared = 0;
+constexpr DWORD no_wait = LOCKFILE_FAIL_IMMEDIATELY;
+
 /// Takes a lock with LockFileEx `flags`: false when another handle holds a
 /// lock in the way and `flags` say not to wait.
 std::expected<bool, std::error_code> take_lock(HANDLE handle, DWORD flags) {
@@ -94,6 +101,11 @@ std::expected<bool, std::error_code> take_lock(HANDLE handle, DWORD flags) {
 }
 
 #else
+
+/// The operations of the locks take_lock() takes.
+constexpr int exclusive = LOCK_EX;
+constexpr int shared = LOCK_SH;
+constexpr int no_wait = LOCK_NB;
 
 /// Takes a lock with flock `operation`: false when another handle holds a
 /// lock in the way and `operation` says not to wait.
@@ -133,35 +145,19 @@ bool File::is_open() const {
 }
 
 std::error_code File::lock() {
-#ifdef _WIN32
-    return error_of(take_lock(handle, LOCKFILE_EXCLUSIVE_LOCK));
-#else
-    return error_of(take_lock(handle, LOCK_EX));
-#endif
+    return error_of(take_lock(handle, exclusive));
 }
 
 std::error_code File::lock_shared() {
-#ifdef _WIN32
-    return error_of(take_lock(handle, 0));
-#else
-    return error_of(take_lock(handle, LOCK_SH));
-#endif
+    return error_of(take_lock(handle, shared));
 }
 
 std::expected<bool, std::error_code> File::try_lock() {
-#ifdef _WIN32
-    return take_lock(handle, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY);
-#else
-    return take_lock(handle, LOCK_EX | LOCK_NB);
-#endif
+    return take_lock(handle, exclusive | no_wait);
 }
 
 std::expected<bool, std::error_code> File::try_lock_shared() {
-#ifdef _WIN32
-    return take_lock(handle, LOCKFILE_FAIL_IMMEDIATELY);
-#else
-    return take_lock(handle, LOCK_SH | LOCK_NB);
-#endif
+    return take_lock(handle, shared | no_wait);
 }
 
 #ifdef _WIN32

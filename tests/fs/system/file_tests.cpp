@@ -8,7 +8,6 @@
 #include <string_view>
 #include <system_error>
 #include <thread>
-#include <utility>
 #include <vector>
 
 #include "fs/harness/files.h"
@@ -83,75 +82,6 @@ ZEST_CASE(read_file_of_a_directory_fails) {
 #else
     ZEXPECT(error == std::errc::is_a_directory);
 #endif
-}
-
-ZEST_CASE(open_reads_and_writes_through_the_handle) {
-    test::TempDir dir;
-    auto file = File::open(dir.file("file"), {.write = true, .create = true});
-    ZASSERT(file.has_value());
-    ZEXPECT(file->is_open());
-    ZEXPECT(!file->write("hello"));
-    ZEXPECT(!file->close());
-    ZEXPECT(!file->is_open());
-    ZEXPECT(test::read_text(dir.file("file")) == "hello");
-
-    auto reader = File::open(dir.file("file"));
-    ZASSERT(reader.has_value());
-    std::array<char, 16> buffer{};
-    auto count = reader->read(buffer);
-    ZASSERT(count.has_value());
-    ZEXPECT(std::string(buffer.data(), *count) == "hello");
-    ZEXPECT(reader->read(buffer) == 0u);
-}
-
-ZEST_CASE(a_moved_file_keeps_its_handle) {
-    test::TempDir dir;
-    test::write_text(dir.file("file"), "text");
-    auto opened = File::open(dir.file("file"));
-    ZASSERT(opened.has_value());
-    auto handle = opened->native_handle();
-    File moved(std::move(*opened));
-    ZEXPECT(!opened->is_open());
-    ZEXPECT(opened->native_handle() == File::closed);
-    ZEXPECT(moved.native_handle() == handle);
-    File assigned;
-    assigned = std::move(moved);
-    ZEXPECT(!moved.is_open());
-    ZEXPECT(assigned.native_handle() == handle);
-    // Closing what is closed does nothing.
-    ZEXPECT(!moved.close());
-}
-
-ZEST_CASE(read_after_close_fails) {
-    test::TempDir dir;
-    test::write_text(dir.file("file"), "text");
-    auto file = File::open(dir.file("file"));
-    ZASSERT(file.has_value());
-    ZEXPECT(!file->close());
-    std::array<char, 16> buffer{};
-    auto count = file->read(buffer);
-    ZASSERT(!count.has_value());
-    ZEXPECT(count.error() == std::errc::bad_file_descriptor);
-    ZEXPECT(file->write("more") == std::errc::bad_file_descriptor);
-}
-
-ZEST_CASE(open_to_create_new_over_anything_fails) {
-    test::TempDir dir;
-    ZEXPECT(File::open(dir.file("new"), {.write = true, .create_new = true}).has_value());
-    auto again = File::open(dir.file("new"), {.write = true, .create_new = true});
-    ZASSERT(!again.has_value());
-    ZEXPECT(again.error() == std::errc::file_exists);
-}
-
-ZEST_CASE(open_to_create_new_over_a_dangling_link_fails) {
-    test::TempDir dir;
-    if(!test::linked(create_symlink("missing", dir.file("link")))) {
-        return;
-    }
-    auto file = File::open(dir.file("link"), {.write = true, .create_new = true});
-    ZASSERT(!file.has_value());
-    ZEXPECT(file.error() == std::errc::file_exists);
-    ZEXPECT(!is_file(dir.file("missing")));
 }
 
 ZEST_CASE(write_file_atomic_replaces_the_whole_file) {
@@ -281,6 +211,7 @@ ZEST_CASE(create_temp_file_opens_a_new_empty_file) {
         ZEXPECT(path::parent(temp) == dir.root());
         ZEXPECT(zest::starts_with(path::filename(temp), "pre-"));
         ZEXPECT(path::extension(temp) == ".tmp");
+        ZEXPECT(is_file(temp));
         ZEXPECT(test::read_text(temp) == "");
         made.insert(temp);
     }

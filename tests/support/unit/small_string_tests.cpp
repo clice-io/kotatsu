@@ -1,10 +1,15 @@
 #include <compare>
 #include <cstring>
+#include <cwchar>
 #include <string>
 #include <string_view>
 
 #include "kota/zest/zest.h"
+#include "kota/support/buffer_ref.h"
 #include "kota/support/small_string.h"
+#if WCHAR_MAX <= 0xFFFF
+#include "kota/support/utf16.h"
+#endif
 
 namespace kota {
 
@@ -133,6 +138,37 @@ ZEST_CASE(from_raw_parts_of_nothing_is_empty) {
     ZEXPECT(s.empty());
     ZEXPECT(s.inlined());
 }
+
+// Wide strings compare with their own operator.
+
+ZEST_CASE(wide_string_is_a_buffer_of_wide_characters) {
+    ZSTATIC_EXPECT(string_buffer<small_wstring<4>, wchar_t>);
+}
+
+ZEST_CASE(wide_c_str_is_terminated_at_the_inline_capacity) {
+    small_wstring<4> s(L"abcd"sv);
+    // The text fills the inline buffer: the NUL needs more room.
+    ZEXPECT(s.capacity() == s.size());
+    const wchar_t* text = s.c_str();
+    ZEXPECT(std::wcslen(text) == 4U);
+    ZEXPECT((std::wstring_view(text) == L"abcd"sv));
+    ZEXPECT(s.size() == 4U);
+}
+
+ZEST_CASE(wide_string_converts_to_a_view) {
+    small_wstring<4> s(L"text"sv);
+    std::wstring_view view = s;
+    ZEXPECT((view == L"text"sv));
+    ZEXPECT((view.data() == s.data()));
+}
+
+#if WCHAR_MAX <= 0xFFFF
+ZEST_CASE(wide_string_takes_utf16) {
+    small_wstring<4> wide;
+    ZEXPECT(!to_utf16(wide, "a longer text"));
+    ZEXPECT((std::wstring_view(wide) == L"a longer text"sv));
+}
+#endif
 
 };  // ZEST_SUITE(support_small_string)
 

@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <expected>
 #include <span>
-#include <string>
 #include <string_view>
 #include <system_error>
 
@@ -94,7 +93,8 @@ public:
     std::expected<Status, std::error_code> status() const;
 
     /// Cuts the file short at `size` bytes, or extends it there with zeros;
-    /// the position stays. Needs `write`.
+    /// the position stays. Needs `write`: on Windows `append` does not
+    /// give the right to change the file's size.
     std::error_code resize(std::uint64_t size);
 
     /// Waits until the system has written the file's bytes and status to
@@ -117,18 +117,23 @@ public:
     /// closing the handle releases it. Each File::open is a handle of its
     /// own, in this process too. flock on POSIX, which a network file system
     /// may not support; on Windows LockFileEx of a byte past any file's end,
-    /// so that the file's bytes stay free to read and write.
+    /// so that the file's bytes stay free to read and write, and which takes
+    /// a file open for `read` or `write`: one open to `append` alone, open it
+    /// for `read` too.
     std::error_code lock();
 
     /// The same for a shared lock, which keeps other handles from taking an
     /// exclusive one, not a shared one.
     std::error_code lock_shared();
 
-    /// lock() without waiting: false when another handle holds a lock.
+    /// lock() without waiting: false when another handle holds a lock. The
+    /// lock this handle held may be gone then on Linux and Windows, which
+    /// release it before they try, and stays on macOS.
     std::expected<bool, std::error_code> try_lock();
 
     /// lock_shared() without waiting: false when another handle holds an
-    /// exclusive lock.
+    /// exclusive lock, and as try_lock() the lock this handle held may be
+    /// gone then.
     std::expected<bool, std::error_code> try_lock_shared();
 
     /// Releases the lock this handle holds; holding none is no error.

@@ -14,6 +14,7 @@
 
 #include "child.h"
 #include "os.h"
+#include "kota/support/small_string.h"
 #include "kota/support/string_ref.h"
 #include "kota/support/utf16.h"
 #include "kota/fs/path.h"
@@ -313,12 +314,16 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     if(auto error = to_utf16(application, *program)) {
         return std::unexpected(error);
     }
+    std::string written;
+    std::string_view command_line = options.windows_command_line;
+    if(command_line.empty()) {
+        written = options.args.empty()
+                      ? windows::join_command_line(std::vector<std::string>{options.file})
+                      : windows::join_command_line(options.args);
+        command_line = written;
+    }
     std::wstring line;
-    if(auto error = to_utf16(line,
-                             !options.windows_command_line.empty() ? options.windows_command_line
-                             : options.args.empty()                ? windows::join_command_line(
-                                                          std::vector<std::string>{options.file})
-                                                    : windows::join_command_line(options.args))) {
+    if(auto error = to_utf16(line, command_line)) {
         return std::unexpected(error);
     }
     std::wstring block;

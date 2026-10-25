@@ -83,7 +83,7 @@ bool has_root(std::string_view p, Style style = native_style);
 /// The names after a path's root, `.` and `..` among them, as views of the
 /// path; repeated and trailing separators make none. A view, which reads
 /// the path as it goes.
-class Components : public std::ranges::view_interface<Components> {
+class components_view : public std::ranges::view_interface<components_view> {
 public:
     class iterator {
     public:
@@ -114,7 +114,7 @@ public:
         }
 
     private:
-        friend class Components;
+        friend class components_view;
 
         iterator(std::string_view path, Style style, Prefix prefix, std::size_t at);
 
@@ -130,9 +130,9 @@ public:
         std::size_t end = 0;
     };
 
-    Components() = default;
+    components_view() = default;
 
-    Components(std::string_view path, Style style) : path(path), style(style) {}
+    components_view(std::string_view path, Style style) : path(path), style(style) {}
 
     iterator begin() const;
 
@@ -147,7 +147,7 @@ private:
 };
 
 /// The components of `p`.
-inline Components components(std::string_view p, Style style = native_style) {
+inline components_view components(std::string_view p, Style style = native_style) {
     return {p, style};
 }
 
@@ -172,7 +172,7 @@ std::string_view extension(std::string_view p, Style style = native_style);
 
 /// `p`, then each parent of it in turn, as parent() gives them, while there
 /// is one: `a/b/c`, `a/b`, `a`; `/a`, `/`. A view, as components() is.
-class Ancestors : public std::ranges::view_interface<Ancestors> {
+class ancestors_view : public std::ranges::view_interface<ancestors_view> {
 public:
     class iterator {
     public:
@@ -206,7 +206,7 @@ public:
         }
 
     private:
-        friend class Ancestors;
+        friend class ancestors_view;
 
         iterator(std::string_view path, Style style) : path(path), style(style) {}
 
@@ -215,9 +215,9 @@ public:
         Style style = native_style;
     };
 
-    Ancestors() = default;
+    ancestors_view() = default;
 
-    Ancestors(std::string_view path, Style style) : path(path), style(style) {}
+    ancestors_view(std::string_view path, Style style) : path(path), style(style) {}
 
     iterator begin() const {
         return {path, style};
@@ -234,7 +234,7 @@ private:
 };
 
 /// The ancestors of `p`, itself first.
-inline Ancestors ancestors(std::string_view p, Style style = native_style) {
+inline ancestors_view ancestors(std::string_view p, Style style = native_style) {
     return {p, style};
 }
 
@@ -261,7 +261,8 @@ void set_file_name(buffer_ref path, std::string_view name, Style style = native_
 
 /// Replaces the extension of `path`'s filename by `ext`, which gains a
 /// leading dot when it has none; an empty `ext` removes the extension.
-/// False, leaving it as it is, for a path without a filename.
+/// False, leaving it as it is, for a path without a filename, or whose
+/// filename is `.` or `..`.
 bool set_extension(buffer_ref path, std::string_view ext, Style style = native_style);
 
 /// What normalize() does with `..`.
@@ -276,8 +277,8 @@ enum class DotDot : std::uint8_t {
 /// separators, with the first separator it uses (only `\` after a verbatim
 /// prefix); `..` folded or kept as `dot_dot` says. A `..` never climbs past a
 /// root, a UNC share included, but stays in a relative path and after a bare
-/// drive (`C:..`), whose directory is unknown. A path left without a
-/// component is `.`; an empty one stays empty.
+/// drive (`C:..`), whose directory is unknown. A relative path left with
+/// nothing is `.`; an empty one stays empty.
 void normalize(buffer_ref path, DotDot dot_dot = DotDot::Fold, Style style = native_style);
 
 /// Writes into `out` the relative path that leads from `base` to `p`, both
@@ -291,7 +292,7 @@ bool
 
 /// The rest of `p` after the components of `prefix`, without the separators
 /// before it: `c/d` of `a/b/c/d` under `a/b`, empty for `a/b` itself; none
-/// when `p` is not under `prefix`. Components compare whole and as written,
+/// when `p` is not under `prefix`. components_view compare whole and as written,
 /// roots as relative() compares them.
 std::optional<std::string_view> strip_prefix(std::string_view p,
                                              std::string_view prefix,

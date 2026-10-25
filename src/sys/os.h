@@ -17,8 +17,6 @@
 #endif
 #include <windows.h>
 
-#include "kota/support/small_string.h"
-#include "kota/support/utf16.h"
 #include "kota/fs/windows.h"
 
 // Declared by the driver kit only; ntdll has it from Windows 2000 on.

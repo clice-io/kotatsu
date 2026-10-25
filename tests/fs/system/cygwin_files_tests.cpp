@@ -33,7 +33,7 @@ ZEST_CASE(read_symlink_reads_the_runtime_spelling) {
     ZEXPECT(target == "/usr/\xC3\xA9");
 }
 
-ZEST_CASE(read_symlink_of_anything_else_leaves_the_buffer) {
+ZEST_CASE(read_symlink_of_anything_else_fails) {
     test::TempDir dir;
     test::write_text(dir.file("plain"), "int main() {}");
     std::string target = "kept";

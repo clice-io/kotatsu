@@ -44,10 +44,16 @@ ZEST_CASE(relative_fails_across_roots) {
     ZEXPECT(relative_of("a", "/b", posix) == std::nullopt);
     ZEXPECT(relative_of("C:\\a", "D:\\a", windows) == std::nullopt);
     ZEXPECT(relative_of("C:a", "C:\\a", windows) == std::nullopt);
+    std::string out = "kept";
+    ZEXPECT(!relative(out, "C:\\a", "D:\\a", windows));
+    ZEXPECT(out == "kept");
+}
+
+ZEST_CASE(relative_past_a_dot_dot_in_the_base_fails) {
     // Where `..` leads depends on what it climbs from.
     ZEXPECT(relative_of("a", "../b", posix) == std::nullopt);
     std::string out = "kept";
-    ZEXPECT(!relative(out, "C:\\a", "D:\\a", windows));
+    ZEXPECT(!relative(out, "a/c", "a/../b", posix));
     ZEXPECT(out == "kept");
 }
 

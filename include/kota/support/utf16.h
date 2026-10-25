@@ -102,8 +102,8 @@ inline void from_utf16(buffer_ref out, std::u16string_view text) {
     detail::from_utf16(out, text);
 }
 
+// The same two, for the wide strings of the Windows API.
 #if WCHAR_MAX <= 0xFFFF
-/// The same, for the wide strings of the Windows API.
 inline std::error_code to_utf16(basic_buffer_ref<wchar_t> out, std::string_view text) {
     return detail::to_utf16(out, text);
 }

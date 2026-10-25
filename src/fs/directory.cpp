@@ -818,12 +818,30 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
         return windows::to_error_code(error);
     }
     auto& data = *reinterpret_cast<Reparse*>(buffer.get());
-    // An absolute substitute name starts with the NT prefix `\??\`, which
-    // Win32 spells `\\?\`.
-    auto substitute = [&](const Reparse::Names& names, WCHAR* text) {
-        std::span name(text + names.substitute_offset / sizeof(WCHAR),
-                       names.substitute_length / sizeof(WCHAR));
+    // What the file system gave is checked before it is read: a name past
+    // the end of the data is no link to follow.
+    auto offset_of = [&](const void* at) {
+        return static_cast<std::size_t>(static_cast<const std::byte*>(at) -
+                                        reinterpret_cast<const std::byte*>(&data));
+    };
+    auto read = [&](const Reparse::Names& names, WCHAR* text) {
+        auto start = offset_of(text);
+        if(start > returned) {
+            return std::make_error_code(std::errc::invalid_argument);
+        }
+        // The print name is what the link was made with; some tools leave
+        // it empty, and the substitute name, which the system follows, is
+        // all there is.
+        bool printed = names.print_length != 0;
+        std::size_t offset = printed ? names.print_offset : names.substitute_offset;
+        std::size_t length = printed ? names.print_length : names.substitute_length;
+        if(offset + length > returned - start) {
+            return std::make_error_code(std::errc::invalid_argument);
+        }
+        std::span name(text + offset / sizeof(WCHAR), length / sizeof(WCHAR));
         std::wstring_view spelled(name.data(), name.size());
+        // An absolute substitute name starts with the NT prefix `\??\`,
+        // which Win32 spells `\\?\`.
         if(spelled.starts_with(LR"(\??\)")) {
             name[1] = L'\\';
             windows::from_native(out, spelled);
@@ -833,11 +851,17 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
         return std::error_code();
     };
     switch(data.tag) {
-        case IO_REPARSE_TAG_SYMLINK: return substitute(data.symlink.names, data.symlink.text);
-        case IO_REPARSE_TAG_MOUNT_POINT: return substitute(data.junction.names, data.junction.text);
-        case wsl_symlink_tag:
-            out.assign(std::string_view(data.wsl.target, data.length - sizeof(data.wsl.version)));
+        case IO_REPARSE_TAG_SYMLINK: return read(data.symlink.names, data.symlink.text);
+        case IO_REPARSE_TAG_MOUNT_POINT: return read(data.junction.names, data.junction.text);
+        case wsl_symlink_tag: {
+            auto start = offset_of(data.wsl.target);
+            auto end = offset_of(&data.wsl) + data.length;
+            if(end < start || end > returned) {
+                return std::make_error_code(std::errc::invalid_argument);
+            }
+            out.assign(std::string_view(data.wsl.target, end - start));
             return {};
+        }
         default: return std::make_error_code(std::errc::invalid_argument);
     }
 #else

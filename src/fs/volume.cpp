@@ -23,9 +23,9 @@
 
 namespace kota::fs {
 
-namespace {
-
 #if !defined(_WIN32) && !defined(__APPLE__)
+
+namespace {
 
 /// The kinds of file system Linux tells by magic number alone (statfs(2)),
 /// with whether their files are served from elsewhere.
@@ -62,9 +62,9 @@ constexpr Kind kinds[] = {
     {0x00C36400, "ceph", true},
 };
 
-#endif
-
 }  // namespace
+
+#endif
 
 std::expected<Volume, std::error_code> volume(std::string_view path) {
 #ifdef _WIN32

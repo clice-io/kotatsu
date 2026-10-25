@@ -6,6 +6,7 @@
 
 #include "os.h"
 #include "proc.h"
+#include "kota/support/small_string.h"
 #include "kota/sys/detail/memory_model.h"
 #include "kota/sys/info.h"
 
