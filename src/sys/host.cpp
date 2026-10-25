@@ -14,6 +14,7 @@
 #endif
 
 #ifdef __APPLE__
+#include <pthread.h>
 #include <sys/sysctl.h>
 #endif
 
@@ -67,16 +68,19 @@ std::chrono::milliseconds uptime() {
 #endif
 }
 
-#ifndef _WIN32
-
 namespace {
 
+/// Whether Priority names `priority`, which a cast from a number may not.
+bool is_named(Priority priority) {
+    return static_cast<std::size_t>(priority) <= static_cast<std::size_t>(Priority::Realtime);
+}
+
+#ifndef _WIN32
 /// The nice value of each priority, in Priority's order.
 constexpr int nice_values[] = {19, 10, 0, -7, -14, -20};
+#endif
 
 }  // namespace
-
-#endif
 
 std::expected<Priority, std::error_code> priority(int pid) {
 #ifdef _WIN32
@@ -110,8 +114,7 @@ std::expected<Priority, std::error_code> priority(int pid) {
 }
 
 std::error_code set_priority(Priority priority, int pid) {
-    // One cast from a number that names none.
-    if(static_cast<std::size_t>(priority) > static_cast<std::size_t>(Priority::Realtime)) {
+    if(!is_named(priority)) {
         return std::make_error_code(std::errc::invalid_argument);
     }
 #ifdef _WIN32
@@ -137,6 +140,45 @@ std::error_code set_priority(Priority priority, int pid) {
         return errno_code();
     }
     return {};
+#endif
+}
+
+std::error_code set_thread_priority(Priority priority) {
+#if !defined(_WIN32) && !defined(__APPLE__)
+    // Linux keeps a nice value per thread, and set_priority's 0 is the
+    // calling one.
+    return set_priority(priority);
+#else
+    if(!is_named(priority)) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
+    auto index = static_cast<std::size_t>(priority);
+#ifdef _WIN32
+    constexpr int levels[] = {
+        THREAD_PRIORITY_IDLE,
+        THREAD_PRIORITY_BELOW_NORMAL,
+        THREAD_PRIORITY_NORMAL,
+        THREAD_PRIORITY_ABOVE_NORMAL,
+        THREAD_PRIORITY_HIGHEST,
+        THREAD_PRIORITY_TIME_CRITICAL,
+    };
+    if(!::SetThreadPriority(::GetCurrentThread(), levels[index])) {
+        return fs::windows::last_error();
+    }
+    return {};
+#else
+    // macOS schedules a thread by its quality of service.
+    constexpr qos_class_t classes[] = {
+        QOS_CLASS_BACKGROUND,
+        QOS_CLASS_UTILITY,
+        QOS_CLASS_DEFAULT,
+        QOS_CLASS_USER_INITIATED,
+        QOS_CLASS_USER_INTERACTIVE,
+        QOS_CLASS_USER_INTERACTIVE,
+    };
+    return std::error_code(::pthread_set_qos_class_self_np(classes[index], 0),
+                           std::generic_category());
+#endif
 #endif
 }
 

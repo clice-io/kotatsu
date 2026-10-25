@@ -4,9 +4,7 @@
 #include <atomic>
 #include <csignal>
 #include <cstdint>
-#include <cstdlib>
 #include <format>
-#include <io.h>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -61,28 +59,10 @@ std::expected<Handle, std::error_code> duplicate_standard(DWORD which) {
     return made;
 }
 
-#ifdef _MSC_VER
-/// Does nothing, for _get_osfhandle: the C runtime would end the process
-/// for a descriptor not open.
-void ignore_invalid_parameter(const wchar_t*,
-                              const wchar_t*,
-                              const wchar_t*,
-                              unsigned int,
-                              std::uintptr_t) {}
-#endif
-
 /// A duplicate of the handle of C runtime descriptor `fd`; none for a
 /// standard stream the process does not have.
 std::expected<Handle, std::error_code> duplicate_descriptor(int fd) {
-#ifdef _MSC_VER
-    auto previous = ::_set_thread_local_invalid_parameter_handler(ignore_invalid_parameter);
-    auto handle = ::_get_osfhandle(fd);
-    ::_set_thread_local_invalid_parameter_handler(previous);
-#else
-    // MinGW's runtime says EBADF and nothing more.
-    auto handle = ::_get_osfhandle(fd);
-#endif
-    // -2: a standard stream without a handle.
+    auto handle = descriptor_handle(fd);
     if(handle == -2) {
         return Handle();
     }

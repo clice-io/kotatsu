@@ -2,9 +2,23 @@
 #include <cstddef>
 #include <string>
 #include <system_error>
+#include <thread>
 
-#ifdef __linux__
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <pthread.h>
+#else
 #include <sched.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #endif
 
 #include "kota/zest/macro.h"
@@ -19,6 +33,19 @@ namespace {
 // A pid no process has: above the largest Linux allows (2^22) and macOS
 // uses, and not a multiple of four, which every Windows pid is.
 constexpr int missing_pid = 999'999'999;
+
+/// The calling thread's priority as the system keeps it: its priority within
+/// the process's class on Windows, its quality of service on macOS, its nice
+/// value on Linux.
+int thread_priority() {
+#ifdef _WIN32
+    return ::GetThreadPriority(::GetCurrentThread());
+#elif defined(__APPLE__)
+    return static_cast<int>(::qos_class_self());
+#else
+    return ::getpriority(PRIO_PROCESS, static_cast<id_t>(::syscall(SYS_gettid)));
+#endif
+}
 
 ZEST_SUITE(sys_info) {
 
@@ -155,6 +182,31 @@ ZEST_CASE(priority_of_a_missing_pid_fails) {
     ZASSERT(!read.has_value());
     ZEXPECT(read.error() == std::errc::no_such_process);
     ZEXPECT(set_priority(Priority::Normal, missing_pid) == std::errc::no_such_process);
+}
+
+// A thread of its own, which a lower priority on POSIX cannot be taken back
+// from, and which leaves the others as they are.
+ZEST_CASE(set_thread_priority_sets_the_calling_threads) {
+    auto before = thread_priority();
+    std::error_code error;
+    int lowered = 0;
+    std::thread([&] {
+        error = set_thread_priority(Priority::BelowNormal);
+        lowered = thread_priority();
+    }).join();
+    ZEXPECT(!error);
+#ifdef _WIN32
+    ZEXPECT(lowered == THREAD_PRIORITY_BELOW_NORMAL);
+#elif defined(__APPLE__)
+    ZEXPECT(lowered == static_cast<int>(QOS_CLASS_UTILITY));
+#else
+    ZEXPECT(lowered == 10);
+#endif
+    ZEXPECT(thread_priority() == before);
+}
+
+ZEST_CASE(set_thread_priority_of_a_value_no_priority_names_fails) {
+    ZEXPECT(set_thread_priority(static_cast<Priority>(6)) == std::errc::invalid_argument);
 }
 
 #ifdef _WIN32

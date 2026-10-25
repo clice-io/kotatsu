@@ -17,8 +17,10 @@
 #include <crt_externs.h>
 #include <libproc.h>
 #include <mach-o/dyld.h>
+#include <signal.h>
 #include <sys/stat.h>
 #else
+#include <signal.h>
 #include <sys/stat.h>
 
 #include "proc.h"
@@ -56,6 +58,23 @@ int parent_pid() noexcept {
     return static_cast<int>(info.parent);
 #else
     return static_cast<int>(::getppid());
+#endif
+}
+
+bool process_alive(int pid) {
+    // kill takes 0 and below for process groups, -1 for every process.
+    if(pid <= 0) {
+        return false;
+    }
+#ifdef _WIN32
+    auto process = Handle::open_process(pid, SYNCHRONIZE);
+    if(!process) {
+        return process.error() == std::errc::permission_denied;
+    }
+    // One that has exited lives on while a handle holds it.
+    return ::WaitForSingleObject(process->handle, 0) == WAIT_TIMEOUT;
+#else
+    return ::kill(pid, 0) == 0 || errno == EPERM;
 #endif
 }
 

@@ -90,12 +90,19 @@ std::error_code set_process_title([[maybe_unused]] std::string_view given) {
     std::memcpy(area->start, title.data(), length);
     std::memset(area->start + length, '\0', area->size - length);
 #ifdef __linux__
-    // The name of the main thread, which is the process's in top and pgrep.
-    if(auto error = fs::write_file("/proc/self/comm", title.substr(0, 15))) {
-        return error;
-    }
-#endif
+    return set_process_name(title);
+#else
     return {};
+#endif
+#endif
+}
+
+std::error_code set_process_name([[maybe_unused]] std::string_view name) {
+#ifdef __linux__
+    // The name of the main thread, which is the process's in top and pgrep.
+    return fs::write_file("/proc/self/comm", name.substr(0, 15));
+#else
+    return std::make_error_code(std::errc::not_supported);
 #endif
 }
 

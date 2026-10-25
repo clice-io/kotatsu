@@ -167,4 +167,13 @@ std::expected<Priority, std::error_code> priority(int pid = 0);
 /// inherit it. invalid_argument for a value Priority does not name.
 std::error_code set_priority(Priority priority, int pid = 0);
 
+/// Sets the priority of the calling thread, the others' left as they are: on
+/// Windows its priority within its process's class, THREAD_PRIORITY_IDLE to
+/// THREAD_PRIORITY_TIME_CRITICAL; on macOS its quality of service,
+/// QOS_CLASS_BACKGROUND to QOS_CLASS_USER_INTERACTIVE, which High and
+/// Realtime share; on Linux its nice value, as set_priority(priority) sets
+/// it, raising which takes privileges. invalid_argument for a value Priority
+/// does not name.
+std::error_code set_thread_priority(Priority priority);
+
 }  // namespace kota::sys

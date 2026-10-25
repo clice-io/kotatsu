@@ -5,6 +5,7 @@
 #include <thread>
 
 #ifdef _WIN32
+#include <cstdint>
 #include <fcntl.h>
 #include <io.h>
 #ifndef WIN32_LEAN_AND_MEAN
@@ -15,10 +16,13 @@
 #endif
 #include <windows.h>
 #else
+#include <cstdlib>
 #include <fcntl.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #endif
 
+#include "fs/harness/files.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/sys/console.h"
@@ -26,6 +30,30 @@
 namespace kota::sys {
 
 namespace {
+
+void close_descriptor(int fd) {
+#ifdef _WIN32
+    ::_close(fd);
+#else
+    ::close(fd);
+#endif
+}
+
+/// A descriptor, closed when it goes.
+struct Descriptor {
+    explicit Descriptor(int fd) : fd(fd) {}
+
+    Descriptor(const Descriptor&) = delete;
+    Descriptor& operator=(const Descriptor&) = delete;
+
+    ~Descriptor() {
+        if(fd >= 0) {
+            close_descriptor(fd);
+        }
+    }
+
+    int fd;
+};
 
 /// A pipe's two descriptors, closed when it goes.
 struct Pipe {
@@ -42,20 +70,12 @@ struct Pipe {
 
     ~Pipe() {
         close_write();
-#ifdef _WIN32
-        ::_close(fds[0]);
-#else
-        ::close(fds[0]);
-#endif
+        close_descriptor(fds[0]);
     }
 
     void close_write() {
         if(fds[1] >= 0) {
-#ifdef _WIN32
-            ::_close(fds[1]);
-#else
-            ::close(fds[1]);
-#endif
+            close_descriptor(fds[1]);
             fds[1] = -1;
         }
     }
@@ -93,6 +113,15 @@ struct Pipe {
 
     std::array<int, 2> fds{-1, -1};
 };
+
+/// A descriptor of file `path`, open for reading.
+int open_file(const std::string& path) {
+#ifdef _WIN32
+    return ::_wopen(test::std_path(path).c_str(), _O_RDONLY | _O_BINARY);
+#else
+    return ::open(path.c_str(), O_RDONLY);
+#endif
+}
 
 ZEST_SUITE(sys_console) {
 
@@ -136,12 +165,92 @@ ZEST_CASE(write_console_to_a_full_pipe_that_does_not_block_fails) {
     ZEXPECT(pipe.read_all().size() == taken);
 }
 
-#ifndef _WIN32
-// The CRT of Windows aborts on a descriptor it never opened.
 ZEST_CASE(write_console_to_no_descriptor_fails) {
     ZEXPECT(write_console(-1, "text") == std::errc::bad_file_descriptor);
 }
+
+ZEST_CASE(is_pipe_of_a_pipe) {
+    Pipe pipe;
+    ZEXPECT(is_pipe(pipe.fds[0]));
+    ZEXPECT(is_pipe(pipe.fds[1]));
+    ZEXPECT(!is_console(pipe.fds[1]));
+}
+
+#ifndef _WIN32
+ZEST_CASE(is_pipe_of_a_socket) {
+    int fds[2];
+    ZASSERT(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
+    Descriptor one(fds[0]);
+    Descriptor other(fds[1]);
+    ZEXPECT(is_pipe(one.fd));
+    ZEXPECT(!is_console(one.fd));
+}
 #endif
+
+ZEST_CASE(is_pipe_of_a_file_is_false) {
+    test::TempDir dir;
+    auto path = dir.file("file");
+    test::write_text(path, "text");
+    Descriptor file(open_file(path));
+    ZASSERT(file.fd >= 0);
+    ZEXPECT(!is_pipe(file.fd));
+    ZEXPECT(!is_console(file.fd));
+}
+
+// A device of characters, which Windows' _isatty takes for a terminal.
+ZEST_CASE(is_console_of_the_null_device_is_false) {
+#ifdef _WIN32
+    Descriptor null(::_open("NUL", _O_WRONLY | _O_BINARY));
+#else
+    Descriptor null(::open("/dev/null", O_WRONLY));
+#endif
+    ZASSERT(null.fd >= 0);
+    ZEXPECT(!is_console(null.fd));
+    ZEXPECT(!is_pipe(null.fd));
+}
+
+// Neither ends the process on Windows, as the C runtime's check would.
+ZEST_CASE(is_pipe_of_no_descriptor_is_false) {
+    int closed = -1;
+    {
+        Pipe pipe;
+        closed = pipe.fds[0];
+    }
+    for(int fd: {-1, closed}) {
+        ZEST_CONTEXT("descriptor {}", fd);
+        ZEXPECT(!is_pipe(fd));
+        ZEXPECT(!is_console(fd));
+    }
+}
+
+ZEST_CASE(is_console_of_a_terminal) {
+#ifdef _WIN32
+    // The console this process has; none when it was started without one.
+    HANDLE console = ::CreateFileW(L"CONOUT$",
+                                   GENERIC_READ | GENERIC_WRITE,
+                                   FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                   nullptr,
+                                   OPEN_EXISTING,
+                                   0,
+                                   nullptr);
+    if(console == INVALID_HANDLE_VALUE) {
+        zest::skip();
+        return;
+    }
+    Descriptor terminal(::_open_osfhandle(reinterpret_cast<std::intptr_t>(console), _O_BINARY));
+#else
+    // A pseudo-terminal's other end, which a sandbox may not give.
+    Descriptor master(::posix_openpt(O_RDWR | O_NOCTTY));
+    if(master.fd < 0 || ::grantpt(master.fd) != 0 || ::unlockpt(master.fd) != 0) {
+        zest::skip();
+        return;
+    }
+    Descriptor terminal(::open(::ptsname(master.fd), O_RDWR | O_NOCTTY));
+#endif
+    ZASSERT(terminal.fd >= 0);
+    ZEXPECT(is_console(terminal.fd));
+    ZEXPECT(!is_pipe(terminal.fd));
+}
 
 };  // ZEST_SUITE(sys_console)
 

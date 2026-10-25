@@ -9,6 +9,10 @@
 #include <vector>
 
 #ifdef _WIN32
+#include <cstdint>
+#include <cstdlib>
+#include <io.h>
+
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -70,6 +74,31 @@ struct Handle {
         return Handle(handle);
     }
 };
+
+#ifdef _MSC_VER
+/// Does nothing, for _get_osfhandle: the C runtime would end the process
+/// for a descriptor not open.
+inline void ignore_invalid_parameter(const wchar_t*,
+                                     const wchar_t*,
+                                     const wchar_t*,
+                                     unsigned int,
+                                     std::uintptr_t) {}
+#endif
+
+/// The handle of C runtime descriptor `fd`, as _get_osfhandle gives it but
+/// ending no process: -1 for a descriptor not open, -2 for a standard stream
+/// without a handle.
+inline std::intptr_t descriptor_handle(int fd) noexcept {
+#ifdef _MSC_VER
+    auto previous = ::_set_thread_local_invalid_parameter_handler(ignore_invalid_parameter);
+    auto handle = ::_get_osfhandle(fd);
+    ::_set_thread_local_invalid_parameter_handler(previous);
+    return handle;
+#else
+    // MinGW's runtime says EBADF and nothing more.
+    return ::_get_osfhandle(fd);
+#endif
+}
 
 /// The directories CreateProcess searches for a program after this
 /// program's and the current one, before PATH: the system directory, the

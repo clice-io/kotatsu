@@ -4,10 +4,11 @@
 
 #ifdef _WIN32
 #include <algorithm>
-#include <io.h>
 #include <iterator>
 
 #include "kota/support/utf8.h"
+#else
+#include <sys/stat.h>
 #endif
 
 namespace kota::sys {
@@ -15,6 +16,18 @@ namespace kota::sys {
 #ifdef _WIN32
 
 namespace {
+
+/// The handle of descriptor `fd`. One not open has INVALID_HANDLE_VALUE, and
+/// a standard stream without a handle -2: the pseudo-handles of this process
+/// and this thread, neither a console nor a pipe.
+HANDLE handle_of(int fd) noexcept {
+    return reinterpret_cast<HANDLE>(descriptor_handle(fd));
+}
+
+bool is_console_handle(HANDLE handle) noexcept {
+    DWORD mode = 0;
+    return ::GetConsoleMode(handle, &mode) != 0;
+}
 
 /// `text` through WriteConsoleW, converted a buffer at a time.
 std::error_code write_wide(HANDLE console, std::string_view text) noexcept {
@@ -72,12 +85,11 @@ std::error_code write_bytes(HANDLE handle, std::string_view text) noexcept {
 
 std::error_code write_console(int fd, std::string_view text) noexcept {
 #ifdef _WIN32
-    auto handle = reinterpret_cast<HANDLE>(::_get_osfhandle(fd));
+    auto handle = handle_of(fd);
     if(handle == INVALID_HANDLE_VALUE) {
         return std::make_error_code(std::errc::bad_file_descriptor);
     }
-    DWORD mode = 0;
-    if(::GetConsoleMode(handle, &mode)) {
+    if(is_console_handle(handle)) {
         return write_wide(handle, text);
     }
     return write_bytes(handle, text);
@@ -93,6 +105,23 @@ std::error_code write_console(int fd, std::string_view text) noexcept {
         text.remove_prefix(static_cast<std::size_t>(written));
     }
     return {};
+#endif
+}
+
+bool is_console(int fd) noexcept {
+#ifdef _WIN32
+    return is_console_handle(handle_of(fd));
+#else
+    return ::isatty(fd) == 1;
+#endif
+}
+
+bool is_pipe(int fd) noexcept {
+#ifdef _WIN32
+    return ::GetFileType(handle_of(fd)) == FILE_TYPE_PIPE;
+#else
+    struct stat status;
+    return ::fstat(fd, &status) == 0 && (S_ISFIFO(status.st_mode) || S_ISSOCK(status.st_mode));
 #endif
 }
 
