@@ -4,6 +4,7 @@
 // the entries.
 
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "kota/zest/zest.h"
@@ -13,12 +14,13 @@ namespace kota::test {
 
 /// The entries of `dir`, each read without an error.
 inline std::vector<fs::DirEntry> entries_of(std::string_view dir) {
+    ZEST_CONTEXT("{}", dir);
     auto stream = fs::read_dir(dir);
     ZASSERT(stream.has_value());
     std::vector<fs::DirEntry> entries;
-    for(const auto& entry: *stream) {
+    for(auto& entry: *stream) {
         ZASSERT(entry.has_value());
-        entries.push_back(*entry);
+        entries.push_back(std::move(*entry));
     }
     return entries;
 }

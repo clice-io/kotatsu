@@ -7,6 +7,7 @@
 #include <ranges>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -122,6 +123,28 @@ ZEST_CASE(read_dir_tells_each_entry_its_own_status) {
         for(auto name: {"a", "a.", "a "}) {
             ZEXPECT(remove(verbatim(dir.file(name))) == true);
         }
+    });
+}
+
+ZEST_CASE(read_dir_of_an_empty_directory_is_empty) {
+    // The first read refused for its IDs, the second finds nothing.
+    on_fat([](const test::TempDir& dir) {
+        auto stream = read_dir(dir.root());
+        ZASSERT(stream.has_value());
+        ZEXPECT(stream->begin() == stream->end());
+    });
+}
+
+ZEST_CASE(read_dir_entry_status_of_a_removed_file_fails) {
+    // FAT lists no whole status: the entry is opened when asked.
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("file.txt"), "12345");
+        auto entries = test::entries_of(dir.root());
+        ZASSERT(entries.size() == 1u);
+        ZEXPECT(remove(dir.file("file.txt")) == true);
+        auto status = entries.front().status();
+        ZASSERT(!status.has_value());
+        ZEXPECT(status.error() == std::errc::no_such_file_or_directory);
     });
 }
 

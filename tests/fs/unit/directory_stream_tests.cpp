@@ -1,5 +1,7 @@
+#include <expected>
 #include <iterator>
 #include <ranges>
+#include <system_error>
 #include <utility>
 
 #include "kota/zest/zest.h"
@@ -20,6 +22,9 @@ ZEST_CASE(dir_stream_is_an_input_range) {
     ZSTATIC_EXPECT(std::ranges::viewable_range<DirStream>);
     ZSTATIC_EXPECT(
         std::ranges::input_range<decltype(std::declval<DirStream&>() | std::views::take(1))>);
+    // An entry may be moved out.
+    ZEXPECT(zest::type_eq<std::iter_reference_t<DirStream::iterator>,
+                          std::expected<DirEntry, std::error_code>&>());
     // Gone through once: no copy shares its place.
     ZSTATIC_EXPECT(!std::copyable<DirStream>);
     ZSTATIC_EXPECT(std::movable<DirStream>);

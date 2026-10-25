@@ -135,6 +135,21 @@ ZEST_CASE(set_times_takes_the_earliest_time) {
     ZEXPECT(mtime_of(dir.file("file.txt")) < at(0));
 }
 
+#ifdef __linux__
+ZEST_CASE(set_times_keeps_the_earliest_time_on_tmpfs) {
+    std::error_code error;
+    if(!std::filesystem::is_directory("/dev/shm", error)) {
+        // No tmpfs at /dev/shm.
+        zest::skip();
+        return;
+    }
+    test::TempDir dir("/dev/shm");
+    test::write_text(dir.file("file.txt"), "text");
+    ZEXPECT(!set_times(dir.file("file.txt"), {.mtime = Time::min()}));
+    ZEXPECT(mtime_of(dir.file("file.txt")) == Time::min());
+}
+#endif
+
 ZEST_CASE(set_times_of_nothing_fails) {
     test::TempDir dir;
     ZEXPECT(set_times(dir.file("missing"), {.mtime = first}) ==

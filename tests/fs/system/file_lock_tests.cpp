@@ -10,6 +10,7 @@
 
 #ifndef _WIN32
 #include <fcntl.h>
+#include <sys/file.h>
 #include <unistd.h>
 #endif
 
@@ -178,6 +179,22 @@ ZEST_CASE(closing_releases_the_lock_a_copy_of_the_handle_shares) {
     ZEXPECT(!first.close());
     ZEXPECT(second.try_lock() == true);
 }
+
+#ifndef _WIN32
+ZEST_CASE(closing_after_unlock_leaves_a_lock_a_copy_of_the_handle_took) {
+    // flock() locks belong to what the copies share: the File unlocked,
+    // closing it leaves the lock the copy took since.
+    LockFile lock;
+    auto first = lock.open();
+    auto second = lock.open();
+    ZEXPECT(!first.lock());
+    ZEXPECT(!first.unlock());
+    HandleCopy copy(first);
+    ZASSERT(::flock(copy.handle, LOCK_EX | LOCK_NB) == 0);
+    ZEXPECT(!first.close());
+    ZEXPECT(second.try_lock() == false);
+}
+#endif
 
 ZEST_CASE(dropping_a_file_releases_its_lock) {
     LockFile lock;

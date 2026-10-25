@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <vector>
 
 #ifndef _WIN32
 #include <fcntl.h>
@@ -186,6 +187,7 @@ ZEST_CASE(status_takes_the_earliest_time_nanoseconds_hold) {
     // disks' file systems do not.
     std::error_code error;
     if(!std::filesystem::is_directory("/dev/shm", error)) {
+        // No tmpfs at /dev/shm.
         zest::skip();
         return;
     }
@@ -294,6 +296,37 @@ ZEST_CASE(symlink_status_of_a_link_and_a_separator_is_the_link) {
     ZASSERT(directory.has_value());
     ZEXPECT(directory->type == FileType::Directory);
 }
+
+ZEST_CASE(symlink_status_of_a_link_and_a_separator_is_the_link_wherever_it_leads) {
+    test::TempDir dir;
+    std::vector<std::string> links = {"dangling/"};
+#ifdef _WIN32
+    test::make_junction(dir.file("dangling"), dir.file("missing"));
+#else
+    ZASSERT(!create_directory_symlink(dir.file("missing"), dir.file("dangling")));
+    // One that leads to itself, which the system gives up following.
+    ZASSERT(!create_symlink("loop", dir.file("loop")));
+    links.push_back("loop/");
+#endif
+    for(const auto& spelled: links) {
+        ZEST_CONTEXT("{}", spelled);
+        auto itself = symlink_status(dir.file(spelled));
+        ZASSERT(itself.has_value());
+        ZEXPECT(itself->type == FileType::Symlink);
+    }
+}
+
+#ifndef _WIN32
+ZEST_CASE(symlink_status_of_a_file_link_and_a_separator_fails) {
+    // No file is named with a separator after it.
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
+    ZASSERT(!create_symlink("file.txt", dir.file("link")));
+    auto found = symlink_status(dir.file("link/"));
+    ZASSERT(!found.has_value());
+    ZEXPECT(found.error() == std::errc::not_a_directory);
+}
+#endif
 
 ZEST_CASE(a_dangling_symlink_exists_only_itself) {
     test::TempDir dir;

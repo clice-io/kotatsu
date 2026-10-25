@@ -85,10 +85,9 @@ Status listed_status(const Info& info, DWORD tag) {
 /// buffer of them at a time: as FILE_ID_EXTD_DIR_INFO while `extended`,
 /// otherwise as FILE_FULL_DIR_INFO.
 struct Listing {
-    explicit Listing(bool extended) : extended(extended) {}
-
     /// The next entry `handle` lists, null at the end, or the error that
-    /// ended the listing.
+    /// ended the listing. A file system that lists no IDs (FAT) refuses the
+    /// first read of FILE_ID_EXTD_DIR_INFO, which then lists the other.
     std::expected<const void*, DWORD> next(HANDLE handle) {
         while(true) {
             if(at == nullptr) {
@@ -101,6 +100,10 @@ struct Listing {
                     auto error = ::GetLastError();
                     if(error == ERROR_NO_MORE_FILES || error == ERROR_FILE_NOT_FOUND) {
                         return nullptr;
+                    }
+                    if(extended && !started && unsupported(error)) {
+                        extended = false;
+                        continue;
                     }
                     return std::unexpected(error);
                 }
@@ -284,7 +287,7 @@ std::expected<std::uint64_t, std::error_code> remove_opened(const win32::Handle&
     std::uint64_t removed = 0;
     if(win32::type_of(info.FileAttributes, *tag) == FileType::Directory) {
         std::vector<std::wstring> names;
-        Listing listing(false);
+        Listing listing{.extended = false};
         while(true) {
             auto entry = listing.next(handle.get());
             if(!entry) {
@@ -506,9 +509,9 @@ struct detail::OpenDirectory {
     win32::Handle handle;
 
     /// The volume's serial number, which the IDs it lists are on.
-    std::uint64_t volume;
+    std::uint64_t device;
 
-    Listing listing{true};
+    Listing listing{.extended = true};
 #else
     DirHandle dir;
 #endif
@@ -548,17 +551,8 @@ void DirStream::advance() {
         return;
     }
     DirEntry made;
-    made.directory = directory;
 #ifdef _WIN32
-    auto& listing = directory->listing;
-    auto entry = listing.next(directory->handle.get());
-    // A file system that lists no IDs (FAT) refuses the first call: its
-    // entries are listed without them, and opened when asked for their
-    // statuses.
-    if(!entry && listing.extended && !listing.started && unsupported(entry.error())) {
-        listing.extended = false;
-        entry = listing.next(directory->handle.get());
-    }
+    auto entry = directory->listing.next(directory->handle.get());
     if(!entry) {
         current = std::unexpected(windows::to_error_code(entry.error()));
         return;
@@ -567,18 +561,18 @@ void DirStream::advance() {
         done = true;
         return;
     }
-    if(listing.extended) {
+    if(directory->listing.extended) {
         const auto& info = *static_cast<const FILE_ID_EXTD_DIR_INFO*>(*entry);
         from_utf16(made.name, name_of<FILE_ID_EXTD_DIR_INFO>(*entry));
         made.listed = listed_status(info, info.ReparsePointTag);
-        made.listed.id = win32::id_of(directory->volume, info.FileId);
-        made.whole = true;
+        made.listed.id = win32::id_of(directory->device, info.FileId);
     } else {
         // A reparse point's tag stands where the size of its extended
         // attributes would.
         const auto& info = *static_cast<const FILE_FULL_DIR_INFO*>(*entry);
         from_utf16(made.name, name_of<FILE_FULL_DIR_INFO>(*entry));
         made.listed = listed_status(info, info.EaSize);
+        made.directory = directory;
     }
     made.type = made.listed.type;
 #else
@@ -594,6 +588,7 @@ void DirStream::advance() {
     }
     made.name = (*entry)->d_name;
     made.type = type_of((*entry)->d_type);
+    made.directory = directory;
     struct stat info;
     if(made.type == FileType::Unknown &&
        ::fstatat(::dirfd(dir), made.name.c_str(), &info, AT_SYMLINK_NOFOLLOW) == 0) {
@@ -613,7 +608,7 @@ std::expected<Volume, std::error_code> DirStream::volume() const {
 
 std::expected<Status, std::error_code> DirEntry::status() const {
 #ifdef _WIN32
-    if(whole) {
+    if(!directory) {
         return listed;
     }
     // By the name as listed, relative to the directory, which Win32 would

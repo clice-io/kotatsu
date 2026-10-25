@@ -9,6 +9,7 @@
 
 #include "win32.h"
 #else
+#include <cerrno>
 #include <fcntl.h>
 
 #include "posix.h"
@@ -208,23 +209,27 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
     if(auto error = c_path.assign(path)) {
         return std::unexpected(error);
     }
-    // Through a trailing separator the system follows a symlink the path
-    // ends in, lstat() too: a symlink to a directory stays itself, as Windows
-    // takes a junction's name with one.
-    auto link = posix::without_trailing_separators(path);
-    bool trailing = link != path;
     struct stat info;
-    if((follow || trailing ? ::stat(c_path.c_str(), &info) : ::lstat(c_path.c_str(), &info)) != 0) {
-        return std::unexpected(posix::last_error());
-    }
-    if(!follow && trailing && S_ISDIR(info.st_mode)) {
+    // Through a trailing separator the system follows a symlink the path
+    // ends in, lstat() too. The symlink stays itself, wherever it leads, as
+    // Windows takes a junction's name with one, but for one that leads to
+    // something other than a directory, which no name with one names: macOS
+    // would follow it to a file all the same.
+    auto link = posix::without_trailing_separators(path);
+    if(!follow && link != path) {
         // No NUL in it, as there was none in `path`.
         posix::CPath c_link;
         [[maybe_unused]] auto checked = c_link.assign(link);
-        struct stat itself;
-        if(::lstat(c_link.c_str(), &itself) == 0 && S_ISLNK(itself.st_mode)) {
-            return posix::make_status(itself);
+        if(::lstat(c_link.c_str(), &info) == 0 && S_ISLNK(info.st_mode)) {
+            struct stat target;
+            if(::stat(c_path.c_str(), &target) == 0 ? !S_ISDIR(target.st_mode) : errno == ENOTDIR) {
+                return std::unexpected(std::make_error_code(std::errc::not_a_directory));
+            }
+            return posix::make_status(info);
         }
+    }
+    if((follow ? ::stat(c_path.c_str(), &info) : ::lstat(c_path.c_str(), &info)) != 0) {
+        return std::unexpected(posix::last_error());
     }
     return posix::make_status(info);
 }
@@ -307,12 +312,12 @@ std::error_code set_times(std::string_view path, const FileTimes& times) {
     if(!handle) {
         return handle.error();
     }
-    FILETIME accessed;
-    FILETIME modified;
+    FILETIME atime;
+    FILETIME mtime;
     if(!::SetFileTime(handle->get(),
                       nullptr,
-                      file_time_of(times.atime, accessed),
-                      file_time_of(times.mtime, modified))) {
+                      file_time_of(times.atime, atime),
+                      file_time_of(times.mtime, mtime))) {
         return windows::last_error();
     }
     return {};

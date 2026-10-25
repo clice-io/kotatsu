@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <system_error>
 
 #include "fs/harness/files.h"
@@ -23,6 +24,31 @@ ZEST_CASE(volume_tells_space_and_kind) {
     // The system temp directory of the machines the suite runs on is local.
     ZEXPECT(!found->remote);
 }
+
+ZEST_CASE(volume_tells_the_capacity_the_standard_library_does) {
+    test::TempDir dir;
+    auto found = volume(dir.root());
+    ZASSERT(found.has_value());
+    ZEXPECT(found->capacity == std::filesystem::space(dir.path).capacity);
+}
+
+#ifdef _WIN32
+ZEST_CASE(volume_of_a_share_is_remote) {
+    // The system drive's administrative share, through the SMB client.
+    auto found = volume(R"(\\localhost\C$)");
+    if(!found) {
+        // No administrative shares where the suite runs.
+        zest::skip();
+        return;
+    }
+    ZEXPECT(found->remote);
+    auto stream = read_dir(R"(\\localhost\C$)");
+    ZASSERT(stream.has_value());
+    auto listed = stream->volume();
+    ZASSERT(listed.has_value());
+    ZEXPECT(listed->remote);
+}
+#endif
 
 #ifdef __linux__
 ZEST_CASE(volume_names_a_kind_linux_knows) {

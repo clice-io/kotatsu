@@ -348,7 +348,8 @@ std::expected<Status, std::error_code> File::status() const {
 
 std::error_code File::canonical(buffer_ref out) const {
     // Windows names a file deleted while open by where it keeps it until the
-    // last handle goes, under `\$Extend\$Deleted`, or by its old name.
+    // last handle goes, under `\$Extend\$Deleted`, or by its old name. A pipe
+    // says it is deleted too.
     FILE_STANDARD_INFO standard;
     if(!::GetFileInformationByHandleEx(handle, FileStandardInfo, &standard, sizeof(standard))) {
         return windows::last_error();
@@ -356,7 +357,14 @@ std::error_code File::canonical(buffer_ref out) const {
     if(standard.DeletePending) {
         return std::make_error_code(std::errc::no_such_file_or_directory);
     }
-    return win32::final_path(out, handle);
+    if(auto error = win32::final_path(out, handle)) {
+        // A device, which no path names.
+        if(::GetFileType(handle) != FILE_TYPE_DISK) {
+            return std::make_error_code(std::errc::no_such_file_or_directory);
+        }
+        return error;
+    }
+    return {};
 }
 
 std::error_code File::resize(std::uint64_t size) {

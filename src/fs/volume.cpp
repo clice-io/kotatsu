@@ -113,7 +113,7 @@ std::expected<Volume, std::error_code> win32::volume_of(HANDLE handle) {
                                         MAX_PATH + 1)) {
         return std::unexpected(windows::last_error());
     }
-    auto unit = std::uint64_t(size.sectors_per_unit) * size.bytes_per_sector;
+    auto unit = static_cast<std::uint64_t>(size.sectors_per_unit) * size.bytes_per_sector;
     Volume found{
         .capacity = static_cast<std::uint64_t>(size.total.QuadPart) * unit,
         .free = static_cast<std::uint64_t>(size.actual_available.QuadPart) * unit,
@@ -129,7 +129,7 @@ std::expected<Volume, std::error_code> win32::volume_of(HANDLE handle) {
 
 namespace {
 
-std::expected<Volume, std::error_code> volume_from(const struct statfs& info) {
+Volume volume_from(const struct statfs& info) {
 #ifdef __APPLE__
     std::uint64_t unit = info.f_bsize;
     std::string type = info.f_fstypename;

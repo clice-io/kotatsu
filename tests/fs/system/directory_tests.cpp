@@ -80,7 +80,12 @@ ZEST_CASE(read_dir_leaves_links_unfollowed) {
         return;
     }
     auto entries = test::entries_of(dir.root());
-    ZEXPECT(type_in(entries, "link") == FileType::Symlink);
+    auto found = std::ranges::find(entries, "link", &DirEntry::name);
+    ZASSERT(found != entries.end());
+    ZEXPECT(found->type == FileType::Symlink);
+    auto status = found->status();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->type == FileType::Symlink);
 }
 
 #ifdef _WIN32
@@ -101,7 +106,12 @@ ZEST_CASE(read_dir_tells_a_fifo) {
     test::TempDir dir;
     ZASSERT(::mkfifo(dir.file("fifo").c_str(), 0600) == 0);
     auto entries = test::entries_of(dir.root());
-    ZEXPECT(type_in(entries, "fifo") == FileType::Fifo);
+    auto found = std::ranges::find(entries, "fifo", &DirEntry::name);
+    ZASSERT(found != entries.end());
+    ZEXPECT(found->type == FileType::Fifo);
+    auto status = found->status();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->type == FileType::Fifo);
 }
 #endif
 
@@ -140,7 +150,7 @@ ZEST_CASE(read_dir_entries_tell_their_statuses_once_the_stream_is_gone) {
     ZEXPECT(status->size == 5u);
 }
 
-ZEST_CASE(read_dir_reads_only_what_is_taken) {
+ZEST_CASE(read_dir_gives_only_what_is_taken) {
     test::TempDir dir;
     std::vector<std::string> names = {"a", "b", "c", "d", "e"};
     for(const auto& name: names) {
@@ -162,6 +172,42 @@ ZEST_CASE(read_dir_reads_only_what_is_taken) {
         ZEXPECT(std::ranges::adjacent_find(taken) == taken.end());
     }
 }
+
+#ifdef _WIN32
+ZEST_CASE(read_dir_entries_leave_the_directory_closed) {
+    // The listing tells each entry its whole status: once the stream is
+    // gone, nothing holds the directory open, which would keep its parent
+    // from being renamed.
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "outer" / "inner");
+    test::write_text(dir.file("outer/inner/file.txt"), "text");
+    auto entries = test::entries_of(dir.file("outer/inner"));
+    ZASSERT(entries.size() == 1u);
+    ZEXPECT(!rename(dir.file("outer"), dir.file("moved")));
+}
+
+ZEST_CASE(read_dir_entry_status_of_a_removed_file_is_as_listed) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "12345");
+    auto entries = test::entries_of(dir.root());
+    ZASSERT(entries.size() == 1u);
+    ZEXPECT(remove(dir.file("file.txt")) == true);
+    auto status = entries.front().status();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->size == 5u);
+}
+#else
+ZEST_CASE(read_dir_entry_status_of_a_removed_file_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "12345");
+    auto entries = test::entries_of(dir.root());
+    ZASSERT(entries.size() == 1u);
+    ZEXPECT(remove(dir.file("file.txt")) == true);
+    auto status = entries.front().status();
+    ZASSERT(!status.has_value());
+    ZEXPECT(status.error() == std::errc::no_such_file_or_directory);
+}
+#endif
 
 ZEST_CASE(read_dir_goes_on_where_it_stopped) {
     // A range to go through once: a second loop takes up the rest.

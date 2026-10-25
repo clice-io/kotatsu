@@ -16,6 +16,7 @@
 #endif
 
 #include "fs/harness/files.h"
+#include "fs/harness/win32.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/file.h"
@@ -478,8 +479,44 @@ ZEST_CASE(canonical_spells_the_open_file_as_on_disk) {
 }
 #endif
 
-#ifndef _WIN32
+#ifdef __linux__
+ZEST_CASE(canonical_of_a_file_named_as_deleted_gives_its_name) {
+    // /proc marks a name that went with " (deleted)"; one that still leads
+    // to the file is the file's own.
+    test::TempDir dir;
+    test::write_text(dir.file("file (deleted)"), "text");
+    auto file = File::open(dir.file("file (deleted)"));
+    ZASSERT(file.has_value());
+    std::string opened;
+    ZEXPECT(!file->canonical(opened));
+    std::string named;
+    ZEXPECT(!fs::canonical(named, dir.file("file (deleted)")));
+    ZEXPECT(opened == named);
+}
+
+ZEST_CASE(canonical_of_a_removed_file_whose_marked_name_another_took_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    auto file = File::open(dir.file("file"));
+    ZASSERT(file.has_value());
+    ZEXPECT(remove(dir.file("file")) == true);
+    test::write_text(dir.file("file (deleted)"), "other");
+    std::string opened;
+    ZEXPECT(file->canonical(opened) == std::errc::no_such_file_or_directory);
+}
+#endif
+
 ZEST_CASE(canonical_of_a_pipe_fails) {
+    // No path names a pipe, though Windows names it to open it.
+#ifdef _WIN32
+    test::TempDir dir;
+    std::string name;
+    HANDLE reader = test::make_pipe(name, dir, PIPE_ACCESS_INBOUND, 4096);
+    auto file = File::open(name, {.write = true});
+    std::string opened;
+    auto error = file ? file->canonical(opened) : file.error();
+    ::CloseHandle(reader);
+#else
     int ends[2];
     ZASSERT(::pipe(ends) == 0);
     auto file = File::open(std::format("/dev/fd/{}", ends[0]));
@@ -487,9 +524,19 @@ ZEST_CASE(canonical_of_a_pipe_fails) {
     auto error = file ? file->canonical(opened) : file.error();
     ::close(ends[0]);
     ::close(ends[1]);
+#endif
     ZEST_CONTEXT("{}", opened);
     ZASSERT(file.has_value());
     ZEXPECT(error == std::errc::no_such_file_or_directory);
+}
+
+#ifdef _WIN32
+ZEST_CASE(canonical_of_a_device_fails) {
+    // Windows names no device by a path, as Linux names /dev/null.
+    auto file = File::open("nul");
+    ZASSERT(file.has_value());
+    std::string opened;
+    ZEXPECT(file->canonical(opened) == std::errc::no_such_file_or_directory);
 }
 #endif
 

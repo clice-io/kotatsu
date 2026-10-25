@@ -16,9 +16,7 @@
 #include "fs/harness/win32.h"
 #include "kota/zest/zest.h"
 #include "kota/support/small_string.h"
-#include "kota/support/utf16.h"
 #include "kota/fs/file.h"
-#include "kota/fs/path.h"
 
 namespace kota::fs {
 
@@ -26,32 +24,13 @@ namespace {
 
 using namespace std::literals;
 
-#ifdef _WIN32
-/// A named pipe of `access`, its name kept apart by the directory's, and
-/// written into `name` in UTF-8.
-HANDLE make_pipe(std::string& name, const test::TempDir& dir, DWORD access, DWORD buffer) {
-    auto wide = LR"(\\.\pipe\)" + test::std_path(path::filename(dir.root())).wstring();
-    HANDLE pipe = ::CreateNamedPipeW(wide.c_str(),
-                                     access,
-                                     PIPE_TYPE_BYTE | PIPE_WAIT,
-                                     1,
-                                     buffer,
-                                     buffer,
-                                     0,
-                                     nullptr);
-    ZASSERT(pipe != INVALID_HANDLE_VALUE);
-    from_utf16(name, std::wstring_view(wide));
-    return pipe;
-}
-#endif
-
 /// The write end of a pipe set not to wait, as a File, with its read end
 /// left unread so that it fills; both closed when this goes.
 struct FullPipe {
     FullPipe() {
 #ifdef _WIN32
         std::string name;
-        reader = make_pipe(name, dir, PIPE_ACCESS_INBOUND, 4096);
+        reader = test::make_pipe(name, dir, PIPE_ACCESS_INBOUND, 4096);
         auto opened = File::open(name, {.write = true});
         ZASSERT(opened.has_value());
         writer = std::move(*opened);
@@ -147,7 +126,7 @@ ZEST_CASE(read_to_end_reads_a_pipe_whole) {
     std::string content;
 #ifdef _WIN32
     std::string name;
-    HANDLE writer = make_pipe(name, dir, PIPE_ACCESS_OUTBOUND, 65536);
+    HANDLE writer = test::make_pipe(name, dir, PIPE_ACCESS_OUTBOUND, 65536);
     auto file = File::open(name);
     ZASSERT(file.has_value());
     DWORD written = 0;

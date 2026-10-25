@@ -33,15 +33,19 @@ struct DirEntry {
 
     /// Its status, as symlink_status() gives it. On Windows the listing
     /// holds it, as it was when listed, so that a large directory costs about
-    /// what a few statuses do, but no link count. Elsewhere, and on a Windows
-    /// file system that lists no IDs (FAT), the system is asked when this is
-    /// called, through the directory, which stays open while an entry of it
-    /// lives.
+    /// what a few statuses do, though without the link count. Elsewhere, and
+    /// on a Windows file system that lists no IDs (FAT), the system is asked
+    /// when this is called, through the directory, which stays open while an
+    /// entry of it lives: an entry removed since fails with
+    /// no_such_file_or_directory, and one on FAT that no open reaches gets
+    /// what the listing told, without an ID or the link count.
     std::expected<Status, std::error_code> status() const;
 
 private:
     friend class DirStream;
 
+    /// The directory to ask its status through; on Windows only where the
+    /// listing told not all of it.
     std::shared_ptr<detail::OpenDirectory> directory;
 
 #ifdef _WIN32
@@ -49,7 +53,6 @@ private:
     /// that lists no IDs (FAT) all but the ID and links, which `status()`
     /// then opens the entry for.
     Status listed;
-    bool whole = false;
 #endif
 };
 
@@ -66,7 +69,7 @@ public:
         using difference_type = std::ptrdiff_t;
         using iterator_concept = std::input_iterator_tag;
 
-        const value_type& operator*() const {
+        value_type& operator*() const {
             return stream->current;
         }
 
@@ -79,8 +82,8 @@ public:
             ++*this;
         }
 
-        friend bool operator==(const iterator& at, std::default_sentinel_t) {
-            return at.at_end();
+        bool operator==(std::default_sentinel_t) const {
+            return stream->done;
         }
 
     private:
@@ -88,17 +91,12 @@ public:
 
         explicit iterator(DirStream* stream) : stream(stream) {}
 
-        /// A member, unlike the friend above, may read the stream's state.
-        bool at_end() const {
-            return stream->done;
-        }
-
         DirStream* stream;
     };
 
-    DirStream(DirStream&& other) noexcept = default;
+    DirStream(DirStream&&) noexcept = default;
 
-    DirStream& operator=(DirStream&& other) noexcept = default;
+    DirStream& operator=(DirStream&&) noexcept = default;
 
     /// Where the stream stands, its first entry read the first time.
     iterator begin();
@@ -108,8 +106,7 @@ public:
     }
 
     /// The volume the directory lives on, as volume() tells it, asked of the
-    /// open directory, which takes no other open: whether to list a remote
-    /// one, say.
+    /// open directory rather than by name.
     std::expected<Volume, std::error_code> volume() const;
 
 private:
