@@ -111,11 +111,22 @@ struct CreationOptions {
 
     /// Windows: no console window, and none for the console programs it
     /// starts, when no stream is this process's. Ignored elsewhere, as the
-    /// one below is.
+    /// ones below are.
     bool windows_hide_console = false;
 
     /// Windows: the window of a GUI program hidden.
     bool windows_hide_gui = false;
+
+    /// Windows: every inheritable handle of this process's reaches the
+    /// child, as CreateProcess with bInheritHandles passes them, rather than
+    /// its standard handles alone: for a program that starts another in its
+    /// place and passes on the handles it was given. An fs::File's is not
+    /// one until SetHandleInformation makes it so. One made inheritable on
+    /// another thread meanwhile reaches it too; the standard handles that
+    /// spawn makes for other children never do, every other spawn waiting
+    /// while this child is created. On POSIX every descriptor without
+    /// close-on-exec reaches the child anyway.
+    bool windows_inherit_handles = false;
 };
 
 struct SpawnOptions {
@@ -319,13 +330,13 @@ private:
 /// Starts a child as `options` say. On POSIX its signal handlers are reset
 /// and its signal mask cleared; the descriptors this process has without
 /// close-on-exec reach it, as make's jobserver needs. On Windows it inherits
-/// its three standard handles alone, and is born in a job object of its
-/// own, nested in any this process is in, which ends it rather than show a
-/// dialog when it crashes. no_such_file_or_directory or permission_denied
-/// for a program not found, as find_program; invalid_argument for a
-/// negative descriptor, a closed file, a batch file without
-/// windows_command_line or, on Windows, an argv[0] with a quote;
-/// bad_file_descriptor for a descriptor not open;
+/// its three standard handles alone, unless windows_inherit_handles, and is
+/// born in a job object of its own, nested in any this process is in, which
+/// ends it rather than show a dialog when it crashes.
+/// no_such_file_or_directory or permission_denied for a program not found,
+/// as find_program; invalid_argument for a negative descriptor, a closed
+/// file, a batch file without windows_command_line or, on Windows, an
+/// argv[0] with a quote; bad_file_descriptor for a descriptor not open;
 /// not_supported for exit_with_parent on macOS.
 std::expected<Child, std::error_code> spawn(const SpawnOptions& options);
 

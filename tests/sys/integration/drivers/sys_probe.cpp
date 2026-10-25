@@ -50,8 +50,9 @@
 //                         `sys_probe hang` exit_with_parent in a tree of its
 //                         own, and prints whether that is in the runner's
 //                         job: {"in_job": <bool>}
-//   handles               Windows: makes an inheritable event of a name of its
-//                         own, starts `sys_probe handle <it> <name>`, and
+//   handles [all]         Windows: makes an inheritable event of a name of its
+//                         own, starts `sys_probe handle <it> <name>`, with
+//                         windows_inherit_handles when `all` is given, and
 //                         prints whether that saw it: {"inherited": <bool>}
 //   handle <value> <name> Windows: exits with 1 when <value> is a handle of
 //                         the event named <name>, 0 otherwise
@@ -414,7 +415,8 @@ int main() {
         print_line(std::format(R"({{"in_job":{}}})", in_job ? "true" : "false"));
         return 0;
     }
-    if(command == "handles") {
+    if(const bool all = arguments.size() == 3 && arguments[2] == "all";
+       command == "handles" && (arguments.size() == 2 || all)) {
         SECURITY_ATTRIBUTES inherit{.nLength = sizeof(inherit),
                                     .lpSecurityDescriptor = nullptr,
                                     .bInheritHandle = TRUE};
@@ -425,8 +427,10 @@ int main() {
         if(event == nullptr) {
             return fail("CreateEventW", kota::fs::windows::last_error());
         }
-        auto child = sys::spawn(
-            probe({"handle", std::to_string(reinterpret_cast<std::uintptr_t>(event)), name}));
+        auto options =
+            probe({"handle", std::to_string(reinterpret_cast<std::uintptr_t>(event)), name});
+        options.creation.windows_inherit_handles = all;
+        auto child = sys::spawn(options);
         if(!child) {
             return fail("spawn", child.error());
         }

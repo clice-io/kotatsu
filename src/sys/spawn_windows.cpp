@@ -1,6 +1,6 @@
 #ifdef _WIN32
 
-#include <algorithm>
+#include <array>
 #include <atomic>
 #include <csignal>
 #include <cstdint>
@@ -30,23 +30,23 @@ namespace kota::sys {
 
 namespace {
 
-/// An inheritable duplicate of `source`; none for a handle that is none, as
-/// the standard handles of a process without a console are.
-std::expected<Handle, std::error_code> inheritable(HANDLE source) {
+/// A duplicate of `source`, not inheritable; none for a handle that is
+/// none, as the standard handles of a process without a console are.
+std::expected<Handle, std::error_code> duplicate(HANDLE source) {
     if(source == nullptr || source == INVALID_HANDLE_VALUE) {
         return Handle();
     }
-    HANDLE duplicate = nullptr;
+    HANDLE copy = nullptr;
     if(!::DuplicateHandle(::GetCurrentProcess(),
                           source,
                           ::GetCurrentProcess(),
-                          &duplicate,
+                          &copy,
                           0,
-                          TRUE,
+                          FALSE,
                           DUPLICATE_SAME_ACCESS)) {
         return std::unexpected(fs::windows::last_error());
     }
-    return Handle(duplicate);
+    return Handle(copy);
 }
 
 #ifdef _MSC_VER
@@ -59,9 +59,9 @@ void ignore_invalid_parameter(const wchar_t*,
                               std::uintptr_t) {}
 #endif
 
-/// The handle of C runtime descriptor `fd`, inheritable; none for a
+/// A duplicate of the handle of C runtime descriptor `fd`; none for a
 /// standard stream the process does not have.
-std::expected<Handle, std::error_code> inheritable_descriptor(int fd) {
+std::expected<Handle, std::error_code> duplicate_descriptor(int fd) {
 #ifdef _MSC_VER
     auto previous = ::_set_thread_local_invalid_parameter_handler(ignore_invalid_parameter);
     auto handle = ::_get_osfhandle(fd);
@@ -77,11 +77,11 @@ std::expected<Handle, std::error_code> inheritable_descriptor(int fd) {
     if(handle == -1) {
         return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
     }
-    return inheritable(reinterpret_cast<HANDLE>(handle));
+    return duplicate(reinterpret_cast<HANDLE>(handle));
 }
 
 /// The two ends of a pipe: this process's, opened for overlapped I/O, and
-/// the child's, inheritable, which the child reads, writes, or both.
+/// the child's, which the child reads, writes, or both.
 std::expected<std::pair<Handle, Handle>, std::error_code> create_pipe(bool child_reads,
                                                                       bool child_writes) {
     static std::atomic<unsigned> serial = 0;
@@ -109,10 +109,7 @@ std::expected<std::pair<Handle, Handle>, std::error_code> create_pipe(bool child
     DWORD access = WRITE_DAC;
     access |= child_reads ? GENERIC_READ : FILE_READ_ATTRIBUTES;
     access |= child_writes ? GENERIC_WRITE : FILE_WRITE_ATTRIBUTES;
-    SECURITY_ATTRIBUTES inherit{.nLength = sizeof(inherit),
-                                .lpSecurityDescriptor = nullptr,
-                                .bInheritHandle = TRUE};
-    Handle theirs(::CreateFileW(name.c_str(), access, 0, &inherit, OPEN_EXISTING, 0, nullptr));
+    Handle theirs(::CreateFileW(name.c_str(), access, 0, nullptr, OPEN_EXISTING, 0, nullptr));
     if(theirs.handle == INVALID_HANDLE_VALUE) {
         return std::unexpected(fs::windows::last_error());
     }
@@ -123,16 +120,13 @@ std::expected<std::pair<Handle, Handle>, std::error_code> create_pipe(bool child
     return std::pair(std::move(ours), std::move(theirs));
 }
 
-/// NUL, inheritable, for reading as stdin or writing as stdout and stderr.
+/// NUL, for reading as stdin or writing as stdout and stderr.
 std::expected<Handle, std::error_code> null_device(bool read) {
-    SECURITY_ATTRIBUTES inherit{.nLength = sizeof(inherit),
-                                .lpSecurityDescriptor = nullptr,
-                                .bInheritHandle = TRUE};
     HANDLE handle =
         ::CreateFileW(L"NUL",
                       read ? FILE_GENERIC_READ : FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES,
                       FILE_SHARE_READ | FILE_SHARE_WRITE,
-                      &inherit,
+                      nullptr,
                       OPEN_EXISTING,
                       0,
                       nullptr);
@@ -141,6 +135,12 @@ std::expected<Handle, std::error_code> null_device(bool read) {
     }
     return Handle(handle);
 }
+
+/// Held while a child's standard handles are inheritable, which they are
+/// only while it is created: shared by children that inherit theirs through
+/// a list, exclusive for one that inherits every inheritable handle, which
+/// would take another's too.
+constinit SRWLOCK inheritance = SRWLOCK_INIT;
 
 /// Whether `path` is a batch file, which CreateProcess runs through cmd,
 /// as Windows names it: trailing dots and spaces dropped.
@@ -351,8 +351,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     }
 
     Child child;
-    // The child's standard handles, inheritable, closed here once it has
-    // started; none where the stream is this process's and it has none.
+    // The child's standard handles, inheritable only while it is created and
+    // closed then; none where the stream is this process's and it has none.
     std::array<Handle, 3> handles;
     bool shares_streams = false;
     constexpr DWORD standard[] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
@@ -360,19 +360,19 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         const auto& stream = options.streams[i];
         std::expected<Handle, std::error_code> made = Handle();
         switch(stream.kind) {
-            case Stdio::Kind::Inherit: made = inheritable(::GetStdHandle(standard[i])); break;
+            case Stdio::Kind::Inherit: made = duplicate(::GetStdHandle(standard[i])); break;
             case Stdio::Kind::Ignore: made = null_device(i == 0); break;
             case Stdio::Kind::FD:
                 if(stream.fd < 0) {
                     return std::unexpected(std::make_error_code(std::errc::invalid_argument));
                 }
-                made = inheritable_descriptor(stream.fd);
+                made = duplicate_descriptor(stream.fd);
                 break;
             case Stdio::Kind::File:
                 if(stream.file == fs::File::closed) {
                     return std::unexpected(std::make_error_code(std::errc::invalid_argument));
                 }
-                made = inheritable(stream.file);
+                made = duplicate(stream.file);
                 break;
             case Stdio::Kind::Pipe: {
                 auto pipe = create_pipe(stream.duplex || i == 0, stream.duplex || i != 0);
@@ -416,12 +416,14 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         return std::unexpected(fs::windows::last_error());
     }
 
-    // Each handle once (the same one twice fails the list), none null.
+    // The handles it inherits, none null, unless it inherits every
+    // inheritable one.
     std::vector<HANDLE> inherited;
-    for(const auto& handle: handles) {
-        if(handle.handle != nullptr &&
-           std::ranges::find(inherited, handle.handle) == inherited.end()) {
-            inherited.push_back(handle.handle);
+    if(!creation.windows_inherit_handles) {
+        for(const auto& handle: handles) {
+            if(handle.handle != nullptr) {
+                inherited.push_back(handle.handle);
+            }
         }
     }
     SIZE_T size = 0;
@@ -484,22 +486,56 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         process_flags |= CREATE_SUSPENDED;
     }
     PROCESS_INFORMATION created{};
-    if(!::CreateProcessW(application.c_str(),
-                         line.data(),
-                         nullptr,
-                         nullptr,
-                         !inherited.empty(),
-                         process_flags,
-                         environment ? block.data() : nullptr,
-                         cwd.empty() ? nullptr : cwd.c_str(),
-                         &startup.StartupInfo,
-                         &created)) {
-        // What it says of a working directory that is not there, as
-        // chdir's ENOENT says it on POSIX.
-        if(::GetLastError() == ERROR_DIRECTORY) {
-            return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
+    {
+        // Closed, and the lock let go, before the hook below runs: a child it
+        // starts inheriting every handle gets none of these, and does not
+        // wait for a lock this thread holds.
+        struct Inheriting {
+            std::array<Handle, 3>& handles;
+            bool exclusive;
+
+            Inheriting(std::array<Handle, 3>& handles, bool exclusive) :
+                handles(handles), exclusive(exclusive) {
+                if(exclusive) {
+                    ::AcquireSRWLockExclusive(&inheritance);
+                } else {
+                    ::AcquireSRWLockShared(&inheritance);
+                }
+            }
+
+            ~Inheriting() {
+                handles = {};
+                if(exclusive) {
+                    ::ReleaseSRWLockExclusive(&inheritance);
+                } else {
+                    ::ReleaseSRWLockShared(&inheritance);
+                }
+            }
+        } inheriting(handles, creation.windows_inherit_handles);
+
+        for(const auto& handle: handles) {
+            if(handle.handle != nullptr &&
+               !::SetHandleInformation(handle.handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)) {
+                return std::unexpected(fs::windows::last_error());
+            }
         }
-        return std::unexpected(fs::windows::last_error());
+        if(!::CreateProcessW(application.c_str(),
+                             line.data(),
+                             nullptr,
+                             nullptr,
+                             creation.windows_inherit_handles || !inherited.empty(),
+                             process_flags,
+                             environment ? block.data() : nullptr,
+                             cwd.empty() ? nullptr : cwd.c_str(),
+                             &startup.StartupInfo,
+                             &created)) {
+            // What it says of a working directory that is not there, as
+            // chdir's ENOENT says it on POSIX.
+            if(::GetLastError() == ERROR_DIRECTORY) {
+                return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
+            }
+            return std::unexpected(fs::windows::last_error());
+        }
     }
     Handle process(created.hProcess);
     Handle thread(created.hThread);
