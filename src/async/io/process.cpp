@@ -179,6 +179,12 @@ struct process::Self::Watch {
 
     /// Starts watching `self`'s child; the error when it cannot.
     error add(Self& self) {
+#ifndef _WIN32
+        // Room for it in the lists it may join, made before anything changes:
+        // nothing throws once it is watched.
+        make_room(polled);
+        make_room(unseen);
+#endif
         watched.push_back(&self);
         self.watch = this;
         own(+1);
@@ -222,6 +228,13 @@ struct process::Self::Watch {
     }
 
 #ifndef _WIN32
+    /// Makes room for one more in `children`, growing it as push_back does.
+    static void make_room(std::vector<Self*>& children) {
+        if(children.size() == children.capacity()) {
+            children.reserve(2 * children.size() + 1);
+        }
+    }
+
     /// Looks at `self`'s child on the next turn, where a SIGCHLD that came
     /// before its handler was armed has no one to tell.
     void look_soon(Self& self) {
