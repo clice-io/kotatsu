@@ -1,13 +1,10 @@
 #ifndef _WIN32
 
-#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <csignal>
-#include <cstring>
 #include <fcntl.h>
 #include <format>
-#include <spawn.h>
 #include <string>
 #include <sys/resource.h>
 #include <sys/socket.h>
@@ -23,14 +20,22 @@
 
 #ifdef __APPLE__
 #include <crt_externs.h>
+#include <mutex>
+#include <spawn.h>
 #else
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 
-// pidfd_open's number on every architecture but Alpha's and MIPS's, for C
-// libraries whose headers are older than it (Linux 5.3).
-#if !defined(SYS_pidfd_open) && !defined(__alpha__) && !defined(__mips__)
+// The numbers of pidfd_send_signal and pidfd_open on every architecture but
+// Alpha's and MIPS's, for C libraries whose headers are older than them
+// (Linux 5.1 and 5.3).
+#if !defined(__alpha__) && !defined(__mips__)
+#ifndef SYS_pidfd_send_signal
+#define SYS_pidfd_send_signal 424
+#endif
+#ifndef SYS_pidfd_open
 #define SYS_pidfd_open 434
+#endif
 #endif
 #endif
 
@@ -66,7 +71,7 @@ struct Descriptor {
 
 /// Two connected descriptors, close-on-exec: a pipe, `[0]` read and `[1]`
 /// written, or a socket pair.
-std::error_code connected_pair(std::array<Descriptor, 2>& pair, bool socket) {
+std::expected<std::array<Descriptor, 2>, std::error_code> connected_pair(bool socket) {
     int fds[2];
 #ifdef __APPLE__
     // Neither pipe2 nor SOCK_CLOEXEC on macOS: the flag goes on after.
@@ -80,19 +85,29 @@ std::error_code connected_pair(std::array<Descriptor, 2>& pair, bool socket) {
                       : ::pipe2(fds, O_CLOEXEC);
 #endif
     if(made != 0) {
-        return errno_code();
+        return std::unexpected(errno_code());
     }
-    pair[0] = Descriptor(fds[0]);
-    pair[1] = Descriptor(fds[1]);
+    std::array<Descriptor, 2> pair = {Descriptor(fds[0]), Descriptor(fds[1])};
+    for(auto& end: pair) {
+        // Above the standard streams, which the child's are put in place of:
+        // in a process that closed one, a new descriptor takes its number.
+        if(end.fd < 3) {
+            Descriptor moved(::fcntl(end.fd, F_DUPFD_CLOEXEC, 3));
+            if(moved.fd < 0) {
+                return std::unexpected(errno_code());
+            }
+            end = std::move(moved);
+        }
+    }
     if(socket) {
         // What libuv gives a child's socket pair, macOS's own being 8 KiB.
         int size = 64 * 1024;
-        for(int fd: fds) {
-            ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
-            ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+        for(const auto& end: pair) {
+            ::setsockopt(end.fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+            ::setsockopt(end.fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
         }
     }
-    return {};
+    return pair;
 }
 
 /// How the child ended, from wait4.
@@ -122,6 +137,9 @@ ExitStatus exit_status_of(int status, const rusage& usage) {
 struct ChildSetup {
     const char* path;
     char* const* argv;
+    /// /bin/sh, `path` and the arguments after argv[0]: what runs a file
+    /// that is no program the kernel knows, as execvp runs it.
+    char* const* shell_argv;
     char* const* envp;
     /// The descriptor each stream takes; -1 for /dev/null.
     std::array<int, 3> fds;
@@ -196,12 +214,15 @@ struct ChildSetup {
         ::sigprocmask(SIG_SETMASK, &none, nullptr);
         // libc's execve, which a hook preloaded into this process sees.
         ::execve(path, argv, envp);
+        if(errno == ENOEXEC) {
+            ::execve(shell_argv[0], shell_argv, envp);
+        }
         fail_in_child(error_fd);
     }
 };
 
 /// A pidfd of child `pid`, or -1 where the kernel has none or a sandbox
-/// forbids it; it stays valid until the child is reaped, by us alone.
+/// forbids it.
 int open_pidfd([[maybe_unused]] pid_t pid) {
 #ifdef SYS_pidfd_open
     return static_cast<int>(::syscall(SYS_pidfd_open, pid, 0));
@@ -210,25 +231,16 @@ int open_pidfd([[maybe_unused]] pid_t pid) {
 #endif
 }
 
+#else
+
+/// Held while a pipe is made and until posix_spawn has started the child it
+/// is for: macOS sets close-on-exec only after it makes one, which another
+/// of these spawns would otherwise give its child.
+std::mutex spawning;
+
 #endif
 
 }  // namespace
-
-Child::Child(Child&& other) noexcept :
-    id(std::exchange(other.id, -1)), handle(std::exchange(other.handle, invalid_handle)),
-    pipes(std::exchange(other.pipes, {fs::File::closed, fs::File::closed, fs::File::closed})),
-    exited(std::exchange(other.exited, std::nullopt)),
-    leads_group(std::exchange(other.leads_group, false)) {}
-
-Child& Child::operator=(Child&& other) noexcept {
-    Child gone(std::move(*this));
-    id = std::exchange(other.id, -1);
-    handle = std::exchange(other.handle, invalid_handle);
-    pipes = std::exchange(other.pipes, {fs::File::closed, fs::File::closed, fs::File::closed});
-    exited = std::exchange(other.exited, std::nullopt);
-    leads_group = std::exchange(other.leads_group, false);
-    return *this;
-}
 
 Child::~Child() {
     if(handle >= 0) {
@@ -241,57 +253,23 @@ Child::~Child() {
     }
 }
 
-fs::File::native_handle_type Child::take_pipe(int index) noexcept {
-    return std::exchange(pipes[static_cast<std::size_t>(index)], fs::File::closed);
-}
-
-std::expected<std::optional<ExitStatus>, std::error_code> Child::try_wait() {
-    if(id < 0) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
-    }
+std::error_code Child::reap(bool block) {
     if(exited) {
-        return exited;
+        return {};
     }
     int status = 0;
     rusage usage{};
     pid_t reaped = 0;
     do {
-        reaped = ::wait4(id, &status, WNOHANG, &usage);
+        reaped = ::wait4(id, &status, block ? 0 : WNOHANG, &usage);
     } while(reaped < 0 && errno == EINTR);
     if(reaped < 0) {
-        return std::unexpected(errno_code());
+        return errno_code();
     }
-    if(reaped == 0) {
-        return std::nullopt;
+    if(reaped > 0) {
+        exited = exit_status_of(status, usage);
     }
-    exited = exit_status_of(status, usage);
-    if(handle >= 0) {
-        ::close(std::exchange(handle, invalid_handle));
-    }
-    return exited;
-}
-
-std::expected<ExitStatus, std::error_code> Child::wait() {
-    if(id < 0) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
-    }
-    if(exited) {
-        return *exited;
-    }
-    int status = 0;
-    rusage usage{};
-    pid_t reaped = 0;
-    do {
-        reaped = ::wait4(id, &status, 0, &usage);
-    } while(reaped < 0 && errno == EINTR);
-    if(reaped < 0) {
-        return std::unexpected(errno_code());
-    }
-    exited = exit_status_of(status, usage);
-    if(handle >= 0) {
-        ::close(std::exchange(handle, invalid_handle));
-    }
-    return *exited;
+    return {};
 }
 
 std::error_code Child::kill(int signum) {
@@ -302,14 +280,20 @@ std::error_code Child::kill(int signum) {
     if(exited) {
         return std::make_error_code(std::errc::no_such_process);
     }
+#ifdef SYS_pidfd_send_signal
+    if(handle >= 0) {
+        if(::syscall(SYS_pidfd_send_signal, handle, signum, nullptr, 0) == 0) {
+            return {};
+        }
+        if(errno != ENOSYS) {
+            return errno_code();
+        }
+    }
+#endif
     if(::kill(id, signum) != 0) {
         return errno_code();
     }
     return {};
-}
-
-std::error_code Child::kill() {
-    return kill(SIGKILL);
 }
 
 std::error_code Child::kill_tree(int signum) {
@@ -321,10 +305,6 @@ std::error_code Child::kill_tree(int signum) {
         return errno_code();
     }
     return {};
-}
-
-std::error_code Child::kill_tree() {
-    return kill_tree(SIGKILL);
 }
 
 std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
@@ -350,6 +330,9 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         argv.push_back(arg.data());
     }
     argv.push_back(nullptr);
+    std::string shell = "/bin/sh";
+    std::vector<char*> shell_argv = {shell.data(), program->data()};
+    shell_argv.insert(shell_argv.end(), argv.begin() + 1, argv.end());
     std::vector<std::string> variables;
     std::vector<char*> envp;
     if(environment) {
@@ -363,6 +346,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     }
 #ifdef __APPLE__
     char* const* child_envp = environment ? envp.data() : *::_NSGetEnviron();
+    std::lock_guard lock(spawning);
 #else
     char* const* child_envp = environment ? envp.data() : environ;
 #endif
@@ -387,14 +371,14 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
             }
             case Stdio::Kind::Pipe: {
                 const bool both = stream.readable && stream.writable;
-                std::array<Descriptor, 2> pair;
-                if(auto error = connected_pair(pair, both)) {
-                    return std::unexpected(error);
+                auto pair = connected_pair(both);
+                if(!pair) {
+                    return std::unexpected(pair.error());
                 }
                 // A pipe the child reads it reads from [0].
                 const std::size_t ours = both || stream.readable ? 1 : 0;
-                child.pipes[i] = pair[ours].release();
-                child_ends[i] = std::move(pair[1 - ours]);
+                child.pipes[i] = (*pair)[ours].release();
+                child_ends[i] = std::move((*pair)[1 - ours]);
                 fds[i] = child_ends[i].fd;
                 break;
             }
@@ -428,46 +412,35 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     if(!options.cwd.empty()) {
         posix_spawn_file_actions_addchdir_np(&actions, options.cwd.c_str());
     }
-    // A descriptor below the stream it goes to moves above them first, to a
-    // number no stream's descriptor has.
-    std::array<int, 3> sources = fds;
+    // Each stream's descriptor, where it is not the stream itself, goes in
+    // from a copy of its own: a number free here, so free in the child but
+    // for the copy, which no stream takes and close-on-exec closes.
+    std::array<Descriptor, 3> copies;
     for(int target = 0; target < 3; ++target) {
-        if(sources[target] >= 0 && sources[target] < target) {
-            int free = 3;
-            while(std::ranges::find(fds, free) != fds.end()) {
-                ++free;
-            }
-            posix_spawn_file_actions_adddup2(&actions, sources[target], free);
-            sources[target] = free;
-        }
-    }
-    for(int target = 0; target < 3; ++target) {
-        int fd = sources[target];
+        int fd = fds[target];
         if(fd < 0) {
             posix_spawn_file_actions_addopen(&actions,
                                              target,
                                              "/dev/null",
                                              target == 0 ? O_RDONLY : O_RDWR,
                                              0);
-        } else if(fd == target) {
+            continue;
+        }
+        if(fd == target) {
             posix_spawn_file_actions_addinherit_np(&actions, fd);
         } else {
-            posix_spawn_file_actions_adddup2(&actions, fd, target);
-        }
-        if(fd >= 0) {
-            // Shared with whoever else has it open, as libuv does.
-            int status = ::fcntl(fd, F_GETFL);
-            if(status >= 0 && (status & O_NONBLOCK)) {
-                ::fcntl(fd, F_SETFL, status & ~O_NONBLOCK);
+            copies[target] = Descriptor(::fcntl(fd, F_DUPFD_CLOEXEC, 3));
+            if(copies[target].fd < 0) {
+                posix_spawn_file_actions_destroy(&actions);
+                posix_spawnattr_destroy(&attributes);
+                return std::unexpected(errno_code());
             }
+            posix_spawn_file_actions_adddup2(&actions, copies[target].fd, target);
         }
-    }
-    // The descriptors moved into place need not stay twice.
-    for(int target = 0; target < 3; ++target) {
-        int fd = sources[target];
-        if(fd >= 3 && std::ranges::find(sources.begin(), sources.begin() + target, fd) ==
-                          sources.begin() + target) {
-            posix_spawn_file_actions_addclose(&actions, fd);
+        // Shared with whoever else has it open, as libuv does.
+        int status = ::fcntl(fd, F_GETFL);
+        if(status >= 0 && (status & O_NONBLOCK)) {
+            ::fcntl(fd, F_SETFL, status & ~O_NONBLOCK);
         }
     }
     pid_t pid = -1;
@@ -475,6 +448,15 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     do {
         failed =
             ::posix_spawn(&pid, program->c_str(), &actions, &attributes, argv.data(), child_envp);
+        // A file that is no program the kernel knows, which execvp runs.
+        if(failed == ENOEXEC) {
+            failed = ::posix_spawn(&pid,
+                                   shell_argv[0],
+                                   &actions,
+                                   &attributes,
+                                   shell_argv.data(),
+                                   child_envp);
+        }
     } while(failed == EINTR);
     posix_spawn_file_actions_destroy(&actions);
     posix_spawnattr_destroy(&attributes);
@@ -483,13 +465,14 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     }
     child.id = pid;
 #else
-    std::array<Descriptor, 2> report;
-    if(auto error = connected_pair(report, false)) {
-        return std::unexpected(error);
+    auto report = connected_pair(false);
+    if(!report) {
+        return std::unexpected(report.error());
     }
     ChildSetup setup{
         .path = program->c_str(),
         .argv = argv.data(),
+        .shell_argv = shell_argv.data(),
         .envp = child_envp,
         .fds = fds,
         .cwd = options.cwd.empty() ? nullptr : options.cwd.c_str(),
@@ -497,7 +480,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         .process_group = creation.process_group,
         .exit_with_parent = creation.exit_with_parent,
         .parent = ::getpid(),
-        .error_fd = report[1].fd,
+        .error_fd = (*report)[1].fd,
     };
     // A signal arriving before the child has reset its handlers would run
     // this process's in it: they wait until it has. A crash still ends it.
@@ -519,14 +502,14 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     if(pid < 0) {
         return std::unexpected(std::error_code(fork_error, std::generic_category()));
     }
-    report[1] = Descriptor();
+    (*report)[1] = Descriptor();
     // The end of the pipe, at the exec, says it went well; a number, how it
     // failed. Until then this thread waits, so that it is the parent
     // PR_SET_PDEATHSIG watches throughout.
     int code = 0;
     ssize_t got = 0;
     do {
-        got = ::read(report[0].fd, &code, sizeof(code));
+        got = ::read((*report)[0].fd, &code, sizeof(code));
     } while(got < 0 && errno == EINTR);
     if(got > 0) {
         while(::waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {}

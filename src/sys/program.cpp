@@ -218,10 +218,7 @@ std::expected<std::string, std::error_code> find_program(std::string_view name,
 #ifdef _WIN32
     auto directories = list_variable("PATH", "");
 #else
-    std::string fallback(::confstr(_CS_PATH, nullptr, 0), '\0');
-    ::confstr(_CS_PATH, fallback.data(), fallback.size());
-    fallback.pop_back();
-    auto directories = list_variable("PATH", fallback);
+    auto directories = list_variable("PATH", default_path());
 #endif
     return find(name, directories, search.extensions, false);
 }

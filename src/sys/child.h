@@ -3,6 +3,7 @@
 // What spawn does alike on every host: the child's environment, and the
 // file it runs.
 
+#include <csignal>
 #include <expected>
 #include <optional>
 #include <string>
@@ -14,13 +15,23 @@
 
 namespace kota::sys {
 
+#ifdef _WIN32
+/// SIGKILL, which Windows's C runtime does not name: kill and kill_tree take
+/// it there too.
+constexpr inline int sigkill = 9;
+#else
+inline constexpr int sigkill = SIGKILL;
+#endif
+
 /// The child's environment as `options` ask for it: `env`, or this
 /// process's, with `env_changes` made in order; unset when the child is to
 /// inherit this process's as it is.
 std::optional<std::vector<EnvVar>> child_environment(const SpawnOptions& options);
 
 /// The file the child runs: `options.file` as SpawnOptions::file says, PATH
-/// read from `environment`, the child's (this process's when unset).
+/// read from `environment`, the child's (this process's when unset). A path
+/// relative to `options.cwd` is made absolute, for a child that changes to
+/// that directory before it runs the file.
 std::expected<std::string, std::error_code>
     child_program(const SpawnOptions& options,
                   const std::optional<std::vector<EnvVar>>& environment);

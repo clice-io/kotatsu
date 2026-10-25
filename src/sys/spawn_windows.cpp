@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <atomic>
 #include <csignal>
+#include <cstdint>
+#include <cstdlib>
 #include <format>
 #include <io.h>
 #include <string>
@@ -27,37 +29,6 @@ namespace kota::sys {
 
 namespace {
 
-/// A handle, closed when this goes.
-struct Handle {
-    HANDLE handle = nullptr;
-
-    Handle() = default;
-
-    explicit Handle(HANDLE handle) noexcept : handle(handle) {}
-
-    Handle(Handle&& other) noexcept : handle(std::exchange(other.handle, nullptr)) {}
-
-    Handle& operator=(Handle&& other) noexcept {
-        std::swap(handle, other.handle);
-        return *this;
-    }
-
-    ~Handle() {
-        if(handle != nullptr && handle != INVALID_HANDLE_VALUE) {
-            ::CloseHandle(handle);
-        }
-    }
-
-    HANDLE release() noexcept {
-        return std::exchange(handle, nullptr);
-    }
-};
-
-/// UTF-16 of `text`, which is WTF-8.
-std::expected<std::wstring, std::error_code> wide(std::string_view text) {
-    return to_utf16<wchar_t>(text);
-}
-
 /// An inheritable duplicate of `source`; none for a handle that is none, as
 /// the standard handles of a process without a console are.
 std::expected<Handle, std::error_code> inheritable(HANDLE source) {
@@ -77,9 +48,34 @@ std::expected<Handle, std::error_code> inheritable(HANDLE source) {
     return Handle(duplicate);
 }
 
+/// Does nothing, for _get_osfhandle: the C runtime would end the process
+/// for a descriptor not open.
+void ignore_invalid_parameter(const wchar_t*,
+                              const wchar_t*,
+                              const wchar_t*,
+                              unsigned int,
+                              std::uintptr_t) {}
+
+/// The handle of C runtime descriptor `fd`, inheritable; none for a
+/// standard stream the process does not have.
+std::expected<Handle, std::error_code> inheritable_descriptor(int fd) {
+    auto previous = ::_set_thread_local_invalid_parameter_handler(ignore_invalid_parameter);
+    auto handle = ::_get_osfhandle(fd);
+    ::_set_thread_local_invalid_parameter_handler(previous);
+    // -2: a standard stream without a handle.
+    if(handle == -2) {
+        return Handle();
+    }
+    if(handle == -1) {
+        return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
+    }
+    return inheritable(reinterpret_cast<HANDLE>(handle));
+}
+
 /// The two ends of a pipe: this process's, opened for overlapped I/O, and
 /// the child's, inheritable; flags from the child's side.
-std::error_code create_pipe(Handle& ours, Handle& theirs, bool readable, bool writable) {
+std::expected<std::pair<Handle, Handle>, std::error_code> create_pipe(bool readable,
+                                                                      bool writable) {
     static std::atomic<unsigned> serial = 0;
     auto name = std::format(LR"(\\.\pipe\kota-{}-{})", ::GetCurrentProcessId(), serial++);
     // Ours reads too when the child only reads, as libuv's does: a shutdown
@@ -91,17 +87,16 @@ std::error_code create_pipe(Handle& ours, Handle& theirs, bool readable, bool wr
     if(writable) {
         open_mode |= PIPE_ACCESS_INBOUND;
     }
-    ours = Handle(::CreateNamedPipeW(name.c_str(),
-                                     open_mode,
-                                     PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
-                                     1,
-                                     65536,
-                                     65536,
-                                     0,
-                                     nullptr));
+    Handle ours(::CreateNamedPipeW(name.c_str(),
+                                   open_mode,
+                                   PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+                                   1,
+                                   65536,
+                                   65536,
+                                   0,
+                                   nullptr));
     if(ours.handle == INVALID_HANDLE_VALUE) {
-        ours.release();
-        return fs::windows::last_error();
+        return std::unexpected(fs::windows::last_error());
     }
     DWORD access = WRITE_DAC;
     access |= readable ? GENERIC_READ : FILE_READ_ATTRIBUTES;
@@ -109,16 +104,15 @@ std::error_code create_pipe(Handle& ours, Handle& theirs, bool readable, bool wr
     SECURITY_ATTRIBUTES inherit{.nLength = sizeof(inherit),
                                 .lpSecurityDescriptor = nullptr,
                                 .bInheritHandle = TRUE};
-    theirs = Handle(::CreateFileW(name.c_str(), access, 0, &inherit, OPEN_EXISTING, 0, nullptr));
+    Handle theirs(::CreateFileW(name.c_str(), access, 0, &inherit, OPEN_EXISTING, 0, nullptr));
     if(theirs.handle == INVALID_HANDLE_VALUE) {
-        theirs.release();
-        return fs::windows::last_error();
+        return std::unexpected(fs::windows::last_error());
     }
     // Both ends are there: it does not wait.
     if(!::ConnectNamedPipe(ours.handle, nullptr) && ::GetLastError() != ERROR_PIPE_CONNECTED) {
-        return fs::windows::last_error();
+        return std::unexpected(fs::windows::last_error());
     }
-    return {};
+    return std::pair(std::move(ours), std::move(theirs));
 }
 
 /// NUL, inheritable, for reading as stdin or writing as stdout and stderr.
@@ -157,7 +151,7 @@ std::expected<std::wstring, std::error_code>
     environment_block(const std::vector<EnvVar>& variables) {
     std::wstring block;
     for(const auto& [name, value]: variables) {
-        auto entry = wide(std::format("{}={}", name, value));
+        auto entry = to_utf16<wchar_t>(std::format("{}={}", name, value));
         if(!entry) {
             return std::unexpected(entry.error());
         }
@@ -215,31 +209,12 @@ bool job_is_empty(HANDLE job) {
     return accounting.ActiveProcesses == 0;
 }
 
-/// Whether `signum` is one kill takes to end a process; 9 is SIGKILL.
+/// Whether `signum` is one kill takes to end a process.
 bool ends_a_process(int signum) {
-    return signum == SIGINT || signum == SIGTERM || signum == 9;
+    return signum == SIGINT || signum == SIGTERM || signum == sigkill;
 }
 
 }  // namespace
-
-Child::Child(Child&& other) noexcept :
-    id(std::exchange(other.id, -1)), handle(std::exchange(other.handle, invalid_handle)),
-    pipes(std::exchange(other.pipes, {fs::File::closed, fs::File::closed, fs::File::closed})),
-    exited(std::exchange(other.exited, std::nullopt)),
-    leads_group(std::exchange(other.leads_group, false)), job(std::exchange(other.job, nullptr)),
-    killed_by(std::exchange(other.killed_by, 0)) {}
-
-Child& Child::operator=(Child&& other) noexcept {
-    Child gone(std::move(*this));
-    id = std::exchange(other.id, -1);
-    handle = std::exchange(other.handle, invalid_handle);
-    pipes = std::exchange(other.pipes, {fs::File::closed, fs::File::closed, fs::File::closed});
-    exited = std::exchange(other.exited, std::nullopt);
-    leads_group = std::exchange(other.leads_group, false);
-    job = std::exchange(other.job, nullptr);
-    killed_by = std::exchange(other.killed_by, 0);
-    return *this;
-}
 
 Child::~Child() {
     for(HANDLE handle: {handle, static_cast<HANDLE>(job), pipes[0], pipes[1], pipes[2]}) {
@@ -249,34 +224,15 @@ Child::~Child() {
     }
 }
 
-fs::File::native_handle_type Child::take_pipe(int index) noexcept {
-    return std::exchange(pipes[static_cast<std::size_t>(index)], fs::File::closed);
-}
-
-std::expected<std::optional<ExitStatus>, std::error_code> Child::try_wait() {
-    if(id < 0) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+std::error_code Child::reap(bool block) {
+    if(exited) {
+        return {};
     }
-    if(!exited) {
-        if(::WaitForSingleObject(handle, 0) != WAIT_OBJECT_0) {
-            return std::nullopt;
-        }
-        exited = exit_status_of(handle, job, leads_group, killed_by);
+    switch(::WaitForSingleObject(handle, block ? INFINITE : 0)) {
+        case WAIT_OBJECT_0: exited = exit_status_of(handle, job, leads_group, killed_by); return {};
+        case WAIT_TIMEOUT: return {};
+        default: return fs::windows::last_error();
     }
-    return exited;
-}
-
-std::expected<ExitStatus, std::error_code> Child::wait() {
-    if(id < 0) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
-    }
-    if(!exited) {
-        if(::WaitForSingleObject(handle, INFINITE) != WAIT_OBJECT_0) {
-            return std::unexpected(fs::windows::last_error());
-        }
-        exited = exit_status_of(handle, job, leads_group, killed_by);
-    }
-    return *exited;
 }
 
 std::error_code Child::kill(int signum) {
@@ -301,10 +257,6 @@ std::error_code Child::kill(int signum) {
     return {};
 }
 
-std::error_code Child::kill() {
-    return kill(9);
-}
-
 std::error_code Child::kill_tree(int signum) {
     if(id < 0 || !leads_group || (signum != 0 && !ends_a_process(signum))) {
         return std::make_error_code(std::errc::invalid_argument);
@@ -324,10 +276,6 @@ std::error_code Child::kill_tree(int signum) {
     return {};
 }
 
-std::error_code Child::kill_tree() {
-    return kill_tree(9);
-}
-
 std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     const auto& creation = options.creation;
     auto environment = child_environment(options);
@@ -341,14 +289,14 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
 
-    auto application = wide(*program);
+    auto application = to_utf16<wchar_t>(*program);
     if(!application) {
         return std::unexpected(application.error());
     }
-    auto line = wide(!options.windows_command_line.empty() ? options.windows_command_line
-                     : options.args.empty()
-                         ? windows::join_command_line(std::vector<std::string>{options.file})
-                         : windows::join_command_line(options.args));
+    auto line = to_utf16<wchar_t>(
+        !options.windows_command_line.empty() ? options.windows_command_line
+        : options.args.empty() ? windows::join_command_line(std::vector<std::string>{options.file})
+                               : windows::join_command_line(options.args));
     if(!line) {
         return std::unexpected(line.error());
     }
@@ -362,7 +310,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     }
     std::wstring cwd;
     if(!options.cwd.empty()) {
-        auto given = wide(options.cwd);
+        auto given = to_utf16<wchar_t>(options.cwd);
         if(!given) {
             return std::unexpected(given.error());
         }
@@ -400,7 +348,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
                     return std::unexpected(std::make_error_code(std::errc::invalid_argument));
                 }
                 shares_streams = true;
-                made = inheritable(reinterpret_cast<HANDLE>(::_get_osfhandle(stream.fd)));
+                made = inheritable_descriptor(stream.fd);
                 break;
             case Stdio::Kind::File:
                 if(stream.file == fs::File::closed) {
@@ -410,11 +358,12 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
                 made = inheritable(stream.file);
                 break;
             case Stdio::Kind::Pipe: {
-                Handle ours;
-                if(auto error = create_pipe(ours, handles[i], stream.readable, stream.writable)) {
-                    return std::unexpected(error);
+                auto pipe = create_pipe(stream.readable, stream.writable);
+                if(!pipe) {
+                    return std::unexpected(pipe.error());
                 }
-                child.pipes[i] = ours.release();
+                child.pipes[i] = pipe->first.release();
+                handles[i] = std::move(pipe->second);
                 continue;
             }
         }
@@ -458,8 +407,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     }
     SIZE_T size = 0;
     ::InitializeProcThreadAttributeList(nullptr, 2, 0, &size);
-    std::vector<std::byte> storage(size);
-    auto* attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
+    std::vector<std::byte> list(size);
+    auto* attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(list.data());
     if(!::InitializeProcThreadAttributeList(attributes, 2, 0, &size)) {
         return std::unexpected(fs::windows::last_error());
     }
@@ -527,6 +476,11 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
                          cwd.empty() ? nullptr : cwd.c_str(),
                          &startup.StartupInfo,
                          &created)) {
+        // What it says of a working directory that is not there, as
+        // chdir's ENOENT says it on POSIX.
+        if(::GetLastError() == ERROR_DIRECTORY) {
+            return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
+        }
         return std::unexpected(fs::windows::last_error());
     }
     Handle process(created.hProcess);

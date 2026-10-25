@@ -8,7 +8,7 @@ namespace kota::sys {
 
 namespace {
 
-ZEST_SUITE(sys_process_exit_status) {
+ZEST_SUITE(sys_process_signal_name) {
 
 ZEST_CASE(signal_name_names_this_hosts_signals) {
     ZEXPECT(signal_name(SIGINT) == "SIGINT");
@@ -33,7 +33,7 @@ ZEST_CASE(signal_name_of_no_signal_is_empty) {
     ZEXPECT(signal_name(1000).empty());
 }
 
-};  // ZEST_SUITE(sys_process_exit_status)
+};  // ZEST_SUITE(sys_process_signal_name)
 
 }  // namespace
 

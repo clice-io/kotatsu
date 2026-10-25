@@ -67,7 +67,7 @@ std::error_code process_error(std::error_code error) {
 std::expected<ProcessStats, std::error_code> process_stats(int pid) {
     ProcessStats stats;
 #ifdef _WIN32
-    auto process = ProcessHandle::open(pid, PROCESS_QUERY_LIMITED_INFORMATION);
+    auto process = Handle::open_process(pid, PROCESS_QUERY_LIMITED_INFORMATION);
     if(!process) {
         return std::unexpected(process.error());
     }

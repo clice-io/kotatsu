@@ -2,6 +2,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <functional>
@@ -97,9 +98,10 @@ struct CreationOptions {
     /// PR_SET_PDEATHSIG, set before it runs: the child alone, and when the
     /// thread that started it exits, which may be before this process does
     /// (cleared too when it runs a set-user-ID program). On Windows its job
-    /// is killed when closed: the whole tree with process_group, else the
-    /// child alone; the job closes once this process exits, or its Child is
-    /// destroyed. not_supported on macOS, which has nothing to do it with.
+    /// is killed when closed: the whole tree with process_group or detached,
+    /// else the child alone; the job closes once this process exits, or its
+    /// Child is destroyed. not_supported on macOS, which has nothing to do it
+    /// with.
     bool exit_with_parent = false;
 
     /// Windows: no console window, and none for the console programs it
@@ -117,11 +119,12 @@ struct CreationOptions {
 struct SpawnOptions {
     /// The program: a path, relative to `cwd` when it is relative and `cwd`
     /// is given, when it holds a separator; else looked for in the child's
-    /// PATH, a relative entry relative to `cwd` too. On POSIX as execvp
-    /// finds it (sys::find_program), PATH unset searching
-    /// confstr(_CS_PATH)'s directories; on Windows as CreateProcess does
-    /// (windows::find_create_process_program), never in the current
-    /// directory. A `.bat` or `.cmd` file runs only with a
+    /// PATH, a relative entry relative to `cwd` too. On POSIX by
+    /// find_program's rules, PATH unset searching confstr(_CS_PATH)'s
+    /// directories, and a file without a #! line run by /bin/sh, as execvp
+    /// does; on Windows by find_create_process_program's, in PATH alone: not,
+    /// as CreateProcess, in this program's directory, the current one or the
+    /// system's. A `.bat` or `.cmd` file runs only with a
     /// windows_command_line, which says how cmd is to read its arguments.
     std::string file = {};
 
@@ -166,7 +169,8 @@ struct ExitStatus {
 
     /// CPU time, in user mode and in the kernel: of the child and the
     /// descendants it waited for, on POSIX; on Windows of every process
-    /// that ran in its job with process_group, else of the child alone.
+    /// that ran in its job with process_group or detached, else of the
+    /// child alone.
     std::chrono::microseconds user_time{};
 
     std::chrono::microseconds system_time{};
@@ -217,7 +221,8 @@ public:
 
     /// What its exit is waited on with: on Windows its process handle; on
     /// Linux a pidfd, readable once it has exited, or -1 on a kernel without
-    /// them (before 5.3) or where a sandbox forbids them; -1 elsewhere.
+    /// them (before 5.3) or where a sandbox forbids them; -1 elsewhere. It
+    /// stays open, after the child is reaped too, until the Child goes.
     native_handle_type native_handle() const noexcept {
         return handle;
     }
@@ -227,7 +232,7 @@ public:
     /// pair for one both read and written; on Windows a named pipe opened
     /// for overlapped I/O, which an event loop takes. Closed, or given away
     /// already, otherwise.
-    fs::File::native_handle_type take_pipe(int index) noexcept;
+    fs::File::native_handle_type take_pipe(std::size_t index) noexcept;
 
     /// Waits for the child to exit, and reaps it. Once it has been reaped,
     /// the status it ended with. no_child_process when another reaped it, as
@@ -238,9 +243,11 @@ public:
     /// it runs. Fails as wait() does.
     std::expected<std::optional<ExitStatus>, std::error_code> try_wait();
 
-    /// Sends signal `signum` to the child. On Windows SIGINT, SIGTERM and
-    /// SIGKILL (9) end it, and 0 tells whether it runs. no_such_process once
-    /// it has been reaped, or on Windows once it has exited.
+    /// Sends signal `signum` to the child, through its pidfd where it has
+    /// one: never to another process that took its pid after another reaped
+    /// it. On Windows SIGINT, SIGTERM and SIGKILL (9) end it, and 0 tells
+    /// whether it runs. no_such_process once it has been reaped, or on
+    /// Windows once it has exited.
     std::error_code kill(int signum);
 
     /// Ends the child at once, which it cannot catch: SIGKILL, or on Windows
@@ -259,6 +266,12 @@ public:
 
 private:
     friend std::expected<Child, std::error_code> spawn(const SpawnOptions& options);
+
+    void swap(Child& other) noexcept;
+
+    /// Reaps the child into `exited` once it has exited, waiting for that
+    /// when `block`; nothing once it has been reaped.
+    std::error_code reap(bool block);
 
     int id = -1;
 
@@ -293,8 +306,9 @@ private:
 /// its three standard handles alone, and is born in a job object of its
 /// own, nested in any this process is in, which ends it rather than show a
 /// dialog when it crashes. no_such_file_or_directory or permission_denied
-/// for a program not found, as find_program; invalid_argument for a bad
-/// descriptor or a batch file without windows_command_line;
+/// for a program not found, as find_program; invalid_argument for a
+/// negative descriptor, a closed file or a batch file without
+/// windows_command_line; bad_file_descriptor for a descriptor not open;
 /// not_supported for exit_with_parent on macOS.
 std::expected<Child, std::error_code> spawn(const SpawnOptions& options);
 

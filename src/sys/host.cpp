@@ -77,7 +77,7 @@ constexpr int nice_values[] = {19, 10, 0, -7, -14, -20};
 
 std::expected<Priority, std::error_code> priority(int pid) {
 #ifdef _WIN32
-    auto process = ProcessHandle::open(pid, PROCESS_QUERY_LIMITED_INFORMATION);
+    auto process = Handle::open_process(pid, PROCESS_QUERY_LIMITED_INFORMATION);
     if(!process) {
         return std::unexpected(process.error());
     }
@@ -115,7 +115,7 @@ std::error_code set_priority(Priority priority, int pid) {
         HIGH_PRIORITY_CLASS,
         REALTIME_PRIORITY_CLASS,
     };
-    auto process = ProcessHandle::open(pid, PROCESS_SET_INFORMATION);
+    auto process = Handle::open_process(pid, PROCESS_SET_INFORMATION);
     if(!process) {
         return process.error();
     }

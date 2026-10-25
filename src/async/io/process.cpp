@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
+#include <csignal>
 #include <cstdlib>
 #include <map>
 #include <mutex>
@@ -19,8 +21,6 @@
 #include <unistd.h>
 #endif
 
-#include <csignal>
-
 #include "awaiter.h"
 #include "kota/async/runtime/when.h"
 
@@ -32,9 +32,11 @@ struct process::Self {
     /// Its loop; null once the loop is gone.
     uv_loop_t* loop;
 
+    struct Watch;
+
     /// What wakes the loop when the child exits; null once nothing does: the
     /// child reaped, or the loop gone.
-    detail::ChildWatch* watch = nullptr;
+    Watch* watch = nullptr;
 
     /// The pending wait.
     uv::waiter_slot<exit_status> slot;
@@ -52,6 +54,10 @@ struct process::Self {
 #ifdef _WIN32
     /// The thread-pool wait on its handle.
     HANDLE wait_handle = nullptr;
+#elif defined(__APPLE__)
+    /// kqueue told of its exit, which it may before the child is a zombie:
+    /// the next look waits for it.
+    bool exiting = false;
 #endif
 
     struct ExitWait;
@@ -67,17 +73,13 @@ struct process::Self {
     static void destroy(Self* self) noexcept;
 };
 
-namespace detail {
-
 /// The children of one loop whose exits it waits for, and what wakes it
 /// for them: on Linux an epoll set of their pidfds, on macOS a kqueue of
 /// their EVFILT_PROC events, under one poll handle; SIGCHLD for children
 /// neither can watch; on Windows a thread-pool wait on each handle, which
 /// posts to the loop. It keeps the loop alive while a child whose process
 /// is still there runs, as libuv's process handles do.
-struct ChildWatch {
-    using Self = process::Self;
-
+struct process::Self::Watch {
     uv_loop_t& loop;
 
     /// The children watched, orphans among them.
@@ -114,7 +116,7 @@ struct ChildWatch {
     std::vector<Self*> signaled;
 #endif
 
-    explicit ChildWatch(uv_loop_t& loop) : loop(loop) {
+    explicit Watch(uv_loop_t& loop) : loop(loop) {
 #ifdef __linux__
         multiplexer = ::epoll_create1(EPOLL_CLOEXEC);
 #elif defined(__APPLE__)
@@ -138,17 +140,18 @@ struct ChildWatch {
     }
 
     /// The watch of `loop`, made on first use and gone with the loop.
-    static ChildWatch& of(event_loop& loop) {
-        static std::mutex table_mutex;
-        static std::map<uv_loop_t*, ChildWatch*> table;
+    static Watch& of(event_loop& loop) {
+        // Never destroyed: a loop of static storage may go after them.
+        static auto& table_mutex = *new std::mutex;
+        static auto& table = *new std::map<uv_loop_t*, Watch*>;
         std::scoped_lock lock(table_mutex);
         auto* native = loop.native_handle();
         auto [entry, first] = table.try_emplace(native, nullptr);
         if(first) {
-            entry->second = new ChildWatch(*native);
+            entry->second = new Watch(*native);
             // A loop made later at the same address starts afresh.
             loop.on_destroy([native] {
-                ChildWatch* watch = nullptr;
+                Watch* watch = nullptr;
                 {
                     std::scoped_lock lock(table_mutex);
                     watch = table.extract(native).mapped();
@@ -237,8 +240,10 @@ struct ChildWatch {
         if(::kevent(multiplexer, &change, 1, nullptr, 0, nullptr) == 0) {
             return true;
         }
-        // Gone already: a zombie is no process kqueue knows of.
+        // Gone already, or going: a process exiting, or a zombie, is none
+        // kqueue knows of.
         if(errno == ESRCH) {
+            self.exiting = true;
             look_soon(self);
             return true;
         }
@@ -334,7 +339,7 @@ struct ChildWatch {
 
 #ifndef _WIN32
     static void on_ready(uv_poll_t* handle, int, int) {
-        auto& watch = *static_cast<ChildWatch*>(handle->data);
+        auto& watch = *static_cast<Watch*>(handle->data);
         std::vector<Self*> ready;
 #ifdef __linux__
         epoll_event events[16];
@@ -347,27 +352,31 @@ struct ChildWatch {
         timespec now{};
         int count = ::kevent(watch.multiplexer, nullptr, 0, events, 16, &now);
         for(int i = 0; i < count; ++i) {
-            ready.push_back(static_cast<Self*>(events[i].udata));
+            auto* self = static_cast<Self*>(events[i].udata);
+            if(watch.watches(self)) {
+                self->exiting = true;
+            }
+            ready.push_back(self);
         }
 #endif
         watch.reap(ready);
     }
 
     static void on_soon(uv_timer_t* handle) {
-        auto& watch = *static_cast<ChildWatch*>(handle->data);
+        auto& watch = *static_cast<Watch*>(handle->data);
         std::vector<Self*> children;
         children.swap(watch.unseen);
         watch.reap(children);
     }
 
     static void on_sigchld(uv_signal_t* handle, int) {
-        auto& watch = *static_cast<ChildWatch*>(handle->data);
+        auto& watch = *static_cast<Watch*>(handle->data);
         // A copy: reaping takes them out.
         watch.reap(std::vector(watch.polled));
     }
 #else
     static void on_signaled(uv_async_t* handle) {
-        auto& watch = *static_cast<ChildWatch*>(handle->data);
+        auto& watch = *static_cast<Watch*>(handle->data);
         std::vector<Self*> ready;
         {
             std::scoped_lock lock(watch.mutex);
@@ -391,7 +400,7 @@ struct ChildWatch {
             }
         }
         auto closed = [](uv_handle_t* handle) {
-            auto* watch = static_cast<ChildWatch*>(handle->data);
+            auto* watch = static_cast<Watch*>(handle->data);
             if(--watch->closing == 0) {
                 delete watch;
             }
@@ -413,7 +422,7 @@ struct ChildWatch {
 #endif
     }
 
-    ~ChildWatch() {
+    ~Watch() {
 #ifndef _WIN32
         if(multiplexer >= 0) {
             ::close(multiplexer);
@@ -421,8 +430,6 @@ struct ChildWatch {
 #endif
     }
 };
-
-}  // namespace detail
 
 namespace {
 
@@ -515,11 +522,12 @@ struct process::Self::ExitWait : uv::uv_op<ExitWait> {
     }
 
     void cancel() noexcept {
-        // The group it leads, else the child alone. no_such_process only
+        // The group it leads, else the child alone, as for a group left
+        // empty by a child that moved to another. no_such_process then only
         // means a child that exited, whose reaping completes this. A child
         // the caller may not signal would keep the cancel waiting for good.
         auto killed = self.child.kill_tree();
-        if(killed == std::errc::invalid_argument) {
+        if(killed == std::errc::invalid_argument || killed == std::errc::no_such_process) {
             killed = self.child.kill();
         }
         if(killed && killed != std::errc::no_such_process) {
@@ -537,6 +545,12 @@ struct process::Self::ExitWait : uv::uv_op<ExitWait> {
 
 void process::Self::reap() {
     auto status = child.try_wait();
+#ifdef __APPLE__
+    // Exited already, if not yet a zombie: a moment's wait.
+    if(exiting && status && !*status) {
+        status = child.wait();
+    }
+#endif
     if(status && !*status) {
         return;
     }
@@ -552,15 +566,17 @@ void process::Self::reap() {
         delete this;
         return;
     }
-    if(slot.waiting()) {
+    // capture()'s wait and wait()'s never wait on the same process. What
+    // resumes may destroy the process, and this with it: nothing of this is
+    // read after.
+    if(auto* waiting = std::exchange(exit_wait, nullptr)) {
+        waiting->complete();
+    } else if(slot.waiting()) {
         if(lost) {
             slot.deliver(outcome_error(lost));
         } else {
             slot.deliver(*exited);
         }
-    }
-    if(auto* waiting = std::exchange(exit_wait, nullptr)) {
-        waiting->complete();
     }
 }
 
@@ -606,7 +622,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
         if(opts.streams[i].kind != stdio::Kind::Pipe) {
             continue;
         }
-        auto opened = open_pipe(child->take_pipe(static_cast<int>(i)), loop);
+        auto opened = open_pipe(child->take_pipe(i), loop);
         if(!opened) {
             return abandon(opened.error());
         }
@@ -614,7 +630,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     }
 
     detail::unique_handle<Self> self(new Self(std::move(*child), *loop.native_handle()));
-    if(auto failed = detail::ChildWatch::of(loop).add(*self)) {
+    if(auto failed = Self::Watch::of(loop).add(*self)) {
         [[maybe_unused]] auto killed = self->child.kill();
         [[maybe_unused]] auto reaped = self->child.wait();
         return outcome_error(failed);

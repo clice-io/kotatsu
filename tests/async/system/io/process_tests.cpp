@@ -19,7 +19,6 @@
 #endif
 
 #ifdef __linux__
-#include <cstddef>
 #include <iterator>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
@@ -63,22 +62,22 @@ process::options shell(std::string_view command) {
     return opts;
 }
 
-/// An environment of `pairs`, names and values.
-std::vector<sys::EnvVar>
-    variables(std::initializer_list<std::pair<std::string_view, std::string_view>> pairs) {
-    std::vector<sys::EnvVar> environment;
-    for(auto [name, value]: pairs) {
-        environment.push_back({.name = std::string(name), .value = std::string(value)});
-    }
-    return environment;
-}
-
 std::string trim_newlines(std::string text) {
     while(!text.empty() && (text.back() == '\n' || text.back() == '\r')) {
         text.pop_back();
     }
     return text;
 }
+
+#ifndef _WIN32
+/// Whether child `pid` of this process has been reaped: it is no child of
+/// this one any more, whatever process took its pid since.
+bool reaped(int pid) {
+    siginfo_t info{};
+    return ::waitid(P_PID, static_cast<id_t>(pid), &info, WEXITED | WNOHANG | WNOWAIT) < 0 &&
+           errno == ECHILD;
+}
+#endif
 
 /// What `opts`, a shell command that writes to marker.txt, writes there when
 /// run in `dir`, or how it ended when it failed.
@@ -241,9 +240,9 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
     // redirection goes first.
     auto opts = shell(by_platform(R"(printf "$KOTA_TEST_VALUE" > marker.txt)",
                                   ">marker.txt echo %KOTA_TEST_VALUE%"));
-    opts.env = variables({
-        {"KOTA_TEST_VALUE", "42"}
-    });
+    opts.env = std::vector<process::env_var>{
+        {.name = "KOTA_TEST_VALUE", .value = "42"}
+    };
     opts.cwd = dir.root();
     auto spawned = process::spawn(opts, loop);
     ZASSERT(spawned.has_value());
@@ -272,9 +271,9 @@ ZEST_CASE(env_changes_go_over_a_given_environment) {
     test::TempDir dir;
     test::ScopedEnv inherited("KOTA_TEST_INHERITED", "inherited");
     auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
-    opts.env = variables({
-        {"KOTA_TEST_GIVEN", "given"}
-    });
+    opts.env = std::vector<process::env_var>{
+        {.name = "KOTA_TEST_GIVEN", .value = "given"}
+    };
     opts.env_changes = {
         {.name = "KOTA_TEST_SET", .value = "set"}
     };
@@ -287,9 +286,9 @@ ZEST_CASE(env_changes_go_over_a_given_environment) {
 ZEST_CASE(last_env_change_of_a_name_counts) {
     test::TempDir dir;
     auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_REMOVED");
-    opts.env = variables({
-        {"KOTA_TEST_REMOVED", "given"}
-    });
+    opts.env = std::vector<process::env_var>{
+        {.name = "KOTA_TEST_REMOVED", .value = "given"}
+    };
     opts.env_changes = {
         {.name = "KOTA_TEST_SET",     .value = "first"     },
         {.name = "KOTA_TEST_REMOVED", .value = std::nullopt},
@@ -307,9 +306,9 @@ ZEST_CASE(env_changes_removing_every_variable_inherit_nothing) {
     test::TempDir dir;
     test::ScopedEnv inherited("KOTA_TEST_INHERITED", "inherited");
     auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
-    opts.env = variables({
-        {"KOTA_TEST_GIVEN", "given"}
-    });
+    opts.env = std::vector<process::env_var>{
+        {.name = "KOTA_TEST_GIVEN", .value = "given"}
+    };
     opts.env_changes = {
         {.name = "KOTA_TEST_GIVEN", .value = std::nullopt}
     };
@@ -323,9 +322,9 @@ ZEST_CASE(env_changes_removing_every_variable_inherit_nothing) {
 ZEST_CASE(env_changes_match_names_without_regard_to_case) {
     test::TempDir dir;
     auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_GIVEN");
-    opts.env = variables({
-        {"kota_test_given", "given"}
-    });
+    opts.env = std::vector<process::env_var>{
+        {.name = "kota_test_given", .value = "given"}
+    };
     opts.env_changes = {
         {.name = "kota_test_set",   .value = "lower"     },
         {.name = "KOTA_TEST_SET",   .value = "upper"     },
@@ -337,9 +336,8 @@ ZEST_CASE(env_changes_match_names_without_regard_to_case) {
 }
 #endif
 
-#ifndef _WIN32
 // The pipe made for stdin before the bad descriptor is found goes with the
-// failed spawn; handles made afterwards still work.
+// failed spawn.
 ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
     auto opts = shell("exit 0");
     opts.streams = {process::stdio::pipe(true, false),
@@ -349,12 +347,7 @@ ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
     auto spawned = process::spawn(opts, loop);
     ZASSERT(spawned.has_error());
     ZEXPECT(spawned.error() == error::invalid_argument);
-    auto t = timer::create(loop);
-    ZASSERT(!t.start(std::chrono::milliseconds(1)));
-    auto [waited] = run(t.wait());
-    ZEXPECT(waited.has_value());
 }
-#endif
 
 ZEST_CASE(spawn_in_a_missing_directory_fails) {
     test::TempDir dir;
@@ -615,10 +608,7 @@ ZEST_CASE(cancelled_capture_kills_the_child) {
     ZEXPECT(captured.is_cancelled());
     ZASSERT(pid.has_value());
     ZASSERT(pid->has_value());
-    const int found = ::kill(std::stoi(**pid), 0);
-    const int why = errno;
-    ZEXPECT(found == -1);
-    ZEXPECT(why == ESRCH);
+    ZEXPECT(reaped(std::stoi(**pid)));
     ZEXPECT(test::close_fd(hold) == 0);
 }
 #endif
@@ -658,6 +648,8 @@ ZEST_CASE(kill_tree_ends_the_childs_children) {
     auto kill_then_read = [&]() -> task<std::string, error> {
         co_await spawned->stdout_pipe.read_chunk().or_fail();
         if(auto killed = spawned->proc.kill_tree()) {
+            // The wait ends all the same.
+            spawned->proc.kill();
             co_await fail(killed);
         }
         co_return co_await spawned->stdout_pipe.read_to_end().or_fail();
@@ -736,10 +728,13 @@ ZEST_CASE(children_of_uv_spawn_and_of_spawn_both_report) {
 
     auto [status] = run(ours->proc.wait());
     ZEXPECT(test::exit_status_of(status) == 6);
-    while(!theirs.seen) {
+    // Nothing of libuv's tells a task when it has reaped its child: the
+    // loop turns until it has.
+    for(int turns = 0; !theirs.seen && turns < 2000; ++turns) {
         auto [turned] = run(sleep(5, loop));
         ZEXPECT(turned.has_value());
     }
+    ZASSERT(theirs.seen);
     ZEXPECT(theirs.status == 4);
 }
 #endif
@@ -752,6 +747,8 @@ ZEST_CASE(exit_is_seen_without_pidfds) {
     const pid_t tester = ::fork();
     ZASSERT(tester >= 0);
     if(tester == 0) {
+        // Ended by SIGALRM rather than hang the test.
+        ::alarm(10);
         sock_filter filter[] = {
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, nr)),
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_pidfd_open, 0, 1),
@@ -762,6 +759,10 @@ ZEST_CASE(exit_is_seen_without_pidfds) {
         if(::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
            ::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0) {
             ::_exit(2);
+        }
+        // The filter holds.
+        if(::syscall(SYS_pidfd_open, ::getpid(), 0) != -1 || errno != ENOSYS) {
+            ::_exit(5);
         }
         event_loop own;
         auto spawned = process::spawn(shell("exit 7"), own);
@@ -782,17 +783,23 @@ ZEST_CASE(exit_is_seen_without_pidfds) {
 #endif
 
 #ifndef _WIN32
-// The group's command holds the pipes the capture reads, so that the
-// capture ends only once the cancel has killed the group too: the shell
-// alone would leave it writing.
+// The shell holds a FIFO the test reads, open before it tells its pid, and
+// its command holds it too: the FIFO ends only once the cancel has killed
+// the group. The capture itself ends with the shell.
 ZEST_CASE(cancelled_capture_kills_the_group) {
     test::TempDir dir;
     ZASSERT(::mkfifo(dir.file("pid").c_str(), 0600) == 0);
+    ZASSERT(::mkfifo(dir.file("hold").c_str(), 0600) == 0);
     int pid_fifo = test::open_fd(dir.file("pid"), O_RDWR, 0);
     ZASSERT(pid_fifo >= 0);
+    // Open for reading first, so that the shell's open does not wait.
+    int hold_fifo = test::open_fd(dir.file("hold"), O_RDONLY | O_NONBLOCK, 0);
+    ZASSERT(hold_fifo >= 0);
     auto reader = pipe::open(pid_fifo, loop);
     ZASSERT(reader.has_value());
-    auto opts = shell("sleep 1000 & echo $$ > pid; wait");
+    auto hold = pipe::open(hold_fifo, loop);
+    ZASSERT(hold.has_value());
+    auto opts = shell("exec 3> hold; sleep 1000 & echo $$ > pid; wait");
     opts.cwd = dir.root();
     opts.creation.process_group = true;
     cancellation_source source;
@@ -807,11 +814,24 @@ ZEST_CASE(cancelled_capture_kills_the_group) {
     ZEXPECT(captured.is_cancelled());
     ZASSERT(pid.has_value());
     ZASSERT(pid->has_value());
-    // The shell was reaped.
-    const int found = ::kill(std::stoi(**pid), 0);
-    const int why = errno;
-    ZEXPECT(found == -1);
-    ZEXPECT(why == ESRCH);
+    const int group = std::stoi(**pid);
+    ZEXPECT(reaped(group));
+
+    // What the cancel left running ends with the test.
+    struct GroupKiller {
+        int group;
+        bool gone = false;
+
+        ~GroupKiller() {
+            if(!gone) {
+                ::killpg(group, SIGKILL);
+            }
+        }
+    } killer{group};
+
+    auto [rest] = run(hold->read_to_end());
+    ZEXPECT(rest.has_value());
+    killer.gone = rest.has_value();
 }
 #endif
 

@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <expected>
+#include <string>
 #include <system_error>
 #include <utility>
 
@@ -25,24 +26,36 @@ extern "C" LONG NTAPI RtlGetVersion(OSVERSIONINFOW* version);
 namespace kota::sys {
 
 #ifdef _WIN32
-/// Process `pid`, this one for 0, opened for `access`; closed when it goes.
-struct ProcessHandle {
-    HANDLE handle;
+/// A handle, closed when this goes.
+struct Handle {
+    HANDLE handle = nullptr;
 
-    explicit ProcessHandle(HANDLE handle) noexcept : handle(handle) {}
+    Handle() = default;
 
-    ProcessHandle(ProcessHandle&& other) noexcept : handle(std::exchange(other.handle, nullptr)) {}
+    explicit Handle(HANDLE handle) noexcept : handle(handle) {}
 
-    ~ProcessHandle() {
-        // The pseudo-handle of this process needs no closing.
-        if(handle != nullptr && handle != ::GetCurrentProcess()) {
+    Handle(Handle&& other) noexcept : handle(std::exchange(other.handle, nullptr)) {}
+
+    Handle& operator=(Handle&& other) noexcept {
+        std::swap(handle, other.handle);
+        return *this;
+    }
+
+    ~Handle() {
+        // This process's pseudo-handle needs no closing, nor gets any.
+        if(handle != nullptr && handle != INVALID_HANDLE_VALUE) {
             ::CloseHandle(handle);
         }
     }
 
-    static std::expected<ProcessHandle, std::error_code> open(int pid, DWORD access) {
+    HANDLE release() noexcept {
+        return std::exchange(handle, nullptr);
+    }
+
+    /// Process `pid`, this one for 0, opened for `access`.
+    static std::expected<Handle, std::error_code> open_process(int pid, DWORD access) {
         if(pid == 0) {
-            return ProcessHandle(::GetCurrentProcess());
+            return Handle(::GetCurrentProcess());
         }
         HANDLE handle = ::OpenProcess(access, FALSE, static_cast<DWORD>(pid));
         if(handle == nullptr) {
@@ -52,13 +65,21 @@ struct ProcessHandle {
             }
             return std::unexpected(fs::windows::last_error());
         }
-        return ProcessHandle(handle);
+        return Handle(handle);
     }
 };
 #else
 /// The error errno holds.
 inline std::error_code errno_code() {
     return {errno, std::generic_category()};
+}
+
+/// The directories execvp searches without PATH: confstr(_CS_PATH)'s.
+inline std::string default_path() {
+    std::string path(::confstr(_CS_PATH, nullptr, 0), '\0');
+    ::confstr(_CS_PATH, path.data(), path.size());
+    path.pop_back();
+    return path;
 }
 #endif
 

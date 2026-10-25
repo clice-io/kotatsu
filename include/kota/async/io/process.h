@@ -11,12 +11,6 @@
 
 namespace kota {
 
-namespace detail {
-
-struct ChildWatch;
-
-}  // namespace detail
-
 /// A child process, started by sys::spawn, whose exit an event loop waits
 /// for: on Linux through a pidfd, or SIGCHLD where the kernel has none
 /// (before 5.3) or a sandbox forbids them; on macOS through kqueue; on
@@ -30,7 +24,9 @@ struct ChildWatch;
 /// abandons the wait: the child runs on, and a later wait() still gets its
 /// exit status. To end the child, kill() it. Destroying the process ends a
 /// pending wait with error::operation_aborted and leaves the child running;
-/// the loop still reaps it once it exits, without waiting for it to.
+/// the loop still reaps it once it exits, without waiting for it to. On
+/// Windows such a child started exit_with_parent is killed when the loop
+/// goes, its job closing.
 ///
 /// A default-constructed or moved-from process is inert: what can fail fails
 /// with error::invalid_argument.
@@ -41,6 +37,8 @@ public:
     using creation_options = sys::CreationOptions;
 
     using stdio = sys::Stdio;
+
+    using env_var = sys::EnvVar;
 
     using env_change = sys::EnvChange;
 
@@ -100,8 +98,6 @@ public:
     error kill_tree();
 
 private:
-    friend struct detail::ChildWatch;
-
     struct Self;
 
     explicit process(detail::unique_handle<Self> self) noexcept;
