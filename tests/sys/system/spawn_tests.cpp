@@ -296,6 +296,17 @@ ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
     child = spawn(options);
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::bad_file_descriptor);
+#ifndef _WIN32
+    // The lowest number free: a pipe the spawn makes would take it.
+    int freed = ::dup(0);
+    ZASSERT(freed >= 0);
+    ::close(freed);
+    options.streams = {Stdio::pipe(true, false), Stdio::from_fd(freed), Stdio::pipe(false, true)};
+    child = spawn(options);
+    ZASSERT(!child.has_value());
+    ZEXPECT(child.error() == std::errc::bad_file_descriptor);
+    options.streams = {Stdio::ignore(), Stdio::ignore(), Stdio::ignore()};
+#endif
     fs::File closed;
     options.streams[1] = Stdio::from_file(closed);
     child = spawn(options);

@@ -671,6 +671,20 @@ task<process::capture_result, error> process::capture(options opts, event_loop& 
     if(!spawned) {
         co_await fail(spawned.error());
     }
+
+    // A capture that ends before both pipes did, cancelled once the child
+    // exited while what it started holds them, kills its group too.
+    struct TreeKiller {
+        Self& self;
+        bool read = false;
+
+        ~TreeKiller() {
+            if(!read) {
+                [[maybe_unused]] auto killed = end_tree(self.child);
+            }
+        }
+    } killer{*spawned->proc.self};
+
     // The exit wait starts first, so that a read failing at once still kills
     // the child and waits for it. Both pipes are read while the child runs:
     // one that fills a pipe waits for it to be read before it can exit.
@@ -678,6 +692,7 @@ task<process::capture_result, error> process::capture(options opts, event_loop& 
         co_await or_fail(co_await when_all(Self::ExitWait(*spawned->proc.self),
                                            spawned->stdout_pipe.read_to_end(),
                                            spawned->stderr_pipe.read_to_end()));
+    killer.read = true;
     co_return capture_result{
         .status = co_await or_fail(std::move(status)),
         .stdout_data = std::move(stdout_data),

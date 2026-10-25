@@ -840,6 +840,67 @@ ZEST_CASE(cancelled_capture_kills_the_group) {
         cleanup.group = -1;
     }
 }
+
+// The shell exits at once, leaving its command holding the capture's pipes
+// and the end of a pipe the test reads: the cancel, once the shell is
+// reaped, kills the group still.
+ZEST_CASE(capture_cancelled_after_the_child_exited_kills_the_group) {
+    test::TempDir dir;
+    ZASSERT(::mkfifo(dir.file("pid").c_str(), 0600) == 0);
+    int pid_fifo = test::open_fd(dir.file("pid"), O_RDWR, 0);
+    ZASSERT(pid_fifo >= 0);
+    int hold[2];
+    ZASSERT(::pipe(hold) == 0);
+    ZASSERT(::fcntl(hold[0], F_SETFD, FD_CLOEXEC) == 0);
+    auto reader = pipe::open(pid_fifo, loop);
+    ZASSERT(reader.has_value());
+    auto held = pipe::open(hold[0], loop);
+    ZASSERT(held.has_value());
+
+    struct Cleanup {
+        int end;
+        int group = -1;
+
+        ~Cleanup() {
+            if(end >= 0) {
+                ::close(end);
+            }
+            if(group > 0) {
+                ::killpg(group, SIGKILL);
+            }
+        }
+    } cleanup{hold[1]};
+
+    auto opts = shell("sleep 1000 & echo $$ > pid");
+    opts.cwd = dir.root();
+    opts.creation.process_group = true;
+    cancellation_source source;
+    auto canceller = [&]() -> task<bool, error> {
+        auto pid = co_await reader->read_line().or_fail();
+        ::close(std::exchange(cleanup.end, -1));
+        cleanup.group = pid ? std::stoi(*pid) : -1;
+        // Nothing tells when the loop has reaped the shell: this looks until
+        // it has.
+        bool gone = false;
+        for(int tries = 0; tries < 1000 && !(gone = reaped(cleanup.group)); ++tries) {
+            co_await sleep(5, loop);
+        }
+        source.cancel();
+        co_return gone;
+    };
+
+    auto [captured, gone] =
+        run(with_token(process::capture(opts, loop), source.token()), canceller());
+    ZEXPECT(captured.is_cancelled());
+    ZASSERT(gone.has_value());
+    ZEXPECT(*gone);
+
+    auto [rest] = run(held->read_to_end());
+    ZEXPECT(rest.has_value());
+    if(rest.has_value()) {
+        cleanup.group = -1;
+    }
+}
 #endif
 
 };  // ZEST_SUITE(async_io_process)

@@ -389,9 +389,20 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     if(!program) {
         return std::unexpected(program.error());
     }
+    // Each descriptor given is looked at before a pipe is made: one not open
+    // would otherwise be the number a pipe takes.
     for(const auto& stream: options.streams) {
         if(stream.kind == Stdio::Kind::Pipe && !stream.readable && !stream.writable) {
             return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        }
+        if(stream.kind == Stdio::Kind::FD || stream.kind == Stdio::Kind::File) {
+            int fd = stream.kind == Stdio::Kind::FD ? stream.fd : stream.file;
+            if(fd < 0) {
+                return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+            }
+            if(::fcntl(fd, F_GETFD) < 0) {
+                return std::unexpected(errno_code());
+            }
         }
     }
 
@@ -431,15 +442,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         switch(stream.kind) {
             case Stdio::Kind::Inherit: fds[i] = static_cast<int>(i); break;
             case Stdio::Kind::Ignore: break;
-            case Stdio::Kind::FD:
-            case Stdio::Kind::File: {
-                int fd = stream.kind == Stdio::Kind::FD ? stream.fd : stream.file;
-                if(fd < 0) {
-                    return std::unexpected(std::make_error_code(std::errc::invalid_argument));
-                }
-                fds[i] = fd;
-                break;
-            }
+            case Stdio::Kind::FD: fds[i] = stream.fd; break;
+            case Stdio::Kind::File: fds[i] = stream.file; break;
             case Stdio::Kind::Pipe: {
                 const bool both = stream.readable && stream.writable;
                 auto pair = connected_pair(both);
