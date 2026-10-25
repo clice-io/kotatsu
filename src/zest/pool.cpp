@@ -282,7 +282,7 @@ struct Pool {
         if(!status) {
             co_await worker->kill();
             outcome.detail = "the fatal hooks did not finish within --timeout";
-        } else if(status->term_signal != 0 || status->status != fatal_exit_code) {
+        } else if(status->term_signal != 0 || status->code != fatal_exit_code) {
             outcome.detail =
                 std::format("the fatal hooks ended the worker with {}", status->to_string());
         }
