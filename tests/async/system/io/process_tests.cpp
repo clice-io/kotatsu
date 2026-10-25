@@ -871,10 +871,17 @@ ZEST_CASE(exit_is_seen_when_the_loop_cannot_poll_the_pidfds) {
         return;
     }
 
-    auto spawned = process::spawn(shell("exit 5"), loop);
+    // It exits once its first look has found it running, a timer the spawn
+    // started before this one: SIGCHLD alone tells of the exit.
+    auto spawned = process::spawn(test::stdin_reader(), loop);
     ZASSERT(spawned.has_value());
-    auto [status] = run(spawned->proc.wait());
-    ZEXPECT(test::exit_code_of(status) == 5);
+    auto close_stdin = [&]() -> task<> {
+        co_await sleep(0, loop);
+        spawned->stdin_pipe = pipe{};
+    };
+
+    auto [status, closed] = run(spawned->proc.wait(), close_stdin());
+    ZEXPECT(test::exit_code_of(status) == 0);
 }
 #endif
 
