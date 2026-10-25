@@ -1043,12 +1043,18 @@ ZEST_CASE(batch_file_named_by_its_extension_alone_gets_its_arguments_escaped) {
         ZASSERT(output.status.has_value());
         ZEXPECT(output.status->success());
     }
-    auto output = output_of({
-        .program = ".bat.",
-        .args = {R"("&echo injected)"},
-        .env_changes = {{.name = "PATH", .value = dir.root()}},
-    });
-    ZEXPECT(!zest::contains(output.text, "injected"));
+    // Found in PATH too, a dot of its own taking no `.exe`.
+    for(auto name: {".bat.", ".bat"}) {
+        ZEST_CONTEXT("{} in PATH", name);
+        auto output = output_of({
+            .program = name,
+            .args = {R"("&echo injected)"},
+            .env_changes = {{.name = "PATH", .value = dir.root()}},
+        });
+        ZEXPECT(!zest::contains(output.text, "injected"));
+        ZASSERT(output.status.has_value());
+        ZEXPECT(output.status->success());
+    }
 }
 
 // The system directory's cmd.exe, not one where CreateProcess would look for

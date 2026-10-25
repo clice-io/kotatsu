@@ -98,11 +98,14 @@ std::vector<std::string> spellings(std::string_view name,
             tried = {".COM", ".EXE", ".BAT", ".CMD"};
         }
     }
+    // CreateProcess takes any dot for an extension of the name's own, a
+    // leading one too (`.bat`).
     auto own = fs::path::extension(name);
-    bool as_is = !own.empty() && (like_create_process ||
-                                  std::ranges::any_of(tried, [&](std::string_view extension) {
-                                      return string_ref(own).equals_insensitive(extension);
-                                  }));
+    bool as_is = like_create_process
+                     ? fs::path::filename(name).find('.') != std::string_view::npos
+                     : !own.empty() && std::ranges::any_of(tried, [&](std::string_view extension) {
+                           return string_ref(own).equals_insensitive(extension);
+                       });
     if(as_is) {
         return {std::string(name)};
     }
