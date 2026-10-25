@@ -1,5 +1,6 @@
 #include "kota/sys/env.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <mutex>
 #include <string>
@@ -128,8 +129,17 @@ std::error_code unset_env(std::string_view name) {
 #endif
 }
 
-std::vector<std::string> environment() {
-    std::vector<std::string> entries;
+std::vector<EnvVar> environment() {
+    std::vector<EnvVar> entries;
+    // The name ends at the first '=' after its first character, which is '='
+    // in the Windows `=C:` variables.
+    auto add = [&](std::string_view entry) {
+        auto end = std::min(entry.find('=', 1), entry.size());
+        entries.push_back({
+            .name = std::string(entry.substr(0, end)),
+            .value = std::string(entry.substr(std::min(end + 1, entry.size()))),
+        });
+    };
 #ifdef _WIN32
     wchar_t* block = ::GetEnvironmentStringsW();
     if(block == nullptr) {
@@ -137,7 +147,7 @@ std::vector<std::string> environment() {
     }
     for(const wchar_t* entry = block; *entry != L'\0';) {
         std::wstring_view text(entry);
-        entries.push_back(from_utf16(text));
+        add(from_utf16(text));
         entry += text.size() + 1;
     }
     ::FreeEnvironmentStringsW(block);
@@ -150,7 +160,7 @@ std::vector<std::string> environment() {
 #endif
     // None after clearenv().
     for(char** entry = block; entry != nullptr && *entry != nullptr; ++entry) {
-        entries.emplace_back(*entry);
+        add(*entry);
     }
 #endif
     return entries;

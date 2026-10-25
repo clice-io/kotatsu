@@ -6,26 +6,65 @@
 //                         or null when it is unset
 //   parent                prints its parent's pid
 //   wait                  prints "ready" and exits once its stdin ends
-//   other <pid>           sets the priority of process <pid> to 12 and prints
-//                         what it reads back and the process's resident size
+//   other <pid>           sets the priority of process <pid> to BelowNormal and
+//                         prints what it reads back, as a number, and the
+//                         process's resident size
 //   title <title> <times> sets the process title to <title> <times> over,
-//                         prints "ready" and exits once its stdin ends
+//                         prints the arguments sys::arguments reads then, a
+//                         JSON array, and exits once its stdin ends
 //   console <text>        Windows: writes <text>, a byte that is no UTF-8
 //                         and "!" to a console of its own, and prints what
 //                         the console shows
 //   job                   Windows: joins a job of at most 1 GiB a process and
 //                         one CPU's time, and prints memory().limit and
 //                         parallelism()
+//   hang                  prints nothing and runs until it is killed
+//   streams               prints "to-stdout" to stdout and "to-stderr" to
+//                         stderr
+//   swapped               starts `sys_probe streams`, its stdout this one's
+//                         stderr and its stderr this one's stdout, and exits
+//                         as it does
+//   report <argument>     prints {"arguments": <what sys::arguments reads>,
+//                         "cwd": <its working directory>, "value": <the
+//                         value of KOTA_PROBE_VALUE>}
+//   relay <cwd> <value> <argument>
+//                         starts `sys_probe report <argument>` in <cwd>,
+//                         KOTA_PROBE_VALUE set to <value>, and exits as it
+//                         does
+//   orphan                starts `sys_probe hang`, exit_with_parent, its
+//                         stdout this one's, prints {"pid": <its pid>} and
+//                         exits once its stdin ends, unless killed first
+//   orphan-thread         Linux: starts `sys_probe hang` exit_with_parent
+//                         from a thread that then ends, and prints
+//                         {"signal": <the signal that ended it>}
+//   hooked                Linux: starts `sys_probe env KOTA_EXECVE_HOOKED`,
+//                         which this one's execve, as a hook preloaded into
+//                         it would, sets to 1, and exits as it does
+//   nested                Windows: joins a job as a CI runner's, starts
+//                         `sys_probe hang` exit_with_parent in a tree of its
+//                         own, and prints whether that is in the runner's
+//                         job: {"in_job": <bool>}
+//   handles               Windows: makes an inheritable event of a name of its
+//                         own, starts `sys_probe handle <it> <name>`, and
+//                         prints whether that saw it: {"inherited": <bool>}
+//   handle <value> <name> Windows: exits with 1 when <value> is a handle of
+//                         the event named <name>, 0 otherwise
 //
-// Each prints one JSON line, and exits with 0; 1 when a call fails, saying
-// why on stderr; 2 for a command it does not know.
+// Each prints one JSON line to stdout but for hang, and exits with 0; 1 when
+// a call fails, saying why on stderr; 2 for a command it does not know.
 
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <expected>
 #include <format>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -41,11 +80,33 @@
 #include "kota/support/utf16.h"
 #include "kota/fs/windows.h"
 #include "kota/sys/console.h"
+#elif defined(__linux__)
+#include <sys/syscall.h>
+#include <unistd.h>
 #endif
 
+#include "kota/fs/resolve.h"
 #include "kota/sys/env.h"
 #include "kota/sys/info.h"
 #include "kota/sys/process.h"
+#include "kota/sys/spawn.h"
+
+#ifdef __linux__
+// What a hook preloaded into this process sees, as catter's: every execve it
+// makes, which this one marks, setting KOTA_EXECVE_HOOKED=1. The list is a
+// static one: in a child between fork and exec nothing may allocate.
+extern "C" int execve(const char* path, char* const argv[], char* const envp[]) noexcept {
+    static char marker[] = "KOTA_EXECVE_HOOKED=1";
+    static char* marked[4096];
+    std::size_t count = 0;
+    marked[count++] = marker;
+    for(std::size_t i = 0; envp[i] != nullptr && count < std::size(marked) - 1; ++i) {
+        marked[count++] = envp[i];
+    }
+    marked[count] = nullptr;
+    return static_cast<int>(::syscall(SYS_execve, path, argv, marked));
+}
+#endif
 
 namespace {
 
@@ -150,20 +211,55 @@ int join_job() {
 
 #endif
 
+/// The arguments `arguments` as a JSON array.
+std::string json(const std::vector<std::string>& arguments) {
+    std::string line = "[";
+    for(std::size_t i = 0; i < arguments.size(); ++i) {
+        line += i == 0 ? "" : ",";
+        line += json(arguments[i]);
+    }
+    return line + "]";
+}
+
+/// `sys_probe <arguments...>`, its streams this one's.
+kota::sys::SpawnOptions probe(std::vector<std::string> arguments) {
+    auto self = kota::sys::executable_path();
+    arguments.insert(arguments.begin(), self ? *self : std::string());
+    return {.file = arguments.front(), .args = std::move(arguments)};
+}
+
+/// `sys_probe hang`, its stdout this one's: the test reads it to its end,
+/// which comes once the child is gone too.
+kota::sys::SpawnOptions hanging(kota::sys::CreationOptions creation) {
+    auto options = probe({"hang"});
+    options.creation = creation;
+    options.streams[0] = kota::sys::Stdio::ignore();
+    options.streams[2] = kota::sys::Stdio::ignore();
+    return options;
+}
+
+/// Runs `options`' child to its exit, and exits with its code.
+int run(const kota::sys::SpawnOptions& options) {
+    auto child = kota::sys::spawn(options);
+    if(!child) {
+        return fail("spawn", child.error());
+    }
+    auto status = child->wait();
+    if(!status) {
+        return fail("wait", status.error());
+    }
+    return static_cast<int>(status->status);
+}
+
 }  // namespace
 
-int main(int argc, char** argv) {
+int main() {
     namespace sys = kota::sys;
-    auto arguments = sys::arguments(argc, argv);
+    const auto& arguments = sys::arguments();
     std::string_view command = arguments.size() > 1 ? std::string_view(arguments[1]) : "";
 
     if(command == "arguments") {
-        std::string line = "[";
-        for(std::size_t i = 0; i < arguments.size(); ++i) {
-            line += i == 0 ? "" : ",";
-            line += json(arguments[i]);
-        }
-        print_line(line + "]");
+        print_line(json(arguments));
         return 0;
     }
     if(command == "env" && arguments.size() == 3) {
@@ -182,7 +278,7 @@ int main(int argc, char** argv) {
     }
     if(command == "other" && arguments.size() == 3) {
         int pid = std::atoi(arguments[2].c_str());
-        if(auto error = sys::set_priority(12, pid)) {
+        if(auto error = sys::set_priority(sys::Priority::BelowNormal, pid)) {
             return fail("set_priority", error);
         }
         auto priority = sys::priority(pid);
@@ -193,10 +289,135 @@ int main(int argc, char** argv) {
         if(!stats) {
             return fail("process_stats", stats.error());
         }
-        print_line(std::format(R"({{"priority":{},"resident":{}}})", *priority, stats->resident));
+        print_line(std::format(R"({{"priority":{},"resident":{}}})",
+                               static_cast<int>(*priority),
+                               stats->resident));
         return 0;
     }
+    if(command == "hang") {
+        while(true) {
+            std::this_thread::sleep_for(std::chrono::hours(1));
+        }
+    }
+    if(command == "streams") {
+        print_line(R"("to-stdout")");
+        std::fprintf(stderr, "\"to-stderr\"\n");
+        return 0;
+    }
+    if(command == "swapped") {
+        auto options = probe({"streams"});
+        options.streams = {sys::Stdio::ignore(), sys::Stdio::from_fd(2), sys::Stdio::from_fd(1)};
+        return run(options);
+    }
+    if(command == "report" && arguments.size() == 3) {
+        auto cwd = kota::fs::current_dir();
+        if(!cwd) {
+            return fail("current_dir", cwd.error());
+        }
+        auto value = sys::get_env("KOTA_PROBE_VALUE");
+        print_line(std::format(R"({{"arguments":{},"cwd":{},"value":{}}})",
+                               json(arguments),
+                               json(*cwd),
+                               value ? json(*value) : "null"));
+        return 0;
+    }
+    if(command == "relay" && arguments.size() == 5) {
+        auto options = probe({"report", arguments[4]});
+        options.cwd = arguments[2];
+        options.env_changes = {
+            {.name = "KOTA_PROBE_VALUE", .value = arguments[3]}
+        };
+        return run(options);
+    }
+    if(command == "orphan") {
+        auto child = sys::spawn(hanging({.exit_with_parent = true}));
+        if(!child) {
+            return fail("spawn", child.error());
+        }
+        print_line(std::format(R"({{"pid":{}}})", child->pid()));
+        wait_for_stdin();
+        return 0;
+    }
+#ifdef __linux__
+    if(command == "orphan-thread") {
+        std::expected<sys::Child, std::error_code> child;
+        std::thread([&] { child = sys::spawn(hanging({.exit_with_parent = true})); }).join();
+        if(!child) {
+            return fail("spawn", child.error());
+        }
+        auto status = child->wait();
+        if(!status) {
+            return fail("wait", status.error());
+        }
+        print_line(std::format(R"({{"signal":{}}})", status->term_signal));
+        return 0;
+    }
+    if(command == "hooked") {
+        return run(probe({"env", "KOTA_EXECVE_HOOKED"}));
+    }
+#endif
 #ifdef _WIN32
+    if(command == "nested") {
+        // As a CI runner's: a job of its own, which its processes' children
+        // may leave.
+        HANDLE job = ::CreateJobObjectW(nullptr, nullptr);
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags =
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        if(job == nullptr ||
+           !::SetInformationJobObject(job,
+                                      JobObjectExtendedLimitInformation,
+                                      &limits,
+                                      sizeof(limits)) ||
+           !::AssignProcessToJobObject(job, ::GetCurrentProcess())) {
+            return fail("a job", kota::fs::windows::last_error());
+        }
+        auto child = sys::spawn(hanging({.process_group = true, .exit_with_parent = true}));
+        if(!child) {
+            return fail("spawn", child.error());
+        }
+        BOOL in_job = FALSE;
+        ::IsProcessInJob(child->native_handle(), job, &in_job);
+        print_line(std::format(R"({{"in_job":{}}})", in_job ? "true" : "false"));
+        return 0;
+    }
+    if(command == "handles") {
+        SECURITY_ATTRIBUTES inherit{.nLength = sizeof(inherit),
+                                    .lpSecurityDescriptor = nullptr,
+                                    .bInheritHandle = TRUE};
+        auto name = std::format("Local\\kota-probe-{}", ::GetCurrentProcessId());
+        auto wide_name = kota::to_utf16<wchar_t>(name);
+        HANDLE event = ::CreateEventW(&inherit, TRUE, TRUE, wide_name->c_str());
+        if(event == nullptr) {
+            return fail("CreateEventW", kota::fs::windows::last_error());
+        }
+        auto child = sys::spawn(
+            probe({"handle", std::to_string(reinterpret_cast<std::uintptr_t>(event)), name}));
+        if(!child) {
+            return fail("spawn", child.error());
+        }
+        auto status = child->wait();
+        if(!status) {
+            return fail("wait", status.error());
+        }
+        print_line(std::format(R"({{"inherited":{}}})", status->status == 1 ? "true" : "false"));
+        return 0;
+    }
+    if(command == "handle" && arguments.size() == 4) {
+        // Whether the number is a handle of that very event: another handle
+        // of this process's may have the number, a signaled one too, or the
+        // one opened here, where nothing held it.
+        using Compare = BOOL(WINAPI*)(HANDLE, HANDLE);
+        auto compare = reinterpret_cast<Compare>(reinterpret_cast<void*>(
+            ::GetProcAddress(::GetModuleHandleW(L"kernelbase.dll"), "CompareObjectHandles")));
+        auto wide_name = kota::to_utf16<wchar_t>(arguments[3]);
+        HANDLE named = ::OpenEventW(SYNCHRONIZE, FALSE, wide_name->c_str());
+        if(compare == nullptr || named == nullptr) {
+            return 0;
+        }
+        auto* value = reinterpret_cast<HANDLE>(std::stoull(arguments[2]));
+        return value != named && compare(value, named) ? 1 : 0;
+    }
     if(command == "console" && arguments.size() == 3) {
         return write_to_console(arguments[2]);
     }
@@ -212,7 +433,7 @@ int main(int argc, char** argv) {
         if(auto error = sys::set_process_title(title)) {
             return fail("set_process_title", error);
         }
-        print_line(R"("ready")");
+        print_line(json(sys::arguments()));
         wait_for_stdin();
         return 0;
     }

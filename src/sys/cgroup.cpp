@@ -6,9 +6,9 @@
 #include <string_view>
 
 #include "proc.h"
-#include "kota/sys/memory_model.h"
+#include "kota/sys/detail/memory_model.h"
 
-namespace kota::sys::cgroup {
+namespace kota::sys::detail::cgroup {
 
 namespace {
 
@@ -189,4 +189,4 @@ std::optional<double> cpu_quota(std::string_view root, std::string_view membersh
     return tightest;
 }
 
-}  // namespace kota::sys::cgroup
+}  // namespace kota::sys::detail::cgroup

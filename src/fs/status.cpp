@@ -257,7 +257,7 @@ std::expected<bool, std::error_code> equivalent(std::string_view a, std::string_
     }
     // A device, a pipe and a file only a directory listing reaches have no
     // ID to tell them apart.
-    if(first->id == FileId{} || second->id == FileId{}) {
+    if(first->id == FileID{} || second->id == FileID{}) {
         return std::unexpected(std::make_error_code(std::errc::not_supported));
     }
     return first->id == second->id;

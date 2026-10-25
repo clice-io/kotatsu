@@ -31,9 +31,18 @@ std::error_code set_env(std::string_view name, std::string_view value);
 /// a name set_env refuses.
 std::error_code unset_env(std::string_view name);
 
-/// Every variable, as "NAME=value". On Windows the `=C:` variables, the
-/// current directory of each drive, are among them.
-std::vector<std::string> environment();
+/// A variable of an environment.
+struct EnvVar {
+    std::string name;
+
+    std::string value;
+
+    friend bool operator==(const EnvVar&, const EnvVar&) = default;
+};
+
+/// Every variable. On Windows the `=C:` variables, the current directory of
+/// each drive, are among them, their names starting with '='.
+std::vector<EnvVar> environment();
 
 /// Whether two variable names are the same: as Windows compares them,
 /// ignoring case, on Windows; byte for byte elsewhere.

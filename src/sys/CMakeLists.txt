@@ -4,6 +4,7 @@
 # and program lookup without the rest.
 add_library(kota_sys STATIC
     cgroup.cpp
+    child.cpp
     command_line.cpp
     console.cpp
     cpu.cpp
@@ -13,11 +14,13 @@ add_library(kota_sys STATIC
     exit_status.cpp
     host.cpp
     memory.cpp
+    os_version.cpp
     process.cpp
     program.cpp
+    spawn_posix.cpp
+    spawn_windows.cpp
     temp_dir.cpp
     title.cpp
-    uname.cpp
 )
 add_library(kota::sys ALIAS kota_sys)
 
@@ -25,13 +28,17 @@ target_include_directories(kota_sys PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
+# pthread_sigmask around spawn's fork, in libc itself only from glibc 2.34.
+find_package(Threads REQUIRED)
+
 target_link_libraries(kota_sys PUBLIC
     kota::fs
     kota::support
+    Threads::Threads
 )
 
-# ntdll: parent_pid, parallelism, cpu_cores, uname; advapi32: the registry of
-# cpu_cores and uname; shell32 and ole32: the known folders of dirs.
+# ntdll: parent_pid, parallelism, cpu_cores, os; advapi32: the registry of
+# cpu_cores; shell32 and ole32: the known folders of dirs.
 if(WIN32)
     target_link_libraries(kota_sys PUBLIC advapi32 ntdll ole32 shell32)
 endif()

@@ -29,19 +29,19 @@
 namespace kota::ipc::detail {
 
 /// A request id as Peer's log writes it: a number as it is, a string quoted.
-struct LoggedId {
+struct LoggedID {
     const protocol::RequestID& id;
 };
 
 }  // namespace kota::ipc::detail
 
 template <>
-struct std::formatter<kota::ipc::detail::LoggedId> {
+struct std::formatter<kota::ipc::detail::LoggedID> {
     constexpr auto parse(std::format_parse_context& ctx) {
         return ctx.begin();
     }
 
-    auto format(const kota::ipc::detail::LoggedId& logged, std::format_context& ctx) const {
+    auto format(const kota::ipc::detail::LoggedID& logged, std::format_context& ctx) const {
         if(const auto* text = std::get_if<std::string>(&logged.id)) {
             return std::format_to(ctx.out(), "\"{}\"", *text);
         }
@@ -522,7 +522,7 @@ struct Peer<CodecT>::Self {
         if(!sent) {
             log(LogLevel::error,
                 "$/cancelRequest for id={} not sent: {}",
-                detail::LoggedId{id},
+                detail::LoggedID{id},
                 sent.error().message);
         }
         return sent.has_value();
@@ -600,10 +600,10 @@ struct Peer<CodecT>::Self {
     void complete_pending_request(const protocol::RequestID& id, Result<PayloadSlice>&& response) {
         auto it = pending_requests.find(id);
         if(it == pending_requests.end()) {
-            log(LogLevel::warn, "orphan response for id={}", detail::LoggedId{id});
+            log(LogLevel::warn, "orphan response for id={}", detail::LoggedID{id});
             return;
         }
-        log(LogLevel::debug, "response received for id={}", detail::LoggedId{id});
+        log(LogLevel::debug, "response received for id={}", detail::LoggedID{id});
         settle(*it->second, std::move(response));
     }
 
@@ -668,7 +668,7 @@ struct Peer<CodecT>::Self {
                           const protocol::RequestID& id,
                           PayloadSlice params,
                           task_group<>& handlers) {
-        log(LogLevel::debug, "request: {} id={}", method, detail::LoggedId{id});
+        log(LogLevel::debug, "request: {} id={}", method, detail::LoggedID{id});
 
         if(incoming_requests.contains(id)) {
             send_error(id, Error(protocol::ErrorCode::InvalidRequest, "duplicate request id"));

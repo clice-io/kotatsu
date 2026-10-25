@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <iterator>
 #include <string>
 
 #include "os.h"
@@ -62,19 +64,31 @@ std::chrono::milliseconds uptime() {
 #endif
 }
 
-std::expected<int, std::error_code> priority(int pid) {
+#ifndef _WIN32
+
+namespace {
+
+/// The nice value of each priority, in Priority's order.
+constexpr int nice_values[] = {19, 10, 0, -7, -14, -20};
+
+}  // namespace
+
+#endif
+
+std::expected<Priority, std::error_code> priority(int pid) {
 #ifdef _WIN32
-    auto process = ProcessHandle::open(pid, PROCESS_QUERY_LIMITED_INFORMATION);
+    auto process = Handle::open_process(pid, PROCESS_QUERY_LIMITED_INFORMATION);
     if(!process) {
         return std::unexpected(process.error());
     }
     switch(::GetPriorityClass(process->handle)) {
-        case REALTIME_PRIORITY_CLASS: return priority_highest;
-        case HIGH_PRIORITY_CLASS: return priority_high;
-        case ABOVE_NORMAL_PRIORITY_CLASS: return priority_above_normal;
-        case BELOW_NORMAL_PRIORITY_CLASS: return priority_below_normal;
-        case IDLE_PRIORITY_CLASS: return priority_low;
-        default: return priority_normal;
+        case 0: return std::unexpected(fs::windows::last_error());
+        case IDLE_PRIORITY_CLASS: return Priority::Idle;
+        case BELOW_NORMAL_PRIORITY_CLASS: return Priority::BelowNormal;
+        case ABOVE_NORMAL_PRIORITY_CLASS: return Priority::AboveNormal;
+        case HIGH_PRIORITY_CLASS: return Priority::High;
+        case REALTIME_PRIORITY_CLASS: return Priority::Realtime;
+        default: return Priority::Normal;
     }
 #else
     // -1 is a priority too.
@@ -83,36 +97,39 @@ std::expected<int, std::error_code> priority(int pid) {
     if(value == -1 && errno != 0) {
         return std::unexpected(errno_code());
     }
-    return value;
+    // The first, from the lowest, whose nice value is at or below it.
+    std::size_t index = 0;
+    while(nice_values[index] > value && index + 1 < std::size(nice_values)) {
+        ++index;
+    }
+    return static_cast<Priority>(index);
 #endif
 }
 
-std::error_code set_priority(int value, int pid) {
-    if(value < priority_highest || value > priority_low) {
+std::error_code set_priority(Priority priority, int pid) {
+    // One cast from a number that names none.
+    if(static_cast<std::size_t>(priority) > static_cast<std::size_t>(Priority::Realtime)) {
         return std::make_error_code(std::errc::invalid_argument);
     }
 #ifdef _WIN32
-    DWORD priority_class = IDLE_PRIORITY_CLASS;
-    if(value < priority_high) {
-        priority_class = REALTIME_PRIORITY_CLASS;
-    } else if(value < priority_above_normal) {
-        priority_class = HIGH_PRIORITY_CLASS;
-    } else if(value < priority_normal) {
-        priority_class = ABOVE_NORMAL_PRIORITY_CLASS;
-    } else if(value < priority_below_normal) {
-        priority_class = NORMAL_PRIORITY_CLASS;
-    } else if(value < priority_low) {
-        priority_class = BELOW_NORMAL_PRIORITY_CLASS;
-    }
-    auto process = ProcessHandle::open(pid, PROCESS_SET_INFORMATION);
+    constexpr DWORD classes[] = {
+        IDLE_PRIORITY_CLASS,
+        BELOW_NORMAL_PRIORITY_CLASS,
+        NORMAL_PRIORITY_CLASS,
+        ABOVE_NORMAL_PRIORITY_CLASS,
+        HIGH_PRIORITY_CLASS,
+        REALTIME_PRIORITY_CLASS,
+    };
+    auto process = Handle::open_process(pid, PROCESS_SET_INFORMATION);
     if(!process) {
         return process.error();
     }
-    if(!::SetPriorityClass(process->handle, priority_class)) {
+    if(!::SetPriorityClass(process->handle, classes[static_cast<std::size_t>(priority)])) {
         return fs::windows::last_error();
     }
     return {};
 #else
+    auto value = nice_values[static_cast<std::size_t>(priority)];
     if(::setpriority(PRIO_PROCESS, static_cast<id_t>(pid), value) != 0) {
         return errno_code();
     }

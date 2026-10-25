@@ -1,6 +1,3 @@
-// Windows has no process title.
-#ifndef _WIN32
-
 #include <algorithm>
 #include <cstring>
 #include <string>
@@ -15,6 +12,8 @@
 #endif
 
 namespace kota::sys {
+
+#ifndef _WIN32
 
 namespace {
 
@@ -71,7 +70,14 @@ std::expected<Area, std::error_code> find_area() {
 
 }  // namespace
 
-std::error_code set_process_title(std::string_view given) {
+#endif
+
+std::error_code set_process_title([[maybe_unused]] std::string_view given) {
+#ifdef _WIN32
+    return std::make_error_code(std::errc::not_supported);
+#else
+    // Read before the title goes over them.
+    arguments();
     auto area = find_area();
     if(!area) {
         return area.error();
@@ -90,8 +96,7 @@ std::error_code set_process_title(std::string_view given) {
     }
 #endif
     return {};
+#endif
 }
 
 }  // namespace kota::sys
-
-#endif

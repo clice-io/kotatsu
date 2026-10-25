@@ -204,17 +204,6 @@ ZEST_CASE(find_program_tries_the_name_as_it_is_for_an_empty_extension) {
     ZEXPECT(found.error() == std::errc::no_such_file_or_directory);
 }
 
-ZEST_CASE(find_program_like_create_process_appends_exe_to_a_bare_name) {
-    ProgramSearch search{.directories = {dir.root()}, .like_create_process = true};
-    auto program = test::make_program(dir, "", "tool.exe");
-    test::make_program(dir, "", "tool.bar.exe");
-    ZEXPECT(find_program("tool", search) == program);
-    // A name with an extension stays as it is.
-    auto found = find_program("tool.bar", search);
-    ZASSERT(!found.has_value());
-    ZEXPECT(found.error() == std::errc::no_such_file_or_directory);
-}
-
 // The current directory is no entry of PATH's on Windows.
 ZEST_CASE(find_program_reads_an_empty_entry_as_nothing) {
     test::make_program(dir, "", "tool.EXE");
@@ -222,16 +211,6 @@ ZEST_CASE(find_program_reads_an_empty_entry_as_nothing) {
     auto found = find_program("tool", in({""}));
     ZASSERT(!found.has_value());
     ZEXPECT(found.error() == std::errc::no_such_file_or_directory);
-}
-
-ZEST_CASE(create_process_search_starts_with_this_programs_directory) {
-    auto search = windows::create_process_search();
-    ZASSERT(search.has_value());
-    ZASSERT(search->directories.size() >= 5U);
-    auto executable = executable_path();
-    ZASSERT(executable.has_value());
-    ZEXPECT(search->directories[0] == fs::path::parent(*executable));
-    ZEXPECT(search->like_create_process);
 }
 
 ZEST_CASE(find_program_takes_a_name_with_a_separator_as_a_path) {
@@ -259,9 +238,6 @@ ZEST_CASE(find_program_follows_a_cygwin_symlink) {
         .extensions = {"", ".EXE"}
     };
     ZEXPECT(find_program("cc", search) == program);
-    // CreateProcess cannot start it.
-    search.like_create_process = true;
-    ZEXPECT(find_program("cc", search) == dir.file("cc"));
 }
 
 ZEST_CASE(find_program_of_a_cygwin_symlink_to_a_posix_path_fails) {

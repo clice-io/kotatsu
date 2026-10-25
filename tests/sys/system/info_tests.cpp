@@ -69,8 +69,6 @@ ZEST_CASE(cpu_cores_have_run) {
         ZEST_CONTEXT("core {}", i);
         const auto& core = (*cores)[i];
         ZEXPECT((core.times.user + core.times.system + core.times.idle).count() > 0);
-        // Virtual machines and Apple silicon may report no clock speed.
-        ZEXPECT(core.speed_mhz >= 0);
 #if defined(_WIN32) || defined(__APPLE__) || defined(__x86_64__)
         // Linux kernels for ARM name no model.
         ZEXPECT(!core.model.empty());
@@ -117,17 +115,17 @@ ZEST_CASE(page_size_is_a_power_of_two) {
     ZEXPECT((size & (size - 1)) == 0U);
 }
 
-ZEST_CASE(uname_names_the_system) {
-    auto name = uname();
-    ZEXPECT(!name.sysname.empty());
-    ZEXPECT(!name.release.empty());
-    ZEXPECT(!name.machine.empty());
+ZEST_CASE(os_names_the_system) {
+    auto system = os();
+    ZEXPECT(!system.version.empty());
+    ZEXPECT(!system.machine.empty());
 #ifdef _WIN32
-    ZEXPECT(name.sysname == "Windows_NT");
+    ZEXPECT(system.name == "Windows");
+    ZEXPECT(system.version.starts_with("10.0."));
 #elif defined(__APPLE__)
-    ZEXPECT(name.sysname == "Darwin");
+    ZEXPECT(system.name == "macOS");
 #else
-    ZEXPECT(name.sysname == "Linux");
+    ZEXPECT(system.name == "Linux");
 #endif
 }
 
@@ -138,19 +136,24 @@ ZEST_CASE(hostname_and_uptime_are_reported) {
     ZEXPECT(uptime().count() > 0);
 }
 
-// Setting the priority it already has leaves the process as it was.
-ZEST_CASE(priority_is_read_and_set) {
-    auto original = priority();
-    ZASSERT(original.has_value());
-    ZEXPECT(!set_priority(*original));
-    ZEXPECT(priority() == *original);
+// A nice value between two of Priority's reads as the one below it, which
+// this process may not take back on POSIX: another process's is set by the
+// integration tests, and Windows's own below.
+ZEST_CASE(priority_is_read) {
+    auto read = priority();
+    ZASSERT(read.has_value());
+    ZEXPECT(priority() == *read);
+}
+
+ZEST_CASE(set_priority_of_a_value_no_priority_names_fails) {
+    ZEXPECT(set_priority(static_cast<Priority>(6)) == std::errc::invalid_argument);
 }
 
 ZEST_CASE(priority_of_a_missing_pid_fails) {
     auto read = priority(missing_pid);
     ZASSERT(!read.has_value());
     ZEXPECT(read.error() == std::errc::no_such_process);
-    ZEXPECT(set_priority(priority_normal, missing_pid) == std::errc::no_such_process);
+    ZEXPECT(set_priority(Priority::Normal, missing_pid) == std::errc::no_such_process);
 }
 
 #ifdef _WIN32
@@ -170,22 +173,17 @@ struct ScopedPriority {
         set_priority(original);
     }
 
-    int original = 0;
+    Priority original = Priority::Normal;
 };
 
-ZEST_CASE(set_priority_takes_the_class_of_the_constant_at_or_below) {
+ZEST_CASE(set_priority_sets_a_priority_class) {
     ScopedPriority restored;
-    ZEXPECT(!set_priority(12));
-    ZEXPECT(priority() == priority_below_normal);
-    ZEXPECT(!set_priority(-10));
-    ZEXPECT(priority() == priority_high);
+    ZEXPECT(!set_priority(Priority::BelowNormal));
+    ZEXPECT(priority() == Priority::BelowNormal);
+    ZEXPECT(!set_priority(Priority::AboveNormal));
+    ZEXPECT(priority() == Priority::AboveNormal);
 }
 #endif
-
-ZEST_CASE(set_priority_past_the_range_fails) {
-    ZEXPECT(set_priority(priority_highest - 1) == std::errc::invalid_argument);
-    ZEXPECT(set_priority(priority_low + 1) == std::errc::invalid_argument);
-}
 
 #ifdef __linux__
 /// This process's OOM score adjustment, put back when this goes.
@@ -223,6 +221,13 @@ ZEST_CASE(oom_score_adjustment_of_a_missing_pid_fails) {
     ZASSERT(!read.has_value());
     ZEXPECT(read.error() == std::errc::no_such_process);
     ZEXPECT(set_oom_score_adjustment(0, missing_pid) == std::errc::no_such_process);
+}
+#else
+ZEST_CASE(oom_score_adjustment_off_linux_fails) {
+    auto read = oom_score_adjustment();
+    ZASSERT(!read.has_value());
+    ZEXPECT(read.error() == std::errc::not_supported);
+    ZEXPECT(set_oom_score_adjustment(0) == std::errc::not_supported);
 }
 #endif
 

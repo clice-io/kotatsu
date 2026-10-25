@@ -192,7 +192,7 @@ std::expected<Handle, std::error_code> open(std::string_view path, DWORD access)
     return handle;
 }
 
-std::expected<FileId, std::error_code> file_id(HANDLE handle) {
+std::expected<FileID, std::error_code> file_id(HANDLE handle) {
     FILE_ID_INFO id;
     if(::GetFileInformationByHandleEx(handle, FileIdInfo, &id, sizeof(id))) {
         return id_of(id.VolumeSerialNumber, id.FileId);
@@ -201,7 +201,7 @@ std::expected<FileId, std::error_code> file_id(HANDLE handle) {
     if(!::GetFileInformationByHandle(handle, &info)) {
         return std::unexpected(windows::last_error());
     }
-    return FileId{.device = info.dwVolumeSerialNumber,
+    return FileID{.device = info.dwVolumeSerialNumber,
                   .file = (std::uint64_t(info.nFileIndexHigh) << 32) | info.nFileIndexLow};
 }
 

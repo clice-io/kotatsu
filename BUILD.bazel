@@ -24,9 +24,8 @@ kota_library(
 # One object per area: a program links only those it calls into, and on
 # Windows imports only their DLLs (catter's hook library, which runs in every
 # process a build starts, takes the environment and program lookup without the
-# rest). ntdll for parent_pid, parallelism, cpu_cores and uname; advapi32 for
-# the registry of cpu_cores and uname; shell32 and ole32 for the known folders
-# of dirs.
+# rest). ntdll for parent_pid, parallelism, cpu_cores and os; advapi32 for
+# the registry of cpu_cores; shell32 and ole32 for the known folders of dirs.
 kota_library(
     name = "sys",
     srcs = glob([
@@ -34,6 +33,7 @@ kota_library(
         "src/sys/*.h",
     ]),
     hdrs = glob(["include/kota/sys/**"]),
+    # pthread_sigmask around spawn's fork, in libc itself only from glibc 2.34.
     linkopts = select({
         "@platforms//os:windows": [
             "-ladvapi32",
@@ -41,6 +41,7 @@ kota_library(
             "-lole32",
             "-lshell32",
         ],
+        "@platforms//os:linux": ["-lpthread"],
         "//conditions:default": [],
     }),
     deps = [

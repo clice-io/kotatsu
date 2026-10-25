@@ -1,12 +1,8 @@
 #pragma once
 
-#include <array>
-#include <cstdint>
-#include <optional>
 #include <string>
-#include <vector>
 
-#include "kota/fs/file.h"
+#include "kota/sys/spawn.h"
 #include "kota/async/io/loop.h"
 #include "kota/async/io/stream.h"
 #include "kota/async/runtime/task.h"
@@ -15,19 +11,39 @@
 
 namespace kota {
 
-/// A child process.
+/// A child process, started by sys::spawn, whose exit an event loop waits
+/// for: on Linux through a pidfd, or SIGCHLD where the kernel has none
+/// (before 5.3) or a sandbox forbids them; on macOS through kqueue; on
+/// Windows through the process handle. libuv's uv_spawn is not used: its
+/// SIGCHLD handler and its job object stay out of the way, and libuv reaps
+/// only children of its own.
 ///
 /// wait() waits for the child to exit; the exit status stays, and every
 /// later wait() returns it at once. One wait() may be pending at a time; a
 /// second fails with error::resource_busy_or_locked. Cancelling a wait only
 /// abandons the wait: the child runs on, and a later wait() still gets its
 /// exit status. To end the child, kill() it. Destroying the process ends a
-/// pending wait with error::operation_aborted and leaves the child running.
+/// pending wait with error::operation_aborted and leaves the child running;
+/// the loop still reaps it once it exits, without waiting for it to. On
+/// Windows such a child started exit_with_parent is killed when the loop
+/// goes, its job closing.
 ///
 /// A default-constructed or moved-from process is inert: what can fail fails
 /// with error::invalid_argument.
 class process {
 public:
+    using options = sys::SpawnOptions;
+
+    using creation_options = sys::CreationOptions;
+
+    using stdio = sys::Stdio;
+
+    using env_var = sys::EnvVar;
+
+    using env_change = sys::EnvChange;
+
+    using exit_status = sys::ExitStatus;
+
     process() noexcept;
 
     process(const process&) = delete;
@@ -38,130 +54,10 @@ public:
 
     ~process();
 
-    struct exit_status {
-        /// Exit code reported by the child. On Windows, a child that crashed
-        /// exits with the NTSTATUS of its exception, such as 0xC0000005.
-        int64_t status;
-
-        /// Terminating signal number if signalled, 0 otherwise. On Windows,
-        /// the signal kill() sent, if it ended the child.
-        int term_signal;
-
-        /// Whether the child exited with code 0, rather than failing,
-        /// crashing or being killed.
-        bool success() const noexcept {
-            return status == 0 && term_signal == 0;
-        }
-
-        /// How the child ended, for a person: "exit code 1", "signal 9
-        /// (SIGKILL)", or on Windows "exception 0xC0000005
-        /// (STATUS_ACCESS_VIOLATION)".
-        std::string to_string() const;
-    };
-
-    struct stdio {
-        enum class kind : std::uint8_t {
-            /// Inherit the parent's stream.
-            inherit,
-            /// Discard the stream.
-            ignore,
-            /// Inherit a given file descriptor.
-            fd,
-            /// Inherit an open file's handle.
-            file,
-            /// Create a pipe.
-            pipe,
-        };
-
-        /// How this stream should be configured for the child.
-        kind type = kind::inherit;
-
-        /// Descriptor to inherit when type == fd.
-        int descriptor = -1;
-
-        /// Handle to inherit when type == file.
-        fs::File::native_handle_type file_handle = fs::File::closed;
-
-        /// Child-readable flag when type == pipe.
-        bool readable = false;  // from the child's perspective
-
-        /// Child-writable flag when type == pipe.
-        bool writable = false;  // from the child's perspective
-
-        /// Inherit parent's descriptor (default).
-        static stdio inherit();
-
-        /// Discard this stream for the child.
-        static stdio ignore();
-
-        /// Duplicate the given descriptor into the child.
-        static stdio from_fd(int fd);
-
-        /// Duplicate an open file's handle into the child, which reads it
-        /// or writes it from where the file stands; `file` may close once
-        /// the child has started.
-        static stdio from_file(const fs::File& file);
-
-        /// Create a pipe; flags are from the child's perspective.
-        static stdio pipe(bool readable, bool writable);
-    };
-
-    struct creation_options {
-        /// Detach the child from the parent process group/session.
-        bool detached = false;
-
-        /// Hide the console window (Windows).
-        bool windows_hide = false;
-
-        /// Hide the console window specifically (Windows).
-        bool windows_hide_console = false;
-
-        /// Hide GUI window (Windows).
-        bool windows_hide_gui = false;
-
-        /// Disable argument quoting/escaping (Windows).
-        bool windows_verbatim_arguments = false;
-
-        /// Use exact file path for image name (Windows).
-        bool windows_file_path_exact_name = false;
-    };
-
-    /// A change to the child's environment: sets variable `name` to `value`,
-    /// or removes it when there is no value.
-    struct env_change {
-        std::string name;
-        std::optional<std::string> value;
-    };
-
-    struct options {
-        /// Executable path.
-        std::string file;
-
-        /// argv (including argv[0]). If empty, defaults to `file`.
-        std::vector<std::string> args;
-
-        /// Environment variables in `KEY=VALUE` form; empty means inherit.
-        std::vector<std::string> env;
-
-        /// Changes made, in order, to `env`, or to the inherited environment
-        /// when `env` is empty; the last change of a name counts. Names
-        /// compare without regard to ASCII case on Windows, as Windows
-        /// compares them.
-        std::vector<env_change> env_changes;
-
-        /// Working directory; empty means inherit.
-        std::string cwd;
-
-        /// Process creation options (platform-specific options may be ignored).
-        creation_options creation;
-
-        /// Stdio config for stdin/stdout/stderr.
-        std::array<stdio, 3> streams = {stdio::inherit(), stdio::inherit(), stdio::inherit()};
-    };
-
     struct spawn_result;
 
-    /// Launches the child, with the pipes `opts` asks for.
+    /// Launches the child, with the pipes `opts` asks for. It either starts,
+    /// with all of them, or leaves nothing behind.
     static result<spawn_result> spawn(const options& opts,
                                       event_loop& loop = event_loop::current());
 
@@ -169,26 +65,38 @@ public:
 
     /// Runs the child to its exit, and returns what it wrote: its stdin
     /// reads nothing, and its stdout and stderr are read while it runs,
-    /// whatever `opts` asks for them. A cancel kills the child, as kill()
-    /// does, and the task ends once the child has exited: it leaves no child
-    /// behind. The child must be one the caller may signal: a cancel that
-    /// cannot kill it aborts the program.
+    /// whatever `opts` asks for them. A cancel kills the group the child
+    /// leads, as kill_tree() does, and the child, as kill() does, and the
+    /// task ends once the child has exited: it leaves no child behind; one
+    /// after the child exited, while what it started holds its pipes, kills
+    /// the group too. The child must be one the caller may signal: a cancel
+    /// that cannot kill it aborts the program.
     static task<capture_result, error> capture(options opts,
                                                event_loop& loop = event_loop::current());
 
-    /// Waits for the child to exit.
+    /// Waits for the child to exit. Fails with error::no_such_process when
+    /// another reaped it, as SIGCHLD set to SIG_IGN makes the system do.
     task<exit_status, error> wait();
 
-    /// The OS process id; -1 for an inert process.
+    /// The OS process ID; -1 for an inert process.
     int pid() const noexcept;
 
     /// Sends a signal to the child; fails with no_such_process once its exit
-    /// has been observed.
+    /// has been observed. On Windows SIGINT, SIGTERM and SIGKILL (9) end it.
     error kill(int signum);
 
     /// Ends the child at once, which it cannot catch: SIGKILL, or on Windows
     /// TerminateProcess. Fails as kill(signum) does.
     error kill();
+
+    /// Sends a signal to the group the child leads (creation_options's
+    /// process_group or detached), or on Windows ends its job, as
+    /// sys::Child::kill_tree does; after the child's exit too, while the
+    /// group has members.
+    error kill_tree(int signum);
+
+    /// Ends the group at once: SIGKILL, or on Windows TerminateJobObject.
+    error kill_tree();
 
 private:
     struct Self;
