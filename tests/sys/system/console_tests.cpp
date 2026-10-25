@@ -7,7 +7,15 @@
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -52,6 +60,20 @@ struct Pipe {
         }
     }
 
+    /// Writes to the write end return at once, taking what fits: O_NONBLOCK,
+    /// or Windows' PIPE_NOWAIT.
+    void stop_blocking_writes() {
+#ifdef _WIN32
+        DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
+        auto handle = reinterpret_cast<HANDLE>(::_get_osfhandle(fds[1]));
+        ZASSERT(::SetNamedPipeHandleState(handle, &mode, nullptr, nullptr));
+#else
+        auto flags = ::fcntl(fds[1], F_GETFL);
+        ZASSERT(flags >= 0);
+        ZASSERT(::fcntl(fds[1], F_SETFL, flags | O_NONBLOCK) == 0);
+#endif
+    }
+
     /// Everything written, until the write end is closed.
     std::string read_all() {
         std::string text;
@@ -94,6 +116,24 @@ ZEST_CASE(write_console_writes_all_of_a_long_text) {
     reader.join();
     ZEXPECT(!error);
     ZEXPECT(read.size() == text.size());
+}
+
+// A pipe that does not block takes what fits, nobody reading, and then
+// nothing: Windows' WriteFile says so by writing no byte, which must end the
+// write rather than repeat it for ever. Filled a byte at a time, as Windows
+// may take nothing of a larger write.
+ZEST_CASE(write_console_to_a_full_pipe_that_does_not_block_fails) {
+    Pipe pipe;
+    pipe.stop_blocking_writes();
+    std::size_t taken = 0;
+    std::error_code error;
+    while(!(error = write_console(pipe.fds[1], "x"))) {
+        ++taken;
+    }
+    ZEXPECT(error == std::errc::resource_unavailable_try_again);
+    ZEXPECT(taken > 0U);
+    pipe.close_write();
+    ZEXPECT(pipe.read_all().size() == taken);
 }
 
 #ifndef _WIN32

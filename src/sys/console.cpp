@@ -39,6 +39,10 @@ std::error_code write_wide(HANDLE console, std::string_view text) noexcept {
             if(!::WriteConsoleW(console, rest, static_cast<DWORD>(count), &written, nullptr)) {
                 return fs::windows::last_error();
             }
+            // A console that took nothing would take nothing again.
+            if(written == 0) {
+                return std::make_error_code(std::errc::io_error);
+            }
             rest += written;
             count -= written;
         }
@@ -52,6 +56,10 @@ std::error_code write_bytes(HANDLE handle, std::string_view text) noexcept {
         auto size = static_cast<DWORD>(std::min<std::size_t>(text.size(), MAXDWORD));
         if(!::WriteFile(handle, text.data(), size, &written, nullptr)) {
             return fs::windows::last_error();
+        }
+        // What a full pipe in PIPE_NOWAIT mode does, where POSIX says EAGAIN.
+        if(written == 0) {
+            return std::make_error_code(std::errc::resource_unavailable_try_again);
         }
         text.remove_prefix(written);
     }
