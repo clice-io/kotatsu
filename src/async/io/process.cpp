@@ -129,7 +129,7 @@ struct process::Self::Watch {
 #endif
 #ifndef _WIN32
         // One the loop cannot poll is none, and SIGCHLD stands in: epoll
-        // refuses a set nested in the loop's past its limit.
+        // refuses a set nested past its limit, or past max_user_watches.
         if(multiplexer >= 0 && ::uv_poll_init(&loop, &poll, multiplexer) != 0) {
             ::close(std::exchange(multiplexer, -1));
         }
@@ -155,12 +155,10 @@ struct process::Self::Watch {
         static auto& table = *new std::map<uv_loop_t*, Watch*>;
         std::scoped_lock lock(table_mutex);
         auto* native = loop.native_handle();
-        // Null until the watch is made: an allocation that throws leaves it
-        // to the next spawn to make.
+        // Null until the watch is made: a throw before leaves it to the next
+        // spawn to make.
         auto& entry = table[native];
         if(entry == nullptr) {
-            // Opened once nothing can throw any more: a throw leaves no
-            // handle on the loop, nor a callback for a watch never made.
             auto made = std::make_unique<Watch>(*native);
             // A loop made later at the same address starts afresh.
             loop.on_destroy([native] {
@@ -171,6 +169,8 @@ struct process::Self::Watch {
                 }
                 watch->close();
             });
+            // Opened once nothing can throw any more: a throw leaves no
+            // handle on the loop.
             entry = made.release();
             entry->open();
         }

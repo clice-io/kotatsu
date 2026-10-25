@@ -794,21 +794,20 @@ ZEST_CASE(exit_is_seen_when_the_loop_cannot_poll_the_pidfds) {
     } outer;
 
     const int backend = ::uv_backend_fd(loop.native_handle());
+    epoll_event event{.events = EPOLLIN, .data = {}};
     int inner = backend;
-    while(outer.fds.size() < 4) {
+    for(int depth = 0; depth < 4; ++depth) {
         const int set = ::epoll_create1(EPOLL_CLOEXEC);
         ZASSERT(set >= 0);
         outer.fds.push_back(set);
-        epoll_event event{.events = EPOLLIN, .data = {}};
         ZASSERT(::epoll_ctl(set, EPOLL_CTL_ADD, inner, &event) == 0);
         inner = set;
     }
     // An older kernel, which counts only the nesting below the set added,
-    // lets one more in.
+    // lets it in.
     const int probe = ::epoll_create1(EPOLL_CLOEXEC);
     ZASSERT(probe >= 0);
-    epoll_event event{.events = EPOLLIN, .data = {}};
-    const bool refused = ::epoll_ctl(backend, EPOLL_CTL_ADD, probe, &event) != 0 && errno == ELOOP;
+    const bool refused = ::epoll_ctl(backend, EPOLL_CTL_ADD, probe, &event) != 0;
     ::close(probe);
     if(!refused) {
         zest::skip();
