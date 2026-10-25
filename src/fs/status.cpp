@@ -22,7 +22,7 @@ constexpr ULONG remote_device = 0x10;
 
 /// FILE_STAT_BASIC_INFORMATION, which only the newest SDKs declare.
 struct StatBasicByName {
-    LARGE_INTEGER FileID;
+    LARGE_INTEGER FileId;
     LARGE_INTEGER CreationTime;
     LARGE_INTEGER LastAccessTime;
     LARGE_INTEGER LastWriteTime;

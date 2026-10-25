@@ -26,6 +26,7 @@ OS os() {
                                version.dwMajorVersion,
                                version.dwMinorVersion,
                                version.dwBuildNumber),
+        .machine = {},
     };
     SYSTEM_INFO info{};
     ::GetNativeSystemInfo(&info);

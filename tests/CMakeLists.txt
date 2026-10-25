@@ -301,14 +301,14 @@ endif()
 add_test(NAME zest_bootstrap_unit
     COMMAND unit_tests
         --no-isolation
-        "--test-filter={support_*,sys_windows_command_line,sys_process_exit_status,sys_windows_exit_status,sys_detail_memory_model,meta_compare,meta_name,meta_spelling,codec_debug_*,deco_*,async_vocab_outcome,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_watcher,async_io_process_exit_status,zest_async}.*"
+        "--test-filter={support_*,sys_windows_command_line,sys_process_exit_status,sys_spawn_exit_status,sys_windows_exit_status,sys_detail_memory_model,meta_compare,meta_name,meta_spelling,codec_debug_*,deco_*,async_vocab_outcome,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_watcher,zest_async}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )
 add_test(NAME zest_bootstrap_system
     COMMAND system_tests
         --no-isolation
-        "--test-filter={fs_file,sys_process_self,sys_info,async_io_fs,async_io_process,async_io_stream_pipe}.*"
+        "--test-filter={fs_file,sys_process_self,sys_info,sys_spawn,async_io_fs,async_io_process,async_io_stream_pipe}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )

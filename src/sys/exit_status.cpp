@@ -1,11 +1,32 @@
 #include <csignal>
 #include <cstdint>
+#include <format>
+#include <string>
 #include <string_view>
 
 #include "kota/sys/process.h"
+#include "kota/sys/spawn.h"
 #include "kota/sys/windows.h"
 
 namespace kota::sys {
+
+std::string ExitStatus::to_string() const {
+    if(term_signal != 0) {
+        auto name = signal_name(term_signal);
+        return name.empty() ? std::format("signal {}", term_signal)
+                            : std::format("signal {} ({})", term_signal, name);
+    }
+#ifdef _WIN32
+    // A crash exits with its exception's NTSTATUS, an error or a warning.
+    const auto code = static_cast<std::uint32_t>(status);
+    if(code >= 0x8000'0000) {
+        auto name = windows::ntstatus_name(code);
+        return name.empty() ? std::format("exception 0x{:08X}", code)
+                            : std::format("exception 0x{:08X} ({})", code, name);
+    }
+#endif
+    return std::format("exit code {}", status);
+}
 
 std::string_view signal_name(int signum) {
     switch(signum) {

@@ -236,9 +236,9 @@ struct owned_handle {
     }
 
     /// After an init of `handle` failed: libuv may have listed the handle on
-    /// its loop and taken it off again, as uv_spawn on Unix and uv_tty_init
-    /// on macOS do on some failures. Such a handle must not be closed, so
-    /// destroy() frees it at once, as one the init never listed.
+    /// its loop and taken it off again, as uv_tty_init on macOS does on some
+    /// failures. Such a handle must not be closed, so destroy() frees it at
+    /// once, as one the init never listed.
     static void forget_if_unlisted(Derived& self) noexcept {
         if(self.handle.loop == nullptr) {
             return;

@@ -18,16 +18,31 @@
 //   job                   Windows: joins a job of at most 1 GiB a process and
 //                         one CPU's time, and prints memory().limit and
 //                         parallelism()
+//   orphan                starts `sys_probe wait`, exit_with_parent, its stdin
+//                         its own, prints {"pid": <its pid>} and exits once
+//                         its stdin ends, unless killed first
+//   orphan-thread         the same, started from a thread that then ends
+//   nested                Windows: joins a job as a CI runner's, starts
+//                         `sys_probe wait` exit_with_parent in a tree of its
+//                         own, and prints whether it is in a job
+//   handles               Windows: makes an inheritable event, starts
+//                         `sys_probe handle <it>`, and prints whether that saw
+//                         it: {"inherited": <bool>}
+//   handle <value>        Windows: exits with 1 when <value> is a signaled
+//                         event's handle, 0 otherwise
 //
 // Each prints one JSON line, and exits with 0; 1 when a call fails, saying
 // why on stderr; 2 for a command it does not know.
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <expected>
 #include <format>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -48,6 +63,7 @@
 #include "kota/sys/env.h"
 #include "kota/sys/info.h"
 #include "kota/sys/process.h"
+#include "kota/sys/spawn.h"
 
 namespace {
 
@@ -154,6 +170,29 @@ int join_job() {
 
 }  // namespace
 
+/// `sys_probe wait`, which runs until its stdin ends: this one's, which the
+/// test holds.
+kota::sys::SpawnOptions waiter(kota::sys::CreationOptions creation) {
+    auto self = kota::sys::executable_path();
+    kota::sys::SpawnOptions options{
+        .file = self ? *self : std::string(),
+        .args = {self ? *self : std::string(), "wait"},
+        .creation = creation,
+    };
+    options.streams[1] = kota::sys::Stdio::ignore();
+    return options;
+}
+
+/// Prints the pid of `child`, started, and exits once its stdin ends.
+int report_and_wait(std::expected<kota::sys::Child, std::error_code>& child) {
+    if(!child) {
+        return fail("spawn", child.error());
+    }
+    print_line(std::format(R"({{"pid":{}}})", child->pid()));
+    wait_for_stdin();
+    return 0;
+}
+
 /// The arguments `arguments` as a JSON array.
 std::string json(const std::vector<std::string>& arguments) {
     std::string line = "[";
@@ -205,7 +244,65 @@ int main() {
                                stats->resident));
         return 0;
     }
+    if(command == "orphan") {
+        auto child = sys::spawn(waiter({.exit_with_parent = true}));
+        return report_and_wait(child);
+    }
+    if(command == "orphan-thread") {
+        std::expected<sys::Child, std::error_code> child;
+        std::thread([&] { child = sys::spawn(waiter({.exit_with_parent = true})); }).join();
+        return report_and_wait(child);
+    }
 #ifdef _WIN32
+    if(command == "nested") {
+        // As a CI runner's: a job of its own, which its processes' children
+        // may leave.
+        HANDLE job = ::CreateJobObjectW(nullptr, nullptr);
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags =
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        if(job == nullptr ||
+           !::SetInformationJobObject(job,
+                                      JobObjectExtendedLimitInformation,
+                                      &limits,
+                                      sizeof(limits)) ||
+           !::AssignProcessToJobObject(job, ::GetCurrentProcess())) {
+            return fail("a job", kota::fs::windows::last_error());
+        }
+        auto child = sys::spawn(waiter({.process_group = true, .exit_with_parent = true}));
+        if(!child) {
+            return fail("spawn", child.error());
+        }
+        BOOL in_job = FALSE;
+        ::IsProcessInJob(child->native_handle(), nullptr, &in_job);
+        print_line(std::format(R"({{"in_job":{}}})", in_job ? "true" : "false"));
+        return 0;
+    }
+    if(command == "handles") {
+        SECURITY_ATTRIBUTES inherit{.nLength = sizeof(inherit),
+                                    .lpSecurityDescriptor = nullptr,
+                                    .bInheritHandle = TRUE};
+        HANDLE event = ::CreateEventW(&inherit, TRUE, TRUE, nullptr);
+        auto self = sys::executable_path();
+        auto child = sys::spawn({
+            .file = self ? *self : std::string(),
+            .args = {self ? *self : std::string(),
+                     "handle", std::to_string(reinterpret_cast<std::uintptr_t>(event))},
+        });
+        if(!child) {
+            return fail("spawn", child.error());
+        }
+        auto status = child->wait();
+        if(!status) {
+            return fail("wait", status.error());
+        }
+        print_line(std::format(R"({{"inherited":{}}})", status->status == 1 ? "true" : "false"));
+        return 0;
+    }
+    if(command == "handle" && arguments.size() == 3) {
+        auto* event = reinterpret_cast<HANDLE>(std::stoull(arguments[2]));
+        return ::WaitForSingleObject(event, 0) == WAIT_OBJECT_0 ? 1 : 0;
+    }
     if(command == "console" && arguments.size() == 3) {
         return write_to_console(arguments[2]);
     }

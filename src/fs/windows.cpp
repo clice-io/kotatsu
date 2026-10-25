@@ -195,7 +195,7 @@ std::expected<Handle, std::error_code> open(std::string_view path, DWORD access)
 std::expected<FileID, std::error_code> file_id(HANDLE handle) {
     FILE_ID_INFO id;
     if(::GetFileInformationByHandleEx(handle, FileIdInfo, &id, sizeof(id))) {
-        return id_of(id.VolumeSerialNumber, id.FileID);
+        return id_of(id.VolumeSerialNumber, id.FileId);
     }
     BY_HANDLE_FILE_INFORMATION info;
     if(!::GetFileInformationByHandle(handle, &info)) {

@@ -148,6 +148,9 @@ target("sys", function()
 	add_deps("support", "fs")
 	if is_plat("windows", "mingw") then
 		add_syslinks("advapi32", "ntdll", "ole32", "shell32")
+	elseif is_plat("linux") then
+		-- pthread_sigmask around spawn's fork, in libc itself only from glibc 2.34.
+		add_syslinks("pthread")
 	end
 end)
 

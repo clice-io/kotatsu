@@ -33,6 +33,7 @@ kota_library(
         "src/sys/*.h",
     ]),
     hdrs = glob(["include/kota/sys/**"]),
+    # pthread_sigmask around spawn's fork, in libc itself only from glibc 2.34.
     linkopts = select({
         "@platforms//os:windows": [
             "-ladvapi32",
@@ -40,6 +41,7 @@ kota_library(
             "-lole32",
             "-lshell32",
         ],
+        "@platforms//os:linux": ["-lpthread"],
         "//conditions:default": [],
     }),
     deps = [

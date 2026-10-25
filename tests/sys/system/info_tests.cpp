@@ -136,12 +136,13 @@ ZEST_CASE(hostname_and_uptime_are_reported) {
     ZEXPECT(uptime().count() > 0);
 }
 
-// Setting the priority it already has leaves the process as it was.
-ZEST_CASE(priority_is_read_and_set) {
-    auto original = priority();
-    ZASSERT(original.has_value());
-    ZEXPECT(!set_priority(*original));
-    ZEXPECT(priority() == *original);
+// A nice value between two of Priority's reads as the one below it, which
+// this process may not take back on POSIX: another process's is set by the
+// integration tests, and Windows's own below.
+ZEST_CASE(priority_is_read) {
+    auto read = priority();
+    ZASSERT(read.has_value());
+    ZEXPECT(priority() == *read);
 }
 
 ZEST_CASE(priority_of_a_missing_pid_fails) {

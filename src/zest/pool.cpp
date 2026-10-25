@@ -166,6 +166,11 @@ struct Pool {
             process::stdio::from_file(*file),
             process::stdio::from_file(*file),
         };
+#ifndef __APPLE__
+        // A runner killed takes its workers with it; macOS has no way, and
+        // its workers end when their stdin does.
+        spawn.creation.exit_with_parent = true;
+#endif
         auto spawned = process::spawn(spawn);
         [[maybe_unused]] auto closed = file->close();
         if(!spawned) {
