@@ -8,7 +8,7 @@
 //   reach it as given, whatever their characters;
 // - its streams may be any of sys_probe's, swapped ones too;
 // - on Linux it is started through the execve a hook preloaded into
-//   sys_probe would see;
+//   sys_probe would see, and a stop its tracer is told of ends nothing;
 // - on Windows it is born in a job nested in the one sys_probe is in, as a CI
 //   runner puts its processes in one, and inherits no handle of sys_probe's
 //   but its standard ones, unless it is to inherit every inheritable one.
@@ -108,7 +108,7 @@ test(
 
 // A traced child's stop, which wait4 reports to its tracer, ends nothing.
 test(
-  "child_that_is_traced_runs_while_it_is_stopped",
+  "traced_child_that_stops_has_not_exited",
   { skip: process.platform !== "linux" && "a Linux tracer" },
   async (t) => {
     const driver = await Driver.spawn(t, "sys_probe", ["traced"]);

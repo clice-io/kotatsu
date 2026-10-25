@@ -6,20 +6,18 @@
 
 namespace kota::sys {
 
-/// kotatsu ignored SIGPIPE, which was at its default: a child started with
-/// keep_signals gets the default back while it stays ignored.
-extern std::atomic<bool> ignored_sigpipe;
+/// SIGPIPE was at its default until kotatsu ignored it: a child started with
+/// keep_signals gets the default back.
+extern std::atomic<bool> sigpipe_was_default;
 
-/// spawn put SIGCHLD, which was ignored, back to its default: a child
-/// started with keep_signals is given it ignored while it stays at the
-/// default.
-extern std::atomic<bool> restored_sigchld;
+/// On Linux, SIGCHLD was ignored until spawn set it to its default: a child
+/// started with keep_signals is given it ignored while it stays there.
+extern std::atomic<bool> sigchld_was_ignored;
 
-/// Puts SIGCHLD back to its default action when it is ignored, and clears
-/// SA_NOCLDWAIT from its action: either has the system reap a child, and
-/// its exit status with it, before wait can. libuv's handler of it did as
-/// much.
-void keep_children_waitable() noexcept;
+/// Sets SIGCHLD to its default when it is ignored, and clears SA_NOCLDWAIT
+/// from its action, a handler kept: either has the system reap a child, and
+/// its exit status with it, before wait can.
+void stop_auto_reaping() noexcept;
 
 }  // namespace kota::sys
 

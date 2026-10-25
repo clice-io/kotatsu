@@ -75,7 +75,8 @@ public:
                                                event_loop& loop = event_loop::current());
 
     /// Waits for the child to exit. Fails with error::no_such_process when
-    /// another reaped it, as a waitpid(-1) elsewhere in this process does.
+    /// another reaped it, as a waitpid(-1) elsewhere in this process does,
+    /// or SIGCHLD ignored since it started.
     task<exit_status, error> wait();
 
     /// The OS process ID; -1 for an inert process.

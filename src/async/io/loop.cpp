@@ -260,10 +260,7 @@ std::coroutine_handle<> yield_awaiter::suspend(task_frame& waiting,
 }
 
 #ifndef _WIN32
-/// A write to a peer that went away raises SIGPIPE, whose default action
-/// ends the process; ignored, the write fails with EPIPE instead. A program
-/// that set an action of its own keeps it. Children start with the default
-/// action.
+/// Once per process: an action set after the first loop is kept.
 static void ignore_sigpipe() {
     static std::once_flag once;
     std::call_once(once, sys::detail::ignore_sigpipe);

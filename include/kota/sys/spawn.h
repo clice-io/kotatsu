@@ -23,8 +23,8 @@ namespace kota::sys {
 /// How a child's standard stream is set up.
 struct Stdio {
     enum class Kind : std::uint8_t {
-        /// This process's own stream; none where it has none open, as a
-        /// program may be started with one closed.
+        /// This process's own stream; closed in the child where this process
+        /// has it closed, as a program may be started with one.
         Inherit,
         /// None: /dev/null, or NUL on Windows.
         Ignore,
@@ -112,9 +112,9 @@ struct CreationOptions {
 
     /// POSIX: the child starts with the signals as exec leaves them, rather
     /// than each at its default and none blocked: those this process ignores
-    /// stay ignored, others go back to their defaults, and the calling
-    /// thread's signal mask is kept; for a program that starts another in
-    /// its place, which nohup's ignored SIGHUP must reach. What kotatsu
+    /// stay ignored, those it handles go back to their defaults, and the
+    /// calling thread's signal mask is kept; for a wrapper that stands in for
+    /// the program it starts: nohup's ignored SIGHUP reaches it. What kotatsu
     /// itself changed goes back: SIGPIPE, which an event loop ignores, to its
     /// default, and on Linux SIGCHLD, which spawn stops ignoring, to ignored.
     /// Ignored on Windows.
@@ -269,7 +269,8 @@ public:
 
     /// Waits for the child to exit, and reaps it. Once it has been reaped,
     /// the status it ended with. no_child_process when another reaped it, as
-    /// a waitpid(-1) elsewhere in this process does.
+    /// a waitpid(-1) elsewhere in this process does, or SIGCHLD ignored since
+    /// it started.
     std::expected<ExitStatus, std::error_code> wait();
 
     /// The status it ended with when it has exited, reaping it; unset while
@@ -342,8 +343,9 @@ private:
 /// default and none blocked, unless keep_signals; the descriptors this
 /// process has without close-on-exec reach it, as make's jobserver needs.
 /// SIGCHLD ignored, or its action set SA_NOCLDWAIT, would have the system
-/// reap the child, its exit status with it: spawn puts it back to its
-/// default, for this whole process, as libuv's handler of it did. On Windows
+/// reap the child, its exit status with it: spawn sets an ignored SIGCHLD to
+/// its default and clears SA_NOCLDWAIT, for this whole process, as uv_spawn
+/// does. On Windows
 /// it inherits its three standard handles alone, unless
 /// windows_inherit_handles, and is born in a job object of its own, nested in
 /// any this process is in, which ends it rather than show a dialog when it

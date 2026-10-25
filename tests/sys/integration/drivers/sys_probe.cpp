@@ -63,8 +63,9 @@
 //   handle <value> <name> Windows: exits with 1 when <value> is a handle of
 //                         the event named <name>, 0 otherwise
 //
-// Each prints one JSON line to stdout but for hang, and exits with 0; 1 when
-// a call fails, saying why on stderr; 2 for a command it does not know.
+// Each prints one JSON line to stdout but for hang and traceme, and exits
+// with 0; 1 when a call fails, saying why on stderr; 2 for a command it does
+// not know.
 
 #include <chrono>
 #include <cstddef>
@@ -406,8 +407,12 @@ int main() {
         }
         // Its stop, which this process, its tracer, is told of, left there.
         siginfo_t info{};
-        if(::waitid(P_PID, static_cast<id_t>(child->pid()), &info, WSTOPPED | WNOWAIT) < 0) {
+        if(::waitid(P_PID, static_cast<id_t>(child->pid()), &info, WSTOPPED | WEXITED | WNOWAIT) <
+           0) {
             return fail("waitid", std::error_code(errno, std::generic_category()));
+        }
+        if(info.si_code != CLD_TRAPPED) {
+            return fail("waitid", std::make_error_code(std::errc::protocol_error));
         }
         auto running = child->try_wait();
         if(!running) {
@@ -426,7 +431,9 @@ int main() {
         return 0;
     }
     if(command == "traceme") {
-        ::ptrace(PTRACE_TRACEME, 0, nullptr, nullptr);
+        if(::ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) < 0) {
+            return fail("ptrace", std::error_code(errno, std::generic_category()));
+        }
         ::raise(SIGSTOP);
         return 0;
     }
