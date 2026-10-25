@@ -19,11 +19,28 @@
 #include <mach/mach_time.h>
 #include <sys/resource.h>
 #include <sys/sysctl.h>
+#else
+#include <sys/resource.h>
+
+#include "kota/fs/directory.h"
 #endif
 
 namespace kota::sys {
 
 namespace {
+
+#ifndef _WIN32
+
+/// Sets the switches of `stats` to this process's, those of the threads that
+/// ended included.
+void count_own_switches(ProcessStats& stats) {
+    rusage own{};
+    ::getrusage(RUSAGE_SELF, &own);
+    stats.voluntary_switches = static_cast<std::uint64_t>(own.ru_nvcsw);
+    stats.involuntary_switches = static_cast<std::uint64_t>(own.ru_nivcsw);
+}
+
+#endif
 
 #ifdef _WIN32
 
@@ -59,6 +76,28 @@ std::error_code process_error(std::error_code error) {
         return std::make_error_code(std::errc::no_such_process);
     }
     return error;
+}
+
+/// Adds to `stats` the switches of the threads process `pid` has, which
+/// Linux counts each apart.
+std::error_code count_thread_switches(ProcessStats& stats, int pid) {
+    small_string<64> dir;
+    proc_path(dir, pid, "task");
+    auto threads = fs::read_dir(dir);
+    if(!threads) {
+        return process_error(threads.error());
+    }
+    for(const auto& thread: *threads) {
+        small_string<64> path{dir, "/", thread.name, "/status"};
+        ProcText status;
+        // A thread may end before it is read.
+        if(fs::read_file(status, path)) {
+            continue;
+        }
+        stats.voluntary_switches += field(status, "voluntary_ctxt_switches:").value_or(0);
+        stats.involuntary_switches += field(status, "nonvoluntary_ctxt_switches:").value_or(0);
+    }
+    return {};
 }
 
 #endif
@@ -105,10 +144,7 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
     stats.major_faults = std::uint32_t(task.pti_pageins);
     // Only a process's own switches are told apart.
     if(target == ::getpid()) {
-        rusage own{};
-        ::getrusage(RUSAGE_SELF, &own);
-        stats.voluntary_switches = static_cast<std::uint64_t>(own.ru_nvcsw);
-        stats.involuntary_switches = static_cast<std::uint64_t>(own.ru_nivcsw);
+        count_own_switches(stats);
     }
 #else
     ProcText status;
@@ -126,8 +162,12 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
     stats.memory = kilobytes("RssAnon:") + stats.swapped;
     stats.peak_memory = kilobytes("VmHWM:");
     stats.resident = kilobytes("VmRSS:");
-    stats.voluntary_switches = field(status, "voluntary_ctxt_switches:").value_or(0);
-    stats.involuntary_switches = field(status, "nonvoluntary_ctxt_switches:").value_or(0);
+    // Of another process, only the threads it has are there to count.
+    if(pid == 0 || pid == ::getpid()) {
+        count_own_switches(stats);
+    } else if(auto error = count_thread_switches(stats, pid)) {
+        return std::unexpected(error);
+    }
     auto number = [&](std::size_t index) {
         return leading_number(stat_field(stat, index)).value_or(0);
     };
@@ -239,10 +279,12 @@ std::expected<Memory, std::error_code> memory([[maybe_unused]] std::span<const P
     vm_statistics64_data_t vm{};
     mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
     vm_size_t page = 0;
-    // Of this very host, they cannot fail.
+    // Of this very host, they cannot fail. Each mach_host_self() adds a
+    // reference to the right, given back after.
     auto host = ::mach_host_self();
     ::host_statistics64(host, HOST_VM_INFO64, reinterpret_cast<host_info64_t>(&vm), &count);
     ::host_page_size(host, &page);
+    ::mach_port_deallocate(::mach_task_self(), host);
     detail::MacMemory counts{
         .total = total,
         .wired = std::uint64_t(vm.wire_count) * page,
@@ -264,8 +306,11 @@ std::expected<Memory, std::error_code> memory([[maybe_unused]] std::span<const P
         .available = field(meminfo, "MemAvailable:").value_or(0) * 1024,
     };
     // Read afresh every time: the process may have moved.
-    if(ProcText membership; !fs::read_file(membership, "/proc/self/cgroup")) {
-        if(auto cgroups = detail::cgroup::memory("/sys/fs/cgroup", membership, read_cgroup_file)) {
+    ProcText membership;
+    ProcText mounts;
+    if(!fs::read_file(membership, "/proc/self/cgroup") &&
+       !fs::read_file(mounts, "/proc/self/mountinfo")) {
+        if(auto cgroups = detail::cgroup::memory(mounts, membership, read_cgroup_file)) {
             result.limit = std::min(result.limit, cgroups->limit);
             result.available = std::min(result.available, cgroups->available);
         }

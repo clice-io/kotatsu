@@ -41,8 +41,9 @@ struct ProcessStats {
 
     std::uint64_t major_faults = 0;
 
-    /// Linux, and on macOS this process's: the times it gave up the CPU to
-    /// wait, and the times the scheduler took it away.
+    /// Linux, and on macOS this process's: the times its threads gave up the
+    /// CPU to wait, and the times the scheduler took it away; of another
+    /// process on Linux, only those of the threads it still has.
     std::uint64_t voluntary_switches = 0;
 
     std::uint64_t involuntary_switches = 0;
@@ -61,7 +62,9 @@ struct Memory {
     std::uint64_t total = 0;
 
     /// The least of `total` and the limits the process runs under: of every
-    /// level of its memory cgroups on Linux, of its job object on Windows.
+    /// level of its memory cgroups on Linux; on Windows of the job object it
+    /// is in, not of the jobs that one is nested in, which a process cannot
+    /// read.
     std::uint64_t limit = 0;
 
     /// What it can take before reclaim starts to hurt. On Linux the least of
@@ -94,8 +97,10 @@ std::error_code set_oom_score_adjustment(int value, int pid = 0);
 /// The CPUs this process can run on at once, at least 1: the least of its
 /// affinity and, on Linux, the CPU quota of every level of its cgroups,
 /// rounded up. On Windows 11 and Server 2022 across all processor groups,
-/// before them the one group a process's threads stay in; less a job
-/// object's hard cap.
+/// before them the one group a process's threads stay in; less the hard cap
+/// of the job object it is in. A job nested in another has a share of that
+/// one's cap, which a process cannot read: there this counts more CPUs than
+/// it gets.
 unsigned parallelism();
 
 /// The size of a page of memory.

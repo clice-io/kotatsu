@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -13,6 +15,7 @@
 #endif
 #include <windows.h>
 #elif defined(__APPLE__)
+#include <mach/mach.h>
 #include <pthread.h>
 #else
 #include <sched.h>
@@ -73,6 +76,33 @@ ZEST_CASE(process_stats_of_a_missing_pid_fails) {
     ZEXPECT(stats.error() == std::errc::no_such_process);
 }
 
+#ifdef __linux__
+// Linux counts each thread's switches apart from the others'.
+ZEST_CASE(process_stats_count_the_switches_of_every_thread) {
+    auto before = process_stats();
+    ZASSERT(before.has_value());
+    long slept = 0;
+    std::thread([&] {
+        rusage start{};
+        ::getrusage(RUSAGE_THREAD, &start);
+        for(int i = 0; i < 1000; ++i) {
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+        rusage end{};
+        ::getrusage(RUSAGE_THREAD, &end);
+        slept = end.ru_nvcsw - start.ru_nvcsw;
+    }).join();
+    // Each sleep gave the CPU up; the thread has ended since.
+    ZASSERT(slept >= 500);
+    auto after = process_stats();
+    ZASSERT(after.has_value());
+    ZEXPECT(after->voluntary_switches - before->voluntary_switches >= std::uint64_t(slept));
+    auto by_pid = process_stats(pid());
+    ZASSERT(by_pid.has_value());
+    ZEXPECT(by_pid->voluntary_switches >= after->voluntary_switches);
+}
+#endif
+
 ZEST_CASE(resident_memory_is_reported) {
     auto resident = resident_memory();
     ZASSERT(resident.has_value());
@@ -86,6 +116,27 @@ ZEST_CASE(parallelism_is_at_most_the_cores) {
     ZEXPECT(parallelism() >= 1U);
     ZEXPECT(parallelism() <= cores->size());
 }
+
+#ifdef __APPLE__
+// Each mach_host_self() adds a reference to this task's send right to the
+// host port.
+ZEST_CASE(memory_and_cpu_cores_give_back_the_host_port) {
+    // This test's own reference keeps the right while it is counted.
+    auto host = ::mach_host_self();
+    mach_port_urefs_t before = 0;
+    ZASSERT(::mach_port_get_refs(::mach_task_self(), host, MACH_PORT_RIGHT_SEND, &before) ==
+            KERN_SUCCESS);
+    for(int i = 0; i < 100; ++i) {
+        ZASSERT(sys::memory().has_value());
+        ZASSERT(cpu_cores().has_value());
+    }
+    mach_port_urefs_t after = 0;
+    ZASSERT(::mach_port_get_refs(::mach_task_self(), host, MACH_PORT_RIGHT_SEND, &after) ==
+            KERN_SUCCESS);
+    ::mach_port_deallocate(::mach_task_self(), host);
+    ZEXPECT(after == before);
+}
+#endif
 
 ZEST_CASE(cpu_cores_have_run) {
     auto cores = cpu_cores();

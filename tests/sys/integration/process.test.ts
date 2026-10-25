@@ -9,7 +9,8 @@
 //   file was removed or replaced, and a copy of it started through
 //   self_executable after the file was renamed, and on Linux removed or
 //   replaced;
-// - another process's priority, set and read back, and its memory;
+// - another process's priority, set and read back, and its memory; on Linux
+//   the switches of all its threads;
 // - on Linux and macOS the title it sets is what ps shows, and its own
 //   arguments read the same after; on Linux an empty one leaves the name top
 //   shows;
@@ -214,6 +215,32 @@ test("priority_of_another_process_is_set_and_read", async (t) => {
   assert.equal(output.priority, 1);
   assert.ok(output.resident > 0);
 });
+
+test(
+  "switches_of_another_process_count_every_thread",
+  {
+    skip:
+      process.platform !== "linux" &&
+      "only Linux tells another process's switches",
+  },
+  async (t) => {
+    const switching = await Driver.spawn(t, "sys_probe", ["switching"]);
+    const { switches } = (await switching.jsonLines().receive()) as {
+      switches: number;
+    };
+    const other = await Driver.spawn(t, "sys_probe", [
+      "other",
+      String(switching.pid),
+    ]);
+    const output = (await printed(other)) as { switches: number };
+    await other.expectExit(0);
+    switching.stdin.end();
+    await switching.expectExit(0);
+    // Each sleep of the thread, which is not the main one, gave the CPU up.
+    assert.ok(switches >= 500);
+    assert.ok(output.switches >= switches);
+  },
+);
 
 test(
   "title_is_what_ps_shows",
