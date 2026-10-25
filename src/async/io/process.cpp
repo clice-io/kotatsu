@@ -509,16 +509,28 @@ result<pipe> open_pipe(fs::File::native_handle_type end, event_loop& loop) {
         ::CloseHandle(end);
         return outcome_error(error::too_many_open_files);
     }
-    auto opened = pipe::open(fd, loop);
-    if(!opened) {
-        ::_close(fd);
-    }
 #else
-    auto opened = pipe::open(end, loop);
-    if(!opened) {
-        ::close(end);
-    }
+    int fd = end;
 #endif
+    // Closed unless the pipe takes it: its open failed, or threw.
+    struct Unopened {
+        int fd;
+
+        ~Unopened() {
+            if(fd >= 0) {
+#ifdef _WIN32
+                ::_close(fd);
+#else
+                ::close(fd);
+#endif
+            }
+        }
+    } unopened{fd};
+
+    auto opened = pipe::open(fd, loop);
+    if(opened) {
+        unopened.fd = -1;
+    }
     return opened;
 }
 
