@@ -23,8 +23,8 @@ namespace kota::sys {
 /// How a child's standard stream is set up.
 struct Stdio {
     enum class Kind : std::uint8_t {
-        /// This process's own stream; none on Windows where its handle is
-        /// none or not open.
+        /// This process's own stream; on Windows none where it has none
+        /// open.
         Inherit,
         /// None: /dev/null, or NUL on Windows.
         Ignore,

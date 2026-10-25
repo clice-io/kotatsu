@@ -325,6 +325,13 @@ ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
     child = spawn(options);
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::invalid_argument);
+#ifdef _WIN32
+    // Not this process, which the value is too.
+    options.streams[1] = {.kind = Stdio::Kind::File, .file = INVALID_HANDLE_VALUE};
+    child = spawn(options);
+    ZASSERT(!child.has_value());
+    ZEXPECT(child.error() == std::errc::invalid_argument);
+#endif
 }
 
 ZEST_CASE(stdout_goes_to_a_file) {
@@ -944,33 +951,33 @@ ZEST_CASE(windows_inherit_handles_takes_none_of_another_childs) {
     ZEXPECT(status->success());
 }
 
-// A program may be given a standard handle that is none or not open, closed
-// or never valid: the child inheriting it has none there.
-ZEST_CASE(inherit_of_a_standard_handle_not_open_gives_none) {
+// A program may be given a standard handle that is none, closed or never
+// valid: a child inheriting it starts all the same.
+ZEST_CASE(spawn_inheriting_a_stdin_not_open_runs_the_child) {
+    /// This process's stdin set to `handle`, put back when this goes.
     struct ScopedStdin {
-        HANDLE previous = ::GetStdHandle(STD_INPUT_HANDLE);
+        explicit ScopedStdin(HANDLE handle) {
+            ::SetStdHandle(STD_INPUT_HANDLE, handle);
+        }
+
+        ScopedStdin(const ScopedStdin&) = delete;
+        ScopedStdin& operator=(const ScopedStdin&) = delete;
 
         ~ScopedStdin() {
             ::SetStdHandle(STD_INPUT_HANDLE, previous);
         }
+
+        HANDLE previous = ::GetStdHandle(STD_INPUT_HANDLE);
     };
 
-    // No process has a handle as high: its table holds 2^24 of them.
+    // No process has a handle as high: they go by fours, 2^24 of them at most.
     auto* never_valid = reinterpret_cast<HANDLE>(std::uintptr_t(0x7FFF'FFFC));
     for(HANDLE handle: {HANDLE(nullptr), INVALID_HANDLE_VALUE, never_valid}) {
-        ZEST_CONTEXT("stdin {}", static_cast<void*>(handle));
+        ZEST_CONTEXT("stdin {}", handle);
+        ScopedStdin given(handle);
         auto options = shell("exit 3");
         options.streams[0] = Stdio::inherit();
-        std::expected<Child, std::error_code> child;
-        {
-            ScopedStdin restored;
-            ::SetStdHandle(STD_INPUT_HANDLE, handle);
-            child = spawn(options);
-        }
-        ZASSERT(child.has_value());
-        auto status = child->wait();
-        ZASSERT(status.has_value());
-        ZEXPECT(status->code == 3);
+        ZEXPECT(status_of(options).code == 3);
     }
 }
 #endif

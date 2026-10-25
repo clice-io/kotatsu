@@ -30,12 +30,8 @@ namespace kota::sys {
 
 namespace {
 
-/// A duplicate of `source`, not inheritable; none for a handle that is
-/// none, as the standard handles of a process without a console are.
+/// A duplicate of `source`, not inheritable.
 std::expected<Handle, std::error_code> duplicate(HANDLE source) {
-    if(source == nullptr || source == INVALID_HANDLE_VALUE) {
-        return Handle();
-    }
     HANDLE copy = nullptr;
     if(!::DuplicateHandle(::GetCurrentProcess(),
                           source,
@@ -47,6 +43,22 @@ std::expected<Handle, std::error_code> duplicate(HANDLE source) {
         return std::unexpected(fs::windows::last_error());
     }
     return Handle(copy);
+}
+
+/// A duplicate of this process's standard handle `which`; none where it has
+/// none open: a process without a console has none, and a program may be
+/// started with one closed or never valid.
+std::expected<Handle, std::error_code> duplicate_standard(DWORD which) {
+    HANDLE source = ::GetStdHandle(which);
+    // INVALID_HANDLE_VALUE would duplicate this process.
+    if(source == nullptr || source == INVALID_HANDLE_VALUE) {
+        return Handle();
+    }
+    auto made = duplicate(source);
+    if(!made && made.error() == std::errc::bad_file_descriptor) {
+        return Handle();
+    }
+    return made;
 }
 
 #ifdef _MSC_VER
@@ -352,8 +364,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
 
     Child child;
     // The child's standard handles, inheritable only while it is created and
-    // closed then; none where the stream is this process's and it has none,
-    // or one not open.
+    // closed then; none where the stream is this process's and it has none
+    // open.
     std::array<Handle, 3> handles;
     bool shares_streams = false;
     constexpr DWORD standard[] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
@@ -361,14 +373,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         const auto& stream = options.streams[i];
         std::expected<Handle, std::error_code> made = Handle();
         switch(stream.kind) {
-            case Stdio::Kind::Inherit:
-                made = duplicate(::GetStdHandle(standard[i]));
-                // A handle not open, closed or never valid, as a program
-                // may be given, is none, as libuv has it.
-                if(!made && made.error() == std::errc::bad_file_descriptor) {
-                    made = Handle();
-                }
-                break;
+            case Stdio::Kind::Inherit: made = duplicate_standard(standard[i]); break;
             case Stdio::Kind::Ignore: made = null_device(i == 0); break;
             case Stdio::Kind::FD:
                 if(stream.fd < 0) {
@@ -377,7 +382,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
                 made = duplicate_descriptor(stream.fd);
                 break;
             case Stdio::Kind::File:
-                if(stream.file == fs::File::closed) {
+                // INVALID_HANDLE_VALUE would duplicate this process.
+                if(stream.file == fs::File::closed || stream.file == INVALID_HANDLE_VALUE) {
                     return std::unexpected(std::make_error_code(std::errc::invalid_argument));
                 }
                 made = duplicate(stream.file);
