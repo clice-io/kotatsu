@@ -6,10 +6,12 @@
 //                         or null when it is unset
 //   parent                prints its parent's pid
 //   wait                  prints "ready" and exits once its stdin ends
-//   other <pid>           sets the priority of process <pid> to 12 and prints
-//                         what it reads back and the process's resident size
+//   other <pid>           sets the priority of process <pid> to BelowNormal and
+//                         prints what it reads back, as a number, and the
+//                         process's resident size
 //   title <title> <times> sets the process title to <title> <times> over,
-//                         prints "ready" and exits once its stdin ends
+//                         prints the arguments sys::arguments reads then, a
+//                         JSON array, and exits once its stdin ends
 //   console <text>        Windows: writes <text>, a byte that is no UTF-8
 //                         and "!" to a console of its own, and prints what
 //                         the console shows
@@ -152,18 +154,23 @@ int join_job() {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+/// The arguments `arguments` as a JSON array.
+std::string json(const std::vector<std::string>& arguments) {
+    std::string line = "[";
+    for(std::size_t i = 0; i < arguments.size(); ++i) {
+        line += i == 0 ? "" : ",";
+        line += json(arguments[i]);
+    }
+    return line + "]";
+}
+
+int main() {
     namespace sys = kota::sys;
-    auto arguments = sys::arguments(argc, argv);
+    const auto& arguments = sys::arguments();
     std::string_view command = arguments.size() > 1 ? std::string_view(arguments[1]) : "";
 
     if(command == "arguments") {
-        std::string line = "[";
-        for(std::size_t i = 0; i < arguments.size(); ++i) {
-            line += i == 0 ? "" : ",";
-            line += json(arguments[i]);
-        }
-        print_line(line + "]");
+        print_line(json(arguments));
         return 0;
     }
     if(command == "env" && arguments.size() == 3) {
@@ -182,7 +189,7 @@ int main(int argc, char** argv) {
     }
     if(command == "other" && arguments.size() == 3) {
         int pid = std::atoi(arguments[2].c_str());
-        if(auto error = sys::set_priority(12, pid)) {
+        if(auto error = sys::set_priority(sys::Priority::BelowNormal, pid)) {
             return fail("set_priority", error);
         }
         auto priority = sys::priority(pid);
@@ -193,7 +200,9 @@ int main(int argc, char** argv) {
         if(!stats) {
             return fail("process_stats", stats.error());
         }
-        print_line(std::format(R"({{"priority":{},"resident":{}}})", *priority, stats->resident));
+        print_line(std::format(R"({{"priority":{},"resident":{}}})",
+                               static_cast<int>(*priority),
+                               stats->resident));
         return 0;
     }
 #ifdef _WIN32
@@ -212,7 +221,7 @@ int main(int argc, char** argv) {
         if(auto error = sys::set_process_title(title)) {
             return fail("set_process_title", error);
         }
-        print_line(R"("ready")");
+        print_line(json(sys::arguments()));
         wait_for_stdin();
         return 0;
     }

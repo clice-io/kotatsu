@@ -72,23 +72,22 @@ struct Memory {
     std::uint64_t available = 0;
 };
 
-/// The memory this process can take (the arithmetic is memory_model.h's).
-/// On macOS the processes `counted` (the
-/// caller's workers, say) are taken at their footprint, rather than at the
-/// share of the compressor their pages hold, which macOS does not tell:
-/// what they compressed is counted at the size they would take back.
-/// Elsewhere `counted` changes nothing.
-std::expected<Memory, std::error_code> memory(std::span<const ProcessStats> counted = {});
+/// The memory this process can take. Memory::available counts the
+/// processes in `own` (the caller's workers, say) at their whole
+/// ProcessStats::memory. Only macOS needs telling: its compressor keeps no
+/// account of whose pages it holds, so without `own` what they compressed
+/// counts at its compressed size, and grows back when they touch it.
+/// Elsewhere the system counts them so already, and `own` changes nothing.
+std::expected<Memory, std::error_code> memory(std::span<const ProcessStats> own = {});
 
-#ifdef __linux__
 /// The OOM score adjustment of process `pid`, this one for 0: from -1000,
-/// which the OOM killer spares, to 1000, which it kills first.
+/// which Linux's OOM killer spares, to 1000, which it kills first.
+/// not_supported elsewhere, which has no such score.
 std::expected<int, std::error_code> oom_score_adjustment(int pid = 0);
 
 /// Sets it. Below the value a privileged process last set, 0 if none,
-/// lowering it takes CAP_SYS_RESOURCE.
+/// lowering it takes CAP_SYS_RESOURCE. not_supported off Linux.
 std::error_code set_oom_score_adjustment(int value, int pid = 0);
-#endif
 
 /// The CPUs this process can run on at once, at least 1: the least of its
 /// affinity and, on Linux, the CPU quota of every level of its cgroups,
@@ -101,73 +100,68 @@ unsigned parallelism();
 std::size_t page_size();
 
 /// A logical CPU's time since boot.
-struct CpuTimes {
+struct CPUTimes {
+    /// Running programs, at any priority.
     std::chrono::milliseconds user{};
 
-    std::chrono::milliseconds nice{};
-
+    /// Running the kernel, interrupts included.
     std::chrono::milliseconds system{};
 
     std::chrono::milliseconds idle{};
-
-    std::chrono::milliseconds irq{};
 };
 
-struct CpuCore {
-    /// Its model ("Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz").
+struct CPUCore {
+    /// Its model ("Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz"); empty where
+    /// the system names none, as Linux on some ARM machines.
     std::string model;
 
-    /// Its clock speed; 0 where the system does not say, as on Apple silicon
-    /// and in some virtual machines.
-    int speed_mhz = 0;
-
-    CpuTimes times;
+    CPUTimes times;
 };
 
-/// The machine's logical CPUs. On Windows their models and speeds come
-/// from the registry: linking it imports advapi32.
-std::expected<std::vector<CpuCore>, std::error_code> cpu_cores();
+/// The machine's logical CPUs. On Windows their models come from the
+/// registry: linking it imports advapi32.
+std::expected<std::vector<CPUCore>, std::error_code> cpu_cores();
 
-struct Uname {
-    /// "Linux", "Darwin", "Windows_NT".
-    std::string sysname;
+/// The operating system.
+struct OS {
+    /// "Linux", "macOS", "Windows"; elsewhere uname's name.
+    std::string name;
 
-    std::string release;
-
+    /// Linux's release ("6.8.0-45-generic"), macOS's product version
+    /// ("15.7"), Windows's major, minor and build ("10.0.26100").
     std::string version;
 
     /// "x86_64", "arm64", "aarch64".
     std::string machine;
 };
 
-/// The system's name and version. On Windows the product's name comes from
-/// the registry: linking it imports advapi32.
-Uname uname();
+OS os();
 
 std::expected<std::string, std::error_code> hostname();
 
 /// The time since the system started.
 std::chrono::milliseconds uptime();
 
-/// Priorities, nice values from the highest to the lowest: what POSIX takes
-/// as they are and Windows maps to its priority classes, from realtime to
-/// idle.
-constexpr inline int priority_highest = -20;
-constexpr inline int priority_high = -14;
-constexpr inline int priority_above_normal = -7;
-constexpr inline int priority_normal = 0;
-constexpr inline int priority_below_normal = 10;
-constexpr inline int priority_low = 19;
+/// A process's priority: Windows's priority classes, and on POSIX the nice
+/// values 19, 10, 0, -7, -14 and -20.
+enum class Priority : std::uint8_t {
+    Idle,
+    BelowNormal,
+    Normal,
+    AboveNormal,
+    High,
+    Realtime,
+};
 
-/// The priority of process `pid`, this one for 0: its nice value on POSIX,
-/// the constant of its priority class on Windows. Linux keeps a nice value
-/// per thread: this is the main thread's, or for 0 the calling thread's.
-std::expected<int, std::error_code> priority(int pid = 0);
+/// The priority of process `pid`, this one for 0. On POSIX, that of the
+/// nice value nearest at or below its own (5 is Normal, 12 BelowNormal).
+/// Linux keeps a nice value per thread: this is the main thread's, or for 0
+/// the calling thread's.
+std::expected<Priority, std::error_code> priority(int pid = 0);
 
-/// Sets it: a nice value from -20 to 19, which Windows maps to the class of
-/// the nearest constant at or below it (-10 to HIGH, as -14).
-/// invalid_argument past that range. On Linux only the main thread's, or
-/// for 0 the calling thread's, changes; threads started after inherit it.
-std::error_code set_priority(int value, int pid = 0);
+/// Sets it. Raising it takes privileges on POSIX. On Linux only the main
+/// thread's, or for 0 the calling thread's, changes; threads started after
+/// inherit it.
+std::error_code set_priority(Priority priority, int pid = 0);
 
 }  // namespace kota::sys

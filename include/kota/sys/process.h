@@ -1,8 +1,6 @@
 #pragma once
 
-#include <cstdint>
 #include <expected>
-#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -10,47 +8,32 @@
 
 namespace kota::sys {
 
-/// This process's id.
+/// This process's ID.
 int pid() noexcept;
 
-/// The id of this process's parent. On POSIX the parent it has now: init or a
-/// subreaper once the one that started it has exited. On Windows the process
-/// that started it, which may have exited and its id gone to another.
+/// The ID of this process's parent. On POSIX the parent it has now: init or
+/// a subreaper once the one that started it has exited. On Windows the
+/// process that started it, which may have exited and its ID gone to another.
 int parent_pid() noexcept;
 
 /// The absolute path of this program's executable: symbolic links resolved
 /// on Linux and macOS, as Windows names the module on Windows.
 std::expected<std::string, std::error_code> executable_path();
 
-/// The arguments this program was started with, argv[0] first. On POSIX
-/// `argv`'s strings. On Windows `argc` and `argv` are left alone, the CRT
-/// having decoded them in the ANSI code page: the arguments are split from
-/// GetCommandLineW() by split_windows_command_line, in WTF-8, without the
-/// wildcard expansion some CRTs and LLVM's tools add.
-std::vector<std::string> arguments(int argc, const char* const* argv);
+/// The arguments this program was started with, argv[0] first, read from
+/// the system rather than from main's argv: /proc/self/cmdline on Linux, the
+/// C runtime's own argv on macOS, and on Windows GetCommandLineW() split by
+/// windows::split_command_line, in WTF-8, without the wildcard expansion
+/// some C runtimes add. Read once; a title set later leaves them as they
+/// were. Empty on Linux when /proc cannot be read.
+const std::vector<std::string>& arguments();
 
-/// `argument` as a Windows command line writes it, for the CRT's rules (and
-/// split_windows_command_line) to read back: as it is when it is not empty
-/// and holds no space, tab, newline, vertical tab or quote; else in quotes,
-/// with each quote escaped and the backslashes before a quote or the closing
-/// one doubled.
-std::string quote_windows_argument(std::string_view argument);
-
-/// The Windows command line of `arguments`, the program first. The program is
-/// read by its own rule, in which a backslash escapes nothing: it is quoted
-/// when it is empty or holds a space or a tab, and holds no quote, which no
-/// Windows file name does. Each argument after it is quoted by
-/// quote_windows_argument.
-std::string join_windows_command_line(std::span<const std::string> arguments);
-
-/// The arguments of a Windows command line, by the rules of the CRT since
-/// 2008 (Rust's parser): the program ends at the first space or tab outside
-/// quotes, every quote in it toggling them; after it, spaces and tabs outside
-/// quotes separate arguments, 2n backslashes before a quote make n and the
-/// quote toggles, 2n+1 make n and a literal quote, two quotes inside quotes
-/// make one, and other backslashes are literal. No wildcard is expanded. An
-/// empty line has no arguments.
-std::vector<std::string> split_windows_command_line(std::string_view line);
+/// Sets the title `ps` shows for this process: the memory of its arguments
+/// is overwritten with `title`, cut to their length, and on Linux the name
+/// `top` shows, the first 15 bytes of it. not_supported on Windows, which
+/// has no such title (its console's is shared with the processes before
+/// this one). Not thread-safe against readers of main's argv.
+std::error_code set_process_title(std::string_view title);
 
 /// Where find_program looks for a program.
 struct ProgramSearch {
@@ -60,19 +43,12 @@ struct ProgramSearch {
     /// current directory is searched only when listed, as cmd lists it first.
     std::vector<std::string> directories = {};
 
-#ifdef _WIN32
-    /// The extensions a name is tried with, compared ignoring case: when
-    /// empty, PATHEXT's (.COM;.EXE;.BAT;.CMD when it is unset or lists none),
-    /// or `.exe` like_create_process. A name that has one of them is tried as
-    /// it is, another with each of them in turn, in one directory before the
-    /// next; "" stands for the name as it is.
+    /// Windows: the extensions a name is tried with, compared ignoring case;
+    /// when empty, PATHEXT's (.COM;.EXE;.BAT;.CMD when it is unset or lists
+    /// none). A name that has one of them is tried as it is, another with
+    /// each of them in turn, in one directory before the next; "" stands for
+    /// the name as it is. POSIX programs have no extensions: ignored there.
     std::vector<std::string> extensions = {};
-
-    /// Names are tried as CreateProcess tries them: `extensions` go only
-    /// after a name without an extension of its own, and a Cygwin symlink is
-    /// the file it is, which CreateProcess cannot start.
-    bool like_create_process = false;
-#endif
 };
 
 /// The file program `name` names. On POSIX as execvp finds it: `name` itself
@@ -88,36 +64,9 @@ struct ProgramSearch {
 std::expected<std::string, std::error_code> find_program(std::string_view name,
                                                          const ProgramSearch& search = {});
 
-#ifdef _WIN32
-namespace windows {
-
-/// The search CreateProcess makes for a program its command line names
-/// without a path, like_create_process: the directory of this program's
-/// executable, the current directory, the system directory, the 16-bit
-/// system directory, the Windows directory, then PATH.
-std::expected<ProgramSearch, std::error_code> create_process_search();
-
-}  // namespace windows
-#endif
-
-#ifndef _WIN32
-/// Sets the title `ps` shows for this process: the memory of its arguments
-/// is overwritten with `title`, cut to their length, and on Linux the name
-/// `top` shows, the first 15 bytes of it. The strings of argv then hold the
-/// title: take arguments() before. Not thread-safe against readers of argv.
-/// Windows has no such title; its console's is shared with the processes
-/// before this one.
-std::error_code set_process_title(std::string_view title);
-#endif
-
 /// The name of signal `signum` on this host ("SIGSEGV"); empty for a number
-/// it has no signal by. On Windows the signals of the CRT, and those libuv
-/// numbers as POSIX does to kill a process (SIGKILL, SIGHUP, SIGQUIT).
+/// it has no signal by. On Windows the signals of the C runtime, and SIGKILL
+/// by POSIX's number, 9, which a child's kill takes to end it.
 std::string_view signal_name(int signum);
-
-/// The name of NTSTATUS `status` ("STATUS_DLL_NOT_FOUND" for 0xC0000135),
-/// among those a Windows program ends with when it crashes or cannot start;
-/// empty for another. On any host, for a Windows exit code read elsewhere.
-std::string_view ntstatus_name(std::uint32_t status);
 
 }  // namespace kota::sys

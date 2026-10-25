@@ -23,6 +23,14 @@ ZEST_CASE(executable_path_names_this_program) {
     ZEXPECT(fs::path::stem(*path).ends_with("system_tests"));
 }
 
+// Read from the system: the program's name first, as it was started.
+ZEST_CASE(arguments_start_with_this_program) {
+    const auto& arguments = sys::arguments();
+    ZASSERT(!arguments.empty());
+    ZEXPECT(fs::path::stem(arguments[0]).ends_with("system_tests"));
+    ZEXPECT(&sys::arguments() == &arguments);
+}
+
 };  // ZEST_SUITE(sys_process_self)
 
 }  // namespace

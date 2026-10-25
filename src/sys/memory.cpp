@@ -6,8 +6,8 @@
 
 #include "os.h"
 #include "proc.h"
+#include "kota/sys/detail/memory_model.h"
 #include "kota/sys/info.h"
-#include "kota/sys/memory_model.h"
 
 #ifdef _WIN32
 // After windows.h, whose types it uses.
@@ -167,11 +167,11 @@ std::expected<std::uint64_t, std::error_code> resident_memory() {
 #endif
 }
 
-std::uint64_t mac_available(const MacMemory& host, std::span<const ProcessStats> counted) {
+std::uint64_t detail::mac_available(const MacMemory& host, std::span<const ProcessStats> own) {
     // Neither the free count nor the inactive one tells what the processes
     // can still take: macOS compresses their memory long before it frees
     // any. What the rest of the system holds is the wired, anonymous and
-    // compressed memory less the counted processes' anonymous pages and
+    // compressed memory less the own processes' anonymous pages and
     // their share of the compressor, at its current ratio. A resident size
     // counts the file pages and the reusable ones too, which a footprint
     // leaves out, and a footprint the compressed pages, at their size before
@@ -183,7 +183,7 @@ std::uint64_t mac_available(const MacMemory& host, std::span<const ProcessStats>
                      : 1.0;
     std::uint64_t ours = 0;
     std::uint64_t footprint = 0;
-    for(const auto& process: counted) {
+    for(const auto& process: own) {
         auto anonymous = std::min(process.resident, process.memory);
         ours += anonymous +
                 static_cast<std::uint64_t>(static_cast<double>(process.memory - anonymous) / ratio);
@@ -197,8 +197,7 @@ std::uint64_t mac_available(const MacMemory& host, std::span<const ProcessStats>
     return host.total > taken ? host.total - taken : 0;
 }
 
-std::expected<Memory, std::error_code>
-    memory([[maybe_unused]] std::span<const ProcessStats> counted) {
+std::expected<Memory, std::error_code> memory([[maybe_unused]] std::span<const ProcessStats> own) {
 #ifdef _WIN32
     MEMORYSTATUSEX status{};
     status.dwLength = sizeof(status);
@@ -243,7 +242,7 @@ std::expected<Memory, std::error_code>
     auto host = ::mach_host_self();
     ::host_statistics64(host, HOST_VM_INFO64, reinterpret_cast<host_info64_t>(&vm), &count);
     ::host_page_size(host, &page);
-    MacMemory counts{
+    detail::MacMemory counts{
         .total = total,
         .wired = std::uint64_t(vm.wire_count) * page,
         .anonymous = std::uint64_t(vm.internal_page_count) * page,
@@ -251,7 +250,7 @@ std::expected<Memory, std::error_code>
         .compressor = std::uint64_t(vm.compressor_page_count) * page,
         .compressed = std::uint64_t(vm.total_uncompressed_pages_in_compressor) * page,
     };
-    return Memory{.total = total, .limit = total, .available = mac_available(counts, counted)};
+    return Memory{.total = total, .limit = total, .available = detail::mac_available(counts, own)};
 #else
     auto meminfo = fs::read_file("/proc/meminfo");
     if(!meminfo) {
@@ -265,7 +264,7 @@ std::expected<Memory, std::error_code>
     };
     // Read afresh every time: the process may have moved.
     if(auto membership = fs::read_file("/proc/self/cgroup")) {
-        if(auto cgroups = cgroup::memory("/sys/fs/cgroup", *membership, read_cgroup_file)) {
+        if(auto cgroups = detail::cgroup::memory("/sys/fs/cgroup", *membership, read_cgroup_file)) {
             result.limit = std::min(result.limit, cgroups->limit);
             result.available = std::min(result.available, cgroups->available);
         }
@@ -274,9 +273,10 @@ std::expected<Memory, std::error_code>
 #endif
 }
 
-#ifdef __linux__
-
-std::expected<int, std::error_code> oom_score_adjustment(int pid) {
+std::expected<int, std::error_code> oom_score_adjustment([[maybe_unused]] int pid) {
+#ifndef __linux__
+    return std::unexpected(std::make_error_code(std::errc::not_supported));
+#else
     auto text = fs::read_file(proc_path(pid, "oom_score_adj"));
     if(!text) {
         return std::unexpected(process_error(text.error()));
@@ -284,12 +284,15 @@ std::expected<int, std::error_code> oom_score_adjustment(int pid) {
     int value = 0;
     std::from_chars(text->data(), text->data() + text->size(), value);
     return value;
-}
-
-std::error_code set_oom_score_adjustment(int value, int pid) {
-    return process_error(fs::write_file(proc_path(pid, "oom_score_adj"), std::to_string(value)));
-}
-
 #endif
+}
+
+std::error_code set_oom_score_adjustment([[maybe_unused]] int value, [[maybe_unused]] int pid) {
+#ifndef __linux__
+    return std::make_error_code(std::errc::not_supported);
+#else
+    return process_error(fs::write_file(proc_path(pid, "oom_score_adj"), std::to_string(value)));
+#endif
+}
 
 }  // namespace kota::sys

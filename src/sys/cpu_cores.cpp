@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <format>
+#include <initializer_list>
 #include <ranges>
 #include <string>
 #include <vector>
@@ -63,11 +64,11 @@ std::optional<std::string_view> cpuinfo_value(std::string_view block, std::strin
 
 #endif
 
-std::expected<std::vector<CpuCore>, std::error_code> cpu_cores() {
-    std::vector<CpuCore> cores;
+std::expected<std::vector<CPUCore>, std::error_code> cpu_cores() {
+    std::vector<CPUCore> cores;
 #ifdef _WIN32
     // SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION, in 100 ns units; the kernel
-    // time holds the idle time.
+    // time holds the idle time, and the time of interrupts.
     struct Times {
         LARGE_INTEGER idle;
         LARGE_INTEGER kernel;
@@ -93,21 +94,15 @@ std::expected<std::vector<CpuCore>, std::error_code> cpu_cores() {
                                      nullptr);
         for(const auto& time: times) {
             auto index = static_cast<DWORD>(cores.size());
-            CpuCore core;
+            CPUCore core;
             core.times = {
                 .user = milliseconds(time.user),
-                .nice = {},
                 .system = milliseconds(time.kernel) - milliseconds(time.idle),
                 .idle = milliseconds(time.idle),
-                .irq = milliseconds(time.interrupt),
             };
             wchar_t name[256];
             if(processor_value(index, L"ProcessorNameString", RRF_RT_REG_SZ, name, sizeof(name))) {
                 core.model = string_ref(from_utf16(std::wstring_view(name))).trim();
-            }
-            DWORD speed = 0;
-            if(processor_value(index, L"~MHz", RRF_RT_REG_DWORD, &speed, sizeof(speed))) {
-                core.speed_mhz = static_cast<int>(speed);
             }
             cores.push_back(std::move(core));
         }
@@ -121,23 +116,17 @@ std::expected<std::vector<CpuCore>, std::error_code> cpu_cores() {
     char model[256] = {};
     auto model_size = sizeof(model);
     ::sysctlbyname("machdep.cpu.brand_string", model, &model_size, nullptr, 0);
-    // Intel Macs only.
-    std::uint64_t frequency = 0;
-    auto frequency_size = sizeof(frequency);
-    ::sysctlbyname("hw.cpufrequency", &frequency, &frequency_size, nullptr, 0);
     auto tick = std::chrono::milliseconds(1000) / ::sysconf(_SC_CLK_TCK);
     auto* ticks = reinterpret_cast<processor_cpu_load_info_data_t*>(info);
     for(natural_t i = 0; i < count; ++i) {
+        const auto& state = ticks[i].cpu_ticks;
         cores.push_back({
             .model = model,
-            .speed_mhz = static_cast<int>(frequency / 1'000'000),
             .times =
                 {
-                        .user = ticks[i].cpu_ticks[CPU_STATE_USER] * tick,
-                        .nice = ticks[i].cpu_ticks[CPU_STATE_NICE] * tick,
-                        .system = ticks[i].cpu_ticks[CPU_STATE_SYSTEM] * tick,
-                        .idle = ticks[i].cpu_ticks[CPU_STATE_IDLE] * tick,
-                        .irq = {},
+                        .user = (state[CPU_STATE_USER] + state[CPU_STATE_NICE]) * tick,
+                        .system = state[CPU_STATE_SYSTEM] * tick,
+                        .idle = state[CPU_STATE_IDLE] * tick,
                         },
         });
     }
@@ -156,9 +145,13 @@ std::expected<std::vector<CpuCore>, std::error_code> cpu_cores() {
         blocks.emplace_back(block.begin(), block.end());
     }
     auto ticks = static_cast<std::uint64_t>(::sysconf(_SC_CLK_TCK));
-    auto milliseconds = [&](std::string_view line, std::size_t index) {
-        return std::chrono::milliseconds(leading_number(word(line, index)).value_or(0) * 1000 /
-                                         ticks);
+    // The sum of fields `indices` of `line`.
+    auto milliseconds = [&](std::string_view line, std::initializer_list<std::size_t> indices) {
+        std::uint64_t sum = 0;
+        for(auto index: indices) {
+            sum += leading_number(word(line, index)).value_or(0);
+        }
+        return std::chrono::milliseconds(sum * 1000 / ticks);
     };
     // "cpu<N> user nice system idle iowait irq softirq ...", in clock ticks.
     for(auto range: std::views::split(std::string_view(*stat), '\n')) {
@@ -168,13 +161,12 @@ std::expected<std::vector<CpuCore>, std::error_code> cpu_cores() {
             continue;
         }
         auto cpu = leading_number(line.substr(3));
-        CpuCore core;
+        CPUCore core;
+        // user and nice; system, irq and softirq; idle.
         core.times = {
-            .user = milliseconds(line, 1),
-            .nice = milliseconds(line, 2),
-            .system = milliseconds(line, 3),
-            .idle = milliseconds(line, 4),
-            .irq = milliseconds(line, 6),
+            .user = milliseconds(line, {1, 2}),
+            .system = milliseconds(line, {3, 6, 7}),
+            .idle = milliseconds(line, {4}),
         };
         auto block = std::ranges::find_if(blocks, [&](std::string_view block) {
             auto processor = cpuinfo_value(block, "processor");
@@ -183,14 +175,6 @@ std::expected<std::vector<CpuCore>, std::error_code> cpu_cores() {
         if(block != blocks.end()) {
             // Kernels for ARM may name no model.
             core.model = cpuinfo_value(*block, "model name").value_or("");
-            core.speed_mhz = static_cast<int>(
-                leading_number(cpuinfo_value(*block, "cpu MHz").value_or("")).value_or(0));
-        }
-        auto frequency = fs::read_file(
-            std::format("/sys/devices/system/cpu/cpu{}/cpufreq/scaling_cur_freq", *cpu));
-        if(frequency) {
-            // In kHz.
-            core.speed_mhz = static_cast<int>(leading_number(*frequency).value_or(0) / 1000);
         }
         cores.push_back(std::move(core));
     }

@@ -2,7 +2,7 @@
 
 // The arithmetic of memory() and parallelism() on figures given rather than
 // read: Linux's cgroups through a reader of their files, macOS's counts as
-// numbers, so that a fixture stands in for the system on any host.
+// numbers, so that a test's fixture stands in for the system on any host.
 
 #include <cstdint>
 #include <optional>
@@ -13,7 +13,7 @@
 #include "kota/support/functional.h"
 #include "kota/sys/info.h"
 
-namespace kota::sys {
+namespace kota::sys::detail {
 
 /// The memory cgroups of Linux and their CPU quotas, read through a reader
 /// of the hierarchy's files.
@@ -64,7 +64,7 @@ struct MacMemory {
 };
 
 /// Memory::available on macOS, from the machine's counts and the processes
-/// `counted` at their footprint.
-std::uint64_t mac_available(const MacMemory& host, std::span<const ProcessStats> counted);
+/// `own` at their footprint.
+std::uint64_t mac_available(const MacMemory& host, std::span<const ProcessStats> own);
 
-}  // namespace kota::sys
+}  // namespace kota::sys::detail

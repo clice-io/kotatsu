@@ -301,7 +301,7 @@ endif()
 add_test(NAME zest_bootstrap_unit
     COMMAND unit_tests
         --no-isolation
-        "--test-filter={support_*,sys_process_arguments,sys_process_command_line,sys_process_exit_status,sys_memory_model,meta_compare,meta_name,meta_spelling,codec_debug_*,deco_*,async_vocab_outcome,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_watcher,async_io_process_exit_status,zest_async}.*"
+        "--test-filter={support_*,sys_windows_command_line,sys_process_exit_status,sys_windows_exit_status,sys_detail_memory_model,meta_compare,meta_name,meta_spelling,codec_debug_*,deco_*,async_vocab_outcome,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_watcher,async_io_process_exit_status,zest_async}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )

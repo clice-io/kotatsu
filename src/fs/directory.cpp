@@ -505,7 +505,7 @@ std::expected<std::vector<StatusEntry>, std::error_code> read_dir_status(std::st
                            .size = static_cast<std::uint64_t>(entry.EndOfFile.QuadPart),
                            .mtime_ns = win32::unix_ns(entry.LastWriteTime.QuadPart),
                            .ctime_ns = win32::unix_ns(entry.ChangeTime.QuadPart),
-                           .id = win32::id_of(volume->device, entry.FileId)},
+                           .id = win32::id_of(volume->device, entry.FileID)},
             });
         });
     if(error == ERROR_SUCCESS) {

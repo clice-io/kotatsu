@@ -3,6 +3,7 @@
 #include <string_view>
 
 #include "kota/sys/process.h"
+#include "kota/sys/windows.h"
 
 namespace kota::sys {
 
@@ -17,9 +18,7 @@ std::string_view signal_name(int signum) {
 #ifdef _WIN32
         case SIGBREAK: return "SIGBREAK";
         case SIGABRT_COMPAT: return "SIGABRT";
-        // libuv's numbers, which kill() sends as on POSIX.
-        case 1: return "SIGHUP";
-        case 3: return "SIGQUIT";
+        // POSIX's number, which a child's kill takes.
         case 9: return "SIGKILL";
 #else
         case SIGHUP: return "SIGHUP";
@@ -58,7 +57,7 @@ std::string_view signal_name(int signum) {
     }
 }
 
-std::string_view ntstatus_name(std::uint32_t status) {
+std::string_view windows::ntstatus_name(std::uint32_t status) {
     switch(status) {
         case 0x40000015: return "STATUS_FATAL_APP_EXIT";
         case 0x80000001: return "STATUS_GUARD_PAGE_VIOLATION";

@@ -8,9 +8,9 @@
 
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
-#include "kota/sys/memory_model.h"
+#include "kota/sys/detail/memory_model.h"
 
-namespace kota::sys {
+namespace kota::sys::detail {
 
 namespace {
 
@@ -46,7 +46,7 @@ struct Hierarchy {
     }
 };
 
-ZEST_SUITE(sys_memory_model) {
+ZEST_SUITE(sys_detail_memory_model) {
 
 ZEST_CASE(cgroup_v2_takes_the_tightest_level) {
     Hierarchy cg;
@@ -210,20 +210,20 @@ ZEST_CASE(mac_available_leaves_out_file_pages) {
     // A process mapping a 1 GiB file: resident 2 GiB, 1 GiB of it
     // anonymous, which the machine's anonymous count holds.
     MacMemory host{.total = 16 * GiB, .wired = 2 * GiB, .anonymous = 5 * GiB};
-    std::vector<ProcessStats> counted{
+    std::vector<ProcessStats> own{
         {.memory = GiB, .resident = 2 * GiB}
     };
-    ZEXPECT(mac_available(host, counted) == 9 * GiB);
+    ZEXPECT(mac_available(host, own) == 9 * GiB);
 }
 
 ZEST_CASE(mac_available_takes_reusable_pages_as_free) {
     // A process whose allocator gave 1 GiB back as reusable: resident 2 GiB,
     // its footprint 1 GiB; the machine's anonymous count holds both.
     MacMemory host{.total = 16 * GiB, .wired = 2 * GiB, .anonymous = 5 * GiB, .reusable = GiB};
-    std::vector<ProcessStats> counted{
+    std::vector<ProcessStats> own{
         {.memory = GiB, .resident = 2 * GiB}
     };
-    ZEXPECT(mac_available(host, counted) == 10 * GiB);
+    ZEXPECT(mac_available(host, own) == 10 * GiB);
 }
 
 ZEST_CASE(mac_available_counts_compressed_pages_at_their_footprint) {
@@ -236,10 +236,10 @@ ZEST_CASE(mac_available_counts_compressed_pages_at_their_footprint) {
         .compressor = GiB,
         .compressed = 4 * GiB,
     };
-    std::vector<ProcessStats> counted{
+    std::vector<ProcessStats> own{
         {.memory = 3 * GiB, .resident = GiB}
     };
-    ZEXPECT(mac_available(host, counted) == 7 * GiB + 512 * MiB);
+    ZEXPECT(mac_available(host, own) == 7 * GiB + 512 * MiB);
     // Counting none, the compressor's pages are the system's.
     ZEXPECT(mac_available(host, {}) == 9 * GiB);
 }
@@ -248,14 +248,14 @@ ZEST_CASE(mac_available_without_a_compression_ratio_takes_none) {
     // The two counts are read apart: the compressor may hold pages it says
     // hold nothing.
     MacMemory host{.total = 16 * GiB, .wired = 2 * GiB, .anonymous = 4 * GiB, .compressor = GiB};
-    std::vector<ProcessStats> counted{
+    std::vector<ProcessStats> own{
         {.memory = 3 * GiB, .resident = GiB}
     };
-    ZEXPECT(mac_available(host, counted) == 9 * GiB);
+    ZEXPECT(mac_available(host, own) == 9 * GiB);
 }
 
-};  // ZEST_SUITE(sys_memory_model)
+};  // ZEST_SUITE(sys_detail_memory_model)
 
 }  // namespace
 
-}  // namespace kota::sys
+}  // namespace kota::sys::detail

@@ -5,8 +5,8 @@
 
 #include "os.h"
 #include "proc.h"
+#include "kota/sys/detail/memory_model.h"
 #include "kota/sys/info.h"
-#include "kota/sys/memory_model.h"
 
 #ifdef __linux__
 #include <sched.h>
@@ -70,7 +70,7 @@ unsigned parallelism() {
     }
     if(auto membership = fs::read_file("/proc/self/cgroup")) {
         // A quota may count more CPUs than any machine has.
-        auto quota = cgroup::cpu_quota("/sys/fs/cgroup", *membership, read_cgroup_file);
+        auto quota = detail::cgroup::cpu_quota("/sys/fs/cgroup", *membership, read_cgroup_file);
         if(quota && *quota < count) {
             count = static_cast<unsigned>(std::ceil(*quota));
         }

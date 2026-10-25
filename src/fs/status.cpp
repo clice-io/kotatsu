@@ -22,7 +22,7 @@ constexpr ULONG remote_device = 0x10;
 
 /// FILE_STAT_BASIC_INFORMATION, which only the newest SDKs declare.
 struct StatBasicByName {
-    LARGE_INTEGER FileId;
+    LARGE_INTEGER FileID;
     LARGE_INTEGER CreationTime;
     LARGE_INTEGER LastAccessTime;
     LARGE_INTEGER LastWriteTime;
@@ -257,7 +257,7 @@ std::expected<bool, std::error_code> equivalent(std::string_view a, std::string_
     }
     // A device, a pipe and a file only a directory listing reaches have no
     // ID to tell them apart.
-    if(first->id == FileId{} || second->id == FileId{}) {
+    if(first->id == FileID{} || second->id == FileID{}) {
         return std::unexpected(std::make_error_code(std::errc::not_supported));
     }
     return first->id == second->id;

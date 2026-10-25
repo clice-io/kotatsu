@@ -13,11 +13,11 @@ add_library(kota_sys STATIC
     exit_status.cpp
     host.cpp
     memory.cpp
+    os_version.cpp
     process.cpp
     program.cpp
     temp_dir.cpp
     title.cpp
-    uname.cpp
 )
 add_library(kota::sys ALIAS kota_sys)
 
@@ -30,8 +30,8 @@ target_link_libraries(kota_sys PUBLIC
     kota::support
 )
 
-# ntdll: parent_pid, parallelism, cpu_cores, uname; advapi32: the registry of
-# cpu_cores and uname; shell32 and ole32: the known folders of dirs.
+# ntdll: parent_pid, parallelism, cpu_cores, os; advapi32: the registry of
+# cpu_cores; shell32 and ole32: the known folders of dirs.
 if(WIN32)
     target_link_libraries(kota_sys PUBLIC advapi32 ntdll ole32 shell32)
 endif()

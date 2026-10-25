@@ -26,14 +26,14 @@ enum class FileType : std::uint8_t {
 /// number on it. On Windows the volume's serial number and the 128-bit file
 /// ID, which ReFS needs whole. All zero where the source of a status does
 /// not tell it.
-struct FileId {
+struct FileID {
     std::uint64_t device = 0;
     std::uint64_t file = 0;
 
     /// The high half of a 128-bit file ID: zero on POSIX and NTFS.
     std::uint64_t file_high = 0;
 
-    friend bool operator==(const FileId&, const FileId&) = default;
+    friend bool operator==(const FileID&, const FileID&) = default;
 };
 
 /// What a status call says about a file.
@@ -52,7 +52,7 @@ struct Status {
     /// (`cp -p`). Zero where the file system keeps none (FAT).
     std::int64_t ctime_ns = 0;
 
-    FileId id = {};
+    FileID id = {};
 
     /// The file's hard links; zero where the source does not tell.
     std::uint32_t links = 0;

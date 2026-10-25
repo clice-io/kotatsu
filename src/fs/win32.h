@@ -123,15 +123,15 @@ inline FileType type_of(DWORD attributes, DWORD tag) {
     return attributes & FILE_ATTRIBUTE_DIRECTORY ? FileType::Directory : FileType::Regular;
 }
 
-inline FileId id_of(std::uint64_t volume, const FILE_ID_128& file) {
-    FileId id{.device = volume};
+inline FileID id_of(std::uint64_t volume, const FILE_ID_128& file) {
+    FileID id{.device = volume};
     std::memcpy(&id.file, file.Identifier, sizeof(id.file));
     std::memcpy(&id.file_high, file.Identifier + sizeof(id.file), sizeof(id.file_high));
     return id;
 }
 
 /// The ID of the file `handle` refers to.
-std::expected<FileId, std::error_code> file_id(HANDLE handle);
+std::expected<FileID, std::error_code> file_id(HANDLE handle);
 
 /// `resolved`, a path in the form Win32 resolves paths to (native_path()
 /// leaves a short absolute one so), in the verbatim form, which any name

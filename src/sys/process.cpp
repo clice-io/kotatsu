@@ -11,8 +11,12 @@
 #include <winternl.h>
 
 #include "kota/support/utf16.h"
+#include "kota/sys/windows.h"
 #elif defined(__APPLE__)
+#include <crt_externs.h>
 #include <mach-o/dyld.h>
+#else
+#include "kota/fs/file.h"
 #endif
 
 namespace kota::sys {
@@ -93,21 +97,42 @@ std::expected<std::string, std::error_code> executable_path() {
 #endif
 }
 
-std::vector<std::string> arguments([[maybe_unused]] int argc,
-                                   [[maybe_unused]] const char* const* argv) {
+const std::vector<std::string>& arguments() {
+    const static std::vector<std::string> arguments = [] {
 #ifdef _WIN32
-    auto line = split_windows_command_line(from_utf16(std::wstring_view(::GetCommandLineW())));
-    // A program started with an empty command line has not even its name in
-    // it: its executable stands for argv[0], as in Rust.
-    if(line.empty()) {
-        if(auto executable = executable_path()) {
-            line.push_back(std::move(*executable));
+        auto line = windows::split_command_line(from_utf16(std::wstring_view(::GetCommandLineW())));
+        // A program started with an empty command line has not even its name
+        // in it: its executable stands for argv[0], as in Rust.
+        if(line.empty()) {
+            if(auto executable = executable_path()) {
+                line.push_back(std::move(*executable));
+            }
         }
-    }
-    return line;
+        return line;
+#elif defined(__APPLE__)
+        const int argc = *::_NSGetArgc();
+        char** argv = *::_NSGetArgv();
+        return std::vector<std::string>(argv, argv + argc);
 #else
-    return {argv, argv + argc};
+        std::vector<std::string> line;
+        auto text = fs::read_file("/proc/self/cmdline");
+        if(!text) {
+            return line;
+        }
+        // Each argument ends with a NUL.
+        std::string_view rest = *text;
+        while(!rest.empty()) {
+            auto end = rest.find('\0');
+            line.emplace_back(rest.substr(0, end));
+            if(end == std::string_view::npos) {
+                break;
+            }
+            rest.remove_prefix(end + 1);
+        }
+        return line;
 #endif
+    }();
+    return arguments;
 }
 
 }  // namespace kota::sys

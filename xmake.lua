@@ -143,7 +143,7 @@ target("sys", function()
 	set_kind("$(kind)")
 	add_files("src/sys/*.cpp")
 	add_includedirs("include", { public = true })
-	add_headerfiles("include/(kota/sys/*)")
+	add_headerfiles("include/(kota/sys/**.h)")
 	add_rules("cl-flags")
 	add_deps("support", "fs")
 	if is_plat("windows", "mingw") then

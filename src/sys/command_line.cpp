@@ -4,11 +4,11 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/sys/process.h"
+#include "kota/sys/windows.h"
 
-namespace kota::sys {
+namespace kota::sys::windows {
 
-std::string quote_windows_argument(std::string_view argument) {
+std::string quote_argument(std::string_view argument) {
     if(!argument.empty() && argument.find_first_of(" \t\n\v\"") == std::string_view::npos) {
         return std::string(argument);
     }
@@ -34,13 +34,13 @@ std::string quote_windows_argument(std::string_view argument) {
     return quoted;
 }
 
-std::string join_windows_command_line(std::span<const std::string> arguments) {
+std::string join_command_line(std::span<const std::string> arguments) {
     std::string line;
     for(std::size_t i = 0; i < arguments.size(); ++i) {
         std::string_view argument = arguments[i];
         if(i != 0) {
             line += ' ';
-            line += quote_windows_argument(argument);
+            line += quote_argument(argument);
             continue;
         }
         assert(argument.find('"') == std::string_view::npos && "a program name holds no quote");
@@ -55,7 +55,7 @@ std::string join_windows_command_line(std::span<const std::string> arguments) {
     return line;
 }
 
-std::vector<std::string> split_windows_command_line(std::string_view line) {
+std::vector<std::string> split_command_line(std::string_view line) {
     std::vector<std::string> arguments;
     if(line.empty()) {
         return arguments;
@@ -135,4 +135,4 @@ std::vector<std::string> split_windows_command_line(std::string_view line) {
     return arguments;
 }
 
-}  // namespace kota::sys
+}  // namespace kota::sys::windows

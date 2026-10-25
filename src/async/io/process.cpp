@@ -17,6 +17,7 @@
 #include "stream_self.h"
 #include "kota/sys/env.h"
 #include "kota/sys/process.h"
+#include "kota/sys/windows.h"
 #include "kota/async/runtime/when.h"
 
 namespace kota {
@@ -90,7 +91,12 @@ std::string_view env_name(std::string_view entry) {
 /// The child's environment as `opts` asks for it: `env`, or the inherited
 /// one, with `env_changes` made in order.
 std::vector<std::string> child_environment(const process::options& opts) {
-    auto entries = opts.env.empty() ? sys::environment() : opts.env;
+    auto entries = opts.env;
+    if(entries.empty()) {
+        for(const auto& [name, value]: sys::environment()) {
+            entries.push_back(std::format("{}={}", name, value));
+        }
+    }
     for(const auto& change: opts.env_changes) {
         std::erase_if(entries, [&](const std::string& entry) {
             return sys::env_name_equal(env_name(entry), change.name);
@@ -126,7 +132,7 @@ std::string process::exit_status::to_string() const {
     // A crash exits with its exception's NTSTATUS, an error or a warning.
     const auto code = static_cast<std::uint32_t>(status);
     if(code >= 0x8000'0000) {
-        auto name = sys::ntstatus_name(code);
+        auto name = sys::windows::ntstatus_name(code);
         return name.empty() ? std::format("exception 0x{:08X}", code)
                             : std::format("exception 0x{:08X} ({})", code, name);
     }

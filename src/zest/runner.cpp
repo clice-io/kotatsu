@@ -449,7 +449,7 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
         fatal_notice = nullptr;
     } else {
         PoolOptions pool{
-            .args = sys::arguments(argc, argv),
+            .args = sys::arguments(),
             .jobs = *options.jobs,
             .timeout = std::chrono::seconds(*options.timeout),
         };

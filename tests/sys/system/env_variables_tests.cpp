@@ -69,7 +69,7 @@ ZEST_CASE(get_env_reads_a_long_value) {
 ZEST_CASE(environment_lists_every_variable) {
     test::ScopedEnv variable(std::string(name), "listed");
     auto entries = environment();
-    ZEXPECT(zest::contains(entries, std::string(name) + "=listed"));
+    ZEXPECT(zest::contains(entries, EnvVar{.name = std::string(name), .value = "listed"}));
 }
 
 #ifdef _WIN32
@@ -82,7 +82,7 @@ ZEST_CASE(get_env_ignores_case_on_windows) {
 ZEST_CASE(set_env_takes_a_drive_variable_on_windows) {
     test::ScopedEnv variable("=Q:", R"(Q:\dir)");
     ZEXPECT(get_env("=Q:") == R"(Q:\dir)");
-    ZEXPECT(zest::contains(environment(), std::string(R"(=Q:=Q:\dir)")));
+    ZEXPECT(zest::contains(environment(), EnvVar{.name = "=Q:", .value = R"(Q:\dir)"}));
 }
 
 // Windows keeps UTF-16, which text that is no UTF-8 has no spelling in.

@@ -6,7 +6,8 @@
 //   from its command line, by the CRT's rules and without wildcard expansion;
 // - its environment's values, non-ASCII included, and its parent, the test;
 // - another process's priority, set and read back, and its memory;
-// - on Linux and macOS the title it sets is what ps shows;
+// - on Linux and macOS the title it sets is what ps shows, and its own
+//   arguments read the same after;
 // - on Windows what write_console writes to a console, and the limits of a
 //   job it joins.
 
@@ -111,8 +112,8 @@ test("priority_of_another_process_is_set_and_read", async (t) => {
   await other.expectExit(0);
   waiting.stdin.end();
   await waiting.expectExit(0);
-  // Windows takes 12 to BELOW_NORMAL, which reads back as 10.
-  assert.equal(output.priority, process.platform === "win32" ? 10 : 12);
+  // Priority::BelowNormal: nice 10, or Windows's BELOW_NORMAL class.
+  assert.equal(output.priority, 1);
   assert.ok(output.resident > 0);
 });
 
@@ -122,7 +123,9 @@ test(
   async (t) => {
     const title = "kota-title-test-long";
     const driver = await Driver.spawn(t, "sys_probe", ["title", title, "1"]);
-    assert.equal(await driver.jsonLines().receive(), "ready");
+    // The arguments read after the title went over them are those given.
+    const read = (await driver.jsonLines().receive()) as string[];
+    assert.deepEqual(read.slice(1), ["title", title, "1"]);
     if (process.platform === "linux") {
       const cmdline = readFileSync(`/proc/${driver.pid}/cmdline`, "latin1");
       assert.equal(cmdline.replace(/\0+$/, ""), title);
@@ -153,7 +156,7 @@ test(
   async (t) => {
     const args = ["title", "kota", "1000"];
     const driver = await Driver.spawn(t, "sys_probe", args);
-    assert.equal(await driver.jsonLines().receive(), "ready");
+    await driver.jsonLines().receive();
     // The arguments' strings, each with its NUL, the program's path first.
     const program = process.env["KOTA_SYS_PROBE"] ?? "";
     const area = [program, ...args].reduce(
