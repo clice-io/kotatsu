@@ -352,7 +352,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
 
     Child child;
     // The child's standard handles, inheritable only while it is created and
-    // closed then; none where the stream is this process's and it has none.
+    // closed then; none where the stream is this process's and it has none,
+    // or one not open.
     std::array<Handle, 3> handles;
     bool shares_streams = false;
     constexpr DWORD standard[] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
@@ -360,7 +361,14 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         const auto& stream = options.streams[i];
         std::expected<Handle, std::error_code> made = Handle();
         switch(stream.kind) {
-            case Stdio::Kind::Inherit: made = duplicate(::GetStdHandle(standard[i])); break;
+            case Stdio::Kind::Inherit:
+                made = duplicate(::GetStdHandle(standard[i]));
+                // A handle not open, closed or never valid, as a program
+                // may be given, is none, as libuv has it.
+                if(!made && made.error() == std::errc::bad_file_descriptor) {
+                    made = Handle();
+                }
+                break;
             case Stdio::Kind::Ignore: made = null_device(i == 0); break;
             case Stdio::Kind::FD:
                 if(stream.fd < 0) {

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -941,6 +942,36 @@ ZEST_CASE(windows_inherit_handles_takes_none_of_another_childs) {
     auto status = reading->wait();
     ZASSERT(status.has_value());
     ZEXPECT(status->success());
+}
+
+// A program may be given a standard handle that is none or not open, closed
+// or never valid: the child inheriting it has none there.
+ZEST_CASE(inherit_of_a_standard_handle_not_open_gives_none) {
+    struct ScopedStdin {
+        HANDLE previous = ::GetStdHandle(STD_INPUT_HANDLE);
+
+        ~ScopedStdin() {
+            ::SetStdHandle(STD_INPUT_HANDLE, previous);
+        }
+    };
+
+    // No process has a handle as high: its table holds 2^24 of them.
+    auto* never_valid = reinterpret_cast<HANDLE>(std::uintptr_t(0x7FFF'FFFC));
+    for(HANDLE handle: {HANDLE(nullptr), INVALID_HANDLE_VALUE, never_valid}) {
+        ZEST_CONTEXT("stdin {}", static_cast<void*>(handle));
+        auto options = shell("exit 3");
+        options.streams[0] = Stdio::inherit();
+        std::expected<Child, std::error_code> child;
+        {
+            ScopedStdin restored;
+            ::SetStdHandle(STD_INPUT_HANDLE, handle);
+            child = spawn(options);
+        }
+        ZASSERT(child.has_value());
+        auto status = child->wait();
+        ZASSERT(status.has_value());
+        ZEXPECT(status->code == 3);
+    }
 }
 #endif
 
