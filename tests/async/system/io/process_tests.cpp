@@ -201,6 +201,36 @@ ZEST_CASE(stdin_pipe_feeds_the_child) {
     ZEXPECT(test::exit_code_of(status) == 0);
 }
 
+#ifdef _WIN32
+// A program that closed its standard streams gives their C runtime
+// descriptors out again, to the parent's end of a child's pipe among them,
+// of which libuv takes a duplicate handle: closed, the end still reaches the
+// child, which reads to its end.
+ZEST_CASE(stdin_pipe_closed_where_stdin_was_closed_ends_the_child) {
+    // The worker reads its runner elsewhere: its stdin reads nothing.
+    struct ClosedStdin {
+        int saved = ::_dup(0);
+
+        ClosedStdin() {
+            test::close_fd(0);
+        }
+
+        ~ClosedStdin() {
+            ::_dup2(saved, 0);
+            test::close_fd(saved);
+        }
+    } closed;
+
+    ZASSERT(closed.saved >= 0);
+    auto spawned = process::spawn(test::stdin_reader(), loop);
+    ZASSERT(spawned.has_value());
+    spawned->stdin_pipe = pipe{};
+
+    auto [status] = run(spawned->proc.wait());
+    ZEXPECT(test::exit_code_of(status) == 0);
+}
+#endif
+
 ZEST_CASE(stdout_goes_to_a_given_descriptor) {
     test::TempDir dir;
     auto path = dir.file("stdout.txt");

@@ -525,7 +525,8 @@ result<pipe> open_pipe(fs::File::native_handle_type end, event_loop& loop) {
 #else
     int fd = end;
 #endif
-    // Closed unless the pipe takes it: its open failed, or threw.
+    // Closed unless the pipe takes it: its open failed or threw, or on Windows
+    // libuv took a duplicate.
     struct Unopened {
         int fd;
 
@@ -541,7 +542,15 @@ result<pipe> open_pipe(fs::File::native_handle_type end, event_loop& loop) {
     } unopened{fd};
 
     auto opened = pipe::open(fd, loop);
-    if(opened) {
+#ifdef _WIN32
+    // Of a descriptor from 0 to 2, which a program that closed its standard
+    // streams gives out again, libuv takes a duplicate of the handle and
+    // leaves the descriptor: kept, it would hold the pipe open.
+    const bool taken = opened && fd > 2;
+#else
+    const bool taken = opened.has_value();
+#endif
+    if(taken) {
         unopened.fd = -1;
     }
     return opened;
