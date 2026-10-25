@@ -4,19 +4,12 @@
 #include <string>
 #include <system_error>
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
+#ifndef _WIN32
 #include <sys/stat.h>
 #endif
 
 #include "fs/harness/files.h"
+#include "fs/harness/win32.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/status.h"
@@ -38,7 +31,7 @@ constexpr Time second = at(1'100'000'000'765'432'100);
 constexpr Time third = at(1'200'000'000'000'000'000);
 
 /// When `path` was last read, which Status does not tell.
-Time accessed(const std::string& path) {
+Time atime_of(const std::string& path) {
 #ifdef _WIN32
     auto wide = test::std_path(path).wstring();
     WIN32_FILE_ATTRIBUTE_DATA data;
@@ -59,7 +52,7 @@ Time accessed(const std::string& path) {
 }
 
 /// The mtime of `path`.
-Time modified(const std::string& path) {
+Time mtime_of(const std::string& path) {
     auto found = status(path);
     ZASSERT(found.has_value());
     return found->mtime;
@@ -86,28 +79,28 @@ ZEST_SUITE(fs_status_change) {
 ZEST_CASE(set_times_sets_both_times) {
     test::TempDir dir;
     test::write_text(dir.file("é中😀.txt"), "text");
-    ZEXPECT(!set_times(dir.file("é中😀.txt"), {.accessed = first, .modified = second}));
-    ZEXPECT(accessed(dir.file("é中😀.txt")) == first);
-    ZEXPECT(modified(dir.file("é中😀.txt")) == second);
+    ZEXPECT(!set_times(dir.file("é中😀.txt"), {.atime = first, .mtime = second}));
+    ZEXPECT(atime_of(dir.file("é中😀.txt")) == first);
+    ZEXPECT(mtime_of(dir.file("é中😀.txt")) == second);
 }
 
 ZEST_CASE(set_times_leaves_a_time_not_given) {
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "text");
-    ZEXPECT(!set_times(dir.file("file.txt"), {.accessed = first, .modified = first}));
-    ZEXPECT(!set_times(dir.file("file.txt"), {.modified = second}));
-    ZEXPECT(accessed(dir.file("file.txt")) == first);
-    ZEXPECT(modified(dir.file("file.txt")) == second);
-    ZEXPECT(!set_times(dir.file("file.txt"), {.accessed = third}));
-    ZEXPECT(accessed(dir.file("file.txt")) == third);
-    ZEXPECT(modified(dir.file("file.txt")) == second);
+    ZEXPECT(!set_times(dir.file("file.txt"), {.atime = first, .mtime = first}));
+    ZEXPECT(!set_times(dir.file("file.txt"), {.mtime = second}));
+    ZEXPECT(atime_of(dir.file("file.txt")) == first);
+    ZEXPECT(mtime_of(dir.file("file.txt")) == second);
+    ZEXPECT(!set_times(dir.file("file.txt"), {.atime = third}));
+    ZEXPECT(atime_of(dir.file("file.txt")) == third);
+    ZEXPECT(mtime_of(dir.file("file.txt")) == second);
 }
 
 ZEST_CASE(set_times_sets_a_directory) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "directory");
-    ZEXPECT(!set_times(dir.file("directory"), {.modified = first}));
-    ZEXPECT(modified(dir.file("directory")) == first);
+    ZEXPECT(!set_times(dir.file("directory"), {.mtime = first}));
+    ZEXPECT(mtime_of(dir.file("directory")) == first);
 }
 
 ZEST_CASE(set_times_follows_a_link) {
@@ -118,25 +111,25 @@ ZEST_CASE(set_times_follows_a_link) {
 #else
     ZASSERT(!create_directory_symlink(dir.file("target"), dir.file("link")));
 #endif
-    ZEXPECT(!set_times(dir.file("link"), {.modified = first}));
-    ZEXPECT(modified(dir.file("target")) == first);
+    ZEXPECT(!set_times(dir.file("link"), {.mtime = first}));
+    ZEXPECT(mtime_of(dir.file("target")) == first);
 }
 
 ZEST_CASE(set_times_rounds_down) {
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "text");
     // Before 1970, where rounding toward zero would round up.
-    ZEXPECT(!set_times(dir.file("file.txt"), {.modified = at(-50)}));
+    ZEXPECT(!set_times(dir.file("file.txt"), {.mtime = at(-50)}));
 #ifdef _WIN32
-    ZEXPECT(modified(dir.file("file.txt")) == at(-100));
+    ZEXPECT(mtime_of(dir.file("file.txt")) == at(-100));
 #else
-    ZEXPECT(modified(dir.file("file.txt")) == at(-50));
+    ZEXPECT(mtime_of(dir.file("file.txt")) == at(-50));
 #endif
 }
 
 ZEST_CASE(set_times_of_nothing_fails) {
     test::TempDir dir;
-    ZEXPECT(set_times(dir.file("missing"), {.modified = first}) ==
+    ZEXPECT(set_times(dir.file("missing"), {.mtime = first}) ==
             std::errc::no_such_file_or_directory);
 }
 
@@ -195,6 +188,17 @@ ZEST_CASE(set_permissions_sets_a_directory) {
     ZEXPECT(permissions_of(dir.file("directory")) == 0755u);
 #endif
 }
+
+#ifndef _WIN32
+ZEST_CASE(set_permissions_sets_the_special_bits) {
+    // Sticky, which a directory's owner may set.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "directory");
+    ZEXPECT(!set_permissions(dir.file("directory"), 01777));
+    ZEXPECT(permissions_of(dir.file("directory")) == 01777u);
+    ZEXPECT(!set_permissions(dir.file("directory"), 0755));
+}
+#endif
 
 ZEST_CASE(set_permissions_follows_a_link) {
     test::TempDir dir;

@@ -1,4 +1,3 @@
-#include <cstddef>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -18,10 +17,7 @@ ZEST_SUITE(fs_mapping) {
 
 ZEST_CASE(map_shows_the_files_bytes) {
     test::TempDir dir;
-    std::string content(100'000, '\0');
-    for(std::size_t i = 0; i < content.size(); ++i) {
-        content[i] = static_cast<char>('a' + i % 26);
-    }
+    auto content = test::text_of(100'000);
     test::write_text(dir.file("é中😀"), content);
     auto file = File::open(dir.file("é中😀"));
     ZASSERT(file.has_value());

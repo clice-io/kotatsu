@@ -156,6 +156,11 @@ constexpr std::uint16_t permissions_of(DWORD attributes) {
 /// GetLastError() telling why.
 bool set_attributes(HANDLE handle, DWORD attributes);
 
+/// The reparse tag of the file `handle` refers to, which has `attributes`:
+/// zero for one that is no reparse point, without asking, since FAT, which
+/// keeps none, refuses the question.
+std::expected<DWORD, std::error_code> reparse_tag(HANDLE handle, DWORD attributes);
+
 /// The ID of the file `handle` refers to.
 std::expected<FileID, std::error_code> file_id(HANDLE handle);
 

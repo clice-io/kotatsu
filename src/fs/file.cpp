@@ -54,10 +54,10 @@ std::error_code with_random_name(buffer_ref path,
                                  Make make) {
     // A separator, or on Windows the colon of a drive or a stream, would
     // put the file elsewhere than in `directory`.
-    constexpr std::string_view elsewhere =
-        path::native_style == path::Style::Windows ? R"(/\:)" : "/";
-    if(prefix.find_first_of(elsewhere) != std::string_view::npos ||
-       suffix.find_first_of(elsewhere) != std::string_view::npos) {
+    auto elsewhere = [](char c) {
+        return path::is_separator(c) || (path::native_style == path::Style::Windows && c == ':');
+    };
+    if(std::ranges::any_of(prefix, elsewhere) || std::ranges::any_of(suffix, elsewhere)) {
         return std::make_error_code(std::errc::invalid_argument);
     }
     constexpr std::string_view alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -227,8 +227,11 @@ std::error_code File::write(std::string_view bytes) {
 std::error_code File::read_to_end(buffer_ref out) {
     // Files under /proc report no size, and any file may grow while read:
     // the end is where a read returns nothing. One byte past the size the
-    // file reports lets that read find the buffer large enough.
-    auto left = left_to_read(handle);
+    // file reports lets that read find the buffer large enough; a size
+    // past what is worth taking on its word (/proc/kcore reports 128 TiB)
+    // grows as it is read instead.
+    constexpr std::uint64_t trusted = std::uint64_t{1} << 30;
+    auto left = std::min(left_to_read(handle), trusted);
     std::size_t at = 0;
     auto buffer = out.resize(left == 0 ? 4096 : static_cast<std::size_t>(left) + 1);
     while(true) {
@@ -382,31 +385,8 @@ std::error_code File::unlock() {
     if(!::UnlockFileEx(handle, 0, 1, 0, &at) && ::GetLastError() != ERROR_NOT_LOCKED) {
         return windows::last_error();
     }
-    return {};
-}
-
-std::error_code File::close() {
-    if(!is_open()) {
-        return {};
-    }
-    if(locked) {
-        [[maybe_unused]] auto ignored = unlock();
-        locked = false;
-    }
-    auto closing = std::exchange(handle, closed);
-    return ::CloseHandle(closing) ? std::error_code() : windows::last_error();
-}
-
-std::expected<int, std::error_code> File::into_descriptor() && {
-    // The C runtime records the flag; the handle is no more inheritable for
-    // it.
-    int fd = ::_open_osfhandle(reinterpret_cast<std::intptr_t>(handle), _O_NOINHERIT);
-    if(fd == -1) {
-        return std::unexpected(std::error_code(errno, std::generic_category()));
-    }
-    handle = closed;
     locked = false;
-    return fd;
+    return {};
 }
 
 #else
@@ -483,14 +463,9 @@ std::expected<Status, std::error_code> File::status() const {
 }
 
 std::error_code File::canonical(buffer_ref out) const {
-    // Linux names a removed file by its old name and " (deleted)", which a
-    // file may be named, and macOS by its old name.
-    struct stat info;
-    if(::fstat(handle, &info) != 0) {
+    struct stat opened;
+    if(::fstat(handle, &opened) != 0) {
         return posix::last_error();
-    }
-    if(info.st_nlink == 0) {
-        return std::make_error_code(std::errc::no_such_file_or_directory);
     }
 #ifdef __APPLE__
     char buffer[MAXPATHLEN];
@@ -498,12 +473,23 @@ std::error_code File::canonical(buffer_ref out) const {
         return posix::last_error();
     }
     out.assign(buffer);
-    return {};
 #else
     char link[32];
     auto end = std::format_to_n(link, sizeof(link), "/proc/self/fd/{}", handle).out;
-    return read_symlink(out, std::string_view(link, end));
+    if(auto error = read_symlink(out, std::string_view(link, end))) {
+        return error;
+    }
 #endif
+    // The name the system keeps for the file may be one removed since,
+    // which Linux marks " (deleted)", a name a file may have, and macOS does
+    // not mark at all: it is the file's only while it leads to the file.
+    posix::CPath c_path;
+    struct stat named;
+    if(c_path.assign(out.view()) || ::stat(c_path.c_str(), &named) != 0 ||
+       named.st_dev != opened.st_dev || named.st_ino != opened.st_ino) {
+        return std::make_error_code(std::errc::no_such_file_or_directory);
+    }
+    return {};
 }
 
 std::error_code File::resize(std::uint64_t size) {
@@ -530,30 +516,54 @@ std::error_code File::set_sparse() {
 }
 
 std::error_code File::unlock() {
-    return error_of(take_lock(handle, LOCK_UN));
+    auto error = error_of(take_lock(handle, LOCK_UN));
+    if(!error) {
+        locked = false;
+    }
+    return error;
 }
+
+#endif
 
 std::error_code File::close() {
     if(!is_open()) {
         return {};
     }
-    // A copy of the descriptor, in a child process among others, would keep
-    // the lock past close().
+    // A copy of the handle, a child process's among others, would keep the
+    // lock past the close, and Windows releases a closed handle's lock only
+    // some time later.
     if(locked) {
         [[maybe_unused]] auto ignored = unlock();
-        locked = false;
     }
+    auto closing = std::exchange(handle, closed);
+    locked = false;
+#ifdef _WIN32
+    return ::CloseHandle(closing) ? std::error_code() : windows::last_error();
+#else
     // The descriptor is gone whatever close() returns, EINTR included: a
     // retry could close one another thread has opened since.
-    return ::close(std::exchange(handle, closed)) == 0 ? std::error_code() : posix::last_error();
+    return ::close(closing) == 0 ? std::error_code() : posix::last_error();
+#endif
 }
 
 std::expected<int, std::error_code> File::into_descriptor() && {
-    locked = false;
-    return std::exchange(handle, closed);
-}
-
+    if(!is_open()) {
+        return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
+    }
+#ifdef _WIN32
+    // The C runtime records that the handle is not inherited, which it
+    // checks when it passes its descriptors to a child.
+    int fd = ::_open_osfhandle(reinterpret_cast<std::intptr_t>(handle), _O_NOINHERIT);
+    if(fd == -1) {
+        return std::unexpected(std::error_code(errno, std::generic_category()));
+    }
+#else
+    int fd = handle;
 #endif
+    handle = closed;
+    locked = false;
+    return fd;
+}
 
 std::error_code read_file(buffer_ref out, std::string_view path) {
     auto file = File::open(path);

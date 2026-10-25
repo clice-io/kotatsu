@@ -8,20 +8,13 @@
 #include <thread>
 #include <utility>
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
+#ifndef _WIN32
 #include <fcntl.h>
 #include <unistd.h>
 #endif
 
 #include "fs/harness/files.h"
+#include "fs/harness/win32.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/file.h"
 
@@ -206,6 +199,15 @@ ZEST_CASE(a_moved_file_releases_the_lock_it_was_given) {
     File moved = std::move(first);
     HandleCopy copy(moved);
     ZEXPECT(!moved.close());
+    ZEXPECT(second.try_lock() == true);
+    ZEXPECT(!second.unlock());
+    // Assigned too, over a File of its own.
+    auto third = lock.open();
+    ZEXPECT(third.try_lock() == true);
+    File assigned = lock.open();
+    assigned = std::move(third);
+    HandleCopy assigned_copy(assigned);
+    ZEXPECT(!assigned.close());
     ZEXPECT(second.try_lock() == true);
 }
 

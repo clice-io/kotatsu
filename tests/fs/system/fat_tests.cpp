@@ -1,21 +1,18 @@
 #ifdef _WIN32
 
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <ranges>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-
+#include "fs/harness/dir.h"
 #include "fs/harness/files.h"
+#include "fs/harness/win32.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/file.h"
@@ -87,40 +84,69 @@ ZEST_CASE(one_file_has_one_id_by_path_by_handle_and_listed) {
                                         0));
         auto named = status(dir.file("file.txt"));
         auto file = File::open(dir.file("file.txt"));
-        auto listed = read_dir_status(dir.root());
+        auto entries = test::entries_of(dir.root());
         ZASSERT(named.has_value());
         ZASSERT(file.has_value());
-        ZASSERT(listed.has_value());
-        ZASSERT(listed->size() == 1u);
+        ZASSERT(entries.size() == 1u);
         auto opened = file->status();
+        auto listed = entries.front().status();
         ZASSERT(opened.has_value());
+        ZASSERT(listed.has_value());
         ZEXPECT(named->id.device == serial);
         ZEXPECT(named->id.file != 0u);
         ZEXPECT(opened->id == named->id);
-        ZEXPECT(listed->front().status.id == named->id);
+        ZEXPECT(listed->id == named->id);
     });
 }
 
-ZEST_CASE(read_dir_status_tells_each_entry_its_own_status) {
-    // Win32 would take `a.` and `a ` for `a`.
+ZEST_CASE(read_dir_tells_each_entry_its_own_status) {
+    // Win32 would take `a.` and `a ` for `a`, which FAT keeps apart.
     on_fat([](const test::TempDir& dir) {
         ZEXPECT(!write_file(verbatim(dir.file("a")), "1"));
         ZEXPECT(!write_file(verbatim(dir.file("a.")), "22"));
         ZEXPECT(!write_file(verbatim(dir.file("a ")), "333"));
-        auto listed = read_dir_status(dir.root());
-        ZASSERT(listed.has_value());
-        ZASSERT(listed->size() == 3u);
-        for(const auto& entry: *listed) {
-            ZEST_CONTEXT("'{}'", entry.name);
-            ZEXPECT(entry.status.type == FileType::Regular);
-            ZEXPECT(entry.status.size == (entry.name == "a" ? 1u : entry.name == "a." ? 2u : 3u));
+        std::vector<std::pair<std::string, std::uint64_t>> sizes;
+        for(const auto& entry: test::entries_of(dir.root())) {
+            auto status = entry.status();
+            ZASSERT(status.has_value());
+            ZEXPECT(status->type == FileType::Regular);
+            sizes.emplace_back(entry.name, status->size);
         }
-        auto limited = read_dir_status(dir.root(), 2);
-        ZASSERT(limited.has_value());
-        ZEXPECT(limited->size() == 2u);
+        std::ranges::sort(sizes);
+        ZEXPECT(sizes == std::vector<std::pair<std::string, std::uint64_t>>{
+                             {"a",  1},
+                             {"a ", 3},
+                             {"a.", 2}
+        });
         for(auto name: {"a", "a.", "a "}) {
             ZEXPECT(remove(verbatim(dir.file(name))) == true);
         }
+    });
+}
+
+ZEST_CASE(set_times_keeps_what_fat_keeps) {
+    // FAT keeps an mtime in two seconds, exFAT in 10 ms.
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("file.txt"), "text");
+        auto odd = std::chrono::sys_time<std::chrono::nanoseconds>(
+            std::chrono::seconds(1'000'000'001) + std::chrono::milliseconds(500));
+        ZEXPECT(!set_times(dir.file("file.txt"), {.mtime = odd}));
+        auto found = status(dir.file("file.txt"));
+        ZASSERT(found.has_value());
+        ZEXPECT(found->mtime >= odd - std::chrono::seconds(2));
+        ZEXPECT(found->mtime <= odd + std::chrono::seconds(2));
+        ZEST_CONTEXT("kept {}", (found->mtime - odd).count());
+        ZEXPECT(found->mtime == odd);
+    });
+}
+
+ZEST_CASE(remove_all_removes_a_tree) {
+    on_fat([](const test::TempDir& dir) {
+        std::filesystem::create_directories(dir.path / "tree" / "inner");
+        test::write_text(dir.file("tree/inner/file.txt"), "text");
+        test::write_text(dir.file("tree/file.txt"), "text");
+        ZEXPECT(remove_all(dir.file("tree")) == 4u);
+        ZEXPECT(exists(dir.file("tree")) == false);
     });
 }
 
@@ -159,9 +185,7 @@ ZEST_CASE(write_file_atomic_replaces_the_whole_file) {
         test::write_text(dir.file("file.txt"), "old");
         ZEXPECT(!write_file_atomic(dir.file("file.txt"), "new"));
         ZEXPECT(test::read_text(dir.file("file.txt")) == "new");
-        auto listed = read_dir(dir.root());
-        ZASSERT(listed.has_value());
-        ZEXPECT(listed->size() == 1u);
+        ZEXPECT(test::entries_of(dir.root()).size() == 1u);
     });
 }
 

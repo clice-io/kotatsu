@@ -25,10 +25,10 @@ enum class FileType : std::uint8_t {
 };
 
 /// What tells files apart while they exist: the device, and the file's
-/// number on it. On Windows the volume's 32-bit serial number, which every
-/// source of a status reports (NTFS and ReFS keep 64 bits, which LLVM,
-/// libuv and Rust do not take either), and the 128-bit file ID, which ReFS
-/// needs whole. All zero where the source of a status does not tell it.
+/// number on it. On Windows the volume's serial number in the 32 bits every
+/// source of a status reports, as LLVM, libuv and Rust take it, though NTFS
+/// and ReFS keep 64; and the 128-bit file ID, which ReFS needs whole. All
+/// zero where the source of a status does not tell it.
 struct FileID {
     std::uint64_t device = 0;
     std::uint64_t file = 0;
@@ -65,7 +65,7 @@ struct Status {
     /// Who may read, write and run it, as POSIX mode bits (0644, 0755) with
     /// setuid, setgid and sticky (07777). Windows keeps only whether a file
     /// is read-only: 0444 then, else 0666, and the run bits (0111) for a
-    /// directory.
+    /// directory; a device or a pipe there tells none, zero.
     std::uint16_t permissions = 0;
 
     friend bool operator==(const Status&, const Status&) = default;
@@ -82,7 +82,8 @@ struct Status {
 std::expected<Status, std::error_code> status(std::string_view path);
 
 /// The status of `path` itself: a symlink, or a junction on Windows, is not
-/// followed.
+/// followed, even to a directory with a separator after it (`link/`),
+/// through which POSIX follows it otherwise.
 std::expected<Status, std::error_code> symlink_status(std::string_view path);
 
 /// Whether `path` names anything, symlinks followed: false when the OS says
@@ -109,21 +110,22 @@ std::expected<bool, std::error_code> equivalent(std::string_view a, std::string_
 /// The times set_times() sets; one left empty stays as it is.
 struct FileTimes {
     /// When the file was last read.
-    std::optional<std::chrono::sys_time<std::chrono::nanoseconds>> accessed = std::nullopt;
+    std::optional<std::chrono::sys_time<std::chrono::nanoseconds>> atime = std::nullopt;
 
-    /// When its bytes last changed: Status::mtime.
-    std::optional<std::chrono::sys_time<std::chrono::nanoseconds>> modified = std::nullopt;
+    /// When its bytes last changed, Status::mtime.
+    std::optional<std::chrono::sys_time<std::chrono::nanoseconds>> mtime = std::nullopt;
 };
 
-/// Sets the times of what `path` names, a directory too, symlinks followed,
-/// as finely as the file system keeps them (Windows 100 ns, FAT two seconds
-/// for the mtime), each rounded down.
+/// Sets the times of what `path` names, a directory too, symlinks followed.
+/// Windows keeps them in 100 ns, to which they are rounded down; a file
+/// system keeps what it can of that (FAT an mtime in two seconds, rounded
+/// up).
 std::error_code set_times(std::string_view path, const FileTimes& times);
 
 /// Sets who may read, write and run what `path` names, symlinks followed, to
-/// the POSIX mode bits `permissions` (07777, as Status::permissions). On
-/// Windows only whether a file is read-only: without a write bit (0222) it
-/// is, otherwise it is not.
+/// the POSIX mode bits `permissions`, at most 07777, as Status::permissions
+/// tells them. On Windows only whether a file is read-only: without a write
+/// bit (0222) it is, otherwise it is not.
 std::error_code set_permissions(std::string_view path, std::uint16_t permissions);
 
 }  // namespace kota::fs

@@ -13,7 +13,6 @@
 
 #ifdef _WIN32
 #include <atomic>
-#include <concepts>
 
 #include "win32.h"
 #include "kota/support/utf16.h"
@@ -62,37 +61,79 @@ bool unsupported(DWORD error) {
            error == ERROR_INVALID_FUNCTION || error == ERROR_INVALID_LEVEL;
 }
 
-/// Hands each entry the directory `handle` lists, `.` and `..` left out, to
-/// `visit` with its UTF-16 name, as the information class `Info` describes
-/// it, until `visit` returns false. The error that ended the listing early,
-/// or ERROR_SUCCESS.
-template <typename Info, typename Visit>
-DWORD for_each_entry(HANDLE handle, Visit visit) {
-    constexpr bool extended = std::same_as<Info, FILE_ID_EXTD_DIR_INFO>;
-    auto kind = extended ? FileIdExtdDirectoryRestartInfo : FileFullDirectoryRestartInfo;
-    constexpr std::size_t buffer_size = 64 * 1024;
-    // The entries hold 8-byte fields.
-    auto buffer = std::make_unique<std::uint64_t[]>(buffer_size / sizeof(std::uint64_t));
-    while(::GetFileInformationByHandleEx(handle, kind, buffer.get(), buffer_size)) {
-        kind = extended ? FileIdExtdDirectoryInfo : FileFullDirectoryInfo;
-        auto* at = reinterpret_cast<const char*>(buffer.get());
+/// The name of a listed entry of the information class `Info`.
+template <typename Info>
+std::wstring_view name_of(const void* entry) {
+    const auto& info = *static_cast<const Info*>(entry);
+    return {info.FileName, info.FileNameLength / sizeof(wchar_t)};
+}
+
+/// What a listed entry of the information class `Info`, with the reparse
+/// tag `tag`, tells of its status: no ID or links.
+template <typename Info>
+Status listed_status(const Info& info, DWORD tag) {
+    return {
+        .type = win32::type_of(info.FileAttributes, tag),
+        .size = static_cast<std::uint64_t>(info.EndOfFile.QuadPart),
+        .mtime = win32::unix_time(info.LastWriteTime.QuadPart),
+        .ctime = win32::unix_time(info.ChangeTime.QuadPart),
+        .permissions = win32::permissions_of(info.FileAttributes),
+    };
+}
+
+/// The entries a directory handle lists, `.` and `..` left out, read a
+/// buffer of them at a time: as FILE_ID_EXTD_DIR_INFO while `extended`,
+/// otherwise as FILE_FULL_DIR_INFO.
+struct Listing {
+    explicit Listing(bool extended) : extended(extended) {}
+
+    /// The next entry `handle` lists, null at the end, or the error that
+    /// ended the listing.
+    std::expected<const void*, DWORD> next(HANDLE handle) {
         while(true) {
-            const auto& entry = *reinterpret_cast<const Info*>(at);
-            std::wstring_view name(entry.FileName, entry.FileNameLength / sizeof(wchar_t));
-            if(name != L"." && name != L".." && !visit(entry, name)) {
-                return ERROR_SUCCESS;
+            if(at == nullptr) {
+                auto kind =
+                    extended ? (started ? FileIdExtdDirectoryInfo : FileIdExtdDirectoryRestartInfo)
+                             : (started ? FileFullDirectoryInfo : FileFullDirectoryRestartInfo);
+                if(!::GetFileInformationByHandleEx(handle, kind, buffer.get(), buffer_size)) {
+                    // A file system that lists no `.` may report an empty
+                    // directory as one where no file matches.
+                    auto error = ::GetLastError();
+                    if(error == ERROR_NO_MORE_FILES || error == ERROR_FILE_NOT_FOUND) {
+                        return nullptr;
+                    }
+                    return std::unexpected(error);
+                }
+                started = true;
+                at = reinterpret_cast<const char*>(buffer.get());
             }
-            if(entry.NextEntryOffset == 0) {
-                break;
+            const char* entry = at;
+            auto offset =
+                extended ? reinterpret_cast<const FILE_ID_EXTD_DIR_INFO*>(entry)->NextEntryOffset
+                         : reinterpret_cast<const FILE_FULL_DIR_INFO*>(entry)->NextEntryOffset;
+            at = offset == 0 ? nullptr : at + offset;
+            auto name = extended ? name_of<FILE_ID_EXTD_DIR_INFO>(entry)
+                                 : name_of<FILE_FULL_DIR_INFO>(entry);
+            if(name != L"." && name != L"..") {
+                return entry;
             }
-            at += entry.NextEntryOffset;
         }
     }
-    // A file system that lists no `.` may report an empty directory as one
-    // where no file matches.
-    auto error = ::GetLastError();
-    return error == ERROR_NO_MORE_FILES || error == ERROR_FILE_NOT_FOUND ? ERROR_SUCCESS : error;
-}
+
+    constexpr static std::size_t buffer_size = 64 * 1024;
+
+    bool extended;
+
+    /// Whether a buffer has been read, which the next read follows on from.
+    bool started = false;
+
+    /// The entries hold 8-byte fields.
+    std::unique_ptr<std::uint64_t[]> buffer =
+        std::make_unique<std::uint64_t[]>(buffer_size / sizeof(std::uint64_t));
+
+    /// The next entry in the buffer, null once it is used up.
+    const char* at = nullptr;
+};
 
 /// A handle to list the directory `dir` through. The access to list a
 /// directory reads a file as well, so a file is told apart here.
@@ -247,21 +288,27 @@ win32::Handle open_to_remove(Open open) {
 /// directory's place goes as the link, and a directory moved away goes
 /// with what it held.
 std::expected<std::uint64_t, std::error_code> remove_opened(const win32::Handle& handle) {
-    FILE_ATTRIBUTE_TAG_INFO info;
-    if(!::GetFileInformationByHandleEx(handle.get(), FileAttributeTagInfo, &info, sizeof(info))) {
+    FILE_BASIC_INFO info;
+    if(!::GetFileInformationByHandleEx(handle.get(), FileBasicInfo, &info, sizeof(info))) {
         return std::unexpected(windows::last_error());
     }
+    auto tag = win32::reparse_tag(handle.get(), info.FileAttributes);
+    if(!tag) {
+        return std::unexpected(tag.error());
+    }
     std::uint64_t removed = 0;
-    if(win32::type_of(info.FileAttributes, info.ReparseTag) == FileType::Directory) {
+    if(win32::type_of(info.FileAttributes, *tag) == FileType::Directory) {
         std::vector<std::wstring> names;
-        auto error = for_each_entry<FILE_FULL_DIR_INFO>(
-            handle.get(),
-            [&](const FILE_FULL_DIR_INFO&, std::wstring_view name) {
-                names.emplace_back(name);
-                return true;
-            });
-        if(error != ERROR_SUCCESS) {
-            return std::unexpected(windows::to_error_code(error));
+        Listing listing(false);
+        while(true) {
+            auto entry = listing.next(handle.get());
+            if(!entry) {
+                return std::unexpected(windows::to_error_code(entry.error()));
+            }
+            if(*entry == nullptr) {
+                break;
+            }
+            names.emplace_back(name_of<FILE_FULL_DIR_INFO>(*entry));
         }
         for(const auto& name: names) {
             auto child = open_to_remove(
@@ -302,20 +349,21 @@ FileType type_of(unsigned char type) {
     }
 }
 
-/// Hands each entry of the open directory `dir`, `.` and `..` left out, to
-/// `visit` with its name and d_type, until `visit` returns false. readdir()
-/// reports an error only through errno.
-template <typename Visit>
-std::error_code for_each_entry(DIR* dir, Visit visit) {
+/// The next entry of the open directory `dir`, `.` and `..` left out, null
+/// at the end. readdir() reports an error only through errno.
+std::expected<const dirent*, std::error_code> next_entry(DIR* dir) {
     while(true) {
         errno = 0;
-        auto* entry = ::readdir(dir);
+        const auto* entry = ::readdir(dir);
         if(entry == nullptr) {
-            return errno == 0 ? std::error_code() : posix::last_error();
+            if(errno != 0) {
+                return std::unexpected(posix::last_error());
+            }
+            return nullptr;
         }
         std::string_view name = entry->d_name;
-        if(name != "." && name != ".." && !visit(name, entry->d_type)) {
-            return {};
+        if(name != "." && name != "..") {
+            return entry;
         }
     }
 }
@@ -365,14 +413,17 @@ std::error_code remove_contents(int fd, std::uint64_t& removed) {
         return error;
     }
     std::vector<std::pair<std::string, unsigned char>> entries;
-    auto error = for_each_entry(dir.get(), [&](std::string_view name, unsigned char type) {
-        entries.emplace_back(name, type);
-        return true;
-    });
-    dir.reset();
-    if(error) {
-        return error;
+    while(true) {
+        auto entry = next_entry(dir.get());
+        if(!entry) {
+            return entry.error();
+        }
+        if(*entry == nullptr) {
+            break;
+        }
+        entries.emplace_back((*entry)->d_name, (*entry)->d_type);
     }
+    dir.reset();
     for(auto& [name, type]: entries) {
         if(auto failed = remove_entry(fd, name.c_str(), type, removed)) {
             return failed;
@@ -465,158 +516,136 @@ std::error_code create_link(std::string_view target, std::string_view link, bool
 
 }  // namespace
 
-std::expected<std::vector<DirEntry>, std::error_code> read_dir(std::string_view dir) {
-    std::vector<DirEntry> entries;
+struct detail::OpenDirectory {
+#ifdef _WIN32
+    win32::Handle handle;
+
+    /// The volume's serial number, which the IDs it lists are on.
+    std::uint64_t volume;
+
+    Listing listing{true};
+#else
+    DirHandle dir;
+#endif
+};
+
+std::expected<DirStream, std::error_code> read_dir(std::string_view dir) {
 #ifdef _WIN32
     auto handle = open_directory(dir);
     if(!handle) {
         return std::unexpected(handle.error());
     }
-    auto error = for_each_entry<FILE_FULL_DIR_INFO>(
-        handle->get(),
-        [&](const FILE_FULL_DIR_INFO& entry, std::wstring_view name) {
-            // A reparse point's tag stands where the size of its extended
-            // attributes would.
-            auto& added = entries.emplace_back();
-            from_utf16(added.name, name);
-            added.type = win32::type_of(entry.FileAttributes, entry.EaSize);
-            return true;
-        });
-    if(error != ERROR_SUCCESS) {
-        return std::unexpected(windows::to_error_code(error));
+    auto id = win32::file_id(handle->get());
+    if(!id) {
+        return std::unexpected(id.error());
     }
+    return DirStream(std::make_shared<detail::OpenDirectory>(std::move(*handle), id->device));
 #else
     auto opened = open_dir(dir);
     if(!opened) {
         return std::unexpected(opened.error());
     }
-    auto* handle = opened->get();
-    auto error = for_each_entry(handle, [&](std::string_view name, unsigned char type) {
-        DirEntry entry{std::string(name), type_of(type)};
-        struct stat info;
-        if(entry.type == FileType::Unknown &&
-           ::fstatat(::dirfd(handle), entry.name.c_str(), &info, AT_SYMLINK_NOFOLLOW) == 0) {
-            entry.type = posix::make_status(info).type;
-        }
-        entries.push_back(std::move(entry));
-        return true;
-    });
-    if(error) {
-        return std::unexpected(error);
-    }
+    return DirStream(std::make_shared<detail::OpenDirectory>(std::move(*opened)));
 #endif
-    return entries;
 }
 
-std::expected<std::vector<StatusEntry>, std::error_code> read_dir_status(std::string_view dir,
-                                                                         std::size_t limit) {
-    std::vector<StatusEntry> entries;
+DirStream::iterator DirStream::begin() {
+    if(!started) {
+        started = true;
+        advance();
+    }
+    return iterator(this);
+}
+
+void DirStream::advance() {
+    if(!current) {
+        done = true;
+        return;
+    }
+    DirEntry made;
+    made.directory = directory;
 #ifdef _WIN32
-    auto handle = open_directory(dir);
-    if(!handle) {
-        return std::unexpected(handle.error());
+    auto& listing = directory->listing;
+    auto entry = listing.next(directory->handle.get());
+    // A file system that lists no IDs (FAT) refuses the first call: its
+    // entries are listed without them, and opened when asked for their
+    // statuses.
+    if(!entry && listing.extended && !listing.started && unsupported(entry.error())) {
+        listing.extended = false;
+        entry = listing.next(directory->handle.get());
     }
-    // The listing tells each file's ID on the directory's volume.
-    auto volume = win32::file_id(handle->get());
-    if(!volume) {
-        return std::unexpected(volume.error());
+    if(!entry) {
+        current = std::unexpected(windows::to_error_code(entry.error()));
+        return;
     }
-    auto error = for_each_entry<FILE_ID_EXTD_DIR_INFO>(
-        handle->get(),
-        [&](const FILE_ID_EXTD_DIR_INFO& entry, std::wstring_view name) {
-            if(entries.size() == limit) {
-                return false;
-            }
-            auto& added = entries.emplace_back();
-            from_utf16(added.name, name);
-            added.status = {.type = win32::type_of(entry.FileAttributes, entry.ReparsePointTag),
-                            .size = static_cast<std::uint64_t>(entry.EndOfFile.QuadPart),
-                            .mtime = win32::unix_time(entry.LastWriteTime.QuadPart),
-                            .ctime = win32::unix_time(entry.ChangeTime.QuadPart),
-                            .id = win32::id_of(volume->device, entry.FileId),
-                            .permissions = win32::permissions_of(entry.FileAttributes)};
-            return true;
-        });
-    if(error == ERROR_SUCCESS) {
-        return entries;
+    if(*entry == nullptr) {
+        done = true;
+        return;
     }
-    if(!unsupported(error)) {
-        return std::unexpected(windows::to_error_code(error));
+    if(listing.extended) {
+        const auto& info = *static_cast<const FILE_ID_EXTD_DIR_INFO*>(*entry);
+        from_utf16(made.name, name_of<FILE_ID_EXTD_DIR_INFO>(*entry));
+        made.listed = listed_status(info, info.ReparsePointTag);
+        made.listed.id = win32::id_of(directory->volume, info.FileId);
+        made.whole = true;
+    } else {
+        // A reparse point's tag stands where the size of its extended
+        // attributes would.
+        const auto& info = *static_cast<const FILE_FULL_DIR_INFO*>(*entry);
+        from_utf16(made.name, name_of<FILE_FULL_DIR_INFO>(*entry));
+        made.listed = listed_status(info, info.EaSize);
     }
-    // A file system that lists no IDs (FAT) refuses the first call: each
-    // entry is opened for its status, through the directory's handle by the
-    // name it lists, which Win32 would rewrite (`a.` naming `a`).
-    std::error_code failed;
-    error = for_each_entry<FILE_FULL_DIR_INFO>(
-        handle->get(),
-        [&](const FILE_FULL_DIR_INFO& entry, std::wstring_view name) {
-            if(entries.size() == limit) {
-                return false;
-            }
-            Status found;
-            auto child = open_entry(handle->get(), name, FILE_READ_ATTRIBUTES);
-            if(child.get() != INVALID_HANDLE_VALUE) {
-                auto opened = win32::handle_status(child.get());
-                if(!opened) {
-                    failed = opened.error();
-                    return false;
-                }
-                found = *opened;
-            } else if(auto code = ::GetLastError(); names_nothing(code)) {
-                // Gone since it was listed.
-                return true;
-            } else if(code == ERROR_SHARING_VIOLATION || code == ERROR_ACCESS_DENIED) {
-                // A file no open reaches, as status() takes it: what the
-                // listing tells, without an ID or links.
-                found = {.type = win32::type_of(entry.FileAttributes, entry.EaSize),
-                         .size = static_cast<std::uint64_t>(entry.EndOfFile.QuadPart),
-                         .mtime = win32::unix_time(entry.LastWriteTime.QuadPart),
-                         .ctime = win32::unix_time(entry.ChangeTime.QuadPart),
-                         .permissions = win32::permissions_of(entry.FileAttributes)};
-            } else {
-                failed = windows::to_error_code(code);
-                return false;
-            }
-            auto& added = entries.emplace_back();
-            from_utf16(added.name, name);
-            added.status = found;
-            return true;
-        });
-    if(error != ERROR_SUCCESS) {
-        return std::unexpected(windows::to_error_code(error));
-    }
+    made.type = made.listed.type;
 #else
-    auto opened = open_dir(dir);
-    if(!opened) {
-        return std::unexpected(opened.error());
+    auto* dir = directory->dir.get();
+    auto entry = next_entry(dir);
+    if(!entry) {
+        current = std::unexpected(entry.error());
+        return;
     }
-    int fd = ::dirfd(opened->get());
-    std::error_code failed;
-    auto error = for_each_entry(opened->get(), [&](std::string_view name, unsigned char) {
-        if(entries.size() == limit) {
-            return false;
-        }
-        struct stat info;
-        std::string owned(name);
-        if(::fstatat(fd, owned.c_str(), &info, AT_SYMLINK_NOFOLLOW) == 0) {
-            entries.push_back({.name = std::move(owned), .status = posix::make_status(info)});
-            return true;
-        }
-        // Gone since it was listed is no error.
-        if(errno != ENOENT) {
-            failed = posix::last_error();
-            return false;
-        }
-        return true;
-    });
-    if(error) {
-        return std::unexpected(error);
+    if(*entry == nullptr) {
+        done = true;
+        return;
+    }
+    made.name = (*entry)->d_name;
+    made.type = type_of((*entry)->d_type);
+    struct stat info;
+    if(made.type == FileType::Unknown &&
+       ::fstatat(::dirfd(dir), made.name.c_str(), &info, AT_SYMLINK_NOFOLLOW) == 0) {
+        made.type = posix::make_status(info).type;
     }
 #endif
-    if(failed) {
-        return std::unexpected(failed);
+    current = std::move(made);
+}
+
+std::expected<Status, std::error_code> DirEntry::status() const {
+#ifdef _WIN32
+    if(whole) {
+        return listed;
     }
-    return entries;
+    // By the name as listed, relative to the directory, which Win32 would
+    // rewrite (`a.` naming `a`); back in the UTF-16 it came from, which
+    // cannot fail.
+    win32::WidePath wide;
+    [[maybe_unused]] auto converted = to_utf16(wide, name);
+    auto child = open_entry(directory->handle.get(), wide, FILE_READ_ATTRIBUTES);
+    if(child.get() != INVALID_HANDLE_VALUE) {
+        return win32::handle_status(child.get());
+    }
+    // A file no open reaches, as status() takes it: what the listing told,
+    // without an ID or links.
+    auto error = ::GetLastError();
+    if(error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED) {
+        return listed;
+    }
+    return std::unexpected(windows::to_error_code(error));
+#else
+    struct stat info;
+    if(::fstatat(::dirfd(directory->dir.get()), name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) {
+        return std::unexpected(posix::last_error());
+    }
+    return posix::make_status(info);
+#endif
 }
 
 std::expected<bool, std::error_code> create_directory(std::string_view path) {

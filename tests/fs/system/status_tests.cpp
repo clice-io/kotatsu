@@ -4,20 +4,14 @@
 #include <string>
 #include <system_error>
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
+#ifndef _WIN32
 #include <fcntl.h>
 #include <sys/stat.h>
 #endif
 
+#include "fs/harness/dir.h"
 #include "fs/harness/files.h"
+#include "fs/harness/win32.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/file.h"
@@ -116,41 +110,26 @@ ZEST_CASE(one_file_has_one_id_by_path_by_handle_and_listed) {
     test::write_text(dir.file("file.txt"), "text");
     auto named = status(dir.file("file.txt"));
     auto file = File::open(dir.file("file.txt"));
-    auto listed = read_dir_status(dir.root());
+    auto entries = test::entries_of(dir.root());
     ZASSERT(named.has_value());
     ZASSERT(file.has_value());
-    ZASSERT(listed.has_value());
-    ZASSERT(listed->size() == 1u);
+    ZASSERT(entries.size() == 1u);
     auto opened = file->status();
+    auto listed = entries.front().status();
     ZASSERT(opened.has_value());
+    ZASSERT(listed.has_value());
     ZEXPECT(opened->id == named->id);
-    ZEXPECT(listed->front().status.id == named->id);
-}
-
+    ZEXPECT(listed->id == named->id);
 #ifdef _WIN32
-ZEST_CASE(the_device_is_the_volume_serial_number) {
     // The 32-bit serial every source tells, the open handle's fallback on a
     // volume without 128-bit IDs (FAT) too, as LLVM, libuv and Rust take it.
-    test::TempDir dir;
-    test::write_text(dir.file("file.txt"), "text");
     auto volume = dir.path.root_path().wstring();
     DWORD serial = 0;
     ZASSERT(
         ::GetVolumeInformationW(volume.c_str(), nullptr, 0, &serial, nullptr, nullptr, nullptr, 0));
-    auto named = status(dir.file("file.txt"));
-    auto file = File::open(dir.file("file.txt"));
-    auto listed = read_dir_status(dir.root());
-    ZASSERT(named.has_value());
-    ZASSERT(file.has_value());
-    ZASSERT(listed.has_value());
-    ZASSERT(listed->size() == 1u);
-    auto opened = file->status();
-    ZASSERT(opened.has_value());
     ZEXPECT(named->id.device == serial);
-    ZEXPECT(opened->id.device == serial);
-    ZEXPECT(listed->front().status.id.device == serial);
-}
 #endif
+}
 
 ZEST_CASE(status_takes_times_past_what_nanoseconds_hold_at_the_nearest) {
     test::TempDir dir;
@@ -182,8 +161,11 @@ ZEST_CASE(status_takes_times_past_what_nanoseconds_hold_at_the_nearest) {
         {.tv_sec = 0,              .tv_nsec = UTIME_OMIT},
         {.tv_sec = 10'000'000'000, .tv_nsec = 0         }
     };
-    if(::utimensat(AT_FDCWD, dir.file("file.txt").c_str(), times, 0) != 0) {
-        // A file system that keeps no time so late refuses it.
+    struct stat kept;
+    if(::utimensat(AT_FDCWD, dir.file("file.txt").c_str(), times, 0) != 0 ||
+       ::stat(dir.file("file.txt").c_str(), &kept) != 0 || kept.st_mtime < times[1].tv_sec / 2) {
+        // A file system that keeps no time so late refuses it, or brings it
+        // back to 2038 (XFS without bigtime, ext4 with small inodes).
         zest::skip();
         return;
     }
@@ -191,10 +173,11 @@ ZEST_CASE(status_takes_times_past_what_nanoseconds_hold_at_the_nearest) {
     auto late = status(dir.file("file.txt"));
     ZASSERT(late.has_value());
     ZEXPECT(late->mtime == Time::max());
-    auto listed = read_dir_status(dir.root());
+    auto entries = test::entries_of(dir.root());
+    ZASSERT(entries.size() == 1u);
+    auto listed = entries.front().status();
     ZASSERT(listed.has_value());
-    ZASSERT(listed->size() == 1u);
-    ZEXPECT(listed->front().status.mtime == Time::max());
+    ZEXPECT(listed->mtime == Time::max());
 }
 
 ZEST_CASE(status_tells_permissions) {
@@ -202,17 +185,22 @@ ZEST_CASE(status_tells_permissions) {
     test::write_text(dir.file("file.txt"), "text");
 #ifdef _WIN32
     auto wide = test::std_path(dir.file("file.txt")).wstring();
-    ZEXPECT(status(dir.file("file.txt"))->permissions == 0666u);
-    ZEXPECT(status(dir.root())->permissions == 0777u);
+    auto file = status(dir.file("file.txt"));
+    auto directory = status(dir.root());
+    ZASSERT(file.has_value());
+    ZASSERT(directory.has_value());
+    ZEXPECT(file->permissions == 0666u);
+    ZEXPECT(directory->permissions == 0777u);
     ZASSERT(::SetFileAttributesW(wide.c_str(), FILE_ATTRIBUTE_READONLY));
     auto read_only = status(dir.file("file.txt"));
-    auto listed = read_dir_status(dir.root());
+    auto entries = test::entries_of(dir.root());
     ZEXPECT(::SetFileAttributesW(wide.c_str(), FILE_ATTRIBUTE_NORMAL));
     ZASSERT(read_only.has_value());
     ZEXPECT(read_only->permissions == 0444u);
+    ZASSERT(entries.size() == 1u);
+    auto listed = entries.front().status();
     ZASSERT(listed.has_value());
-    ZASSERT(listed->size() == 1u);
-    ZEXPECT(listed->front().status.permissions == 0444u);
+    ZEXPECT(listed->permissions == 0444u);
 #else
     using std::filesystem::perms;
     std::filesystem::permissions(dir.path / "file.txt",

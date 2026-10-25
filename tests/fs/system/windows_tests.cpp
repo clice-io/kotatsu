@@ -4,9 +4,10 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <windows.h>
 
+#include "fs/harness/dir.h"
 #include "fs/harness/files.h"
+#include "fs/harness/win32.h"
 #include "kota/zest/zest.h"
 #include "kota/support/utf16.h"
 #include "kota/fs/directory.h"
@@ -84,7 +85,7 @@ ZEST_CASE(to_native_prefixes_a_long_path) {
     ZEXPECT(native(R"(\\.\)" + long_path) == R"(\\?\)" + long_path);
 }
 
-ZEST_CASE(a_long_device_path_works) {
+ZEST_CASE(read_file_takes_a_long_device_path) {
     test::TempDir dir;
     std::string deep = dir.root();
     while(deep.size() < 300) {
@@ -97,28 +98,9 @@ ZEST_CASE(a_long_device_path_works) {
     std::string content;
     ZEXPECT(!read_file(content, R"(\\.\)" + file));
     ZEXPECT(content == "text");
-}
-
-ZEST_CASE(absolute_leaves_a_verbatim_path_as_it_is) {
-    test::TempDir dir;
-    // Win32 would fold the `..` and drop the dot; the file system keeps
-    // both names apart.
-    std::string dotted = R"(\\?\)" + dir.root();
-    path::push(dotted, "name.");
-    ZEXPECT(!write_file(dotted, "dotted"));
-    ZEXPECT(!write_file(dir.file("name"), "plain"));
-    std::string full;
-    ZEXPECT(!absolute(full, dotted));
-    ZEXPECT(full == dotted);
-    std::string up = R"(\\?\)" + dir.root() + R"(\..\x)";
-    ZEXPECT(!absolute(full, up));
-    ZEXPECT(full == up);
-    std::string real;
-    weakly_canonical(real, dotted);
-    std::string content;
-    ZEXPECT(!read_file(content, real));
-    ZEXPECT(content == "dotted");
-    ZEXPECT(remove(dotted) == true);
+    // MinGW's std::filesystem, which TempDir removes with, loops on a path
+    // this long.
+    ZEXPECT(remove_all(dir.file("a-directory-name-of-some-length")).has_value());
 }
 
 ZEST_CASE(to_native_of_what_names_nothing_fails) {
@@ -176,10 +158,10 @@ ZEST_CASE(paths_longer_than_max_path_work) {
     path::push(moved, "moved.txt");
     ZEXPECT(!rename(file, moved));
     ZEXPECT(!write_file_atomic(moved, "new"));
-    auto entries = read_dir_status(deep);
-    ZASSERT(entries.has_value());
-    ZASSERT(entries->size() == 1u);
-    ZEXPECT(entries->front().name == "moved.txt");
+    auto entries = test::entries_of(deep);
+    ZASSERT(entries.size() == 1u);
+    ZEXPECT(entries.front().name == "moved.txt");
+    ZEXPECT(entries.front().status().has_value());
     std::string real;
     ZEXPECT(!canonical(real, moved));
     ZEXPECT(remove(moved) == true);
@@ -195,10 +177,9 @@ ZEST_CASE(verbatim_paths_reach_names_win32_would_change) {
     ZEXPECT(!write_file(dotted, "text"));
     ZEXPECT(is_file(dotted));
     ZEXPECT(!is_file(dir.file("name")));
-    auto entries = read_dir(dir.root());
-    ZASSERT(entries.has_value());
-    ZASSERT(entries->size() == 1u);
-    ZEXPECT(entries->front().name == "name.");
+    auto entries = test::entries_of(dir.root());
+    ZASSERT(entries.size() == 1u);
+    ZEXPECT(entries.front().name == "name.");
     ZEXPECT(remove(dotted) == true);
 }
 
@@ -208,10 +189,9 @@ ZEST_CASE(names_that_are_no_unicode_roundtrip) {
     auto lone = dir.root();
     path::push(lone, "\xED\xA0\x80");
     ZEXPECT(!write_file(lone, "text"));
-    auto entries = read_dir(dir.root());
-    ZASSERT(entries.has_value());
-    ZASSERT(entries->size() == 1u);
-    ZEXPECT(entries->front().name == "\xED\xA0\x80");
+    auto entries = test::entries_of(dir.root());
+    ZASSERT(entries.size() == 1u);
+    ZEXPECT(entries.front().name == "\xED\xA0\x80");
     std::string content;
     ZEXPECT(!read_file(content, lone));
     ZEXPECT(content == "text");

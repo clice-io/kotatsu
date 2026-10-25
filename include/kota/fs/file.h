@@ -78,11 +78,11 @@ public:
     /// many bytes it read, zero at the end of the file.
     std::expected<std::size_t, std::error_code> read(std::span<char> buffer);
 
-    /// Writes into `out` the bytes from where the last read stopped to the
-    /// end of the file, as read_file() does for a path: into a buffer sized
-    /// once from what the file reports it holds, read on past that until a
-    /// read returns nothing, so that a file that grows meanwhile, or one
-    /// that reports no size (a pipe, a file under /proc), is read whole.
+    /// Writes into `out` the bytes from where the file stands to its end:
+    /// into a buffer sized once from what the file reports it holds, read on
+    /// past that until a read returns nothing, so that a file that grows
+    /// meanwhile, or one that reports no size (a pipe, a file under /proc),
+    /// is read whole.
     std::error_code read_to_end(buffer_ref out);
 
     /// Writes from the start of `bytes` what one call of the system takes,
@@ -111,12 +111,13 @@ public:
 
     /// Writes into `out` the name the OS gives the open file, as canonical()
     /// gives it for a path: absolute, every symlink followed, on Windows
-    /// with each name's on-disk case. A rename since gives the new name; a
-    /// file whose last name has been removed fails with
-    /// std::errc::no_such_file_or_directory. GetFinalPathNameByHandleW on
-    /// Windows, F_GETPATH on macOS, which for a file of several hard links
-    /// may give another of its names, and on Linux the link in
-    /// /proc/self/fd, which needs /proc mounted.
+    /// with each name's on-disk case; after a rename, the new name. Once the
+    /// name it was opened by is gone, the OS may give another hard link of
+    /// it; one that knows no name leading to the file fails with
+    /// std::errc::no_such_file_or_directory, as Linux, which remembers only
+    /// the name gone, always does then. GetFinalPathNameByHandleW on Windows,
+    /// F_GETPATH on macOS, and on Linux the link in /proc/self/fd, which
+    /// needs /proc mounted.
     std::error_code canonical(buffer_ref out) const;
 
     /// Cuts the file short at `size` bytes, or extends it there with zeros;

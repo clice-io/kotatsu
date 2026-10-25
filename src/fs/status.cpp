@@ -1,5 +1,6 @@
 #include "kota/fs/status.h"
 
+#include <cassert>
 #include <string>
 
 #ifdef _WIN32
@@ -36,20 +37,16 @@ std::expected<Status, std::error_code> win32::handle_status(HANDLE handle) {
        !::GetFileInformationByHandleEx(handle, FileStandardInfo, &standard, sizeof(standard))) {
         return std::unexpected(windows::last_error());
     }
-    DWORD tag = 0;
-    if(basic.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-        FILE_ATTRIBUTE_TAG_INFO info;
-        if(!::GetFileInformationByHandleEx(handle, FileAttributeTagInfo, &info, sizeof(info))) {
-            return std::unexpected(windows::last_error());
-        }
-        tag = info.ReparseTag;
+    auto tag = win32::reparse_tag(handle, basic.FileAttributes);
+    if(!tag) {
+        return std::unexpected(tag.error());
     }
     auto id = win32::file_id(handle);
     if(!id) {
         return std::unexpected(id.error());
     }
     return Status{
-        .type = win32::type_of(basic.FileAttributes, tag),
+        .type = win32::type_of(basic.FileAttributes, *tag),
         .size = static_cast<std::uint64_t>(standard.EndOfFile.QuadPart),
         .mtime = win32::unix_time(basic.LastWriteTime.QuadPart),
         .ctime = win32::unix_time(basic.ChangeTime.QuadPart),
@@ -211,19 +208,23 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
     if(auto error = c_path.assign(path)) {
         return std::unexpected(error);
     }
+    // Through a trailing separator the system follows a symlink the path
+    // ends in, lstat() too: a symlink to a directory stays itself, as Windows
+    // takes a junction's name with one.
+    auto link = posix::without_trailing_separators(path);
+    bool trailing = link != path;
     struct stat info;
-    // A symlink the path ends in stays itself behind a separator, through
-    // which the system would follow it, as Windows does.
-    if(auto link = posix::without_trailing_separators(path); !follow && link != path) {
+    if((follow || trailing ? ::stat(c_path.c_str(), &info) : ::lstat(c_path.c_str(), &info)) != 0) {
+        return std::unexpected(posix::last_error());
+    }
+    if(!follow && trailing && S_ISDIR(info.st_mode)) {
         // No NUL in it, as there was none in `path`.
         posix::CPath c_link;
         [[maybe_unused]] auto checked = c_link.assign(link);
-        if(::lstat(c_link.c_str(), &info) == 0 && S_ISLNK(info.st_mode)) {
-            return posix::make_status(info);
+        struct stat itself;
+        if(::lstat(c_link.c_str(), &itself) == 0 && S_ISLNK(itself.st_mode)) {
+            return posix::make_status(itself);
         }
-    }
-    if((follow ? ::stat(c_path.c_str(), &info) : ::lstat(c_path.c_str(), &info)) != 0) {
-        return std::unexpected(posix::last_error());
     }
     return posix::make_status(info);
 }
@@ -242,16 +243,21 @@ std::expected<Status, std::error_code> symlink_status(std::string_view path) {
 
 std::expected<bool, std::error_code> exists(std::string_view path) {
 #ifdef _WIN32
-    // The attributes by name, which open nothing before Windows 11 24H2 as
-    // status() would: a link to follow, or a file they do not reach, takes a
-    // status after all.
+    // GetFileAttributesW opens nothing, where status() opens the file before
+    // Windows 11 24H2: only a link to follow, or a file the attributes do not
+    // reach, takes a status.
     win32::WidePath native;
     if(auto error = windows::to_native(native, path)) {
         return std::unexpected(error);
     }
-    auto attributes = ::GetFileAttributesW(native.c_str());
-    if(attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-        return true;
+    if(auto attributes = ::GetFileAttributesW(native.c_str());
+       attributes != INVALID_FILE_ATTRIBUTES) {
+        if(!(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            return true;
+        }
+    } else if(auto error = windows::last_error(); error == std::errc::no_such_file_or_directory ||
+                                                  error == std::errc::not_a_directory) {
+        return false;
     }
 #endif
     auto found = status(path);
@@ -284,8 +290,9 @@ std::error_code set_times(std::string_view path, const FileTimes& times) {
 #ifdef _WIN32
     // Every time nanoseconds since 1970 hold lies after 1601, FILETIME's
     // start, which SetFileTime would take for leaving a time as it is.
-    auto file_time = [](const std::optional<std::chrono::sys_time<std::chrono::nanoseconds>>& time,
-                        FILETIME& out) -> FILETIME* {
+    auto file_time_of =
+        [](const std::optional<std::chrono::sys_time<std::chrono::nanoseconds>>& time,
+           FILETIME& out) -> FILETIME* {
         if(!time) {
             return nullptr;
         }
@@ -304,8 +311,8 @@ std::error_code set_times(std::string_view path, const FileTimes& times) {
     FILETIME modified;
     if(!::SetFileTime(handle->get(),
                       nullptr,
-                      file_time(times.accessed, accessed),
-                      file_time(times.modified, modified))) {
+                      file_time_of(times.atime, accessed),
+                      file_time_of(times.mtime, modified))) {
         return windows::last_error();
     }
     return {};
@@ -323,7 +330,7 @@ std::error_code set_times(std::string_view path, const FileTimes& times) {
     if(auto error = c_path.assign(path)) {
         return error;
     }
-    timespec specs[2] = {spec_of(times.accessed), spec_of(times.modified)};
+    timespec specs[2] = {spec_of(times.atime), spec_of(times.mtime)};
     if(::utimensat(AT_FDCWD, c_path.c_str(), specs, 0) != 0) {
         return posix::last_error();
     }
@@ -332,6 +339,7 @@ std::error_code set_times(std::string_view path, const FileTimes& times) {
 }
 
 std::error_code set_permissions(std::string_view path, std::uint16_t permissions) {
+    assert(permissions <= 07777);
 #ifdef _WIN32
     auto handle = win32::open(path, FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES);
     if(!handle) {
@@ -352,7 +360,7 @@ std::error_code set_permissions(std::string_view path, std::uint16_t permissions
     if(auto error = c_path.assign(path)) {
         return error;
     }
-    if(::chmod(c_path.c_str(), static_cast<mode_t>(permissions & 07777)) != 0) {
+    if(::chmod(c_path.c_str(), static_cast<mode_t>(permissions)) != 0) {
         return posix::last_error();
     }
     return {};

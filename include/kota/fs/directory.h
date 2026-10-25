@@ -3,44 +3,123 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <limits>
+#include <iterator>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <vector>
+#include <utility>
 
 #include "kota/support/buffer_ref.h"
 #include "kota/fs/status.h"
 
 namespace kota::fs {
 
-/// An entry of a directory: its name, and its type with a link not
-/// followed.
+namespace detail {
+
+/// A directory open for listing, which the DirStream that reads it shares
+/// with the entries it gave, as they ask for their statuses.
+struct OpenDirectory;
+
+}  // namespace detail
+
+/// An entry of a directory.
 struct DirEntry {
     std::string name;
+
+    /// Its type, a link not followed.
     FileType type = FileType::Unknown;
+
+    /// Its status, as symlink_status() gives it. On Windows the listing
+    /// holds it, as it was when listed, so that a large directory costs about
+    /// what a few statuses do, but no link count; elsewhere the system is
+    /// asked, through the directory, which stays open while an entry of it
+    /// lives.
+    std::expected<Status, std::error_code> status() const;
+
+private:
+    friend class DirStream;
+
+    std::shared_ptr<detail::OpenDirectory> directory;
+
+#ifdef _WIN32
+    /// What the listing told of the status: all of it, or on a file system
+    /// that lists no IDs (FAT) all but the ID and links, which `status()`
+    /// then opens the entry for.
+    Status listed;
+    bool whole = false;
+#endif
 };
 
 /// The entries of a directory, `.` and `..` left out, in the order the
-/// system lists them.
-std::expected<std::vector<DirEntry>, std::error_code> read_dir(std::string_view dir);
+/// system lists them, each read when it is asked for: a range to go through
+/// once, of entries, or of the error that ends it. Taking part of it
+/// (std::views::take) leaves the rest unread.
+class DirStream {
+public:
+    class iterator {
+    public:
+        using value_type = std::expected<DirEntry, std::error_code>;
+        using difference_type = std::ptrdiff_t;
+        using iterator_concept = std::input_iterator_tag;
 
-/// An entry of a directory with its status, a link not followed.
-struct StatusEntry {
-    std::string name;
-    Status status;
+        const value_type& operator*() const {
+            return stream->current;
+        }
+
+        iterator& operator++() {
+            stream->advance();
+            return *this;
+        }
+
+        void operator++(int) {
+            ++*this;
+        }
+
+        friend bool operator==(const iterator& at, std::default_sentinel_t) {
+            return at.stream->done;
+        }
+
+    private:
+        friend class DirStream;
+
+        explicit iterator(DirStream* stream) : stream(stream) {}
+
+        DirStream* stream;
+    };
+
+    DirStream(DirStream&& other) noexcept = default;
+
+    DirStream& operator=(DirStream&& other) noexcept = default;
+
+    /// Where the stream stands, its first entry read the first time.
+    iterator begin();
+
+    std::default_sentinel_t end() const {
+        return {};
+    }
+
+private:
+    friend std::expected<DirStream, std::error_code> read_dir(std::string_view dir);
+
+    explicit DirStream(std::shared_ptr<detail::OpenDirectory> directory) :
+        directory(std::move(directory)) {}
+
+    /// Reads the next entry into `current`, or after an error, or at the
+    /// end, ends the stream.
+    void advance();
+
+    std::shared_ptr<detail::OpenDirectory> directory;
+
+    std::expected<DirEntry, std::error_code> current;
+
+    bool started = false;
+
+    bool done = false;
 };
 
-/// The entries of a directory with their statuses, as symlink_status()
-/// would give them. On Windows the listing itself holds them, so a large
-/// directory costs about what a few statuses do; it tells no link counts.
-///
-/// At most `limit` entries: the listing stops there, and the rest goes
-/// unread. A caller that gives up on a directory past some size asks for
-/// one entry more, to see whether it is.
-std::expected<std::vector<StatusEntry>, std::error_code>
-    read_dir_status(std::string_view dir,
-                    std::size_t limit = std::numeric_limits<std::size_t>::max());
+/// Opens the directory `dir` to list its entries.
+std::expected<DirStream, std::error_code> read_dir(std::string_view dir);
 
 /// Creates the directory `path`: true when it made it, false when a
 /// directory was there already.

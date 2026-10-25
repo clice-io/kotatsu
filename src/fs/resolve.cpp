@@ -74,8 +74,9 @@ std::error_code absolute(buffer_ref out, std::string_view path) {
     if(auto error = win32::widen(wide, path)) {
         return error;
     }
-    // A verbatim path is absolute as it is: Win32 would fold its `..` and
-    // drop the trailing dots and spaces its names keep.
+    // A verbatim path is absolute already, and its names are as the file
+    // system takes them: Win32 would fold its `..` and drop the trailing
+    // dots and spaces they keep.
     if(path.starts_with(R"(\\?\)")) {
         windows::from_native(out, std::wstring_view(wide.data(), wide.size()));
         return {};

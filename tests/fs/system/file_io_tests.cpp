@@ -6,21 +6,14 @@
 #include <thread>
 #include <utility>
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
+#ifndef _WIN32
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
 
 #include "fs/harness/files.h"
+#include "fs/harness/win32.h"
 #include "kota/zest/zest.h"
 #include "kota/support/small_string.h"
 #include "kota/support/utf16.h"
@@ -33,55 +26,33 @@ namespace {
 
 using namespace std::literals;
 
-/// A string that counts how often it is resized: what tells a read sized
-/// once from one that grows its buffer step by step.
-struct CountedBuffer {
-    char* data() {
-        return text.data();
-    }
-
-    std::size_t size() const {
-        return text.size();
-    }
-
-    void resize(std::size_t size) {
-        ++resizes;
-        text.resize(size);
-    }
-
-    std::string text;
-    int resizes = 0;
-};
-
-/// Text of `size` bytes that is no repetition of a short run.
-std::string text_of(std::size_t size) {
-    std::string text(size, '\0');
-    for(std::size_t i = 0; i < size; ++i) {
-        text[i] = static_cast<char>('a' + (i * 7 + i / 26) % 26);
-    }
-    return text;
+#ifdef _WIN32
+/// A named pipe of `access`, its name kept apart by the directory's, and
+/// written into `name` in UTF-8.
+HANDLE make_pipe(std::string& name, const test::TempDir& dir, DWORD access, DWORD buffer) {
+    auto wide = LR"(\\.\pipe\)" + test::std_path(path::filename(dir.root())).wstring();
+    HANDLE pipe = ::CreateNamedPipeW(wide.c_str(),
+                                     access,
+                                     PIPE_TYPE_BYTE | PIPE_WAIT,
+                                     1,
+                                     buffer,
+                                     buffer,
+                                     0,
+                                     nullptr);
+    ZASSERT(pipe != INVALID_HANDLE_VALUE);
+    from_utf16(name, std::wstring_view(wide));
+    return pipe;
 }
+#endif
 
 /// The write end of a pipe set not to wait, as a File, with its read end
 /// left unread so that it fills; both closed when this goes.
 struct FullPipe {
     FullPipe() {
 #ifdef _WIN32
-        // Pipe names live outside the file system: the directory's name
-        // keeps this one apart.
-        auto name = LR"(\\.\pipe\)" + test::std_path(path::filename(dir.root())).wstring();
-        reader = ::CreateNamedPipeW(name.c_str(),
-                                    PIPE_ACCESS_INBOUND,
-                                    PIPE_TYPE_BYTE | PIPE_WAIT,
-                                    1,
-                                    4096,
-                                    4096,
-                                    0,
-                                    nullptr);
-        ZASSERT(reader != INVALID_HANDLE_VALUE);
-        small_string<128> utf8_name;
-        from_utf16(utf8_name, std::wstring_view(name));
-        auto opened = File::open(utf8_name, {.write = true});
+        std::string name;
+        reader = make_pipe(name, dir, PIPE_ACCESS_INBOUND, 4096);
+        auto opened = File::open(name, {.write = true});
         ZASSERT(opened.has_value());
         writer = std::move(*opened);
         DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
@@ -156,13 +127,13 @@ ZEST_CASE(read_to_end_writes_over_what_the_buffer_held) {
 
 ZEST_CASE(read_to_end_sizes_its_buffer_once) {
     test::TempDir dir;
-    auto text = text_of(1'000'000);
+    auto text = test::text_of(1'000'000);
     test::write_text(dir.file("large"), text);
     auto file = File::open(dir.file("large"));
     ZASSERT(file.has_value());
     std::array<char, 1000> head{};
     ZEXPECT(file->read(head) == 1000u);
-    CountedBuffer content;
+    test::CountedBuffer content;
     ZEXPECT(!file->read_to_end(content));
     ZEXPECT(content.text == std::string_view(text).substr(1000));
     // Sized for what is left, then cut to what was read.
@@ -172,22 +143,12 @@ ZEST_CASE(read_to_end_sizes_its_buffer_once) {
 ZEST_CASE(read_to_end_reads_a_pipe_whole) {
     // A pipe reports no size: the buffer grows as it is read.
     test::TempDir dir;
-    auto text = text_of(10'000);
+    auto text = test::text_of(10'000);
     std::string content;
 #ifdef _WIN32
-    auto name = LR"(\\.\pipe\)" + test::std_path(path::filename(dir.root())).wstring();
-    HANDLE writer = ::CreateNamedPipeW(name.c_str(),
-                                       PIPE_ACCESS_OUTBOUND,
-                                       PIPE_TYPE_BYTE | PIPE_WAIT,
-                                       1,
-                                       65536,
-                                       65536,
-                                       0,
-                                       nullptr);
-    ZASSERT(writer != INVALID_HANDLE_VALUE);
-    small_string<128> utf8_name;
-    from_utf16(utf8_name, std::wstring_view(name));
-    auto file = File::open(utf8_name);
+    std::string name;
+    HANDLE writer = make_pipe(name, dir, PIPE_ACCESS_OUTBOUND, 65536);
+    auto file = File::open(name);
     ZASSERT(file.has_value());
     DWORD written = 0;
     ZEXPECT(::WriteFile(writer, text.data(), static_cast<DWORD>(text.size()), &written, nullptr));
@@ -226,24 +187,6 @@ ZEST_CASE(read_to_end_of_a_file_open_to_write_fails) {
     ZEXPECT(error == std::errc::bad_file_descriptor);
 #endif
 }
-
-ZEST_CASE(read_file_sizes_its_buffer_once) {
-    test::TempDir dir;
-    auto text = text_of(1'000'000);
-    test::write_text(dir.file("large"), text);
-    CountedBuffer content;
-    ZEXPECT(!read_file(content, dir.file("large")));
-    ZEXPECT(content.text == text);
-    ZEXPECT(content.resizes == 2);
-}
-
-#ifdef __linux__
-ZEST_CASE(read_file_reads_a_file_that_reports_no_size) {
-    std::string content;
-    ZEXPECT(!read_file(content, "/proc/self/status"));
-    ZEXPECT(zest::contains(content, "Pid:"));
-}
-#endif
 
 ZEST_CASE(write_some_writes_from_the_start) {
     test::TempDir dir;

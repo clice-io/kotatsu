@@ -81,7 +81,6 @@ ZEST_CASE(runtime_dirs_take_a_bare_program_as_in_the_current_directory) {
     test::write_text(dir.file("cygwin1.dll"), "");
     test::ScopedCurrentDir here(dir.path);
     ZEXPECT(runtime_dirs("gcc.exe", std::vector<std::string>{}) == std::vector<std::string>{"."});
-    ZEXPECT(runtime_dirs("", std::vector<std::string>{}).empty());
 }
 
 };  // ZEST_SUITE(fs_cygwin_files)

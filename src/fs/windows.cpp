@@ -237,6 +237,17 @@ bool set_attributes(HANDLE handle, DWORD attributes) {
     return ::SetFileInformationByHandle(handle, FileBasicInfo, &changed, sizeof(changed));
 }
 
+std::expected<DWORD, std::error_code> reparse_tag(HANDLE handle, DWORD attributes) {
+    if(!(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+        return 0;
+    }
+    FILE_ATTRIBUTE_TAG_INFO info;
+    if(!::GetFileInformationByHandleEx(handle, FileAttributeTagInfo, &info, sizeof(info))) {
+        return std::unexpected(windows::last_error());
+    }
+    return info.ReparseTag;
+}
+
 std::expected<FileID, std::error_code> file_id(HANDLE handle) {
     FILE_ID_INFO id;
     if(::GetFileInformationByHandleEx(handle, FileIdInfo, &id, sizeof(id))) {

@@ -33,11 +33,10 @@ void weakly_canonical(buffer_ref out, std::string_view path);
 /// Writes into `out` `path` made absolute against the current directory,
 /// symlinks left alone. On Windows by Win32's own rules, which fold `.` and
 /// `..`, take a rooted `\x` and a drive-relative `C:x` on their drive, and
-/// remove trailing dots and spaces, but leave a verbatim path (`\\?\`) as
-/// it is; on POSIX joined to the current directory
-/// with `.` and doubled separators folded, but `..` kept, which a symlink
-/// before it would make name another directory. Fails with
-/// std::errc::invalid_argument on an empty path.
+/// remove trailing dots and spaces, but leave the names of a verbatim path
+/// (`\\?\`) as they are, the prefix dropped as from_native() drops it; on POSIX joined to the
+/// current directory with `.` and doubled separators folded, but `..` kept, which a symlink before
+/// it would make name another directory. Fails with std::errc::invalid_argument on an empty path.
 std::error_code absolute(buffer_ref out, std::string_view path);
 
 /// Writes into `out` the current directory, as the OS reports it.

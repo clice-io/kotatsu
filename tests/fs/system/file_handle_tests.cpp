@@ -18,6 +18,7 @@
 #include "kota/zest/zest.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/file.h"
+#include "kota/fs/path.h"
 #include "kota/fs/resolve.h"
 #include "kota/fs/status.h"
 
@@ -440,6 +441,42 @@ ZEST_CASE(canonical_of_a_removed_file_fails) {
     ZEXPECT(file->canonical(opened) == std::errc::no_such_file_or_directory);
 }
 
+ZEST_CASE(canonical_of_a_file_whose_name_went_gives_another_or_fails) {
+    // Another hard link still names the file, which the system may give.
+    test::TempDir dir;
+    test::write_text(dir.file("a.txt"), "text");
+    ZEXPECT(!create_hard_link(dir.file("a.txt"), dir.file("b.txt")));
+    auto file = File::open(dir.file("a.txt"));
+    ZASSERT(file.has_value());
+    ZEXPECT(remove(dir.file("a.txt")) == true);
+    std::string opened;
+    auto error = file->canonical(opened);
+    std::string other;
+    ZASSERT(!fs::canonical(other, dir.file("b.txt")));
+    ZEST_CONTEXT("{}", opened);
+    if(error) {
+        ZEXPECT(error == std::errc::no_such_file_or_directory);
+    } else {
+        ZEXPECT(opened == other);
+    }
+#ifdef __linux__
+    // Linux keeps the name that went, marked " (deleted)".
+    ZEXPECT(error == std::errc::no_such_file_or_directory);
+#endif
+}
+
+#ifdef _WIN32
+ZEST_CASE(canonical_spells_the_open_file_as_on_disk) {
+    test::TempDir dir;
+    test::write_text(dir.file("MixedCase.txt"), "text");
+    auto file = File::open(dir.file("mixedcase.TXT"));
+    ZASSERT(file.has_value());
+    std::string opened;
+    ZEXPECT(!file->canonical(opened));
+    ZEXPECT(path::filename(opened) == "MixedCase.txt");
+}
+#endif
+
 ZEST_CASE(canonical_of_a_closed_file_fails) {
     File file;
     std::string opened;
@@ -463,6 +500,49 @@ ZEST_CASE(into_descriptor_hands_the_file_to_the_c_runtime) {
     ZEXPECT(::close(*fd) == 0);
 #endif
     ZEXPECT(test::read_text(dir.file("file")) == "hello world");
+}
+
+ZEST_CASE(into_descriptor_writes_bytes_as_they_are) {
+    // Binary mode: a C runtime in text mode would write "\r\n".
+    test::TempDir dir;
+    auto file = File::open(dir.file("file"), {.write = true, .create = true});
+    ZASSERT(file.has_value());
+    auto fd = std::move(*file).into_descriptor();
+    ZASSERT(fd.has_value());
+#ifdef _WIN32
+    ZEXPECT(::_write(*fd, "a\nb", 3) == 3);
+    ZEXPECT(::_close(*fd) == 0);
+#else
+    ZEXPECT(::write(*fd, "a\nb", 3) == 3);
+    ZEXPECT(::close(*fd) == 0);
+#endif
+    ZEXPECT(test::read_text(dir.file("file")) == "a\nb");
+}
+
+ZEST_CASE(into_descriptor_keeps_the_lock) {
+    test::TempDir dir;
+    test::write_text(dir.file("lock"), "text");
+    auto first = File::open(dir.file("lock"), {.read = true, .write = true});
+    auto second = File::open(dir.file("lock"), {.read = true, .write = true});
+    ZASSERT(first.has_value());
+    ZASSERT(second.has_value());
+    ZEXPECT(!first->lock());
+    auto fd = std::move(*first).into_descriptor();
+    ZASSERT(fd.has_value());
+    ZEXPECT(second->try_lock() == false);
+#ifdef _WIN32
+    ZEXPECT(::_close(*fd) == 0);
+#else
+    ZEXPECT(::close(*fd) == 0);
+#endif
+    ZEXPECT(second->try_lock() == true);
+}
+
+ZEST_CASE(into_descriptor_of_a_closed_file_fails) {
+    File file;
+    auto fd = std::move(file).into_descriptor();
+    ZASSERT(!fd.has_value());
+    ZEXPECT(fd.error() == std::errc::bad_file_descriptor);
 }
 
 };  // ZEST_SUITE(fs_file_handle)

@@ -97,7 +97,7 @@ std::vector<std::string> runtime_dirs(std::string_view program, string_list_ref 
     };
     // A program named without a directory is in the current one.
     auto own = path::parent(program);
-    add(own.empty() && !program.empty() ? "." : own);
+    add(own.empty() ? "." : own);
     for(auto dir: search_path) {
         add(dir);
     }
