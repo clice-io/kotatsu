@@ -89,7 +89,10 @@ std::error_code count_thread_switches(ProcessStats& stats, int pid) {
         return process_error(threads.error());
     }
     for(const auto& thread: *threads) {
-        small_string<64> path{dir, "/", thread.name, "/status"};
+        if(!thread) {
+            return process_error(thread.error());
+        }
+        small_string<64> path{dir, "/", thread->name, "/status"};
         ProcText status;
         // A thread may end before it is read.
         if(fs::read_file(status, path)) {
