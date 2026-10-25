@@ -20,7 +20,6 @@
 #include "kota/sys/spawn.h"
 
 #ifdef __APPLE__
-#include <crt_externs.h>
 #include <mutex>
 #include <spawn.h>
 #include <sys/event.h>
@@ -151,11 +150,15 @@ struct ChildSetup {
     bool exit_with_parent;
     pid_t parent;
     int error_fd;
+    /// SIGRTMIN and SIGRTMAX, which glibc reads through calls of its own.
+    int rtmin;
+    int rtmax;
 
     [[noreturn]] void run() {
         // Handlers mean nothing to another program, and an ignored signal
-        // stays ignored across exec. Past 31 are glibc's own.
-        for(int signum = 1; signum < 32; ++signum) {
+        // stays ignored across exec. Those between 31 and SIGRTMIN are
+        // glibc's own.
+        for(int signum = 1; signum <= rtmax; signum = signum == 31 ? rtmin : signum + 1) {
             if(signum != SIGKILL && signum != SIGSTOP && ::signal(signum, SIG_DFL) == SIG_ERR) {
                 fail_in_child(error_fd);
             }
@@ -368,10 +371,20 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         return std::unexpected(std::make_error_code(std::errc::not_supported));
     }
 #endif
+    // A copy of this process's own too: setenv in another thread may move
+    // its array while the child is made.
     auto environment = child_environment(options);
+    if(!environment) {
+        environment = sys::environment();
+    }
     auto program = child_program(options, environment);
     if(!program) {
         return std::unexpected(program.error());
+    }
+    for(const auto& stream: options.streams) {
+        if(stream.kind == Stdio::Kind::Pipe && !stream.readable && !stream.writable) {
+            return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        }
     }
 
     // What the child gets, laid out before it starts.
@@ -389,20 +402,16 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     shell_argv.insert(shell_argv.end(), argv.begin() + 1, argv.end());
     std::vector<std::string> variables;
     std::vector<char*> envp;
-    if(environment) {
-        for(const auto& [name, value]: *environment) {
-            variables.push_back(std::format("{}={}", name, value));
-        }
-        for(auto& variable: variables) {
-            envp.push_back(variable.data());
-        }
-        envp.push_back(nullptr);
+    for(const auto& [name, value]: *environment) {
+        variables.push_back(std::format("{}={}", name, value));
     }
+    for(auto& variable: variables) {
+        envp.push_back(variable.data());
+    }
+    envp.push_back(nullptr);
+    char* const* child_envp = envp.data();
 #ifdef __APPLE__
-    char* const* child_envp = environment ? envp.data() : *::_NSGetEnviron();
     std::lock_guard lock(spawning);
-#else
-    char* const* child_envp = environment ? envp.data() : environ;
 #endif
 
     Child child;
@@ -535,6 +544,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         .exit_with_parent = creation.exit_with_parent,
         .parent = ::getpid(),
         .error_fd = (*report)[1].fd,
+        .rtmin = SIGRTMIN,
+        .rtmax = SIGRTMAX,
     };
     // A signal arriving before the child has reset its handlers would run
     // this process's in it: they wait until it has. A crash still ends it.

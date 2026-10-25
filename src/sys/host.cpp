@@ -82,6 +82,7 @@ std::expected<Priority, std::error_code> priority(int pid) {
         return std::unexpected(process.error());
     }
     switch(::GetPriorityClass(process->handle)) {
+        case 0: return std::unexpected(fs::windows::last_error());
         case IDLE_PRIORITY_CLASS: return Priority::Idle;
         case BELOW_NORMAL_PRIORITY_CLASS: return Priority::BelowNormal;
         case ABOVE_NORMAL_PRIORITY_CLASS: return Priority::AboveNormal;
@@ -106,6 +107,10 @@ std::expected<Priority, std::error_code> priority(int pid) {
 }
 
 std::error_code set_priority(Priority priority, int pid) {
+    // One cast from a number that names none.
+    if(static_cast<std::size_t>(priority) > static_cast<std::size_t>(Priority::Realtime)) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
 #ifdef _WIN32
     constexpr DWORD classes[] = {
         IDLE_PRIORITY_CLASS,

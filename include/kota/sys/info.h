@@ -161,7 +161,7 @@ std::expected<Priority, std::error_code> priority(int pid = 0);
 
 /// Sets it. Raising it takes privileges on POSIX. On Linux only the main
 /// thread's, or for 0 the calling thread's, changes; threads started after
-/// inherit it.
+/// inherit it. invalid_argument for a value Priority does not name.
 std::error_code set_priority(Priority priority, int pid = 0);
 
 }  // namespace kota::sys

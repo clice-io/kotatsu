@@ -298,6 +298,11 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     if(options.windows_command_line.empty() && is_batch_file(*program)) {
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
+    for(const auto& stream: options.streams) {
+        if(stream.kind == Stdio::Kind::Pipe && !stream.readable && !stream.writable) {
+            return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        }
+    }
 
     auto application = to_utf16<wchar_t>(*program);
     if(!application) {
@@ -493,17 +498,27 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     Handle process(created.hProcess);
     Handle thread(created.hThread);
     if(options.windows_before_start) {
+        // Ended unless it runs: a hook's error, or its exception, leaves no
+        // child suspended for good.
+        struct Suspended {
+            HANDLE process;
+            bool resumed = false;
+
+            ~Suspended() {
+                if(!resumed) {
+                    ::TerminateProcess(process, 1);
+                    ::WaitForSingleObject(process, INFINITE);
+                }
+            }
+        } suspended{process.handle};
+
         if(auto error = options.windows_before_start(process.handle, thread.handle)) {
-            ::TerminateProcess(process.handle, 1);
-            ::WaitForSingleObject(process.handle, INFINITE);
             return std::unexpected(error);
         }
         if(::ResumeThread(thread.handle) == static_cast<DWORD>(-1)) {
-            auto error = fs::windows::last_error();
-            ::TerminateProcess(process.handle, 1);
-            ::WaitForSingleObject(process.handle, INFINITE);
-            return std::unexpected(error);
+            return std::unexpected(fs::windows::last_error());
         }
+        suspended.resumed = true;
     }
     child.id = static_cast<int>(created.dwProcessId);
     child.handle = process.release();

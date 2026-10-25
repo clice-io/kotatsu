@@ -63,7 +63,7 @@ struct Stdio {
         return {.kind = Kind::File, .file = file.native_handle()};
     }
 
-    /// Flags from the child's side.
+    /// Flags from the child's side, one of them at least.
     static Stdio pipe(bool readable, bool writable) {
         return {.kind = Kind::Pipe, .readable = readable, .writable = writable};
     }
@@ -259,7 +259,9 @@ public:
 
     /// Sends signal `signum` to the group it leads (killpg), or on Windows
     /// ends its job (TerminateJobObject, which returns before they are all
-    /// gone); after it has exited too, while the group has members.
+    /// gone); after it has exited too, while the group has members. On POSIX
+    /// the ID of a group left empty may be another's once the child is
+    /// reaped: kill_tree then is for a group known to have members.
     /// invalid_argument for a child started without process_group or
     /// detached; no_such_process for a group with no members left.
     std::error_code kill_tree(int signum);
@@ -313,8 +315,9 @@ private:
 /// own, nested in any this process is in, which ends it rather than show a
 /// dialog when it crashes. no_such_file_or_directory or permission_denied
 /// for a program not found, as find_program; invalid_argument for a
-/// negative descriptor, a closed file or a batch file without
-/// windows_command_line; bad_file_descriptor for a descriptor not open;
+/// negative descriptor, a closed file, a pipe the child neither reads nor
+/// writes or a batch file without windows_command_line;
+/// bad_file_descriptor for a descriptor not open;
 /// not_supported for exit_with_parent on macOS.
 std::expected<Child, std::error_code> spawn(const SpawnOptions& options);
 

@@ -65,8 +65,8 @@ public:
 
     /// Runs the child to its exit, and returns what it wrote: its stdin
     /// reads nothing, and its stdout and stderr are read while it runs,
-    /// whatever `opts` asks for them. A cancel kills the child, as kill()
-    /// does, or the group it leads, as kill_tree() does, and the task ends
+    /// whatever `opts` asks for them. A cancel kills the group the child
+    /// leads, as kill_tree() does, and the child, as kill() does, and the task ends
     /// once the child has exited: it leaves no child behind. The child must
     /// be one the caller may signal: a cancel that cannot kill it aborts the
     /// program.

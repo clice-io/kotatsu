@@ -393,6 +393,9 @@ struct process::Self::Watch {
             const bool orphaned = self->orphaned;
             forget(*self);
             if(orphaned) {
+                // One that exited is reaped still; one that runs is left to
+                // the system.
+                [[maybe_unused]] auto reaped = self->child.try_wait();
                 delete self;
             } else {
                 self->loop = nullptr;
@@ -504,6 +507,21 @@ result<pipe> open_pipe(fs::File::native_handle_type end, event_loop& loop) {
     return opened;
 }
 
+/// Kills `child` and the group it leads, if it leads one: on POSIX the child
+/// itself too, which may have left its group for another, where Windows's
+/// job holds it for good. The error when the child could not be killed; a
+/// child that exited counts as killed.
+std::error_code end_tree(sys::Child& child) noexcept {
+    auto killed = child.kill_tree();
+#ifdef _WIN32
+    if(!killed) {
+        return {};
+    }
+#endif
+    killed = child.kill();
+    return killed == std::errc::no_such_process ? std::error_code() : killed;
+}
+
 }  // namespace
 
 /// Waits for the child, started that same turn, to exit; a cancel kills it,
@@ -522,15 +540,10 @@ struct process::Self::ExitWait : uv::uv_op<ExitWait> {
     }
 
     void cancel() noexcept {
-        // The group it leads, else the child alone, as for a group left
-        // empty by a child that moved to another. no_such_process then only
-        // means a child that exited, whose reaping completes this. A child
-        // the caller may not signal would keep the cancel waiting for good.
-        auto killed = self.child.kill_tree();
-        if(killed == std::errc::invalid_argument || killed == std::errc::no_such_process) {
-            killed = self.child.kill();
-        }
-        if(killed && killed != std::errc::no_such_process) {
+        // no_such_process only means a child that exited, whose reaping
+        // completes this. A child the caller may not signal would keep the
+        // cancel waiting for good.
+        if(end_tree(self.child)) {
             std::abort();
         }
     }
@@ -613,7 +626,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     // A child whose pipe cannot be had is ended, so that none is left
     // behind; it has not run much.
     auto abandon = [&](error failed) {
-        [[maybe_unused]] auto killed = child->kill();
+        [[maybe_unused]] auto killed = end_tree(*child);
         [[maybe_unused]] auto reaped = child->wait();
         return outcome_error(failed);
     };
@@ -631,7 +644,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
 
     detail::unique_handle<Self> self(new Self(std::move(*child), *loop.native_handle()));
     if(auto failed = Self::Watch::of(loop).add(*self)) {
-        [[maybe_unused]] auto killed = self->child.kill();
+        [[maybe_unused]] auto killed = end_tree(self->child);
         [[maybe_unused]] auto reaped = self->child.wait();
         return outcome_error(failed);
     }

@@ -145,6 +145,10 @@ ZEST_CASE(priority_is_read) {
     ZEXPECT(priority() == *read);
 }
 
+ZEST_CASE(set_priority_of_a_value_no_priority_names_fails) {
+    ZEXPECT(set_priority(static_cast<Priority>(6)) == std::errc::invalid_argument);
+}
+
 ZEST_CASE(priority_of_a_missing_pid_fails) {
     auto read = priority(missing_pid);
     ZASSERT(!read.has_value());

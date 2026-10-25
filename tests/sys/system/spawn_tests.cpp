@@ -1,3 +1,4 @@
+#include <chrono>
 #include <csignal>
 #include <expected>
 #include <filesystem>
@@ -6,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -275,6 +277,14 @@ ZEST_CASE(spawn_in_a_missing_directory_fails) {
     ZEXPECT(child.error() == std::errc::no_such_file_or_directory);
 }
 
+ZEST_CASE(spawn_with_a_pipe_of_no_direction_fails) {
+    auto options = shell("exit 0");
+    options.streams[0] = Stdio::pipe(false, false);
+    auto child = spawn(options);
+    ZASSERT(!child.has_value());
+    ZEXPECT(child.error() == std::errc::invalid_argument);
+}
+
 ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
     auto options = shell("exit 0");
     options.streams[1] = Stdio::from_fd(-1);
@@ -444,12 +454,18 @@ ZEST_CASE(kill_tree_reaches_the_group_after_its_leader_exited) {
     test::close_end(end);
 }
 
+// The console host Windows starts for a console child may stay in its job
+// a moment after the child: signal 0 tells when the group is empty.
 ZEST_CASE(kill_tree_of_an_empty_group_fails) {
     auto options = shell("exit 0");
     options.creation.process_group = true;
     auto child = spawn(options);
     ZASSERT(child.has_value());
     ZEXPECT(child->wait().has_value());
+    for(int tries = 0; tries < 1000 && !child->kill_tree(0); ++tries) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ZEXPECT(child->kill_tree(0) == std::errc::no_such_process);
     ZEXPECT(child->kill_tree() == std::errc::no_such_process);
 }
 
