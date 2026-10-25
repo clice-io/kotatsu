@@ -9,9 +9,11 @@
 //   file was removed or replaced, and a copy of it started through
 //   self_executable after the file was renamed, and on Linux removed or
 //   replaced;
-// - another process's priority, set and read back, and its memory;
+// - another process's priority, set and read back, and its memory; on Linux
+//   the switches of all its threads;
 // - on Linux and macOS the title it sets is what ps shows, and its own
-//   arguments read the same after;
+//   arguments read the same after; on Linux an empty one leaves the name top
+//   shows;
 // - on Windows what write_console writes to a console, and the limits of a
 //   job it joins.
 
@@ -26,7 +28,7 @@ import {
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { test, type TestContext } from "node:test";
 
 import { Driver, driverPath } from "../../harness/driver.ts";
@@ -215,6 +217,32 @@ test("priority_of_another_process_is_set_and_read", async (t) => {
 });
 
 test(
+  "switches_of_another_process_count_every_thread",
+  {
+    skip:
+      process.platform !== "linux" &&
+      "only Linux tells another process's switches",
+  },
+  async (t) => {
+    const switching = await Driver.spawn(t, "sys_probe", ["switching"]);
+    const { switches } = (await switching.jsonLines().receive()) as {
+      switches: number;
+    };
+    const other = await Driver.spawn(t, "sys_probe", [
+      "other",
+      String(switching.pid),
+    ]);
+    const output = (await printed(other)) as { switches: number };
+    await other.expectExit(0);
+    switching.stdin.end();
+    await switching.expectExit(0);
+    // Each sleep of the thread, which is not the main one, gave the CPU up.
+    assert.ok(switches >= 500);
+    assert.ok(output.switches >= switches);
+  },
+);
+
+test(
   "title_is_what_ps_shows",
   { skip: process.platform === "win32" && "Windows has no process title" },
   async (t) => {
@@ -239,6 +267,25 @@ test(
       );
       assert.equal(command.trim(), title);
     }
+    driver.stdin.end();
+    await driver.expectExit(0);
+  },
+);
+
+test(
+  "title_that_is_empty_leaves_the_name",
+  {
+    skip:
+      process.platform !== "linux" && "only Linux has a name beside the title",
+  },
+  async (t) => {
+    const driver = await Driver.spawn(t, "sys_probe", ["title", "", "1"]);
+    await driver.jsonLines().receive();
+    const cmdline = readFileSync(`/proc/${driver.pid}/cmdline`, "latin1");
+    assert.equal(cmdline.replace(/\0+$/, ""), "");
+    // The name the kernel gave it from its executable's.
+    const comm = readFileSync(`/proc/${driver.pid}/comm`, "latin1");
+    assert.equal(comm, `${basename(driverPath("sys_probe")).slice(0, 15)}\n`);
     driver.stdin.end();
     await driver.expectExit(0);
   },

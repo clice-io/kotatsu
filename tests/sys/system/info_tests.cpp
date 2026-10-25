@@ -1,12 +1,30 @@
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <system_error>
+#include <thread>
 
-#ifdef __linux__
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach/mach.h>
+#include <pthread.h>
+#else
 #include <sched.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #endif
 
+#include "sys/harness/pids.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/sys/info.h"
@@ -16,9 +34,18 @@ namespace kota::sys {
 
 namespace {
 
-// A pid no process has: above the largest Linux allows (2^22) and macOS
-// uses, and not a multiple of four, which every Windows pid is.
-constexpr int missing_pid = 999'999'999;
+/// The calling thread's priority as the system keeps it: its priority within
+/// the process's class on Windows, its quality of service on macOS, its nice
+/// value on Linux.
+int thread_priority() {
+#ifdef _WIN32
+    return ::GetThreadPriority(::GetCurrentThread());
+#elif defined(__APPLE__)
+    return static_cast<int>(::qos_class_self());
+#else
+    return ::getpriority(PRIO_PROCESS, static_cast<id_t>(::syscall(SYS_gettid)));
+#endif
+}
 
 ZEST_SUITE(sys_info) {
 
@@ -44,10 +71,37 @@ ZEST_CASE(process_stats_describe_this_process) {
 }
 
 ZEST_CASE(process_stats_of_a_missing_pid_fails) {
-    auto stats = process_stats(missing_pid);
+    auto stats = process_stats(test::missing_pid);
     ZASSERT(!stats.has_value());
     ZEXPECT(stats.error() == std::errc::no_such_process);
 }
+
+#ifdef __linux__
+// Linux counts each thread's switches apart from the others'.
+ZEST_CASE(process_stats_count_the_switches_of_every_thread) {
+    auto before = process_stats();
+    ZASSERT(before.has_value());
+    long slept = 0;
+    std::thread([&] {
+        rusage start{};
+        ::getrusage(RUSAGE_THREAD, &start);
+        for(int i = 0; i < 1000; ++i) {
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+        rusage end{};
+        ::getrusage(RUSAGE_THREAD, &end);
+        slept = end.ru_nvcsw - start.ru_nvcsw;
+    }).join();
+    // Each sleep gave the CPU up; the thread has ended since.
+    ZASSERT(slept >= 500);
+    auto after = process_stats();
+    ZASSERT(after.has_value());
+    ZEXPECT(after->voluntary_switches - before->voluntary_switches >= std::uint64_t(slept));
+    auto by_pid = process_stats(pid());
+    ZASSERT(by_pid.has_value());
+    ZEXPECT(by_pid->voluntary_switches >= after->voluntary_switches);
+}
+#endif
 
 ZEST_CASE(resident_memory_is_reported) {
     auto resident = resident_memory();
@@ -62,6 +116,27 @@ ZEST_CASE(parallelism_is_at_most_the_cores) {
     ZEXPECT(parallelism() >= 1U);
     ZEXPECT(parallelism() <= cores->size());
 }
+
+#ifdef __APPLE__
+// Each mach_host_self() adds a reference to this task's send right to the
+// host port.
+ZEST_CASE(memory_and_cpu_cores_give_back_the_host_port) {
+    // This test's own reference keeps the right while it is counted.
+    auto host = ::mach_host_self();
+    mach_port_urefs_t before = 0;
+    ZASSERT(::mach_port_get_refs(::mach_task_self(), host, MACH_PORT_RIGHT_SEND, &before) ==
+            KERN_SUCCESS);
+    for(int i = 0; i < 100; ++i) {
+        ZASSERT(sys::memory().has_value());
+        ZASSERT(cpu_cores().has_value());
+    }
+    mach_port_urefs_t after = 0;
+    ZASSERT(::mach_port_get_refs(::mach_task_self(), host, MACH_PORT_RIGHT_SEND, &after) ==
+            KERN_SUCCESS);
+    ::mach_port_deallocate(::mach_task_self(), host);
+    ZEXPECT(after == before);
+}
+#endif
 
 ZEST_CASE(cpu_cores_have_run) {
     auto cores = cpu_cores();
@@ -151,10 +226,61 @@ ZEST_CASE(set_priority_of_a_value_no_priority_names_fails) {
 }
 
 ZEST_CASE(priority_of_a_missing_pid_fails) {
-    auto read = priority(missing_pid);
+    auto read = priority(test::missing_pid);
     ZASSERT(!read.has_value());
     ZEXPECT(read.error() == std::errc::no_such_process);
-    ZEXPECT(set_priority(Priority::Normal, missing_pid) == std::errc::no_such_process);
+    ZEXPECT(set_priority(Priority::Normal, test::missing_pid) == std::errc::no_such_process);
+}
+
+// Each on a thread of its own, which goes with what it set, the case's own
+// left as it was. Linux sets each priority's nice value as it is, and raising
+// a thread's takes privileges: there only those at or below the thread's own,
+// which a process started under `nice` may have lowered.
+ZEST_CASE(set_thread_priority_sets_the_calling_threads) {
+#ifdef _WIN32
+    constexpr int levels[] = {
+        THREAD_PRIORITY_IDLE,
+        THREAD_PRIORITY_BELOW_NORMAL,
+        THREAD_PRIORITY_NORMAL,
+        THREAD_PRIORITY_ABOVE_NORMAL,
+        THREAD_PRIORITY_HIGHEST,
+        THREAD_PRIORITY_TIME_CRITICAL,
+    };
+#elif defined(__APPLE__)
+    constexpr int levels[] = {
+        QOS_CLASS_BACKGROUND,
+        QOS_CLASS_UTILITY,
+        QOS_CLASS_DEFAULT,
+        QOS_CLASS_USER_INITIATED,
+        QOS_CLASS_USER_INTERACTIVE,
+        QOS_CLASS_USER_INTERACTIVE,
+    };
+#else
+    constexpr int levels[] = {19, 10, 0, -7, -14, -20};
+#endif
+    auto before = thread_priority();
+    for(int index = 0; index < 6; ++index) {
+        auto level = static_cast<Priority>(index);
+        ZEST_CONTEXT("priority {}", index);
+#if !defined(_WIN32) && !defined(__APPLE__)
+        if(levels[index] < before) {
+            continue;
+        }
+#endif
+        std::error_code error;
+        int set = 0;
+        std::thread([&] {
+            error = set_thread_priority(level);
+            set = thread_priority();
+        }).join();
+        ZEXPECT(!error);
+        ZEXPECT(set == levels[index]);
+    }
+    ZEXPECT(thread_priority() == before);
+}
+
+ZEST_CASE(set_thread_priority_of_a_value_no_priority_names_fails) {
+    ZEXPECT(set_thread_priority(static_cast<Priority>(6)) == std::errc::invalid_argument);
 }
 
 #ifdef _WIN32
@@ -218,10 +344,10 @@ ZEST_CASE(oom_score_adjustment_is_read_and_set) {
 }
 
 ZEST_CASE(oom_score_adjustment_of_a_missing_pid_fails) {
-    auto read = oom_score_adjustment(missing_pid);
+    auto read = oom_score_adjustment(test::missing_pid);
     ZASSERT(!read.has_value());
     ZEXPECT(read.error() == std::errc::no_such_process);
-    ZEXPECT(set_oom_score_adjustment(0, missing_pid) == std::errc::no_such_process);
+    ZEXPECT(set_oom_score_adjustment(0, test::missing_pid) == std::errc::no_such_process);
 }
 #else
 ZEST_CASE(oom_score_adjustment_off_linux_fails) {

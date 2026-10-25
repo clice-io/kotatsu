@@ -17,6 +17,12 @@ int pid() noexcept;
 /// process that started it, which may have exited and its ID gone to another.
 int parent_pid() noexcept;
 
+/// Whether process `pid` exists, one this process may not signal or open
+/// included: on POSIX a zombie too, which has exited and which its parent
+/// has not waited for. False for 0 and below. An ID may be another
+/// process's once its own has gone.
+bool process_alive(int pid) noexcept;
+
 /// Writes into `out` the absolute path of this program's executable, under
 /// the name its file has now: renamed since the program started, the new
 /// name; symbolic links resolved. Fails with no_such_file_or_directory once
@@ -43,10 +49,19 @@ const std::vector<std::string>& arguments();
 
 /// Sets the title `ps` shows for this process: the memory of its arguments
 /// is overwritten with `title`, cut to their length, and on Linux the name
-/// `top` shows, the first 15 bytes of it. not_supported on Windows, which
-/// has no such title (its console's is shared with the processes before
-/// this one). Not thread-safe against readers of main's argv.
+/// `top` shows, as set_process_name sets it, unless nothing of `title` is
+/// left for it, as of an empty one.
+/// not_supported on Windows, which has no such title (its console's is
+/// shared with the processes before this one). Not thread-safe against
+/// readers of main's argv.
 std::error_code set_process_title(std::string_view title);
+
+/// Sets the name `top` and `pgrep` show for this process, leaving its
+/// arguments as they are: on Linux the name of its main thread, the first 15
+/// bytes of `name`, cut back to a character's start. invalid_argument when
+/// that leaves nothing, as of an empty `name`. not_supported on macOS and
+/// Windows.
+std::error_code set_process_name(std::string_view name);
 
 /// Where find_program looks for a program.
 struct ProgramSearch {
@@ -73,7 +88,10 @@ struct ProgramSearch {
 /// target has none, and counts as a file that cannot be run when it names a
 /// POSIX path, which only its runtime's mount table maps.
 /// no_such_file_or_directory when nothing is found, permission_denied when
-/// only files that cannot be run are.
+/// only files that cannot be run are, `out` then naming the first of them:
+/// for Cygwin symlinks, the link that names a POSIX path or nothing that
+/// runs, whose target fs::cygwin::read_symlink reads, or the first of links
+/// that loop.
 std::error_code find_program(buffer_ref out,
                              std::string_view name,
                              const ProgramSearch& search = {});

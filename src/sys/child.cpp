@@ -1,11 +1,14 @@
 #include "child.h"
 
+#include <algorithm>
 #include <string_view>
 #include <utility>
 
 #include "os.h"
+#include "kota/support/string_list_ref.h"
 #include "kota/fs/path.h"
 #include "kota/fs/resolve.h"
+#include "kota/fs/status.h"
 #include "kota/sys/process.h"
 #include "kota/sys/windows.h"
 
@@ -83,11 +86,46 @@ std::optional<std::vector<EnvVar>> child_environment(const SpawnOptions& options
     return variables;
 }
 
+bool holds_nul(const SpawnOptions& options) {
+    auto nul = [](std::string_view text) {
+        return text.contains('\0');
+    };
+    auto variable_nul = [&](const EnvVar& variable) {
+        return nul(variable.name) || nul(variable.value);
+    };
+    auto change_nul = [&](const EnvChange& change) {
+        return nul(change.name) || (change.value && nul(*change.value));
+    };
+#ifdef _WIN32
+    if(nul(options.windows_command_line)) {
+        return true;
+    }
+#endif
+    return nul(options.program) || (options.arg0 && nul(*options.arg0)) ||
+           std::ranges::any_of(options.args, nul) || nul(options.cwd) ||
+           (options.env && std::ranges::any_of(*options.env, variable_nul)) ||
+           std::ranges::any_of(options.env_changes, change_nul);
+}
+
 std::vector<std::string> child_arguments(const SpawnOptions& options) {
     std::vector<std::string> arguments = {options.arg0.value_or(options.program)};
     arguments.insert(arguments.end(), options.args.begin(), options.args.end());
     return arguments;
 }
+
+#ifdef _WIN32
+
+/// The file find_create_process_program finds for `name` in `directories`.
+static std::expected<std::string, std::error_code>
+    create_process_program(std::string_view name, string_list_ref directories) {
+    std::string program;
+    if(auto error = windows::find_create_process_program(program, name, directories)) {
+        return std::unexpected(error);
+    }
+    return program;
+}
+
+#endif
 
 std::expected<std::string, std::error_code>
     child_program(const SpawnOptions& options,
@@ -117,7 +155,18 @@ std::expected<std::string, std::error_code>
         return joined;
     };
     if(is_path) {
+#ifdef _WIN32
+        // CreateProcess adds no `.exe` to a path; add it as to a name it
+        // looks for, the path running as it is when only that is there.
+        auto path = in_cwd(file);
+        auto program = create_process_program(path, {});
+        if(!program && fs::is_file(path)) {
+            return path;
+        }
+        return program;
+#else
         return in_cwd(file);
+#endif
     }
 
     std::string path;
@@ -160,17 +209,15 @@ std::expected<std::string, std::error_code>
         // On POSIX an empty one is the current directory: the child's.
         directory = in_cwd(directory);
     }
-    std::string program;
 #ifdef _WIN32
-    if(auto error = windows::find_create_process_program(program, file, directories)) {
-        return std::unexpected(error);
-    }
+    return create_process_program(file, directories);
 #else
+    std::string program;
     if(auto error = find_program(program, file, {.directories = std::move(directories)})) {
         return std::unexpected(error);
     }
-#endif
     return program;
+#endif
 }
 
 }  // namespace kota::sys

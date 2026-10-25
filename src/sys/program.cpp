@@ -17,6 +17,8 @@
 #include "kota/support/utf16.h"
 #include "kota/fs/cygwin.h"
 #else
+#include <fcntl.h>
+
 #include "kota/fs/status.h"
 #endif
 
@@ -54,11 +56,18 @@ Candidate examine(std::string_view path) {
         return status.error() == std::errc::permission_denied ? Candidate::Unrunnable
                                                               : Candidate::Missing;
     }
-    small_string<256> c_path(path);
-    if(status->type != fs::FileType::Regular || ::access(c_path.c_str(), X_OK) != 0) {
+    if(status->type != fs::FileType::Regular) {
         return Candidate::Unrunnable;
     }
-    return Candidate::Program;
+    small_string<256> c_path(path);
+    // By the effective IDs, which exec goes by, where access takes the real
+    // ones; through access while they are the same: glibc's faccessat calls
+    // faccessat2 from 2.33 on, which a sandbox older than it (Docker's
+    // before 20.10.6) refuses with EPERM.
+    const bool same_ids = ::getuid() == ::geteuid() && ::getgid() == ::getegid();
+    const int checked = same_ids ? ::access(c_path.c_str(), X_OK)
+                                 : ::faccessat(AT_FDCWD, c_path.c_str(), X_OK, AT_EACCESS);
+    return checked == 0 ? Candidate::Program : Candidate::Unrunnable;
 #endif
 }
 
@@ -89,11 +98,14 @@ std::vector<std::string> spellings(std::string_view name,
             tried = {".COM", ".EXE", ".BAT", ".CMD"};
         }
     }
+    // CreateProcess takes any dot for an extension of the name's own, a
+    // leading one too (`.bat`).
     auto own = fs::path::extension(name);
-    bool as_is = !own.empty() && (like_create_process ||
-                                  std::ranges::any_of(tried, [&](std::string_view extension) {
-                                      return string_ref(own).equals_insensitive(extension);
-                                  }));
+    bool as_is = like_create_process
+                     ? fs::path::filename(name).find('.') != std::string_view::npos
+                     : !own.empty() && std::ranges::any_of(tried, [&](std::string_view extension) {
+                           return string_ref(own).equals_insensitive(extension);
+                       });
     if(as_is) {
         return {std::string(name)};
     }
@@ -107,12 +119,14 @@ std::vector<std::string> spellings(std::string_view name,
 /// Follows the Cygwin symlink at `path` to the program it names, in place:
 /// its target beside it, link after link, `.exe` added where the target has
 /// none; a program that is no link stays. False when a link names a POSIX
-/// path, which only its runtime's mount table maps, or nothing that runs, or
-/// the links loop.
+/// path, which only its runtime's mount table maps, or nothing that runs,
+/// `path` then that link, or when the links loop, `path` then the first.
 bool follow_cygwin_links(buffer_ref path) {
     // Past it, a chain is taken to loop.
     constexpr int most_links = 16;
+    const small_string<256> first(path.view());
     small_string<256> target;
+    small_string<256> link;
     for(int links = 0; links <= most_links; ++links) {
         if(!fs::cygwin::read_symlink(target, path.view())) {
             return true;
@@ -120,15 +134,18 @@ bool follow_cygwin_links(buffer_ref path) {
         if(fs::cygwin::is_posix_path(target)) {
             return false;
         }
+        link.assign(path.view());
         fs::path::pop(path);
         fs::path::push(path, target);
         if(examine(path.view()) != Candidate::Program) {
             path.append(".exe");
             if(examine(path.view()) != Candidate::Program) {
+                path.assign(link);
                 return false;
             }
         }
     }
+    path.assign(first);
     return false;
 }
 
@@ -145,7 +162,9 @@ std::error_code find(buffer_ref out,
     if(name.empty()) {
         return std::make_error_code(std::errc::no_such_file_or_directory);
     }
-    bool found_unrunnable = false;
+    // The first file found that cannot be run, which permission_denied
+    // names.
+    small_string<256> unrunnable;
     // Whether the candidate in `out` is a program, which it then names.
     auto runs = [&] {
         switch(examine(out.view())) {
@@ -154,20 +173,25 @@ std::error_code find(buffer_ref out,
                 if(like_create_process || follow_cygwin_links(out)) {
                     return true;
                 }
-                found_unrunnable = true;
-                return false;
+                break;
 #else
                 return true;
 #endif
             }
-            case Candidate::Unrunnable: found_unrunnable = true; return false;
+            case Candidate::Unrunnable: break;
             case Candidate::Missing: return false;
         }
-        std::unreachable();
+        if(unrunnable.empty()) {
+            unrunnable.assign(out.view());
+        }
+        return false;
     };
     auto not_found = [&] {
-        return std::make_error_code(found_unrunnable ? std::errc::permission_denied
-                                                     : std::errc::no_such_file_or_directory);
+        if(unrunnable.empty()) {
+            return std::make_error_code(std::errc::no_such_file_or_directory);
+        }
+        out.assign(unrunnable);
+        return std::make_error_code(std::errc::permission_denied);
     };
 
 #ifdef _WIN32
@@ -257,11 +281,15 @@ std::error_code known_directory(buffer_ref out, auto read) {
 
 }  // namespace
 
+std::error_code system_directory(buffer_ref out) {
+    return known_directory(out, [](DWORD size, wchar_t* buffer) {
+        return ::GetSystemDirectoryW(buffer, size);
+    });
+}
+
 std::expected<std::vector<std::string>, std::error_code> system_directories() {
     std::vector<std::string> directories(3);
-    if(auto error = known_directory(directories[0], [](DWORD size, wchar_t* buffer) {
-           return ::GetSystemDirectoryW(buffer, size);
-       })) {
+    if(auto error = system_directory(directories[0])) {
         return std::unexpected(error);
     }
     if(auto error = known_directory(directories[2], [](DWORD size, wchar_t* buffer) {

@@ -38,6 +38,28 @@ void append_quoted(buffer_ref out, std::string_view argument) {
     out.push_back('"');
 }
 
+/// Reads the backslashes at `at` of `line` into `argument`: 2n of them
+/// before a quote make n, and leave the quote to be read; 2n+1 make n and a
+/// quote, which they take; others are as they are. The index of the last
+/// character taken.
+std::size_t read_backslashes(std::string_view line, std::size_t at, small_string<256>& argument) {
+    std::size_t start = at;
+    while(at < line.size() && line[at] == '\\') {
+        ++at;
+    }
+    auto count = at - start;
+    if(at == line.size() || line[at] != '"') {
+        argument.append(count, '\\');
+        return at - 1;
+    }
+    argument.append(count / 2, '\\');
+    if(count % 2 == 0) {
+        return at - 1;
+    }
+    argument.push_back('"');
+    return at;
+}
+
 }  // namespace
 
 void quote_argument(buffer_ref out, std::string_view argument) {
@@ -66,72 +88,50 @@ void join_command_line(buffer_ref out, string_list_ref arguments) {
     }
 }
 
-split_command_line_view::iterator::iterator(std::string_view line) : rest(line) {
-    if(line.empty()) {
-        done = true;
-        return;
-    }
+split_command_line_view::iterator::iterator(std::string_view line, CommandLineRules rules) :
+    rest(line), rules(rules), program(rules != CommandLineRules::LLVM) {
     ++*this;
 }
 
 split_command_line_view::iterator& split_command_line_view::iterator::operator++() {
-    auto blank = [](char c) {
-        return c == ' ' || c == '\t';
+    const bool crt = rules == CommandLineRules::CRT;
+    // The C runtime's program starts at the first character, a blank too,
+    // and reads every quote as a toggle.
+    const bool crt_program = crt && program;
+    auto separates = [&](char c) {
+        return c == ' ' || c == '\t' || (!crt && (c == '\r' || c == '\n' || c == '\0'));
     };
-    if(!program && rest.empty()) {
+    std::size_t at = 0;
+    if(!crt_program) {
+        while(at < rest.size() && separates(rest[at])) {
+            ++at;
+        }
+    }
+    if(at == rest.size()) {
         done = true;
         return *this;
     }
     argument.clear();
     bool quoted = false;
-    std::size_t at = 0;
-    if(program) {
-        // No escapes, every quote toggles.
-        program = false;
-        for(; at < rest.size() && (quoted || !blank(rest[at])); ++at) {
-            if(rest[at] == '"') {
-                quoted = !quoted;
-            } else {
-                argument.push_back(rest[at]);
-            }
-        }
-    } else {
-        // It starts at what is no blank, and ends at a blank outside quotes,
-        // or at the end of the line, in quotes or not.
-        while(at < rest.size() && (quoted || !blank(rest[at]))) {
-            char c = rest[at];
-            if(c == '\\') {
-                std::size_t start = at;
-                while(at < rest.size() && rest[at] == '\\') {
-                    ++at;
-                }
-                auto count = at - start;
-                if(at < rest.size() && rest[at] == '"') {
-                    argument.append(count / 2, '\\');
-                    if(count % 2 == 1) {
-                        argument.push_back('"');
-                        ++at;
-                    }
-                } else {
-                    argument.append(count, '\\');
-                }
-                continue;
-            }
+    // It ends at a separator outside quotes, or at the end of the line, in
+    // quotes or not.
+    for(; at < rest.size() && (quoted || !separates(rest[at])); ++at) {
+        char c = rest[at];
+        if(c == '\\' && !program) {
+            at = read_backslashes(rest, at, argument);
+        } else if(c != '"') {
+            argument.push_back(c);
+        } else if(quoted && !crt_program && at + 1 < rest.size() && rest[at + 1] == '"') {
+            argument.push_back('"');
             ++at;
-            if(c != '"') {
-                argument.push_back(c);
-            } else if(!quoted) {
-                quoted = true;
-            } else if(at < rest.size() && rest[at] == '"') {
-                argument.push_back('"');
-                ++at;
-            } else {
-                quoted = false;
-            }
+        } else {
+            quoted = !quoted;
         }
     }
-    auto next = rest.find_first_not_of(" \t", at);
-    rest = next == std::string_view::npos ? std::string_view() : rest.substr(next);
+    // As LLVM reads it, a command starts after a newline that ends an
+    // argument, not after one that a blank comes before.
+    program = rules == CommandLineRules::LLVMFull && at < rest.size() && rest[at] == '\n';
+    rest.remove_prefix(at);
     return *this;
 }
 

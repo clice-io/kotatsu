@@ -161,15 +161,14 @@ struct ChildSetup {
     int rtmax;
     /// The signals as exec leaves them, rather than all at their defaults.
     bool keep_signals;
-    /// What kotatsu changed, which a child keep_signals gets as it was.
-    bool sigpipe_was_default;
-    bool sigchld_was_ignored;
     /// The signal mask it starts with.
     sigset_t mask;
 
     /// The action exec leaves signal `signum` with: the default for one
     /// with a handler, which means nothing to another program, an ignored
-    /// one ignored; one kotatsu changed as it was.
+    /// one ignored; one kotatsu changed as it was. What kotatsu changed is
+    /// read here, after the fork, which took it with the actions it goes
+    /// with.
     void (*exec_action(int signum) const)(int) {
         struct sigaction action;
         ::sigaction(signum, nullptr, &action);
@@ -292,11 +291,6 @@ int open_pidfd([[maybe_unused]] pid_t pid) {
 }
 
 #else
-
-/// Held while a pipe is made and until posix_spawn has started the child it
-/// is for: macOS sets close-on-exec only after it makes one, which another
-/// of these spawns would otherwise give its child.
-std::mutex spawning;
 
 /// Waits for process `pid` to exit, through kqueue: a wait4 that blocks
 /// waits for good on macOS for a child the system reaps itself, SIGCHLD
@@ -431,6 +425,9 @@ std::error_code Child::kill_tree(int signum) {
 }
 
 std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
+    if(holds_nul(options)) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
     const auto& creation = options.creation;
 #ifdef __APPLE__
     if(creation.exit_with_parent) {
@@ -666,8 +663,6 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         .rtmin = SIGRTMIN,
         .rtmax = SIGRTMAX,
         .keep_signals = creation.keep_signals,
-        .sigpipe_was_default = sigpipe_was_default,
-        .sigchld_was_ignored = sigchld_was_ignored,
         .mask = {},
     };
     // A signal arriving before the child has reset its handlers would run

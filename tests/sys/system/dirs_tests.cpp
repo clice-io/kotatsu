@@ -1,7 +1,13 @@
 #include <expected>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <system_error>
+
+#ifndef _WIN32
+#include <pwd.h>
+#include <unistd.h>
+#endif
 
 #include "sys/harness/env.h"
 #include "kota/zest/macro.h"
@@ -16,15 +22,26 @@ namespace {
 #ifdef _WIN32
 constexpr const char* home_variable = "USERPROFILE";
 constexpr const char* home = R"(C:\Users\kota)";
+constexpr const char* root = R"(C:\)";
 #else
 constexpr const char* home_variable = "HOME";
 constexpr const char* home = "/home/kota";
+constexpr const char* root = "/";
 #endif
 
 /// The directory `dir` writes, or its error.
 std::expected<std::string, std::error_code> dir_of(std::error_code (*dir)(buffer_ref)) {
     std::string out;
     if(auto error = dir(out)) {
+        return std::unexpected(error);
+    }
+    return out;
+}
+
+/// `path` with its `~` expanded, or the error.
+std::expected<std::string, std::error_code> expanded(std::string_view path) {
+    std::string out;
+    if(auto error = expand_tilde(out, path)) {
         return std::unexpected(error);
     }
     return out;
@@ -48,6 +65,61 @@ ZEST_CASE(home_dir_without_the_variable_is_the_users) {
     ZASSERT(found.has_value());
     ZEXPECT(fs::path::is_absolute(*found));
 }
+
+// The rest goes after the home as it is, a separator of either kind on
+// Windows.
+ZEST_CASE(expand_tilde_takes_the_home_directory) {
+    test::ScopedEnv variable(home_variable, home);
+    ZEXPECT(expanded("~") == home);
+    ZEXPECT(expanded("~/a/b") == std::string(home) + "/a/b");
+#ifdef _WIN32
+    ZEXPECT(expanded(R"(~\a)") == R"(C:\Users\kota\a)");
+#endif
+}
+
+ZEST_CASE(expand_tilde_in_a_root_home_keeps_one_separator) {
+    test::ScopedEnv variable(home_variable, root);
+    ZEXPECT(expanded("~") == root);
+#ifdef _WIN32
+    ZEXPECT(expanded("~/a") == "C:/a");
+#else
+    ZEXPECT(expanded("~/a") == "/a");
+#endif
+}
+
+ZEST_CASE(expand_tilde_leaves_a_path_without_one) {
+    ZEXPECT(expanded("a/~") == "a/~");
+    ZEXPECT(expanded("/~") == "/~");
+    ZEXPECT(expanded("") == "");
+}
+
+#ifdef _WIN32
+ZEST_CASE(expand_tilde_leaves_a_user_name) {
+    ZEXPECT(expanded(R"(~kota\a)") == R"(~kota\a)");
+}
+#else
+// The user's home from the password database, whatever HOME says.
+ZEST_CASE(expand_tilde_takes_a_users_home) {
+    test::ScopedEnv variable(home_variable, home);
+    const passwd* entry = ::getpwuid(::getuid());
+    // A container may run as a user the password database does not list.
+    if(entry == nullptr) {
+        zest::skip();
+        return;
+    }
+    std::string name = entry->pw_name;
+    std::string user_home = entry->pw_dir;
+    ZEXPECT(expanded("~" + name) == user_home);
+    std::string inside = user_home;
+    fs::path::push(inside, "a");
+    ZEXPECT(expanded("~" + name + "/a") == inside);
+}
+
+ZEST_CASE(expand_tilde_leaves_a_user_that_does_not_exist) {
+    ZEXPECT(expanded("~kota-no-such-user/a") == "~kota-no-such-user/a");
+    ZEXPECT(expanded("~kota-no-such-user") == "~kota-no-such-user");
+}
+#endif
 
 ZEST_CASE(temp_dir_is_a_directory) {
     auto found = dir_of(temp_dir);

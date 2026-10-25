@@ -41,8 +41,9 @@ struct ProcessStats {
 
     std::uint64_t major_faults = 0;
 
-    /// Linux, and on macOS this process's: the times it gave up the CPU to
-    /// wait, and the times the scheduler took it away.
+    /// Linux, and on macOS this process's: the times its threads gave up the
+    /// CPU to wait, and the times the scheduler took it away; of another
+    /// process on Linux, only those of the threads it still has.
     std::uint64_t voluntary_switches = 0;
 
     std::uint64_t involuntary_switches = 0;
@@ -61,7 +62,9 @@ struct Memory {
     std::uint64_t total = 0;
 
     /// The least of `total` and the limits the process runs under: of every
-    /// level of its memory cgroups on Linux, of its job object on Windows.
+    /// level of its memory cgroups on Linux; on Windows of the job object it
+    /// is in, not of the jobs that one is nested in, which a process cannot
+    /// read.
     std::uint64_t limit = 0;
 
     /// What it can take before reclaim starts to hurt. On Linux the least of
@@ -94,8 +97,10 @@ std::error_code set_oom_score_adjustment(int value, int pid = 0);
 /// The CPUs this process can run on at once, at least 1: the least of its
 /// affinity and, on Linux, the CPU quota of every level of its cgroups,
 /// rounded up. On Windows 11 and Server 2022 across all processor groups,
-/// before them the one group a process's threads stay in; less a job
-/// object's hard cap.
+/// before them the one group a process's threads stay in; less the hard cap
+/// of the job object it is in. A job nested in another has a share of that
+/// one's cap, which a process cannot read: there this counts more CPUs than
+/// it gets.
 unsigned parallelism();
 
 /// The size of a page of memory.
@@ -145,8 +150,9 @@ std::error_code hostname(buffer_ref out);
 /// The time since the system started.
 std::chrono::milliseconds uptime();
 
-/// A process's priority: Windows's priority classes, and on POSIX the nice
-/// values 19, 10, 0, -7, -14 and -20.
+/// A priority, from the lowest. A process's is one of Windows's priority
+/// classes, and on POSIX one of the nice values 19, 10, 0, -7, -14 and -20; a
+/// thread's is one of set_thread_priority's.
 enum class Priority : std::uint8_t {
     Idle,
     BelowNormal,
@@ -166,5 +172,17 @@ std::expected<Priority, std::error_code> priority(int pid = 0);
 /// thread's, or for 0 the calling thread's, changes; threads started after
 /// inherit it. invalid_argument for a value Priority does not name.
 std::error_code set_priority(Priority priority, int pid = 0);
+
+/// Sets the priority of the calling thread, the others' left as they are: on
+/// Windows its priority within its process's class, THREAD_PRIORITY_IDLE to
+/// THREAD_PRIORITY_TIME_CRITICAL; on macOS its quality of service,
+/// QOS_CLASS_BACKGROUND to QOS_CLASS_USER_INTERACTIVE, which High and
+/// Realtime share; on Linux its nice value, as set_priority(priority) sets
+/// it. That value is the priority's own whatever the thread had: on Linux a
+/// thread lower already, as in a process started under `nice -n 15`, is
+/// raised, which takes privileges and fails without them, unless the caller
+/// compares priority() first. invalid_argument for a value Priority does not
+/// name.
+std::error_code set_thread_priority(Priority priority);
 
 }  // namespace kota::sys
