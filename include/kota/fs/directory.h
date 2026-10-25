@@ -12,6 +12,7 @@
 
 #include "kota/support/buffer_ref.h"
 #include "kota/fs/status.h"
+#include "kota/fs/volume.h"
 
 namespace kota::fs {
 
@@ -77,13 +78,18 @@ public:
         }
 
         friend bool operator==(const iterator& at, std::default_sentinel_t) {
-            return at.stream->done;
+            return at.at_end();
         }
 
     private:
         friend class DirStream;
 
         explicit iterator(DirStream* stream) : stream(stream) {}
+
+        /// A member, unlike the friend above, may read the stream's state.
+        bool at_end() const {
+            return stream->done;
+        }
 
         DirStream* stream;
     };
@@ -98,6 +104,11 @@ public:
     std::default_sentinel_t end() const {
         return {};
     }
+
+    /// The volume the directory lives on, as volume() tells it, asked of the
+    /// open directory, which takes no other open: whether to list a remote
+    /// one, say.
+    std::expected<Volume, std::error_code> volume() const;
 
 private:
     friend std::expected<DirStream, std::error_code> read_dir(std::string_view dir);

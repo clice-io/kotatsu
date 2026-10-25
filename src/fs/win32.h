@@ -3,6 +3,7 @@
 #ifdef _WIN32
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -26,9 +27,25 @@
 #include "kota/support/buffer_ref.h"
 #include "kota/support/small_string.h"
 #include "kota/fs/status.h"
+#include "kota/fs/volume.h"
 #include "kota/fs/windows.h"
 
 namespace kota::fs::win32 {
+
+/// The function `name` of ntdll, which every Windows has, looked up once.
+template <typename Function>
+Function from_ntdll(std::atomic<Function>& cache, const char* name) {
+    auto function = cache.load(std::memory_order_relaxed);
+    if(function == nullptr) {
+        auto found = ::GetProcAddress(::GetModuleHandleW(L"ntdll.dll"), name);
+        function = reinterpret_cast<Function>(reinterpret_cast<void (*)()>(found));
+        cache.store(function, std::memory_order_relaxed);
+    }
+    return function;
+}
+
+/// The Win32 error an NTSTATUS stands for.
+DWORD dos_error(NTSTATUS status);
 
 /// A handle closed when this goes.
 class Handle {
@@ -160,6 +177,9 @@ bool set_attributes(HANDLE handle, DWORD attributes);
 /// zero for one that is no reparse point, without asking, since FAT, which
 /// keeps none, refuses the question.
 std::expected<DWORD, std::error_code> reparse_tag(HANDLE handle, DWORD attributes);
+
+/// The volume the file `handle` refers to lives on, as volume() tells it.
+std::expected<Volume, std::error_code> volume_of(HANDLE handle);
 
 /// The ID of the file `handle` refers to.
 std::expected<FileID, std::error_code> file_id(HANDLE handle);

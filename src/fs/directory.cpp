@@ -210,25 +210,11 @@ using NtCreateFileFn = NTSTATUS(NTAPI*)(PHANDLE,
                                         ULONG,
                                         PVOID,
                                         ULONG);
-using NtStatusToErrorFn = ULONG(NTAPI*)(NTSTATUS);
-
 /// NtCreateFile's disposition and options, which only the DDK names.
 constexpr ULONG nt_open_existing = 1;
 constexpr ULONG nt_synchronous_io = 0x20;
 constexpr ULONG nt_backup_intent = 0x4000;
 constexpr ULONG nt_open_reparse_point = 0x200000;
-
-/// The function `name` of ntdll, which every Windows has, looked up once.
-template <typename Function>
-Function from_ntdll(std::atomic<Function>& cache, const char* name) {
-    auto function = cache.load(std::memory_order_relaxed);
-    if(function == nullptr) {
-        auto found = ::GetProcAddress(::GetModuleHandleW(L"ntdll.dll"), name);
-        function = reinterpret_cast<Function>(reinterpret_cast<void (*)()>(found));
-        cache.store(function, std::memory_order_relaxed);
-    }
-    return function;
-}
 
 /// The entry `name` of the directory `parent`, itself when it is a link,
 /// opened through the parent's handle: Win32 opens names only from the
@@ -236,7 +222,6 @@ Function from_ntdll(std::atomic<Function>& cache, const char* name) {
 /// handle on failure, GetLastError() telling why.
 win32::Handle open_entry(HANDLE parent, std::wstring_view name, DWORD access) {
     static constinit std::atomic<NtCreateFileFn> create = nullptr;
-    static constinit std::atomic<NtStatusToErrorFn> to_error = nullptr;
     UNICODE_STRING object_name;
     object_name.Length = static_cast<USHORT>(name.size() * sizeof(wchar_t));
     object_name.MaximumLength = object_name.Length;
@@ -247,7 +232,7 @@ win32::Handle open_entry(HANDLE parent, std::wstring_view name, DWORD access) {
     attributes.ObjectName = &object_name;
     IO_STATUS_BLOCK status_block{};
     HANDLE handle = INVALID_HANDLE_VALUE;
-    auto status = from_ntdll(create, "NtCreateFile")(
+    auto status = win32::from_ntdll(create, "NtCreateFile")(
         &handle,
         access | SYNCHRONIZE,
         &attributes,
@@ -260,7 +245,7 @@ win32::Handle open_entry(HANDLE parent, std::wstring_view name, DWORD access) {
         nullptr,
         0);
     if(status < 0) {
-        ::SetLastError(from_ntdll(to_error, "RtlNtStatusToDosError")(status));
+        ::SetLastError(win32::dos_error(status));
         return win32::Handle();
     }
     return win32::Handle(handle);
@@ -616,6 +601,14 @@ void DirStream::advance() {
     }
 #endif
     current = std::move(made);
+}
+
+std::expected<Volume, std::error_code> DirStream::volume() const {
+#ifdef _WIN32
+    return win32::volume_of(directory->handle.get());
+#else
+    return posix::volume_of(::dirfd(directory->dir.get()));
+#endif
 }
 
 std::expected<Status, std::error_code> DirEntry::status() const {

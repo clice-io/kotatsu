@@ -5,12 +5,14 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
+#include <expected>
 #include <string_view>
 #include <sys/stat.h>
 #include <system_error>
 
 #include "kota/support/small_string.h"
 #include "kota/fs/status.h"
+#include "kota/fs/volume.h"
 
 namespace kota::fs::posix {
 
@@ -40,6 +42,9 @@ public:
 private:
     small_string<256> text;
 };
+
+/// The volume the file `fd` refers to lives on, as volume() tells it.
+std::expected<Volume, std::error_code> volume_of(int fd);
 
 /// `path` without its trailing separators, its root kept: through them the
 /// system follows a symlink the path ends in.

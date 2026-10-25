@@ -155,6 +155,12 @@ void from_native(buffer_ref out, std::wstring_view path) {
 
 namespace kota::fs::win32 {
 
+DWORD dos_error(NTSTATUS status) {
+    using ToDosErrorFn = ULONG(NTAPI*)(NTSTATUS);
+    static constinit std::atomic<ToDosErrorFn> to_dos_error = nullptr;
+    return from_ntdll(to_dos_error, "RtlNtStatusToDosError")(status);
+}
+
 std::error_code widen(basic_buffer_ref<wchar_t> out, std::string_view path) {
     if(path.find('\0') != std::string_view::npos) {
         return std::make_error_code(std::errc::invalid_argument);

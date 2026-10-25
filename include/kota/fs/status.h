@@ -118,8 +118,8 @@ struct FileTimes {
 
 /// Sets the times of what `path` names, a directory too, symlinks followed.
 /// Windows keeps them in 100 ns, to which they are rounded down; a file
-/// system keeps what it can of that (FAT an mtime in two seconds, rounded
-/// up).
+/// system keeps what it can of that (FAT32 and exFAT an mtime in two
+/// seconds, rounded up).
 std::error_code set_times(std::string_view path, const FileTimes& times);
 
 /// Sets who may read, write and run what `path` names, symlinks followed, to

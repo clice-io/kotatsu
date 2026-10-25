@@ -2,6 +2,7 @@
 
 #include "fs/harness/files.h"
 #include "kota/zest/zest.h"
+#include "kota/fs/directory.h"
 #include "kota/fs/volume.h"
 
 namespace kota::fs {
@@ -30,6 +31,19 @@ ZEST_CASE(volume_names_a_kind_linux_knows) {
     ZEXPECT(found->type == "proc");
 }
 #endif
+
+ZEST_CASE(dir_stream_volume_matches_the_volume_of_its_path) {
+    test::TempDir dir;
+    auto named = volume(dir.root());
+    auto stream = read_dir(dir.root());
+    ZASSERT(named.has_value());
+    ZASSERT(stream.has_value());
+    auto listed = stream->volume();
+    ZASSERT(listed.has_value());
+    ZEXPECT(listed->type == named->type);
+    ZEXPECT(listed->capacity == named->capacity);
+    ZEXPECT(listed->remote == named->remote);
+}
 
 ZEST_CASE(volume_of_nothing_fails) {
     test::TempDir dir;

@@ -463,33 +463,43 @@ std::expected<Status, std::error_code> File::status() const {
 }
 
 std::error_code File::canonical(buffer_ref out) const {
+#ifdef __APPLE__
+    // macOS keeps the last name of a file whose names all went.
     struct stat opened;
     if(::fstat(handle, &opened) != 0) {
         return posix::last_error();
     }
-#ifdef __APPLE__
+    if(opened.st_nlink == 0) {
+        return std::make_error_code(std::errc::no_such_file_or_directory);
+    }
     char buffer[MAXPATHLEN];
     if(::fcntl(handle, F_GETPATH, buffer) != 0) {
         return posix::last_error();
     }
     out.assign(buffer);
+    return {};
 #else
     char link[32];
     auto end = std::format_to_n(link, sizeof(link), "/proc/self/fd/{}", handle).out;
     if(auto error = read_symlink(out, std::string_view(link, end))) {
         return error;
     }
-#endif
-    // The name the system keeps for the file may be one removed since,
-    // which Linux marks " (deleted)", a name a file may have, and macOS does
-    // not mark at all: it is the file's only while it leads to the file.
+    // Linux keeps the name the file was opened by, marked " (deleted)" once
+    // it went, though another hard link may still name the file. A file may
+    // be named so too: the name is the file's while it leads to it.
+    if(!out.view().ends_with(" (deleted)")) {
+        return {};
+    }
     posix::CPath c_path;
+    struct stat opened;
     struct stat named;
-    if(c_path.assign(out.view()) || ::stat(c_path.c_str(), &named) != 0 ||
-       named.st_dev != opened.st_dev || named.st_ino != opened.st_ino) {
+    if(c_path.assign(out.view()) || ::fstat(handle, &opened) != 0 ||
+       ::stat(c_path.c_str(), &named) != 0 || named.st_dev != opened.st_dev ||
+       named.st_ino != opened.st_ino) {
         return std::make_error_code(std::errc::no_such_file_or_directory);
     }
     return {};
+#endif
 }
 
 std::error_code File::resize(std::uint64_t size) {

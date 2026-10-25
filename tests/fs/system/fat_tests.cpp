@@ -17,6 +17,7 @@
 #include "kota/fs/directory.h"
 #include "kota/fs/file.h"
 #include "kota/fs/status.h"
+#include "kota/fs/volume.h"
 
 // What NTFS does not show: the calls FAT32 and exFAT refuse, POSIX deletes
 // and renames, 128-bit IDs and listings with IDs among them, and the ways
@@ -124,19 +125,33 @@ ZEST_CASE(read_dir_tells_each_entry_its_own_status) {
     });
 }
 
-ZEST_CASE(set_times_keeps_what_fat_keeps) {
-    // FAT keeps an mtime in two seconds, exFAT in 10 ms.
+ZEST_CASE(set_times_rounds_up_to_two_seconds) {
+    // FAT32 and exFAT keep an mtime in two seconds.
     on_fat([](const test::TempDir& dir) {
         test::write_text(dir.file("file.txt"), "text");
-        auto odd = std::chrono::sys_time<std::chrono::nanoseconds>(
-            std::chrono::seconds(1'000'000'001) + std::chrono::milliseconds(500));
+        using std::chrono::seconds;
+        auto odd = std::chrono::sys_time<std::chrono::nanoseconds>(seconds(1'000'000'001) +
+                                                                   std::chrono::milliseconds(500));
         ZEXPECT(!set_times(dir.file("file.txt"), {.mtime = odd}));
         auto found = status(dir.file("file.txt"));
         ZASSERT(found.has_value());
-        ZEXPECT(found->mtime >= odd - std::chrono::seconds(2));
-        ZEXPECT(found->mtime <= odd + std::chrono::seconds(2));
-        ZEST_CONTEXT("kept {}", (found->mtime - odd).count());
-        ZEXPECT(found->mtime == odd);
+        ZEXPECT(found->mtime ==
+                std::chrono::sys_time<std::chrono::nanoseconds>(seconds(1'000'000'002)));
+    });
+}
+
+ZEST_CASE(volume_names_the_file_system) {
+    on_fat([](const test::TempDir& dir) {
+        auto named = volume(dir.root());
+        auto stream = read_dir(dir.root());
+        ZASSERT(named.has_value());
+        ZASSERT(stream.has_value());
+        auto listed = stream->volume();
+        ZASSERT(listed.has_value());
+        ZEXPECT(named->type == listed->type);
+        ZEXPECT((named->type == "FAT32" || named->type == "exFAT"));
+        ZEXPECT(named->capacity > 0u);
+        ZEXPECT(!named->remote);
     });
 }
 

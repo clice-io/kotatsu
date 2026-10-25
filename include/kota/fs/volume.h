@@ -32,7 +32,9 @@ struct Volume {
     bool remote = false;
 };
 
-/// The volume `path`, an existing file, lives on, symlinks followed.
+/// The volume `path`, an existing file, lives on, symlinks followed: on
+/// Windows asked of the file opened, which takes one open; DirStream::volume
+/// asks it of a directory open for listing.
 std::expected<Volume, std::error_code> volume(std::string_view path);
 
 }  // namespace kota::fs
