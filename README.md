@@ -138,11 +138,14 @@ All public APIs live under the `kota::` namespace, public headers under `include
 
 Synchronous paths and files on UTF-8 strings, depending on `support` alone (no libuv, no async), so that a library injected into other processes can use it.
 
-- Lexical paths (`path.h`): roots, components, `join`, `normalize`, `relative`, `strip_prefix`, in the POSIX or the Windows style on any host. Windows roots follow drives, UNC shares, device and verbatim (`\\?\`) prefixes; `..` never climbs past a root.
+- Strings out and in: what produces a path or text writes it into a buffer the caller gives, of any type (`std::string`, `small_string<N>`, `llvm::SmallString<N>`) through `buffer_ref`, so that a loop of calls can reuse one buffer and allocate nothing; a list of strings goes in as a `string_list_ref` of whatever the caller holds.
+- Lexical paths (`path.h`): roots, `components` and `ancestors` as lazy views, and Rust's `PathBuf` operations in place on a buffer (`push`, `pop`, `set_file_name`, `set_extension`, `normalize`), `relative`, `strip_prefix`, in the POSIX or the Windows style on any host. Windows roots follow drives, UNC shares, device and verbatim (`\\?\`) prefixes; `..` never climbs past a root.
 - Status (`status.h`): `status` / `symlink_status` with file IDs, change time and link counts; on Windows by name where the system allows, junctions and symlinks reported as links.
-- Directories and files (`directory.h`, `file.h`): `read_dir` (with statuses from the listing on Windows), `create_directories`, `remove` and `rename` with POSIX semantics on Windows, `remove_all` that never follows a link, `File`, `read_file`, `write_file_atomic`, `create_temp_file`.
+- Directories and links (`directory.h`): `read_dir` (with statuses from the listing on Windows), `create_directories`, `remove` and `rename` with POSIX semantics on Windows, `remove_all` that never follows a link, symlinks (`create_symlink`, and `read_symlink`, which reads Windows junctions too) and hard links.
+- Files (`file.h`, `mapping.h`): `File`, opened as Rust's `OpenOptions` say (read, write, append, truncate, create, create new), with `seek`, `status`, `resize`, `sync`, sparse files and advisory locks (`lock`, `lock_shared`, `try_lock`), which on Windows keep no one from the file's bytes; `read_file`, which reads rather than maps, `write_file_atomic`, `create_temp_file` and `create_temp_directory`; `Mapping`, a file's bytes mapped read only.
+- Volumes (`volume.h`): `volume`, the space, type and remoteness of the file system a path lives on (9p, NFS and SMB are remote; FUSE is told by its type).
 - Resolution (`resolve.h`): `canonical`, `weakly_canonical` for paths that may not exist yet, `absolute`, `current_dir`.
-- The Windows boundary (`windows.h`): UTF-8 paths as the wide, `\\?\`-prefixed paths the file functions take, and Win32 errors as `std::error_code`; Cygwin and MSYS2 mount tables (`cygwin.h`).
+- The Windows boundary (`windows.h`): UTF-8 paths as the wide, `\\?\`-prefixed paths the file functions take (`to_native`, `from_native`), and Win32 errors as `std::error_code`; Cygwin and MSYS2 mount tables (`cygwin.h`).
 
 ### `support` (`include/kota/support/*`)
 
@@ -153,6 +156,8 @@ Synchronous paths and files on UTF-8 strings, depending on `support` alone (no l
   - `small_string<N>` — SBO string, shares layout with `small_vector<char>`
 - Compile-time string utilities: `string_ref`.
 - Text encodings: UTF-8 checks (`utf8.h`) and WTF-8 ↔ UTF-16 conversion (`utf16.h`), which keeps a Windows name's lone surrogates.
+- Type-erased string references (`buffer_ref.h`, `string_list_ref.h`): `buffer_ref`, any contiguous resizable buffer of characters for a function to write into, and `string_list_ref`, any contiguous range of string-likes for a function to read.
+- `small_wstring<N>`, a `small_vector<wchar_t, N>` whose `c_str()` gives the Windows API its NUL-terminated wide strings.
 - Naming-convention conversion (`naming.h`): identity, lower-snake, lower-camel, upper-camel, upper-snake.
 - Type-level utilities: `type_list<Ts...>`, `tuple_traits`, `type_traits`, `expected_try`, `comptime` helpers, and miscellaneous `memory` / `ranges` / `functional` adapters.
 

@@ -16,7 +16,7 @@
 #include <crt_externs.h>
 #include <mach-o/dyld.h>
 #else
-#include "kota/fs/file.h"
+#include "proc.h"
 #endif
 
 namespace kota::sys {
@@ -63,8 +63,9 @@ std::expected<std::string, std::error_code> executable_path() {
         }
         // Cut short, the path fills the buffer.
         if(size < path.size()) {
-            path.resize(size);
-            return from_utf16(std::wstring_view(path));
+            std::string executable;
+            from_utf16(executable, std::wstring_view(path.data(), size));
+            return executable;
         }
         path.resize(path.size() * 2);
     }
@@ -100,7 +101,9 @@ std::expected<std::string, std::error_code> executable_path() {
 const std::vector<std::string>& arguments() {
     const static std::vector<std::string> arguments = [] {
 #ifdef _WIN32
-        auto line = windows::split_command_line(from_utf16(std::wstring_view(::GetCommandLineW())));
+        std::string text;
+        from_utf16(text, std::wstring_view(::GetCommandLineW()));
+        auto line = windows::split_command_line(text);
         // A program started with an empty command line has not even its name
         // in it: its executable stands for argv[0], as in Rust.
         if(line.empty()) {
@@ -115,12 +118,12 @@ const std::vector<std::string>& arguments() {
         return std::vector<std::string>(argv, argv + argc);
 #else
         std::vector<std::string> line;
-        auto text = fs::read_file("/proc/self/cmdline");
-        if(!text) {
+        ProcText text;
+        if(fs::read_file(text, "/proc/self/cmdline")) {
             return line;
         }
         // Each argument ends with a NUL.
-        std::string_view rest = *text;
+        std::string_view rest = text;
         while(!rest.empty()) {
             auto end = rest.find('\0');
             line.emplace_back(rest.substr(0, end));

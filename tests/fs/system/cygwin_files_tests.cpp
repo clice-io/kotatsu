@@ -1,5 +1,4 @@
 #include <filesystem>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -20,22 +19,28 @@ ZEST_SUITE(fs_cygwin_files) {
 ZEST_CASE(read_symlink_reads_the_installer_spelling) {
     test::TempDir dir;
     test::write_text(dir.file("cc"), "!<symlink>gcc.exe\0"sv);
-    ZEXPECT(read_symlink(dir.file("cc")) == std::optional<std::string>("gcc.exe"));
+    std::string target;
+    ZEXPECT(read_symlink(target, dir.file("cc")));
+    ZEXPECT(target == "gcc.exe");
 }
 
 ZEST_CASE(read_symlink_reads_the_runtime_spelling) {
     test::TempDir dir;
     // What `ln -s` writes: UTF-16 behind a byte order mark, `é` included.
     test::write_text(dir.file("link"), "!<symlink>\xFF\xFE/\0u\0s\0r\0/\0\xE9\0\0\0"sv);
-    ZEXPECT(read_symlink(dir.file("link")) == std::optional<std::string>("/usr/\xC3\xA9"));
+    std::string target;
+    ZEXPECT(read_symlink(target, dir.file("link")));
+    ZEXPECT(target == "/usr/\xC3\xA9");
 }
 
-ZEST_CASE(read_symlink_of_anything_else_is_none) {
+ZEST_CASE(read_symlink_of_anything_else_fails) {
     test::TempDir dir;
     test::write_text(dir.file("plain"), "int main() {}");
-    ZEXPECT(read_symlink(dir.file("plain")) == std::nullopt);
-    ZEXPECT(read_symlink(dir.file("missing")) == std::nullopt);
-    ZEXPECT(read_symlink(dir.root()) == std::nullopt);
+    std::string target = "kept";
+    ZEXPECT(!read_symlink(target, dir.file("plain")));
+    ZEXPECT(!read_symlink(target, dir.file("missing")));
+    ZEXPECT(!read_symlink(target, dir.root()));
+    ZEXPECT(target == "kept");
 }
 
 ZEST_CASE(runtime_dirs_keep_the_dll_search_order) {

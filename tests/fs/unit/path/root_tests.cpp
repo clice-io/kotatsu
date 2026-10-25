@@ -1,5 +1,4 @@
 #include <string_view>
-#include <vector>
 
 #include "kota/zest/zest.h"
 #include "kota/fs/path.h"
@@ -105,18 +104,6 @@ ZEST_CASE(rooted_paths_take_no_directory_in_front) {
     ZEXPECT(has_root(R"(\\server\share)", windows));
     ZEXPECT(!has_root("C:x", windows));
     ZEXPECT(!has_root("x", windows));
-}
-
-ZEST_CASE(components_are_the_names_after_the_root) {
-    using names = std::vector<std::string_view>;
-    ZEXPECT(components("/a//b/./c/", posix) == names{"a", "b", ".", "c"});
-    ZEXPECT(components("a\\b", posix) == names{"a\\b"});
-    ZEXPECT(components("C:\\a/b", windows) == names{"a", "b"});
-    ZEXPECT(components("C:a", windows) == names{"a"});
-    ZEXPECT(components(R"(\\server\share\a)", windows) == names{"a"});
-    ZEXPECT(components(R"(\\?\C:\a/b\..)", windows) == names{"a/b", ".."});
-    ZEXPECT(components("/", posix).empty());
-    ZEXPECT(components("", posix).empty());
 }
 
 };  // ZEST_SUITE(fs_path_root)

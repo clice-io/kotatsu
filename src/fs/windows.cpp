@@ -2,7 +2,8 @@
 
 #include "kota/fs/windows.h"
 
-#include <string>
+#include <algorithm>
+#include <cstring>
 #include <string_view>
 
 #include "win32.h"
@@ -86,7 +87,7 @@ std::error_code to_error_code(unsigned long code) {
             case ERROR_NOT_SUPPORTED: return std::errc::not_supported;
             case ERROR_BROKEN_PIPE:
             case ERROR_NO_DATA: return std::errc::broken_pipe;
-            case ERROR_NEGATIVE_SEEK: return std::errc::invalid_seek;
+            case ERROR_NEGATIVE_SEEK: return std::errc::invalid_argument;
             case ERROR_SEEK:
             case ERROR_CRC:
             case ERROR_IO_DEVICE: return std::errc::io_error;
@@ -109,69 +110,81 @@ std::error_code last_error() {
     return to_error_code(::GetLastError());
 }
 
-std::expected<std::wstring, std::error_code> native_path(std::string_view path) {
-    auto wide = win32::widen(path);
-    if(!wide) {
-        return std::unexpected(wide.error());
+std::error_code to_native(basic_buffer_ref<wchar_t> out, std::string_view path) {
+    if(auto error = win32::widen(out, path)) {
+        return error;
     }
-    if(wide->starts_with(LR"(\\?\)") ||
-       (wide->size() < short_path_limit && needs_no_resolution(*wide))) {
-        return std::move(*wide);
+    auto wide = out.view();
+    if(wide.starts_with(LR"(\\?\)") ||
+       (wide.size() < short_path_limit && needs_no_resolution(wide))) {
+        return {};
     }
-    auto full = win32::full_path(*wide);
-    if(!full) {
-        return std::unexpected(full.error());
+    win32::WidePath plain;
+    plain.assign(wide);
+    if(auto error = win32::full_path(out, plain.c_str())) {
+        return error;
     }
-    return win32::verbatim(std::move(*full));
+    win32::verbatim(out);
+    return {};
 }
 
-std::string from_native(std::wstring_view path) {
-    std::wstring plain;
+void from_native(buffer_ref out, std::wstring_view path) {
+    win32::WidePath plain;
     if(path.starts_with(LR"(\\?\UNC\)")) {
-        plain = LR"(\\)" + std::wstring(path.substr(8));
+        plain.append(2, L'\\');
+        plain.append(path.substr(8));
     } else if(path.starts_with(LR"(\\?\)") && path.size() >= 6 && path[5] == L':') {
-        plain = std::wstring(path.substr(4));
+        plain.append(path.substr(4));
     } else {
-        return from_utf16(path);
+        from_utf16(out, path);
+        return;
     }
     // Without the prefix Win32 resolves the path: it names the same file
     // only where that resolution changes nothing.
-    auto resolved = win32::full_path(plain);
-    if(resolved && *resolved == plain) {
-        return from_utf16(plain);
+    win32::WidePath resolved;
+    if(!win32::full_path(resolved, plain.c_str()) && std::ranges::equal(resolved, plain)) {
+        from_utf16(out, plain);
+        return;
     }
-    return from_utf16(path);
+    from_utf16(out, path);
 }
 
 }  // namespace kota::fs::windows
 
 namespace kota::fs::win32 {
 
-std::expected<std::wstring, std::error_code> widen(std::string_view path) {
+std::error_code widen(basic_buffer_ref<wchar_t> out, std::string_view path) {
     if(path.find('\0') != std::string_view::npos) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        return std::make_error_code(std::errc::invalid_argument);
     }
-    return to_utf16<wchar_t>(path);
+    return to_utf16(out, path);
 }
 
-std::expected<std::wstring, std::error_code> full_path(const std::wstring& path) {
-    return fill_wide([&](wchar_t* buffer, DWORD size) {
-        return ::GetFullPathNameW(path.c_str(), size, buffer, nullptr);
+std::error_code full_path(basic_buffer_ref<wchar_t> out, const wchar_t* path) {
+    return fill_wide(out, [&](wchar_t* buffer, DWORD size) {
+        return ::GetFullPathNameW(path, size, buffer, nullptr);
     });
 }
 
-std::wstring verbatim(std::wstring resolved) {
-    if(resolved.starts_with(LR"(\\?\)") || resolved.starts_with(LR"(\\.\)")) {
-        return resolved;
+void verbatim(basic_buffer_ref<wchar_t> path) {
+    auto held = path.view();
+    if(held.starts_with(LR"(\\?\)") || held.starts_with(LR"(\\.\)")) {
+        return;
     }
-    if(resolved.starts_with(LR"(\\)")) {
-        return LR"(\\?\UNC\)" + resolved.substr(2);
-    }
-    return LR"(\\?\)" + resolved;
+    // A share's `\\server` becomes `\\?\UNC\server`.
+    bool share = held.starts_with(LR"(\\)");
+    std::wstring_view prefix = share ? LR"(\\?\UNC\)" : LR"(\\?\)";
+    std::size_t kept_from = share ? 2 : 0;
+    auto size = held.size();
+    auto chars = path.resize(size - kept_from + prefix.size());
+    std::memmove(chars.data() + prefix.size(),
+                 chars.data() + kept_from,
+                 (size - kept_from) * sizeof(wchar_t));
+    std::ranges::copy(prefix, chars.begin());
 }
 
-Handle try_open(const std::wstring& path, DWORD access, DWORD flags) {
-    return Handle(::CreateFileW(path.c_str(),
+Handle try_open(const wchar_t* path, DWORD access, DWORD flags) {
+    return Handle(::CreateFileW(path,
                                 access,
                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                 nullptr,
@@ -181,11 +194,11 @@ Handle try_open(const std::wstring& path, DWORD access, DWORD flags) {
 }
 
 std::expected<Handle, std::error_code> open(std::string_view path, DWORD access) {
-    auto native = windows::native_path(path);
-    if(!native) {
-        return std::unexpected(native.error());
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, path)) {
+        return std::unexpected(error);
     }
-    auto handle = try_open(*native, access, 0);
+    auto handle = try_open(native.c_str(), access, 0);
     if(handle.get() == INVALID_HANDLE_VALUE) {
         return std::unexpected(windows::last_error());
     }

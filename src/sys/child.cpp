@@ -101,14 +101,14 @@ std::expected<std::string, std::error_code>
     // path means the same once the child is in it.
     std::string cwd;
     if(!options.cwd.empty()) {
-        auto absolute = fs::absolute(options.cwd);
-        if(!absolute) {
-            return std::unexpected(absolute.error());
+        if(auto error = fs::absolute(cwd, options.cwd)) {
+            return std::unexpected(error);
         }
-        cwd = std::move(*absolute);
     }
     auto in_cwd = [&](std::string_view path) {
-        return fs::path::join(cwd, path);
+        std::string joined = cwd;
+        fs::path::push(joined, path);
+        return joined;
     };
     if(is_path) {
         return in_cwd(file);

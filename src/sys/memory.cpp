@@ -6,6 +6,7 @@
 
 #include "os.h"
 #include "proc.h"
+#include "kota/support/small_string.h"
 #include "kota/sys/detail/memory_model.h"
 #include "kota/sys/info.h"
 
@@ -110,25 +111,25 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
         stats.involuntary_switches = static_cast<std::uint64_t>(own.ru_nivcsw);
     }
 #else
-    auto status = fs::read_file(proc_path(pid, "status"));
-    if(!status) {
-        return std::unexpected(process_error(status.error()));
+    ProcText status;
+    if(auto error = read_proc(status, pid, "status")) {
+        return std::unexpected(process_error(error));
     }
-    auto stat = fs::read_file(proc_path(pid, "stat"));
-    if(!stat) {
-        return std::unexpected(process_error(stat.error()));
+    ProcText stat;
+    if(auto error = read_proc(stat, pid, "stat")) {
+        return std::unexpected(process_error(error));
     }
     auto kilobytes = [&](std::string_view key) {
-        return field(*status, key).value_or(0) * 1024;
+        return field(status, key).value_or(0) * 1024;
     };
     stats.swapped = kilobytes("VmSwap:");
     stats.memory = kilobytes("RssAnon:") + stats.swapped;
     stats.peak_memory = kilobytes("VmHWM:");
     stats.resident = kilobytes("VmRSS:");
-    stats.voluntary_switches = field(*status, "voluntary_ctxt_switches:").value_or(0);
-    stats.involuntary_switches = field(*status, "nonvoluntary_ctxt_switches:").value_or(0);
+    stats.voluntary_switches = field(status, "voluntary_ctxt_switches:").value_or(0);
+    stats.involuntary_switches = field(status, "nonvoluntary_ctxt_switches:").value_or(0);
     auto number = [&](std::size_t index) {
-        return leading_number(stat_field(*stat, index)).value_or(0);
+        return leading_number(stat_field(stat, index)).value_or(0);
     };
     auto ticks = static_cast<std::uint64_t>(::sysconf(_SC_CLK_TCK));
     stats.minor_faults = number(10);
@@ -157,11 +158,11 @@ std::expected<std::uint64_t, std::error_code> resident_memory() {
     return info.resident_size;
 #else
     // "<size> <resident> ...", in pages.
-    auto statm = fs::read_file("/proc/self/statm");
-    if(!statm) {
-        return std::unexpected(statm.error());
+    ProcText statm;
+    if(auto error = fs::read_file(statm, "/proc/self/statm")) {
+        return std::unexpected(error);
     }
-    std::string_view fields = *statm;
+    std::string_view fields = statm;
     auto pages = leading_number(fields.substr(std::min(fields.find(' '), fields.size())));
     return pages.value_or(0) * page_size();
 #endif
@@ -252,19 +253,19 @@ std::expected<Memory, std::error_code> memory([[maybe_unused]] std::span<const P
     };
     return Memory{.total = total, .limit = total, .available = detail::mac_available(counts, own)};
 #else
-    auto meminfo = fs::read_file("/proc/meminfo");
-    if(!meminfo) {
-        return std::unexpected(meminfo.error());
+    ProcText meminfo;
+    if(auto error = fs::read_file(meminfo, "/proc/meminfo")) {
+        return std::unexpected(error);
     }
-    auto total = field(*meminfo, "MemTotal:").value_or(0) * 1024;
+    auto total = field(meminfo, "MemTotal:").value_or(0) * 1024;
     Memory result{
         .total = total,
         .limit = total,
-        .available = field(*meminfo, "MemAvailable:").value_or(0) * 1024,
+        .available = field(meminfo, "MemAvailable:").value_or(0) * 1024,
     };
     // Read afresh every time: the process may have moved.
-    if(auto membership = fs::read_file("/proc/self/cgroup")) {
-        if(auto cgroups = detail::cgroup::memory("/sys/fs/cgroup", *membership, read_cgroup_file)) {
+    if(ProcText membership; !fs::read_file(membership, "/proc/self/cgroup")) {
+        if(auto cgroups = detail::cgroup::memory("/sys/fs/cgroup", membership, read_cgroup_file)) {
             result.limit = std::min(result.limit, cgroups->limit);
             result.available = std::min(result.available, cgroups->available);
         }
@@ -277,12 +278,12 @@ std::expected<int, std::error_code> oom_score_adjustment([[maybe_unused]] int pi
 #ifndef __linux__
     return std::unexpected(std::make_error_code(std::errc::not_supported));
 #else
-    auto text = fs::read_file(proc_path(pid, "oom_score_adj"));
-    if(!text) {
-        return std::unexpected(process_error(text.error()));
+    small_string<16> text;
+    if(auto error = read_proc(text, pid, "oom_score_adj")) {
+        return std::unexpected(process_error(error));
     }
     int value = 0;
-    std::from_chars(text->data(), text->data() + text->size(), value);
+    std::from_chars(text.data(), text.data() + text.size(), value);
     return value;
 #endif
 }
@@ -291,7 +292,12 @@ std::error_code set_oom_score_adjustment([[maybe_unused]] int value, [[maybe_unu
 #ifndef __linux__
     return std::make_error_code(std::errc::not_supported);
 #else
-    return process_error(fs::write_file(proc_path(pid, "oom_score_adj"), std::to_string(value)));
+    small_string<64> path;
+    proc_path(path, pid, "oom_score_adj");
+    char digits[16];
+    auto end = std::to_chars(digits, digits + sizeof(digits), value).ptr;
+    return process_error(
+        fs::write_file(path, std::string_view(digits, static_cast<std::size_t>(end - digits))));
 #endif
 }
 

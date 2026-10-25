@@ -30,15 +30,18 @@ std::expected<std::string, std::error_code> temp_dir() {
         }
         // Too small, it asks for the size with the NUL.
         if(size < path.size()) {
-            path.resize(size);
-            return fs::path::normalize(from_utf16(std::wstring_view(path)), fs::path::DotDot::Keep);
+            std::string temp;
+            from_utf16(temp, std::wstring_view(path.data(), size));
+            fs::path::normalize(temp, fs::path::DotDot::Keep);
+            return temp;
         }
         path.resize(size);
     }
 #else
     for(auto name: {"TMPDIR", "TMP", "TEMP", "TEMPDIR"}) {
         if(auto value = get_env(name); value && !value->empty()) {
-            return fs::path::normalize(*value, fs::path::DotDot::Keep);
+            fs::path::normalize(*value, fs::path::DotDot::Keep);
+            return std::move(*value);
         }
     }
     return "/tmp";

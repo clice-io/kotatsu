@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <memory>
 
+#include "kota/support/small_string.h"
 #include "kota/fs/path.h"
 
 #ifdef _WIN32
@@ -16,102 +17,115 @@
 
 namespace kota::fs {
 
-std::expected<std::string, std::error_code> canonical(std::string_view path) {
+std::error_code canonical(buffer_ref out, std::string_view path) {
 #ifdef _WIN32
     auto handle = win32::open(path, 0);
     if(!handle) {
-        return std::unexpected(handle.error());
+        return handle.error();
     }
-    auto final = win32::fill_wide([&](wchar_t* buffer, DWORD size) {
-        return ::GetFinalPathNameByHandleW(handle->get(),
-                                           buffer,
-                                           size,
-                                           FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-    });
-    if(!final) {
-        return std::unexpected(final.error());
+    win32::WidePath final;
+    if(auto error = win32::fill_wide(final, [&](wchar_t* buffer, DWORD size) {
+           return ::GetFinalPathNameByHandleW(handle->get(),
+                                              buffer,
+                                              size,
+                                              FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+       })) {
+        return error;
     }
-    return windows::from_native(*final);
+    windows::from_native(out, final);
+    return {};
 #else
-    auto c_path = posix::c_path(path);
-    if(!c_path) {
-        return std::unexpected(c_path.error());
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return error;
     }
-    std::unique_ptr<char, decltype(&std::free)> real(::realpath(c_path->c_str(), nullptr),
+    std::unique_ptr<char, decltype(&std::free)> real(::realpath(c_path.c_str(), nullptr),
                                                      &std::free);
     if(!real) {
-        return std::unexpected(posix::last_error());
+        return posix::last_error();
     }
-    return std::string(real.get());
+    out.assign(real.get());
+    return {};
 #endif
 }
 
-std::string weakly_canonical(std::string_view path) {
-    auto full = absolute(path);
-    if(!full) {
-        return path::normalize(path);
+void weakly_canonical(buffer_ref out, std::string_view path) {
+    small_string<256> full;
+    if(absolute(full, path)) {
+        out.assign(path);
+        path::normalize(out);
+        return;
     }
-    std::string_view existing = *full;
-    while(true) {
-        if(auto real = canonical(existing)) {
-            auto rest = std::string_view(*full).substr(existing.size());
-            while(!rest.empty() && path::is_separator(rest.front())) {
-                rest.remove_prefix(1);
-            }
-            return path::normalize(path::join(*real, rest));
+    std::string_view existing = full;
+    small_string<256> real;
+    while(canonical(real, existing)) {
+        existing = path::parent(existing);
+        if(existing.empty()) {
+            out.assign(full);
+            path::normalize(out);
+            return;
         }
-        auto above = path::parent(existing);
-        if(above.empty()) {
-            return path::normalize(*full);
-        }
-        existing = above;
     }
+    auto rest = std::string_view(full).substr(existing.size());
+    while(!rest.empty() && path::is_separator(rest.front())) {
+        rest.remove_prefix(1);
+    }
+    path::push(real, rest);
+    path::normalize(real);
+    out.assign(real);
 }
 
-std::expected<std::string, std::error_code> absolute(std::string_view path) {
+std::error_code absolute(buffer_ref out, std::string_view path) {
     if(path.empty()) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        return std::make_error_code(std::errc::invalid_argument);
     }
 #ifdef _WIN32
-    auto wide = win32::widen(path);
-    if(!wide) {
-        return std::unexpected(wide.error());
+    win32::WidePath wide;
+    if(auto error = win32::widen(wide, path)) {
+        return error;
     }
-    auto full = win32::full_path(*wide);
-    if(!full) {
-        return std::unexpected(full.error());
+    win32::WidePath full;
+    if(auto error = win32::full_path(full, wide.c_str())) {
+        return error;
     }
-    return windows::from_native(*full);
+    windows::from_native(out, full);
+    return {};
 #else
     if(path::is_absolute(path)) {
-        return path::normalize(path, path::DotDot::Keep);
+        out.assign(path);
+    } else {
+        small_string<256> joined;
+        if(auto error = current_dir(joined)) {
+            return error;
+        }
+        path::push(joined, path);
+        out.assign(joined);
     }
-    auto cwd = current_dir();
-    if(!cwd) {
-        return std::unexpected(cwd.error());
-    }
-    return path::normalize(path::join(*cwd, path), path::DotDot::Keep);
+    path::normalize(out, path::DotDot::Keep);
+    return {};
 #endif
 }
 
-std::expected<std::string, std::error_code> current_dir() {
+std::error_code current_dir(buffer_ref out) {
 #ifdef _WIN32
-    auto cwd = win32::fill_wide(
-        [](wchar_t* buffer, DWORD size) { return ::GetCurrentDirectoryW(size, buffer); });
-    if(!cwd) {
-        return std::unexpected(cwd.error());
+    win32::WidePath cwd;
+    if(auto error = win32::fill_wide(cwd, [](wchar_t* buffer, DWORD size) {
+           return ::GetCurrentDirectoryW(size, buffer);
+       })) {
+        return error;
     }
-    return windows::from_native(*cwd);
+    windows::from_native(out, cwd);
+    return {};
 #else
-    std::string buffer(256, '\0');
+    auto buffer = out.resize(256);
     while(::getcwd(buffer.data(), buffer.size()) == nullptr) {
         if(errno != ERANGE) {
-            return std::unexpected(posix::last_error());
+            return posix::last_error();
         }
-        buffer.resize(buffer.size() * 2);
+        buffer = out.resize(buffer.size() * 2);
     }
-    buffer.resize(buffer.find('\0'));
-    return buffer;
+    out.resize(std::string_view(buffer.data()).size());
+    return {};
 #endif
 }
 

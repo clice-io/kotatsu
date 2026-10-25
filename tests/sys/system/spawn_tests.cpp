@@ -47,7 +47,10 @@ std::string shell_path() {
 #ifdef _WIN32
     wchar_t directory[MAX_PATH];
     auto size = ::GetSystemDirectoryW(directory, MAX_PATH);
-    return fs::path::join(fs::windows::from_native(std::wstring_view(directory, size)), "cmd.exe");
+    std::string path;
+    fs::windows::from_native(path, std::wstring_view(directory, size));
+    fs::path::push(path, "cmd.exe");
+    return path;
 #else
     return "/bin/sh";
 #endif
@@ -315,7 +318,8 @@ ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
 }
 
 ZEST_CASE(stdout_goes_to_a_file) {
-    auto file = fs::File::open(dir.file("out.txt"), fs::OpenMode::Write);
+    auto file =
+        fs::File::open(dir.file("out.txt"), {.write = true, .truncate = true, .create = true});
     ZASSERT(file.has_value());
     auto options = shell("echo kotatsu-file");
     options.streams[1] = Stdio::from_file(*file);

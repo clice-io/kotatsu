@@ -1,4 +1,8 @@
+#include <string>
+#include <string_view>
+
 #include "kota/zest/zest.h"
+#include "kota/support/small_string.h"
 #include "kota/fs/path.h"
 
 namespace kota::fs::path {
@@ -8,15 +12,30 @@ namespace {
 constexpr auto posix = Style::Posix;
 constexpr auto windows = Style::Windows;
 
+/// `p` normalized, `..` folded.
 std::string folded(std::string_view p, Style style) {
-    return normalize(p, DotDot::Fold, style);
+    std::string buffer(p);
+    normalize(buffer, DotDot::Fold, style);
+    return buffer;
 }
 
+/// `p` normalized, `..` kept.
 std::string kept(std::string_view p, Style style) {
-    return normalize(p, DotDot::Keep, style);
+    std::string buffer(p);
+    normalize(buffer, DotDot::Keep, style);
+    return buffer;
 }
 
 ZEST_SUITE(fs_path_normalize) {
+
+ZEST_CASE(normalize_rewrites_the_buffer_in_place) {
+    small_string<16> p("a/./b/../c//");
+    normalize(p, DotDot::Fold, posix);
+    ZEXPECT(std::string_view(p) == "a/c");
+    p = "./";
+    normalize(p, DotDot::Fold, posix);
+    ZEXPECT(std::string_view(p) == ".");
+}
 
 ZEST_CASE(dots_and_repeated_separators_go) {
     ZEXPECT(folded("a/./b//c/", posix) == "a/b/c");
@@ -40,11 +59,18 @@ ZEST_CASE(dot_dot_never_climbs_past_a_root) {
     ZEXPECT(folded("/../a", posix) == "/a");
     ZEXPECT(folded("/..", posix) == "/");
     ZEXPECT(folded("C:\\..\\a", windows) == "C:\\a");
+    ZEXPECT(folded(R"(C:\..)", windows) == R"(C:\)");
     ZEXPECT(folded(R"(\\server\share\..\..\a)", windows) == R"(\\server\share\a)");
     ZEXPECT(folded(R"(\\?\C:\..\a)", windows) == R"(\\?\C:\a)");
     // A bare drive's directory is unknown, so `..` may climb past it.
     ZEXPECT(folded("C:..\\a", windows) == "C:..\\a");
     ZEXPECT(folded("C:a\\..\\..", windows) == "C:..");
+}
+
+ZEST_CASE(a_root_alone_stays_as_written) {
+    ZEXPECT(folded("C:", windows) == "C:");
+    ZEXPECT(folded(R"(C:\)", windows) == R"(C:\)");
+    ZEXPECT(folded(R"(\\server\share)", windows) == R"(\\server\share)");
 }
 
 ZEST_CASE(dot_dot_stays_when_asked) {

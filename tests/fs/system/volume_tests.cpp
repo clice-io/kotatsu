@@ -1,0 +1,45 @@
+#include <system_error>
+
+#include "fs/harness/files.h"
+#include "kota/zest/zest.h"
+#include "kota/fs/volume.h"
+
+namespace kota::fs {
+
+namespace {
+
+ZEST_SUITE(fs_volume) {
+
+ZEST_CASE(volume_tells_space_and_kind) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    auto found = volume(dir.file("file"));
+    ZASSERT(found.has_value());
+    ZEXPECT(found->capacity > 0u);
+    ZEXPECT(found->free <= found->capacity);
+    ZEXPECT(found->available <= found->free);
+    ZEXPECT(!found->type.empty());
+    // The system temp directory of the machines the suite runs on is local.
+    ZEXPECT(!found->remote);
+}
+
+#ifdef __linux__
+ZEST_CASE(volume_names_a_kind_linux_knows) {
+    auto found = volume("/proc/self");
+    ZASSERT(found.has_value());
+    ZEXPECT(found->type == "proc");
+}
+#endif
+
+ZEST_CASE(volume_of_nothing_fails) {
+    test::TempDir dir;
+    auto found = volume(dir.file("missing"));
+    ZASSERT(!found.has_value());
+    ZEXPECT(found.error() == std::errc::no_such_file_or_directory);
+}
+
+};  // ZEST_SUITE(fs_volume)
+
+}  // namespace
+
+}  // namespace kota::fs

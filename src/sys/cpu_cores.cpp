@@ -3,10 +3,12 @@
 #include <initializer_list>
 #include <ranges>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "os.h"
 #include "proc.h"
+#include "kota/support/small_string.h"
 #include "kota/sys/info.h"
 
 #ifdef _WIN32
@@ -102,7 +104,9 @@ std::expected<std::vector<CPUCore>, std::error_code> cpu_cores() {
             };
             wchar_t name[256];
             if(processor_value(index, L"ProcessorNameString", RRF_RT_REG_SZ, name, sizeof(name))) {
-                core.model = string_ref(from_utf16(std::wstring_view(name))).trim();
+                small_string<256> model;
+                from_utf16(model, std::wstring_view(name));
+                core.model = string_ref(std::string_view(model)).trim();
             }
             cores.push_back(std::move(core));
         }
@@ -134,12 +138,16 @@ std::expected<std::vector<CPUCore>, std::error_code> cpu_cores() {
                     reinterpret_cast<vm_address_t>(info),
                     info_count * sizeof(integer_t));
 #else
-    auto stat = fs::read_file("/proc/stat");
-    if(!stat) {
-        return std::unexpected(stat.error());
+    ProcText stat;
+    if(auto error = fs::read_file(stat, "/proc/stat")) {
+        return std::unexpected(error);
     }
-    // Blocks of "key\t: value" lines, one per online CPU.
-    auto cpuinfo = fs::read_file("/proc/cpuinfo").value_or("");
+    // Blocks of "key\t: value" lines, one per online CPU; none when it
+    // cannot be read.
+    ProcText cpuinfo;
+    if(fs::read_file(cpuinfo, "/proc/cpuinfo")) {
+        cpuinfo.clear();
+    }
     std::vector<std::string_view> blocks;
     for(auto block: std::views::split(std::string_view(cpuinfo), std::string_view("\n\n"))) {
         blocks.emplace_back(block.begin(), block.end());
@@ -154,7 +162,7 @@ std::expected<std::vector<CPUCore>, std::error_code> cpu_cores() {
         return std::chrono::milliseconds(sum * 1000 / ticks);
     };
     // "cpu<N> user nice system idle iowait irq softirq ...", in clock ticks.
-    for(auto range: std::views::split(std::string_view(*stat), '\n')) {
+    for(auto range: std::views::split(std::string_view(stat), '\n')) {
         std::string_view line(range.begin(), range.end());
         // Not "cpu ", the sum of them all.
         if(!line.starts_with("cpu") || line.size() < 4 || line[3] < '0' || line[3] > '9') {

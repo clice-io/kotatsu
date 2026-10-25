@@ -1,0 +1,89 @@
+#include <cstddef>
+#include <string>
+#include <system_error>
+#include <utility>
+
+#include "fs/harness/files.h"
+#include "kota/zest/zest.h"
+#include "kota/fs/file.h"
+#include "kota/fs/mapping.h"
+
+namespace kota::fs {
+
+namespace {
+
+ZEST_SUITE(fs_mapping) {
+
+ZEST_CASE(map_shows_the_files_bytes) {
+    test::TempDir dir;
+    std::string content(100'000, '\0');
+    for(std::size_t i = 0; i < content.size(); ++i) {
+        content[i] = static_cast<char>('a' + i % 26);
+    }
+    test::write_text(dir.file("é中😀"), content);
+    auto file = File::open(dir.file("é中😀"));
+    ZASSERT(file.has_value());
+    auto mapping = Mapping::map(*file);
+    ZASSERT(mapping.has_value());
+    // The mapping outlives the handle.
+    ZEXPECT(!file->close());
+    ZEXPECT(mapping->bytes() == content);
+}
+
+ZEST_CASE(map_of_an_empty_file_has_no_bytes) {
+    test::TempDir dir;
+    test::write_text(dir.file("empty"), "");
+    auto file = File::open(dir.file("empty"));
+    ZASSERT(file.has_value());
+    auto mapping = Mapping::map(*file);
+    ZASSERT(mapping.has_value());
+    ZEXPECT(mapping->bytes().empty());
+}
+
+#ifdef __linux__
+ZEST_CASE(map_of_a_file_without_a_size_has_no_bytes) {
+    auto file = File::open("/proc/self/status");
+    ZASSERT(file.has_value());
+    auto mapping = Mapping::map(*file);
+    ZASSERT(mapping.has_value());
+    ZEXPECT(mapping->bytes().empty());
+}
+#endif
+
+ZEST_CASE(a_moved_mapping_keeps_its_bytes) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    auto file = File::open(dir.file("file"));
+    ZASSERT(file.has_value());
+    auto mapping = Mapping::map(*file);
+    ZASSERT(mapping.has_value());
+    Mapping moved(std::move(*mapping));
+    ZEXPECT(mapping->bytes().empty());
+    ZEXPECT(moved.bytes() == "text");
+    Mapping assigned;
+    assigned = std::move(moved);
+    ZEXPECT(moved.bytes().empty());
+    ZEXPECT(assigned.bytes() == "text");
+}
+
+ZEST_CASE(map_of_a_file_open_to_write_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    auto file = File::open(dir.file("file"), {.write = true});
+    ZASSERT(file.has_value());
+    auto mapping = Mapping::map(*file);
+    ZASSERT(!mapping.has_value());
+    ZEXPECT(mapping.error() == std::errc::permission_denied);
+}
+
+ZEST_CASE(map_of_a_closed_file_fails) {
+    auto mapping = Mapping::map(File());
+    ZASSERT(!mapping.has_value());
+    ZEXPECT(mapping.error() == std::errc::bad_file_descriptor);
+}
+
+};  // ZEST_SUITE(fs_mapping)
+
+}  // namespace
+
+}  // namespace kota::fs

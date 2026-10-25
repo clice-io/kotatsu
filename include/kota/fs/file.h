@@ -4,21 +4,45 @@
 #include <cstdint>
 #include <expected>
 #include <span>
-#include <string>
 #include <string_view>
 #include <system_error>
 
+#include "kota/support/buffer_ref.h"
+#include "kota/fs/status.h"
+
 namespace kota::fs {
 
-/// How File::open() opens a file.
-enum class OpenMode : std::uint8_t {
-    /// For reading; the file must exist.
-    Read,
-    /// For writing, created or emptied.
-    Write,
-    /// For writing a file that must not exist: anything there fails with
-    /// std::errc::file_exists, a symlink too, dangling or not.
-    CreateNew,
+/// How File::open() opens a file. At least one of `read`, `write` and
+/// `append` is set; `truncate`, `create` and `create_new` need `write` or
+/// `append`, and `truncate` with `append` needs `create_new`, which empties
+/// nothing: anything else fails with std::errc::invalid_argument.
+struct OpenOptions {
+    bool read = false;
+
+    /// For writing, from where the last write or seek left off.
+    bool write = false;
+
+    /// For writing, each write at the end of the file, wherever another
+    /// handle wrote meanwhile: writing implied.
+    bool append = false;
+
+    /// Emptied once open.
+    bool truncate = false;
+
+    /// Created when it does not exist.
+    bool create = false;
+
+    /// Created, and anything there fails with std::errc::file_exists, a
+    /// symlink too, dangling or not; `create` and `truncate` then change
+    /// nothing.
+    bool create_new = false;
+};
+
+/// Where File::seek() counts from.
+enum class SeekFrom : std::uint8_t {
+    Start,
+    Current,
+    End,
 };
 
 /// An open file, closed when this goes. Its handle is not inherited by
@@ -47,7 +71,8 @@ public:
 
     ~File();
 
-    static std::expected<File, std::error_code> open(std::string_view path, OpenMode mode);
+    static std::expected<File, std::error_code> open(std::string_view path,
+                                                     const OpenOptions& options = {.read = true});
 
     /// Reads what fits into `buffer` from where the last read stopped: how
     /// many bytes it read, zero at the end of the file.
@@ -55,6 +80,64 @@ public:
 
     /// Writes all of `bytes`.
     std::error_code write(std::string_view bytes);
+
+    /// Moves where the next read or write starts to `offset` bytes from
+    /// `from`: the new position, from the start. Past the end is no error,
+    /// and a write there leaves a hole that reads as zeros; before the start
+    /// fails with std::errc::invalid_argument.
+    std::expected<std::uint64_t, std::error_code> seek(std::int64_t offset,
+                                                       SeekFrom from = SeekFrom::Start);
+
+    /// The status of the open file, which a rename or a removal of its name
+    /// does not change, as status() would give it for its path.
+    std::expected<Status, std::error_code> status() const;
+
+    /// Cuts the file short at `size` bytes, or extends it there with zeros;
+    /// the position stays. Needs `write`: on Windows `append` does not
+    /// give the right to change the file's size.
+    std::error_code resize(std::uint64_t size);
+
+    /// Waits until the system has written the file's bytes and status to
+    /// the disk, where a crash of the system does not lose them: fsync, on
+    /// macOS F_FULLFSYNC (which also empties the disk's own cache, where
+    /// fsync stops at the disk), on Windows FlushFileBuffers.
+    std::error_code sync();
+
+    /// Lets the file hold holes, ranges never written that take no space:
+    /// a write past the end, or resize(), leaves one rather than zeros
+    /// written out. On Windows the file system must support it (NTFS and
+    /// ReFS do, FAT does not), and the file be open for `write`; POSIX file
+    /// systems that can hold holes always do, and there this does nothing.
+    std::error_code set_sparse();
+
+    /// Waits until no other handle holds a lock of the file, then takes an
+    /// exclusive one, which keeps any other from taking either kind. Locks
+    /// are advisory: they keep no one from reading or writing. A handle
+    /// holds one lock at a time, and taking one replaces the one it holds;
+    /// closing the handle releases it. Each File::open is a handle of its
+    /// own, in this process too. flock on POSIX, which a network file system
+    /// may not support; on Windows LockFileEx of a byte past any file's end,
+    /// so that the file's bytes stay free to read and write, and which takes
+    /// a file open for `read` or `write`: one open to `append` alone, open it
+    /// for `read` too.
+    std::error_code lock();
+
+    /// The same for a shared lock, which keeps other handles from taking an
+    /// exclusive one, not a shared one.
+    std::error_code lock_shared();
+
+    /// lock() without waiting: false when another handle holds a lock. The
+    /// lock this handle held may be gone then on Linux and Windows, which
+    /// release it before they try, and stays on macOS.
+    std::expected<bool, std::error_code> try_lock();
+
+    /// lock_shared() without waiting: false when another handle holds an
+    /// exclusive lock, and as try_lock() the lock this handle held may be
+    /// gone then.
+    std::expected<bool, std::error_code> try_lock_shared();
+
+    /// Releases the lock this handle holds; holding none is no error.
+    std::error_code unlock();
 
     /// Closes the file, saying whether the system kept every write, which
     /// some file systems tell only now; closing a closed file does nothing.
@@ -73,9 +156,9 @@ private:
     native_handle_type handle = closed;
 };
 
-/// The bytes of a file. Read, not mapped: on Windows a mapped file keeps an
-/// editor from saving over it.
-std::expected<std::string, std::error_code> read_file(std::string_view path);
+/// Writes into `out` the bytes of a file. Read, not mapped: on Windows a
+/// mapped file keeps an editor from saving over it.
+std::error_code read_file(buffer_ref out, std::string_view path);
 
 /// Writes `bytes` as the whole of a file, created or emptied first.
 std::error_code write_file(std::string_view path, std::string_view bytes);
@@ -93,9 +176,18 @@ std::error_code write_file(std::string_view path, std::string_view bytes);
 std::error_code write_file_atomic(std::string_view path, std::string_view bytes);
 
 /// Creates an empty file in `directory`, named `prefix`, random characters
-/// and `suffix`, and none of it there before: its path.
-std::expected<std::string, std::error_code> create_temp_file(std::string_view directory,
-                                                             std::string_view prefix,
-                                                             std::string_view suffix);
+/// and `suffix`, and none of it there before: the file, open for reading and
+/// writing, and its path written into `path`. Nothing removes it.
+std::expected<File, std::error_code> create_temp_file(buffer_ref path,
+                                                      std::string_view directory,
+                                                      std::string_view prefix,
+                                                      std::string_view suffix);
+
+/// Creates an empty directory in `directory`, named `prefix` and random
+/// characters, and none of it there before, and writes its path into `path`.
+/// Nothing removes it.
+std::error_code create_temp_directory(buffer_ref path,
+                                      std::string_view directory,
+                                      std::string_view prefix);
 
 }  // namespace kota::fs

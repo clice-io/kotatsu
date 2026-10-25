@@ -178,7 +178,9 @@ int write_to_console(std::string_view text) {
                                   &read);
     // Blank cells hold a space, or a NUL in a console without a window.
     cells.resize(cells.find_last_not_of(std::wstring_view(L" \0", 2)) + 1);
-    print_line(json(kota::from_utf16(std::wstring_view(cells))));
+    std::string shown;
+    kota::from_utf16(shown, cells);
+    print_line(json(shown));
     return 0;
 }
 
@@ -310,14 +312,14 @@ int main() {
         return run(options);
     }
     if(command == "report" && arguments.size() == 3) {
-        auto cwd = kota::fs::current_dir();
-        if(!cwd) {
-            return fail("current_dir", cwd.error());
+        std::string cwd;
+        if(auto error = kota::fs::current_dir(cwd)) {
+            return fail("current_dir", error);
         }
         auto value = sys::get_env("KOTA_PROBE_VALUE");
         print_line(std::format(R"({{"arguments":{},"cwd":{},"value":{}}})",
                                json(arguments),
-                               json(*cwd),
+                               json(cwd),
                                value ? json(*value) : "null"));
         return 0;
     }
@@ -386,8 +388,9 @@ int main() {
                                     .lpSecurityDescriptor = nullptr,
                                     .bInheritHandle = TRUE};
         auto name = std::format("Local\\kota-probe-{}", ::GetCurrentProcessId());
-        auto wide_name = kota::to_utf16<wchar_t>(name);
-        HANDLE event = ::CreateEventW(&inherit, TRUE, TRUE, wide_name->c_str());
+        std::wstring wide_name;
+        kota::to_utf16(wide_name, name);
+        HANDLE event = ::CreateEventW(&inherit, TRUE, TRUE, wide_name.c_str());
         if(event == nullptr) {
             return fail("CreateEventW", kota::fs::windows::last_error());
         }
@@ -410,8 +413,9 @@ int main() {
         using Compare = BOOL(WINAPI*)(HANDLE, HANDLE);
         auto compare = reinterpret_cast<Compare>(reinterpret_cast<void*>(
             ::GetProcAddress(::GetModuleHandleW(L"kernelbase.dll"), "CompareObjectHandles")));
-        auto wide_name = kota::to_utf16<wchar_t>(arguments[3]);
-        HANDLE named = ::OpenEventW(SYNCHRONIZE, FALSE, wide_name->c_str());
+        std::wstring wide_name;
+        kota::to_utf16(wide_name, arguments[3]);
+        HANDLE named = ::OpenEventW(SYNCHRONIZE, FALSE, wide_name.c_str());
         if(compare == nullptr || named == nullptr) {
             return 0;
         }

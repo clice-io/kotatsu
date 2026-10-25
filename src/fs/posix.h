@@ -3,13 +3,13 @@
 #ifndef _WIN32
 
 #include <cerrno>
+#include <chrono>
 #include <cstdint>
-#include <expected>
-#include <string>
 #include <string_view>
 #include <sys/stat.h>
 #include <system_error>
 
+#include "kota/support/small_string.h"
 #include "kota/fs/status.h"
 
 namespace kota::fs::posix {
@@ -19,14 +19,27 @@ inline std::error_code last_error() {
     return std::error_code(errno, std::generic_category());
 }
 
-/// `path` as the system calls take it, NUL-terminated; a NUL inside, which
-/// would cut it short, fails.
-inline std::expected<std::string, std::error_code> c_path(std::string_view path) {
-    if(path.find('\0') != std::string_view::npos) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+/// A path as the system calls take it, NUL-terminated, on the stack while
+/// it is no longer than most paths are.
+class CPath {
+public:
+    /// Takes `path`: invalid_argument for a NUL inside, which would cut it
+    /// short.
+    std::error_code assign(std::string_view path) {
+        if(path.find('\0') != std::string_view::npos) {
+            return std::make_error_code(std::errc::invalid_argument);
+        }
+        text.assign(path);
+        return {};
     }
-    return std::string(path);
-}
+
+    const char* c_str() {
+        return text.c_str();
+    }
+
+private:
+    small_string<256> text;
+};
 
 inline Status make_status(const struct stat& info) {
     auto type = S_ISREG(info.st_mode)    ? FileType::Regular
@@ -44,14 +57,15 @@ inline Status make_status(const struct stat& info) {
     const auto& mtime = info.st_mtim;
     const auto& ctime = info.st_ctim;
 #endif
-    auto ns = [](const struct timespec& time) {
-        return static_cast<std::int64_t>(time.tv_sec) * 1'000'000'000 + time.tv_nsec;
+    auto time_of = [](const struct timespec& time) {
+        return std::chrono::sys_time<std::chrono::nanoseconds>(
+            std::chrono::seconds(time.tv_sec) + std::chrono::nanoseconds(time.tv_nsec));
     };
     return Status{
         .type = type,
         .size = static_cast<std::uint64_t>(info.st_size),
-        .mtime_ns = ns(mtime),
-        .ctime_ns = ns(ctime),
+        .mtime = time_of(mtime),
+        .ctime = time_of(ctime),
         .id = {.device = static_cast<std::uint64_t>(info.st_dev),
                .file = static_cast<std::uint64_t>(info.st_ino)},
         .links = static_cast<std::uint32_t>(info.st_nlink),

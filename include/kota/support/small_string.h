@@ -132,4 +132,22 @@ public:
     }
 };
 
+/// A small_vector<wchar_t>, for the wide strings of the Windows API, which
+/// c_str() ends with the NUL they take.
+template <unsigned InlineCapacity>
+class small_wstring : public small_vector<wchar_t, InlineCapacity> {
+public:
+    using small_vector<wchar_t, InlineCapacity>::small_vector;
+
+    constexpr const wchar_t* c_str() {
+        this->push_back(L'\0');
+        this->pop_back();
+        return this->data();
+    }
+
+    constexpr operator std::wstring_view() const {
+        return std::wstring_view(this->data(), this->size());
+    }
+};
+
 }  // namespace kota

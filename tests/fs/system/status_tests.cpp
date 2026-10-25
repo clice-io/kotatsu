@@ -1,5 +1,4 @@
 #include <chrono>
-#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -16,11 +15,6 @@
 namespace kota::fs {
 
 namespace {
-
-std::int64_t now_ns() {
-    auto since_epoch = std::chrono::system_clock::now().time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(since_epoch).count();
-}
 
 ZEST_SUITE(fs_status) {
 
@@ -42,17 +36,17 @@ ZEST_CASE(status_tells_files_from_directories) {
 
 ZEST_CASE(status_tells_times_since_the_unix_epoch) {
     test::TempDir dir;
-    auto before = now_ns();
+    auto before = std::chrono::system_clock::now();
     test::write_text(dir.file("file.txt"), "text");
     auto found = status(dir.file("file.txt"));
     ZASSERT(found.has_value());
     // File systems keep coarser times than the clock: a minute either way
     // tells a wrong epoch or unit, which would be years off.
-    constexpr std::int64_t minute = 60'000'000'000;
-    ZEXPECT(found->mtime_ns > before - minute);
-    ZEXPECT(found->mtime_ns < now_ns() + minute);
-    ZEXPECT(found->ctime_ns > before - minute);
-    ZEXPECT(found->ctime_ns < now_ns() + minute);
+    constexpr auto minute = std::chrono::minutes(1);
+    ZEXPECT(found->mtime > before - minute);
+    ZEXPECT(found->mtime < std::chrono::system_clock::now() + minute);
+    ZEXPECT(found->ctime > before - minute);
+    ZEXPECT(found->ctime < std::chrono::system_clock::now() + minute);
 }
 
 ZEST_CASE(status_tells_a_device) {

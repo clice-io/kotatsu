@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstring>
 
+#include "kota/support/small_vector.h"
 #include "kota/support/string_ref.h"
 
 namespace kota::fs::path {
@@ -84,20 +86,15 @@ Root windows_prefix(std::string_view p) {
     return {};
 }
 
-/// The names after the root of `p`, as views of `p`.
-std::vector<std::string_view> names_after(std::string_view p, const Root& r, Style style) {
-    std::vector<std::string_view> names;
-    std::size_t at = r.name.size() + r.directory.size();
-    while(at < p.size()) {
-        if(separates(p[at], style, r.prefix)) {
-            ++at;
-            continue;
-        }
-        auto start = at;
-        while(at < p.size() && !separates(p[at], style, r.prefix)) {
-            ++at;
-        }
-        names.push_back(p.substr(start, at - start));
+/// The names of a path, kept on the stack while a path is no deeper than
+/// most are.
+using Names = small_vector<std::string_view, 32>;
+
+/// The names after the root of `p`.
+Names names_after(std::string_view p, Style style) {
+    Names names;
+    for(auto name: components(p, style)) {
+        names.push_back(name);
     }
     return names;
 }
@@ -146,16 +143,6 @@ char separator_of(std::string_view p, const Root& r, Style style, char fallback)
     return fallback;
 }
 
-/// The names joined with `sep`.
-void append_names(std::string& out, const std::vector<std::string_view>& names, char sep) {
-    for(std::size_t i = 0; i < names.size(); ++i) {
-        if(i != 0) {
-            out.push_back(sep);
-        }
-        out.append(names[i]);
-    }
-}
-
 /// Where the last name of `p` ends: before its trailing separators.
 std::size_t trimmed_end(std::string_view p, const Root& r, Style style) {
     auto end = p.size();
@@ -202,8 +189,29 @@ bool has_root(std::string_view p, Style style) {
     return rooted(root(p, style));
 }
 
-std::vector<std::string_view> components(std::string_view p, Style style) {
-    return names_after(p, root(p, style), style);
+components_view::iterator::iterator(std::string_view path,
+                                    Style style,
+                                    Prefix prefix,
+                                    std::size_t at) :
+    path(path), style(style), prefix(prefix), start(at), end(at) {
+    ++*this;
+}
+
+components_view::iterator& components_view::iterator::operator++() {
+    start = end;
+    while(start < path.size() && separates(path[start], style, prefix)) {
+        ++start;
+    }
+    end = start;
+    while(end < path.size() && !separates(path[end], style, prefix)) {
+        ++end;
+    }
+    return *this;
+}
+
+components_view::iterator components_view::begin() const {
+    auto r = root(path, style);
+    return {path, style, r.prefix, r.name.size() + r.directory.size()};
 }
 
 std::string_view filename(std::string_view p, Style style) {
@@ -237,40 +245,25 @@ std::string_view extension(std::string_view p, Style style) {
     return dot == std::string_view::npos ? std::string_view() : name.substr(dot);
 }
 
-std::string replace_extension(std::string_view p, std::string_view ext, Style style) {
-    auto name = filename(p, style);
-    if(name.empty()) {
-        return std::string(p);
-    }
-    auto name_start = static_cast<std::size_t>(name.data() - p.data());
-    auto dot = extension_dot(name);
-    std::string result(p.substr(0, name_start + std::min(dot, name.size())));
-    if(!ext.empty()) {
-        if(!ext.starts_with('.')) {
-            result.push_back('.');
-        }
-        result.append(ext);
-    }
-    return result;
-}
-
-std::string join(std::string_view base, std::string_view p, Style style) {
+void push(buffer_ref path, std::string_view p, Style style) {
+    auto base = path.view();
     if(base.empty() || is_absolute(p, style)) {
-        return std::string(p);
+        path.assign(p);
+        return;
     }
     auto b = root(base, style);
     auto r = root(p, style);
     if(r.prefix != Prefix::None && !same_prefix(r, b, style)) {
-        return std::string(p);
+        path.assign(p);
+        return;
     }
     // A rooted `\x` keeps only the base's prefix; anything else, its own
     // prefix the base's, keeps the whole base.
     auto rest = p.substr(r.name.size());
-    std::string result;
+    bool verbatim = is_verbatim(b.prefix);
     if(!r.directory.empty()) {
-        result.append(b.name);
+        path.resize(b.name.size());
     } else {
-        result.append(base);
         bool ends_in_separator =
             base.size() > b.name.size() && separates(base.back(), style, b.prefix);
         if(!rest.empty() && !ends_in_separator &&
@@ -283,36 +276,57 @@ std::string join(std::string_view base, std::string_view p, Style style) {
                     sep = c;
                 }
             }
-            result.push_back(is_verbatim(b.prefix) ? '\\' : sep);
+            path.push_back(verbatim ? '\\' : sep);
         }
     }
-    auto appended = result.size();
-    result.append(rest);
-    if(is_verbatim(b.prefix)) {
-        std::replace(result.begin() + static_cast<std::ptrdiff_t>(appended),
-                     result.end(),
-                     '/',
-                     '\\');
+    auto appended = path.size();
+    path.append(rest);
+    if(verbatim) {
+        std::ranges::replace(path.chars().subspan(appended), '/', '\\');
     }
-    return result;
 }
 
-std::string join(std::initializer_list<std::string_view> parts, Style style) {
-    std::string result;
-    for(auto part: parts) {
-        result = join(result, part, style);
+bool pop(buffer_ref path, Style style) {
+    auto p = path.view();
+    if(filename(p, style).empty()) {
+        return false;
     }
-    return result;
+    path.resize(parent(p, style).size());
+    return true;
 }
 
-std::string normalize(std::string_view p, DotDot dot_dot, Style style) {
+void set_file_name(buffer_ref path, std::string_view name, Style style) {
+    pop(path, style);
+    push(path, name, style);
+}
+
+bool set_extension(buffer_ref path, std::string_view ext, Style style) {
+    auto p = path.view();
+    auto name = filename(p, style);
+    // An extension would make `.` and `..` names of their own.
+    if(name.empty() || name == "." || name == "..") {
+        return false;
+    }
+    auto name_start = static_cast<std::size_t>(name.data() - p.data());
+    path.resize(name_start + std::min(extension_dot(name), name.size()));
+    if(!ext.empty()) {
+        if(!ext.starts_with('.')) {
+            path.push_back('.');
+        }
+        path.append(ext);
+    }
+    return true;
+}
+
+void normalize(buffer_ref path, DotDot dot_dot, Style style) {
+    auto p = path.view();
     if(p.empty()) {
-        return {};
+        return;
     }
     auto r = root(p, style);
     bool climbs_stop = rooted(r);
-    std::vector<std::string_view> kept;
-    for(auto name: names_after(p, r, style)) {
+    Names kept;
+    for(auto name: components(p, style)) {
         if(name == ".") {
             continue;
         }
@@ -328,28 +342,38 @@ std::string normalize(std::string_view p, DotDot dot_dot, Style style) {
         kept.push_back(name);
     }
     char sep = separator_of(p, r, style, '/');
-    std::string result;
+    // Written over the path from its start: each piece lands where it is, or
+    // before, so that what is still to be read stays.
+    auto chars = path.chars();
+    std::size_t length = 0;
     for(auto c: r.name) {
-        result.push_back(!is_verbatim(r.prefix) && is_separator(c, style) ? sep : c);
+        chars[length++] = !is_verbatim(r.prefix) && is_separator(c, style) ? sep : c;
     }
     if(!r.directory.empty()) {
-        result.push_back(sep);
+        chars[length++] = sep;
     }
-    append_names(result, kept, sep);
-    if(result.empty()) {
-        return ".";
+    for(std::size_t i = 0; i < kept.size(); ++i) {
+        if(i != 0) {
+            chars[length++] = sep;
+        }
+        std::memmove(chars.data() + length, kept[i].data(), kept[i].size());
+        length += kept[i].size();
     }
-    return result;
+    if(length == 0) {
+        path.assign(".");
+        return;
+    }
+    path.resize(length);
 }
 
-std::optional<std::string> relative(std::string_view p, std::string_view base, Style style) {
+bool relative(buffer_ref out, std::string_view p, std::string_view base, Style style) {
     auto pr = root(p, style);
     auto br = root(base, style);
     if(!same_root(pr, br, style)) {
-        return std::nullopt;
+        return false;
     }
-    auto a = names_after(p, pr, style);
-    auto b = names_after(base, br, style);
+    auto a = names_after(p, style);
+    auto b = names_after(base, style);
     std::size_t common = 0;
     while(common < a.size() && common < b.size() && a[common] == b[common]) {
         ++common;
@@ -359,19 +383,29 @@ std::optional<std::string> relative(std::string_view p, std::string_view base, S
     std::size_t climbs = 0;
     for(auto i = common; i < b.size(); ++i) {
         if(b[i] == "..") {
-            return std::nullopt;
+            return false;
         }
         climbs += b[i] != ".";
     }
     if(climbs == 0 && common == a.size()) {
-        return ".";
+        out.assign(".");
+        return true;
     }
     char sep = separator_of(p, pr, style, separator_of(base, br, style, '/'));
-    std::vector<std::string_view> names(climbs, "..");
-    names.insert(names.end(), a.begin() + static_cast<std::ptrdiff_t>(common), a.end());
-    std::string result;
-    append_names(result, names, sep);
-    return result;
+    out.clear();
+    for(std::size_t i = 0; i < climbs; ++i) {
+        if(i != 0) {
+            out.push_back(sep);
+        }
+        out.append("..");
+    }
+    for(auto i = common; i < a.size(); ++i) {
+        if(!out.empty()) {
+            out.push_back(sep);
+        }
+        out.append(a[i]);
+    }
+    return true;
 }
 
 std::optional<std::string_view> strip_prefix(std::string_view p,
@@ -382,8 +416,8 @@ std::optional<std::string_view> strip_prefix(std::string_view p,
     if(!same_root(pr, ar, style)) {
         return std::nullopt;
     }
-    auto names = names_after(p, pr, style);
-    auto ancestor = names_after(prefix, ar, style);
+    auto names = names_after(p, style);
+    auto ancestor = names_after(prefix, style);
     if(ancestor.size() > names.size() ||
        !std::equal(ancestor.begin(), ancestor.end(), names.begin())) {
         return std::nullopt;
@@ -399,20 +433,16 @@ bool is_within(std::string_view p, std::string_view ancestor, Style style) {
     return strip_prefix(p, ancestor, style).has_value();
 }
 
-std::string to_slash(std::string_view p, Style style) {
-    std::string result(p);
-    if(style == Style::Windows && !is_verbatim(root(p, style).prefix)) {
-        std::ranges::replace(result, '\\', '/');
+void to_slash(buffer_ref path, Style style) {
+    if(style == Style::Windows && !is_verbatim(root(path.view(), style).prefix)) {
+        std::ranges::replace(path.chars(), '\\', '/');
     }
-    return result;
 }
 
-std::string to_backslash(std::string_view p) {
-    std::string result(p);
-    if(!is_verbatim(root(p, Style::Windows).prefix)) {
-        std::ranges::replace(result, '/', '\\');
+void to_backslash(buffer_ref path) {
+    if(!is_verbatim(root(path.view(), Style::Windows).prefix)) {
+        std::ranges::replace(path.chars(), '/', '\\');
     }
-    return result;
 }
 
 }  // namespace kota::fs::path

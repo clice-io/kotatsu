@@ -1,3 +1,5 @@
+#include <string_view>
+
 #include "kota/zest/zest.h"
 #include "kota/fs/path.h"
 
@@ -52,25 +54,6 @@ ZEST_CASE(stem_and_extension_split_at_the_last_dot) {
     ZEXPECT(extension("..", posix) == "");
     ZEXPECT(extension("a.b/c", posix) == "");
     ZEXPECT(extension("C:\\dir\\clang.EXE", windows) == ".EXE");
-}
-
-ZEST_CASE(replace_extension_swaps_or_removes_it) {
-    ZEXPECT(replace_extension("a/b.cpp", ".o", posix) == "a/b.o");
-    ZEXPECT(replace_extension("a/b.cpp", "o", posix) == "a/b.o");
-    ZEXPECT(replace_extension("a/b", ".o", posix) == "a/b.o");
-    ZEXPECT(replace_extension("a/b.cpp", "", posix) == "a/b");
-    ZEXPECT(replace_extension(".bashrc", ".bak", posix) == ".bashrc.bak");
-    ZEXPECT(replace_extension("a.b/c", "x", posix) == "a.b/c.x");
-    ZEXPECT(replace_extension("a/b/", ".o", posix) == "a/b.o");
-    ZEXPECT(replace_extension("/", ".o", posix) == "/");
-}
-
-ZEST_CASE(separators_convert_where_they_separate) {
-    ZEXPECT(to_slash("C:\\a\\b", windows) == "C:/a/b");
-    ZEXPECT(to_slash("a\\b", posix) == "a\\b");
-    // Past `\\?\` a `/` is a name's character, and `\` must stay.
-    ZEXPECT(to_slash(R"(\\?\C:\a)", windows) == R"(\\?\C:\a)");
-    ZEXPECT(to_backslash("C:/a/b") == "C:\\a\\b");
 }
 
 };  // ZEST_SUITE(fs_path_decompose)

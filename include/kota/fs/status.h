@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <string_view>
@@ -43,14 +44,14 @@ struct Status {
     /// In bytes.
     std::uint64_t size = 0;
 
-    /// When its bytes last changed, in nanoseconds since the Unix epoch.
-    std::int64_t mtime_ns = 0;
+    /// When its bytes last changed.
+    std::chrono::sys_time<std::chrono::nanoseconds> mtime{};
 
     /// When its bytes or its metadata last changed (POSIX ctime, Windows
     /// ChangeTime): unlike the mtime nothing sets it back, so it moves when
     /// a file is replaced under its name with its size and mtime kept
-    /// (`cp -p`). Zero where the file system keeps none (FAT).
-    std::int64_t ctime_ns = 0;
+    /// (`cp -p`). The epoch where the file system keeps none (FAT).
+    std::chrono::sys_time<std::chrono::nanoseconds> ctime{};
 
     FileID id = {};
 

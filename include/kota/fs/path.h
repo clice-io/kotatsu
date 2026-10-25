@@ -1,11 +1,13 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
-#include <initializer_list>
+#include <iterator>
 #include <optional>
-#include <string>
+#include <ranges>
 #include <string_view>
-#include <vector>
+
+#include "kota/support/buffer_ref.h"
 
 /// Paths as text: UTF-8 (WTF-8 on Windows) strings taken apart, joined and
 /// normalized without asking the operating system. Nothing here reads the
@@ -78,9 +80,76 @@ bool is_absolute(std::string_view p, Style style = native_style);
 /// front of it: absolute, or on Windows rooted on the current drive (`\x`).
 bool has_root(std::string_view p, Style style = native_style);
 
-/// The names after the root, `.` and `..` among them; repeated and trailing
-/// separators make none.
-std::vector<std::string_view> components(std::string_view p, Style style = native_style);
+/// The names after a path's root, `.` and `..` among them, as views of the
+/// path; repeated and trailing separators make none. A view, which reads
+/// the path as it goes.
+class components_view : public std::ranges::view_interface<components_view> {
+public:
+    class iterator {
+    public:
+        using iterator_concept = std::forward_iterator_tag;
+        using value_type = std::string_view;
+        using difference_type = std::ptrdiff_t;
+
+        iterator() = default;
+
+        std::string_view operator*() const {
+            return path.substr(start, end - start);
+        }
+
+        iterator& operator++();
+
+        iterator operator++(int) {
+            auto old = *this;
+            ++*this;
+            return old;
+        }
+
+        friend bool operator==(const iterator& a, const iterator& b) {
+            return a.start == b.start;
+        }
+
+        friend bool operator==(const iterator& it, std::default_sentinel_t) {
+            return it.start == it.path.size();
+        }
+
+    private:
+        friend class components_view;
+
+        iterator(std::string_view path, Style style, Prefix prefix, std::size_t at);
+
+        std::string_view path;
+
+        Style style = native_style;
+
+        Prefix prefix = Prefix::None;
+
+        /// Where the name starts and ends: the path's size at the end.
+        std::size_t start = 0;
+
+        std::size_t end = 0;
+    };
+
+    components_view() = default;
+
+    components_view(std::string_view path, Style style) : path(path), style(style) {}
+
+    iterator begin() const;
+
+    std::default_sentinel_t end() const {
+        return {};
+    }
+
+private:
+    std::string_view path;
+
+    Style style = native_style;
+};
+
+/// The components of `p`.
+inline components_view components(std::string_view p, Style style = native_style) {
+    return {p, style};
+}
 
 /// The last name: `b` of `a/b` and of `a/b/`; empty when there is none, as
 /// in `/` and `C:`.
@@ -101,18 +170,100 @@ std::string_view stem(std::string_view p, Style style = native_style);
 /// `.` of `name.`; empty when it has none.
 std::string_view extension(std::string_view p, Style style = native_style);
 
-/// `p` with its extension replaced by `ext`, which gains a leading dot when
-/// it has none; an empty `ext` removes the extension.
-std::string replace_extension(std::string_view p, std::string_view ext, Style style = native_style);
+/// `p`, then each parent of it in turn, as parent() gives them, while there
+/// is one: `a/b/c`, `a/b`, `a`; `/a`, `/`. A view, as components() is.
+class ancestors_view : public std::ranges::view_interface<ancestors_view> {
+public:
+    class iterator {
+    public:
+        using iterator_concept = std::forward_iterator_tag;
+        using value_type = std::string_view;
+        using difference_type = std::ptrdiff_t;
 
-/// `p` taken relative to `base`. An absolute `p`, and on Windows one with
-/// another prefix (`D:x` onto `C:\a`), stands alone; a rooted `\x` keeps
-/// the base's prefix; anything else goes after the base, behind the
-/// separator the base already uses, or `p` uses, or `/`.
-std::string join(std::string_view base, std::string_view p, Style style = native_style);
+        iterator() = default;
 
-/// The parts joined left to right.
-std::string join(std::initializer_list<std::string_view> parts, Style style = native_style);
+        std::string_view operator*() const {
+            return path;
+        }
+
+        iterator& operator++() {
+            path = parent(path, style);
+            return *this;
+        }
+
+        iterator operator++(int) {
+            auto old = *this;
+            ++*this;
+            return old;
+        }
+
+        friend bool operator==(const iterator& a, const iterator& b) {
+            return a.path.size() == b.path.size();
+        }
+
+        friend bool operator==(const iterator& it, std::default_sentinel_t) {
+            return it.path.empty();
+        }
+
+    private:
+        friend class ancestors_view;
+
+        iterator(std::string_view path, Style style) : path(path), style(style) {}
+
+        std::string_view path;
+
+        Style style = native_style;
+    };
+
+    ancestors_view() = default;
+
+    ancestors_view(std::string_view path, Style style) : path(path), style(style) {}
+
+    iterator begin() const {
+        return {path, style};
+    }
+
+    std::default_sentinel_t end() const {
+        return {};
+    }
+
+private:
+    std::string_view path;
+
+    Style style = native_style;
+};
+
+/// The ancestors of `p`, itself first.
+inline ancestors_view ancestors(std::string_view p, Style style = native_style) {
+    return {p, style};
+}
+
+// The functions below write a path into a buffer the caller gives, of any
+// type (std::string, small_string<N>, llvm::SmallString<N>): one buffer may
+// serve a loop of calls without allocating. Those that change a path change
+// it in place, as Rust's PathBuf does; a string_view they take must not view
+// the buffer they write.
+
+/// Joins `p` onto `path`. An absolute `p`, and on Windows one with another
+/// prefix (`D:x` onto `C:\a`), takes its place; a rooted `\x` keeps its
+/// prefix; anything else goes after it, behind the separator it already
+/// uses, or `p` uses, or `/`.
+void push(buffer_ref path, std::string_view p, Style style = native_style);
+
+/// Cuts `path` to its parent(), the empty one of a single relative name
+/// (`a`) included; false, leaving it as it is, when it has no filename to
+/// cut (`/`, `C:`, ``).
+bool pop(buffer_ref path, Style style = native_style);
+
+/// Replaces the filename of `path` by `name`, or joins `name` onto a path
+/// without one, as push() does.
+void set_file_name(buffer_ref path, std::string_view name, Style style = native_style);
+
+/// Replaces the extension of `path`'s filename by `ext`, which gains a
+/// leading dot when it has none; an empty `ext` removes the extension.
+/// False, leaving it as it is, for a path without a filename, or whose
+/// filename is `.` or `..`.
+bool set_extension(buffer_ref path, std::string_view ext, Style style = native_style);
 
 /// What normalize() does with `..`.
 enum class DotDot : std::uint8_t {
@@ -122,28 +273,26 @@ enum class DotDot : std::uint8_t {
     Keep,
 };
 
-/// `p` without `.` components and repeated or trailing separators, written
-/// with the first separator `p` uses (only `\` after a verbatim prefix);
-/// `..` folded or kept as `dot_dot` says. A `..` never climbs past a root,
-/// a UNC share included, but stays in a relative path and after a bare
-/// drive (`C:..`), whose directory is unknown. A path left without a
-/// component is `.`; an empty one stays empty.
-std::string normalize(std::string_view p,
-                      DotDot dot_dot = DotDot::Fold,
-                      Style style = native_style);
+/// Rewrites `path` without `.` components and repeated or trailing
+/// separators, with the first separator it uses (only `\` after a verbatim
+/// prefix); `..` folded or kept as `dot_dot` says. A `..` never climbs past a
+/// root, a UNC share included, but stays in a relative path and after a bare
+/// drive (`C:..`), whose directory is unknown. A relative path left with
+/// nothing is `.`; an empty one stays empty.
+void normalize(buffer_ref path, DotDot dot_dot = DotDot::Fold, Style style = native_style);
 
-/// The relative path that leads from `base` to `p`, both taken as written
-/// (normalize() them first): `../c` for `a/c` from `a/b`, `.` for `p`
-/// itself. None when the path cannot be told: the roots differ (prefixes
-/// compare in either case), or `base` has a `..` past the part the two
-/// share, which climbs out of a directory whose name neither spells.
-std::optional<std::string> relative(std::string_view p,
-                                    std::string_view base,
-                                    Style style = native_style);
+/// Writes into `out` the relative path that leads from `base` to `p`, both
+/// taken as written (normalize() them first): `../c` for `a/c` from `a/b`,
+/// `.` for `p` itself. False, leaving `out` as it is, when the path cannot be
+/// told: the roots differ (prefixes compare in either case), or `base` has a
+/// `..` past the part the two share, which climbs out of a directory whose
+/// name neither spells.
+bool
+    relative(buffer_ref out, std::string_view p, std::string_view base, Style style = native_style);
 
 /// The rest of `p` after the components of `prefix`, without the separators
 /// before it: `c/d` of `a/b/c/d` under `a/b`, empty for `a/b` itself; none
-/// when `p` is not under `prefix`. Components compare whole and as written,
+/// when `p` is not under `prefix`. components_view compare whole and as written,
 /// roots as relative() compares them.
 std::optional<std::string_view> strip_prefix(std::string_view p,
                                              std::string_view prefix,
@@ -152,13 +301,13 @@ std::optional<std::string_view> strip_prefix(std::string_view p,
 /// Whether `p` is `ancestor` or lies under it, component by component.
 bool is_within(std::string_view p, std::string_view ancestor, Style style = native_style);
 
-/// `p` with each `\` turned into `/` where `\` separates: a Windows path
-/// that is not verbatim. Any other path comes back as it is.
-std::string to_slash(std::string_view p, Style style = native_style);
+/// Turns each `\` of `path` into `/` where `\` separates: in a Windows
+/// path that is not verbatim. Any other path stays as it is.
+void to_slash(buffer_ref path, Style style = native_style);
 
-/// A Windows path with each `/` turned into `\`, the way Windows programs
-/// print paths; a verbatim one, where `/` is a name's character, comes back
-/// as it is.
-std::string to_backslash(std::string_view p);
+/// Turns each `/` of a Windows `path` into `\`, the way Windows programs
+/// print paths; a verbatim one, where `/` is a name's character, stays as it
+/// is.
+void to_backslash(buffer_ref path);
 
 }  // namespace kota::fs::path

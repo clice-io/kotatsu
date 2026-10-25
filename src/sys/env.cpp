@@ -6,6 +6,7 @@
 #include <string>
 
 #include "os.h"
+#include "kota/support/small_string.h"
 #include "kota/support/string_ref.h"
 
 #ifdef _WIN32
@@ -45,15 +46,16 @@ std::optional<std::string> get_env(std::string_view name) {
         return std::nullopt;
     }
 #ifdef _WIN32
-    auto wide_name = to_utf16<wchar_t>(name);
-    if(!wide_name) {
+    small_wstring<64> wide_name;
+    if(to_utf16(wide_name, name)) {
         return std::nullopt;
     }
-    std::wstring value(128, L'\0');
+    small_wstring<256> value;
+    value.resize(256);
     while(true) {
         // An empty value reads as 0 too, without an error.
         ::SetLastError(ERROR_SUCCESS);
-        auto size = ::GetEnvironmentVariableW(wide_name->c_str(),
+        auto size = ::GetEnvironmentVariableW(wide_name.c_str(),
                                               value.data(),
                                               static_cast<DWORD>(value.size()));
         if(size == 0 && ::GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
@@ -61,8 +63,9 @@ std::optional<std::string> get_env(std::string_view name) {
         }
         // Too small, it asks for the size with the NUL.
         if(size < value.size()) {
-            value.resize(size);
-            return from_utf16(std::wstring_view(value));
+            std::string text;
+            from_utf16(text, std::wstring_view(value.data(), size));
+            return text;
         }
         value.resize(size);
     }
@@ -82,15 +85,15 @@ std::error_code set_env(std::string_view name, std::string_view value) {
         return std::make_error_code(std::errc::invalid_argument);
     }
 #ifdef _WIN32
-    auto wide_name = to_utf16<wchar_t>(name);
-    if(!wide_name) {
-        return wide_name.error();
+    small_wstring<64> wide_name;
+    if(auto error = to_utf16(wide_name, name)) {
+        return error;
     }
-    auto wide_value = to_utf16<wchar_t>(value);
-    if(!wide_value) {
-        return wide_value.error();
+    small_wstring<256> wide_value;
+    if(auto error = to_utf16(wide_value, value)) {
+        return error;
     }
-    if(!::SetEnvironmentVariableW(wide_name->c_str(), wide_value->c_str())) {
+    if(!::SetEnvironmentVariableW(wide_name.c_str(), wide_value.c_str())) {
         return fs::windows::last_error();
     }
     return {};
@@ -110,11 +113,11 @@ std::error_code unset_env(std::string_view name) {
         return std::make_error_code(std::errc::invalid_argument);
     }
 #ifdef _WIN32
-    auto wide_name = to_utf16<wchar_t>(name);
-    if(!wide_name) {
-        return wide_name.error();
+    small_wstring<64> wide_name;
+    if(auto error = to_utf16(wide_name, name)) {
+        return error;
     }
-    if(!::SetEnvironmentVariableW(wide_name->c_str(), nullptr) &&
+    if(!::SetEnvironmentVariableW(wide_name.c_str(), nullptr) &&
        ::GetLastError() != ERROR_ENVVAR_NOT_FOUND) {
         return fs::windows::last_error();
     }
@@ -145,9 +148,11 @@ std::vector<EnvVar> environment() {
     if(block == nullptr) {
         return entries;
     }
+    small_string<256> utf8;
     for(const wchar_t* entry = block; *entry != L'\0';) {
         std::wstring_view text(entry);
-        add(from_utf16(text));
+        from_utf16(utf8, text);
+        add(utf8);
         entry += text.size() + 1;
     }
     ::FreeEnvironmentStringsW(block);
@@ -172,13 +177,13 @@ bool env_name_equal(std::string_view left, std::string_view right) {
         return true;
     }
     // Past ASCII, as Windows folds case.
-    auto wide_left = to_utf16<wchar_t>(left);
-    auto wide_right = to_utf16<wchar_t>(right);
-    return wide_left && wide_right &&
-           ::CompareStringOrdinal(wide_left->data(),
-                                  static_cast<int>(wide_left->size()),
-                                  wide_right->data(),
-                                  static_cast<int>(wide_right->size()),
+    small_wstring<64> wide_left;
+    small_wstring<64> wide_right;
+    return !to_utf16(wide_left, left) && !to_utf16(wide_right, right) &&
+           ::CompareStringOrdinal(wide_left.data(),
+                                  static_cast<int>(wide_left.size()),
+                                  wide_right.data(),
+                                  static_cast<int>(wide_right.size()),
                                   TRUE) == CSTR_EQUAL;
 #else
     return left == right;

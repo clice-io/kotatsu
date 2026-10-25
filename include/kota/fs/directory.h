@@ -7,20 +7,21 @@
 #include <system_error>
 #include <vector>
 
+#include "kota/support/buffer_ref.h"
 #include "kota/fs/status.h"
 
 namespace kota::fs {
 
 /// An entry of a directory: its name, and its type with a link not
 /// followed.
-struct Entry {
+struct DirEntry {
     std::string name;
     FileType type = FileType::Unknown;
 };
 
 /// The entries of a directory, `.` and `..` left out, in the order the
 /// system lists them.
-std::expected<std::vector<Entry>, std::error_code> read_dir(std::string_view dir);
+std::expected<std::vector<DirEntry>, std::error_code> read_dir(std::string_view dir);
 
 /// An entry of a directory with its status, a link not followed.
 struct StatusEntry {
@@ -68,5 +69,18 @@ std::error_code create_symlink(std::string_view target, std::string_view link);
 
 /// The same for a directory, which Windows tells from a file's.
 std::error_code create_directory_symlink(std::string_view target, std::string_view link);
+
+/// Writes into `out` the target of the symlink `path`, as it was written:
+/// on Windows with `\` for `/`, as Windows keeps it, and for a junction the
+/// directory it names; where the link keeps only the name the system
+/// follows, that name. Fails with std::errc::invalid_argument for a file
+/// that is no symlink, a Cygwin one included (cygwin::read_symlink reads
+/// those).
+std::error_code read_symlink(buffer_ref out, std::string_view path);
+
+/// Creates `link`, another name of the existing file `target`, which must
+/// be no directory; a symlink at `target` gets the name itself, and is not
+/// followed.
+std::error_code create_hard_link(std::string_view target, std::string_view link);
 
 }  // namespace kota::fs

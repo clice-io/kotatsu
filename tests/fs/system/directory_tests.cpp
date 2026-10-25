@@ -20,7 +20,7 @@ namespace kota::fs {
 namespace {
 
 /// The entries' names, sorted: the system lists them in no set order.
-std::vector<std::string> names_of(const std::vector<Entry>& entries) {
+std::vector<std::string> names_of(const std::vector<DirEntry>& entries) {
     std::vector<std::string> names;
     for(const auto& entry: entries) {
         names.push_back(entry.name);
@@ -29,8 +29,8 @@ std::vector<std::string> names_of(const std::vector<Entry>& entries) {
     return names;
 }
 
-FileType type_in(const std::vector<Entry>& entries, std::string_view name) {
-    auto found = std::ranges::find(entries, name, &Entry::name);
+FileType type_in(const std::vector<DirEntry>& entries, std::string_view name) {
+    auto found = std::ranges::find(entries, name, &DirEntry::name);
     return found == entries.end() ? FileType::Unknown : found->type;
 }
 
@@ -123,7 +123,7 @@ ZEST_CASE(read_dir_status_matches_each_status) {
         ZASSERT(single.has_value());
         ZEXPECT(entry.status.type == single->type);
         ZEXPECT(entry.status.id == single->id);
-        ZEXPECT(entry.status.mtime_ns == single->mtime_ns);
+        ZEXPECT(entry.status.mtime == single->mtime);
         if(entry.status.type == FileType::Regular) {
             ZEXPECT(entry.status.size == 5);
         }
@@ -214,7 +214,7 @@ ZEST_CASE(remove_of_a_full_directory_fails) {
 ZEST_CASE(remove_takes_a_file_held_open) {
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "text");
-    auto held = File::open(dir.file("file.txt"), OpenMode::Read);
+    auto held = File::open(dir.file("file.txt"));
     ZASSERT(held.has_value());
     ZEXPECT(remove(dir.file("file.txt")) == true);
     // The name is gone at once, and may be taken again.
@@ -322,10 +322,107 @@ ZEST_CASE(rename_replaces_a_file_held_open) {
     test::TempDir dir;
     test::write_text(dir.file("from"), "new");
     test::write_text(dir.file("to"), "old");
-    auto held = File::open(dir.file("to"), OpenMode::Read);
+    auto held = File::open(dir.file("to"));
     ZASSERT(held.has_value());
     ZEXPECT(!rename(dir.file("from"), dir.file("to")));
     ZEXPECT(test::read_text(dir.file("to")) == "new");
+}
+
+ZEST_CASE(read_symlink_gives_the_target_as_written) {
+    test::TempDir dir;
+    test::write_text(dir.file("target"), "text");
+    if(!test::linked(create_symlink("target", dir.file("relative")))) {
+        return;
+    }
+    std::string target;
+    ZEXPECT(!read_symlink(target, dir.file("relative")));
+    ZEXPECT(target == "target");
+    ZEXPECT(!create_symlink(dir.file("target"), dir.file("absolute")));
+    ZEXPECT(!read_symlink(target, dir.file("absolute")));
+    ZEXPECT(target == dir.file("target"));
+    ZEXPECT(!create_symlink("missing", dir.file("dangling")));
+    ZEXPECT(!read_symlink(target, dir.file("dangling")));
+    ZEXPECT(target == "missing");
+    std::filesystem::create_directory(dir.path / "sub");
+    test::write_text(dir.file("sub/target"), "text");
+    ZEXPECT(!create_symlink("sub/target", dir.file("nested")));
+    ZEXPECT(!read_symlink(target, dir.file("nested")));
+#ifdef _WIN32
+    ZEXPECT(target == R"(sub\target)");
+#else
+    ZEXPECT(target == "sub/target");
+#endif
+}
+
+ZEST_CASE(read_symlink_of_a_file_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    std::string target;
+    ZEXPECT(read_symlink(target, dir.file("file")) == std::errc::invalid_argument);
+    ZEXPECT(read_symlink(target, dir.file("missing")) == std::errc::no_such_file_or_directory);
+}
+
+ZEST_CASE(read_symlink_of_a_directory_fails) {
+    test::TempDir dir;
+    std::string target;
+    ZEXPECT(read_symlink(target, dir.root()) == std::errc::invalid_argument);
+}
+
+#ifdef _WIN32
+ZEST_CASE(read_symlink_gives_the_directory_of_a_junction) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    test::make_junction(dir.file("junction"), dir.file("target"));
+    std::string target;
+    ZEXPECT(!read_symlink(target, dir.file("junction")));
+    ZEXPECT(target == dir.file("target"));
+}
+#endif
+
+ZEST_CASE(create_hard_link_gives_a_file_another_name) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    ZEXPECT(!create_hard_link(dir.file("file"), dir.file("other")));
+    ZEXPECT(equivalent(dir.file("file"), dir.file("other")) == true);
+    auto found = status(dir.file("other"));
+    ZASSERT(found.has_value());
+    ZEXPECT(found->links == 2u);
+    ZEXPECT(test::read_text(dir.file("other")) == "text");
+}
+
+ZEST_CASE(create_hard_link_names_a_symlink_itself) {
+    test::TempDir dir;
+    test::write_text(dir.file("target"), "text");
+    if(!test::linked(create_symlink("target", dir.file("link")))) {
+        return;
+    }
+    ZEXPECT(!create_hard_link(dir.file("link"), dir.file("other")));
+    ZEXPECT(is_symlink(dir.file("other")));
+    std::string target;
+    ZEXPECT(!read_symlink(target, dir.file("other")));
+    ZEXPECT(target == "target");
+}
+
+ZEST_CASE(create_hard_link_over_a_file_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    test::write_text(dir.file("taken"), "old");
+    ZEXPECT(create_hard_link(dir.file("file"), dir.file("taken")) == std::errc::file_exists);
+    ZEXPECT(create_hard_link(dir.file("missing"), dir.file("other")) ==
+            std::errc::no_such_file_or_directory);
+    ZEXPECT(test::read_text(dir.file("taken")) == "old");
+}
+
+ZEST_CASE(create_hard_link_to_a_directory_fails) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "sub");
+    auto error = create_hard_link(dir.file("sub"), dir.file("other"));
+#ifdef _WIN32
+    ZEXPECT(error == std::errc::permission_denied);
+#else
+    ZEXPECT(error == std::errc::operation_not_permitted);
+#endif
+    ZEXPECT(exists(dir.file("other")) == false);
 }
 
 ZEST_CASE(rename_of_nothing_fails) {

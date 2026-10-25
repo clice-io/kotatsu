@@ -27,7 +27,10 @@ std::expected<std::string, std::error_code> known_folder(const KNOWNFOLDERID& id
     wchar_t* path = nullptr;
     auto result = ::SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, nullptr, &path);
     // Freed whether or not it succeeded.
-    std::string folder = SUCCEEDED(result) ? from_utf16(std::wstring_view(path)) : std::string();
+    std::string folder;
+    if(SUCCEEDED(result)) {
+        from_utf16(folder, std::wstring_view(path));
+    }
     ::CoTaskMemFree(path);
     if(FAILED(result)) {
         // A Win32 error wrapped in an HRESULT, or an HRESULT of its own.
@@ -44,10 +47,10 @@ std::expected<std::string, std::error_code> known_folder(const KNOWNFOLDERID& id
 /// Directory `relative` in the home directory.
 std::expected<std::string, std::error_code> in_home(std::string_view relative) {
     auto home = home_dir();
-    if(!home) {
-        return home;
+    if(home) {
+        fs::path::push(*home, relative);
     }
-    return fs::path::join(*home, relative);
+    return home;
 }
 
 #endif
