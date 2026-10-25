@@ -892,9 +892,9 @@ ZEST_CASE(inherit_of_a_stream_not_open_gives_none) {
     std::expected<ExitStatus, std::error_code> status;
     {
         ScopedClosedStdin closed;
-        // It reads nothing from where it has no stdin; one that has one
-        // would read the empty input and exit with 1.
-        auto options = shell("(true <&0) 2>/dev/null && exit 1; exit 3");
+        // cat cannot read a stdin it has not: one it has, it would read to
+        // its end and exit with 1.
+        auto options = shell("cat >/dev/null 2>&1 && exit 1; exit 3");
         options.streams = {Stdio::inherit(), Stdio::pipe(), Stdio::ignore()};
         auto child = spawn(options);
         ZASSERT(child.has_value());
