@@ -326,7 +326,7 @@ ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::invalid_argument);
 #ifdef _WIN32
-    // Not this process, which the value is too.
+    // INVALID_HANDLE_VALUE, which names this process too, is no file.
     options.streams[1] = {.kind = Stdio::Kind::File, .file = INVALID_HANDLE_VALUE};
     child = spawn(options);
     ZASSERT(!child.has_value());
