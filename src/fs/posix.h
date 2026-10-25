@@ -3,6 +3,7 @@
 #ifndef _WIN32
 
 #include <cerrno>
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <string>
@@ -44,14 +45,15 @@ inline Status make_status(const struct stat& info) {
     const auto& mtime = info.st_mtim;
     const auto& ctime = info.st_ctim;
 #endif
-    auto ns = [](const struct timespec& time) {
-        return static_cast<std::int64_t>(time.tv_sec) * 1'000'000'000 + time.tv_nsec;
+    auto time_of = [](const struct timespec& time) {
+        return std::chrono::sys_time<std::chrono::nanoseconds>(
+            std::chrono::seconds(time.tv_sec) + std::chrono::nanoseconds(time.tv_nsec));
     };
     return Status{
         .type = type,
         .size = static_cast<std::uint64_t>(info.st_size),
-        .mtime_ns = ns(mtime),
-        .ctime_ns = ns(ctime),
+        .mtime = time_of(mtime),
+        .ctime = time_of(ctime),
         .id = {.device = static_cast<std::uint64_t>(info.st_dev),
                .file = static_cast<std::uint64_t>(info.st_ino)},
         .links = static_cast<std::uint32_t>(info.st_nlink),

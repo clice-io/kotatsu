@@ -86,7 +86,7 @@ std::error_code to_error_code(unsigned long code) {
             case ERROR_NOT_SUPPORTED: return std::errc::not_supported;
             case ERROR_BROKEN_PIPE:
             case ERROR_NO_DATA: return std::errc::broken_pipe;
-            case ERROR_NEGATIVE_SEEK: return std::errc::invalid_seek;
+            case ERROR_NEGATIVE_SEEK: return std::errc::invalid_argument;
             case ERROR_SEEK:
             case ERROR_CRC:
             case ERROR_IO_DEVICE: return std::errc::io_error;
@@ -109,7 +109,7 @@ std::error_code last_error() {
     return to_error_code(::GetLastError());
 }
 
-std::expected<std::wstring, std::error_code> native_path(std::string_view path) {
+std::expected<std::wstring, std::error_code> to_native(std::string_view path) {
     auto wide = win32::widen(path);
     if(!wide) {
         return std::unexpected(wide.error());
@@ -181,7 +181,7 @@ Handle try_open(const std::wstring& path, DWORD access, DWORD flags) {
 }
 
 std::expected<Handle, std::error_code> open(std::string_view path, DWORD access) {
-    auto native = windows::native_path(path);
+    auto native = windows::to_native(path);
     if(!native) {
         return std::unexpected(native.error());
     }

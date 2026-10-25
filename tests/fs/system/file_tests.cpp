@@ -74,7 +74,7 @@ ZEST_CASE(read_file_of_a_directory_fails) {
 
 ZEST_CASE(open_reads_and_writes_through_the_handle) {
     test::TempDir dir;
-    auto file = File::open(dir.file("file"), OpenMode::Write);
+    auto file = File::open(dir.file("file"), {.write = true, .create = true});
     ZASSERT(file.has_value());
     ZEXPECT(file->is_open());
     ZEXPECT(!file->write("hello"));
@@ -82,7 +82,7 @@ ZEST_CASE(open_reads_and_writes_through_the_handle) {
     ZEXPECT(!file->is_open());
     ZEXPECT(test::read_text(dir.file("file")) == "hello");
 
-    auto reader = File::open(dir.file("file"), OpenMode::Read);
+    auto reader = File::open(dir.file("file"));
     ZASSERT(reader.has_value());
     std::array<char, 16> buffer{};
     auto count = reader->read(buffer);
@@ -94,7 +94,7 @@ ZEST_CASE(open_reads_and_writes_through_the_handle) {
 ZEST_CASE(a_moved_file_keeps_its_handle) {
     test::TempDir dir;
     test::write_text(dir.file("file"), "text");
-    auto opened = File::open(dir.file("file"), OpenMode::Read);
+    auto opened = File::open(dir.file("file"));
     ZASSERT(opened.has_value());
     auto handle = opened->native_handle();
     File moved(std::move(*opened));
@@ -112,7 +112,7 @@ ZEST_CASE(a_moved_file_keeps_its_handle) {
 ZEST_CASE(read_after_close_fails) {
     test::TempDir dir;
     test::write_text(dir.file("file"), "text");
-    auto file = File::open(dir.file("file"), OpenMode::Read);
+    auto file = File::open(dir.file("file"));
     ZASSERT(file.has_value());
     ZEXPECT(!file->close());
     std::array<char, 16> buffer{};
@@ -124,8 +124,8 @@ ZEST_CASE(read_after_close_fails) {
 
 ZEST_CASE(open_to_create_new_over_anything_fails) {
     test::TempDir dir;
-    ZEXPECT(File::open(dir.file("new"), OpenMode::CreateNew).has_value());
-    auto again = File::open(dir.file("new"), OpenMode::CreateNew);
+    ZEXPECT(File::open(dir.file("new"), {.write = true, .create_new = true}).has_value());
+    auto again = File::open(dir.file("new"), {.write = true, .create_new = true});
     ZASSERT(!again.has_value());
     ZEXPECT(again.error() == std::errc::file_exists);
 }
@@ -135,7 +135,7 @@ ZEST_CASE(open_to_create_new_over_a_dangling_link_fails) {
     if(!test::linked(create_symlink("missing", dir.file("link")))) {
         return;
     }
-    auto file = File::open(dir.file("link"), OpenMode::CreateNew);
+    auto file = File::open(dir.file("link"), {.write = true, .create_new = true});
     ZASSERT(!file.has_value());
     ZEXPECT(file.error() == std::errc::file_exists);
     ZEXPECT(!is_file(dir.file("missing")));
@@ -254,24 +254,57 @@ ZEST_CASE(write_file_atomic_over_a_directory_fails) {
     ZEXPECT(entries->size() == 1u);
 }
 
-ZEST_CASE(create_temp_file_names_a_new_empty_file) {
+ZEST_CASE(create_temp_file_opens_a_new_empty_file) {
     test::TempDir dir;
     std::set<std::string> made;
     for(int i = 0; i < 8; ++i) {
         auto created = create_temp_file(dir.root(), "pre-", ".tmp");
         ZASSERT(created.has_value());
-        ZEXPECT(zest::starts_with(path::filename(*created), "pre-"));
-        ZEXPECT(path::extension(*created) == ".tmp");
-        ZEXPECT(test::read_text(*created) == "");
-        ZEXPECT(is_file(*created));
-        made.insert(*created);
+        ZEXPECT(zest::starts_with(path::filename(created->path), "pre-"));
+        ZEXPECT(path::extension(created->path) == ".tmp");
+        ZEXPECT(test::read_text(created->path) == "");
+        made.insert(created->path);
     }
     ZEXPECT(made.size() == 8u);
+}
+
+ZEST_CASE(create_temp_file_reads_and_writes) {
+    test::TempDir dir;
+    auto created = create_temp_file(dir.root(), "", "");
+    ZASSERT(created.has_value());
+    ZEXPECT(!created->file.write("text"));
+    ZEXPECT(created->file.seek(0) == 0u);
+    std::array<char, 16> buffer{};
+    ZEXPECT(created->file.read(buffer) == 4u);
+    ZEXPECT(std::string_view(buffer.data(), 4) == "text");
 }
 
 ZEST_CASE(create_temp_file_in_nothing_fails) {
     test::TempDir dir;
     auto created = create_temp_file(dir.file("missing"), "pre-", "");
+    ZASSERT(!created.has_value());
+    ZEXPECT(created.error() == std::errc::no_such_file_or_directory);
+}
+
+ZEST_CASE(create_temp_directory_makes_a_new_empty_directory) {
+    test::TempDir dir;
+    std::set<std::string> made;
+    for(int i = 0; i < 8; ++i) {
+        auto created = create_temp_directory(dir.root(), "pre-");
+        ZASSERT(created.has_value());
+        ZEXPECT(zest::starts_with(path::filename(*created), "pre-"));
+        ZEXPECT(is_directory(*created));
+        auto entries = read_dir(*created);
+        ZASSERT(entries.has_value());
+        ZEXPECT(entries->empty());
+        made.insert(*created);
+    }
+    ZEXPECT(made.size() == 8u);
+}
+
+ZEST_CASE(create_temp_directory_in_nothing_fails) {
+    test::TempDir dir;
+    auto created = create_temp_directory(dir.file("missing"), "pre-");
     ZASSERT(!created.has_value());
     ZEXPECT(created.error() == std::errc::no_such_file_or_directory);
 }

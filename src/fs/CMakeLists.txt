@@ -2,9 +2,11 @@ add_library(kota_fs STATIC
     cygwin.cpp
     directory.cpp
     file.cpp
+    mapping.cpp
     path.cpp
     resolve.cpp
     status.cpp
+    volume.cpp
     windows.cpp
 )
 add_library(kota::fs ALIAS kota_fs)

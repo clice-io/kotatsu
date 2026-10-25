@@ -3,6 +3,7 @@
 #ifdef _WIN32
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -19,6 +20,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <winioctl.h>
 #include <winternl.h>
 
 #include "kota/fs/status.h"
@@ -133,17 +135,21 @@ inline FileID id_of(std::uint64_t volume, const FILE_ID_128& file) {
 /// The ID of the file `handle` refers to.
 std::expected<FileID, std::error_code> file_id(HANDLE handle);
 
-/// `resolved`, a path in the form Win32 resolves paths to (native_path()
+/// The status of the file `handle` refers to.
+std::expected<Status, std::error_code> handle_status(HANDLE handle);
+
+/// `resolved`, a path in the form Win32 resolves paths to (to_native()
 /// leaves a short absolute one so), in the verbatim form, which any name
 /// appended with `\` keeps valid at any length. A device path stays as it
 /// is.
 std::wstring verbatim(std::wstring resolved);
 
-/// FILETIME ticks, 100 ns since 1601, as nanoseconds since the Unix epoch;
-/// zero, the time FAT keeps for a change it does not record, stays zero.
-constexpr std::int64_t unix_ns(std::int64_t ticks) {
+/// FILETIME ticks, 100 ns since 1601, as a time; zero, the time FAT keeps
+/// for a change it does not record, is the Unix epoch.
+constexpr std::chrono::sys_time<std::chrono::nanoseconds> unix_time(std::int64_t ticks) {
     constexpr std::int64_t unix_epoch = 116'444'736'000'000'000;
-    return ticks == 0 ? 0 : (ticks - unix_epoch) * 100;
+    return std::chrono::sys_time<std::chrono::nanoseconds>(
+        std::chrono::nanoseconds(ticks == 0 ? 0 : (ticks - unix_epoch) * 100));
 }
 
 }  // namespace kota::fs::win32

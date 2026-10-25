@@ -29,7 +29,7 @@ std::error_code last_error();
 /// needs no prefix and comes back as it is, as does a verbatim one. Fails
 /// with std::errc::invalid_argument on a NUL, and with
 /// std::errc::illegal_byte_sequence on text that is not WTF-8.
-std::expected<std::wstring, std::error_code> native_path(std::string_view path);
+std::expected<std::wstring, std::error_code> to_native(std::string_view path);
 
 /// A path Windows gave, as WTF-8, without the `\\?\` or `\\?\UNC\` prefix
 /// wherever the plain spelling names the same file.

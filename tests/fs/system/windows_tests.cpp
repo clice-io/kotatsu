@@ -20,55 +20,55 @@ namespace kota::fs::windows {
 
 namespace {
 
-/// What native_path() gave, as UTF-8 for a readable failure.
+/// What to_native() gave, as UTF-8 for a readable failure.
 std::string narrow(const std::expected<std::wstring, std::error_code>& wide) {
     return wide ? from_utf16(*wide) : "error: " + wide.error().message();
 }
 
 ZEST_SUITE(fs_windows) {
 
-ZEST_CASE(native_path_leaves_a_short_plain_path) {
-    ZEXPECT(narrow(native_path(R"(C:\dir\file.txt)")) == R"(C:\dir\file.txt)");
-    ZEXPECT(narrow(native_path(R"(\\server\share\file)")) == R"(\\server\share\file)");
-    ZEXPECT(narrow(native_path(R"(\\?\C:\a\..\b)")) == R"(\\?\C:\a\..\b)");
-    ZEXPECT(narrow(native_path("C:\\\xC3\xA9")) == "C:\\\xC3\xA9");
+ZEST_CASE(to_native_leaves_a_short_plain_path) {
+    ZEXPECT(narrow(to_native(R"(C:\dir\file.txt)")) == R"(C:\dir\file.txt)");
+    ZEXPECT(narrow(to_native(R"(\\server\share\file)")) == R"(\\server\share\file)");
+    ZEXPECT(narrow(to_native(R"(\\?\C:\a\..\b)")) == R"(\\?\C:\a\..\b)");
+    ZEXPECT(narrow(to_native("C:\\\xC3\xA9")) == "C:\\\xC3\xA9");
 }
 
-ZEST_CASE(native_path_resolves_what_the_prefix_would_change) {
+ZEST_CASE(to_native_resolves_what_the_prefix_would_change) {
     auto cwd = current_dir();
     ZASSERT(cwd.has_value());
-    auto relative = native_path("a/b");
+    auto relative = to_native("a/b");
     ZASSERT(relative.has_value());
     ZEXPECT(from_native(*relative) == path::normalize(path::join(*cwd, "a\\b")));
-    ZEXPECT(narrow(native_path(R"(C:\a\.\b\..\c)")) == R"(\\?\C:\a\c)");
-    ZEXPECT(narrow(native_path("C:/a/b")) == R"(\\?\C:\a\b)");
+    ZEXPECT(narrow(to_native(R"(C:\a\.\b\..\c)")) == R"(\\?\C:\a\c)");
+    ZEXPECT(narrow(to_native("C:/a/b")) == R"(\\?\C:\a\b)");
     // Win32 removes a name's trailing dots and spaces.
-    ZEXPECT(narrow(native_path(R"(C:\a\name. .)")) == R"(\\?\C:\a\name)");
-    ZEXPECT(narrow(native_path(R"(\\server\share\a\..\b)")) == R"(\\?\UNC\server\share\b)");
+    ZEXPECT(narrow(to_native(R"(C:\a\name. .)")) == R"(\\?\C:\a\name)");
+    ZEXPECT(narrow(to_native(R"(\\server\share\a\..\b)")) == R"(\\?\UNC\server\share\b)");
     // A device stays in the device namespace.
-    ZEXPECT(narrow(native_path("nul")) == R"(\\.\nul)");
+    ZEXPECT(narrow(to_native("nul")) == R"(\\.\nul)");
 }
 
-ZEST_CASE(native_path_resolves_a_path_relative_to_a_drive) {
+ZEST_CASE(to_native_resolves_a_path_relative_to_a_drive) {
     auto cwd = current_dir();
     ZASSERT(cwd.has_value());
     auto drive = cwd->substr(0, 2);
     // A rooted path is on the current directory's drive.
-    ZEXPECT(narrow(native_path(R"(\x)")) == R"(\\?\)" + drive + R"(\x)");
+    ZEXPECT(narrow(to_native(R"(\x)")) == R"(\\?\)" + drive + R"(\x)");
     // A path relative to the current drive is relative to its directory.
-    ZEXPECT(narrow(native_path(drive + "x")) == R"(\\?\)" + path::join(*cwd, "x"));
+    ZEXPECT(narrow(to_native(drive + "x")) == R"(\\?\)" + path::join(*cwd, "x"));
 }
 
-ZEST_CASE(native_path_prefixes_a_long_path) {
+ZEST_CASE(to_native_prefixes_a_long_path) {
     std::string long_path = R"(C:\)" + std::string(300, 'a');
-    ZEXPECT(narrow(native_path(long_path)) == R"(\\?\)" + long_path);
+    ZEXPECT(narrow(to_native(long_path)) == R"(\\?\)" + long_path);
 }
 
-ZEST_CASE(native_path_of_what_names_nothing_fails) {
-    auto nul = native_path(std::string_view("a\0b", 3));
+ZEST_CASE(to_native_of_what_names_nothing_fails) {
+    auto nul = to_native(std::string_view("a\0b", 3));
     ZASSERT(!nul.has_value());
     ZEXPECT(nul.error() == std::errc::invalid_argument);
-    auto invalid = native_path("\xFF");
+    auto invalid = to_native("\xFF");
     ZASSERT(!invalid.has_value());
     ZEXPECT(invalid.error() == std::errc::illegal_byte_sequence);
 }

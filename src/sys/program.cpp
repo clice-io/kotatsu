@@ -34,7 +34,7 @@ Candidate examine(const std::string& path) {
 #ifdef _WIN32
     // By name, without opening the file: the cheapest query, which a search
     // through every directory of PATH makes for each extension.
-    auto native = fs::windows::native_path(path);
+    auto native = fs::windows::to_native(path);
     if(!native) {
         return Candidate::Missing;
     }

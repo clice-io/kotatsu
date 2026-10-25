@@ -11,6 +11,7 @@
 #include "win32.h"
 #else
 #include <fcntl.h>
+#include <sys/file.h>
 #include <unistd.h>
 
 #include "posix.h"
@@ -23,6 +24,101 @@ namespace {
 /// Bytes past which one read or write call takes a piece at a time: Windows
 /// counts in DWORD, POSIX in ssize_t, and either may stop short anyway.
 constexpr std::size_t largest_call = std::size_t{1} << 30;
+
+/// The combinations OpenOptions refuses, as Rust's OpenOptions does.
+bool refused(const OpenOptions& options) {
+    bool writes = options.write || options.append;
+    return (!options.read && !writes) ||
+           (!writes && (options.truncate || options.create || options.create_new)) ||
+           (options.append && options.truncate && !options.create_new);
+}
+
+/// `prefix`, twelve random characters and `suffix`.
+std::string random_name(std::string_view prefix, std::string_view suffix) {
+    constexpr std::string_view alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    std::random_device device;
+    std::uniform_int_distribution<std::size_t> pick(0, alphabet.size() - 1);
+    std::string name(prefix);
+    for(int i = 0; i < 12; ++i) {
+        name.push_back(alphabet[pick(device)]);
+    }
+    name.append(suffix);
+    return name;
+}
+
+/// What `make` makes of a new random name in `directory`, tried again with
+/// another while it fails with std::errc::file_exists: another process holds
+/// a hundred names only by design.
+template <typename Made, typename Make>
+std::expected<Made, std::error_code> with_random_name(std::string_view directory,
+                                                      std::string_view prefix,
+                                                      std::string_view suffix,
+                                                      Make make) {
+    std::error_code error;
+    for(int attempt = 0; attempt < 100; ++attempt) {
+        auto candidate = path::join(directory, random_name(prefix, suffix));
+        auto made = make(candidate);
+        if(made) {
+            return std::move(*made);
+        }
+        error = made.error();
+        if(error != std::errc::file_exists) {
+            break;
+        }
+    }
+    return std::unexpected(error);
+}
+
+#ifdef _WIN32
+
+/// The byte a lock covers: past any file's end, so that it keeps no one
+/// from the file's bytes, as a Windows lock of them would.
+OVERLAPPED lock_byte() {
+    OVERLAPPED at{};
+    at.Offset = 0xFFFF'FFFE;
+    at.OffsetHigh = 0x7FFF'FFFF;
+    return at;
+}
+
+/// Takes a lock with LockFileEx `flags`: false when another handle holds a
+/// lock in the way and `flags` say not to wait.
+std::expected<bool, std::error_code> take_lock(HANDLE handle, DWORD flags) {
+    // A lock replaces the one the handle holds, as flock's does; Windows
+    // would have the two conflict.
+    auto at = lock_byte();
+    ::UnlockFileEx(handle, 0, 1, 0, &at);
+    at = lock_byte();
+    if(::LockFileEx(handle, flags, 0, 1, 0, &at)) {
+        return true;
+    }
+    auto error = ::GetLastError();
+    if(error == ERROR_LOCK_VIOLATION && (flags & LOCKFILE_FAIL_IMMEDIATELY)) {
+        return false;
+    }
+    return std::unexpected(windows::to_error_code(error));
+}
+
+#else
+
+/// Takes a lock with flock `operation`: false when another handle holds a
+/// lock in the way and `operation` says not to wait.
+std::expected<bool, std::error_code> take_lock(int fd, int operation) {
+    while(::flock(fd, operation) != 0) {
+        if(errno == EWOULDBLOCK) {
+            return false;
+        }
+        if(errno != EINTR) {
+            return std::unexpected(posix::last_error());
+        }
+    }
+    return true;
+}
+
+#endif
+
+std::error_code error_of(const std::expected<bool, std::error_code>& taken) {
+    return taken ? std::error_code() : taken.error();
+}
 
 }  // namespace
 
@@ -41,21 +137,63 @@ bool File::is_open() const {
     return handle != closed;
 }
 
+std::error_code File::lock() {
+#ifdef _WIN32
+    return error_of(take_lock(handle, LOCKFILE_EXCLUSIVE_LOCK));
+#else
+    return error_of(take_lock(handle, LOCK_EX));
+#endif
+}
+
+std::error_code File::lock_shared() {
+#ifdef _WIN32
+    return error_of(take_lock(handle, 0));
+#else
+    return error_of(take_lock(handle, LOCK_SH));
+#endif
+}
+
+std::expected<bool, std::error_code> File::try_lock() {
+#ifdef _WIN32
+    return take_lock(handle, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY);
+#else
+    return take_lock(handle, LOCK_EX | LOCK_NB);
+#endif
+}
+
+std::expected<bool, std::error_code> File::try_lock_shared() {
+#ifdef _WIN32
+    return take_lock(handle, LOCKFILE_FAIL_IMMEDIATELY);
+#else
+    return take_lock(handle, LOCK_SH | LOCK_NB);
+#endif
+}
+
 #ifdef _WIN32
 
-std::expected<File, std::error_code> File::open(std::string_view path, OpenMode mode) {
-    auto native = windows::native_path(path);
+std::expected<File, std::error_code> File::open(std::string_view path, const OpenOptions& options) {
+    if(refused(options)) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
+    auto native = windows::to_native(path);
     if(!native) {
         return std::unexpected(native.error());
     }
-    DWORD access = mode == OpenMode::Read ? GENERIC_READ : GENERIC_WRITE;
-    // CREATE_ALWAYS would drop a hidden or system file's attributes, or
-    // refuse it: an existing file is emptied after it opens instead.
-    DWORD disposition = mode == OpenMode::Read    ? OPEN_EXISTING
-                        : mode == OpenMode::Write ? OPEN_ALWAYS
-                                                  : CREATE_NEW;
+    // Any handle tells its status, which takes the right to read the
+    // attributes.
+    DWORD access = FILE_READ_ATTRIBUTES | (options.read ? GENERIC_READ : 0);
+    // A handle without the right to write the data where it likes writes at
+    // the end alone.
+    if(options.append) {
+        access |= FILE_GENERIC_WRITE & ~FILE_WRITE_DATA;
+    } else if(options.write) {
+        access |= GENERIC_WRITE;
+    }
+    DWORD disposition = options.create_new ? CREATE_NEW
+                        : options.create   ? OPEN_ALWAYS
+                                           : OPEN_EXISTING;
     // A new file takes the place of nothing, a dangling symlink included.
-    DWORD flags = mode == OpenMode::CreateNew ? FILE_FLAG_OPEN_REPARSE_POINT : 0;
+    DWORD flags = options.create_new ? FILE_FLAG_OPEN_REPARSE_POINT : 0;
     HANDLE handle = ::CreateFileW(native->c_str(),
                                   access,
                                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -67,10 +205,13 @@ std::expected<File, std::error_code> File::open(std::string_view path, OpenMode 
         return std::unexpected(windows::last_error());
     }
     File file(handle);
-    if(mode == OpenMode::Write && ::GetLastError() == ERROR_ALREADY_EXISTS) {
-        FILE_END_OF_FILE_INFO end{};
-        if(!::SetFileInformationByHandle(handle, FileEndOfFileInfo, &end, sizeof(end))) {
-            return std::unexpected(windows::last_error());
+    // TRUNCATE_EXISTING and CREATE_ALWAYS would drop a hidden or system
+    // file's attributes, or refuse it: an existing file is emptied once open
+    // instead.
+    bool existed = disposition == OPEN_EXISTING || ::GetLastError() == ERROR_ALREADY_EXISTS;
+    if(options.truncate && !options.create_new && existed) {
+        if(auto error = file.resize(0)) {
+            return std::unexpected(error);
         }
     }
     return file;
@@ -101,6 +242,52 @@ std::error_code File::write(std::string_view bytes) {
     return {};
 }
 
+std::expected<std::uint64_t, std::error_code> File::seek(std::int64_t offset, SeekFrom from) {
+    DWORD method = from == SeekFrom::Start     ? FILE_BEGIN
+                   : from == SeekFrom::Current ? FILE_CURRENT
+                                               : FILE_END;
+    LARGE_INTEGER distance;
+    distance.QuadPart = offset;
+    LARGE_INTEGER position;
+    if(!::SetFilePointerEx(handle, distance, &position, method)) {
+        return std::unexpected(windows::last_error());
+    }
+    return static_cast<std::uint64_t>(position.QuadPart);
+}
+
+std::expected<Status, std::error_code> File::status() const {
+    return win32::handle_status(handle);
+}
+
+std::error_code File::resize(std::uint64_t size) {
+    FILE_END_OF_FILE_INFO end;
+    end.EndOfFile.QuadPart = static_cast<LONGLONG>(size);
+    if(!::SetFileInformationByHandle(handle, FileEndOfFileInfo, &end, sizeof(end))) {
+        return windows::last_error();
+    }
+    return {};
+}
+
+std::error_code File::sync() {
+    return ::FlushFileBuffers(handle) ? std::error_code() : windows::last_error();
+}
+
+std::error_code File::set_sparse() {
+    DWORD returned = 0;
+    if(!::DeviceIoControl(handle, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &returned, nullptr)) {
+        return windows::last_error();
+    }
+    return {};
+}
+
+std::error_code File::unlock() {
+    auto at = lock_byte();
+    if(!::UnlockFileEx(handle, 0, 1, 0, &at) && ::GetLastError() != ERROR_NOT_LOCKED) {
+        return windows::last_error();
+    }
+    return {};
+}
+
 std::error_code File::close() {
     if(!is_open()) {
         return {};
@@ -111,17 +298,27 @@ std::error_code File::close() {
 
 #else
 
-std::expected<File, std::error_code> File::open(std::string_view path, OpenMode mode) {
+std::expected<File, std::error_code> File::open(std::string_view path, const OpenOptions& options) {
+    if(refused(options)) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
     auto c_path = posix::c_path(path);
     if(!c_path) {
         return std::unexpected(c_path.error());
     }
-    int flags = mode == OpenMode::Read    ? O_RDONLY
-                : mode == OpenMode::Write ? O_WRONLY | O_CREAT | O_TRUNC
-                                          : O_WRONLY | O_CREAT | O_EXCL;
+    bool writes = options.write || options.append;
+    int flags = O_CLOEXEC | (!writes ? O_RDONLY : options.read ? O_RDWR : O_WRONLY);
+    if(options.append) {
+        flags |= O_APPEND;
+    }
+    if(options.create_new) {
+        flags |= O_CREAT | O_EXCL;
+    } else {
+        flags |= (options.create ? O_CREAT : 0) | (options.truncate ? O_TRUNC : 0);
+    }
     int fd;
     do {
-        fd = ::open(c_path->c_str(), flags | O_CLOEXEC, 0666);
+        fd = ::open(c_path->c_str(), flags, 0666);
     } while(fd < 0 && errno == EINTR);
     if(fd < 0) {
         return std::unexpected(posix::last_error());
@@ -155,6 +352,52 @@ std::error_code File::write(std::string_view bytes) {
     return {};
 }
 
+std::expected<std::uint64_t, std::error_code> File::seek(std::int64_t offset, SeekFrom from) {
+    int whence = from == SeekFrom::Start     ? SEEK_SET
+                 : from == SeekFrom::Current ? SEEK_CUR
+                                             : SEEK_END;
+    auto position = ::lseek(handle, static_cast<off_t>(offset), whence);
+    if(position < 0) {
+        return std::unexpected(posix::last_error());
+    }
+    return static_cast<std::uint64_t>(position);
+}
+
+std::expected<Status, std::error_code> File::status() const {
+    struct stat info;
+    if(::fstat(handle, &info) != 0) {
+        return std::unexpected(posix::last_error());
+    }
+    return posix::make_status(info);
+}
+
+std::error_code File::resize(std::uint64_t size) {
+    while(::ftruncate(handle, static_cast<off_t>(size)) != 0) {
+        if(errno != EINTR) {
+            return posix::last_error();
+        }
+    }
+    return {};
+}
+
+std::error_code File::sync() {
+#ifdef __APPLE__
+    // Network file systems, among others, have no F_FULLFSYNC.
+    if(::fcntl(handle, F_FULLFSYNC) == 0) {
+        return {};
+    }
+#endif
+    return ::fsync(handle) == 0 ? std::error_code() : posix::last_error();
+}
+
+std::error_code File::set_sparse() {
+    return {};
+}
+
+std::error_code File::unlock() {
+    return error_of(take_lock(handle, LOCK_UN));
+}
+
 std::error_code File::close() {
     if(!is_open()) {
         return {};
@@ -167,7 +410,7 @@ std::error_code File::close() {
 #endif
 
 std::expected<std::string, std::error_code> read_file(std::string_view path) {
-    auto file = File::open(path, OpenMode::Read);
+    auto file = File::open(path);
     if(!file) {
         return std::unexpected(file.error());
     }
@@ -193,7 +436,7 @@ std::expected<std::string, std::error_code> read_file(std::string_view path) {
 }
 
 std::error_code write_file(std::string_view path, std::string_view bytes) {
-    auto file = File::open(path, OpenMode::Write);
+    auto file = File::open(path, {.write = true, .truncate = true, .create = true});
     if(!file) {
         return file.error();
     }
@@ -202,43 +445,6 @@ std::error_code write_file(std::string_view path, std::string_view bytes) {
     }
     return file->close();
 }
-
-namespace {
-
-struct TempFile {
-    File file;
-    std::string path;
-};
-
-/// create_temp_file(), the file left open for writing.
-std::expected<TempFile, std::error_code> open_temp_file(std::string_view directory,
-                                                        std::string_view prefix,
-                                                        std::string_view suffix) {
-    constexpr std::string_view alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-    std::random_device device;
-    std::uniform_int_distribution<std::size_t> pick(0, alphabet.size() - 1);
-    // Another process may hold a name; it holds a hundred only by design.
-    std::error_code error;
-    for(int attempt = 0; attempt < 100; ++attempt) {
-        std::string name(prefix);
-        for(int i = 0; i < 12; ++i) {
-            name.push_back(alphabet[pick(device)]);
-        }
-        name.append(suffix);
-        auto candidate = path::join(directory, name);
-        auto file = File::open(candidate, OpenMode::CreateNew);
-        if(file) {
-            return TempFile{std::move(*file), std::move(candidate)};
-        }
-        error = file.error();
-        if(error != std::errc::file_exists) {
-            break;
-        }
-    }
-    return std::unexpected(error);
-}
-
-}  // namespace
 
 std::error_code write_file_atomic(std::string_view path, std::string_view bytes) {
     // The sibling's name starts with the file's, cut short at a character's
@@ -252,7 +458,7 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
         }
         name = name.substr(0, end);
     }
-    auto sibling = open_temp_file(path::parent(path), std::string(name) + ".", ".tmp");
+    auto sibling = create_temp_file(path::parent(path), std::string(name) + ".", ".tmp");
     if(!sibling) {
         return sibling.error();
     }
@@ -269,17 +475,39 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
     return error;
 }
 
-std::expected<std::string, std::error_code> create_temp_file(std::string_view directory,
-                                                             std::string_view prefix,
-                                                             std::string_view suffix) {
-    auto created = open_temp_file(directory, prefix, suffix);
-    if(!created) {
-        return std::unexpected(created.error());
-    }
-    if(auto error = created->file.close()) {
-        return std::unexpected(error);
-    }
-    return std::move(created->path);
+std::expected<TempFile, std::error_code> create_temp_file(std::string_view directory,
+                                                          std::string_view prefix,
+                                                          std::string_view suffix) {
+    return with_random_name<TempFile>(
+        directory,
+        prefix,
+        suffix,
+        [](std::string& candidate) -> std::expected<TempFile, std::error_code> {
+            auto file = File::open(candidate, {.read = true, .write = true, .create_new = true});
+            if(!file) {
+                return std::unexpected(file.error());
+            }
+            return TempFile{std::move(*file), std::move(candidate)};
+        });
+}
+
+std::expected<std::string, std::error_code> create_temp_directory(std::string_view directory,
+                                                                  std::string_view prefix) {
+    return with_random_name<std::string>(
+        directory,
+        prefix,
+        "",
+        [](std::string& candidate) -> std::expected<std::string, std::error_code> {
+            auto made = create_directory(candidate);
+            if(!made) {
+                return std::unexpected(made.error());
+            }
+            // A directory there already holds the name too.
+            if(!*made) {
+                return std::unexpected(std::make_error_code(std::errc::file_exists));
+            }
+            return std::move(candidate);
+        });
 }
 
 }  // namespace kota::fs

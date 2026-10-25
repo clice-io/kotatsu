@@ -405,7 +405,7 @@ std::string_view without_trailing_separators(std::string_view path) {
 
 std::error_code create_link(std::string_view target, std::string_view link, bool directory) {
 #ifdef _WIN32
-    auto native = windows::native_path(link);
+    auto native = windows::to_native(link);
     if(!native) {
         return native.error();
     }
@@ -444,8 +444,8 @@ std::error_code create_link(std::string_view target, std::string_view link, bool
 
 }  // namespace
 
-std::expected<std::vector<Entry>, std::error_code> read_dir(std::string_view dir) {
-    std::vector<Entry> entries;
+std::expected<std::vector<DirEntry>, std::error_code> read_dir(std::string_view dir) {
+    std::vector<DirEntry> entries;
 #ifdef _WIN32
     auto handle = open_directory(dir);
     if(!handle) {
@@ -469,7 +469,7 @@ std::expected<std::vector<Entry>, std::error_code> read_dir(std::string_view dir
     }
     auto* handle = opened->get();
     auto error = for_each_entry(handle, [&](std::string_view name, unsigned char type) {
-        Entry entry{std::string(name), type_of(type)};
+        DirEntry entry{std::string(name), type_of(type)};
         struct stat info;
         if(entry.type == FileType::Unknown &&
            ::fstatat(::dirfd(handle), entry.name.c_str(), &info, AT_SYMLINK_NOFOLLOW) == 0) {
@@ -503,8 +503,8 @@ std::expected<std::vector<StatusEntry>, std::error_code> read_dir_status(std::st
                 .name = from_utf16(name),
                 .status = {.type = win32::type_of(entry.FileAttributes, entry.ReparsePointTag),
                            .size = static_cast<std::uint64_t>(entry.EndOfFile.QuadPart),
-                           .mtime_ns = win32::unix_ns(entry.LastWriteTime.QuadPart),
-                           .ctime_ns = win32::unix_ns(entry.ChangeTime.QuadPart),
+                           .mtime = win32::unix_time(entry.LastWriteTime.QuadPart),
+                           .ctime = win32::unix_time(entry.ChangeTime.QuadPart),
                            .id = win32::id_of(volume->device, entry.FileId)},
             });
         });
@@ -554,7 +554,7 @@ std::expected<std::vector<StatusEntry>, std::error_code> read_dir_status(std::st
 
 std::expected<bool, std::error_code> create_directory(std::string_view path) {
 #ifdef _WIN32
-    auto native = windows::native_path(path);
+    auto native = windows::to_native(path);
     if(!native) {
         return std::unexpected(native.error());
     }
@@ -607,7 +607,7 @@ std::expected<bool, std::error_code> create_directories(std::string_view path) {
 
 std::expected<bool, std::error_code> remove(std::string_view path) {
 #ifdef _WIN32
-    auto native = windows::native_path(path);
+    auto native = windows::to_native(path);
     if(!native) {
         return std::unexpected(native.error());
     }
@@ -660,7 +660,7 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) 
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
 #ifdef _WIN32
-    auto native = windows::native_path(path);
+    auto native = windows::to_native(path);
     if(!native) {
         return std::unexpected(native.error());
     }
@@ -689,11 +689,11 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) 
 
 std::error_code rename(std::string_view from, std::string_view to) {
 #ifdef _WIN32
-    auto source = windows::native_path(from);
+    auto source = windows::to_native(from);
     if(!source) {
         return source.error();
     }
-    auto target = windows::native_path(to);
+    auto target = windows::to_native(to);
     if(!target) {
         return target.error();
     }
@@ -745,6 +745,140 @@ std::error_code create_symlink(std::string_view target, std::string_view link) {
 
 std::error_code create_directory_symlink(std::string_view target, std::string_view link) {
     return create_link(target, link, true);
+}
+
+std::expected<std::string, std::error_code> read_symlink(std::string_view path) {
+#ifdef _WIN32
+    auto native = windows::to_native(path);
+    if(!native) {
+        return std::unexpected(native.error());
+    }
+    auto handle = win32::try_open(*native, 0, FILE_FLAG_OPEN_REPARSE_POINT);
+    if(handle.get() == INVALID_HANDLE_VALUE) {
+        return std::unexpected(windows::last_error());
+    }
+
+    // REPARSE_DATA_BUFFER, which only the driver headers declare: a symlink
+    // and a junction hold a substitute name, which the system follows, and a
+    // print name, which some tools leave empty; a WSL symlink holds its
+    // target in UTF-8 after a version.
+    struct Reparse {
+        ULONG tag;
+        USHORT length;
+        USHORT reserved;
+
+        struct Names {
+            USHORT substitute_offset;
+            USHORT substitute_length;
+            USHORT print_offset;
+            USHORT print_length;
+        };
+
+        union {
+            struct {
+                Names names;
+                ULONG flags;
+                WCHAR text[1];
+            } symlink;
+
+            struct {
+                Names names;
+                WCHAR text[1];
+            } junction;
+
+            struct {
+                ULONG version;
+                char target[1];
+            } wsl;
+        };
+    };
+
+    constexpr ULONG wsl_symlink_tag = 0xA000001D;
+    auto buffer = std::make_unique_for_overwrite<std::byte[]>(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
+    DWORD returned = 0;
+    if(!::DeviceIoControl(handle.get(),
+                          FSCTL_GET_REPARSE_POINT,
+                          nullptr,
+                          0,
+                          buffer.get(),
+                          MAXIMUM_REPARSE_DATA_BUFFER_SIZE,
+                          &returned,
+                          nullptr)) {
+        auto error = ::GetLastError();
+        if(error == ERROR_NOT_A_REPARSE_POINT) {
+            return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        }
+        return std::unexpected(windows::to_error_code(error));
+    }
+    const auto& data = *reinterpret_cast<const Reparse*>(buffer.get());
+    // An absolute substitute name starts with the NT prefix `\??\`, which
+    // Win32 spells `\\?\`.
+    auto substitute = [](const Reparse::Names& names, const WCHAR* text) {
+        std::wstring name(text + names.substitute_offset / sizeof(WCHAR),
+                          names.substitute_length / sizeof(WCHAR));
+        if(name.starts_with(LR"(\??\)")) {
+            name[1] = L'\\';
+            return windows::from_native(name);
+        }
+        return from_utf16(std::wstring_view(name));
+    };
+    switch(data.tag) {
+        case IO_REPARSE_TAG_SYMLINK: return substitute(data.symlink.names, data.symlink.text);
+        case IO_REPARSE_TAG_MOUNT_POINT: return substitute(data.junction.names, data.junction.text);
+        case wsl_symlink_tag:
+            return std::string(data.wsl.target, data.length - sizeof(data.wsl.version));
+        default: return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
+#else
+    auto c_path = posix::c_path(path);
+    if(!c_path) {
+        return std::unexpected(c_path.error());
+    }
+    // A link's size says nothing in /proc: grow until the target fits.
+    std::string target(256, '\0');
+    while(true) {
+        auto size = ::readlink(c_path->c_str(), target.data(), target.size());
+        if(size < 0) {
+            return std::unexpected(posix::last_error());
+        }
+        if(static_cast<std::size_t>(size) < target.size()) {
+            target.resize(static_cast<std::size_t>(size));
+            return target;
+        }
+        target.resize(target.size() * 2);
+    }
+#endif
+}
+
+std::error_code create_hard_link(std::string_view target, std::string_view link) {
+#ifdef _WIN32
+    auto native_target = windows::to_native(target);
+    if(!native_target) {
+        return native_target.error();
+    }
+    auto native_link = windows::to_native(link);
+    if(!native_link) {
+        return native_link.error();
+    }
+    if(!::CreateHardLinkW(native_link->c_str(), native_target->c_str(), nullptr)) {
+        return windows::last_error();
+    }
+    return {};
+#else
+    auto c_target = posix::c_path(target);
+    if(!c_target) {
+        return c_target.error();
+    }
+    auto c_link = posix::c_path(link);
+    if(!c_link) {
+        return c_link.error();
+    }
+    // Not link(), which follows a symlink on macOS.
+    if(::linkat(AT_FDCWD, c_target->c_str(), AT_FDCWD, c_link->c_str(), 0) != 0) {
+        return posix::last_error();
+    }
+    return {};
+#endif
 }
 
 }  // namespace kota::fs

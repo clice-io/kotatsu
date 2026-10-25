@@ -147,7 +147,7 @@ struct Pool {
         auto log = directory / std::format("{}.log", started++);
         // Created new: names never repeat within a run, so a file already
         // there was planted by someone else.
-        auto file = fs::File::open(utf8(log), fs::OpenMode::CreateNew);
+        auto file = fs::File::open(utf8(log), {.write = true, .create_new = true});
         if(!file) {
             co_return std::unexpected(WorkerFailure{
                 .detail = std::format("cannot create {}: {}", utf8(log), file.error().message()),

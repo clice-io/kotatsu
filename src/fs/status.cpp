@@ -12,6 +12,51 @@
 
 namespace kota::fs {
 
+#ifdef _WIN32
+
+std::expected<Status, std::error_code> win32::handle_status(HANDLE handle) {
+    switch(::GetFileType(handle)) {
+        case FILE_TYPE_DISK: break;
+        case FILE_TYPE_CHAR: return Status{.type = FileType::Character};
+        case FILE_TYPE_PIPE: return Status{.type = FileType::Fifo};
+        default: {
+            // FILE_TYPE_UNKNOWN, and an error only when one is set.
+            if(auto error = ::GetLastError(); error != NO_ERROR) {
+                return std::unexpected(windows::to_error_code(error));
+            }
+            return Status{.type = FileType::Unknown};
+        }
+    }
+    FILE_BASIC_INFO basic;
+    FILE_STANDARD_INFO standard;
+    if(!::GetFileInformationByHandleEx(handle, FileBasicInfo, &basic, sizeof(basic)) ||
+       !::GetFileInformationByHandleEx(handle, FileStandardInfo, &standard, sizeof(standard))) {
+        return std::unexpected(windows::last_error());
+    }
+    DWORD tag = 0;
+    if(basic.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+        FILE_ATTRIBUTE_TAG_INFO info;
+        if(!::GetFileInformationByHandleEx(handle, FileAttributeTagInfo, &info, sizeof(info))) {
+            return std::unexpected(windows::last_error());
+        }
+        tag = info.ReparseTag;
+    }
+    auto id = win32::file_id(handle);
+    if(!id) {
+        return std::unexpected(id.error());
+    }
+    return Status{
+        .type = win32::type_of(basic.FileAttributes, tag),
+        .size = static_cast<std::uint64_t>(standard.EndOfFile.QuadPart),
+        .mtime = win32::unix_time(basic.LastWriteTime.QuadPart),
+        .ctime = win32::unix_time(basic.ChangeTime.QuadPart),
+        .id = *id,
+        .links = standard.NumberOfLinks,
+    };
+}
+
+#endif
+
 namespace {
 
 #ifdef _WIN32
@@ -74,47 +119,6 @@ bool names_nothing(DWORD error) {
     }
 }
 
-std::expected<Status, std::error_code> handle_status(HANDLE handle) {
-    switch(::GetFileType(handle)) {
-        case FILE_TYPE_DISK: break;
-        case FILE_TYPE_CHAR: return Status{.type = FileType::Character};
-        case FILE_TYPE_PIPE: return Status{.type = FileType::Fifo};
-        default: {
-            // FILE_TYPE_UNKNOWN, and an error only when one is set.
-            if(auto error = ::GetLastError(); error != NO_ERROR) {
-                return std::unexpected(windows::to_error_code(error));
-            }
-            return Status{.type = FileType::Unknown};
-        }
-    }
-    FILE_BASIC_INFO basic;
-    FILE_STANDARD_INFO standard;
-    if(!::GetFileInformationByHandleEx(handle, FileBasicInfo, &basic, sizeof(basic)) ||
-       !::GetFileInformationByHandleEx(handle, FileStandardInfo, &standard, sizeof(standard))) {
-        return std::unexpected(windows::last_error());
-    }
-    DWORD tag = 0;
-    if(basic.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-        FILE_ATTRIBUTE_TAG_INFO info;
-        if(!::GetFileInformationByHandleEx(handle, FileAttributeTagInfo, &info, sizeof(info))) {
-            return std::unexpected(windows::last_error());
-        }
-        tag = info.ReparseTag;
-    }
-    auto id = win32::file_id(handle);
-    if(!id) {
-        return std::unexpected(id.error());
-    }
-    return Status{
-        .type = win32::type_of(basic.FileAttributes, tag),
-        .size = static_cast<std::uint64_t>(standard.EndOfFile.QuadPart),
-        .mtime_ns = win32::unix_ns(basic.LastWriteTime.QuadPart),
-        .ctime_ns = win32::unix_ns(basic.ChangeTime.QuadPart),
-        .id = *id,
-        .links = standard.NumberOfLinks,
-    };
-}
-
 /// The status a directory's listing gives a file no open reaches: a page
 /// file, a directory the caller may list but not open. It has no change
 /// time, ID or links.
@@ -139,12 +143,12 @@ std::expected<Status, std::error_code> listed_status(const std::wstring& path) {
     return Status{
         .type = win32::type_of(data.dwFileAttributes, data.dwReserved0),
         .size = (std::uint64_t(data.nFileSizeHigh) << 32) | data.nFileSizeLow,
-        .mtime_ns = win32::unix_ns(ticks(data.ftLastWriteTime)),
+        .mtime = win32::unix_time(ticks(data.ftLastWriteTime)),
     };
 }
 
 std::expected<Status, std::error_code> status_of(std::string_view path, bool follow) {
-    auto native = windows::native_path(path);
+    auto native = windows::to_native(path);
     if(!native) {
         return std::unexpected(native.error());
     }
@@ -158,8 +162,8 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
                 return Status{
                     .type = win32::type_of(info.FileAttributes, info.ReparseTag),
                     .size = static_cast<std::uint64_t>(info.EndOfFile.QuadPart),
-                    .mtime_ns = win32::unix_ns(info.LastWriteTime.QuadPart),
-                    .ctime_ns = win32::unix_ns(info.ChangeTime.QuadPart),
+                    .mtime = win32::unix_time(info.LastWriteTime.QuadPart),
+                    .ctime = win32::unix_time(info.ChangeTime.QuadPart),
                     .id = win32::id_of(info.VolumeSerialNumber.QuadPart, info.FileId128),
                     .links = info.NumberOfLinks,
                 };
@@ -171,7 +175,7 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
     DWORD flags = follow ? 0 : FILE_FLAG_OPEN_REPARSE_POINT;
     auto handle = win32::try_open(*native, 0, flags);
     if(handle.get() != INVALID_HANDLE_VALUE) {
-        return handle_status(handle.get());
+        return win32::handle_status(handle.get());
     }
     auto error = ::GetLastError();
     if(error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED) {
@@ -184,7 +188,7 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
         // opened as a file: a Unix socket, an app execution alias.
         auto itself = win32::try_open(*native, 0, FILE_FLAG_OPEN_REPARSE_POINT);
         if(itself.get() != INVALID_HANDLE_VALUE) {
-            auto result = handle_status(itself.get());
+            auto result = win32::handle_status(itself.get());
             if(result && result->type != FileType::Symlink) {
                 return result;
             }

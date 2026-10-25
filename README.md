@@ -140,9 +140,11 @@ Synchronous paths and files on UTF-8 strings, depending on `support` alone (no l
 
 - Lexical paths (`path.h`): roots, components, `join`, `normalize`, `relative`, `strip_prefix`, in the POSIX or the Windows style on any host. Windows roots follow drives, UNC shares, device and verbatim (`\\?\`) prefixes; `..` never climbs past a root.
 - Status (`status.h`): `status` / `symlink_status` with file IDs, change time and link counts; on Windows by name where the system allows, junctions and symlinks reported as links.
-- Directories and files (`directory.h`, `file.h`): `read_dir` (with statuses from the listing on Windows), `create_directories`, `remove` and `rename` with POSIX semantics on Windows, `remove_all` that never follows a link, `File`, `read_file`, `write_file_atomic`, `create_temp_file`.
+- Directories and links (`directory.h`): `read_dir` (with statuses from the listing on Windows), `create_directories`, `remove` and `rename` with POSIX semantics on Windows, `remove_all` that never follows a link, symlinks (`create_symlink`, `read_symlink`, junctions on Windows) and hard links.
+- Files (`file.h`, `mapping.h`): `File`, opened as Rust's `OpenOptions` say (read, write, append, truncate, create, create new), with `seek`, `status`, `resize`, `sync`, sparse files and advisory locks (`lock`, `lock_shared`, `try_lock`), which on Windows keep no one from the file's bytes; `read_file`, which reads rather than maps, `write_file_atomic`, `create_temp_file` and `create_temp_directory`; `Mapping`, a file's bytes mapped read only.
+- Volumes (`volume.h`): `volume`, the space, kind and remoteness of the file system a path lives on (9p, NFS and SMB are remote; FUSE is told by its kind).
 - Resolution (`resolve.h`): `canonical`, `weakly_canonical` for paths that may not exist yet, `absolute`, `current_dir`.
-- The Windows boundary (`windows.h`): UTF-8 paths as the wide, `\\?\`-prefixed paths the file functions take, and Win32 errors as `std::error_code`; Cygwin and MSYS2 mount tables (`cygwin.h`).
+- The Windows boundary (`windows.h`): UTF-8 paths as the wide, `\\?\`-prefixed paths the file functions take (`to_native`, `from_native`), and Win32 errors as `std::error_code`; Cygwin and MSYS2 mount tables (`cygwin.h`).
 
 ### `support` (`include/kota/support/*`)
 
