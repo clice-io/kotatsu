@@ -6,6 +6,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <utility>
@@ -92,7 +93,8 @@ struct process::Self::Watch {
     int closing = 0;
 
 #ifndef _WIN32
-    /// The pidfds' epoll set or the kqueue, -1 where it cannot be had.
+    /// The pidfds' epoll set or the kqueue, -1 where it cannot be had or
+    /// the loop cannot poll it.
     int multiplexer = -1;
 
     uv_poll_t poll{};
@@ -116,15 +118,22 @@ struct process::Self::Watch {
     std::vector<Self*> signaled;
 #endif
 
-    explicit Watch(uv_loop_t& loop) : loop(loop) {
+    explicit Watch(uv_loop_t& loop) noexcept : loop(loop) {}
+
+    /// Opens what wakes the loop, which close() closes.
+    void open() noexcept {
 #ifdef __linux__
         multiplexer = ::epoll_create1(EPOLL_CLOEXEC);
 #elif defined(__APPLE__)
         multiplexer = ::kqueue();
 #endif
 #ifndef _WIN32
+        // One the loop cannot poll is none, and SIGCHLD stands in: epoll
+        // refuses a set nested past its limit, or past max_user_watches.
+        if(multiplexer >= 0 && ::uv_poll_init(&loop, &poll, multiplexer) != 0) {
+            ::close(std::exchange(multiplexer, -1));
+        }
         if(multiplexer >= 0) {
-            ::uv_poll_init(&loop, &poll, multiplexer);
             poll.data = this;
             ::uv_poll_start(&poll, UV_READABLE, on_ready);
             ::uv_unref(reinterpret_cast<uv_handle_t*>(&poll));
@@ -146,9 +155,11 @@ struct process::Self::Watch {
         static auto& table = *new std::map<uv_loop_t*, Watch*>;
         std::scoped_lock lock(table_mutex);
         auto* native = loop.native_handle();
-        auto [entry, first] = table.try_emplace(native, nullptr);
-        if(first) {
-            entry->second = new Watch(*native);
+        // Null until the watch is made: a throw before leaves it to the next
+        // spawn to make.
+        auto& entry = table[native];
+        if(entry == nullptr) {
+            auto made = std::make_unique<Watch>(*native);
             // A loop made later at the same address starts afresh.
             loop.on_destroy([native] {
                 Watch* watch = nullptr;
@@ -158,12 +169,22 @@ struct process::Self::Watch {
                 }
                 watch->close();
             });
+            // Opened once nothing can throw any more: a throw leaves no
+            // handle on the loop.
+            entry = made.release();
+            entry->open();
         }
-        return *entry->second;
+        return *entry;
     }
 
     /// Starts watching `self`'s child; the error when it cannot.
     error add(Self& self) {
+#ifndef _WIN32
+        // Room for it in the lists it may join, made before anything changes:
+        // nothing throws once it is watched.
+        make_room(polled);
+        make_room(unseen);
+#endif
         watched.push_back(&self);
         self.watch = this;
         own(+1);
@@ -207,6 +228,13 @@ struct process::Self::Watch {
     }
 
 #ifndef _WIN32
+    /// Makes room for one more in `children`, growing it as push_back does.
+    static void make_room(std::vector<Self*>& children) {
+        if(children.size() == children.capacity()) {
+            children.reserve(2 * children.size() + 1);
+        }
+    }
+
     /// Looks at `self`'s child on the next turn, where a SIGCHLD that came
     /// before its handler was armed has no one to tell.
     void look_soon(Self& self) {
@@ -494,16 +522,37 @@ result<pipe> open_pipe(fs::File::native_handle_type end, event_loop& loop) {
         ::CloseHandle(end);
         return outcome_error(error::too_many_open_files);
     }
-    auto opened = pipe::open(fd, loop);
-    if(!opened) {
-        ::_close(fd);
-    }
 #else
-    auto opened = pipe::open(end, loop);
-    if(!opened) {
-        ::close(end);
-    }
+    int fd = end;
 #endif
+    // Closed unless the pipe takes it: its open failed or threw, or on Windows
+    // libuv took a duplicate.
+    struct Unopened {
+        int fd;
+
+        ~Unopened() {
+            if(fd >= 0) {
+#ifdef _WIN32
+                ::_close(fd);
+#else
+                ::close(fd);
+#endif
+            }
+        }
+    } unopened{fd};
+
+    auto opened = pipe::open(fd, loop);
+#ifdef _WIN32
+    // Of a descriptor from 0 to 2, which a program that closed its standard
+    // streams gives out again, libuv takes a duplicate of the handle and
+    // leaves the descriptor: kept, it would hold the pipe open.
+    const bool taken = opened && fd > 2;
+#else
+    const bool taken = opened.has_value();
+#endif
+    if(taken) {
+        unopened.fd = -1;
+    }
     return opened;
 }
 
@@ -619,6 +668,11 @@ process::process(process&& other) noexcept = default;
 process& process::operator=(process&& other) noexcept = default;
 
 result<process::spawn_result> process::spawn(const options& opts, event_loop& loop) {
+    // Its watch would come after the loop closed its handles, and keep it
+    // from closing.
+    if(uv::destroying(*loop.native_handle())) {
+        return outcome_error(error::operation_aborted);
+    }
     // Made before the child, which nothing then separates from its watch but
     // what the rollback below undoes.
     detail::unique_handle<Self> self(new Self(sys::Child(), *loop.native_handle()));

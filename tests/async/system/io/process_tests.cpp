@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <format>
 #include <initializer_list>
+#include <latch>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -22,6 +23,7 @@
 #include <iterator>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
+#include <sys/epoll.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -200,6 +202,36 @@ ZEST_CASE(stdin_pipe_feeds_the_child) {
     ZEXPECT(trim_newlines(*output) == "kotatsu-stdin");
     ZEXPECT(test::exit_code_of(status) == 0);
 }
+
+#ifdef _WIN32
+// A program that closed its standard streams gives their C runtime
+// descriptors out again, to the parent's end of a child's pipe among them,
+// of which libuv takes a duplicate handle: closed, the end still reaches the
+// child, which reads to its end.
+ZEST_CASE(stdin_pipe_closed_where_stdin_was_closed_ends_the_child) {
+    // The worker reads its runner elsewhere: its stdin reads nothing.
+    struct ClosedStdin {
+        int saved = ::_dup(0);
+
+        ClosedStdin() {
+            test::close_fd(0);
+        }
+
+        ~ClosedStdin() {
+            ::_dup2(saved, 0);
+            test::close_fd(saved);
+        }
+    } closed;
+
+    ZASSERT(closed.saved >= 0);
+    auto spawned = process::spawn(test::stdin_reader(), loop);
+    ZASSERT(spawned.has_value());
+    spawned->stdin_pipe = pipe{};
+
+    auto [status] = run(spawned->proc.wait());
+    ZEXPECT(test::exit_code_of(status) == 0);
+}
+#endif
 
 ZEST_CASE(stdout_goes_to_a_given_descriptor) {
     test::TempDir dir;
@@ -498,6 +530,32 @@ ZEST_CASE(wait_cancelled_after_its_process_is_destroyed_ends) {
     ZEXPECT(*result == 1U);
 }
 
+// ~event_loop runs the loop until the thread pool's work is done, and so
+// resumes the task that queued it: a watch made then would come after the
+// loop closed its handles, and keep it from closing.
+ZEST_CASE(spawn_while_its_loop_is_destroyed_fails) {
+    std::latch gate(1);
+    std::optional<result<process::spawn_result>> spawned;
+    std::optional<event_loop> dying(std::in_place);
+    auto late = [&]() -> task<> {
+        co_await queue([&] { gate.wait(); }, *dying);
+        spawned.emplace(process::spawn(shell("exit 0"), *dying));
+    };
+    auto stop = [&]() -> task<> {
+        dying->stop();
+        co_return;
+    };
+    dying->schedule(late());
+    dying->schedule(stop());
+    dying->run();
+
+    gate.count_down();
+    dying.reset();
+    ZASSERT(spawned.has_value());
+    ZASSERT(spawned->has_error());
+    ZEXPECT(spawned->error() == error::operation_aborted);
+}
+
 ZEST_CASE(inert_process_fails) {
     process inert;
 
@@ -789,6 +847,54 @@ ZEST_CASE(exit_is_seen_without_pidfds) {
     ZASSERT(::waitpid(tester, &status, 0) == tester);
     ZEXPECT(WIFEXITED(status));
     ZEXPECT(WEXITSTATUS(status) == 0);
+}
+
+// epoll nests sets at most four deep: with the loop's own set four deep in
+// others, it refuses the loop the set of the pidfds, and SIGCHLD tells of
+// the exit.
+ZEST_CASE(exit_is_seen_when_the_loop_cannot_poll_the_pidfds) {
+    struct Sets {
+        std::vector<int> fds;
+
+        ~Sets() {
+            for(int fd: fds) {
+                ::close(fd);
+            }
+        }
+    } outer;
+
+    const int backend = ::uv_backend_fd(loop.native_handle());
+    epoll_event event{.events = EPOLLIN, .data = {}};
+    int inner = backend;
+    for(int depth = 0; depth < 4; ++depth) {
+        const int set = ::epoll_create1(EPOLL_CLOEXEC);
+        ZASSERT(set >= 0);
+        outer.fds.push_back(set);
+        ZASSERT(::epoll_ctl(set, EPOLL_CTL_ADD, inner, &event) == 0);
+        inner = set;
+    }
+    // An older kernel, which counts only the nesting below the set added,
+    // lets it in.
+    const int probe = ::epoll_create1(EPOLL_CLOEXEC);
+    ZASSERT(probe >= 0);
+    const bool refused = ::epoll_ctl(backend, EPOLL_CTL_ADD, probe, &event) != 0;
+    ::close(probe);
+    if(!refused) {
+        zest::skip();
+        return;
+    }
+
+    // It exits once its first look has found it running, a timer the spawn
+    // started before this one: SIGCHLD alone tells of the exit.
+    auto spawned = process::spawn(test::stdin_reader(), loop);
+    ZASSERT(spawned.has_value());
+    auto close_stdin = [&]() -> task<> {
+        co_await sleep(0, loop);
+        spawned->stdin_pipe = pipe{};
+    };
+
+    auto [status, closed] = run(spawned->proc.wait(), close_stdin());
+    ZEXPECT(test::exit_code_of(status) == 0);
 }
 #endif
 

@@ -13,10 +13,10 @@ namespace kota {
 
 /// A child process, started by sys::spawn, whose exit an event loop waits
 /// for: on Linux through a pidfd, or SIGCHLD where the kernel has none
-/// (before 5.3) or a sandbox forbids them; on macOS through kqueue; on
-/// Windows through the process handle. libuv's uv_spawn is not used: its
-/// SIGCHLD handler and its job object stay out of the way, and libuv reaps
-/// only children of its own.
+/// (before 5.3), a sandbox forbids them or the loop cannot poll their epoll
+/// set; on macOS through kqueue; on Windows through the process handle.
+/// libuv's uv_spawn is not used: its SIGCHLD handler and its job object stay
+/// out of the way, and libuv reaps only children of its own.
 ///
 /// wait() waits for the child to exit; the exit status stays, and every
 /// later wait() returns it at once. One wait() may be pending at a time; a
@@ -57,7 +57,8 @@ public:
     struct spawn_result;
 
     /// Launches the child, with the pipes `opts` asks for. It either starts,
-    /// with all of them, or leaves nothing behind.
+    /// with all of them, or leaves nothing behind. Fails with
+    /// error::operation_aborted while the loop is being destroyed.
     static result<spawn_result> spawn(const options& opts,
                                       event_loop& loop = event_loop::current());
 
