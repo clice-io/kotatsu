@@ -870,6 +870,22 @@ ZEST_CASE(keep_signals_gives_back_the_sigpipe_kotatsu_ignored) {
     ZEXPECT(status_of(options).term_signal == SIGPIPE);
 }
 
+#ifdef __linux__
+// SIGCHLD, which spawn stops ignoring, goes back to ignored: what a child of
+// this process's would have had.
+ZEST_CASE(keep_signals_gives_back_the_sigchld_spawn_stopped_ignoring) {
+    ScopedAction restore(SIGCHLD);
+    set_action(SIGCHLD, SIG_IGN);
+    SpawnOptions options{.program = "/bin/cat", .args = {"/proc/self/status"}};
+    options.creation.keep_signals = true;
+    auto output = output_of(options);
+    auto at = output.text.find("SigIgn:");
+    ZASSERT(at != std::string::npos);
+    auto ignored = std::stoull(output.text.substr(at + 7), nullptr, 16);
+    ZEXPECT(((ignored >> (SIGCHLD - 1)) & 1) == 1);
+}
+#endif
+
 // This process's stream it has not open, as a program may be started with:
 // none in the child.
 ZEST_CASE(inherit_of_a_stream_not_open_gives_none) {
