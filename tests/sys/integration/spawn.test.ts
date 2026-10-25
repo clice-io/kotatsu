@@ -11,7 +11,7 @@
 //   sys_probe would see;
 // - on Windows it is born in a job nested in the one sys_probe is in, as a CI
 //   runner puts its processes in one, and inherits no handle of sys_probe's
-//   but its standard ones.
+//   but its standard ones, unless it is to inherit every inheritable one.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -127,5 +127,18 @@ test(
     };
     await driver.expectExit(0);
     assert.equal(output.inherited, false);
+  },
+);
+
+test(
+  "child_inherits_every_inheritable_handle_when_asked",
+  { skip: process.platform !== "win32" && "Windows lists the handles" },
+  async (t) => {
+    const driver = await Driver.spawn(t, "sys_probe", ["handles", "all"]);
+    const output = (await driver.jsonLines().receive()) as {
+      inherited: boolean;
+    };
+    await driver.expectExit(0);
+    assert.equal(output.inherited, true);
   },
 );
