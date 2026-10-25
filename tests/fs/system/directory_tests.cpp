@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <cstddef>
 #include <filesystem>
+#include <ranges>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -9,6 +11,7 @@
 #include <unistd.h>
 #endif
 
+#include "fs/harness/dir.h"
 #include "fs/harness/files.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/directory.h"
@@ -42,36 +45,32 @@ ZEST_CASE(read_dir_lists_names_and_types) {
     test::write_text(dir.file("é中😀"), "text");
     std::filesystem::create_directory(dir.path / "sub");
 
-    auto entries = read_dir(dir.root());
-    ZASSERT(entries.has_value());
-    ZEXPECT(names_of(*entries) == std::vector<std::string>{"file.txt", "sub", "é中😀"});
-    ZEXPECT(type_in(*entries, "file.txt") == FileType::Regular);
-    ZEXPECT(type_in(*entries, "sub") == FileType::Directory);
+    auto entries = test::entries_of(dir.root());
+    ZEXPECT(names_of(entries) == std::vector<std::string>{"file.txt", "sub", "é中😀"});
+    ZEXPECT(type_in(entries, "file.txt") == FileType::Regular);
+    ZEXPECT(type_in(entries, "sub") == FileType::Directory);
 }
 
 ZEST_CASE(read_dir_of_an_empty_directory_is_empty) {
     test::TempDir dir;
-    auto entries = read_dir(dir.root());
-    ZASSERT(entries.has_value());
-    ZEXPECT(entries->empty());
+    auto stream = read_dir(dir.root());
+    ZASSERT(stream.has_value());
+    ZEXPECT(stream->begin() == stream->end());
 }
 
 ZEST_CASE(read_dir_of_nothing_fails) {
     test::TempDir dir;
-    auto entries = read_dir(dir.file("missing"));
-    ZASSERT(!entries.has_value());
-    ZEXPECT(entries.error() == std::errc::no_such_file_or_directory);
+    auto stream = read_dir(dir.file("missing"));
+    ZASSERT(!stream.has_value());
+    ZEXPECT(stream.error() == std::errc::no_such_file_or_directory);
 }
 
 ZEST_CASE(read_dir_of_a_file_fails) {
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "text");
-    auto entries = read_dir(dir.file("file.txt"));
-    ZASSERT(!entries.has_value());
-    ZEXPECT(entries.error() == std::errc::not_a_directory);
-    auto statuses = read_dir_status(dir.file("file.txt"));
-    ZASSERT(!statuses.has_value());
-    ZEXPECT(statuses.error() == std::errc::not_a_directory);
+    auto stream = read_dir(dir.file("file.txt"));
+    ZASSERT(!stream.has_value());
+    ZEXPECT(stream.error() == std::errc::not_a_directory);
 }
 
 ZEST_CASE(read_dir_leaves_links_unfollowed) {
@@ -80,9 +79,13 @@ ZEST_CASE(read_dir_leaves_links_unfollowed) {
     if(!test::linked(create_directory_symlink("target", dir.file("link")))) {
         return;
     }
-    auto entries = read_dir(dir.root());
-    ZASSERT(entries.has_value());
-    ZEXPECT(type_in(*entries, "link") == FileType::Symlink);
+    auto entries = test::entries_of(dir.root());
+    auto found = std::ranges::find(entries, "link", &DirEntry::name);
+    ZASSERT(found != entries.end());
+    ZEXPECT(found->type == FileType::Symlink);
+    auto status = found->status();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->type == FileType::Symlink);
 }
 
 #ifdef _WIN32
@@ -90,44 +93,142 @@ ZEST_CASE(read_dir_lists_a_junction_as_a_link) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
     test::make_junction(dir.file("junction"), dir.file("target"));
-    auto entries = read_dir(dir.root());
-    ZASSERT(entries.has_value());
-    ZEXPECT(type_in(*entries, "junction") == FileType::Symlink);
-    auto statuses = read_dir_status(dir.root());
-    ZASSERT(statuses.has_value());
-    auto found = std::ranges::find(*statuses, "junction", &StatusEntry::name);
-    ZASSERT(found != statuses->end());
-    ZEXPECT(found->status.type == FileType::Symlink);
+    auto entries = test::entries_of(dir.root());
+    auto found = std::ranges::find(entries, "junction", &DirEntry::name);
+    ZASSERT(found != entries.end());
+    ZEXPECT(found->type == FileType::Symlink);
+    auto status = found->status();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->type == FileType::Symlink);
 }
 #else
 ZEST_CASE(read_dir_tells_a_fifo) {
     test::TempDir dir;
     ZASSERT(::mkfifo(dir.file("fifo").c_str(), 0600) == 0);
-    auto entries = read_dir(dir.root());
-    ZASSERT(entries.has_value());
-    ZEXPECT(type_in(*entries, "fifo") == FileType::Fifo);
+    auto entries = test::entries_of(dir.root());
+    auto found = std::ranges::find(entries, "fifo", &DirEntry::name);
+    ZASSERT(found != entries.end());
+    ZEXPECT(found->type == FileType::Fifo);
+    auto status = found->status();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->type == FileType::Fifo);
 }
 #endif
 
-ZEST_CASE(read_dir_status_matches_each_status) {
+ZEST_CASE(read_dir_entries_tell_their_statuses) {
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "12345");
     std::filesystem::create_directory(dir.path / "sub");
 
-    auto entries = read_dir_status(dir.root());
-    ZASSERT(entries.has_value());
-    ZASSERT(entries->size() == 2);
-    for(const auto& entry: *entries) {
+    auto entries = test::entries_of(dir.root());
+    ZASSERT(entries.size() == 2u);
+    for(const auto& entry: entries) {
         ZEST_CONTEXT("{}", entry.name);
+        auto listed = entry.status();
         auto single = symlink_status(dir.file(entry.name));
+        ZASSERT(listed.has_value());
         ZASSERT(single.has_value());
-        ZEXPECT(entry.status.type == single->type);
-        ZEXPECT(entry.status.id == single->id);
-        ZEXPECT(entry.status.mtime == single->mtime);
-        if(entry.status.type == FileType::Regular) {
-            ZEXPECT(entry.status.size == 5);
+        ZEXPECT(listed->type == entry.type);
+        ZEXPECT(listed->type == single->type);
+        ZEXPECT(listed->id == single->id);
+        ZEXPECT(listed->mtime == single->mtime);
+        ZEXPECT(listed->permissions == single->permissions);
+        if(entry.type == FileType::Regular) {
+            ZEXPECT(listed->size == 5u);
         }
     }
+}
+
+ZEST_CASE(read_dir_entries_tell_their_statuses_once_the_stream_is_gone) {
+    // The directory stays open while an entry of it lives.
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "12345");
+    auto entries = test::entries_of(dir.root());
+    ZASSERT(entries.size() == 1u);
+    auto status = entries.front().status();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->size == 5u);
+}
+
+ZEST_CASE(read_dir_gives_only_what_is_taken) {
+    test::TempDir dir;
+    std::vector<std::string> names = {"a", "b", "c", "d", "e"};
+    for(const auto& name: names) {
+        test::write_text(dir.file(name), name);
+    }
+    for(std::size_t count = 0; count <= names.size() + 1; ++count) {
+        ZEST_CONTEXT("count {}", count);
+        auto stream = read_dir(dir.root());
+        ZASSERT(stream.has_value());
+        // Whichever the system lists first, each once.
+        std::vector<std::string> taken;
+        for(const auto& entry: *stream | std::views::take(count)) {
+            ZASSERT(entry.has_value());
+            ZEXPECT(std::ranges::find(names, entry->name) != names.end());
+            taken.push_back(entry->name);
+        }
+        ZEXPECT(taken.size() == std::min(count, names.size()));
+        std::ranges::sort(taken);
+        ZEXPECT(std::ranges::adjacent_find(taken) == taken.end());
+    }
+}
+
+#ifdef _WIN32
+ZEST_CASE(read_dir_entries_leave_the_directory_closed) {
+    // The listing tells each entry its whole status: once the stream is
+    // gone, nothing holds the directory open, which would keep its parent
+    // from being renamed.
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "outer" / "inner");
+    test::write_text(dir.file("outer/inner/file.txt"), "text");
+    auto entries = test::entries_of(dir.file("outer/inner"));
+    ZASSERT(entries.size() == 1u);
+    ZEXPECT(!rename(dir.file("outer"), dir.file("moved")));
+}
+
+ZEST_CASE(read_dir_entry_status_of_a_removed_file_is_as_listed) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "12345");
+    auto entries = test::entries_of(dir.root());
+    ZASSERT(entries.size() == 1u);
+    ZEXPECT(remove(dir.file("file.txt")) == true);
+    auto status = entries.front().status();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->size == 5u);
+}
+#else
+ZEST_CASE(read_dir_entry_status_of_a_removed_file_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "12345");
+    auto entries = test::entries_of(dir.root());
+    ZASSERT(entries.size() == 1u);
+    ZEXPECT(remove(dir.file("file.txt")) == true);
+    auto status = entries.front().status();
+    ZASSERT(!status.has_value());
+    ZEXPECT(status.error() == std::errc::no_such_file_or_directory);
+}
+#endif
+
+ZEST_CASE(read_dir_goes_on_where_it_stopped) {
+    // A range to go through once: a second loop takes up the rest.
+    test::TempDir dir;
+    for(auto name: {"a", "b", "c"}) {
+        test::write_text(dir.file(name), name);
+    }
+    auto stream = read_dir(dir.root());
+    ZASSERT(stream.has_value());
+    std::vector<std::string> taken;
+    for(const auto& entry: *stream | std::views::take(1)) {
+        ZASSERT(entry.has_value());
+        taken.push_back(entry->name);
+    }
+    ZEXPECT(taken.size() == 1u);
+    for(const auto& entry: *stream) {
+        ZASSERT(entry.has_value());
+        taken.push_back(entry->name);
+    }
+    std::ranges::sort(taken);
+    ZEXPECT(taken == std::vector<std::string>{"a", "b", "c"});
 }
 
 ZEST_CASE(create_directory_says_whether_it_made_one) {
@@ -275,6 +376,33 @@ ZEST_CASE(remove_all_never_follows_a_junction) {
     test::make_junction(dir.file("tree/junction"), dir.file("outside"));
     ZEXPECT(remove_all(dir.file("tree")) == 2u);
     ZEXPECT(is_file(dir.file("outside/kept.txt")));
+}
+
+ZEST_CASE(remove_takes_a_junction_not_its_target) {
+    // Junctions, unlike symlinks, need no privilege, so CI makes them.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    test::write_text(dir.file("target/kept.txt"), "text");
+    test::make_junction(dir.file("junction"), dir.file("target"));
+    ZEXPECT(remove(dir.file("junction")) == true);
+    ZEXPECT(!symlink_status(dir.file("junction")).has_value());
+    ZEXPECT(is_file(dir.file("target/kept.txt")));
+}
+
+ZEST_CASE(remove_all_of_a_junction_takes_the_junction_alone) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    test::write_text(dir.file("target/kept.txt"), "text");
+    test::make_junction(dir.file("junction"), dir.file("target"));
+    ZEXPECT(remove_all(dir.file("junction")) == 1u);
+    ZEXPECT(!symlink_status(dir.file("junction")).has_value());
+    ZEXPECT(is_file(dir.file("target/kept.txt")));
+    // A dangling one too.
+    std::filesystem::create_directory(dir.path / "gone");
+    test::make_junction(dir.file("dangling"), dir.file("gone"));
+    std::filesystem::remove(dir.path / "gone");
+    ZEXPECT(remove_all(dir.file("dangling")) == 1u);
+    ZEXPECT(!symlink_status(dir.file("dangling")).has_value());
 }
 #else
 ZEST_CASE(remove_all_where_access_is_denied_fails) {

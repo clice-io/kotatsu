@@ -1,13 +1,21 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <thread>
 #include <utility>
 
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
+
 #include "fs/harness/files.h"
+#include "fs/harness/win32.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/file.h"
 
@@ -29,6 +37,39 @@ struct LockFile {
     }
 
     test::TempDir dir;
+};
+
+/// A copy of the handle of `file`, as a child process that inherited it
+/// would hold, closed when this goes.
+struct HandleCopy {
+    explicit HandleCopy(const File& file) {
+#ifdef _WIN32
+        auto process = ::GetCurrentProcess();
+        ZASSERT(::DuplicateHandle(process,
+                                  file.native_handle(),
+                                  process,
+                                  &handle,
+                                  0,
+                                  FALSE,
+                                  DUPLICATE_SAME_ACCESS));
+#else
+        handle = ::fcntl(file.native_handle(), F_DUPFD_CLOEXEC, 0);
+        ZASSERT(handle >= 0);
+#endif
+    }
+
+    ~HandleCopy() {
+#ifdef _WIN32
+        ::CloseHandle(handle);
+#else
+        ::close(handle);
+#endif
+    }
+
+    HandleCopy(const HandleCopy&) = delete;
+    HandleCopy& operator=(const HandleCopy&) = delete;
+
+    File::native_handle_type handle;
 };
 
 ZEST_SUITE(fs_file_lock) {
@@ -126,6 +167,64 @@ ZEST_CASE(closing_releases_the_lock) {
     auto second = lock.open();
     ZEXPECT(!first.lock());
     ZEXPECT(!first.close());
+    ZEXPECT(second.try_lock() == true);
+}
+
+ZEST_CASE(closing_releases_the_lock_a_copy_of_the_handle_shares) {
+    LockFile lock;
+    auto first = lock.open();
+    auto second = lock.open();
+    ZEXPECT(!first.lock());
+    HandleCopy copy(first);
+    ZEXPECT(!first.close());
+    ZEXPECT(second.try_lock() == true);
+}
+
+#ifndef _WIN32
+ZEST_CASE(closing_after_unlock_leaves_a_lock_a_copy_of_the_handle_took) {
+    // flock() locks belong to what the copies share: the File unlocked,
+    // closing it leaves the lock the copy took since.
+    LockFile lock;
+    auto first = lock.open();
+    auto second = lock.open();
+    ZEXPECT(!first.lock());
+    ZEXPECT(!first.unlock());
+    HandleCopy copy(first);
+    ZASSERT(::flock(copy.handle, LOCK_EX | LOCK_NB) == 0);
+    ZEXPECT(!first.close());
+    ZEXPECT(second.try_lock() == false);
+}
+#endif
+
+ZEST_CASE(dropping_a_file_releases_its_lock) {
+    LockFile lock;
+    auto second = lock.open();
+    std::optional<HandleCopy> copy;
+    {
+        auto first = lock.open();
+        ZEXPECT(!first.lock_shared());
+        copy.emplace(first);
+    }
+    ZEXPECT(second.try_lock() == true);
+}
+
+ZEST_CASE(a_moved_file_releases_the_lock_it_was_given) {
+    LockFile lock;
+    auto first = lock.open();
+    auto second = lock.open();
+    ZEXPECT(first.try_lock() == true);
+    File moved = std::move(first);
+    HandleCopy copy(moved);
+    ZEXPECT(!moved.close());
+    ZEXPECT(second.try_lock() == true);
+    ZEXPECT(!second.unlock());
+    // Assigned too, over a File of its own.
+    auto third = lock.open();
+    ZEXPECT(third.try_lock() == true);
+    File assigned = lock.open();
+    assigned = std::move(third);
+    HandleCopy assigned_copy(assigned);
+    ZEXPECT(!assigned.close());
     ZEXPECT(second.try_lock() == true);
 }
 

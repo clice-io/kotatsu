@@ -1,10 +1,12 @@
 #pragma once
 
 // TempDir, a directory of a test's own, write_text() and read_text(),
-// make_junction() on Windows and ScopedPermissions elsewhere, all through
-// std::filesystem, fstreams and cmd rather than kota::fs, which the tests
-// check; linked() for a case that makes a symlink.
+// ScopedCurrentDir, make_junction() on Windows and ScopedPermissions
+// elsewhere, all through std::filesystem, fstreams and cmd rather than
+// kota::fs, which the tests check; linked() for a case that makes a symlink;
+// text_of() and CountedBuffer for reads of large files.
 
+#include <cstddef>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -23,7 +25,10 @@ namespace kota::test {
 /// A directory of its own under the system temp directory, removed with
 /// everything in it when this goes, or when a failed ZASSERT ends the process.
 struct TempDir {
-    TempDir() : path(create()) {}
+    TempDir() : path(create(std::filesystem::temp_directory_path())) {}
+
+    /// One under `base` rather than the system temp directory.
+    explicit TempDir(const std::filesystem::path& base) : path(create(base)) {}
 
     ~TempDir() {
         remove();
@@ -59,9 +64,8 @@ private:
 
     zest::FatalHook on_fatal{[this] { remove(); }};
 
-    static std::filesystem::path create() {
+    static std::filesystem::path create(const std::filesystem::path& base) {
         std::random_device random;
-        auto base = std::filesystem::temp_directory_path();
         std::filesystem::path candidate;
         do {
             candidate = base / std::format("kota-{:08x}{:08x}", random(), random());
@@ -74,6 +78,35 @@ private:
 inline std::filesystem::path std_path(std::string_view path) {
     return std::filesystem::path(std::u8string(path.begin(), path.end()));
 }
+
+/// Text of `size` bytes that is no repetition of a short run.
+inline std::string text_of(std::size_t size) {
+    std::string text(size, '\0');
+    for(std::size_t i = 0; i < size; ++i) {
+        text[i] = static_cast<char>('a' + (i * 7 + i / 26) % 26);
+    }
+    return text;
+}
+
+/// A string that counts how often it is resized: what tells a read sized
+/// once from one that grows its buffer step by step.
+struct CountedBuffer {
+    char* data() {
+        return text.data();
+    }
+
+    std::size_t size() const {
+        return text.size();
+    }
+
+    void resize(std::size_t size) {
+        ++resizes;
+        text.resize(size);
+    }
+
+    std::string text;
+    int resizes = 0;
+};
 
 /// Writes `text` as the whole of the file at the UTF-8 `path`.
 inline void write_text(std::string_view path, std::string_view text) {
@@ -97,6 +130,32 @@ inline bool linked(std::error_code error) {
     zest::skip();
     return false;
 }
+
+/// The current directory, put back when this goes.
+struct ScopedCurrentDir {
+    explicit ScopedCurrentDir(const std::filesystem::path& path) {
+        std::filesystem::current_path(path);
+    }
+
+    ScopedCurrentDir(const ScopedCurrentDir&) = delete;
+    ScopedCurrentDir& operator=(const ScopedCurrentDir&) = delete;
+
+    ~ScopedCurrentDir() {
+        restore();
+    }
+
+    std::filesystem::path original = std::filesystem::current_path();
+
+private:
+    void restore() const {
+        std::error_code ignored;
+        std::filesystem::current_path(original, ignored);
+    }
+
+    // Windows removes no directory a process stands in: this runs before the
+    // hook of a TempDir it stands in, declared before it.
+    zest::FatalHook on_fatal{[this] { restore(); }};
+};
 
 #ifndef _WIN32
 /// The permissions of `path` replaced by `perms` for as long as this lives,

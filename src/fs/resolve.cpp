@@ -23,17 +23,7 @@ std::error_code canonical(buffer_ref out, std::string_view path) {
     if(!handle) {
         return handle.error();
     }
-    win32::WidePath final;
-    if(auto error = win32::fill_wide(final, [&](wchar_t* buffer, DWORD size) {
-           return ::GetFinalPathNameByHandleW(handle->get(),
-                                              buffer,
-                                              size,
-                                              FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-       })) {
-        return error;
-    }
-    windows::from_native(out, final);
-    return {};
+    return win32::final_path(out, handle->get());
 #else
     posix::CPath c_path;
     if(auto error = c_path.assign(path)) {
@@ -83,6 +73,13 @@ std::error_code absolute(buffer_ref out, std::string_view path) {
     win32::WidePath wide;
     if(auto error = win32::widen(wide, path)) {
         return error;
+    }
+    // A verbatim path is absolute already, and its names are as the file
+    // system takes them: Win32 would fold its `..` and drop the trailing
+    // dots and spaces they keep.
+    if(path.starts_with(R"(\\?\)")) {
+        windows::from_native(out, std::wstring_view(wide.data(), wide.size()));
+        return {};
     }
     win32::WidePath full;
     if(auto error = win32::full_path(full, wide.c_str())) {
