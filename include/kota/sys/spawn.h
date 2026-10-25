@@ -11,6 +11,7 @@
 #include <system_error>
 #include <vector>
 
+#include "kota/support/buffer_ref.h"
 #include "kota/fs/file.h"
 #include "kota/sys/env.h"
 
@@ -322,5 +323,14 @@ private:
 /// bad_file_descriptor for a descriptor not open;
 /// not_supported for exit_with_parent on macOS.
 std::expected<Child, std::error_code> spawn(const SpawnOptions& options);
+
+/// Runs a child to its end, as `options` say but for its streams: its stdin
+/// reads nothing, and what its stdout and its stderr write is read into
+/// `out` and `err`, two buffers, while it runs, as the bytes they are: how it
+/// ended. Fails as spawn() does, or with the error of a read, the child then
+/// killed, and its group with it when it leads one, and reaped.
+std::expected<ExitStatus, std::error_code> capture(SpawnOptions options,
+                                                   buffer_ref out,
+                                                   buffer_ref err);
 
 }  // namespace kota::sys

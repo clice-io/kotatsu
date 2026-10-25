@@ -4,6 +4,7 @@
 # and program lookup without the rest.
 add_library(kota_sys STATIC
     cgroup.cpp
+    capture.cpp
     child.cpp
     command_line.cpp
     console.cpp

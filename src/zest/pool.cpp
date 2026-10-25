@@ -357,8 +357,7 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
     std::string executable;
     if(auto error = sys::self_executable(executable)) {
         return std::unexpected(WorkerFailure{
-            .detail = std::format("cannot find this program to start workers: {}",
-                                  error.message()),
+            .detail = std::format("cannot find this program to start workers: {}", error.message()),
         });
     }
 

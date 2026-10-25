@@ -1,4 +1,3 @@
-
 #include "os.h"
 #include "kota/fs/path.h"
 #include "kota/sys/dirs.h"
