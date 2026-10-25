@@ -44,11 +44,11 @@
 //                         `sys_probe hang` exit_with_parent in a tree of its
 //                         own, and prints whether that is in the runner's
 //                         job: {"in_job": <bool>}
-//   handles               Windows: makes an inheritable event, starts
-//                         `sys_probe handle <it>`, and prints whether that saw
-//                         it: {"inherited": <bool>}
-//   handle <value>        Windows: exits with 1 when <value> is a signaled
-//                         event's handle, 0 otherwise
+//   handles               Windows: makes an inheritable event of a name of its
+//                         own, starts `sys_probe handle <it> <name>`, and
+//                         prints whether that saw it: {"inherited": <bool>}
+//   handle <value> <name> Windows: exits with 1 when <value> is a handle of
+//                         the event named <name>, 0 otherwise
 //
 // Each prints one JSON line to stdout but for hang, and exits with 0; 1 when
 // a call fails, saying why on stderr; 2 for a command it does not know.
@@ -385,9 +385,14 @@ int main() {
         SECURITY_ATTRIBUTES inherit{.nLength = sizeof(inherit),
                                     .lpSecurityDescriptor = nullptr,
                                     .bInheritHandle = TRUE};
-        HANDLE event = ::CreateEventW(&inherit, TRUE, TRUE, nullptr);
-        auto child =
-            sys::spawn(probe({"handle", std::to_string(reinterpret_cast<std::uintptr_t>(event))}));
+        auto name = std::format("Local\\kota-probe-{}", ::GetCurrentProcessId());
+        auto wide_name = kota::to_utf16<wchar_t>(name);
+        HANDLE event = ::CreateEventW(&inherit, TRUE, TRUE, wide_name->c_str());
+        if(event == nullptr) {
+            return fail("CreateEventW", kota::fs::windows::last_error());
+        }
+        auto child = sys::spawn(
+            probe({"handle", std::to_string(reinterpret_cast<std::uintptr_t>(event)), name}));
         if(!child) {
             return fail("spawn", child.error());
         }
@@ -398,9 +403,20 @@ int main() {
         print_line(std::format(R"({{"inherited":{}}})", status->status == 1 ? "true" : "false"));
         return 0;
     }
-    if(command == "handle" && arguments.size() == 3) {
-        auto* event = reinterpret_cast<HANDLE>(std::stoull(arguments[2]));
-        return ::WaitForSingleObject(event, 0) == WAIT_OBJECT_0 ? 1 : 0;
+    if(command == "handle" && arguments.size() == 4) {
+        // Whether the number is a handle of that very event: another handle
+        // of this process's may have the number, a signaled one too, or the
+        // one opened here, where nothing held it.
+        using Compare = BOOL(WINAPI*)(HANDLE, HANDLE);
+        auto compare = reinterpret_cast<Compare>(reinterpret_cast<void*>(
+            ::GetProcAddress(::GetModuleHandleW(L"kernelbase.dll"), "CompareObjectHandles")));
+        auto wide_name = kota::to_utf16<wchar_t>(arguments[3]);
+        HANDLE named = ::OpenEventW(SYNCHRONIZE, FALSE, wide_name->c_str());
+        if(compare == nullptr || named == nullptr) {
+            return 0;
+        }
+        auto* value = reinterpret_cast<HANDLE>(std::stoull(arguments[2]));
+        return value != named && compare(value, named) ? 1 : 0;
     }
     if(command == "console" && arguments.size() == 3) {
         return write_to_console(arguments[2]);
