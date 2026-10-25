@@ -46,6 +46,12 @@
 //   hooked                Linux: starts `sys_probe env KOTA_EXECVE_HOOKED`,
 //                         which this one's execve, as a hook preloaded into
 //                         it would, sets to 1, and exits as it does
+//   traced                Linux: starts `sys_probe traceme`, waits for it to
+//                         stop, and prints {"running": <whether try_wait
+//                         takes it to be running then>, "signal": <the
+//                         signal that ended it once killed>}
+//   traceme               Linux: asks to be traced by its parent and stops,
+//                         as a debugger's child does
 //   nested                Windows: joins a job as a CI runner's, starts
 //                         `sys_probe hang` exit_with_parent in a tree of its
 //                         own, and prints whether that is in the runner's
@@ -88,7 +94,11 @@
 #include "kota/fs/windows.h"
 #include "kota/sys/console.h"
 #elif defined(__linux__)
+#include <cerrno>
+#include <csignal>
+#include <sys/ptrace.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -388,6 +398,37 @@ int main() {
     }
     if(command == "hooked") {
         return run(probe({"env", "KOTA_EXECVE_HOOKED"}));
+    }
+    if(command == "traced") {
+        auto child = sys::spawn(probe({"traceme"}));
+        if(!child) {
+            return fail("spawn", child.error());
+        }
+        // Its stop, which this process, its tracer, is told of, left there.
+        siginfo_t info{};
+        if(::waitid(P_PID, static_cast<id_t>(child->pid()), &info, WSTOPPED | WNOWAIT) < 0) {
+            return fail("waitid", std::error_code(errno, std::generic_category()));
+        }
+        auto running = child->try_wait();
+        if(!running) {
+            return fail("try_wait", running.error());
+        }
+        if(auto error = child->kill()) {
+            return fail("kill", error);
+        }
+        auto status = child->wait();
+        if(!status) {
+            return fail("wait", status.error());
+        }
+        print_line(std::format(R"({{"running":{},"signal":{}}})",
+                               running->has_value() ? "false" : "true",
+                               status->term_signal));
+        return 0;
+    }
+    if(command == "traceme") {
+        ::ptrace(PTRACE_TRACEME, 0, nullptr, nullptr);
+        ::raise(SIGSTOP);
+        return 0;
     }
 #endif
 #ifdef _WIN32

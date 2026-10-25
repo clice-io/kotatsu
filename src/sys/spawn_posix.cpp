@@ -17,6 +17,7 @@
 
 #include "child.h"
 #include "os.h"
+#include "signals.h"
 #include "kota/sys/spawn.h"
 
 #ifdef __APPLE__
@@ -111,6 +112,11 @@ std::expected<std::array<Descriptor, 2>, std::error_code> connected_pair(bool so
     return pair;
 }
 
+/// What a stream's descriptor is for one that is /dev/null, and for one that
+/// is none, closed in the child as it is here.
+constexpr int null_stream = -1;
+constexpr int no_stream = -2;
+
 /// How the child ended, from wait4.
 ExitStatus exit_status_of(int status, const rusage& usage) {
     auto microseconds = [](const timeval& time) {
@@ -142,7 +148,7 @@ struct ChildSetup {
     /// that is no program the kernel knows, as execvp runs it.
     char* const* shell_argv;
     char* const* envp;
-    /// The descriptor each stream takes; -1 for /dev/null.
+    /// The descriptor each stream takes, or null_stream or no_stream.
     std::array<int, 3> fds;
     const char* cwd;
     bool detached;
@@ -153,13 +159,41 @@ struct ChildSetup {
     /// SIGRTMIN and SIGRTMAX, which glibc reads through calls of its own.
     int rtmin;
     int rtmax;
+    /// The signals as exec leaves them, rather than all at their defaults.
+    bool keep_signals;
+    /// kotatsu ignored SIGPIPE, and spawn put SIGCHLD back to its default:
+    /// a child keep_signals gets them as they were.
+    bool default_sigpipe;
+    bool ignore_sigchld;
+    /// The signal mask it starts with.
+    sigset_t mask;
+
+    /// The action exec leaves signal `signum` with: the default for one
+    /// with a handler, which means nothing to another program, an ignored
+    /// one ignored; one kotatsu changed as it was.
+    bool keep(int signum) const {
+        struct sigaction action;
+        if(::sigaction(signum, nullptr, &action) != 0) {
+            return false;
+        }
+        void (*kept)(int) = action.sa_handler == SIG_IGN ? SIG_IGN : SIG_DFL;
+        if(signum == SIGPIPE && default_sigpipe) {
+            kept = SIG_DFL;
+        }
+        if(signum == SIGCHLD && ignore_sigchld && action.sa_handler == SIG_DFL) {
+            kept = SIG_IGN;
+        }
+        return ::signal(signum, kept) != SIG_ERR;
+    }
 
     [[noreturn]] void run() {
-        // Handlers mean nothing to another program, and an ignored signal
-        // stays ignored across exec. Those between 31 and SIGRTMIN are
-        // glibc's own.
+        // Before the mask lets a signal in: a handler of this process's
+        // would run here. Those between 31 and SIGRTMIN are glibc's own.
         for(int signum = 1; signum <= rtmax; signum = signum == 31 ? rtmin : signum + 1) {
-            if(signum != SIGKILL && signum != SIGSTOP && ::signal(signum, SIG_DFL) == SIG_ERR) {
+            if(signum == SIGKILL || signum == SIGSTOP) {
+                continue;
+            }
+            if(keep_signals ? !keep(signum) : ::signal(signum, SIG_DFL) == SIG_ERR) {
                 fail_in_child(error_fd);
             }
         }
@@ -177,6 +211,11 @@ struct ChildSetup {
                 ::kill(::getpid(), SIGKILL);
             }
         }
+        // Before the streams change, which a working directory not there
+        // would otherwise have changed for nothing.
+        if(cwd != nullptr && ::chdir(cwd) < 0) {
+            fail_in_child(error_fd);
+        }
         // A descriptor below the stream it goes to may be a stream's
         // target before its turn (stdout and stderr swapped): it moves above
         // them first.
@@ -188,9 +227,16 @@ struct ChildSetup {
                 }
             }
         }
+        // The flags of each stream that was non-blocking, which it gets back
+        // when the exec fails: the parent shares it.
+        std::array<int, 3> nonblocking = {-1, -1, -1};
         for(int target = 0; target < 3; ++target) {
             int fd = fds[target];
-            if(fd < 0) {
+            if(fd == no_stream) {
+                ::close(target);
+                continue;
+            }
+            if(fd == null_stream) {
                 ::close(target);
                 fd = ::open("/dev/null", target == 0 ? O_RDONLY : O_RDWR);
                 if(fd < 0) {
@@ -209,19 +255,22 @@ struct ChildSetup {
             int flags = ::fcntl(target, F_GETFL);
             if(flags >= 0 && (flags & O_NONBLOCK)) {
                 ::fcntl(target, F_SETFL, flags & ~O_NONBLOCK);
+                nonblocking[target] = flags;
             }
         }
-        if(cwd != nullptr && ::chdir(cwd) < 0) {
-            fail_in_child(error_fd);
-        }
-        sigset_t none;
-        sigemptyset(&none);
-        ::sigprocmask(SIG_SETMASK, &none, nullptr);
+        ::sigprocmask(SIG_SETMASK, &mask, nullptr);
         // libc's execve, which a hook preloaded into this process sees.
         ::execve(path, argv, envp);
         if(errno == ENOEXEC) {
             ::execve(shell_argv[0], shell_argv, envp);
         }
+        const int exec_error = errno;
+        for(int target = 0; target < 3; ++target) {
+            if(nonblocking[target] >= 0) {
+                ::fcntl(target, F_SETFL, nonblocking[target]);
+            }
+        }
+        errno = exec_error;
         fail_in_child(error_fd);
     }
 };
@@ -317,7 +366,9 @@ std::error_code Child::reap(bool block) {
             lost = errno == ECHILD;
             return errno_code();
         }
-        if(reaped > 0) {
+        // A stop of a child that is traced, which wait4 reports anyway,
+        // ends nothing.
+        if(reaped > 0 && !WIFSTOPPED(status) && !WIFCONTINUED(status)) {
             exited = exit_status_of(status, usage);
             return {};
         }
@@ -390,7 +441,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         return std::unexpected(program.error());
     }
     // Each descriptor given is looked at before a pipe is made: one not open
-    // would otherwise be the number a pipe takes.
+    // would otherwise be the number a pipe takes. Of this process's own
+    // streams, one it has not open is none in the child too.
     for(const auto& stream: options.streams) {
         if(stream.kind == Stdio::Kind::FD || stream.kind == Stdio::Kind::File) {
             int fd = stream.kind == Stdio::Kind::FD ? stream.fd : stream.file;
@@ -430,11 +482,14 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     Child child;
     // The child's end of each pipe, closed here once it has started.
     std::array<Descriptor, 3> child_ends;
-    std::array<int, 3> fds = {-1, -1, -1};
+    std::array<int, 3> fds = {null_stream, null_stream, null_stream};
     for(std::size_t i = 0; i < 3; ++i) {
         const auto& stream = options.streams[i];
         switch(stream.kind) {
-            case Stdio::Kind::Inherit: fds[i] = static_cast<int>(i); break;
+            case Stdio::Kind::Inherit:
+                fds[i] =
+                    ::fcntl(static_cast<int>(i), F_GETFD) < 0 ? no_stream : static_cast<int>(i);
+                break;
             case Stdio::Kind::Ignore: break;
             case Stdio::Kind::FD: fds[i] = stream.fd; break;
             case Stdio::Kind::File: fds[i] = stream.file; break;
@@ -453,32 +508,66 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         }
     }
     child.leads_group = creation.detached || creation.process_group;
+    // Before the child exists: ignored, SIGCHLD would have the system reap
+    // it, and its exit status with it.
+    keep_children_waitable();
 
 #ifdef __APPLE__
     // posix_spawn, a system call of its own on macOS: no fork of this
     // process, however large, and nothing of it runs in the child.
-    posix_spawnattr_t attributes;
-    posix_spawnattr_init(&attributes);
+    struct Setup {
+        posix_spawnattr_t attributes;
+        posix_spawn_file_actions_t actions;
+
+        Setup() {
+            posix_spawnattr_init(&attributes);
+            posix_spawn_file_actions_init(&actions);
+        }
+
+        ~Setup() {
+            posix_spawn_file_actions_destroy(&actions);
+            posix_spawnattr_destroy(&attributes);
+        }
+    } setup;
+
+    auto& attributes = setup.attributes;
+    auto& actions = setup.actions;
+    // The first error of the calls that set it up, a path too long among
+    // them, which the spawn fails with.
+    int failed = 0;
+    auto check = [&](int result) {
+        if(failed == 0) {
+            failed = result;
+        }
+    };
     // A session's leader leads its group too; macOS runs SETPGROUP before
     // SETSID, so never both.
-    short flags = POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK;
+    short flags = 0;
     if(creation.detached) {
         flags |= POSIX_SPAWN_SETSID;
     } else if(creation.process_group) {
         flags |= POSIX_SPAWN_SETPGROUP;
     }
-    posix_spawnattr_setflags(&attributes, flags);
-    posix_spawnattr_setpgroup(&attributes, 0);
     sigset_t signals;
-    sigfillset(&signals);
-    posix_spawnattr_setsigdefault(&attributes, &signals);
-    sigemptyset(&signals);
-    posix_spawnattr_setsigmask(&attributes, &signals);
-
-    posix_spawn_file_actions_t actions;
-    posix_spawn_file_actions_init(&actions);
+    if(!creation.keep_signals) {
+        // Every signal at its default, none blocked.
+        flags |= POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK;
+        sigfillset(&signals);
+        check(posix_spawnattr_setsigdefault(&attributes, &signals));
+        sigemptyset(&signals);
+        check(posix_spawnattr_setsigmask(&attributes, &signals));
+    } else if(ignored_sigpipe) {
+        // As exec leaves them, which posix_spawn does, but for the SIGPIPE
+        // kotatsu ignored.
+        flags |= POSIX_SPAWN_SETSIGDEF;
+        sigemptyset(&signals);
+        sigaddset(&signals, SIGPIPE);
+        check(posix_spawnattr_setsigdefault(&attributes, &signals));
+    }
+    check(posix_spawnattr_setflags(&attributes, flags));
+    check(posix_spawnattr_setpgroup(&attributes, 0));
     if(!options.cwd.empty()) {
-        posix_spawn_file_actions_addchdir_np(&actions, options.cwd.c_str());
+        check(posix_spawn_file_actions_addchdir_np(&actions, options.cwd.c_str()));
     }
     // Each stream's descriptor, where it is not the stream itself, goes in
     // from a copy of its own: a number free here, so free in the child but
@@ -486,33 +575,39 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     std::array<Descriptor, 3> copies;
     for(int target = 0; target < 3; ++target) {
         int fd = fds[target];
-        if(fd < 0) {
-            posix_spawn_file_actions_addopen(&actions,
-                                             target,
-                                             "/dev/null",
-                                             target == 0 ? O_RDONLY : O_RDWR,
-                                             0);
-            continue;
-        }
-        if(fd == target) {
-            posix_spawn_file_actions_addinherit_np(&actions, fd);
-        } else {
+        if(fd == null_stream) {
+            check(posix_spawn_file_actions_addopen(&actions,
+                                                   target,
+                                                   "/dev/null",
+                                                   target == 0 ? O_RDONLY : O_RDWR,
+                                                   0));
+        } else if(fd == target) {
+            check(posix_spawn_file_actions_addinherit_np(&actions, fd));
+        } else if(fd != no_stream) {
             copies[target] = Descriptor(::fcntl(fd, F_DUPFD_CLOEXEC, 3));
             if(copies[target].fd < 0) {
-                posix_spawn_file_actions_destroy(&actions);
-                posix_spawnattr_destroy(&attributes);
                 return std::unexpected(errno_code());
             }
-            posix_spawn_file_actions_adddup2(&actions, copies[target].fd, target);
+            check(posix_spawn_file_actions_adddup2(&actions, copies[target].fd, target));
         }
-        // Shared with whoever else has it open, as libuv does.
-        int status = ::fcntl(fd, F_GETFL);
+    }
+    if(failed != 0) {
+        return std::unexpected(std::error_code(failed, std::generic_category()));
+    }
+    // Shared with whoever else has it open, as libuv does; put back if the
+    // spawn fails.
+    std::array<int, 3> nonblocking = {-1, -1, -1};
+    for(int target = 0; target < 3; ++target) {
+        if(fds[target] < 0) {
+            continue;
+        }
+        int status = ::fcntl(fds[target], F_GETFL);
         if(status >= 0 && (status & O_NONBLOCK)) {
-            ::fcntl(fd, F_SETFL, status & ~O_NONBLOCK);
+            ::fcntl(fds[target], F_SETFL, status & ~O_NONBLOCK);
+            nonblocking[target] = status;
         }
     }
     pid_t pid = -1;
-    int failed = 0;
     do {
         failed =
             ::posix_spawn(&pid, program->c_str(), &actions, &attributes, argv.data(), child_envp);
@@ -526,9 +621,12 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
                                    child_envp);
         }
     } while(failed == EINTR);
-    posix_spawn_file_actions_destroy(&actions);
-    posix_spawnattr_destroy(&attributes);
     if(failed != 0) {
+        for(int target = 0; target < 3; ++target) {
+            if(nonblocking[target] >= 0) {
+                ::fcntl(fds[target], F_SETFL, nonblocking[target]);
+            }
+        }
         return std::unexpected(std::error_code(failed, std::generic_category()));
     }
     child.id = pid;
@@ -551,6 +649,10 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         .error_fd = (*report)[1].fd,
         .rtmin = SIGRTMIN,
         .rtmax = SIGRTMAX,
+        .keep_signals = creation.keep_signals,
+        .default_sigpipe = ignored_sigpipe,
+        .ignore_sigchld = restored_sigchld,
+        .mask = {},
     };
     // A signal arriving before the child has reset its handlers would run
     // this process's in it: they wait until it has. A crash still ends it.
@@ -561,6 +663,13 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         sigdelset(&blocked, signum);
     }
     ::pthread_sigmask(SIG_BLOCK, &blocked, &previous);
+    // The child unblocks them once it has: all of them, or those this
+    // thread does not block when it keeps the signals as exec would.
+    if(creation.keep_signals) {
+        setup.mask = previous;
+    } else {
+        sigemptyset(&setup.mask);
+    }
     // fork rather than vfork: a hook preloaded into this process, as
     // catter's is, runs in the child when it execs, and may allocate.
     pid_t pid = ::fork();

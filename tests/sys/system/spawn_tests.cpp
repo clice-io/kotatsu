@@ -23,6 +23,7 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -38,6 +39,8 @@
 
 #ifdef _WIN32
 #include "kota/fs/windows.h"
+#else
+#include "kota/sys/detail/signals.h"
 #endif
 
 namespace kota::sys {
@@ -297,6 +300,18 @@ ZEST_CASE(spawn_in_a_missing_directory_fails) {
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::no_such_file_or_directory);
 }
+
+#ifndef _WIN32
+// Longer than a path can be: no child runs in this process's directory
+// instead.
+ZEST_CASE(spawn_in_a_directory_too_long_fails) {
+    auto options = shell("exit 0");
+    options.cwd = "/" + std::string(5000, 'a');
+    auto child = spawn(options);
+    ZASSERT(!child.has_value());
+    ZEXPECT(child.error() == std::errc::filename_too_long);
+}
+#endif
 
 ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
     auto options = shell("exit 0");
@@ -755,34 +770,162 @@ ZEST_CASE(child_starts_with_signals_at_their_defaults) {
     ZEXPECT(status_of(shell("kill -USR2 $$")).term_signal == SIGUSR2);
 }
 
-// SIGCHLD set to SIG_IGN has the system reap children itself.
+/// This process's action for signal `signum`, put back when this goes.
+struct ScopedAction {
+    explicit ScopedAction(int signum) : signum(signum) {
+        ::sigaction(signum, nullptr, &previous);
+    }
+
+    ScopedAction(const ScopedAction&) = delete;
+    ScopedAction& operator=(const ScopedAction&) = delete;
+
+    ~ScopedAction() {
+        ::sigaction(signum, &previous, nullptr);
+    }
+
+    int signum;
+    struct sigaction previous = {};
+};
+
+/// Sets this process's action for `signum` to `handler`, with `flags`.
+void set_action(int signum, void (*handler)(int), int flags = 0) {
+    struct sigaction action = {};
+    action.sa_handler = handler;
+    action.sa_flags = flags;
+    ZASSERT(::sigaction(signum, &action, nullptr) == 0);
+}
+
+void ignore_signal(int) {}
+
+// A waitpid of this process's own reaped it: its pid may be another's now.
 ZEST_CASE(child_reaped_by_another_is_lost) {
-    struct Restore {
-        struct sigaction action;
-
-        ~Restore() {
-            ::sigaction(SIGCHLD, &action, nullptr);
-        }
-    } restore{};
-
-    struct sigaction ignore{};
-    ignore.sa_handler = SIG_IGN;
-    ZASSERT(::sigaction(SIGCHLD, &ignore, &restore.action) == 0);
     auto child = spawn(shell("exit 0"));
     ZASSERT(child.has_value());
+    ZASSERT(::waitpid(child->pid(), nullptr, 0) == child->pid());
+    ZEXPECT(child->kill(0) == std::errc::no_such_process);
     auto status = child->wait();
     ZASSERT(!status.has_value());
     ZEXPECT(status.error() == std::errc::no_child_process);
-    // Its pid may be another's now.
-    ZEXPECT(child->kill(0) == std::errc::no_such_process);
-    // Gone before this process looked: kill says so once the system has
-    // let it go, which Linux does a moment after waitid stops seeing it.
-    auto unseen = spawn(shell("exit 0"));
-    ZASSERT(unseen.has_value());
-    for(int tries = 0; tries < 1000 && !unseen->kill(0); ++tries) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+
+// The system would reap the child itself, its exit status with it: spawn
+// puts SIGCHLD back to its default first.
+ZEST_CASE(wait_reports_the_exit_of_a_child_while_sigchld_is_ignored) {
+    ScopedAction restore(SIGCHLD);
+    set_action(SIGCHLD, SIG_IGN);
+    auto status = status_of(shell("exit 3"));
+    ZEXPECT(status.code == 3);
+    struct sigaction now = {};
+    ZASSERT(::sigaction(SIGCHLD, nullptr, &now) == 0);
+    ZEXPECT(now.sa_handler == SIG_DFL);
+    // A handler with SA_NOCLDWAIT reaps them as well, and keeps its handler.
+    set_action(SIGCHLD, ignore_signal, SA_NOCLDWAIT);
+    status = status_of(shell("exit 4"));
+    ZEXPECT(status.code == 4);
+    ZASSERT(::sigaction(SIGCHLD, nullptr, &now) == 0);
+    ZEXPECT(now.sa_handler == ignore_signal);
+    ZEXPECT(!(now.sa_flags & SA_NOCLDWAIT));
+}
+
+// The signals as exec leaves them: what is ignored stays ignored, what is
+// blocked stays blocked, a handler goes back to the default.
+ZEST_CASE(keep_signals_starts_the_child_as_exec_would) {
+    ScopedAction restore_usr1(SIGUSR1);
+    ScopedAction restore_hup(SIGHUP);
+    set_action(SIGUSR1, SIG_IGN);
+    set_action(SIGHUP, ignore_signal);
+
+    struct ScopedMask {
+        ~ScopedMask() {
+            ::pthread_sigmask(SIG_SETMASK, &previous, nullptr);
+        }
+
+        sigset_t previous;
+    } restore_mask{};
+
+    sigset_t blocked;
+    sigemptyset(&blocked);
+    sigaddset(&blocked, SIGUSR2);
+    ZASSERT(::pthread_sigmask(SIG_BLOCK, &blocked, &restore_mask.previous) == 0);
+    auto kept = [](std::string_view command) {
+        auto options = shell(command);
+        options.creation.keep_signals = true;
+        return status_of(options);
+    };
+    ZEXPECT(kept("kill -USR1 $$; exit 5").code == 5);
+    ZEXPECT(kept("kill -USR2 $$; exit 5").code == 5);
+    ZEXPECT(kept("kill -HUP $$; exit 5").term_signal == SIGHUP);
+}
+
+// SIGPIPE, which an event loop ignores, goes back to its default.
+ZEST_CASE(keep_signals_gives_back_the_sigpipe_kotatsu_ignored) {
+    ScopedAction restore(SIGPIPE);
+    set_action(SIGPIPE, SIG_DFL);
+    detail::ignore_sigpipe();
+    struct sigaction now = {};
+    ZASSERT(::sigaction(SIGPIPE, nullptr, &now) == 0);
+    ZASSERT(now.sa_handler == SIG_IGN);
+    auto options = shell("kill -PIPE $$; exit 5");
+    options.creation.keep_signals = true;
+    ZEXPECT(status_of(options).term_signal == SIGPIPE);
+}
+
+// This process's stream it has not open, as a program may be started with:
+// none in the child.
+ZEST_CASE(inherit_of_a_stream_not_open_gives_none) {
+    struct ScopedClosedStdin {
+        ScopedClosedStdin() : saved(::dup(0)) {
+            ::close(0);
+        }
+
+        ScopedClosedStdin(const ScopedClosedStdin&) = delete;
+        ScopedClosedStdin& operator=(const ScopedClosedStdin&) = delete;
+
+        ~ScopedClosedStdin() {
+            ::dup2(saved, 0);
+            ::close(saved);
+        }
+
+        int saved;
+    };
+
+    std::expected<ExitStatus, std::error_code> status;
+    {
+        ScopedClosedStdin closed;
+        // It reads nothing from where it has no stdin; one that has one
+        // would read the empty input and exit with 1.
+        auto options = shell("(true <&0) 2>/dev/null && exit 1; exit 3");
+        options.streams = {Stdio::inherit(), Stdio::pipe(), Stdio::ignore()};
+        auto child = spawn(options);
+        ZASSERT(child.has_value());
+        status = child->wait();
     }
-    ZEXPECT(unseen->kill(0) == std::errc::no_such_process);
+    ZASSERT(status.has_value());
+    ZEXPECT(status->code == 3);
+}
+
+// The child would clear O_NONBLOCK of a stream it is given, which this
+// process shares: one that never ran leaves it as it was.
+ZEST_CASE(spawn_that_fails_leaves_a_stream_non_blocking) {
+    int fds[2];
+    ZASSERT(::pipe(fds) == 0);
+    int flags = ::fcntl(fds[1], F_GETFL);
+    ZASSERT(::fcntl(fds[1], F_SETFL, flags | O_NONBLOCK) == 0);
+    auto options = shell("exit 0");
+    options.streams[1] = Stdio::from_fd(fds[1]);
+    options.cwd = dir.file("missing");
+    ZEXPECT(!spawn(options).has_value());
+    ZEXPECT((::fcntl(fds[1], F_GETFL) & O_NONBLOCK) != 0);
+    // One whose interpreter is not there.
+    auto script = dir.file("script");
+    test::write_text(script, "#!/kota/missing/interpreter\n");
+    ZASSERT(::chmod(script.c_str(), 0755) == 0);
+    options = SpawnOptions{.program = script};
+    options.streams[1] = Stdio::from_fd(fds[1]);
+    ZEXPECT(!spawn(options).has_value());
+    ZEXPECT((::fcntl(fds[1], F_GETFL) & O_NONBLOCK) != 0);
+    ::close(fds[0]);
+    ::close(fds[1]);
 }
 #endif
 

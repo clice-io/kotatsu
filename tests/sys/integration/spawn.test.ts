@@ -106,6 +106,22 @@ test(
   },
 );
 
+// A traced child's stop, which wait4 reports to its tracer, ends nothing.
+test(
+  "child_that_is_traced_runs_while_it_is_stopped",
+  { skip: process.platform !== "linux" && "a Linux tracer" },
+  async (t) => {
+    const driver = await Driver.spawn(t, "sys_probe", ["traced"]);
+    const output = (await driver.jsonLines().receive()) as {
+      running: boolean;
+      signal: number;
+    };
+    await driver.expectExit(0);
+    assert.equal(output.running, true);
+    assert.equal(output.signal, 9);
+  },
+);
+
 test(
   "child_nests_in_the_job_its_parent_is_in",
   { skip: process.platform !== "win32" && "Windows has jobs" },

@@ -671,6 +671,28 @@ ZEST_CASE(wait_for_a_child_another_reaped_fails) {
     ZEXPECT(status.error() == error::no_such_process);
 }
 
+// The system would reap the child itself while SIGCHLD is ignored, as a
+// program may be started: spawn puts it back to its default first.
+ZEST_CASE(wait_reports_the_exit_of_a_child_while_sigchld_is_ignored) {
+    struct ScopedAction {
+        ~ScopedAction() {
+            ::sigaction(SIGCHLD, &previous, nullptr);
+        }
+
+        struct sigaction previous = {};
+    } restore;
+
+    struct sigaction ignore = {};
+    ignore.sa_handler = SIG_IGN;
+    ZASSERT(::sigaction(SIGCHLD, &ignore, &restore.previous) == 0);
+    auto spawned = process::spawn(shell("exit 3"), loop);
+    ZASSERT(spawned.has_value());
+
+    auto [status] = run(spawned->proc.wait());
+    ZASSERT(status.has_value());
+    ZEXPECT(status->code == 3);
+}
+
 // Nothing tells when the loop has reaped a child whose process is gone: the
 // test looks until it has, waitid's WNOWAIT leaving a zombie for the loop.
 ZEST_CASE(child_of_a_destroyed_process_is_still_reaped) {
