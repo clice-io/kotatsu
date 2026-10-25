@@ -30,6 +30,17 @@ ZEST_CASE(dir_stream_is_an_input_range) {
     ZSTATIC_EXPECT(std::movable<DirStream>);
 }
 
+#ifndef _WIN32
+ZEST_CASE(dir_entry_made_rather_than_listed_has_no_status_fails) {
+    // It has no directory to ask through; Windows gives the empty status it
+    // holds instead.
+    DirEntry entry;
+    auto status = entry.status();
+    ZASSERT(!status.has_value());
+    ZEXPECT(status.error() == std::errc::bad_file_descriptor);
+}
+#endif
+
 };  // ZEST_SUITE(fs_directory_stream)
 
 }  // namespace

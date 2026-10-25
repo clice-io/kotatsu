@@ -628,6 +628,10 @@ std::expected<Status, std::error_code> DirEntry::status() const {
     }
     return std::unexpected(windows::to_error_code(error));
 #else
+    // One made rather than listed has no directory to ask through.
+    if(!directory) {
+        return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
+    }
     struct stat info;
     if(::fstatat(::dirfd(directory->dir.get()), name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) {
         return std::unexpected(posix::last_error());

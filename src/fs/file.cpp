@@ -231,9 +231,10 @@ std::error_code File::read_to_end(buffer_ref out) {
     // past what is worth taking on its word (/proc/kcore reports 128 TiB)
     // grows as it is read instead.
     constexpr std::uint64_t trusted = std::uint64_t{1} << 30;
-    auto left = std::min(left_to_read(handle), trusted);
+    auto left = left_to_read(handle);
     std::size_t at = 0;
-    auto buffer = out.resize(left == 0 ? 4096 : static_cast<std::size_t>(left) + 1);
+    auto buffer =
+        out.resize(left == 0 || left > trusted ? 4096 : static_cast<std::size_t>(left) + 1);
     while(true) {
         if(at == buffer.size()) {
             buffer = out.resize(buffer.size() * 2);

@@ -1,5 +1,6 @@
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -78,6 +79,32 @@ struct FullPipe {
     File writer;
 };
 
+/// A buffer that cuts the file at `path` to "text" when it is first sized:
+/// a file that holds less than it reported.
+struct ShrinkingBuffer {
+    char* data() {
+        return text.data();
+    }
+
+    std::size_t size() const {
+        return text.size();
+    }
+
+    void resize(std::size_t size) {
+        if(first == 0) {
+            first = size;
+            test::write_text(path, "text");
+        }
+        text.resize(size);
+    }
+
+    std::string path;
+    std::string text;
+
+    /// The size it was first asked for.
+    std::size_t first = 0;
+};
+
 ZEST_SUITE(fs_file_io) {
 
 ZEST_CASE(read_to_end_reads_from_where_the_file_stands) {
@@ -117,6 +144,20 @@ ZEST_CASE(read_to_end_sizes_its_buffer_once) {
     ZEXPECT(content.text == std::string_view(text).substr(1000));
     // Sized for what is left, then cut to what was read.
     ZEXPECT(content.resizes == 2);
+}
+
+ZEST_CASE(read_to_end_takes_no_size_past_a_gigabyte_on_its_word) {
+    // A file may report more than it holds (/proc/kcore reports 128 TiB):
+    // the buffer starts small and grows as it is read.
+    test::TempDir dir;
+    auto file = File::open(dir.file("sparse"), {.read = true, .write = true, .create = true});
+    ZASSERT(file.has_value());
+    ZEXPECT(!file->resize(std::uint64_t{2} << 30));
+    ShrinkingBuffer content;
+    content.path = dir.file("sparse");
+    ZEXPECT(!file->read_to_end(content));
+    ZEXPECT(content.text == "text");
+    ZEXPECT(content.first < (std::size_t{1} << 30));
 }
 
 ZEST_CASE(read_to_end_reads_a_pipe_whole) {
