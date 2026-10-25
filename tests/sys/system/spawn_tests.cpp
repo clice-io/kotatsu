@@ -606,6 +606,16 @@ ZEST_CASE(child_reaped_by_another_is_lost) {
     auto status = child->wait();
     ZASSERT(!status.has_value());
     ZEXPECT(status.error() == std::errc::no_child_process);
+    // Its pid may be another's now.
+    ZEXPECT(child->kill(0) == std::errc::no_such_process);
+    // Gone before this process looked: kill says so once the system has
+    // let it go, which Linux does a moment after waitid stops seeing it.
+    auto unseen = spawn(shell("exit 0"));
+    ZASSERT(unseen.has_value());
+    for(int tries = 0; tries < 1000 && !unseen->kill(0); ++tries) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ZEXPECT(unseen->kill(0) == std::errc::no_such_process);
 }
 #endif
 

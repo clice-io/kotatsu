@@ -619,35 +619,44 @@ process::process(process&& other) noexcept = default;
 process& process::operator=(process&& other) noexcept = default;
 
 result<process::spawn_result> process::spawn(const options& opts, event_loop& loop) {
+    // Made before the child, which nothing then separates from its watch but
+    // what the rollback below undoes.
+    detail::unique_handle<Self> self(new Self(sys::Child(), *loop.native_handle()));
     auto child = sys::spawn(opts);
     if(!child) {
         return outcome_error(error_of(child.error()));
     }
-    // A child whose pipe cannot be had is ended, so that none is left
-    // behind; it has not run much.
-    auto abandon = [&](error failed) {
-        [[maybe_unused]] auto killed = end_tree(*child);
-        [[maybe_unused]] auto reaped = child->wait();
-        return outcome_error(failed);
-    };
+    self->child = std::move(*child);
+
+    // Until the loop watches it, a failure, returned or thrown, ends the
+    // child and its tree and reaps it, so that none is left behind; it has
+    // not run much.
+    struct Rollback {
+        sys::Child* child;
+
+        ~Rollback() {
+            if(child != nullptr) {
+                [[maybe_unused]] auto killed = end_tree(*child);
+                [[maybe_unused]] auto reaped = child->wait();
+            }
+        }
+    } rollback{&self->child};
+
     std::array<pipe, 3> pipes;
     for(std::size_t i = 0; i < pipes.size(); ++i) {
         if(opts.streams[i].kind != stdio::Kind::Pipe) {
             continue;
         }
-        auto opened = open_pipe(child->take_pipe(i), loop);
+        auto opened = open_pipe(self->child.take_pipe(i), loop);
         if(!opened) {
-            return abandon(opened.error());
+            return outcome_error(opened.error());
         }
         pipes[i] = std::move(*opened);
     }
-
-    detail::unique_handle<Self> self(new Self(std::move(*child), *loop.native_handle()));
     if(auto failed = Self::Watch::of(loop).add(*self)) {
-        [[maybe_unused]] auto killed = end_tree(self->child);
-        [[maybe_unused]] auto reaped = self->child.wait();
         return outcome_error(failed);
     }
+    rollback.child = nullptr;
     return spawn_result{
         .proc = process(std::move(self)),
         .stdin_pipe = std::move(pipes[0]),

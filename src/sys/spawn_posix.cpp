@@ -347,6 +347,14 @@ std::error_code Child::kill(int signum) {
         }
     }
 #endif
+    // By its pid: while it is this process's child, a zombie too, the pid
+    // is no other process's. One another reaped is not.
+    siginfo_t info{};
+    if(::waitid(P_PID, static_cast<id_t>(id), &info, WEXITED | WNOHANG | WNOWAIT) < 0 &&
+       errno == ECHILD) {
+        lost = true;
+        return std::make_error_code(std::errc::no_such_process);
+    }
     if(::kill(id, signum) != 0) {
         return errno_code();
     }
