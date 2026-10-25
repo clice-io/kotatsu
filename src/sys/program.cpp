@@ -73,7 +73,9 @@ std::vector<std::string> spellings(std::string_view name,
     if(like_create_process) {
         tried = {".exe"};
     } else if(!extensions.empty()) {
-        tried.assign(extensions.begin(), extensions.end());
+        for(auto extension: extensions) {
+            tried.emplace_back(extension);
+        }
     } else {
         small_string<256> pathext;
         if(get_env(pathext, "PATHEXT")) {
