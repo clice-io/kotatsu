@@ -1,9 +1,11 @@
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "kota/zest/zest.h"
+#include "kota/support/small_string.h"
 #include "kota/fs/cygwin.h"
 
 namespace kota::fs::cygwin {
@@ -24,6 +26,13 @@ constexpr std::string_view msys_listing =
     "C:/msys64 on / type ntfs (binary,noacl,auto)\r\n"
     "C:/msys64/usr/bin on /bin type ntfs (binary,noacl,auto)\r\n"
     "C: on /c type ntfs (binary,noacl,posix=0,user,noumount,auto)\r\n";
+
+/// What to_windows() writes for `posix`.
+std::string windows_of(const MountTable& table, std::string_view posix) {
+    std::string out;
+    table.to_windows(out, posix);
+    return out;
+}
 
 ZEST_SUITE(fs_cygwin) {
 
@@ -47,7 +56,7 @@ ZEST_CASE(parse_puts_the_longest_mount_point_first) {
 ZEST_CASE(parse_takes_directories_with_backslashes) {
     auto table = MountTable::parse("C:\\cygwin on / type ntfs (binary,auto)\n");
     ZASSERT(table.has_value());
-    ZEXPECT(table->to_windows("/usr/bin") == "C:/cygwin/usr/bin");
+    ZEXPECT(windows_of(*table, "/usr/bin") == "C:/cygwin/usr/bin");
 }
 
 ZEST_CASE(parse_without_a_root_mount_fails) {
@@ -58,42 +67,52 @@ ZEST_CASE(parse_without_a_root_mount_fails) {
 ZEST_CASE(to_windows_maps_through_the_longest_mount) {
     auto table = MountTable::parse(cygwin_listing);
     ZASSERT(table.has_value());
-    ZEXPECT(table->to_windows("/usr/include/stdio.h") == "C:/cygwin64/usr/include/stdio.h");
+    ZEXPECT(windows_of(*table, "/usr/include/stdio.h") == "C:/cygwin64/usr/include/stdio.h");
     // Cygwin mounts /usr/lib at the root's lib, not under usr.
-    ZEXPECT(table->to_windows("/usr/lib/gcc") == "C:/cygwin64/lib/gcc");
-    ZEXPECT(table->to_windows("/usr/bin") == "C:/cygwin64/bin");
-    ZEXPECT(table->to_windows("/home/me/src/a.c") == "D:/src/a.c");
+    ZEXPECT(windows_of(*table, "/usr/lib/gcc") == "C:/cygwin64/lib/gcc");
+    ZEXPECT(windows_of(*table, "/usr/bin") == "C:/cygwin64/bin");
+    ZEXPECT(windows_of(*table, "/home/me/src/a.c") == "D:/src/a.c");
     // A mount point matches whole names only.
-    ZEXPECT(table->to_windows("/usr/binary") == "C:/cygwin64/usr/binary");
-    ZEXPECT(table->to_windows("/cygdrive/c/proj") == "C:/proj");
-    ZEXPECT(table->to_windows("/cygdrive/C/proj") == "C:/proj");
-    ZEXPECT(table->to_windows("/cygdrive/c") == "C:/");
+    ZEXPECT(windows_of(*table, "/usr/binary") == "C:/cygwin64/usr/binary");
+    ZEXPECT(windows_of(*table, "/cygdrive/c/proj") == "C:/proj");
+    ZEXPECT(windows_of(*table, "/cygdrive/C/proj") == "C:/proj");
+    ZEXPECT(windows_of(*table, "/cygdrive/c") == "C:/");
 }
 
 ZEST_CASE(to_windows_folds_dots_before_it_maps) {
     auto table = MountTable::parse(cygwin_listing);
     ZASSERT(table.has_value());
     // `..` out of a mount point leaves the mount, as the runtime folds it.
-    ZEXPECT(table->to_windows("/usr/lib/../include") == "C:/cygwin64/usr/include");
-    ZEXPECT(table->to_windows("/usr/./bin//gcc") == "C:/cygwin64/bin/gcc");
+    ZEXPECT(windows_of(*table, "/usr/lib/../include") == "C:/cygwin64/usr/include");
+    ZEXPECT(windows_of(*table, "/usr/./bin//gcc") == "C:/cygwin64/bin/gcc");
 }
 
 ZEST_CASE(to_windows_keeps_a_share) {
     auto table = MountTable::parse(cygwin_listing);
     ZASSERT(table.has_value());
-    ZEXPECT(table->to_windows("//server/share/a/../b.c") == "//server/share/b.c");
+    ZEXPECT(windows_of(*table, "//server/share/a/../b.c") == "//server/share/b.c");
     // A share's name stays even where `..` would climb past it.
-    ZEXPECT(table->to_windows("//server/share/..") == "//server/share/");
+    ZEXPECT(windows_of(*table, "//server/share/..") == "//server/share/");
     // Three slashes or more are the root's.
-    ZEXPECT(table->to_windows("///usr/bin") == "C:/cygwin64/bin");
+    ZEXPECT(windows_of(*table, "///usr/bin") == "C:/cygwin64/bin");
+}
+
+ZEST_CASE(to_windows_writes_over_what_the_buffer_held) {
+    auto table = MountTable::parse(cygwin_listing);
+    ZASSERT(table.has_value());
+    small_string<16> out("text the path replaces");
+    table->to_windows(out, "/usr/bin");
+    ZEXPECT(std::string_view(out) == "C:/cygwin64/bin");
+    table->to_windows(out, "//server/share/a/../b.c");
+    ZEXPECT(std::string_view(out) == "//server/share/b.c");
 }
 
 ZEST_CASE(to_windows_reads_msys_drives_at_the_root) {
     auto table = MountTable::parse(msys_listing);
     ZASSERT(table.has_value());
-    ZEXPECT(table->to_windows("/c/Users/me") == "C:/Users/me");
-    ZEXPECT(table->to_windows("/bin/gcc") == "C:/msys64/usr/bin/gcc");
-    ZEXPECT(table->to_windows("/mingw64/include") == "C:/msys64/mingw64/include");
+    ZEXPECT(windows_of(*table, "/c/Users/me") == "C:/Users/me");
+    ZEXPECT(windows_of(*table, "/bin/gcc") == "C:/msys64/usr/bin/gcc");
+    ZEXPECT(windows_of(*table, "/mingw64/include") == "C:/msys64/mingw64/include");
 }
 
 };  // ZEST_SUITE(fs_cygwin)

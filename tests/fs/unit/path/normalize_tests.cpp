@@ -1,4 +1,8 @@
+#include <string>
+#include <string_view>
+
 #include "kota/zest/zest.h"
+#include "kota/support/small_string.h"
 #include "kota/fs/path.h"
 
 namespace kota::fs::path {
@@ -8,15 +12,30 @@ namespace {
 constexpr auto posix = Style::Posix;
 constexpr auto windows = Style::Windows;
 
+/// `p` normalized, `..` folded.
 std::string folded(std::string_view p, Style style) {
-    return normalize(p, DotDot::Fold, style);
+    std::string buffer(p);
+    normalize(buffer, DotDot::Fold, style);
+    return buffer;
 }
 
+/// `p` normalized, `..` kept.
 std::string kept(std::string_view p, Style style) {
-    return normalize(p, DotDot::Keep, style);
+    std::string buffer(p);
+    normalize(buffer, DotDot::Keep, style);
+    return buffer;
 }
 
 ZEST_SUITE(fs_path_normalize) {
+
+ZEST_CASE(normalize_rewrites_the_buffer_in_place) {
+    small_string<16> p("a/./b/../c//");
+    normalize(p, DotDot::Fold, posix);
+    ZEXPECT(std::string_view(p) == "a/c");
+    p = "./";
+    normalize(p, DotDot::Fold, posix);
+    ZEXPECT(std::string_view(p) == ".");
+}
 
 ZEST_CASE(dots_and_repeated_separators_go) {
     ZEXPECT(folded("a/./b//c/", posix) == "a/b/c");
