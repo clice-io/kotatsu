@@ -33,8 +33,13 @@ cc_library(
 ) for module, deps in [
     ("support", ["//:support"]),
     ("fs", ["//:fs"]),
+    ("sys", [
+        ":fs_harness",
+        "//:sys",
+    ]),
     ("async", [
         ":fs_harness",
+        ":sys_harness",
         "//:async",
     ]),
     ("codec", [
@@ -91,6 +96,8 @@ cc_library(
     ("support", "unit", [":support_harness"]),
     ("fs", "unit", ["//:fs"]),
     ("fs", "system", [":fs_harness"]),
+    ("sys", "unit", [":sys_harness"]),
+    ("sys", "system", [":sys_harness"]),
     ("meta", "unit", [":fixtures"]),
     ("codec", "unit", [":codec_harness"]),
     ("codec/bincode", "unit", [":codec_bincode_harness"]),
@@ -143,6 +150,7 @@ cc_library(
     tags = ["manual"] if driver == "lsp_roundtrip" else [],
     deps = deps,
 ) for module, deps, drivers in [
+    ("sys", ["//:sys"], ["sys_probe"]),
     ("ipc", [":ipc_harness"], [
         "jsonrpc_driver",
         "stdio_close",
@@ -238,6 +246,7 @@ command_test(
     source_tree = True,
     tags = ["integration"],
 ) for module, programs, exclude, files in [
+    ("sys", [":sys_probe"], [], []),
     ("ipc", [
         ":jsonrpc_driver",
         ":stdio_close",

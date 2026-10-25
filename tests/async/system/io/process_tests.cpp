@@ -225,7 +225,7 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
 // this process has.
 ZEST_CASE(env_changes_go_over_the_inherited_environment) {
     test::TempDir dir;
-    test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
+    test::ScopedEnv inherited("KOTA_TEST_INHERITED", "inherited");
     auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_INHERITED");
     opts.env_changes = {
         {.name = "KOTA_TEST_SET", .value = "set"}
@@ -238,7 +238,7 @@ ZEST_CASE(env_changes_go_over_the_inherited_environment) {
 
 ZEST_CASE(env_changes_go_over_a_given_environment) {
     test::TempDir dir;
-    test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
+    test::ScopedEnv inherited("KOTA_TEST_INHERITED", "inherited");
     auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
     opts.env = {"KOTA_TEST_GIVEN=given"};
     opts.env_changes = {
@@ -269,7 +269,7 @@ ZEST_CASE(last_env_change_of_a_name_counts) {
 // not the inherited one.
 ZEST_CASE(env_changes_removing_every_variable_inherit_nothing) {
     test::TempDir dir;
-    test::ScopedVariable inherited("KOTA_TEST_INHERITED", "inherited");
+    test::ScopedEnv inherited("KOTA_TEST_INHERITED", "inherited");
     auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
     opts.env = {"KOTA_TEST_GIVEN=given"};
     opts.env_changes = {

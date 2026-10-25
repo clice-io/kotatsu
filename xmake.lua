@@ -139,6 +139,18 @@ target("fs", function()
 	add_rules("cl-flags")
 end)
 
+target("sys", function()
+	set_kind("$(kind)")
+	add_files("src/sys/*.cpp")
+	add_includedirs("include", { public = true })
+	add_headerfiles("include/(kota/sys/*)")
+	add_rules("cl-flags")
+	add_deps("support", "fs")
+	if is_plat("windows", "mingw") then
+		add_syslinks("advapi32", "ntdll", "ole32", "shell32")
+	end
+end)
+
 target("meta", function()
 	set_kind("headeronly")
 	add_includedirs("include", { public = true })
@@ -233,11 +245,8 @@ if has_config("ztest") then
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(kota/zest/**)")
 		add_rules("cl-flags")
-		add_deps("support", "deco", "async", "fs")
+		add_deps("support", "deco", "async", "fs", "sys")
 		add_packages("cpptrace", { public = true })
-		if is_plat("windows", "mingw") then
-			add_syslinks("shell32")
-		end
 	end)
 end
 
@@ -248,7 +257,7 @@ if has_config("async") then
 		add_files("src/async/**.cpp")
 		add_includedirs("include", { public = true })
 		add_headerfiles("include/(kota/async/**)")
-		add_deps("support", "fs")
+		add_deps("support", "fs", "sys")
 		add_packages("libuv", { public = true })
 	end)
 end
@@ -317,7 +326,7 @@ target("kotatsu", function()
 	add_includedirs("include", { public = true })
 	add_headerfiles("include/(kota/**)")
 
-	add_deps("support", "fs", "meta", { public = true })
+	add_deps("support", "fs", "sys", "meta", { public = true })
 
 	if has_config("codec") then
 		add_deps("codec", { public = true })
@@ -385,7 +394,7 @@ end)
 if has_config("test") and has_config("ztest") then
 	-- Mirrors tests/CMakeLists.txt: one binary per level, built from that
 	-- level's directory of every enabled module.
-	local test_modules = { "support", "fs", "meta", "async", "zest", "examples/async" }
+	local test_modules = { "support", "fs", "sys", "meta", "async", "zest", "examples/async" }
 	if has_config("codec") then
 		table.insert(test_modules, "codec")
 		table.insert(test_modules, "codec/bincode")

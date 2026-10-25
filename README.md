@@ -27,7 +27,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - stream base abstraction, with `read_line()` and `read_to_end()`
   - pipes, TCP sockets, TCP acceptors, console / TTY streams
   - UDP sockets with multicast and per-packet send/recv
-- Child process API (`process::spawn`) with stdio piping, environment changes, async wait/kill, exit statuses that tell how the child ended, and resource-usage reporting; `process::capture` runs a child to its exit and returns its output, killing it if cancelled.
+- Child process API (`process::spawn`) with stdio piping, environment changes, async wait/kill, exit statuses that tell how the child ended (named by `sys`); `process::capture` runs a child to its exit and returns its output, killing it if cancelled.
 - Async filesystem API, `kota::fs::async`, covering the full libuv fs surface on libuv's thread pool (stat / mkdir / scandir / chmod / link / rename / sendfile / utime / mkstemp / …); `fs` below does the same synchronously, without libuv.
 - Libuv watcher wrappers: timer, idle, prepare, check, signal, plus a `sleep` helper.
 
@@ -156,6 +156,16 @@ Synchronous paths and files on UTF-8 strings, depending on `support` alone (no l
 - Naming-convention conversion (`naming.h`): identity, lower-snake, lower-camel, upper-camel, upper-snake.
 - Type-level utilities: `type_list<Ts...>`, `tuple_traits`, `type_traits`, `expected_try`, `comptime` helpers, and miscellaneous `memory` / `ranges` / `functional` adapters.
 
+### `sys` (`include/kota/sys/*`)
+
+- The process and its system without libuv or `async`, in a static library of one object per area: a program links only what it calls, and on Windows imports only those objects' DLLs. catter's hook library, injected into every process a build starts, takes the environment and program lookup without the rest.
+- `env.h`: `get_env` / `set_env` / `unset_env` / `environment` on the OS's own block (Windows' `GetEnvironmentVariableW`, never the CRT's copy), `env_name_equal`, and `split_paths` / `join_paths` for PATH-like lists in either style.
+- `process.h`: `pid`, `parent_pid`, `executable_path`, `arguments` (on Windows from `GetCommandLineW`, in WTF-8, by the CRT's rules and without wildcard expansion), `quote_windows_argument` / `join_windows_command_line` / `split_windows_command_line`, `find_program` (execvp's search on POSIX; on Windows PATH and PATHEXT directory by directory, Cygwin symlinks followed, or CreateProcess's search through `windows::create_process_search`), the process title (`set_process_title`, Linux and macOS), and the names of exit statuses: `signal_name`, `ntstatus_name` (`0xC0000135` is `STATUS_DLL_NOT_FOUND`).
+- `dirs.h`: `home_dir`, `temp_dir`, and the user's `cache_dir` / `config_dir` / `data_dir` (XDG, `~/Library`, known folders).
+- `console.h`: `write_console`, UTF-8 to a Windows console as UTF-16 and bytes anywhere else, allocating nothing and never throwing.
+- `info.h`: per-process memory and CPU (`process_stats`, with the peak), the memory a process can take under every level of its cgroups (`memory`, with macOS's compressor and Windows' commit charge counted), `parallelism` under its affinity and cgroup CPU quotas, `cpu_cores`, `uname`, `hostname`, `uptime`, priorities, and Linux's OOM score adjustment; `memory_model.h` has their arithmetic on given figures.
+- What can fail returns `std::expected<T, std::error_code>`, or a `std::error_code` when there is no value; Windows codes are mapped to `std::errc` where one fits.
+
 ## Using kotatsu from Bazel
 
 kotatsu is a Bazel module (Bazel 9). The targets are one per module:
@@ -199,6 +209,7 @@ include/kota/
   meta/        # Compile-time reflection, attribute markers, schema IR, runtime type info
   option/      # LLVM-compatible option parsing layer
   support/     # Containers, traits, compile-time strings, naming helpers
+  sys/         # Environment, command line, directories, memory and CPU, without libuv
   zest/        # Unit test framework
 
 src/
@@ -211,6 +222,7 @@ src/
     lsp/       # URI / position implementations
   option/      # Option parser implementation
   meta/        # Meta target wiring (header-only public APIs)
+  sys/         # Process and system information, one file per area
   zest/        # Test runner implementation
 
 bazel/         # Bazel: build settings, the rule running the tests' commands
