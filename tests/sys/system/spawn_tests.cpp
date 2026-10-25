@@ -795,7 +795,7 @@ void set_action(int signum, void (*handler)(int), int flags = 0) {
     ZASSERT(::sigaction(signum, &action, nullptr) == 0);
 }
 
-void ignore_signal(int) {}
+static void ignore_signal(int) {}
 
 // A waitpid of this process's own reaped it: its pid may be another's now.
 ZEST_CASE(child_reaped_by_another_is_lost) {
