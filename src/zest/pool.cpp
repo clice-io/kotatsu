@@ -8,6 +8,7 @@
 #include <iterator>
 #include <optional>
 #include <random>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -155,14 +156,18 @@ struct Pool {
         }
 
         process::options spawn;
-        spawn.file = executable;
-        // The flag goes right after argv[0], ahead of anything the program
-        // passes through untouched after `--`.
-        spawn.args = options.args;
-        spawn.args.emplace(spawn.args.begin() + std::min<std::size_t>(1, spawn.args.size()),
-                           protocol::worker_flag);
+        spawn.program = executable;
+        // This program's argv[0], and the flag right after it, ahead of
+        // anything the program passes through untouched after `--`.
+        std::span<const std::string> argv = options.args;
+        if(!argv.empty()) {
+            spawn.arg0 = argv.front();
+            argv = argv.subspan(1);
+        }
+        spawn.args = {std::string(protocol::worker_flag)};
+        spawn.args.insert(spawn.args.end(), argv.begin(), argv.end());
         spawn.streams = {
-            process::stdio::pipe(true, true),
+            process::stdio::duplex_pipe(),
             process::stdio::from_file(*file),
             process::stdio::from_file(*file),
         };
@@ -348,7 +353,8 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
     run_pool(std::span<const Entry* const> tests,
              const PoolOptions& options,
              function_ref<void(const Entry&, const Outcome&)> report) {
-    auto executable = sys::executable_path();
+    // Workers run this very image, though a build replaced its file.
+    auto executable = sys::self_executable();
     if(!executable) {
         return std::unexpected(WorkerFailure{
             .detail = std::format("cannot find this program to start workers: {}",

@@ -31,7 +31,8 @@ struct Stdio {
         /// The open file `file` refers to, which the child reads or writes
         /// from where it stands.
         File,
-        /// A pipe, whose other end Child::take_pipe gives this process.
+        /// A pipe, whose other end Child::take_pipe gives this process: the
+        /// child reads stdin's and writes the others', or both, `duplex`.
         Pipe,
     };
 
@@ -41,10 +42,7 @@ struct Stdio {
 
     fs::File::native_handle_type file = fs::File::closed;
 
-    /// Of a pipe: whether the child reads it, and whether it writes it.
-    bool readable = false;
-
-    bool writable = false;
+    bool duplex = false;
 
     static Stdio inherit() {
         return {};
@@ -63,9 +61,13 @@ struct Stdio {
         return {.kind = Kind::File, .file = file.native_handle()};
     }
 
-    /// Flags from the child's side, one of them at least.
-    static Stdio pipe(bool readable, bool writable) {
-        return {.kind = Kind::Pipe, .readable = readable, .writable = writable};
+    static Stdio pipe() {
+        return {.kind = Kind::Pipe};
+    }
+
+    /// A pipe both read and written, by the child and by this process.
+    static Stdio duplex_pipe() {
+        return {.kind = Kind::Pipe, .duplex = true};
     }
 };
 
@@ -105,11 +107,8 @@ struct CreationOptions {
     bool exit_with_parent = false;
 
     /// Windows: no console window, and none for the console programs it
-    /// starts, when no stream is this process's; the window of a GUI
-    /// program hidden. Ignored elsewhere, as the two below are.
-    bool windows_hide = false;
-
-    /// Windows: no console window, when no stream is this process's.
+    /// starts, when no stream is this process's. Ignored elsewhere, as the
+    /// one below is.
     bool windows_hide_console = false;
 
     /// Windows: the window of a GUI program hidden.
@@ -127,10 +126,13 @@ struct SpawnOptions {
     /// first; PATH unset searching the system's directories. A `.bat` or
     /// `.cmd` file runs only with a windows_command_line, which says how cmd
     /// is to read its arguments.
-    std::string file = {};
+    std::string program = {};
 
-    /// argv, argv[0] first, which need not be `file`; `file` when empty.
+    /// The arguments after argv[0].
     std::vector<std::string> args = {};
+
+    /// argv[0], which need not be `program`; `program` when unset.
+    std::optional<std::string> arg0 = {};
 
     /// The child's environment; unset, this process's. Given, it is the
     /// child's as it is, in its order, on Windows too: nothing is added,
@@ -150,7 +152,7 @@ struct SpawnOptions {
     std::array<Stdio, 3> streams = {Stdio::inherit(), Stdio::inherit(), Stdio::inherit()};
 
     /// Windows: the command line, as it is, instead of one written from
-    /// `args`, which are not read then. Ignored elsewhere.
+    /// `arg0` and `args`, which are not read then. Ignored elsewhere.
     std::string windows_command_line = {};
 
     /// Windows: called with the child's process and main thread handles
@@ -164,7 +166,7 @@ struct SpawnOptions {
 struct ExitStatus {
     /// Its exit code. On Windows a child that crashed exits with the
     /// NTSTATUS of its exception, such as 0xC0000005, unsigned.
-    std::int64_t status = 0;
+    std::int64_t code = 0;
 
     /// The signal that ended it, 0 if none. On Windows the signal its kill
     /// or kill_tree sent, if it ended the child.
@@ -181,7 +183,7 @@ struct ExitStatus {
     /// Whether the child exited with code 0, rather than failing, crashing
     /// or being killed.
     bool success() const noexcept {
-        return status == 0 && term_signal == 0;
+        return code == 0 && term_signal == 0;
     }
 
     /// How the child ended, for a person: "exit code 1", "signal 9
@@ -315,8 +317,8 @@ private:
 /// own, nested in any this process is in, which ends it rather than show a
 /// dialog when it crashes. no_such_file_or_directory or permission_denied
 /// for a program not found, as find_program; invalid_argument for a
-/// negative descriptor, a closed file, a pipe the child neither reads nor
-/// writes or a batch file without windows_command_line;
+/// negative descriptor, a closed file or a batch file without
+/// windows_command_line;
 /// bad_file_descriptor for a descriptor not open;
 /// not_supported for exit_with_parent on macOS.
 std::expected<Child, std::error_code> spawn(const SpawnOptions& options);

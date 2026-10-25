@@ -191,7 +191,7 @@ std::chrono::microseconds microseconds(FILETIME time) {
 ExitStatus exit_status_of(HANDLE process, HANDLE job, bool tree, int killed_by) {
     DWORD code = 0;
     ::GetExitCodeProcess(process, &code);
-    ExitStatus status{.status = static_cast<std::int64_t>(code), .term_signal = killed_by};
+    ExitStatus status{.code = static_cast<std::int64_t>(code), .term_signal = killed_by};
     if(tree) {
         JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting{};
         ::QueryInformationJobObject(job,
@@ -304,11 +304,6 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     if(options.windows_command_line.empty() && is_batch_file(*program)) {
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
-    for(const auto& stream: options.streams) {
-        if(stream.kind == Stdio::Kind::Pipe && !stream.readable && !stream.writable) {
-            return std::unexpected(std::make_error_code(std::errc::invalid_argument));
-        }
-    }
 
     small_wstring<264> application;
     if(auto error = to_utf16(application, *program)) {
@@ -317,9 +312,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     std::string written;
     std::string_view command_line = options.windows_command_line;
     if(command_line.empty()) {
-        written = options.args.empty()
-                      ? windows::join_command_line(std::vector<std::string>{options.file})
-                      : windows::join_command_line(options.args);
+        written = windows::join_command_line(child_arguments(options));
         command_line = written;
     }
     std::wstring line;
@@ -377,7 +370,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
                 made = inheritable(stream.file);
                 break;
             case Stdio::Kind::Pipe: {
-                auto pipe = create_pipe(stream.readable, stream.writable);
+                auto pipe = create_pipe(stream.duplex || i == 0, stream.duplex || i != 0);
                 if(!pipe) {
                     return std::unexpected(pipe.error());
                 }
@@ -469,7 +462,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     startup.StartupInfo.hStdOutput = handles[1].handle;
     startup.StartupInfo.hStdError = handles[2].handle;
     startup.StartupInfo.wShowWindow = static_cast<WORD>(
-        creation.windows_hide || creation.windows_hide_gui ? SW_HIDE : SW_SHOWDEFAULT);
+        creation.windows_hide_gui ? SW_HIDE : SW_SHOWDEFAULT);
     startup.lpAttributeList = attributes;
 
     DWORD process_flags = CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
@@ -480,7 +473,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     // where a child without a console (DETACHED_PROCESS) has each of them
     // open one. libuv's rule: a stream of this process's keeps its console.
     if(creation.detached ||
-       ((creation.windows_hide || creation.windows_hide_console) && !shares_streams)) {
+       (creation.windows_hide_console && !shares_streams)) {
         process_flags |= CREATE_NO_WINDOW;
     }
     if(options.windows_before_start) {

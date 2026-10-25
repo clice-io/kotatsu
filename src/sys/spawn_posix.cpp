@@ -117,7 +117,7 @@ ExitStatus exit_status_of(int status, const rusage& usage) {
         return std::chrono::seconds(time.tv_sec) + std::chrono::microseconds(time.tv_usec);
     };
     return ExitStatus{
-        .status = WIFEXITED(status) ? WEXITSTATUS(status) : 0,
+        .code = WIFEXITED(status) ? WEXITSTATUS(status) : 0,
         .term_signal = WIFSIGNALED(status) ? WTERMSIG(status) : 0,
         .user_time = microseconds(usage.ru_utime),
         .system_time = microseconds(usage.ru_stime),
@@ -392,9 +392,6 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     // Each descriptor given is looked at before a pipe is made: one not open
     // would otherwise be the number a pipe takes.
     for(const auto& stream: options.streams) {
-        if(stream.kind == Stdio::Kind::Pipe && !stream.readable && !stream.writable) {
-            return std::unexpected(std::make_error_code(std::errc::invalid_argument));
-        }
         if(stream.kind == Stdio::Kind::FD || stream.kind == Stdio::Kind::File) {
             int fd = stream.kind == Stdio::Kind::FD ? stream.fd : stream.file;
             if(fd < 0) {
@@ -407,10 +404,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     }
 
     // What the child gets, laid out before it starts.
-    std::vector<std::string> args = options.args;
-    if(args.empty()) {
-        args.push_back(options.file);
-    }
+    auto args = child_arguments(options);
     std::vector<char*> argv;
     for(auto& arg: args) {
         argv.push_back(arg.data());
@@ -445,13 +439,12 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
             case Stdio::Kind::FD: fds[i] = stream.fd; break;
             case Stdio::Kind::File: fds[i] = stream.file; break;
             case Stdio::Kind::Pipe: {
-                const bool both = stream.readable && stream.writable;
-                auto pair = connected_pair(both);
+                auto pair = connected_pair(stream.duplex);
                 if(!pair) {
                     return std::unexpected(pair.error());
                 }
-                // A pipe the child reads it reads from [0].
-                const std::size_t ours = both || stream.readable ? 1 : 0;
+                // A pipe the child reads, stdin's, it reads from [0].
+                const std::size_t ours = stream.duplex || i == 0 ? 1 : 0;
                 child.pipes[i] = (*pair)[ours].release();
                 child_ends[i] = std::move((*pair)[1 - ours]);
                 fds[i] = child_ends[i].fd;

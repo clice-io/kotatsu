@@ -83,10 +83,16 @@ std::optional<std::vector<EnvVar>> child_environment(const SpawnOptions& options
     return variables;
 }
 
+std::vector<std::string> child_arguments(const SpawnOptions& options) {
+    std::vector<std::string> arguments = {options.arg0.value_or(options.program)};
+    arguments.insert(arguments.end(), options.args.begin(), options.args.end());
+    return arguments;
+}
+
 std::expected<std::string, std::error_code>
     child_program(const SpawnOptions& options,
                   const std::optional<std::vector<EnvVar>>& environment) {
-    std::string_view file = options.file;
+    std::string_view file = options.program;
     if(file.empty()) {
         return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
     }
