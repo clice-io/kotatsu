@@ -148,9 +148,13 @@ struct SpawnOptions {
     /// directories, and a file without a #! line run by /bin/sh, as execvp
     /// does; on Windows by find_create_process_program's, in PATH alone, not,
     /// as CreateProcess, in this program's directory and the current one
-    /// first; PATH unset searching the system's directories. A `.bat` or
-    /// `.cmd` file runs only with a windows_command_line, which says how cmd
-    /// is to read its arguments.
+    /// first, PATH unset searching the system's directories; a path without
+    /// an extension takes `.exe` too, which CreateProcess would not add, when
+    /// that file is there. A `.bat` or `.cmd`
+    /// file runs as Rust's Command runs one, by the system's cmd.exe, `args`
+    /// written so that cmd passes them on as they are: a program the script
+    /// starts with %* reads each as given, no variable expanded in it, no
+    /// command of it run.
     std::string program = {};
 
     /// The arguments after argv[0].
@@ -158,7 +162,7 @@ struct SpawnOptions {
 
     /// argv[0], which need not be `program`; `program` when unset. On
     /// Windows it holds no quote, which a command line has no way to write
-    /// for it.
+    /// for it; a batch file does not get it: its %0 is the script.
     std::optional<std::string> arg0 = {};
 
     /// The child's environment; unset, this process's. Given, it is the
@@ -179,7 +183,9 @@ struct SpawnOptions {
     std::array<Stdio, 3> streams = {Stdio::inherit(), Stdio::inherit(), Stdio::inherit()};
 
     /// Windows: the command line, as it is, instead of one written from
-    /// `arg0` and `args`, which are not read then. Ignored elsewhere.
+    /// `arg0` and `args`, which are not read then; a batch file runs with it
+    /// as CreateProcess runs one, through cmd, which reads it by its own
+    /// rules. Ignored elsewhere.
     std::string windows_command_line = {};
 
     /// Windows: called with the child's process and main thread handles
@@ -352,9 +358,11 @@ private:
 /// crashes.
 /// no_such_file_or_directory or permission_denied for a program not found,
 /// as find_program; invalid_argument for a negative descriptor, a closed
-/// file, a batch file without windows_command_line or, on Windows, an
-/// argv[0] with a quote; bad_file_descriptor for a descriptor not open;
-/// not_supported for exit_with_parent on macOS.
+/// file, a string with a NUL, which the child would get cut short, or, on
+/// Windows, an argv[0] with a quote, or an argument of a batch file with a
+/// carriage return or a newline, where cmd would end its command;
+/// bad_file_descriptor for a descriptor not open; not_supported for
+/// exit_with_parent on macOS.
 std::expected<Child, std::error_code> spawn(const SpawnOptions& options);
 
 /// Runs a child to its end, as `options` say but for its streams, whatever

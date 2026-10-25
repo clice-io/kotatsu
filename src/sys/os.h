@@ -21,6 +21,7 @@
 #endif
 #include <windows.h>
 
+#include "kota/support/buffer_ref.h"
 #include "kota/fs/windows.h"
 
 // Declared by the driver kit only; ntdll has it from Windows 2000 on.
@@ -101,6 +102,9 @@ inline std::intptr_t descriptor_handle(int fd) noexcept {
     return ::_get_osfhandle(fd);
 #endif
 }
+
+/// Writes into `out` the system directory, as GetSystemDirectoryW gives it.
+std::error_code system_directory(buffer_ref out);
 
 /// The directories CreateProcess searches for a program after this
 /// program's and the current one, before PATH: the system directory, the

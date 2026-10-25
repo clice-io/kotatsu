@@ -430,6 +430,9 @@ std::error_code Child::kill_tree(int signum) {
 }
 
 std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
+    if(holds_nul(options)) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
     const auto& creation = options.creation;
 #ifdef __APPLE__
     if(creation.exit_with_parent) {

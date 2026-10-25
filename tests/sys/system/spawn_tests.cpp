@@ -350,6 +350,67 @@ ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
 #endif
 }
 
+/// The error spawn fails `options` with; none when it starts the child,
+/// which it waits for.
+std::error_code spawn_error(const SpawnOptions& options) {
+    auto child = spawn(options);
+    if(!child) {
+        return child.error();
+    }
+    ZEXPECT(child->wait().has_value());
+    return {};
+}
+
+// No system call takes a NUL in a string: the child would get the text
+// before it, another file than the one given, or on Windows, whose block of
+// variables a NUL separates, a variable not given.
+ZEST_CASE(spawn_of_text_with_a_nul_fails) {
+    using namespace std::literals;
+    const auto nul = "\0KOTA_INJECTED=1"s;
+    auto given = shell("exit 0");
+    auto options = given;
+    options.program += nul;
+    ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
+    options = given;
+    options.arg0 = "shell" + nul;
+    ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
+    options = given;
+    options.args.back() += nul;
+    ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
+    options = given;
+    options.cwd = dir.root() + nul;
+    ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
+    options = given;
+    options.env = environment();
+    options.env->push_back({.name = "KOTA" + nul, .value = "a"});
+    ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
+    options = given;
+    options.env = environment();
+    options.env->push_back({.name = "KOTA_NUL", .value = "a" + nul});
+    ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
+    options = given;
+    options.env_changes = {
+        {.name = "KOTA" + nul, .value = "a"}
+    };
+    ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
+    options = given;
+    options.env_changes = {
+        {.name = "KOTA_NUL", .value = "a" + nul}
+    };
+    ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
+#ifdef _WIN32
+    options = given;
+    options.windows_command_line = "cmd /c exit 0" + nul;
+    ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
+    // The file named before the NUL is a batch file, which would run with
+    // arguments cmd reads by rules of its own.
+    test::write_text(dir.file("tool.bat"), "@exit /b 4\r\n");
+    options = given;
+    options.program = dir.file("tool.bat") + "\0.exe"s;
+    ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
+#endif
+}
+
 ZEST_CASE(stdout_goes_to_a_file) {
     auto file =
         fs::File::open(dir.file("out.txt"), {.write = true, .truncate = true, .create = true});
@@ -962,25 +1023,94 @@ ZEST_CASE(arg0_with_a_quote_fails) {
     ZEXPECT(child.error() == std::errc::invalid_argument);
 }
 
-// cmd would read the arguments by its own rules. Windows drops trailing dots
-// and spaces from a name, so `tool.bat.` is a batch file too.
-ZEST_CASE(batch_file_without_a_command_line_fails) {
+// cmd runs it. Windows drops trailing dots and spaces from a name, so
+// `tool.bat.` is a batch file too.
+ZEST_CASE(batch_file_runs) {
     test::write_text(dir.file("tool.bat"), "@exit /b 4\r\n");
-    for(auto name: {"tool.bat", "TOOL.CMD", "tool.bat.", "tool.bat "}) {
-        auto child = spawn({.program = dir.file(name)});
+    test::write_text(dir.file("tool.cmd"), "@exit /b 5\r\n");
+    ZEXPECT(status_of({.program = dir.file("tool.bat")}).code == 4);
+    ZEXPECT(status_of({.program = dir.file("TOOL.CMD")}).code == 5);
+    ZEXPECT(status_of({.program = dir.file("tool.bat.")}).code == 4);
+    ZEXPECT(status_of({.program = dir.file("tool.bat ")}).code == 4);
+    // Found in PATH too, and in the child's directory, a `/` its separator.
+    ZEXPECT(status_of({
+                          .program = "tool.bat",
+                          .env_changes = {{.name = "PATH", .value = dir.root()}},
+                      })
+                .code == 4);
+    std::filesystem::create_directories(test::std_path(dir.file("sub")));
+    test::write_text(dir.file(R"(sub\tool.bat)"), "@exit /b 6\r\n");
+    ZEXPECT(status_of({.program = "sub/tool.bat", .cwd = dir.root()}).code == 6);
+}
+
+// cmd's %0 is the script: argv[0] is written nowhere, and may hold a quote.
+ZEST_CASE(batch_file_takes_no_arg0) {
+    auto script = dir.file("tool.bat");
+    test::write_text(script,
+                     std::format("@if /i \"%~f0\"==\"{}\" exit /b 4\r\n@exit /b 1\r\n", script));
+    ZEXPECT(status_of({.program = script, .arg0 = R"(a"b)"}).code == 4);
+}
+
+// Windows takes a name that ends in `.bat` for a batch file, though its
+// stem would be all of it: cmd reads the arguments of `.bat` too.
+ZEST_CASE(batch_file_named_by_its_extension_alone_gets_its_arguments_escaped) {
+    test::write_text(dir.file(".bat"), "@rem\r\n");
+    for(auto name: {".bat.", ".bat"}) {
+        ZEST_CONTEXT("{}", name);
+        auto output = output_of({.program = dir.file(name), .args = {R"("&echo injected)"}});
+        ZEXPECT(!zest::contains(output.text, "injected"));
+        ZASSERT(output.status.has_value());
+        ZEXPECT(output.status->success());
+    }
+    auto output = output_of({
+        .program = ".bat.",
+        .args = {R"("&echo injected)"},
+        .env_changes = {{.name = "PATH", .value = dir.root()}},
+    });
+    ZEXPECT(!zest::contains(output.text, "injected"));
+}
+
+// The system directory's cmd.exe, not one where CreateProcess would look for
+// a name.
+ZEST_CASE(batch_file_runs_the_systems_cmd) {
+    test::write_text(dir.file("tool.bat"), "@exit /b 4\r\n");
+    test::write_text(dir.file("cmd.exe"), "no program");
+    test::ScopedCurrentDir current(dir.path);
+    ZEXPECT(status_of({.program = dir.file("tool.bat")}).code == 4);
+}
+
+// cmd would end its command there.
+ZEST_CASE(batch_file_argument_with_a_line_end_fails) {
+    test::write_text(dir.file("tool.bat"), "@exit /b 4\r\n");
+    for(std::string_view end: {"\n", "\r"}) {
+        ZEST_CONTEXT("{}", end == "\n" ? "a newline" : "a carriage return");
+        auto child =
+            spawn({.program = dir.file("tool.bat"), .args = {"a" + std::string(end) + "b"}});
         ZASSERT(!child.has_value());
         ZEXPECT(child.error() == std::errc::invalid_argument);
     }
-    // Found in PATH too.
-    auto child = spawn({
-        .program = "tool.bat",
-        .env_changes = {{.name = "PATH", .value = dir.root()}},
-    });
+}
+
+// No file has a quote in its name, which the line written for cmd puts the
+// script's in.
+ZEST_CASE(batch_file_with_a_quote_in_its_name_is_not_found) {
+    auto child = spawn({.program = dir.file(R"(a"b.bat)")});
     ZASSERT(!child.has_value());
-    ZEXPECT(child.error() == std::errc::invalid_argument);
-    ZEXPECT(status_of({.program = dir.file("tool.bat"),
-                       .windows_command_line = std::format(R"("{}")", dir.file("tool.bat"))})
-                .code == 4);
+    ZEXPECT(child.error() == std::errc::no_such_file_or_directory);
+}
+
+// CreateProcess runs it through cmd with the line given, which cmd reads as
+// it is: its variables expanded.
+ZEST_CASE(batch_file_with_a_command_line_runs_it_as_it_is) {
+    test::write_text(dir.file("tool.bat"), "@exit /b %1\r\n");
+    ZEXPECT(status_of({
+                          .program = dir.file("tool.bat"),
+                          .args = {"9"},
+                          .env_changes = {{.name = "KOTA_CODE", .value = "7"}},
+                          .windows_command_line =
+                              std::format(R"("{}" %KOTA_CODE%)", dir.file("tool.bat")),
+                      })
+                .code == 7);
 }
 
 // CreateProcess would look in the current directory first.
@@ -992,6 +1122,49 @@ ZEST_CASE(program_is_not_looked_for_in_the_current_directory) {
         .env_changes = {{.name = "PATH"}},
         .cwd = dir.root(),
     });
+    ZASSERT(!child.has_value());
+    ZEXPECT(child.error() == std::errc::no_such_file_or_directory);
+}
+
+// As find_create_process_program takes it, which CreateProcess does not for
+// the path it is given to start; the path as it is when only that is there.
+ZEST_CASE(program_path_without_an_extension_takes_exe) {
+    std::filesystem::create_directories(test::std_path(dir.file("bin")));
+    std::filesystem::copy_file(test::std_path(shell_path()),
+                               test::std_path(dir.file(R"(bin\kotatool.exe)")));
+    ZEXPECT(status_of({
+                          .program = dir.file(R"(bin\kotatool)"),
+                          .args = {"/c", "exit 5"}
+    })
+                .code == 5);
+    // In the child's directory. cmd would take a `/` in its argv[0] for one
+    // of its switches.
+    ZEXPECT(status_of({
+                          .program = R"(bin\kotatool)",
+                          .args = {"/c", "exit 6"},
+                          .cwd = dir.root()
+    })
+                .code == 6);
+    // Before a file without it, which is no program.
+    test::write_text(dir.file(R"(bin\kotatool)"), "no program");
+    ZEXPECT(status_of({
+                          .program = dir.file(R"(bin\kotatool)"),
+                          .args = {"/c", "exit 7"}
+    })
+                .code == 7);
+}
+
+ZEST_CASE(program_path_without_an_extension_runs_as_it_is_without_an_exe) {
+    std::filesystem::create_directories(test::std_path(dir.file("bin")));
+    std::filesystem::copy_file(test::std_path(shell_path()),
+                               test::std_path(dir.file(R"(bin\kotaplain)")));
+    ZEXPECT(status_of({
+                          .program = dir.file(R"(bin\kotaplain)"),
+                          .args = {"/c", "exit 5"}
+    })
+                .code == 5);
+    // Neither there.
+    auto child = spawn({.program = dir.file(R"(bin\missing)")});
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::no_such_file_or_directory);
 }

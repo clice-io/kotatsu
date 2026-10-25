@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cassert>
 #include <csignal>
 #include <cstdint>
 #include <format>
@@ -13,9 +14,11 @@
 #include "child.h"
 #include "os.h"
 #include "kota/support/small_string.h"
+#include "kota/support/string_list_ref.h"
 #include "kota/support/string_ref.h"
 #include "kota/support/utf16.h"
 #include "kota/fs/path.h"
+#include "kota/fs/resolve.h"
 #include "kota/sys/spawn.h"
 #include "kota/sys/windows.h"
 
@@ -134,15 +137,79 @@ std::expected<Handle, std::error_code> null_device(bool read) {
 /// would take another's too.
 constinit SRWLOCK inheritance = SRWLOCK_INIT;
 
-/// Whether `path` is a batch file, which CreateProcess runs through cmd,
-/// as Windows names it: trailing dots and spaces dropped.
+/// Whether `path`, as fs::absolute writes it, its trailing dots and spaces
+/// dropped as Windows drops them, is a batch file, which CreateProcess runs
+/// through cmd: as Windows tells, by its end, a file named `.bat` too.
 bool is_batch_file(std::string_view path) {
-    while(!path.empty() && (path.back() == '.' || path.back() == ' ')) {
-        path.remove_suffix(1);
+    return string_ref(path).ends_with_insensitive(".bat") ||
+           string_ref(path).ends_with_insensitive(".cmd");
+}
+
+/// Appends `argument` to `out` as cmd is to pass it on to a batch file, by
+/// the rules of Rust's Command (append_bat_arg): in quotes unless it is not
+/// empty, ends in no backslash, which would escape a quote the script puts
+/// after it, and each ASCII character of it is a letter, a digit or one of
+/// `#$*+-./:?@\_` and none a control character; each quote doubled, and the
+/// backslashes before it as before the closing quote; each `%` written
+/// `%%cd:~,%`, which cmd reads as the `%` and an empty substring of %cd%,
+/// not as the start of a variable's name.
+void append_batch_argument(std::string& out, std::string_view argument) {
+    constexpr std::string_view unquoted = R"(#$*+-./:?@\_)";
+    bool quote = argument.empty() || argument.ends_with('\\');
+    for(std::size_t i = 0; i < argument.size(); ++i) {
+        auto c = static_cast<unsigned char>(argument[i]);
+        const bool ascii_plain = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+                                 (c >= 'a' && c <= 'z') || unquoted.contains(argument[i]);
+        // U+0080 to U+009F, the control characters past ASCII.
+        const bool control = c == 0xC2 && i + 1 < argument.size() &&
+                             static_cast<unsigned char>(argument[i + 1]) < 0xA0;
+        quote |= (c < 0x80 && !ascii_plain) || control;
     }
-    auto extension = fs::path::extension(path);
-    return string_ref(extension).equals_insensitive(".bat") ||
-           string_ref(extension).equals_insensitive(".cmd");
+    if(quote) {
+        out.push_back('"');
+    }
+    std::size_t backslashes = 0;
+    for(char c: argument) {
+        if(c == '\\') {
+            ++backslashes;
+        } else {
+            if(c == '"') {
+                out.append(backslashes, '\\');
+                out.push_back('"');
+            } else if(c == '%') {
+                out.append("%%cd:~,");
+            }
+            backslashes = 0;
+        }
+        out.push_back(c);
+    }
+    if(quote) {
+        out.append(backslashes, '\\');
+        out.push_back('"');
+    }
+}
+
+/// Writes into `out` the command line that has cmd run batch file `script`
+/// with `arguments`, as Rust's Command writes it (make_bat_command_line):
+/// `cmd.exe /e:ON /v:OFF /d /c ""<script>" <argument>..."`, command
+/// extensions on, which append_batch_argument's `%` takes, and neither
+/// delayed expansion nor AutoRun commands; cmd drops the outer quotes.
+/// invalid_argument for an argument holding a carriage return or a newline,
+/// which would end the command there.
+std::error_code batch_command_line(std::string& out,
+                                   std::string_view script,
+                                   string_list_ref arguments) {
+    assert(!script.contains('"') && "no Windows file name holds a quote");
+    out = std::format(R"(cmd.exe /e:ON /v:OFF /d /c ""{}")", script);
+    for(auto argument: arguments) {
+        if(argument.find_first_of("\r\n") != std::string_view::npos) {
+            return std::make_error_code(std::errc::invalid_argument);
+        }
+        out.push_back(' ');
+        append_batch_argument(out, argument);
+    }
+    out.push_back('"');
+    return {};
 }
 
 /// The environment block of `variables`: each `name=value` and its NUL, and
@@ -285,32 +352,51 @@ std::error_code Child::kill_tree(int signum) {
 }
 
 std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
+    if(holds_nul(options)) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
     const auto& creation = options.creation;
     auto environment = child_environment(options);
     auto program = child_program(options, environment);
     if(!program) {
         return std::unexpected(program.error());
     }
-    // cmd would read the arguments by its own rules, which quoting for the
-    // C runtime does not keep from running a command of theirs.
-    if(options.windows_command_line.empty() && is_batch_file(*program)) {
-        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
-    }
 
-    small_wstring<264> application;
-    if(auto error = to_utf16(application, *program)) {
-        return std::unexpected(error);
-    }
+    std::string_view application = *program;
+    std::string cmd;
     std::string written;
     std::string_view command_line = options.windows_command_line;
     if(command_line.empty()) {
-        auto arguments = child_arguments(options);
-        // The program's rule has no way to write a quote.
-        if(arguments[0].find('"') != std::string::npos) {
-            return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        // The name Windows gives the file, which cmd finds it by too.
+        std::string file;
+        if(auto error = fs::absolute(file, *program)) {
+            return std::unexpected(error);
         }
-        windows::join_command_line(written, arguments);
+        if(is_batch_file(file)) {
+            // cmd, which CreateProcess would run with a line written for the
+            // C runtime, reads the arguments by its own rules, which that
+            // quoting does not keep from running a command of theirs.
+            if(auto error = system_directory(cmd)) {
+                return std::unexpected(error);
+            }
+            fs::path::push(cmd, "cmd.exe");
+            application = cmd;
+            if(auto error = batch_command_line(written, file, options.args)) {
+                return std::unexpected(error);
+            }
+        } else {
+            auto arguments = child_arguments(options);
+            // The program's rule has no way to write a quote.
+            if(arguments[0].find('"') != std::string::npos) {
+                return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+            }
+            windows::join_command_line(written, arguments);
+        }
         command_line = written;
+    }
+    small_wstring<264> wide_application;
+    if(auto error = to_utf16(wide_application, application)) {
+        return std::unexpected(error);
     }
     std::wstring line;
     if(auto error = to_utf16(line, command_line)) {
@@ -513,7 +599,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
                 return std::unexpected(fs::windows::last_error());
             }
         }
-        if(!::CreateProcessW(application.c_str(),
+        if(!::CreateProcessW(wide_application.c_str(),
                              line.data(),
                              nullptr,
                              nullptr,

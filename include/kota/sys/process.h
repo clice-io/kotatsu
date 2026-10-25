@@ -87,7 +87,10 @@ struct ProgramSearch {
 /// target has none, and counts as a file that cannot be run when it names a
 /// POSIX path, which only its runtime's mount table maps.
 /// no_such_file_or_directory when nothing is found, permission_denied when
-/// only files that cannot be run are.
+/// only files that cannot be run are, `out` then naming the first of them:
+/// for Cygwin symlinks, the link that names a POSIX path or nothing that
+/// runs, whose target fs::cygwin::read_symlink reads, or the first of links
+/// that loop.
 std::error_code find_program(buffer_ref out,
                              std::string_view name,
                              const ProgramSearch& search = {});

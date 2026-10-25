@@ -89,6 +89,7 @@ export class Driver {
       stdin = "pipe",
       stdout = "pipe",
       env,
+      cwd,
       windowsVerbatimArguments,
     }: {
       /** What runs, a copy of the driver: the driver itself when unset. */
@@ -97,6 +98,8 @@ export class Driver {
       stdout?: Stdio;
       /** The driver's environment, the test's when unset. */
       env?: NodeJS.ProcessEnv;
+      /** The driver's working directory, the test's when unset. */
+      cwd?: string;
       /** On Windows, `args` joined by spaces make the command line as they are. */
       windowsVerbatimArguments?: boolean;
     } = {},
@@ -106,6 +109,7 @@ export class Driver {
       spawn(program, args, {
         stdio: [stdin, stdout, "pipe"],
         env,
+        cwd,
         windowsVerbatimArguments,
       }),
     );
