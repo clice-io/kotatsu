@@ -11,15 +11,17 @@
 //   sys_probe would see;
 // - on Windows it is born in a job nested in the one sys_probe is in, as a CI
 //   runner puts its processes in one, and inherits no handle of sys_probe's
-//   but its standard ones, unless it is to inherit every inheritable one.
+//   but its standard ones, unless it is to inherit every inheritable one;
+// - on Windows a batch file gets its arguments as given, whatever cmd makes
+//   of their characters.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { test } from "node:test";
 
-import { Driver } from "../../harness/driver.ts";
+import { Driver, driverPath } from "../../harness/driver.ts";
 
 // sys_probe's child holds sys_probe's stdout, which ends only once both are
 // gone.
@@ -142,3 +144,91 @@ test(
     assert.equal(output.inherited, true);
   },
 );
+
+// Rust's cases (tests/ui/std/windows-bat-args.rs), and more of cmd's
+// characters. None ends with an empty argument, which the third script
+// cannot tell from none.
+const BATCH_ARGUMENTS = [
+  ["a", "b"],
+  ["c is for cat", "d is for dog"],
+  ['"', ' "'],
+  ["\\", "\\"],
+  [">file.txt"],
+  ["whoami.exe"],
+  ["&a.exe"],
+  ["&echo hello "],
+  ["&echo hello", "&whoami", ">file.txt"],
+  ["!TMP!"],
+  ["key=value"],
+  ['"key=value"'],
+  ["key = value"],
+  ['key=["value"]'],
+  ["", "a=b"],
+  ['key="foo bar"'],
+  ['key=["my_value]'],
+  ['key=["my_value","other-value"]'],
+  ["key\\=value"],
+  ['key="&whoami"'],
+  ['key="value"=5'],
+  ['key=[">file.txt"]'],
+  ["%hello"],
+  ["%PATH%"],
+  ["%%cd:~,%"],
+  ["%PATH%PATH%"],
+  ['">file.txt'],
+  ['abc"&echo hello'],
+  ['123">file.txt'],
+  ['"&echo hello&whoami.exe'],
+  ['hello^"world', "hello &echo oh no >file.txt"],
+  ["%%", "^", "<", ">", "|", "(", ")", "!", "a b"],
+  ["trailing\\", "", "C:\\dir with space\\"],
+  ["ünï 測試 ✓", "caf\u00e9\u0085"],
+];
+
+// Each passes on what it was given as Rust's tests' scripts do: all at once,
+// one by one, and one by one, quoted; the last runs by its name with the
+// dots and spaces after it that Windows drops.
+const BATCH_SCRIPTS = [
+  { file: "all.bat", runAs: "all.bat", passed: "%*" },
+  { file: "each.bat", runAs: "each.bat", passed: "%1 %2 %3 %4 %5 %6 %7 %8 %9" },
+  {
+    file: "quoted.cmd",
+    runAs: "quoted.cmd",
+    passed: '"%~1" "%~2" "%~3" "%~4" "%~5" "%~6" "%~7" "%~8" "%~9"',
+  },
+  { file: "dotted.bat", runAs: "dotted.bat .. ", passed: "%*" },
+];
+
+for (const { file, runAs, passed } of BATCH_SCRIPTS) {
+  test(
+    `batch_file_gets_its_arguments_as_given_${file.replace(".", "_")}`,
+    { skip: process.platform !== "win32" && "Windows runs batch files" },
+    async (t) => {
+      const directory = mkdtempSync(join(tmpdir(), "kota-batch-"));
+      t.after(() => rmSync(directory, { recursive: true, force: true }));
+      writeFileSync(
+        join(directory, file),
+        `@"${driverPath("sys_probe")}" arguments ${passed}\r\n`,
+      );
+      for (const args of BATCH_ARGUMENTS) {
+        const driver = await Driver.spawn(t, "sys_probe", [
+          "spawn",
+          join(directory, runAs),
+          ...args,
+        ]);
+        const output = await driver.output();
+        await driver.expectExit(0);
+        // One line, of the probe the script started: cmd ran nothing else.
+        const lines = output.split("\n").filter((line) => line !== "");
+        assert.equal(lines.length, 1, `output of ${JSON.stringify(args)}`);
+        const received = (JSON.parse(lines[0]) as string[]).slice(2);
+        // The script that quotes each passes on nine.
+        while (received.length > args.length && received.at(-1) === "") {
+          received.pop();
+        }
+        assert.deepEqual(received, args);
+        assert.equal(existsSync("file.txt"), false);
+      }
+    },
+  );
+}

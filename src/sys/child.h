@@ -28,6 +28,11 @@ inline constexpr int sigkill = SIGKILL;
 /// inherit this process's as it is.
 std::optional<std::vector<EnvVar>> child_environment(const SpawnOptions& options);
 
+/// Whether a string `options` gives the child holds a NUL, which no system
+/// call takes in one: the child would get the text before it. On Windows
+/// windows_command_line too.
+bool holds_nul(const SpawnOptions& options);
+
 /// The child's argv: `arg0`, or `program`, then `args`.
 std::vector<std::string> child_arguments(const SpawnOptions& options);
 

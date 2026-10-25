@@ -37,6 +37,9 @@
 //                         starts `sys_probe report <argument>` in <cwd>, its
 //                         argv[0] <arg0>, KOTA_PROBE_VALUE set to <value>,
 //                         and exits as it does
+//   spawn <program> [<argument>...]
+//                         starts <program> with the arguments, its streams
+//                         this one's, and exits as it does
 //   orphan                starts `sys_probe hang`, exit_with_parent, its
 //                         stdout this one's, prints {"pid": <its pid>} and
 //                         exits once its stdin ends, unless killed first
@@ -362,6 +365,12 @@ int main() {
             {.name = "KOTA_PROBE_VALUE", .value = arguments[3]}
         };
         return run(options);
+    }
+    if(command == "spawn" && arguments.size() >= 3) {
+        return run({
+            .program = arguments[2],
+            .args = std::vector<std::string>(arguments.begin() + 3, arguments.end()),
+        });
     }
     if(command == "orphan") {
         auto child = sys::spawn(hanging({.exit_with_parent = true}));
