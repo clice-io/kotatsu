@@ -12,6 +12,7 @@
 #include <system_error>
 
 #include "kota/fs/status.h"
+#include "kota/support/small_string.h"
 
 namespace kota::fs::posix {
 
@@ -20,13 +21,14 @@ inline std::error_code last_error() {
     return std::error_code(errno, std::generic_category());
 }
 
-/// `path` as the system calls take it, NUL-terminated; a NUL inside, which
-/// would cut it short, fails.
-inline std::expected<std::string, std::error_code> c_path(std::string_view path) {
+/// `path` as the system calls take it, through c_str(), on the stack when it
+/// is no longer than most paths are; a NUL inside, which would cut it short,
+/// fails.
+inline std::expected<small_string<256>, std::error_code> c_path(std::string_view path) {
     if(path.find('\0') != std::string_view::npos) {
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
-    return std::string(path);
+    return small_string<256>(path);
 }
 
 inline Status make_status(const struct stat& info) {
