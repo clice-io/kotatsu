@@ -488,6 +488,11 @@ std::error_code File::canonical(buffer_ref out) const {
     if(auto error = read_symlink(out, std::string_view(link, end))) {
         return error;
     }
+    // A pipe or a socket has a description such as pipe:[N] in place of a
+    // name.
+    if(!out.view().starts_with('/')) {
+        return std::make_error_code(std::errc::no_such_file_or_directory);
+    }
     // Linux keeps the name the file was opened by, marked " (deleted)" once
     // it went, though another hard link may still name the file. A file may
     // be named so too: the name is the file's while it leads to it.

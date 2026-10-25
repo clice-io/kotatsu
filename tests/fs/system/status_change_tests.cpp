@@ -127,6 +127,14 @@ ZEST_CASE(set_times_rounds_down) {
 #endif
 }
 
+ZEST_CASE(set_times_takes_the_earliest_time) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
+    // The file system keeps it, or the earliest time it holds.
+    ZEXPECT(!set_times(dir.file("file.txt"), {.mtime = Time::min()}));
+    ZEXPECT(mtime_of(dir.file("file.txt")) < at(0));
+}
+
 ZEST_CASE(set_times_of_nothing_fails) {
     test::TempDir dir;
     ZEXPECT(set_times(dir.file("missing"), {.mtime = first}) ==

@@ -33,8 +33,9 @@ struct DirEntry {
 
     /// Its status, as symlink_status() gives it. On Windows the listing
     /// holds it, as it was when listed, so that a large directory costs about
-    /// what a few statuses do, but no link count; elsewhere the system is
-    /// asked, through the directory, which stays open while an entry of it
+    /// what a few statuses do, but no link count. Elsewhere, and on a Windows
+    /// file system that lists no IDs (FAT), the system is asked when this is
+    /// called, through the directory, which stays open while an entry of it
     /// lives.
     std::expected<Status, std::error_code> status() const;
 
@@ -53,9 +54,10 @@ private:
 };
 
 /// The entries of a directory, `.` and `..` left out, in the order the
-/// system lists them, each read when it is asked for: a range to go through
-/// once, of entries, or of the error that ends it. Taking part of it
-/// (std::views::take) leaves the rest unread.
+/// system lists them, each read when the stream goes on to it: a range to go
+/// through once, of entries, or of the error that ends it. Taking part of it
+/// leaves the rest unread, but for the entry after it: std::views::take(n)
+/// reads n + 1, as it does of std::views::istream.
 class DirStream {
 public:
     class iterator {

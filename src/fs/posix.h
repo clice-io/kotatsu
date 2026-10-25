@@ -73,12 +73,19 @@ inline Status make_status(const struct stat& info) {
     const auto& ctime = info.st_ctim;
 #endif
     // A time nanoseconds do not hold, before 1677 or after 2262, is the
-    // nearest one they do.
+    // nearest one they do. Before 1970 a second moves into the nanoseconds,
+    // so that the earliest seconds do not overflow before they are added.
     auto time_of = [](const struct timespec& time) {
         using Time = std::chrono::sys_time<std::chrono::nanoseconds>;
+        std::int64_t seconds = time.tv_sec;
+        std::int64_t nanoseconds = time.tv_nsec;
+        if(seconds < 0) {
+            seconds += 1;
+            nanoseconds -= 1'000'000'000;
+        }
         std::int64_t since;
-        if(__builtin_mul_overflow(static_cast<std::int64_t>(time.tv_sec), 1'000'000'000, &since) ||
-           __builtin_add_overflow(since, static_cast<std::int64_t>(time.tv_nsec), &since)) {
+        if(__builtin_mul_overflow(seconds, 1'000'000'000, &since) ||
+           __builtin_add_overflow(since, nanoseconds, &since)) {
             return time.tv_sec < 0 ? Time::min() : Time::max();
         }
         return Time(std::chrono::nanoseconds(since));

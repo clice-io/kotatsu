@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <format>
 #include <iterator>
 #include <string>
 #include <string_view>
@@ -477,6 +478,21 @@ ZEST_CASE(canonical_spells_the_open_file_as_on_disk) {
 }
 #endif
 
+#ifndef _WIN32
+ZEST_CASE(canonical_of_a_pipe_fails) {
+    int ends[2];
+    ZASSERT(::pipe(ends) == 0);
+    auto file = File::open(std::format("/dev/fd/{}", ends[0]));
+    std::string opened;
+    auto error = file ? file->canonical(opened) : file.error();
+    ::close(ends[0]);
+    ::close(ends[1]);
+    ZEST_CONTEXT("{}", opened);
+    ZASSERT(file.has_value());
+    ZEXPECT(error == std::errc::no_such_file_or_directory);
+}
+#endif
+
 ZEST_CASE(canonical_of_a_closed_file_fails) {
     File file;
     std::string opened;
@@ -531,11 +547,12 @@ ZEST_CASE(into_descriptor_keeps_the_lock) {
     ZASSERT(fd.has_value());
     ZEXPECT(second->try_lock() == false);
 #ifdef _WIN32
+    // Windows releases a lock left on a closed handle in its own time.
     ZEXPECT(::_close(*fd) == 0);
 #else
     ZEXPECT(::close(*fd) == 0);
-#endif
     ZEXPECT(second->try_lock() == true);
+#endif
 }
 
 ZEST_CASE(into_descriptor_of_a_closed_file_fails) {

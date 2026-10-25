@@ -321,10 +321,17 @@ std::error_code set_times(std::string_view path, const FileTimes& times) {
         if(!time) {
             return timespec{.tv_sec = 0, .tv_nsec = UTIME_OMIT};
         }
-        auto since = time->time_since_epoch();
-        auto seconds = std::chrono::floor<std::chrono::seconds>(since);
-        return timespec{.tv_sec = static_cast<time_t>(seconds.count()),
-                        .tv_nsec = static_cast<long>((since - seconds).count())};
+        // Split in nanoseconds: the seconds of a time near the earliest
+        // would not convert back.
+        auto since = time->time_since_epoch().count();
+        auto seconds = since / 1'000'000'000;
+        auto nanoseconds = since % 1'000'000'000;
+        if(nanoseconds < 0) {
+            seconds -= 1;
+            nanoseconds += 1'000'000'000;
+        }
+        return timespec{.tv_sec = static_cast<time_t>(seconds),
+                        .tv_nsec = static_cast<long>(nanoseconds)};
     };
     posix::CPath c_path;
     if(auto error = c_path.assign(path)) {

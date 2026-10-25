@@ -180,6 +180,37 @@ ZEST_CASE(status_takes_times_past_what_nanoseconds_hold_at_the_nearest) {
     ZEXPECT(listed->mtime == Time::max());
 }
 
+#ifdef __linux__
+ZEST_CASE(status_takes_the_earliest_time_nanoseconds_hold) {
+    // tmpfs keeps times earlier than nanoseconds since 1970 hold, which
+    // disks' file systems do not.
+    std::error_code error;
+    if(!std::filesystem::is_directory("/dev/shm", error)) {
+        zest::skip();
+        return;
+    }
+    test::TempDir dir("/dev/shm");
+    test::write_text(dir.file("file.txt"), "text");
+    // Its seconds alone are past what nanoseconds hold.
+    timespec times[2] = {
+        {.tv_sec = 0,              .tv_nsec = UTIME_OMIT },
+        {.tv_sec = -9'223'372'037, .tv_nsec = 999'999'999}
+    };
+    struct stat kept;
+    ZASSERT(::utimensat(AT_FDCWD, dir.file("file.txt").c_str(), times, 0) == 0);
+    ZASSERT(::stat(dir.file("file.txt").c_str(), &kept) == 0);
+    if(kept.st_mtim.tv_sec != times[1].tv_sec || kept.st_mtim.tv_nsec != times[1].tv_nsec) {
+        // A tmpfs that brings it to the earliest time it keeps.
+        zest::skip();
+        return;
+    }
+    auto found = status(dir.file("file.txt"));
+    ZASSERT(found.has_value());
+    using Time = std::chrono::sys_time<std::chrono::nanoseconds>;
+    ZEXPECT(found->mtime == Time(std::chrono::nanoseconds(-9'223'372'036'000'000'001)));
+}
+#endif
+
 ZEST_CASE(status_tells_permissions) {
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "text");
