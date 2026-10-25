@@ -161,15 +161,14 @@ struct ChildSetup {
     int rtmax;
     /// The signals as exec leaves them, rather than all at their defaults.
     bool keep_signals;
-    /// What kotatsu changed, which a child keep_signals gets as it was.
-    bool sigpipe_was_default;
-    bool sigchld_was_ignored;
     /// The signal mask it starts with.
     sigset_t mask;
 
     /// The action exec leaves signal `signum` with: the default for one
     /// with a handler, which means nothing to another program, an ignored
-    /// one ignored; one kotatsu changed as it was.
+    /// one ignored; one kotatsu changed as it was. What kotatsu changed is
+    /// read here, after the fork, which took it with the actions it goes
+    /// with.
     void (*exec_action(int signum) const)(int) {
         struct sigaction action;
         ::sigaction(signum, nullptr, &action);
@@ -666,8 +665,6 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         .rtmin = SIGRTMIN,
         .rtmax = SIGRTMAX,
         .keep_signals = creation.keep_signals,
-        .sigpipe_was_default = sigpipe_was_default,
-        .sigchld_was_ignored = sigchld_was_ignored,
         .mask = {},
     };
     // A signal arriving before the child has reset its handlers would run

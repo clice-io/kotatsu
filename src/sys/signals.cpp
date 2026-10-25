@@ -20,8 +20,10 @@ void stop_auto_reaping() noexcept {
         return;
     }
     if(ignored) {
-        action.sa_handler = SIG_DFL;
+        // Before the action changes: a child started meanwhile that sees
+        // it changed sees this too.
         sigchld_was_ignored = true;
+        action.sa_handler = SIG_DFL;
     }
     action.sa_flags &= ~SA_NOCLDWAIT;
     ::sigaction(SIGCHLD, &action, nullptr);
@@ -33,9 +35,10 @@ void ignore_sigpipe() noexcept {
     struct sigaction action = {};
     ::sigaction(SIGPIPE, nullptr, &action);
     if(action.sa_handler == SIG_DFL) {
+        // Before the action changes, as stop_auto_reaping's.
+        sigpipe_was_default = true;
         action.sa_handler = SIG_IGN;
         ::sigaction(SIGPIPE, &action, nullptr);
-        sigpipe_was_default = true;
     }
 }
 
