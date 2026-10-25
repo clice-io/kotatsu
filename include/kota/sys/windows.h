@@ -21,7 +21,7 @@
 namespace kota::sys::windows {
 
 /// Writes into `out` `argument` as a Windows command line writes it, for the
-/// C runtime's rules (and split_command_line) to read back: as it is when it
+/// C runtime's rules (CommandLineRules::CRT) to read back: as it is when it
 /// is not empty and holds no space, tab, newline, vertical tab or quote; else
 /// in quotes, with each quote escaped and the backslashes before a quote or
 /// the closing one doubled.
@@ -33,6 +33,28 @@ void quote_argument(buffer_ref out, std::string_view argument);
 /// which no Windows file name does. Each argument after it is quoted by
 /// quote_argument.
 void join_command_line(buffer_ref out, string_list_ref arguments);
+
+/// The rules a command line is read by.
+enum class CommandLineRules : std::uint8_t {
+    /// The C runtime's since 2008, which a program reads its own by (Rust's
+    /// parser): the program ends at the first space or tab outside quotes,
+    /// every quote in it toggling them; after it, spaces and tabs outside
+    /// quotes separate arguments, 2n backslashes before a quote make n and
+    /// the quote toggles, 2n+1 make n and a literal quote, two quotes inside
+    /// quotes make one, and other backslashes are literal. An empty line has
+    /// no arguments, and one that starts with a blank an empty program.
+    CRT,
+    /// LLVM's cl::TokenizeWindowsCommandLine, which clang reads a compilation
+    /// database's commands and a response file by: each argument by the
+    /// CRT's rules for those after the program, none being the program, but
+    /// that carriage returns, newlines and NULs separate them too, and that
+    /// separators before the first make no empty one.
+    Clang,
+    /// LLVM's cl::TokenizeWindowsCommandLineFull: Clang's rules, but that the
+    /// first argument, and each after one that a newline ends, is a program,
+    /// read without escapes, two quotes inside quotes still making one.
+    ClangFull,
+};
 
 /// The arguments of a command line, as split_command_line() gives them: a
 /// view that reads the line as it goes, each argument a view of the
@@ -64,7 +86,7 @@ public:
     private:
         friend class split_command_line_view;
 
-        explicit iterator(std::string_view line);
+        iterator(std::string_view line, CommandLineRules rules);
 
         /// What is left of the line after the argument.
         std::string_view rest;
@@ -72,7 +94,9 @@ public:
         /// The argument, its quotes and escapes read.
         small_string<256> argument;
 
-        /// Whether the next argument is the program, read by its own rule.
+        CommandLineRules rules = CommandLineRules::CRT;
+
+        /// Whether the next argument is a program, read by its own rule.
         bool program = true;
 
         /// Whether the argument is past the last.
@@ -81,10 +105,11 @@ public:
 
     split_command_line_view() = default;
 
-    explicit split_command_line_view(std::string_view line) : line(line) {}
+    split_command_line_view(std::string_view line, CommandLineRules rules) :
+        line(line), rules(rules) {}
 
     iterator begin() const {
-        return iterator(line);
+        return iterator(line, rules);
     }
 
     std::default_sentinel_t end() const {
@@ -93,17 +118,15 @@ public:
 
 private:
     std::string_view line;
+
+    CommandLineRules rules = CommandLineRules::CRT;
 };
 
-/// The arguments of a command line, by the rules of the C runtime since 2008
-/// (Rust's parser): the program ends at the first space or tab outside
-/// quotes, every quote in it toggling them; after it, spaces and tabs outside
-/// quotes separate arguments, 2n backslashes before a quote make n and the
-/// quote toggles, 2n+1 make n and a literal quote, two quotes inside quotes
-/// make one, and other backslashes are literal. No wildcard is expanded. An
-/// empty line has no arguments.
-inline split_command_line_view split_command_line(std::string_view line) {
-    return split_command_line_view(line);
+/// The arguments of command line `line`, read by `rules`. No wildcard is
+/// expanded.
+inline split_command_line_view split_command_line(std::string_view line,
+                                                  CommandLineRules rules = CommandLineRules::CRT) {
+    return split_command_line_view(line, rules);
 }
 
 /// The name of NTSTATUS `status` ("STATUS_DLL_NOT_FOUND" for 0xC0000135),
