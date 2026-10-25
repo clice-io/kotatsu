@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -324,6 +325,13 @@ ZEST_CASE(spawn_with_a_bad_descriptor_fails) {
     child = spawn(options);
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::invalid_argument);
+#ifdef _WIN32
+    // INVALID_HANDLE_VALUE, which names this process too, is no file.
+    options.streams[1] = {.kind = Stdio::Kind::File, .file = INVALID_HANDLE_VALUE};
+    child = spawn(options);
+    ZASSERT(!child.has_value());
+    ZEXPECT(child.error() == std::errc::invalid_argument);
+#endif
 }
 
 ZEST_CASE(stdout_goes_to_a_file) {
@@ -941,6 +949,36 @@ ZEST_CASE(windows_inherit_handles_takes_none_of_another_childs) {
     auto status = reading->wait();
     ZASSERT(status.has_value());
     ZEXPECT(status->success());
+}
+
+// A program may be given a standard handle that is none, closed or never
+// valid: a child inheriting it starts all the same.
+ZEST_CASE(spawn_inheriting_a_stdin_not_open_runs_the_child) {
+    /// This process's stdin set to `handle`, put back when this goes.
+    struct ScopedStdin {
+        explicit ScopedStdin(HANDLE handle) {
+            ::SetStdHandle(STD_INPUT_HANDLE, handle);
+        }
+
+        ScopedStdin(const ScopedStdin&) = delete;
+        ScopedStdin& operator=(const ScopedStdin&) = delete;
+
+        ~ScopedStdin() {
+            ::SetStdHandle(STD_INPUT_HANDLE, previous);
+        }
+
+        HANDLE previous = ::GetStdHandle(STD_INPUT_HANDLE);
+    };
+
+    // No process has a handle as high: they go by fours, 2^24 of them at most.
+    auto* never_valid = reinterpret_cast<HANDLE>(std::uintptr_t(0x7FFF'FFFC));
+    for(HANDLE handle: {HANDLE(nullptr), INVALID_HANDLE_VALUE, never_valid}) {
+        ZEST_CONTEXT("stdin {}", handle);
+        ScopedStdin given(handle);
+        auto options = shell("exit 3");
+        options.streams[0] = Stdio::inherit();
+        ZEXPECT(status_of(options).code == 3);
+    }
 }
 #endif
 
