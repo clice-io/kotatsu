@@ -115,8 +115,11 @@ std::expected<std::vector<CPUCore>, std::error_code> cpu_cores() {
     natural_t count = 0;
     processor_info_array_t info = nullptr;
     mach_msg_type_number_t info_count = 0;
-    // Of this very host, it cannot fail.
-    ::host_processor_info(::mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &count, &info, &info_count);
+    // Of this very host, it cannot fail. Each mach_host_self() adds a
+    // reference to the right, given back after.
+    auto host = ::mach_host_self();
+    ::host_processor_info(host, PROCESSOR_CPU_LOAD_INFO, &count, &info, &info_count);
+    ::mach_port_deallocate(::mach_task_self(), host);
     char model[256] = {};
     auto model_size = sizeof(model);
     ::sysctlbyname("machdep.cpu.brand_string", model, &model_size, nullptr, 0);

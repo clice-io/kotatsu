@@ -5,6 +5,8 @@
 
 #ifdef __linux__
 #include <sched.h>
+#elif defined(__APPLE__)
+#include <mach/mach.h>
 #endif
 
 #include "kota/zest/macro.h"
@@ -62,6 +64,27 @@ ZEST_CASE(parallelism_is_at_most_the_cores) {
     ZEXPECT(parallelism() >= 1U);
     ZEXPECT(parallelism() <= cores->size());
 }
+
+#ifdef __APPLE__
+// Each mach_host_self() adds a reference to this task's send right to the
+// host port.
+ZEST_CASE(memory_and_cpu_cores_give_back_the_host_port) {
+    // This test's own reference keeps the right while it is counted.
+    auto host = ::mach_host_self();
+    mach_port_urefs_t before = 0;
+    ZASSERT(::mach_port_get_refs(::mach_task_self(), host, MACH_PORT_RIGHT_SEND, &before) ==
+            KERN_SUCCESS);
+    for(int i = 0; i < 100; ++i) {
+        ZASSERT(sys::memory().has_value());
+        ZASSERT(cpu_cores().has_value());
+    }
+    mach_port_urefs_t after = 0;
+    ZASSERT(::mach_port_get_refs(::mach_task_self(), host, MACH_PORT_RIGHT_SEND, &after) ==
+            KERN_SUCCESS);
+    ::mach_port_deallocate(::mach_task_self(), host);
+    ZEXPECT(after == before);
+}
+#endif
 
 ZEST_CASE(cpu_cores_have_run) {
     auto cores = cpu_cores();

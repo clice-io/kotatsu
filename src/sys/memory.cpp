@@ -239,10 +239,12 @@ std::expected<Memory, std::error_code> memory([[maybe_unused]] std::span<const P
     vm_statistics64_data_t vm{};
     mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
     vm_size_t page = 0;
-    // Of this very host, they cannot fail.
+    // Of this very host, they cannot fail. Each mach_host_self() adds a
+    // reference to the right, given back after.
     auto host = ::mach_host_self();
     ::host_statistics64(host, HOST_VM_INFO64, reinterpret_cast<host_info64_t>(&vm), &count);
     ::host_page_size(host, &page);
+    ::mach_port_deallocate(::mach_task_self(), host);
     detail::MacMemory counts{
         .total = total,
         .wired = std::uint64_t(vm.wire_count) * page,
