@@ -223,9 +223,6 @@ struct ChildSetup {
                 }
             }
         }
-        // The flags of each stream that was non-blocking, which it gets back
-        // when the exec fails: the parent shares it.
-        std::array<int, 3> nonblocking = {-1, -1, -1};
         for(int target = 0; target < 3; ++target) {
             int fd = fds[target];
             if(fd == closed_stream) {
@@ -246,9 +243,13 @@ struct ChildSetup {
             if(fd == target ? ::fcntl(fd, F_SETFD, 0) < 0 : ::dup2(fd, target) < 0) {
                 fail_in_child(error_fd);
             }
-            // Shared with whoever else has it open, as libuv does: a child
-            // given a non-blocking stream would see EAGAIN.
-            int flags = ::fcntl(target, F_GETFL);
+        }
+        // Shared with whoever else has it open, as libuv does: a child given
+        // a non-blocking stream would see EAGAIN. Last, so that only the exec
+        // fails after, and gives the flags back: the parent shares them.
+        std::array<int, 3> nonblocking = {-1, -1, -1};
+        for(int target = 0; target < 3; ++target) {
+            int flags = fds[target] < 0 ? -1 : ::fcntl(target, F_GETFL);
             if(flags >= 0 && (flags & O_NONBLOCK)) {
                 ::fcntl(target, F_SETFL, flags & ~O_NONBLOCK);
                 nonblocking[target] = flags;
@@ -275,7 +276,16 @@ struct ChildSetup {
 /// forbids it.
 int open_pidfd([[maybe_unused]] pid_t pid) {
 #ifdef SYS_pidfd_open
-    return static_cast<int>(::syscall(SYS_pidfd_open, pid, 0));
+    int fd = static_cast<int>(::syscall(SYS_pidfd_open, pid, 0));
+    // Above the standard streams, as connected_pair's ends: in a process
+    // that closed one it would take its number, and reach a child that
+    // inherits the stream.
+    if(fd >= 0 && fd < 3) {
+        int moved = ::fcntl(fd, F_DUPFD_CLOEXEC, 3);
+        ::close(fd);
+        fd = moved;
+    }
+    return fd;
 #else
     return -1;
 #endif
@@ -362,8 +372,9 @@ std::error_code Child::reap(bool block) {
             lost = errno == ECHILD;
             return errno_code();
         }
-        // A stop of a child that is traced, which wait4 reports anyway,
-        // ends nothing.
+        // A traced child's stop, which wait4 reports to its tracer, this
+        // process, anyway, ends nothing; it is taken all the same, a program
+        // that traces its own children waiting for them itself.
         if(reaped > 0 && !WIFSTOPPED(status)) {
             exited = exit_status_of(status, usage);
             return {};
@@ -582,7 +593,12 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
                                                    0));
         } else if(fd == target) {
             check(posix_spawn_file_actions_addinherit_np(&actions, fd));
-        } else if(fd != closed_stream) {
+        } else if(fd == closed_stream) {
+            // Closed whatever another thread opened there meanwhile: open
+            // first, as a close of what is not open fails the spawn.
+            check(posix_spawn_file_actions_addopen(&actions, target, "/dev/null", O_RDONLY, 0));
+            check(posix_spawn_file_actions_addclose(&actions, target));
+        } else {
             copies[target] = Descriptor(::fcntl(fd, F_DUPFD_CLOEXEC, 3));
             if(copies[target].fd < 0) {
                 return std::unexpected(errno_code());

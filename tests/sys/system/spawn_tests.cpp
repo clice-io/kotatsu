@@ -836,25 +836,26 @@ ZEST_CASE(keep_signals_gives_back_the_sigchld_spawn_stopped_ignoring) {
 }
 #endif
 
+/// This process's stdin closed until this goes, which puts it back.
+struct ScopedClosedStdin {
+    ScopedClosedStdin() : saved(::fcntl(0, F_DUPFD_CLOEXEC, 3)) {
+        ZASSERT(saved >= 0);
+        ::close(0);
+    }
+
+    ScopedClosedStdin(const ScopedClosedStdin&) = delete;
+    ScopedClosedStdin& operator=(const ScopedClosedStdin&) = delete;
+
+    ~ScopedClosedStdin() {
+        ::dup2(saved, 0);
+        ::close(saved);
+    }
+
+    int saved;
+};
+
 // As a program may be started with one.
 ZEST_CASE(inherit_of_a_closed_stream_closes_it_in_the_child) {
-    struct ScopedClosedStdin {
-        ScopedClosedStdin() : saved(::fcntl(0, F_DUPFD_CLOEXEC, 3)) {
-            ZASSERT(saved >= 0);
-            ::close(0);
-        }
-
-        ScopedClosedStdin(const ScopedClosedStdin&) = delete;
-        ScopedClosedStdin& operator=(const ScopedClosedStdin&) = delete;
-
-        ~ScopedClosedStdin() {
-            ::dup2(saved, 0);
-            ::close(saved);
-        }
-
-        int saved;
-    };
-
     std::expected<ExitStatus, std::error_code> status;
     {
         ScopedClosedStdin closed;
@@ -870,6 +871,27 @@ ZEST_CASE(inherit_of_a_closed_stream_closes_it_in_the_child) {
     ZASSERT(status.has_value());
     ZEXPECT(status->code == 1);
 }
+
+#ifdef __linux__
+// A child's pidfd would take the number of a stream this process closed, and
+// a child inheriting the stream would get it.
+ZEST_CASE(pidfd_takes_no_closed_stream) {
+    std::expected<ExitStatus, std::error_code> status;
+    {
+        ScopedClosedStdin closed;
+        auto first = spawn(shell("exit 0"));
+        ZASSERT(first.has_value());
+        auto options = shell("test -e /proc/self/fd/0 && exit 1; exit 3");
+        options.streams[0] = Stdio::inherit();
+        auto second = spawn(options);
+        ZASSERT(second.has_value());
+        status = second->wait();
+        ZEXPECT(first->wait().has_value());
+    }
+    ZASSERT(status.has_value());
+    ZEXPECT(status->code == 3);
+}
+#endif
 
 // The child clears O_NONBLOCK of a stream it is given, which this process
 // shares, as libuv's does: one that never ran leaves it as it was.
