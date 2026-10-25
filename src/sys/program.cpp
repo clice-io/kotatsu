@@ -221,14 +221,15 @@ std::error_code find_program(buffer_ref out, std::string_view name, const Progra
     if(!search.directories.empty()) {
         return find(out, name, search.directories, search.extensions, false);
     }
+    // Unset, it is empty on Windows, and confstr(_CS_PATH)'s directories on
+    // POSIX.
     small_string<1024> path;
-    if(!get_env(path, "PATH")) {
-#ifdef _WIN32
-        path.clear();
-#else
+    [[maybe_unused]] const bool set = get_env(path, "PATH");
+#ifndef _WIN32
+    if(!set) {
         path.assign(default_path());
-#endif
     }
+#endif
     return find(out, name, split_paths(path), search.extensions, false);
 }
 

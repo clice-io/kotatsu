@@ -1,3 +1,4 @@
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -19,6 +20,15 @@ std::string quoted(std::string_view argument) {
     std::string out;
     quote_argument(out, argument);
     return out;
+}
+
+/// The arguments split_command_line reads in `line`.
+Arguments split(std::string_view line) {
+    Arguments arguments;
+    for(auto argument: split_command_line(line)) {
+        arguments.emplace_back(argument);
+    }
+    return arguments;
 }
 
 /// The command line join_command_line writes of `arguments`.
@@ -68,60 +78,76 @@ ZEST_CASE(quote_and_join_write_over_what_the_buffer_held) {
     ZEXPECT(std::string_view(out) == R"(C:\x.exe "a b")");
 }
 
+ZEST_CASE(split_is_an_input_view) {
+    ZSTATIC_EXPECT(std::ranges::view<split_command_line_view>);
+    ZSTATIC_EXPECT(std::ranges::input_range<split_command_line_view>);
+}
+
+// An argument views its iterator: a copy keeps its own.
+ZEST_CASE(split_iterator_copies_keep_their_argument) {
+    auto view = split_command_line(R"(p "a b" c)");
+    auto it = view.begin();
+    ++it;
+    auto copy = it;
+    ++it;
+    ZEXPECT(*copy == "a b");
+    ZEXPECT(*it == "c");
+}
+
 ZEST_CASE(split_reads_the_program_by_its_own_rule) {
     // Backslashes are literal in it, and every quote toggles.
-    ZEXPECT(split_command_line(R"("C:\dir\"x y)") == Arguments{R"(C:\dir\x)", "y"});
-    ZEXPECT(split_command_line(R"(C:\a" "b\c.exe arg)") == Arguments{R"(C:\a b\c.exe)", "arg"});
-    ZEXPECT(split_command_line(R"("" a)") == Arguments{"", "a"});
+    ZEXPECT(split(R"("C:\dir\"x y)") == Arguments{R"(C:\dir\x)", "y"});
+    ZEXPECT(split(R"(C:\a" "b\c.exe arg)") == Arguments{R"(C:\a b\c.exe)", "arg"});
+    ZEXPECT(split(R"("" a)") == Arguments{"", "a"});
 }
 
 ZEST_CASE(split_separates_on_blanks_outside_quotes) {
-    ZEXPECT(split_command_line("p  a\t b ") == Arguments{"p", "a", "b"});
-    ZEXPECT(split_command_line(R"(p "a b" c)") == Arguments{"p", "a b", "c"});
-    ZEXPECT(split_command_line(R"(p a"b c"d)") == Arguments{"p", "ab cd"});
+    ZEXPECT(split("p  a\t b ") == Arguments{"p", "a", "b"});
+    ZEXPECT(split(R"(p "a b" c)") == Arguments{"p", "a b", "c"});
+    ZEXPECT(split(R"(p a"b c"d)") == Arguments{"p", "ab cd"});
 }
 
 ZEST_CASE(split_keeps_empty_quoted_arguments) {
-    ZEXPECT(split_command_line(R"(p "" "")") == Arguments{"p", "", ""});
+    ZEXPECT(split(R"(p "" "")") == Arguments{"p", "", ""});
     // Quotes still open at the end.
-    ZEXPECT(split_command_line(R"(p ")") == Arguments{"p", ""});
-    ZEXPECT(split_command_line(R"(p "abc)") == Arguments{"p", "abc"});
+    ZEXPECT(split(R"(p ")") == Arguments{"p", ""});
+    ZEXPECT(split(R"(p "abc)") == Arguments{"p", "abc"});
 }
 
 ZEST_CASE(split_halves_backslashes_before_a_quote) {
-    ZEXPECT(split_command_line(R"(p a\\"b c")") == Arguments{"p", R"(a\b c)"});
-    ZEXPECT(split_command_line(R"(p a\\\"b)") == Arguments{"p", R"(a\"b)"});
-    ZEXPECT(split_command_line(R"(p a\\b)") == Arguments{"p", R"(a\\b)"});
-    ZEXPECT(split_command_line(R"(p "C:\dir\\")") == Arguments{"p", R"(C:\dir\)"});
+    ZEXPECT(split(R"(p a\\"b c")") == Arguments{"p", R"(a\b c)"});
+    ZEXPECT(split(R"(p a\\\"b)") == Arguments{"p", R"(a\"b)"});
+    ZEXPECT(split(R"(p a\\b)") == Arguments{"p", R"(a\\b)"});
+    ZEXPECT(split(R"(p "C:\dir\\")") == Arguments{"p", R"(C:\dir\)"});
 }
 
 ZEST_CASE(split_reads_two_quotes_in_quotes_as_one) {
-    ZEXPECT(split_command_line(R"(p "a""b")") == Arguments{"p", R"(a"b)"});
-    ZEXPECT(split_command_line(R"(p "a""")") == Arguments{"p", R"(a")"});
+    ZEXPECT(split(R"(p "a""b")") == Arguments{"p", R"(a"b)"});
+    ZEXPECT(split(R"(p "a""")") == Arguments{"p", R"(a")"});
 }
 
 // The rule of the CRT since 2008, which an older one read as `a"b` and ` c`.
 ZEST_CASE(split_reads_two_quotes_in_quotes_and_stays_in_them) {
-    ZEXPECT(split_command_line(R"(p "a""b c")") == Arguments{"p", R"(a"b c)"});
+    ZEXPECT(split(R"(p "a""b c")") == Arguments{"p", R"(a"b c)"});
 }
 
 ZEST_CASE(split_reads_an_empty_program_before_a_blank) {
-    ZEXPECT(split_command_line(" p") == Arguments{"", "p"});
-    ZEXPECT(split_command_line("   ") == Arguments{""});
+    ZEXPECT(split(" p") == Arguments{"", "p"});
+    ZEXPECT(split("   ") == Arguments{""});
     // Quotes still open run to the end.
-    ZEXPECT(split_command_line(R"("C:\a b)") == Arguments{R"(C:\a b)"});
+    ZEXPECT(split(R"("C:\a b)") == Arguments{R"(C:\a b)"});
 }
 
 ZEST_CASE(split_keeps_backslashes_at_the_end) {
-    ZEXPECT(split_command_line(R"(p a\\)") == Arguments{"p", R"(a\\)"});
+    ZEXPECT(split(R"(p a\\)") == Arguments{"p", R"(a\\)"});
 }
 
 ZEST_CASE(split_expands_no_wildcard) {
-    ZEXPECT(split_command_line("p *.cpp 'foo*' ?") == Arguments{"p", "*.cpp", "'foo*'", "?"});
+    ZEXPECT(split("p *.cpp 'foo*' ?") == Arguments{"p", "*.cpp", "'foo*'", "?"});
 }
 
 ZEST_CASE(split_of_an_empty_line_has_no_arguments) {
-    ZEXPECT(split_command_line("").empty());
+    ZEXPECT(split("").empty());
 }
 
 ZEST_CASE(split_reads_back_what_join_writes) {
@@ -137,7 +163,7 @@ ZEST_CASE(split_reads_back_what_join_writes) {
         "caf\xC3\xA9 \xF0\x9F\x98\x80",
         "*",
     };
-    ZEXPECT(split_command_line(joined(arguments)) == arguments);
+    ZEXPECT(split(joined(arguments)) == arguments);
 }
 
 };  // ZEST_SUITE(sys_windows_command_line)

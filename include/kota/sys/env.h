@@ -54,7 +54,7 @@ bool env_name_equal(std::string_view left, std::string_view right);
 /// The entries of a list of paths such as PATH, as split_paths() gives
 /// them: a view that reads the list as it goes, each entry a view of the
 /// list, or of the iterator for a Windows entry its quotes are left out of,
-/// which holds until the iterator moves on.
+/// which holds until that iterator moves on or goes.
 class split_paths_view : public std::ranges::view_interface<split_paths_view> {
 public:
     class iterator {
@@ -66,7 +66,7 @@ public:
         iterator() = default;
 
         std::string_view operator*() const {
-            return entry;
+            return quoted ? std::string_view(unquoted) : entry;
         }
 
         iterator& operator++();
@@ -89,10 +89,14 @@ public:
 
         fs::path::Style style = fs::path::native_style;
 
+        /// The entry as the list has it.
         std::string_view entry;
 
         /// A Windows entry that had quotes, without them.
         small_string<256> unquoted;
+
+        /// Whether the entry had quotes: it is `unquoted`.
+        bool quoted = false;
 
         /// Whether the entry is past the last.
         bool done = false;

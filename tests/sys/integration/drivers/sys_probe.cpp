@@ -33,10 +33,10 @@
 //   report <argument>     prints {"arguments": <what sys::arguments reads>,
 //                         "cwd": <its working directory>, "value": <the
 //                         value of KOTA_PROBE_VALUE>}
-//   relay <cwd> <value> <argument>
-//                         starts `sys_probe report <argument>` in <cwd>,
-//                         KOTA_PROBE_VALUE set to <value>, and exits as it
-//                         does
+//   relay <cwd> <value> <argument> <arg0>
+//                         starts `sys_probe report <argument>` in <cwd>, its
+//                         argv[0] <arg0>, KOTA_PROBE_VALUE set to <value>,
+//                         and exits as it does
 //   orphan                starts `sys_probe hang`, exit_with_parent, its
 //                         stdout this one's, prints {"pid": <its pid>} and
 //                         exits once its stdin ends, unless killed first
@@ -259,6 +259,10 @@ int run(const kota::sys::SpawnOptions& options) {
     if(!status) {
         return fail("wait", status.error());
     }
+    // A signal's end, as a shell tells it.
+    if(status->term_signal != 0) {
+        return 128 + status->term_signal;
+    }
     return static_cast<int>(status->code);
 }
 
@@ -349,8 +353,9 @@ int main() {
                                set ? json(value) : "null"));
         return 0;
     }
-    if(command == "relay" && arguments.size() == 5) {
+    if(command == "relay" && arguments.size() == 6) {
         auto options = probe({"report", arguments[4]});
+        options.arg0 = arguments[5];
         options.cwd = arguments[2];
         options.env_changes = {
             {.name = "KOTA_PROBE_VALUE", .value = arguments[3]}

@@ -207,27 +207,26 @@ split_paths_view::iterator& split_paths_view::iterator::operator++() {
     }
     bool windows = style == fs::path::Style::Windows;
     // The end of the entry: the first separator outside quotes.
-    bool quoted = false;
-    bool quotes = false;
+    bool inside = false;
+    quoted = false;
     std::size_t end = 0;
     for(; end < rest.size(); ++end) {
         char c = rest[end];
         if(windows && c == '"') {
-            quoted = !quoted;
-            quotes = true;
-        } else if(c == (windows ? ';' : ':') && !quoted) {
+            inside = !inside;
+            quoted = true;
+        } else if(c == (windows ? ';' : ':') && !inside) {
             break;
         }
     }
     entry = rest.substr(0, end);
-    if(quotes) {
+    if(quoted) {
         unquoted.clear();
         for(char c: entry) {
             if(c != '"') {
                 unquoted.push_back(c);
             }
         }
-        entry = unquoted;
     }
     last = end == rest.size();
     rest.remove_prefix(std::min(end + 1, rest.size()));

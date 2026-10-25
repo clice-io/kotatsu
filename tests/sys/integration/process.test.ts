@@ -5,9 +5,10 @@
 //   quotes, backslashes and blanks; on Windows, where the program reads them
 //   from its command line, by the CRT's rules and without wildcard expansion;
 // - its environment's values, non-ASCII included, and its parent, the test;
-// - its executable's path under the name the file has now, and a copy of it
-//   started through self_executable after the file was renamed, and on Linux
-//   removed;
+// - its executable's path under the name the file has now, none once the
+//   file was removed or replaced, and a copy of it started through
+//   self_executable after the file was renamed, and on Linux removed or
+//   replaced;
 // - another process's priority, set and read back, and its memory;
 // - on Linux and macOS the title it sets is what ps shows, and its own
 //   arguments read the same after;
@@ -120,7 +121,8 @@ async function movable(
   t: TestContext,
 ): Promise<{ driver: Driver; path: string }> {
   const dir = mkdtempSync(join(tmpdir(), "kota-moved-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // A scanner may hold a program that just ran a moment.
+  t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }));
   const path = join(dir, `first${exe}`);
   copyFileSync(driverPath("sys_probe"), path);
   const driver = await Driver.spawn(t, "sys_probe", ["moved"], {
@@ -146,24 +148,50 @@ test("executable_path_follows_a_rename", async (t) => {
   assert.equal(output.code, 0);
 });
 
+/**
+ * What a copy of sys_probe running `moved` tells once `update` removed its
+ * file or put another in its place: the path names the program no more.
+ */
+async function afterUpdate(
+  t: TestContext,
+  update: (path: string) => void,
+): Promise<Moved> {
+  const { driver, path } = await movable(t);
+  const lines = driver.jsonLines();
+  assert.equal(await lines.receive(), "ready");
+  update(path);
+  driver.stdin.end();
+  const output = (await lines.receive()) as Moved;
+  await driver.expectExit(0);
+  return output;
+}
+
+const noRemoval = {
+  skip:
+    process.platform === "win32" &&
+    "Windows removes no file a program runs from",
+};
+
+// Linux starts the image itself still; macOS has nothing to start it by.
+const restarted = process.platform === "linux" ? 0 : null;
+
+test("executable_path_fails_once_the_file_is_removed", noRemoval, async (t) => {
+  const output = await afterUpdate(t, (path) => rmSync(path));
+  assert.equal(output.path, null);
+  assert.equal(output.code, restarted);
+});
+
 test(
-  "self_executable_outlives_a_removal_on_linux",
-  {
-    skip:
-      process.platform === "win32" &&
-      "Windows removes no file a program runs from",
-  },
+  "executable_path_fails_once_the_file_is_replaced",
+  noRemoval,
   async (t) => {
-    const { driver, path } = await movable(t);
-    const lines = driver.jsonLines();
-    assert.equal(await lines.receive(), "ready");
-    rmSync(path);
-    driver.stdin.end();
-    const output = (await lines.receive()) as Moved;
-    await driver.expectExit(0);
+    const output = await afterUpdate(t, (path) => {
+      const update = `${path}.new`;
+      copyFileSync(driverPath("sys_probe"), update);
+      renameSync(update, path);
+    });
     assert.equal(output.path, null);
-    // Linux starts the image itself; macOS has nothing to start it by.
-    assert.equal(output.code, process.platform === "linux" ? 0 : null);
+    assert.equal(output.code, restarted);
   },
 );
 

@@ -1,4 +1,3 @@
-#include <filesystem>
 #include <memory>
 #include <print>
 #include <string>
@@ -7,6 +6,7 @@
 #include <vector>
 
 #include "kota/ipc/codec/json.h"
+#include "kota/sys/process.h"
 #include "kota/async/async.h"
 
 namespace ipc = kota::ipc;
@@ -211,6 +211,10 @@ int main(int argc, char** argv) {
         return run_worker();
     }
 
-    auto self_path = std::filesystem::absolute(argv[0]).string();
+    std::string self_path;
+    if(auto error = kota::sys::self_executable(self_path)) {
+        std::println(stderr, "cannot find this program: {}", error.message());
+        return 1;
+    }
     return run_parent(std::move(self_path));
 }

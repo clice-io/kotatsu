@@ -124,7 +124,10 @@ const std::vector<std::string>& arguments() {
 #ifdef _WIN32
         std::string text;
         from_utf16(text, std::wstring_view(::GetCommandLineW()));
-        auto line = windows::split_command_line(text);
+        std::vector<std::string> line;
+        for(auto argument: windows::split_command_line(text)) {
+            line.emplace_back(argument);
+        }
         // A program started with an empty command line has not even its name
         // in it: its executable stands for argv[0], as in Rust.
         if(line.empty()) {

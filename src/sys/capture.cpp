@@ -1,5 +1,7 @@
 #include <array>
 #include <cstddef>
+#include <memory>
+#include <string_view>
 #include <utility>
 
 #include "child.h"
@@ -31,21 +33,18 @@ struct Reader {
 
     OVERLAPPED overlapped{};
 
-    /// Where the read under way writes in `sink`.
-    std::size_t at = 0;
+    /// What the read under way writes, appended to `sink` once it is done:
+    /// the other reader may resize the same buffer meanwhile.
+    std::unique_ptr<char[]> bytes = std::make_unique_for_overwrite<char[]>(chunk);
 
     bool pending = false;
 
-    bool done = false;
-
     /// Starts the next read: an error when it cannot.
     std::error_code start() {
-        at = sink.size();
-        auto chars = sink.resize(at + chunk);
         overlapped = {};
         overlapped.hEvent = event.handle;
         // One that completes at once signals the event as well.
-        if(::ReadFile(pipe.handle, chars.data() + at, chunk, nullptr, &overlapped) ||
+        if(::ReadFile(pipe.handle, bytes.get(), chunk, nullptr, &overlapped) ||
            ::GetLastError() == ERROR_IO_PENDING) {
             pending = true;
             return {};
@@ -60,21 +59,19 @@ struct Reader {
         if(!::GetOverlappedResult(pipe.handle, &overlapped, &count, FALSE)) {
             return end(::GetLastError());
         }
-        sink.resize(at + count);
+        sink.append(std::string_view(bytes.get(), count));
         return start();
     }
 
     /// The end of the pipe, or the error that ended a read early.
-    std::error_code end(DWORD error) {
-        sink.resize(at);
-        done = true;
+    static std::error_code end(DWORD error) {
         return error == ERROR_BROKEN_PIPE || error == ERROR_HANDLE_EOF
                    ? std::error_code()
                    : fs::windows::to_error_code(error);
     }
 
     ~Reader() {
-        // The read under way writes into the buffer until it is done.
+        // The read under way writes into `bytes` until it is done.
         if(pending) {
             ::CancelIoEx(pipe.handle, &overlapped);
             DWORD count = 0;
@@ -138,6 +135,7 @@ std::error_code read_both(Child& child, buffer_ref out, buffer_ref err) {
         }
     } closer{polls};
 
+    auto bytes = std::make_unique_for_overwrite<char[]>(chunk);
     while(polls[0].fd >= 0 || polls[1].fd >= 0) {
         if(::poll(polls.data(), polls.size(), -1) < 0) {
             if(errno == EINTR) {
@@ -149,11 +147,9 @@ std::error_code read_both(Child& child, buffer_ref out, buffer_ref err) {
             if(polls[i].fd < 0 || polls[i].revents == 0) {
                 continue;
             }
-            auto at = sinks[i].size();
-            auto chars = sinks[i].resize(at + chunk);
-            auto count = ::read(polls[i].fd, chars.data() + at, chunk);
-            sinks[i].resize(at + static_cast<std::size_t>(count > 0 ? count : 0));
+            auto count = ::read(polls[i].fd, bytes.get(), chunk);
             if(count > 0) {
+                sinks[i].append(std::string_view(bytes.get(), static_cast<std::size_t>(count)));
                 continue;
             }
             if(count < 0) {
@@ -172,26 +168,39 @@ std::error_code read_both(Child& child, buffer_ref out, buffer_ref err) {
 
 }  // namespace
 
-std::expected<ExitStatus, std::error_code> capture(SpawnOptions options,
-                                                   buffer_ref out,
-                                                   buffer_ref err) {
+std::expected<ExitStatus, std::error_code> capture(buffer_ref out,
+                                                   buffer_ref err,
+                                                   SpawnOptions options) {
     options.streams = {Stdio::ignore(), Stdio::pipe(), Stdio::pipe()};
     auto child = spawn(options);
     if(!child) {
         return std::unexpected(child.error());
     }
+
+    // Ends the child unless its streams were read to their end, and its
+    // group with it when it leads one: what it started may hold the pipes.
+    struct Ender {
+        Child& child;
+
+        bool group;
+
+        bool read = false;
+
+        ~Ender() {
+            if(read) {
+                return;
+            }
+            [[maybe_unused]] auto killed = group ? child.kill_tree() : child.kill();
+            [[maybe_unused]] auto reaped = child.wait();
+        }
+    } ender{*child, options.creation.process_group || options.creation.detached};
+
     out.clear();
     err.clear();
     if(auto error = read_both(*child, out, err)) {
-        // What it started may hold the pipes it was writing: a group goes
-        // as a whole.
-        if(options.creation.process_group || options.creation.detached) {
-            [[maybe_unused]] auto killed = child->kill_tree();
-        }
-        [[maybe_unused]] auto killed = child->kill();
-        [[maybe_unused]] auto reaped = child->wait();
         return std::unexpected(error);
     }
+    ender.read = true;
     return child->wait();
 }
 

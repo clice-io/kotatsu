@@ -62,6 +62,8 @@ struct Stdio {
         return {.kind = Kind::File, .file = file.native_handle()};
     }
 
+    /// A pipe in the direction of its slot: the child reads stdin's, and
+    /// writes stdout's and stderr's.
     static Stdio pipe() {
         return {.kind = Kind::Pipe};
     }
@@ -132,7 +134,9 @@ struct SpawnOptions {
     /// The arguments after argv[0].
     std::vector<std::string> args = {};
 
-    /// argv[0], which need not be `program`; `program` when unset.
+    /// argv[0], which need not be `program`; `program` when unset. On
+    /// Windows it holds no quote, which a command line has no way to write
+    /// for it.
     std::optional<std::string> arg0 = {};
 
     /// The child's environment; unset, this process's. Given, it is the
@@ -165,8 +169,9 @@ struct SpawnOptions {
 
 /// How a child ended.
 struct ExitStatus {
-    /// Its exit code. On Windows a child that crashed exits with the
-    /// NTSTATUS of its exception, such as 0xC0000005, unsigned.
+    /// Its exit code; 0 for one a signal ended, which `term_signal` says. On
+    /// Windows a child that crashed exits with the NTSTATUS of its exception,
+    /// such as 0xC0000005, unsigned.
     std::int64_t code = 0;
 
     /// The signal that ended it, 0 if none. On Windows the signal its kill
@@ -318,19 +323,21 @@ private:
 /// own, nested in any this process is in, which ends it rather than show a
 /// dialog when it crashes. no_such_file_or_directory or permission_denied
 /// for a program not found, as find_program; invalid_argument for a
-/// negative descriptor, a closed file or a batch file without
-/// windows_command_line;
+/// negative descriptor, a closed file, a batch file without
+/// windows_command_line or, on Windows, an argv[0] with a quote;
 /// bad_file_descriptor for a descriptor not open;
 /// not_supported for exit_with_parent on macOS.
 std::expected<Child, std::error_code> spawn(const SpawnOptions& options);
 
-/// Runs a child to its end, as `options` say but for its streams: its stdin
-/// reads nothing, and what its stdout and its stderr write is read into
-/// `out` and `err`, two buffers, while it runs, as the bytes they are: how it
-/// ended. Fails as spawn() does, or with the error of a read, the child then
-/// killed, and its group with it when it leads one, and reaped.
-std::expected<ExitStatus, std::error_code> capture(SpawnOptions options,
-                                                   buffer_ref out,
-                                                   buffer_ref err);
+/// Runs a child to its end, as `options` say but for its streams, whatever
+/// they ask: its stdin reads nothing, and what its stdout and its stderr
+/// write is read into `out` and `err` while it runs, as the bytes they are,
+/// until both end, which a process it started holding them puts off. The
+/// two may be one buffer, which takes what each read gives in turn. How the
+/// child ended. Fails as spawn() does, or with the error of a read, the
+/// child then killed, its group instead when it leads one, and reaped.
+std::expected<ExitStatus, std::error_code> capture(buffer_ref out,
+                                                   buffer_ref err,
+                                                   SpawnOptions options);
 
 }  // namespace kota::sys

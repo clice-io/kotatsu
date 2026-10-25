@@ -24,7 +24,8 @@ concept string_buffer = requires(Buffer& buffer, std::size_t size) {
 /// text takes, so that its caller decides where the text goes, and may keep
 /// one buffer for many calls. It refers to the buffer as std::string_view
 /// refers to a string, and must not outlive it. What a function that fails
-/// leaves in the buffer is unspecified, unless it says.
+/// leaves in the buffer is unspecified, and what else it takes must not view
+/// the buffer, unless it says.
 template <typename Char>
 class basic_buffer_ref {
 public:

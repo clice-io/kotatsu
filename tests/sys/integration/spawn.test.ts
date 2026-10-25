@@ -4,8 +4,8 @@
 //   macOS has no way to do it);
 // - on Linux it dies too with the thread that started it, sys_probe running
 //   on;
-// - its arguments, environment and working directory reach it as given,
-//   whatever their characters;
+// - its arguments, argv[0] among them, environment and working directory
+//   reach it as given, whatever their characters;
 // - its streams may be any of sys_probe's, swapped ones too;
 // - on Linux it is started through the execve a hook preloaded into
 //   sys_probe would see;
@@ -64,11 +64,14 @@ test("arguments_environment_and_directory_keep_their_characters", async (t) => {
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   const value = "välue 値 ✓";
   const argument = 'ärgüment 引数 "quoted" \\';
+  // Windows writes argv[0] by a rule that has no quotes.
+  const arg0 = "ärgv zéro 零";
   const driver = await Driver.spawn(t, "sys_probe", [
     "relay",
     cwd,
     value,
     argument,
+    arg0,
   ]);
   const output = (await driver.jsonLines().receive()) as {
     arguments: string[];
@@ -76,7 +79,7 @@ test("arguments_environment_and_directory_keep_their_characters", async (t) => {
     value: string;
   };
   await driver.expectExit(0);
-  assert.deepEqual(output.arguments.slice(1), ["report", argument]);
+  assert.deepEqual(output.arguments, [arg0, "report", argument]);
   assert.equal(output.value, value);
   // The directory's own name: the path to it may be spelled otherwise, a
   // symlink resolved or a short name of Windows's.

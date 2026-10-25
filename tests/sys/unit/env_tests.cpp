@@ -93,6 +93,19 @@ ZEST_CASE(split_paths_entries_view_the_list_unless_unquoted) {
     ZEXPECT((it == view.end()));
 }
 
+// A copy of an iterator keeps its own entry, unquoted or not, and so does
+// one an adaptor moves.
+ZEST_CASE(split_paths_iterator_copies_keep_their_entry) {
+    auto view = split_paths(R"("C:\b";"C:\d")", Style::Windows);
+    auto it = view.begin();
+    auto copy = it;
+    ++it;
+    ZEXPECT(*copy == R"(C:\b)");
+    ZEXPECT(*it == R"(C:\d)");
+    auto sizes = view | std::views::transform([](std::string_view entry) { return entry.size(); });
+    ZEXPECT(*sizes.begin() == 4U);
+}
+
 ZEST_CASE(join_paths_reads_back_with_split_paths) {
     Paths posix{"/usr/bin", "", "relative"};
     auto list = joined(posix, Style::Posix);

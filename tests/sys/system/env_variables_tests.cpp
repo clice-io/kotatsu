@@ -36,7 +36,9 @@ ZEST_CASE(set_env_is_read_back) {
 
 ZEST_CASE(set_env_to_empty_keeps_the_variable) {
     test::ScopedEnv variable(std::string(name), "");
-    ZEXPECT(value_of(name) == "");
+    std::string value = "stale";
+    ZEXPECT(get_env(value, name));
+    ZEXPECT(value.empty());
 }
 
 ZEST_CASE(unset_env_removes_the_variable) {
@@ -76,6 +78,8 @@ ZEST_CASE(get_env_of_an_unset_variable_leaves_the_buffer) {
     test::ScopedEnv variable(std::string(name), std::nullopt);
     std::string value = "kept";
     ZEXPECT(!get_env(value, name));
+    ZEXPECT(value == "kept");
+    ZEXPECT(!get_env(value, "A=B"));
     ZEXPECT(value == "kept");
 }
 

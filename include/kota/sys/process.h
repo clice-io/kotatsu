@@ -25,10 +25,12 @@ int parent_pid() noexcept;
 std::error_code executable_path(buffer_ref out);
 
 /// Writes into `out` a path that starts this very program, the image this
-/// process runs, for starting another copy of it that speaks its protocol:
-/// on Linux /proc/self/exe, which reaches the image after its file was
-/// renamed, replaced or removed; elsewhere executable_path(), which fails
-/// on macOS once the file was removed.
+/// process runs, for this process to start another copy of it that speaks
+/// its protocol: on Linux /proc/self/exe, which reaches the image after its
+/// file was renamed, replaced or removed, but names another's in another
+/// process, and makes a poor argv[0] (SpawnOptions::arg0 sets one);
+/// elsewhere executable_path(), which fails on macOS once the file was
+/// removed.
 std::error_code self_executable(buffer_ref out);
 
 /// The arguments this program was started with, argv[0] first, read from

@@ -133,28 +133,23 @@ std::expected<std::string, std::error_code>
         has_path = get_env(path, "PATH");
     }
     std::vector<std::string> directories;
-#ifdef _WIN32
-    // Without PATH the system's directories, which CreateProcess searches
-    // too, as POSIX has confstr(_CS_PATH)'s.
     if(!has_path) {
+#ifdef _WIN32
+        // The system's directories, which CreateProcess searches too, as
+        // POSIX has confstr(_CS_PATH)'s.
         auto system = system_directories();
         if(!system) {
             return std::unexpected(system.error());
         }
         directories = std::move(*system);
-    } else {
-        for(auto entry: split_paths(path)) {
-            directories.emplace_back(entry);
-        }
-    }
 #else
-    if(!has_path) {
         path = default_path();
+#endif
     }
+    // On Windows an unset PATH, empty, has no entries.
     for(auto entry: split_paths(path)) {
         directories.emplace_back(entry);
     }
-#endif
     for(auto& directory: directories) {
 #ifdef _WIN32
         // An empty entry names no directory.

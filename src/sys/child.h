@@ -1,7 +1,7 @@
 #pragma once
 
-// What spawn does alike on every host: the child's environment, and the
-// file it runs.
+// What spawn does alike on every host: the child's environment, its
+// arguments, and the file it runs.
 
 #include <csignal>
 #include <expected>

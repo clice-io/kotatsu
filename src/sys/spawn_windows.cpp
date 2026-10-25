@@ -81,18 +81,18 @@ std::expected<Handle, std::error_code> inheritable_descriptor(int fd) {
 }
 
 /// The two ends of a pipe: this process's, opened for overlapped I/O, and
-/// the child's, inheritable; flags from the child's side.
-std::expected<std::pair<Handle, Handle>, std::error_code> create_pipe(bool readable,
-                                                                      bool writable) {
+/// the child's, inheritable, which the child reads, writes, or both.
+std::expected<std::pair<Handle, Handle>, std::error_code> create_pipe(bool child_reads,
+                                                                      bool child_writes) {
     static std::atomic<unsigned> serial = 0;
     auto name = std::format(LR"(\\.\pipe\kota-{}-{})", ::GetCurrentProcessId(), serial++);
     // Ours reads too when the child only reads, as libuv's does: a shutdown
     // asks how much of what it wrote is left, which takes read access.
     DWORD open_mode = FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE | WRITE_DAC;
-    if(readable) {
+    if(child_reads) {
         open_mode |= PIPE_ACCESS_INBOUND | PIPE_ACCESS_OUTBOUND;
     }
-    if(writable) {
+    if(child_writes) {
         open_mode |= PIPE_ACCESS_INBOUND;
     }
     Handle ours(::CreateNamedPipeW(name.c_str(),
@@ -107,8 +107,8 @@ std::expected<std::pair<Handle, Handle>, std::error_code> create_pipe(bool reada
         return std::unexpected(fs::windows::last_error());
     }
     DWORD access = WRITE_DAC;
-    access |= readable ? GENERIC_READ : FILE_READ_ATTRIBUTES;
-    access |= writable ? GENERIC_WRITE : FILE_WRITE_ATTRIBUTES;
+    access |= child_reads ? GENERIC_READ : FILE_READ_ATTRIBUTES;
+    access |= child_writes ? GENERIC_WRITE : FILE_WRITE_ATTRIBUTES;
     SECURITY_ATTRIBUTES inherit{.nLength = sizeof(inherit),
                                 .lpSecurityDescriptor = nullptr,
                                 .bInheritHandle = TRUE};
@@ -312,7 +312,12 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     std::string written;
     std::string_view command_line = options.windows_command_line;
     if(command_line.empty()) {
-        windows::join_command_line(written, child_arguments(options));
+        auto arguments = child_arguments(options);
+        // The program's rule has no way to write a quote.
+        if(arguments[0].find('"') != std::string::npos) {
+            return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+        }
+        windows::join_command_line(written, arguments);
         command_line = written;
     }
     std::wstring line;
