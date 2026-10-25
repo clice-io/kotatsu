@@ -30,17 +30,17 @@ class basic_buffer_ref {
 public:
     template <string_buffer<Char> Buffer>
     basic_buffer_ref(Buffer& buffer) noexcept :
-        buffer(std::addressof(buffer)), ops(&ops_of<Buffer>) {}
+        buffer(std::addressof(buffer)), access(&access_of<Buffer>) {}
 
     /// What the buffer holds.
     std::basic_string_view<Char> view() const {
-        auto chars = ops->chars(buffer);
+        auto chars = access(buffer, unchanged);
         return {chars.data(), chars.size()};
     }
 
     /// What the buffer holds, to write over.
     std::span<Char> chars() {
-        return ops->chars(buffer);
+        return access(buffer, unchanged);
     }
 
     std::size_t size() const {
@@ -55,7 +55,7 @@ public:
     /// rest for the caller to write: the characters, which a resize may have
     /// moved.
     std::span<Char> resize(std::size_t size) {
-        return ops->resize(buffer, size);
+        return access(buffer, size);
     }
 
     /// Makes `text`, which may view the buffer itself, the whole of it.
@@ -89,32 +89,28 @@ public:
     }
 
 private:
-    struct Ops {
-        std::span<Char> (*chars)(void* buffer);
-        std::span<Char> (*resize)(void* buffer, std::size_t size);
-    };
+    /// What access_of() takes for a size to leave the buffer as it is.
+    constexpr static std::size_t unchanged = static_cast<std::size_t>(-1);
 
+    /// The characters of the buffer, made `size` long first unless `size` is
+    /// `unchanged`.
     template <typename Buffer>
-    constexpr static Ops ops_of = {
-        .chars = [](void* buffer) -> std::span<Char> {
-            auto& held = *static_cast<Buffer*>(buffer);
-            return {held.data(), static_cast<std::size_t>(held.size())};
-        },
-        .resize = [](void* buffer, std::size_t size) -> std::span<Char> {
-            auto& held = *static_cast<Buffer*>(buffer);
+    static std::span<Char> access_of(void* buffer, std::size_t size) {
+        auto& text = *static_cast<Buffer*>(buffer);
+        if(size != unchanged) {
             // What the caller writes need not be zeroed first.
-            if constexpr(requires { held.resize_for_overwrite(size); }) {
-                held.resize_for_overwrite(size);
+            if constexpr(requires { text.resize_for_overwrite(size); }) {
+                text.resize_for_overwrite(size);
             } else {
-                held.resize(size);
+                text.resize(size);
             }
-            return {held.data(), static_cast<std::size_t>(held.size())};
-        },
-    };
+        }
+        return {text.data(), static_cast<std::size_t>(text.size())};
+    }
 
     void* buffer;
 
-    const Ops* ops;
+    std::span<Char> (*access)(void* buffer, std::size_t size);
 };
 
 using buffer_ref = basic_buffer_ref<char>;
