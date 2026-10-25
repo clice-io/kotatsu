@@ -47,7 +47,10 @@ std::string shell_path() {
 #ifdef _WIN32
     wchar_t directory[MAX_PATH];
     auto size = ::GetSystemDirectoryW(directory, MAX_PATH);
-    return fs::path::join(fs::windows::from_native(std::wstring_view(directory, size)), "cmd.exe");
+    std::string path;
+    fs::windows::from_native(path, std::wstring_view(directory, size));
+    fs::path::push(path, "cmd.exe");
+    return path;
 #else
     return "/bin/sh";
 #endif

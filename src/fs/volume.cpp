@@ -6,6 +6,7 @@
 #include <cwchar>
 
 #include "win32.h"
+#include "kota/support/small_string.h"
 #include "kota/support/utf16.h"
 #include "kota/fs/resolve.h"
 #else
@@ -112,6 +113,7 @@ std::expected<Volume, std::error_code> volume(std::string_view path) {
         .capacity = capacity.QuadPart,
         .free = free.QuadPart,
         .available = available.QuadPart,
+        .type = {},
         .remote = ::GetDriveTypeW(plain.c_str()) == DRIVE_REMOTE,
     };
     from_utf16(found.type, std::wstring_view(type));

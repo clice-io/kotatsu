@@ -18,7 +18,8 @@ inline std::string make_program(const TempDir& dir,
                                 std::string_view directory,
                                 std::string_view name,
                                 bool executable = true) {
-    auto path = fs::path::join(dir.file(directory), name);
+    auto path = dir.file(directory);
+    fs::path::push(path, name);
     std::filesystem::create_directories(std_path(path).parent_path());
     write_text(path, "#!/bin/sh\n");
     auto permissions = std::filesystem::perms::owner_read | std::filesystem::perms::owner_write;

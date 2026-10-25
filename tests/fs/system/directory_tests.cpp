@@ -334,22 +334,23 @@ ZEST_CASE(read_symlink_gives_the_target_as_written) {
     if(!test::linked(create_symlink("target", dir.file("relative")))) {
         return;
     }
-    ZEXPECT(read_symlink(dir.file("relative")) == std::string("target"));
+    std::string target;
+    ZEXPECT(!read_symlink(target, dir.file("relative")));
+    ZEXPECT(target == "target");
     ZEXPECT(!create_symlink(dir.file("target"), dir.file("absolute")));
-    ZEXPECT(read_symlink(dir.file("absolute")) == dir.file("target"));
+    ZEXPECT(!read_symlink(target, dir.file("absolute")));
+    ZEXPECT(target == dir.file("target"));
     ZEXPECT(!create_symlink("missing", dir.file("dangling")));
-    ZEXPECT(read_symlink(dir.file("dangling")) == std::string("missing"));
+    ZEXPECT(!read_symlink(target, dir.file("dangling")));
+    ZEXPECT(target == "missing");
 }
 
 ZEST_CASE(read_symlink_of_a_file_fails) {
     test::TempDir dir;
     test::write_text(dir.file("file"), "text");
-    auto target = read_symlink(dir.file("file"));
-    ZASSERT(!target.has_value());
-    ZEXPECT(target.error() == std::errc::invalid_argument);
-    auto missing = read_symlink(dir.file("missing"));
-    ZASSERT(!missing.has_value());
-    ZEXPECT(missing.error() == std::errc::no_such_file_or_directory);
+    std::string target;
+    ZEXPECT(read_symlink(target, dir.file("file")) == std::errc::invalid_argument);
+    ZEXPECT(read_symlink(target, dir.file("missing")) == std::errc::no_such_file_or_directory);
 }
 
 #ifdef _WIN32
@@ -357,7 +358,9 @@ ZEST_CASE(read_symlink_gives_the_directory_of_a_junction) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
     test::make_junction(dir.file("junction"), dir.file("target"));
-    ZEXPECT(read_symlink(dir.file("junction")) == dir.file("target"));
+    std::string target;
+    ZEXPECT(!read_symlink(target, dir.file("junction")));
+    ZEXPECT(target == dir.file("target"));
 }
 #endif
 
@@ -380,7 +383,9 @@ ZEST_CASE(create_hard_link_names_a_symlink_itself) {
     }
     ZEXPECT(!create_hard_link(dir.file("link"), dir.file("other")));
     ZEXPECT(is_symlink(dir.file("other")));
-    ZEXPECT(read_symlink(dir.file("other")) == std::string("target"));
+    std::string target;
+    ZEXPECT(!read_symlink(target, dir.file("other")));
+    ZEXPECT(target == "target");
 }
 
 ZEST_CASE(create_hard_link_over_a_file_fails) {
