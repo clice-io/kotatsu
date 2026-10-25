@@ -18,6 +18,7 @@ add_library(kota_sys STATIC
     os_version.cpp
     process.cpp
     program.cpp
+    signals.cpp
     spawn_posix.cpp
     spawn_windows.cpp
     temp_dir.cpp

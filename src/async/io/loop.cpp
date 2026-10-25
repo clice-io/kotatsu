@@ -7,12 +7,9 @@
 #include <utility>
 #include <vector>
 
-#ifndef _WIN32
-#include <csignal>
-#endif
-
 #include "../libuv.h"
 #include "kota/support/functional.h"
+#include "kota/sys/detail/signals.h"
 #include "kota/async/runtime/node.h"
 #include "kota/async/runtime/sync.h"
 #include "kota/async/runtime/task.h"
@@ -263,18 +260,10 @@ std::coroutine_handle<> yield_awaiter::suspend(task_frame& waiting,
 }
 
 #ifndef _WIN32
-/// A write to a peer that went away raises SIGPIPE, whose default action
-/// ends the process; ignored, the write fails with EPIPE instead. A program
-/// that set an action of its own keeps it. libuv starts every child with the
-/// default actions.
+/// Once per process: an action set after the first loop is kept.
 static void ignore_sigpipe() {
     static std::once_flag once;
-    std::call_once(once, [] {
-        struct sigaction current = {};
-        if(::sigaction(SIGPIPE, nullptr, &current) == 0 && current.sa_handler == SIG_DFL) {
-            std::signal(SIGPIPE, SIG_IGN);
-        }
-    });
+    std::call_once(once, sys::detail::ignore_sigpipe);
 }
 #endif
 
