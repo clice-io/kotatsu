@@ -3,6 +3,7 @@
 #include <initializer_list>
 #include <ranges>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "os.h"
@@ -105,7 +106,7 @@ std::expected<std::vector<CPUCore>, std::error_code> cpu_cores() {
             if(processor_value(index, L"ProcessorNameString", RRF_RT_REG_SZ, name, sizeof(name))) {
                 small_string<256> model;
                 from_utf16(model, std::wstring_view(name));
-                core.model = string_ref(model).trim();
+                core.model = string_ref(std::string_view(model)).trim();
             }
             cores.push_back(std::move(core));
         }
