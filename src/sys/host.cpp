@@ -3,6 +3,7 @@
 #include <string>
 
 #include "os.h"
+#include "kota/support/small_string.h"
 #include "kota/sys/info.h"
 
 #ifdef _WIN32
@@ -18,20 +19,20 @@
 
 namespace kota::sys {
 
-std::expected<std::string, std::error_code> hostname() {
+std::error_code hostname(buffer_ref out) {
 #ifdef _WIN32
     // Not gethostname, which needs Winsock started.
-    std::wstring name(64, L'\0');
+    small_wstring<64> name;
+    name.resize(64);
     while(true) {
         auto size = static_cast<DWORD>(name.size());
         if(::GetComputerNameExW(ComputerNameDnsHostname, name.data(), &size)) {
-            std::string host;
-            from_utf16(host, std::wstring_view(name.data(), size));
-            return host;
+            from_utf16(out, std::wstring_view(name.data(), size));
+            return {};
         }
         // Too small, it gives the size with the NUL.
         if(::GetLastError() != ERROR_MORE_DATA) {
-            return std::unexpected(fs::windows::last_error());
+            return fs::windows::last_error();
         }
         name.resize(size);
     }
@@ -39,9 +40,10 @@ std::expected<std::string, std::error_code> hostname() {
     // POSIX may leave a name that does not fit without its NUL.
     char name[256] = {};
     if(::gethostname(name, sizeof(name) - 1) != 0) {
-        return std::unexpected(errno_code());
+        return errno_code();
     }
-    return std::string(name);
+    out.assign(name);
+    return {};
 #endif
 }
 

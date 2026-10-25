@@ -9,6 +9,8 @@
 #include <system_error>
 #include <vector>
 
+#include "kota/support/buffer_ref.h"
+
 namespace kota::sys {
 
 /// What a process uses.
@@ -137,7 +139,8 @@ struct OS {
 
 OS os();
 
-std::expected<std::string, std::error_code> hostname();
+/// Writes into `out` the machine's name.
+std::error_code hostname(buffer_ref out);
 
 /// The time since the system started.
 std::chrono::milliseconds uptime();

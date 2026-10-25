@@ -312,7 +312,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     std::string written;
     std::string_view command_line = options.windows_command_line;
     if(command_line.empty()) {
-        written = windows::join_command_line(child_arguments(options));
+        windows::join_command_line(written, child_arguments(options));
         command_line = written;
     }
     std::wstring line;

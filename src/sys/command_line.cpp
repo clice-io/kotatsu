@@ -8,51 +8,62 @@
 
 namespace kota::sys::windows {
 
-std::string quote_argument(std::string_view argument) {
+namespace {
+
+/// Appends `argument` to `out`, quoted as quote_argument() quotes it.
+void append_quoted(buffer_ref out, std::string_view argument) {
     if(!argument.empty() && argument.find_first_of(" \t\n\v\"") == std::string_view::npos) {
-        return std::string(argument);
+        out.append(argument);
+        return;
     }
-    std::string quoted = "\"";
+    out.push_back('"');
     std::size_t backslashes = 0;
+    auto put_backslashes = [&](std::size_t count) {
+        for(std::size_t i = 0; i < count; ++i) {
+            out.push_back('\\');
+        }
+    };
     for(char c: argument) {
         if(c == '\\') {
             ++backslashes;
             continue;
         }
         // Backslashes before a quote escape themselves, and one more the quote.
-        if(c == '"') {
-            quoted.append(backslashes * 2 + 1, '\\');
-        } else {
-            quoted.append(backslashes, '\\');
-        }
+        put_backslashes(c == '"' ? backslashes * 2 + 1 : backslashes);
         backslashes = 0;
-        quoted += c;
+        out.push_back(c);
     }
     // The closing quote must not be escaped.
-    quoted.append(backslashes * 2, '\\');
-    quoted += '"';
-    return quoted;
+    put_backslashes(backslashes * 2);
+    out.push_back('"');
 }
 
-std::string join_command_line(std::span<const std::string> arguments) {
-    std::string line;
+}  // namespace
+
+void quote_argument(buffer_ref out, std::string_view argument) {
+    out.clear();
+    append_quoted(out, argument);
+}
+
+void join_command_line(buffer_ref out, string_list_ref arguments) {
+    out.clear();
     for(std::size_t i = 0; i < arguments.size(); ++i) {
-        std::string_view argument = arguments[i];
+        auto argument = arguments[i];
         if(i != 0) {
-            line += ' ';
-            line += quote_argument(argument);
+            out.push_back(' ');
+            append_quoted(out, argument);
             continue;
         }
         assert(argument.find('"') == std::string_view::npos && "a program name holds no quote");
-        if(argument.empty() || argument.find_first_of(" \t") != std::string_view::npos) {
-            line += '"';
-            line += argument;
-            line += '"';
-        } else {
-            line += argument;
+        bool quote = argument.empty() || argument.find_first_of(" \t") != std::string_view::npos;
+        if(quote) {
+            out.push_back('"');
+        }
+        out.append(argument);
+        if(quote) {
+            out.push_back('"');
         }
     }
-    return line;
 }
 
 std::vector<std::string> split_command_line(std::string_view line) {

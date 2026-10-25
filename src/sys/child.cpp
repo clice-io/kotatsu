@@ -120,31 +120,40 @@ std::expected<std::string, std::error_code>
         return in_cwd(file);
     }
 
-    std::optional<std::string> path;
+    std::string path;
+    bool has_path = false;
     if(environment) {
         for(const auto& variable: *environment) {
             if(env_name_equal(variable.name, "PATH")) {
                 path = variable.value;
+                has_path = true;
             }
         }
     } else {
-        path = get_env("PATH");
+        has_path = get_env(path, "PATH");
     }
+    std::vector<std::string> directories;
 #ifdef _WIN32
     // Without PATH the system's directories, which CreateProcess searches
     // too, as POSIX has confstr(_CS_PATH)'s.
-    std::vector<std::string> directories;
-    if(path) {
-        directories = split_paths(*path);
-    } else {
+    if(!has_path) {
         auto system = system_directories();
         if(!system) {
             return std::unexpected(system.error());
         }
         directories = std::move(*system);
+    } else {
+        for(auto entry: split_paths(path)) {
+            directories.emplace_back(entry);
+        }
     }
 #else
-    auto directories = split_paths(path ? *path : default_path());
+    if(!has_path) {
+        path = default_path();
+    }
+    for(auto entry: split_paths(path)) {
+        directories.emplace_back(entry);
+    }
 #endif
     for(auto& directory: directories) {
 #ifdef _WIN32
@@ -156,11 +165,17 @@ std::expected<std::string, std::error_code>
         // On POSIX an empty one is the current directory: the child's.
         directory = in_cwd(directory);
     }
+    std::string program;
 #ifdef _WIN32
-    return windows::find_create_process_program(file, directories);
+    if(auto error = windows::find_create_process_program(program, file, directories)) {
+        return std::unexpected(error);
+    }
 #else
-    return find_program(file, {.directories = std::move(directories)});
+    if(auto error = find_program(program, file, {.directories = std::move(directories)})) {
+        return std::unexpected(error);
+    }
 #endif
+    return program;
 }
 
 }  // namespace kota::sys

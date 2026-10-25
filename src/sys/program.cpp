@@ -1,9 +1,12 @@
-#include <span>
+#include <algorithm>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "os.h"
+#include "kota/support/small_string.h"
+#include "kota/support/string_list_ref.h"
 #include "kota/support/string_ref.h"
 #include "kota/fs/path.h"
 #include "kota/sys/env.h"
@@ -30,11 +33,11 @@ enum class Candidate : std::uint8_t {
     Program,
 };
 
-Candidate examine(const std::string& path) {
+Candidate examine(std::string_view path) {
 #ifdef _WIN32
     // By name, without opening the file: the cheapest query, which a search
     // through every directory of PATH makes for each extension.
-    std::wstring native;
+    small_wstring<264> native;
     if(fs::windows::to_native(native, path)) {
         return Candidate::Missing;
     }
@@ -51,18 +54,12 @@ Candidate examine(const std::string& path) {
         return status.error() == std::errc::permission_denied ? Candidate::Unrunnable
                                                               : Candidate::Missing;
     }
-    if(status->type != fs::FileType::Regular || ::access(path.c_str(), X_OK) != 0) {
+    small_string<256> c_path(path);
+    if(status->type != fs::FileType::Regular || ::access(c_path.c_str(), X_OK) != 0) {
         return Candidate::Unrunnable;
     }
     return Candidate::Program;
 #endif
-}
-
-/// The entries of the list in variable `name`, or of `fallback` when it is
-/// unset.
-std::vector<std::string> list_variable(std::string_view name, std::string_view fallback) {
-    auto value = get_env(name);
-    return split_paths(value ? std::string_view(*value) : fallback);
 }
 
 #ifdef _WIN32
@@ -70,141 +67,146 @@ std::vector<std::string> list_variable(std::string_view name, std::string_view f
 /// The names `name` is tried as in a directory: with `extensions`, or as
 /// CreateProcess tries it.
 std::vector<std::string> spellings(std::string_view name,
-                                   std::vector<std::string> extensions,
+                                   string_list_ref extensions,
                                    bool like_create_process) {
+    std::vector<std::string> tried;
     if(like_create_process) {
-        extensions = {".exe"};
-    } else if(extensions.empty()) {
-        extensions = list_variable("PATHEXT", "");
-        std::erase(extensions, "");
-        if(extensions.empty()) {
-            extensions = {".COM", ".EXE", ".BAT", ".CMD"};
+        tried = {".exe"};
+    } else if(!extensions.empty()) {
+        tried.assign(extensions.begin(), extensions.end());
+    } else {
+        small_string<256> pathext;
+        if(get_env(pathext, "PATHEXT")) {
+            for(auto extension: split_paths(pathext)) {
+                if(!extension.empty()) {
+                    tried.emplace_back(extension);
+                }
+            }
+        }
+        if(tried.empty()) {
+            tried = {".COM", ".EXE", ".BAT", ".CMD"};
         }
     }
     auto own = fs::path::extension(name);
     bool as_is = !own.empty() && (like_create_process ||
-                                  std::ranges::any_of(extensions, [&](std::string_view extension) {
+                                  std::ranges::any_of(tried, [&](std::string_view extension) {
                                       return string_ref(own).equals_insensitive(extension);
                                   }));
     if(as_is) {
         return {std::string(name)};
     }
     std::vector<std::string> names;
-    for(const auto& extension: extensions) {
+    for(const auto& extension: tried) {
         names.push_back(std::string(name) + extension);
     }
     return names;
 }
 
-/// The program the Cygwin symlink at `path`, a program itself when it is
-/// none, names: its target beside it, link after link, `.exe` added where
-/// the target has none. None when a link names a POSIX path, which only its
-/// runtime's mount table maps, or nothing that runs, or the links loop.
-std::optional<std::string> follow_cygwin_links(std::string path) {
+/// Follows the Cygwin symlink at `path` to the program it names, in place:
+/// its target beside it, link after link, `.exe` added where the target has
+/// none; a program that is no link stays. False when a link names a POSIX
+/// path, which only its runtime's mount table maps, or nothing that runs, or
+/// the links loop.
+bool follow_cygwin_links(buffer_ref path) {
     // Past it, a chain is taken to loop.
     constexpr int most_links = 16;
+    small_string<256> target;
     for(int links = 0; links <= most_links; ++links) {
-        std::string target;
-        if(!fs::cygwin::read_symlink(target, path)) {
-            return path;
+        if(!fs::cygwin::read_symlink(target, path.view())) {
+            return true;
         }
         if(fs::cygwin::is_posix_path(target)) {
-            return std::nullopt;
+            return false;
         }
-        std::string next(fs::path::parent(path));
-        fs::path::push(next, target);
-        if(examine(next) != Candidate::Program) {
-            next += ".exe";
-            if(examine(next) != Candidate::Program) {
-                return std::nullopt;
+        fs::path::pop(path);
+        fs::path::push(path, target);
+        if(examine(path.view()) != Candidate::Program) {
+            path.append(".exe");
+            if(examine(path.view()) != Candidate::Program) {
+                return false;
             }
         }
-        path = std::move(next);
     }
-    return std::nullopt;
+    return false;
 }
 
 #endif
 
-/// The program `name` names, looked for in `directories` by find_program's
-/// rules, or on Windows CreateProcess's.
-std::expected<std::string, std::error_code>
-    find(std::string_view name,
-         std::span<const std::string> directories,
-         [[maybe_unused]] std::vector<std::string> extensions,
-         [[maybe_unused]] bool like_create_process) {
+/// Writes into `out` the program `name` names, looked for in `directories`
+/// by find_program's rules, or on Windows CreateProcess's.
+template <typename Directories>
+std::error_code find(buffer_ref out,
+                     std::string_view name,
+                     const Directories& directories,
+                     [[maybe_unused]] string_list_ref extensions,
+                     [[maybe_unused]] bool like_create_process) {
     if(name.empty()) {
-        return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
+        return std::make_error_code(std::errc::no_such_file_or_directory);
     }
     bool found_unrunnable = false;
-    // The first program among `candidates`.
-    auto first = [&](const std::vector<std::string>& candidates) -> std::optional<std::string> {
-        for(const auto& candidate: candidates) {
-            switch(examine(candidate)) {
-                case Candidate::Program: {
+    // Whether the candidate in `out` is a program, which it then names.
+    auto runs = [&] {
+        switch(examine(out.view())) {
+            case Candidate::Program: {
 #ifdef _WIN32
-                    if(like_create_process) {
-                        return candidate;
-                    }
-                    if(auto program = follow_cygwin_links(candidate)) {
-                        return program;
-                    }
-                    found_unrunnable = true;
-                    break;
-#else
-                    return candidate;
-#endif
+                if(like_create_process || follow_cygwin_links(out)) {
+                    return true;
                 }
-                case Candidate::Unrunnable: found_unrunnable = true; break;
-                case Candidate::Missing: break;
+                found_unrunnable = true;
+                return false;
+#else
+                return true;
+#endif
             }
+            case Candidate::Unrunnable: found_unrunnable = true; return false;
+            case Candidate::Missing: return false;
         }
-        return std::nullopt;
+        std::unreachable();
     };
     auto not_found = [&] {
-        return std::unexpected(std::make_error_code(found_unrunnable
-                                                        ? std::errc::permission_denied
-                                                        : std::errc::no_such_file_or_directory));
+        return std::make_error_code(found_unrunnable ? std::errc::permission_denied
+                                                     : std::errc::no_such_file_or_directory);
     };
 
 #ifdef _WIN32
-    auto names = spellings(name, std::move(extensions), like_create_process);
+    auto names = spellings(name, extensions, like_create_process);
     // A separator or a drive (`C:tool`, in that drive's current directory)
     // makes it a path.
     if(!fs::path::root(name).name.empty() ||
        name.find_first_of(R"(/\)") != std::string_view::npos) {
-        if(auto program = first(names)) {
-            return std::move(*program);
+        for(const auto& spelling: names) {
+            out.assign(spelling);
+            if(runs()) {
+                return {};
+            }
         }
         return not_found();
     }
 #else
     if(name.find('/') != std::string_view::npos) {
-        if(auto program = first({std::string(name)})) {
-            return std::move(*program);
-        }
-        return not_found();
+        out.assign(name);
+        return runs() ? std::error_code() : not_found();
     }
 #endif
 
-    for(const auto& directory: directories) {
+    for(std::string_view directory: directories) {
 #ifdef _WIN32
         if(directory.empty()) {
             continue;
         }
-        std::vector<std::string> candidates;
         for(const auto& spelling: names) {
-            fs::path::push(candidates.emplace_back(directory), spelling);
-        }
-        if(auto program = first(candidates)) {
-            return std::move(*program);
+            out.assign(directory);
+            fs::path::push(out, spelling);
+            if(runs()) {
+                return {};
+            }
         }
 #else
         // An empty entry is the current directory.
-        std::string candidate(directory.empty() ? "." : directory);
-        fs::path::push(candidate, name);
-        if(auto program = first({std::move(candidate)})) {
-            return std::move(*program);
+        out.assign(directory.empty() ? "." : directory);
+        fs::path::push(out, name);
+        if(runs()) {
+            return {};
         }
 #endif
     }
@@ -213,36 +215,38 @@ std::expected<std::string, std::error_code>
 
 }  // namespace
 
-std::expected<std::string, std::error_code> find_program(std::string_view name,
-                                                         const ProgramSearch& search) {
+std::error_code find_program(buffer_ref out, std::string_view name, const ProgramSearch& search) {
     if(!search.directories.empty()) {
-        return find(name, search.directories, search.extensions, false);
+        return find(out, name, search.directories, search.extensions, false);
     }
+    small_string<1024> path;
+    if(!get_env(path, "PATH")) {
 #ifdef _WIN32
-    auto directories = list_variable("PATH", "");
+        path.clear();
 #else
-    auto directories = list_variable("PATH", default_path());
+        path.assign(default_path());
 #endif
-    return find(name, directories, search.extensions, false);
+    }
+    return find(out, name, split_paths(path), search.extensions, false);
 }
 
 #ifdef _WIN32
 
 namespace {
 
-/// A directory a Win32 call `read` gives, which asks for the size with the
-/// NUL when the buffer is too small.
-std::expected<std::string, std::error_code> known_directory(auto read) {
-    std::wstring path(MAX_PATH, L'\0');
+/// Writes into `out` a directory a Win32 call `read` gives, which asks for
+/// the size with the NUL when the buffer is too small.
+std::error_code known_directory(buffer_ref out, auto read) {
+    small_wstring<264> path;
+    path.resize(MAX_PATH);
     while(true) {
         auto size = read(static_cast<DWORD>(path.size()), path.data());
         if(size == 0) {
-            return std::unexpected(fs::windows::last_error());
+            return fs::windows::last_error();
         }
         if(size < path.size()) {
-            std::string directory;
-            from_utf16(directory, std::wstring_view(path.data(), size));
-            return directory;
+            from_utf16(out, std::wstring_view(path.data(), size));
+            return {};
         }
         path.resize(size);
     }
@@ -251,48 +255,52 @@ std::expected<std::string, std::error_code> known_directory(auto read) {
 }  // namespace
 
 std::expected<std::vector<std::string>, std::error_code> system_directories() {
-    auto system = known_directory(
-        [](DWORD size, wchar_t* buffer) { return ::GetSystemDirectoryW(buffer, size); });
-    if(!system) {
-        return std::unexpected(system.error());
+    std::vector<std::string> directories(3);
+    if(auto error = known_directory(directories[0], [](DWORD size, wchar_t* buffer) {
+           return ::GetSystemDirectoryW(buffer, size);
+       })) {
+        return std::unexpected(error);
     }
-    auto windows = known_directory(
-        [](DWORD size, wchar_t* buffer) { return ::GetWindowsDirectoryW(buffer, size); });
-    if(!windows) {
-        return std::unexpected(windows.error());
+    if(auto error = known_directory(directories[2], [](DWORD size, wchar_t* buffer) {
+           return ::GetWindowsDirectoryW(buffer, size);
+       })) {
+        return std::unexpected(error);
     }
-    std::string system16 = *windows;
-    fs::path::push(system16, "System");
-    return std::vector<std::string>{std::move(*system), std::move(system16), std::move(*windows)};
+    directories[1] = directories[2];
+    fs::path::push(directories[1], "System");
+    return directories;
 }
 
 std::expected<std::vector<std::string>, std::error_code> windows::create_process_directories() {
-    auto executable = executable_path();
-    if(!executable) {
-        return std::unexpected(executable.error());
+    std::string executable;
+    if(auto error = executable_path(executable)) {
+        return std::unexpected(error);
     }
-    auto current = known_directory(
-        [](DWORD size, wchar_t* buffer) { return ::GetCurrentDirectoryW(size, buffer); });
-    if(!current) {
-        return std::unexpected(current.error());
+    std::vector<std::string> directories;
+    directories.emplace_back(fs::path::parent(executable));
+    if(auto error = known_directory(directories.emplace_back(), [](DWORD size, wchar_t* buffer) {
+           return ::GetCurrentDirectoryW(size, buffer);
+       })) {
+        return std::unexpected(error);
     }
     auto system = system_directories();
     if(!system) {
         return std::unexpected(system.error());
     }
-    std::vector<std::string> directories = {std::string(fs::path::parent(*executable)),
-                                            std::move(*current)};
     directories.insert(directories.end(), system->begin(), system->end());
-    for(auto& entry: list_variable("PATH", "")) {
-        directories.push_back(std::move(entry));
+    small_string<1024> path;
+    if(get_env(path, "PATH")) {
+        for(auto entry: split_paths(path)) {
+            directories.emplace_back(entry);
+        }
     }
     return directories;
 }
 
-std::expected<std::string, std::error_code>
-    windows::find_create_process_program(std::string_view name,
-                                         std::span<const std::string> directories) {
-    return find(name, directories, {}, true);
+std::error_code windows::find_create_process_program(buffer_ref out,
+                                                     std::string_view name,
+                                                     string_list_ref directories) {
+    return find(out, name, directories, {}, true);
 }
 
 #endif

@@ -354,11 +354,11 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
              const PoolOptions& options,
              function_ref<void(const Entry&, const Outcome&)> report) {
     // Workers run this very image, though a build replaced its file.
-    auto executable = sys::self_executable();
-    if(!executable) {
+    std::string executable;
+    if(auto error = sys::self_executable(executable)) {
         return std::unexpected(WorkerFailure{
             .detail = std::format("cannot find this program to start workers: {}",
-                                  executable.error().message()),
+                                  error.message()),
         });
     }
 
@@ -394,7 +394,7 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
     Pool pool{
         .options = options,
         .report = report,
-        .executable = std::move(*executable),
+        .executable = std::move(executable),
         .directory = directory,
     };
 

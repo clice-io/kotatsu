@@ -41,14 +41,14 @@ constinit std::mutex lock;
 
 }  // namespace
 
-std::optional<std::string> get_env(std::string_view name) {
+bool get_env(buffer_ref out, std::string_view name) {
     if(!valid_name(name)) {
-        return std::nullopt;
+        return false;
     }
 #ifdef _WIN32
     small_wstring<64> wide_name;
     if(to_utf16(wide_name, name)) {
-        return std::nullopt;
+        return false;
     }
     small_wstring<256> value;
     value.resize(256);
@@ -59,24 +59,24 @@ std::optional<std::string> get_env(std::string_view name) {
                                               value.data(),
                                               static_cast<DWORD>(value.size()));
         if(size == 0 && ::GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
-            return std::nullopt;
+            return false;
         }
         // Too small, it asks for the size with the NUL.
         if(size < value.size()) {
-            std::string text;
-            from_utf16(text, std::wstring_view(value.data(), size));
-            return text;
+            from_utf16(out, std::wstring_view(value.data(), size));
+            return true;
         }
         value.resize(size);
     }
 #else
-    std::string key(name);
+    small_string<64> key(name);
     std::lock_guard guard(lock);
     const char* value = std::getenv(key.c_str());
     if(value == nullptr) {
-        return std::nullopt;
+        return false;
     }
-    return std::string(value);
+    out.assign(value);
+    return true;
 #endif
 }
 
@@ -98,8 +98,8 @@ std::error_code set_env(std::string_view name, std::string_view value) {
     }
     return {};
 #else
-    std::string key(name);
-    std::string text(value);
+    small_string<64> key(name);
+    small_string<256> text(value);
     std::lock_guard guard(lock);
     if(::setenv(key.c_str(), text.c_str(), 1) != 0) {
         return errno_code();
@@ -123,7 +123,7 @@ std::error_code unset_env(std::string_view name) {
     }
     return {};
 #else
-    std::string key(name);
+    small_string<64> key(name);
     std::lock_guard guard(lock);
     if(::unsetenv(key.c_str()) != 0) {
         return errno_code();
@@ -190,61 +190,73 @@ bool env_name_equal(std::string_view left, std::string_view right) {
 #endif
 }
 
-std::vector<std::string> split_paths(std::string_view list, fs::path::Style style) {
-    std::vector<std::string> paths;
-    if(style == fs::path::Style::Posix) {
-        std::size_t at = 0;
-        while(true) {
-            auto end = list.find(':', at);
-            paths.emplace_back(list.substr(at, end - at));
-            if(end == std::string_view::npos) {
-                return paths;
-            }
-            at = end + 1;
-        }
+split_paths_view::iterator::iterator(std::string_view list, fs::path::Style style) :
+    rest(list), style(style) {
+    // An empty Windows list has no entry, an empty POSIX one an empty one.
+    if(style == fs::path::Style::Windows && list.empty()) {
+        done = true;
+        return;
     }
-    if(list.empty()) {
-        return paths;
-    }
-    std::string current;
-    bool quoted = false;
-    for(char c: list) {
-        if(c == '"') {
-            quoted = !quoted;
-        } else if(c == ';' && !quoted) {
-            paths.push_back(std::move(current));
-            current.clear();
-        } else {
-            current += c;
-        }
-    }
-    paths.push_back(std::move(current));
-    return paths;
+    ++*this;
 }
 
-std::expected<std::string, std::error_code> join_paths(std::span<const std::string> paths,
-                                                       fs::path::Style style) {
-    bool posix = style == fs::path::Style::Posix;
-    std::string list;
-    for(std::size_t i = 0; i < paths.size(); ++i) {
-        std::string_view path = paths[i];
-        if(path.find(posix ? ':' : '"') != std::string_view::npos) {
-            return std::unexpected(std::make_error_code(std::errc::invalid_argument));
-        }
-        if(i != 0) {
-            list += posix ? ':' : ';';
-        }
-        // Quoted, a lone empty entry is not the empty list.
-        if(!posix &&
-           (path.find(';') != std::string_view::npos || (paths.size() == 1 && path.empty()))) {
-            list += '"';
-            list += path;
-            list += '"';
-        } else {
-            list += path;
+split_paths_view::iterator& split_paths_view::iterator::operator++() {
+    if(last) {
+        done = true;
+        return *this;
+    }
+    bool windows = style == fs::path::Style::Windows;
+    // The end of the entry: the first separator outside quotes.
+    bool quoted = false;
+    bool quotes = false;
+    std::size_t end = 0;
+    for(; end < rest.size(); ++end) {
+        char c = rest[end];
+        if(windows && c == '"') {
+            quoted = !quoted;
+            quotes = true;
+        } else if(c == (windows ? ';' : ':') && !quoted) {
+            break;
         }
     }
-    return list;
+    entry = rest.substr(0, end);
+    if(quotes) {
+        unquoted.clear();
+        for(char c: entry) {
+            if(c != '"') {
+                unquoted.push_back(c);
+            }
+        }
+        entry = unquoted;
+    }
+    last = end == rest.size();
+    rest.remove_prefix(std::min(end + 1, rest.size()));
+    return *this;
+}
+
+std::error_code join_paths(buffer_ref out, string_list_ref paths, fs::path::Style style) {
+    bool posix = style == fs::path::Style::Posix;
+    out.clear();
+    for(std::size_t i = 0; i < paths.size(); ++i) {
+        auto path = paths[i];
+        if(path.find(posix ? ':' : '"') != std::string_view::npos) {
+            return std::make_error_code(std::errc::invalid_argument);
+        }
+        if(i != 0) {
+            out.push_back(posix ? ':' : ';');
+        }
+        // Quoted, a lone empty entry is not the empty list.
+        bool quote = !posix && (path.find(';') != std::string_view::npos ||
+                                (paths.size() == 1 && path.empty()));
+        if(quote) {
+            out.push_back('"');
+        }
+        out.append(path);
+        if(quote) {
+            out.push_back('"');
+        }
+    }
+    return {};
 }
 
 }  // namespace kota::sys

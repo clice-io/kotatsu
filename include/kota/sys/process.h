@@ -1,10 +1,11 @@
 #pragma once
 
-#include <expected>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <vector>
+
+#include "kota/support/buffer_ref.h"
 
 namespace kota::sys {
 
@@ -16,9 +17,19 @@ int pid() noexcept;
 /// process that started it, which may have exited and its ID gone to another.
 int parent_pid() noexcept;
 
-/// The absolute path of this program's executable: symbolic links resolved
-/// on Linux and macOS, as Windows names the module on Windows.
-std::expected<std::string, std::error_code> executable_path();
+/// Writes into `out` the absolute path of this program's executable, under
+/// the name its file has now: renamed since the program started, the new
+/// name; symbolic links resolved. Fails with no_such_file_or_directory once
+/// the file was removed, as an update that replaced it removes it; Windows
+/// removes no file a program runs from.
+std::error_code executable_path(buffer_ref out);
+
+/// Writes into `out` a path that starts this very program, the image this
+/// process runs, for starting another copy of it that speaks its protocol:
+/// on Linux /proc/self/exe, which reaches the image after its file was
+/// renamed, replaced or removed; elsewhere executable_path(), which fails
+/// on macOS once the file was removed.
+std::error_code self_executable(buffer_ref out);
 
 /// The arguments this program was started with, argv[0] first, read from
 /// the system rather than from main's argv: /proc/self/cmdline on Linux, the
@@ -51,18 +62,19 @@ struct ProgramSearch {
     std::vector<std::string> extensions = {};
 };
 
-/// The file program `name` names. On POSIX as execvp finds it: `name` itself
-/// when it holds a `/`, else the first regular file with execute permission
-/// in the directories of `search`. On Windows the first file that is no
-/// directory, a name with a separator or a drive being taken as a path
-/// rather than looked for; a Cygwin symlink (`/usr/bin/cc`) is followed to
-/// the program it names beside it, `.exe` added when the target has none,
-/// and counts as a file that cannot be run when it names a POSIX path, which
-/// only its runtime's mount table maps. no_such_file_or_directory when
-/// nothing is found, permission_denied when only files that cannot be run
-/// are.
-std::expected<std::string, std::error_code> find_program(std::string_view name,
-                                                         const ProgramSearch& search = {});
+/// Writes into `out` the file program `name` names. On POSIX as execvp
+/// finds it: `name` itself when it holds a `/`, else the first regular file
+/// with execute permission in the directories of `search`. On Windows the
+/// first file that is no directory, a name with a separator or a drive being
+/// taken as a path rather than looked for; a Cygwin symlink (`/usr/bin/cc`)
+/// is followed to the program it names beside it, `.exe` added when the
+/// target has none, and counts as a file that cannot be run when it names a
+/// POSIX path, which only its runtime's mount table maps.
+/// no_such_file_or_directory when nothing is found, permission_denied when
+/// only files that cannot be run are.
+std::error_code find_program(buffer_ref out,
+                             std::string_view name,
+                             const ProgramSearch& search = {});
 
 /// The name of signal `signum` on this host ("SIGSEGV"); empty for a number
 /// it has no signal by. On Windows the signals of the C runtime, and SIGKILL
