@@ -1,5 +1,6 @@
 #include "kota/sys/process.h"
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -15,6 +16,8 @@
 #elif defined(__APPLE__)
 #include <crt_externs.h>
 #include <libproc.h>
+#include <mach-o/dyld.h>
+#include <sys/stat.h>
 #else
 #include <sys/stat.h>
 
@@ -79,6 +82,19 @@ std::error_code executable_path(buffer_ref out) {
     // process has left.
     char path[PROC_PIDPATHINFO_MAXSIZE];
     if(::proc_pidpath(::getpid(), path, sizeof(path)) <= 0) {
+        return std::make_error_code(std::errc::no_such_file_or_directory);
+    }
+    // The name stays after a file was renamed over the image's: it is the
+    // image's only when it reaches the file the image's header is mapped
+    // from.
+    proc_regionwithpathinfo region{};
+    auto header = reinterpret_cast<std::uint64_t>(::_dyld_get_image_header(0));
+    const auto& image = region.prp_vip.vip_vi.vi_stat;
+    struct stat named;
+    if(::proc_pidinfo(::getpid(), PROC_PIDREGIONPATHINFO, header, &region, sizeof(region)) !=
+           static_cast<int>(sizeof(region)) ||
+       ::stat(path, &named) != 0 || static_cast<std::uint32_t>(named.st_dev) != image.vst_dev ||
+       named.st_ino != image.vst_ino) {
         return std::make_error_code(std::errc::no_such_file_or_directory);
     }
     out.assign(path);
