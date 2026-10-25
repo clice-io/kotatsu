@@ -57,7 +57,8 @@ public:
     struct spawn_result;
 
     /// Launches the child, with the pipes `opts` asks for. It either starts,
-    /// with all of them, or leaves nothing behind.
+    /// with all of them, or leaves nothing behind. Fails with
+    /// error::operation_aborted while the loop is being destroyed.
     static result<spawn_result> spawn(const options& opts,
                                       event_loop& loop = event_loop::current());
 

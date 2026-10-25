@@ -668,6 +668,11 @@ process::process(process&& other) noexcept = default;
 process& process::operator=(process&& other) noexcept = default;
 
 result<process::spawn_result> process::spawn(const options& opts, event_loop& loop) {
+    // Its watch would come after the loop closed its handles, and keep it
+    // from closing.
+    if(uv::destroying(*loop.native_handle())) {
+        return outcome_error(error::operation_aborted);
+    }
     // Made before the child, which nothing then separates from its watch but
     // what the rollback below undoes.
     detail::unique_handle<Self> self(new Self(sys::Child(), *loop.native_handle()));

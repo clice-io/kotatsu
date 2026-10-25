@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <format>
 #include <initializer_list>
+#include <latch>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -526,6 +527,32 @@ ZEST_CASE(wait_cancelled_after_its_process_is_destroyed_ends) {
     auto [result] = run(test::winner(proc->wait(), destroy()));
     ZASSERT(result.has_value());
     ZEXPECT(*result == 1U);
+}
+
+// ~event_loop runs the loop until the thread pool's work is done, and so
+// resumes the task that queued it: a watch made then would come after the
+// loop closed its handles, and keep it from closing.
+ZEST_CASE(spawn_while_its_loop_is_destroyed_fails) {
+    std::latch gate(1);
+    std::optional<result<process::spawn_result>> spawned;
+    std::optional<event_loop> dying(std::in_place);
+    auto late = [&]() -> task<> {
+        co_await queue([&] { gate.wait(); }, *dying);
+        spawned.emplace(process::spawn(shell("exit 0"), *dying));
+    };
+    auto stop = [&]() -> task<> {
+        dying->stop();
+        co_return;
+    };
+    dying->schedule(late());
+    dying->schedule(stop());
+    dying->run();
+
+    gate.count_down();
+    dying.reset();
+    ZASSERT(spawned.has_value());
+    ZASSERT(spawned->has_error());
+    ZEXPECT(spawned->error() == error::operation_aborted);
 }
 
 ZEST_CASE(inert_process_fails) {
