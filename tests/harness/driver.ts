@@ -26,7 +26,8 @@ const PROBLEM = /^\[(?:warn|error)\] .*$/gm;
 /** Warn or error lines a test lets the driver log. */
 type Allowance = { pattern: RegExp; left: number };
 
-function driverPath(name: string): string {
+/** The path of the driver `name`, which ctest passes in KOTA_<NAME>. */
+export function driverPath(name: string): string {
   const variable = `KOTA_${name.toUpperCase()}`;
   const path = process.env[variable];
   if (path === undefined) {
@@ -84,11 +85,14 @@ export class Driver {
     name: string,
     args: string[] = [],
     {
+      program = driverPath(name),
       stdin = "pipe",
       stdout = "pipe",
       env,
       windowsVerbatimArguments,
     }: {
+      /** What runs, a copy of the driver: the driver itself when unset. */
+      program?: string;
       stdin?: Stdio;
       stdout?: Stdio;
       /** The driver's environment, the test's when unset. */
@@ -99,7 +103,7 @@ export class Driver {
   ): Promise<Driver> {
     const driver = new Driver(
       name,
-      spawn(driverPath(name), args, {
+      spawn(program, args, {
         stdio: [stdin, stdout, "pipe"],
         env,
         windowsVerbatimArguments,

@@ -5,6 +5,9 @@
 //   quotes, backslashes and blanks; on Windows, where the program reads them
 //   from its command line, by the CRT's rules and without wildcard expansion;
 // - its environment's values, non-ASCII included, and its parent, the test;
+// - its executable's path under the name the file has now, and a copy of it
+//   started through self_executable after the file was renamed, and on Linux
+//   removed;
 // - another process's priority, set and read back, and its memory;
 // - on Linux and macOS the title it sets is what ps shows, and its own
 //   arguments read the same after;
@@ -13,10 +16,19 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { test } from "node:test";
+import {
+  copyFileSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test, type TestContext } from "node:test";
 
-import { Driver } from "../../harness/driver.ts";
+import { Driver, driverPath } from "../../harness/driver.ts";
 
 const tricky = [
   "",
@@ -97,6 +109,63 @@ test("parent_pid_is_the_test", async (t) => {
   await driver.expectExit(0);
   assert.equal(output, process.pid);
 });
+
+const exe = process.platform === "win32" ? ".exe" : "";
+
+/**
+ * A copy of sys_probe, in a directory of its own, running `moved`: the test
+ * renames or removes it.
+ */
+async function movable(
+  t: TestContext,
+): Promise<{ driver: Driver; path: string }> {
+  const dir = mkdtempSync(join(tmpdir(), "kota-moved-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, `first${exe}`);
+  copyFileSync(driverPath("sys_probe"), path);
+  const driver = await Driver.spawn(t, "sys_probe", ["moved"], {
+    program: path,
+  });
+  return { driver, path };
+}
+
+type Moved = { path: string | null; code: number | null };
+
+test("executable_path_follows_a_rename", async (t) => {
+  const { driver, path } = await movable(t);
+  const lines = driver.jsonLines();
+  assert.equal(await lines.receive(), "ready");
+  const renamed = join(path, "..", `second${exe}`);
+  renameSync(path, renamed);
+  driver.stdin.end();
+  const output = (await lines.receive()) as Moved;
+  await driver.expectExit(0);
+  assert.ok(output.path !== null);
+  // The native one resolves macOS's /private and Windows's short names.
+  assert.equal(realpathSync.native(output.path), realpathSync.native(renamed));
+  assert.equal(output.code, 0);
+});
+
+test(
+  "self_executable_outlives_a_removal_on_linux",
+  {
+    skip:
+      process.platform === "win32" &&
+      "Windows removes no file a program runs from",
+  },
+  async (t) => {
+    const { driver, path } = await movable(t);
+    const lines = driver.jsonLines();
+    assert.equal(await lines.receive(), "ready");
+    rmSync(path);
+    driver.stdin.end();
+    const output = (await lines.receive()) as Moved;
+    await driver.expectExit(0);
+    assert.equal(output.path, null);
+    // Linux starts the image itself; macOS has nothing to start it by.
+    assert.equal(output.code, process.platform === "linux" ? 0 : null);
+  },
+);
 
 test("priority_of_another_process_is_set_and_read", async (t) => {
   const waiting = await Driver.spawn(t, "sys_probe", ["wait"]);

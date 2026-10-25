@@ -6,6 +6,12 @@
 //                         or null when it is unset
 //   parent                prints its parent's pid
 //   wait                  prints "ready" and exits once its stdin ends
+//   moved                 prints "ready", and once its stdin ends, the test
+//                         having moved or removed its file meanwhile,
+//                         {"path": <what executable_path writes, or null
+//                         when it fails>, "code": <the exit code of
+//                         `sys_probe parent` started by self_executable, or
+//                         null when it cannot be started>}
 //   other <pid>           sets the priority of process <pid> to BelowNormal and
 //                         prints what it reads back, as a number, and the
 //                         process's resident size
@@ -279,6 +285,22 @@ int main() {
     if(command == "wait") {
         print_line(R"("ready")");
         wait_for_stdin();
+        return 0;
+    }
+    if(command == "moved") {
+        print_line(R"("ready")");
+        wait_for_stdin();
+        std::string path;
+        const bool found = !sys::executable_path(path);
+        auto options = probe({"parent"});
+        options.streams[1] = sys::Stdio::ignore();
+        std::string code = "null";
+        if(auto child = sys::spawn(options)) {
+            if(auto status = child->wait()) {
+                code = std::to_string(status->code);
+            }
+        }
+        print_line(std::format(R"({{"path":{},"code":{}}})", found ? json(path) : "null", code));
         return 0;
     }
     if(command == "other" && arguments.size() == 3) {
