@@ -15,6 +15,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <winsock2.h>
 #else
 #include <cstdlib>
 #include <fcntl.h>
@@ -31,14 +32,6 @@ namespace kota::sys {
 
 namespace {
 
-void close_descriptor(int fd) {
-#ifdef _WIN32
-    ::_close(fd);
-#else
-    ::close(fd);
-#endif
-}
-
 /// A descriptor, closed when it goes.
 struct Descriptor {
     explicit Descriptor(int fd) : fd(fd) {}
@@ -47,37 +40,34 @@ struct Descriptor {
     Descriptor& operator=(const Descriptor&) = delete;
 
     ~Descriptor() {
+        reset();
+    }
+
+    void reset() {
         if(fd >= 0) {
-            close_descriptor(fd);
+#ifdef _WIN32
+            ::_close(fd);
+#else
+            ::close(fd);
+#endif
+            fd = -1;
         }
     }
 
     int fd;
 };
 
-/// A pipe's two descriptors, closed when it goes.
+/// A pipe's two ends.
 struct Pipe {
     Pipe() {
+        int fds[2];
 #ifdef _WIN32
-        ZASSERT(::_pipe(fds.data(), 1 << 16, _O_BINARY) == 0);
+        ZASSERT(::_pipe(fds, 1 << 16, _O_BINARY) == 0);
 #else
-        ZASSERT(::pipe(fds.data()) == 0);
+        ZASSERT(::pipe(fds) == 0);
 #endif
-    }
-
-    Pipe(const Pipe&) = delete;
-    Pipe& operator=(const Pipe&) = delete;
-
-    ~Pipe() {
-        close_write();
-        close_descriptor(fds[0]);
-    }
-
-    void close_write() {
-        if(fds[1] >= 0) {
-            close_descriptor(fds[1]);
-            fds[1] = -1;
-        }
+        read.fd = fds[0];
+        write.fd = fds[1];
     }
 
     /// Writes to the write end return at once, taking what fits: O_NONBLOCK,
@@ -85,12 +75,12 @@ struct Pipe {
     void stop_blocking_writes() {
 #ifdef _WIN32
         DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
-        auto handle = reinterpret_cast<HANDLE>(::_get_osfhandle(fds[1]));
+        auto handle = reinterpret_cast<HANDLE>(::_get_osfhandle(write.fd));
         ZASSERT(::SetNamedPipeHandleState(handle, &mode, nullptr, nullptr));
 #else
-        auto flags = ::fcntl(fds[1], F_GETFL);
+        auto flags = ::fcntl(write.fd, F_GETFL);
         ZASSERT(flags >= 0);
-        ZASSERT(::fcntl(fds[1], F_SETFL, flags | O_NONBLOCK) == 0);
+        ZASSERT(::fcntl(write.fd, F_SETFL, flags | O_NONBLOCK) == 0);
 #endif
     }
 
@@ -100,9 +90,9 @@ struct Pipe {
         char buffer[4096];
         while(true) {
 #ifdef _WIN32
-            auto count = ::_read(fds[0], buffer, sizeof(buffer));
+            auto count = ::_read(read.fd, buffer, sizeof(buffer));
 #else
-            auto count = ::read(fds[0], buffer, sizeof(buffer));
+            auto count = ::read(read.fd, buffer, sizeof(buffer));
 #endif
             if(count <= 0) {
                 return text;
@@ -111,7 +101,8 @@ struct Pipe {
         }
     }
 
-    std::array<int, 2> fds{-1, -1};
+    Descriptor read{-1};
+    Descriptor write{-1};
 };
 
 /// A descriptor of file `path`, open for reading.
@@ -129,8 +120,8 @@ ZEST_SUITE(sys_console) {
 ZEST_CASE(write_console_writes_bytes_to_a_pipe) {
     Pipe pipe;
     std::string_view text = "caf\xC3\xA9 \xF0\x9F\x98\x80 \xFF\xC3 end\n";
-    ZEXPECT(!write_console(pipe.fds[1], text));
-    pipe.close_write();
+    ZEXPECT(!write_console(pipe.write.fd, text));
+    pipe.write.reset();
     ZEXPECT(pipe.read_all() == text);
 }
 
@@ -140,8 +131,8 @@ ZEST_CASE(write_console_writes_all_of_a_long_text) {
     std::string text(1 << 20, 'x');
     std::string read;
     std::thread reader([&] { read = pipe.read_all(); });
-    auto error = write_console(pipe.fds[1], text);
-    pipe.close_write();
+    auto error = write_console(pipe.write.fd, text);
+    pipe.write.reset();
     reader.join();
     ZEXPECT(!error);
     ZEXPECT(read.size() == text.size());
@@ -156,12 +147,12 @@ ZEST_CASE(write_console_to_a_full_pipe_that_does_not_block_fails) {
     pipe.stop_blocking_writes();
     std::size_t taken = 0;
     std::error_code error;
-    while(!(error = write_console(pipe.fds[1], "x"))) {
+    while(!(error = write_console(pipe.write.fd, "x"))) {
         ++taken;
     }
     ZEXPECT(error == std::errc::resource_unavailable_try_again);
     ZEXPECT(taken > 0U);
-    pipe.close_write();
+    pipe.write.reset();
     ZEXPECT(pipe.read_all().size() == taken);
 }
 
@@ -169,23 +160,35 @@ ZEST_CASE(write_console_to_no_descriptor_fails) {
     ZEXPECT(write_console(-1, "text") == std::errc::bad_file_descriptor);
 }
 
-ZEST_CASE(is_pipe_of_a_pipe) {
+ZEST_CASE(is_pipe_holds_for_a_pipe) {
     Pipe pipe;
-    ZEXPECT(is_pipe(pipe.fds[0]));
-    ZEXPECT(is_pipe(pipe.fds[1]));
-    ZEXPECT(!is_console(pipe.fds[1]));
+    ZEXPECT(is_pipe(pipe.read.fd));
+    ZEXPECT(is_pipe(pipe.write.fd));
+    ZEXPECT(!is_console(pipe.write.fd));
 }
 
-#ifndef _WIN32
-ZEST_CASE(is_pipe_of_a_socket) {
+ZEST_CASE(is_pipe_holds_for_a_socket) {
+#ifdef _WIN32
+    WSADATA data;
+    ZASSERT(::WSAStartup(MAKEWORD(2, 2), &data) == 0);
+    SOCKET handle = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ZASSERT(handle != INVALID_SOCKET);
+    // Its descriptor's close closes the socket's handle too.
+    Descriptor one(::_open_osfhandle(static_cast<std::intptr_t>(handle), 0));
+    ZASSERT(one.fd >= 0);
+#else
     int fds[2];
     ZASSERT(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
     Descriptor one(fds[0]);
     Descriptor other(fds[1]);
+#endif
     ZEXPECT(is_pipe(one.fd));
     ZEXPECT(!is_console(one.fd));
-}
+#ifdef _WIN32
+    one.reset();
+    ::WSACleanup();
 #endif
+}
 
 ZEST_CASE(is_pipe_of_a_file_is_false) {
     test::TempDir dir;
@@ -214,7 +217,7 @@ ZEST_CASE(is_pipe_of_no_descriptor_is_false) {
     int closed = -1;
     {
         Pipe pipe;
-        closed = pipe.fds[0];
+        closed = pipe.read.fd;
     }
     for(int fd: {-1, closed}) {
         ZEST_CONTEXT("descriptor {}", fd);
@@ -223,7 +226,7 @@ ZEST_CASE(is_pipe_of_no_descriptor_is_false) {
     }
 }
 
-ZEST_CASE(is_console_of_a_terminal) {
+ZEST_CASE(is_console_holds_for_a_terminal) {
 #ifdef _WIN32
     // The console this process has; none when it was started without one.
     HANDLE console = ::CreateFileW(L"CONOUT$",
@@ -241,11 +244,13 @@ ZEST_CASE(is_console_of_a_terminal) {
 #else
     // A pseudo-terminal's other end, which a sandbox may not give.
     Descriptor master(::posix_openpt(O_RDWR | O_NOCTTY));
-    if(master.fd < 0 || ::grantpt(master.fd) != 0 || ::unlockpt(master.fd) != 0) {
+    const char* name = nullptr;
+    if(master.fd < 0 || ::grantpt(master.fd) != 0 || ::unlockpt(master.fd) != 0 ||
+       (name = ::ptsname(master.fd)) == nullptr) {
         zest::skip();
         return;
     }
-    Descriptor terminal(::open(::ptsname(master.fd), O_RDWR | O_NOCTTY));
+    Descriptor terminal(::open(name, O_RDWR | O_NOCTTY));
 #endif
     ZASSERT(terminal.fd >= 0);
     ZEXPECT(is_console(terminal.fd));

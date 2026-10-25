@@ -21,7 +21,7 @@ int parent_pid() noexcept;
 /// included: on POSIX a zombie too, which has exited and which its parent
 /// has not waited for. False for 0 and below. An ID may be another
 /// process's once its own has gone.
-bool process_alive(int pid);
+bool process_alive(int pid) noexcept;
 
 /// Writes into `out` the absolute path of this program's executable, under
 /// the name its file has now: renamed since the program started, the new
@@ -48,15 +48,18 @@ std::error_code self_executable(buffer_ref out);
 const std::vector<std::string>& arguments();
 
 /// Sets the title `ps` shows for this process: the memory of its arguments
-/// is overwritten with `title`, cut to their length, and on Linux
-/// set_process_name sets the name `top` shows. not_supported on Windows,
-/// which has no such title (its console's is shared with the processes
-/// before this one). Not thread-safe against readers of main's argv.
+/// is overwritten with `title`, cut to their length, and on Linux the name
+/// `top` shows, as set_process_name sets it, unless `title` is empty.
+/// not_supported on Windows, which has no such title (its console's is
+/// shared with the processes before this one). Not thread-safe against
+/// readers of main's argv.
 std::error_code set_process_title(std::string_view title);
 
 /// Sets the name `top` and `pgrep` show for this process, leaving its
 /// arguments as they are: on Linux the name of its main thread, the first 15
-/// bytes of `name`. not_supported on macOS and Windows.
+/// bytes of `name`, cut back to a character's start. invalid_argument when
+/// that leaves nothing, as of an empty `name`. not_supported on macOS and
+/// Windows.
 std::error_code set_process_name(std::string_view name);
 
 /// Where find_program looks for a program.

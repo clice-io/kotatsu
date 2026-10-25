@@ -11,7 +11,8 @@
 //   replaced;
 // - another process's priority, set and read back, and its memory;
 // - on Linux and macOS the title it sets is what ps shows, and its own
-//   arguments read the same after;
+//   arguments read the same after; on Linux an empty one leaves the name top
+//   shows;
 // - on Windows what write_console writes to a console, and the limits of a
 //   job it joins.
 
@@ -26,7 +27,7 @@ import {
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { test, type TestContext } from "node:test";
 
 import { Driver, driverPath } from "../../harness/driver.ts";
@@ -239,6 +240,25 @@ test(
       );
       assert.equal(command.trim(), title);
     }
+    driver.stdin.end();
+    await driver.expectExit(0);
+  },
+);
+
+test(
+  "title_that_is_empty_leaves_the_name",
+  {
+    skip:
+      process.platform !== "linux" && "only Linux has a name beside the title",
+  },
+  async (t) => {
+    const driver = await Driver.spawn(t, "sys_probe", ["title", "", "1"]);
+    await driver.jsonLines().receive();
+    const cmdline = readFileSync(`/proc/${driver.pid}/cmdline`, "latin1");
+    assert.equal(cmdline.replace(/\0+$/, ""), "");
+    // The name the kernel gave it from its executable's.
+    const comm = readFileSync(`/proc/${driver.pid}/comm`, "latin1");
+    assert.equal(comm, `${basename(driverPath("sys_probe")).slice(0, 15)}\n`);
     driver.stdin.end();
     await driver.expectExit(0);
   },

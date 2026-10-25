@@ -95,7 +95,9 @@ inline std::intptr_t descriptor_handle(int fd) noexcept {
     ::_set_thread_local_invalid_parameter_handler(previous);
     return handle;
 #else
-    // MinGW's runtime says EBADF and nothing more.
+    // MinGW's headers declare no handler of a thread's own; its startup code
+    // sets one for the process that does nothing, so the runtime says EBADF
+    // and nothing more.
     return ::_get_osfhandle(fd);
 #endif
 }

@@ -3,6 +3,12 @@
 #include <string_view>
 #include <system_error>
 
+// What a descriptor is, and writing text to it. On Windows a descriptor that
+// is not open ends no process here, as the C runtime's check of it would;
+// MSVC's debug runtime (/MDd, /MTd) still reports that check's failed
+// assertion first, in a dialog that waits for an answer unless
+// _CrtSetReportMode sends its reports elsewhere.
+
 namespace kota::sys {
 
 /// Writes `text`, UTF-8, to the open file descriptor `fd`, all of it: to a

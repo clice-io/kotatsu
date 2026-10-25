@@ -90,17 +90,30 @@ std::error_code set_process_title([[maybe_unused]] std::string_view given) {
     std::memcpy(area->start, title.data(), length);
     std::memset(area->start + length, '\0', area->size - length);
 #ifdef __linux__
-    return set_process_name(title);
-#else
-    return {};
+    // An empty title leaves the name as it was.
+    if(!title.empty()) {
+        return set_process_name(title);
+    }
 #endif
+    return {};
 #endif
 }
 
 std::error_code set_process_name([[maybe_unused]] std::string_view name) {
 #ifdef __linux__
+    // Linux keeps 15 bytes; a character they would cut goes whole.
+    if(name.size() > 15) {
+        std::size_t end = 15;
+        while(end > 0 && (static_cast<unsigned char>(name[end]) & 0xC0) == 0x80) {
+            --end;
+        }
+        name = name.substr(0, end);
+    }
+    if(name.empty()) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
     // The name of the main thread, which is the process's in top and pgrep.
-    return fs::write_file("/proc/self/comm", name.substr(0, 15));
+    return fs::write_file("/proc/self/comm", name);
 #else
     return std::make_error_code(std::errc::not_supported);
 #endif

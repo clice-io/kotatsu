@@ -145,8 +145,9 @@ std::error_code hostname(buffer_ref out);
 /// The time since the system started.
 std::chrono::milliseconds uptime();
 
-/// A process's priority: Windows's priority classes, and on POSIX the nice
-/// values 19, 10, 0, -7, -14 and -20.
+/// A priority, from the lowest. A process's is one of Windows's priority
+/// classes, and on POSIX one of the nice values 19, 10, 0, -7, -14 and -20; a
+/// thread's is one of set_thread_priority's.
 enum class Priority : std::uint8_t {
     Idle,
     BelowNormal,
@@ -172,8 +173,11 @@ std::error_code set_priority(Priority priority, int pid = 0);
 /// THREAD_PRIORITY_TIME_CRITICAL; on macOS its quality of service,
 /// QOS_CLASS_BACKGROUND to QOS_CLASS_USER_INTERACTIVE, which High and
 /// Realtime share; on Linux its nice value, as set_priority(priority) sets
-/// it, raising which takes privileges. invalid_argument for a value Priority
-/// does not name.
+/// it. That value is the priority's own whatever the thread had: on Linux a
+/// thread lower already, as in a process started under `nice -n 15`, is
+/// raised, which takes privileges and fails without them, unless the caller
+/// compares priority() first. invalid_argument for a value Priority does not
+/// name.
 std::error_code set_thread_priority(Priority priority);
 
 }  // namespace kota::sys

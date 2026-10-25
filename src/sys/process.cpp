@@ -61,7 +61,7 @@ int parent_pid() noexcept {
 #endif
 }
 
-bool process_alive(int pid) {
+bool process_alive(int pid) noexcept {
     // kill takes 0 and below for process groups, -1 for every process.
     if(pid <= 0) {
         return false;

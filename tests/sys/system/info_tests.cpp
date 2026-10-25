@@ -21,6 +21,7 @@
 #include <unistd.h>
 #endif
 
+#include "sys/harness/pids.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/sys/info.h"
@@ -29,10 +30,6 @@
 namespace kota::sys {
 
 namespace {
-
-// A pid no process has: above the largest Linux allows (2^22) and macOS
-// uses, and not a multiple of four, which every Windows pid is.
-constexpr int missing_pid = 999'999'999;
 
 /// The calling thread's priority as the system keeps it: its priority within
 /// the process's class on Windows, its quality of service on macOS, its nice
@@ -71,7 +68,7 @@ ZEST_CASE(process_stats_describe_this_process) {
 }
 
 ZEST_CASE(process_stats_of_a_missing_pid_fails) {
-    auto stats = process_stats(missing_pid);
+    auto stats = process_stats(test::missing_pid);
     ZASSERT(!stats.has_value());
     ZEXPECT(stats.error() == std::errc::no_such_process);
 }
@@ -178,30 +175,56 @@ ZEST_CASE(set_priority_of_a_value_no_priority_names_fails) {
 }
 
 ZEST_CASE(priority_of_a_missing_pid_fails) {
-    auto read = priority(missing_pid);
+    auto read = priority(test::missing_pid);
     ZASSERT(!read.has_value());
     ZEXPECT(read.error() == std::errc::no_such_process);
-    ZEXPECT(set_priority(Priority::Normal, missing_pid) == std::errc::no_such_process);
+    ZEXPECT(set_priority(Priority::Normal, test::missing_pid) == std::errc::no_such_process);
 }
 
-// A thread of its own, which a lower priority on POSIX cannot be taken back
-// from, and which leaves the others as they are.
+// Each on a thread of its own, which goes with what it set, the case's own
+// left as it was. Linux sets each priority's nice value as it is, and raising
+// a thread's takes privileges: there only those at or below the thread's own,
+// which a process started under `nice` may have lowered.
 ZEST_CASE(set_thread_priority_sets_the_calling_threads) {
-    auto before = thread_priority();
-    std::error_code error;
-    int lowered = 0;
-    std::thread([&] {
-        error = set_thread_priority(Priority::BelowNormal);
-        lowered = thread_priority();
-    }).join();
-    ZEXPECT(!error);
 #ifdef _WIN32
-    ZEXPECT(lowered == THREAD_PRIORITY_BELOW_NORMAL);
+    constexpr int levels[] = {
+        THREAD_PRIORITY_IDLE,
+        THREAD_PRIORITY_BELOW_NORMAL,
+        THREAD_PRIORITY_NORMAL,
+        THREAD_PRIORITY_ABOVE_NORMAL,
+        THREAD_PRIORITY_HIGHEST,
+        THREAD_PRIORITY_TIME_CRITICAL,
+    };
 #elif defined(__APPLE__)
-    ZEXPECT(lowered == static_cast<int>(QOS_CLASS_UTILITY));
+    constexpr int levels[] = {
+        QOS_CLASS_BACKGROUND,
+        QOS_CLASS_UTILITY,
+        QOS_CLASS_DEFAULT,
+        QOS_CLASS_USER_INITIATED,
+        QOS_CLASS_USER_INTERACTIVE,
+        QOS_CLASS_USER_INTERACTIVE,
+    };
 #else
-    ZEXPECT(lowered == 10);
+    constexpr int levels[] = {19, 10, 0, -7, -14, -20};
 #endif
+    auto before = thread_priority();
+    for(int index = 0; index < 6; ++index) {
+        auto level = static_cast<Priority>(index);
+        ZEST_CONTEXT("priority {}", index);
+#if !defined(_WIN32) && !defined(__APPLE__)
+        if(levels[index] < before) {
+            continue;
+        }
+#endif
+        std::error_code error;
+        int set = 0;
+        std::thread([&] {
+            error = set_thread_priority(level);
+            set = thread_priority();
+        }).join();
+        ZEXPECT(!error);
+        ZEXPECT(set == levels[index]);
+    }
     ZEXPECT(thread_priority() == before);
 }
 
@@ -270,10 +293,10 @@ ZEST_CASE(oom_score_adjustment_is_read_and_set) {
 }
 
 ZEST_CASE(oom_score_adjustment_of_a_missing_pid_fails) {
-    auto read = oom_score_adjustment(missing_pid);
+    auto read = oom_score_adjustment(test::missing_pid);
     ZASSERT(!read.has_value());
     ZEXPECT(read.error() == std::errc::no_such_process);
-    ZEXPECT(set_oom_score_adjustment(0, missing_pid) == std::errc::no_such_process);
+    ZEXPECT(set_oom_score_adjustment(0, test::missing_pid) == std::errc::no_such_process);
 }
 #else
 ZEST_CASE(oom_score_adjustment_off_linux_fails) {

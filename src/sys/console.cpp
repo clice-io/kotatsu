@@ -52,10 +52,6 @@ std::error_code write_wide(HANDLE console, std::string_view text) noexcept {
             if(!::WriteConsoleW(console, rest, static_cast<DWORD>(count), &written, nullptr)) {
                 return fs::windows::last_error();
             }
-            // A console that took nothing would take nothing again.
-            if(written == 0) {
-                return std::make_error_code(std::errc::io_error);
-            }
             rest += written;
             count -= written;
         }

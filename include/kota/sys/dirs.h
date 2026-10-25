@@ -5,11 +5,12 @@
 
 #include "kota/support/buffer_ref.h"
 
-// The user's well-known directories, none of which is created. On Windows,
-// linking home_dir, expand_tilde, cache_dir, config_dir or data_dir imports
-// shell32 and ole32 for the known folders, which a library injected into
-// other programs should not load; temp_dir lives apart and takes kernel32
-// alone. Each writes the directory into a buffer the caller gives.
+// The user's well-known directories, none of which is created, and paths
+// under the home directory spelled with `~`. On Windows, linking home_dir,
+// expand_tilde, cache_dir, config_dir or data_dir imports shell32 and ole32
+// for the known folders, which a library injected into other programs should
+// not load; temp_dir lives apart and takes kernel32 alone. Each writes the
+// path into a buffer the caller gives.
 
 namespace kota::sys {
 
@@ -18,7 +19,7 @@ namespace kota::sys {
 /// the profile directory.
 std::error_code home_dir(buffer_ref out);
 
-/// Writes into `out` `path` with its leading `~` expanded, as a shell does:
+/// Writes `path` into `out`, its leading `~` expanded, as a shell does:
 /// `~` alone or before a separator becomes home_dir(), its trailing
 /// separators dropped before the rest of `path` (`~/a` is `/a` in a home of
 /// `/`); on POSIX `~user` becomes the home of user `user` in the password

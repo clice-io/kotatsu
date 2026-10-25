@@ -11,9 +11,13 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <csignal>
+#include <sys/wait.h>
 #endif
 
 #include "fs/harness/files.h"
+#include "sys/harness/pids.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/file.h"
@@ -33,6 +37,7 @@ struct UnopenableProcess {
         SECURITY_DESCRIPTOR descriptor;
         ZASSERT(::InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION));
         // A list of access with no entry grants nothing.
+        ACL acl;
         ZASSERT(::InitializeAcl(&acl, sizeof(acl), ACL_REVISION));
         ZASSERT(::SetSecurityDescriptorDacl(&descriptor, TRUE, &acl, FALSE));
         SECURITY_ATTRIBUTES attributes{
@@ -64,7 +69,6 @@ struct UnopenableProcess {
         ::CloseHandle(info.hProcess);
     }
 
-    ACL acl;
     PROCESS_INFORMATION info{};
     zest::FatalHook on_fatal{[this] { ::TerminateProcess(info.hProcess, 0); }};
 };
@@ -103,6 +107,21 @@ struct ScopedNoDebugPrivilege {
     }
 };
 #endif
+
+/// A child that exits at once, its streams ignored.
+SpawnOptions exit_at_once() {
+    SpawnOptions options{
+#ifdef _WIN32
+        .program = "cmd",
+        .args = {"/c", "exit 0"},
+#else
+        .program = "sh",
+        .args = {"-c", "exit 0"},
+#endif
+    };
+    options.streams = {Stdio::ignore(), Stdio::ignore(), Stdio::ignore()};
+    return options;
+}
 
 #ifdef __linux__
 /// The name of this process's main thread.
@@ -166,7 +185,7 @@ ZEST_CASE(arguments_start_with_this_program) {
     ZEXPECT(&sys::arguments() == &arguments);
 }
 
-ZEST_CASE(process_alive_of_this_process) {
+ZEST_CASE(process_alive_holds_for_this_process) {
     ZEXPECT(process_alive(pid()));
 }
 
@@ -175,40 +194,48 @@ ZEST_CASE(process_alive_of_this_process) {
 ZEST_CASE(process_alive_of_no_pid_is_false) {
     ZEXPECT(!process_alive(0));
     ZEXPECT(!process_alive(-1));
-    // Above the largest pid Linux allows (2^22) and macOS uses, and not a
-    // multiple of four, which every Windows pid is.
-    ZEXPECT(!process_alive(999'999'999));
+    ZEXPECT(!process_alive(test::missing_pid));
 }
 
 ZEST_CASE(process_alive_of_a_child_waited_for_is_false) {
-    SpawnOptions options{
-#ifdef _WIN32
-        .program = "cmd",
-        .args = {"/c", "exit 0"},
-#else
-        .program = "sh",
-        .args = {"-c", "exit 0"},
-#endif
-    };
-    options.streams = {Stdio::ignore(), Stdio::ignore(), Stdio::ignore()};
-    auto child = spawn(options);
+    auto child = spawn(exit_at_once());
     ZASSERT(child.has_value());
     ZASSERT(child->wait().has_value());
     ZEXPECT(!process_alive(child->pid()));
 }
 
 #ifdef _WIN32
-ZEST_CASE(process_alive_of_a_process_this_one_may_not_open) {
+ZEST_CASE(process_alive_holds_for_a_process_this_one_may_not_open) {
     UnopenableProcess process;
     ScopedNoDebugPrivilege unprivileged;
     auto id = process.info.dwProcessId;
-    ZEXPECT(::OpenProcess(SYNCHRONIZE, FALSE, id) == nullptr);
-    ZEXPECT(::GetLastError() == static_cast<DWORD>(ERROR_ACCESS_DENIED));
+    HANDLE opened = ::OpenProcess(SYNCHRONIZE, FALSE, id);
+    auto error = ::GetLastError();
+    if(opened != nullptr) {
+        ::CloseHandle(opened);
+    }
+    ZEXPECT(opened == nullptr);
+    ZEXPECT(error == static_cast<DWORD>(ERROR_ACCESS_DENIED));
     ZEXPECT(process_alive(static_cast<int>(id)));
 }
 #else
-// init, which a process other than root's may not signal.
-ZEST_CASE(process_alive_of_a_process_this_one_may_not_signal) {
+// One that has exited and is not yet waited for.
+ZEST_CASE(process_alive_holds_for_a_zombie) {
+    auto child = spawn(exit_at_once());
+    ZASSERT(child.has_value());
+    siginfo_t info{};
+    ZASSERT(::waitid(P_PID, static_cast<id_t>(child->pid()), &info, WEXITED | WNOWAIT) == 0);
+    ZEXPECT(process_alive(child->pid()));
+    ZASSERT(child->wait().has_value());
+}
+
+// init, which a process other than root's, outside a namespace of its own
+// pids, may not signal.
+ZEST_CASE(process_alive_holds_for_a_process_this_one_may_not_signal) {
+    if(::kill(1, 0) == 0) {
+        zest::skip();
+        return;
+    }
     ZEXPECT(process_alive(1));
 }
 #endif
@@ -225,6 +252,24 @@ ZEST_CASE(set_process_name_names_the_main_thread) {
     std::string after;
     ZASSERT(!fs::read_file(after, "/proc/self/cmdline"));
     ZEXPECT(after == arguments);
+}
+
+// A character of three bytes after 13, which the fifteenth would cut, goes;
+// after 12 it fits.
+ZEST_CASE(set_process_name_cuts_at_a_character) {
+    ScopedProcessName restore;
+    ZEXPECT(!set_process_name("kota-process-\xE5\x90\x8D"));
+    ZEXPECT(main_thread_name() == "kota-process-");
+    ZEXPECT(!set_process_name("kota-proces-\xE5\x90\x8D"));
+    ZEXPECT(main_thread_name() == "kota-proces-\xE5\x90\x8D");
+}
+
+ZEST_CASE(set_process_name_of_nothing_fails) {
+    ScopedProcessName restore;
+    ZEXPECT(set_process_name("") == std::errc::invalid_argument);
+    // None of the 15 bytes kept starts a character.
+    ZEXPECT(set_process_name(std::string(16, '\x80')) == std::errc::invalid_argument);
+    ZEXPECT(main_thread_name() == restore.previous);
 }
 #else
 ZEST_CASE(set_process_name_off_linux_fails) {
