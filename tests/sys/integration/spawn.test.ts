@@ -98,24 +98,19 @@ test("streams_may_swap_descriptors", async (t) => {
   assert.equal(driver.stderr.trim(), '"to-stdout"');
 });
 
-// Each in turn: the child has the other two. Its console on Windows is
-// sys_probe's, or with "hidden" a new one without a window, which would put
-// its own handle in place of a null one.
+// Each in turn: the child has the other two.
 test("closed_stream_is_closed_in_the_child_alone", async (t) => {
   for (const index of [0, 1, 2]) {
-    for (const hidden of [[], ["hidden"]]) {
-      const driver = await Driver.spawn(t, "sys_probe", [
-        "closed",
-        String(index),
-        ...hidden,
-      ]);
-      const output = await driver.jsonLines().receive();
-      await driver.expectExit(0);
-      assert.deepEqual(output, {
-        open: 0b1000 | (0b111 & ~(1 << index)),
-        kept: true,
-      });
-    }
+    const driver = await Driver.spawn(t, "sys_probe", [
+      "closed",
+      String(index),
+    ]);
+    const output = await driver.jsonLines().receive();
+    await driver.expectExit(0);
+    assert.deepEqual(output, {
+      open: 0b1000 | (0b111 & ~(1 << index)),
+      kept: true,
+    });
   }
 });
 

@@ -443,8 +443,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
 
     Child child;
     // The child's standard handles, inheritable only while it is created and
-    // closed then; none for Closed, and for Inherit where this process has
-    // none.
+    // closed then; a null one for Closed, and for Inherit or FD where this
+    // process has none, which a console the child gets of its own fills.
     std::array<Handle, 3> handles;
     bool shares_streams = false;
     constexpr DWORD standard[] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
@@ -559,16 +559,9 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb = sizeof(startup);
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
-    // A stream closed gets INVALID_HANDLE_VALUE: when the child gets a
-    // console of its own, Windows puts the console's handles in place of
-    // null ones, and of every one of a child that inherits none.
-    auto standard_handle = [&](std::size_t i) {
-        return options.streams[i].kind == Stdio::Kind::Closed ? INVALID_HANDLE_VALUE
-                                                              : handles[i].handle;
-    };
-    startup.StartupInfo.hStdInput = standard_handle(0);
-    startup.StartupInfo.hStdOutput = standard_handle(1);
-    startup.StartupInfo.hStdError = standard_handle(2);
+    startup.StartupInfo.hStdInput = handles[0].handle;
+    startup.StartupInfo.hStdOutput = handles[1].handle;
+    startup.StartupInfo.hStdError = handles[2].handle;
     startup.StartupInfo.wShowWindow =
         static_cast<WORD>(creation.windows_hide_gui ? SW_HIDE : SW_SHOWDEFAULT);
     startup.lpAttributeList = attributes;
