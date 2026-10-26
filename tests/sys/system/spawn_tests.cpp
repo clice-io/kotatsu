@@ -38,6 +38,7 @@
 
 #ifndef _WIN32
 #include "sys/harness/signals.h"
+#include "sys/harness/streams.h"
 #include "kota/sys/detail/signals.h"
 #endif
 
@@ -866,29 +867,11 @@ ZEST_CASE(keep_signals_gives_back_the_sigchld_spawn_stopped_ignoring) {
 }
 #endif
 
-/// This process's stdin closed until this goes, which puts it back.
-struct ScopedClosedStdin {
-    ScopedClosedStdin() : saved(::fcntl(0, F_DUPFD_CLOEXEC, 3)) {
-        ZASSERT(saved >= 0);
-        ::close(0);
-    }
-
-    ScopedClosedStdin(const ScopedClosedStdin&) = delete;
-    ScopedClosedStdin& operator=(const ScopedClosedStdin&) = delete;
-
-    ~ScopedClosedStdin() {
-        ::dup2(saved, 0);
-        ::close(saved);
-    }
-
-    int saved;
-};
-
 // As a program may be started with one.
 ZEST_CASE(inherit_of_a_closed_stream_closes_it_in_the_child) {
     std::expected<ExitStatus, std::error_code> status;
     {
-        ScopedClosedStdin closed;
+        test::ScopedClosedStream closed(0);
         // cat fails to read a stdin it has not, and reads one it has to its
         // end. A pipe spawn makes, and the /dev/null it opens for stderr,
         // take the number free here for a moment.
@@ -908,7 +891,7 @@ ZEST_CASE(inherit_of_a_closed_stream_closes_it_in_the_child) {
 ZEST_CASE(pidfd_takes_no_closed_stream) {
     std::expected<ExitStatus, std::error_code> status;
     {
-        ScopedClosedStdin closed;
+        test::ScopedClosedStream closed(0);
         auto first = spawn(test::shell("exit 0"));
         ZASSERT(first.has_value());
         auto options = test::shell("test -e /proc/self/fd/0 && exit 1; exit 3");
@@ -964,6 +947,30 @@ ZEST_CASE(exit_with_parent_fails_on_macos) {
     auto child = spawn(options);
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::not_supported);
+}
+
+// A wait goes through a kqueue of its own, which would take the number of a
+// standard stream this process closed while it waits. Nothing tells when
+// the wait has made it: the test looks for a while, to show it never does.
+ZEST_CASE(wait_takes_no_closed_stream) {
+    test::ScopedClosedStream closed(0);
+    auto options = test::shell("cat");
+    options.streams[0] = Stdio::pipe();
+    auto child = spawn(options);
+    ZASSERT(child.has_value());
+    auto end = child->take_pipe(0);
+    std::expected<ExitStatus, std::error_code> status;
+    std::thread waiter([&] { status = child->wait(); });
+    bool taken = false;
+    for(int tries = 0; tries < 100 && !taken; ++tries) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        taken = ::fcntl(0, F_GETFD) != -1;
+    }
+    test::close_end(end);
+    waiter.join();
+    ZEXPECT(!taken);
+    ZASSERT(status.has_value());
+    ZEXPECT(status->success());
 }
 #endif
 
