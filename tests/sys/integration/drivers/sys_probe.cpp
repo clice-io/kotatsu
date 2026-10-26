@@ -69,14 +69,15 @@
 //                         prints whether that saw it: {"inherited": <bool>}
 //   handle <value> <name> Windows: exits with 1 when <value> is a handle of
 //                         the event named <name>, 0 otherwise
-//   open                  exits with 8 plus a number whose bit i says that it
-//                         has standard stream i, on Windows a handle there:
+//   open                  Windows: exits with 8 plus a number whose bit i
+//                         says that it has a handle for standard stream i:
 //                         its stdout may be the stream it has not
-//   closed <i>            starts `sys_probe open`, its standard stream <i>
-//                         closed and the others this one's, on Windows in a
-//                         console this one shares, and prints {"open": <what
-//                         that exited with>, "kept": <whether this one still
-//                         has stream <i>>}
+//   closed <i>            starts a child that exits as open does, its
+//                         standard stream <i> closed and the others this
+//                         one's, and prints {"open": <what that exited with>,
+//                         "kept": <whether this one still has stream <i>>};
+//                         on Windows `sys_probe open`, in a console this one
+//                         shares, elsewhere the shell
 //
 // Each prints one JSON line to stdout and exits with 0 unless its entry says
 // otherwise; 1 when a call fails, saying why on stderr; 2 for a command it
@@ -414,13 +415,6 @@ int main() {
             .args = std::vector<std::string>(arguments.begin() + 3, arguments.end()),
         });
     }
-    if(command == "open") {
-        int held = 8;
-        for(int index = 0; index < 3; ++index) {
-            held |= has_stream(index) ? 1 << index : 0;
-        }
-        return held;
-    }
     if(command == "closed" && arguments.size() == 3 && arguments[2].size() == 1 &&
        arguments[2][0] >= '0' && arguments[2][0] <= '2') {
         const int index = arguments[2][0] - '0';
@@ -428,8 +422,17 @@ int main() {
         // One the child shares: a console of its own, which Windows makes
         // for it when this one has none, would fill the null handle.
         ::AllocConsole();
-#endif
         auto options = probe({"open"});
+#else
+        // Not this program, which a sanitizer, as it starts, may give a
+        // descriptor of its own on a standard stream's number.
+        sys::SpawnOptions options{
+            .program = "/bin/sh",
+            .args = {"-c",
+                     "held=8; for i in 0 1 2; do [ -e /dev/fd/$i ] && held=$((held | 1 << i)); "
+                     "done; exit $held"},
+        };
+#endif
         options.streams[index] = sys::Stdio::closed();
         auto child = sys::spawn(options);
         if(!child) {
@@ -526,6 +529,13 @@ int main() {
     }
 #endif
 #ifdef _WIN32
+    if(command == "open") {
+        int held = 8;
+        for(int index = 0; index < 3; ++index) {
+            held |= has_stream(index) ? 1 << index : 0;
+        }
+        return held;
+    }
     if(command == "nested") {
         // As a CI runner's: a job of its own, which its processes' children
         // may leave.
