@@ -33,25 +33,20 @@ struct enum_probe {
     constexpr static bool valid = !name.empty() && name.find(')') == std::string_view::npos;
 };
 
-/// The i-th of the values -128..127 that the reflection of an enum whose underlying type is U
-/// scans, in ascending order of U: an unsigned U (char too, where it is unsigned) converts the
-/// negative values to its largest, so they come after 0..127.
-template <typename U>
-consteval int scan_value(int i) {
+template <typename U, int... Is>
+consteval auto make_scan_values(std::integer_sequence<int, Is...>) {
     if constexpr(std::is_signed_v<U>) {
-        return i - 128;
+        return std::integer_sequence<int, (Is - 128)...>{};
     } else {
-        return i < 128 ? i : i - 256;
+        return std::integer_sequence<int, (Is < 128 ? Is : Is - 256)...>{};
     }
 }
 
-template <typename U, typename Seq>
-struct scan_sequence;
-
-template <typename U, int... Is>
-struct scan_sequence<U, std::integer_sequence<int, Is...>> {
-    using type = std::integer_sequence<int, scan_value<U>(Is)...>;
-};
+/// The values the reflection of an enum whose underlying type is U scans, -128..127, in
+/// ascending order of U, which enum_name's binary search needs: an unsigned U (char too, where
+/// it is unsigned) converts the negative ones to its largest values, so they come after 0..127.
+template <typename U>
+using scan_values = decltype(make_scan_values<U>(std::make_integer_sequence<int, 256>{}));
 
 template <typename E, int... Values>
 consteval auto make_candidate_values(std::integer_sequence<int, Values...>) {
@@ -91,10 +86,7 @@ concept enum_type = std::is_enum_v<T>;
 
 template <enum_type T>
 struct reflection<T> {
-    // Ascending, which enum_name's binary search needs.
-    using scan_sequence =
-        typename detail::scan_sequence<std::underlying_type_t<T>,
-                                       std::make_integer_sequence<int, 256>>::type;
+    using scan_sequence = detail::scan_values<std::underlying_type_t<T>>;
 
     constexpr inline static auto candidate_values =
         detail::make_candidate_values<T>(scan_sequence{});

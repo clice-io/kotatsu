@@ -42,11 +42,13 @@ enum class High8 : std::uint8_t {
     High = 200,
 };
 
-/// A sentinel the scan reaches as -1.
-enum class Sentinel : std::uint32_t {
-    First,
-    Second,
-    Invalid = 0xFFFF'FFFF,
+/// The ends of both halves of the scan of an unsigned type: 0..127, then the
+/// top 128 values, reached as -128..-1.
+enum class EdgeU32 : std::uint32_t {
+    Zero = 0,
+    Top = 127,
+    Bottom = 0xFFFF'FF80,
+    Max = 0xFFFF'FFFF,
 };
 
 /// A high byte, negative where char is signed and above 127 where it is not (Linux on ARM).
@@ -87,17 +89,6 @@ static_assert(reflection<Edge8>::member_values[1] == Edge8::Max);
 static_assert(reflection<Edge8>::member_names[0] == "Min");
 static_assert(reflection<Edge8>::member_names[1] == "Max");
 
-static_assert(reflection<High8>::member_count == 2);
-static_assert(reflection<High8>::member_values[0] == High8::Low);
-static_assert(reflection<High8>::member_values[1] == High8::High);
-
-static_assert(reflection<Sentinel>::member_count == 3);
-static_assert(reflection<Sentinel>::member_values[0] == Sentinel::First);
-static_assert(reflection<Sentinel>::member_values[1] == Sentinel::Second);
-static_assert(reflection<Sentinel>::member_values[2] == Sentinel::Invalid);
-
-static_assert(reflection<Byte>::member_count == 2);
-
 ZEST_SUITE(meta_enum) {
 
 ZEST_CASE(enum_member_names) {
@@ -123,14 +114,25 @@ ZEST_CASE(enum_member_names) {
     ZEXPECT(enum_name(Edge8::Max) == "Max");
 }
 
-ZEST_CASE(enum_name_unsigned_beyond_127) {
+ZEST_CASE(unsigned_members_above_127_ascend) {
+    ZSTATIC_EXPECT(reflection<High8>::member_count == 2);
+    ZSTATIC_EXPECT(reflection<High8>::member_values[0] == High8::Low);
+    ZSTATIC_EXPECT(reflection<High8>::member_values[1] == High8::High);
     ZEXPECT(enum_name(High8::Low) == "Low");
     ZEXPECT(enum_name(High8::High) == "High");
 
-    ZEXPECT(enum_name(Sentinel::First) == "First");
-    ZEXPECT(enum_name(Sentinel::Second) == "Second");
-    ZEXPECT(enum_name(Sentinel::Invalid) == "Invalid");
+    ZSTATIC_EXPECT(reflection<EdgeU32>::member_count == 4);
+    ZSTATIC_EXPECT(reflection<EdgeU32>::member_values[0] == EdgeU32::Zero);
+    ZSTATIC_EXPECT(reflection<EdgeU32>::member_values[1] == EdgeU32::Top);
+    ZSTATIC_EXPECT(reflection<EdgeU32>::member_values[2] == EdgeU32::Bottom);
+    ZSTATIC_EXPECT(reflection<EdgeU32>::member_values[3] == EdgeU32::Max);
+    ZEXPECT(enum_name(EdgeU32::Zero) == "Zero");
+    ZEXPECT(enum_name(EdgeU32::Top) == "Top");
+    ZEXPECT(enum_name(EdgeU32::Bottom) == "Bottom");
+    ZEXPECT(enum_name(EdgeU32::Max) == "Max");
 
+    ZSTATIC_EXPECT(reflection<Byte>::member_count == 2);
+    ZSTATIC_EXPECT(reflection<Byte>::member_values[0] < reflection<Byte>::member_values[1]);
     ZEXPECT(enum_name(Byte::Letter) == "Letter");
     ZEXPECT(enum_name(Byte::High) == "High");
 }
