@@ -559,8 +559,9 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb = sizeof(startup);
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
-    // A stream closed gets INVALID_HANDLE_VALUE: Windows replaces a null
-    // handle with the console's own when the child gets a console of its own.
+    // A stream closed gets INVALID_HANDLE_VALUE: when the child gets a
+    // console of its own, Windows puts the console's handles in place of
+    // null ones, and of every one of a child that inherits none.
     auto standard_handle = [&](std::size_t i) {
         return options.streams[i].kind == Stdio::Kind::Closed ? INVALID_HANDLE_VALUE
                                                               : handles[i].handle;

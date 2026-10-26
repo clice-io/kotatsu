@@ -33,10 +33,11 @@ struct Stdio {
         /// event loop's, fails the spawn with bad_file_descriptor.
         Inherit,
         /// Closed in the child, whatever this process has there, which it
-        /// keeps; on Windows INVALID_HANDLE_VALUE, which no console of the
-        /// child's own replaces. For a program started without the stream
-        /// that holds its number open on /dev/null, so that nothing it opens
-        /// takes it, and starts its children as it was started.
+        /// keeps; on Windows INVALID_HANDLE_VALUE, which a console of the
+        /// child's own replaces only in a child given no handle at all. For
+        /// a program started without the stream that holds its number open
+        /// on /dev/null, so that nothing it opens takes it, and starts its
+        /// children as it was started.
         Closed,
         /// /dev/null, or NUL on Windows.
         Ignore,
