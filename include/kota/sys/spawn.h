@@ -28,7 +28,8 @@ struct Stdio {
         /// the child where there is none, as a program may be started with
         /// one closed. Whatever such a program opens meanwhile takes the
         /// number, an event loop made since among them, and reaches the
-        /// child as the stream.
+        /// child as the stream; on macOS a kqueue there, an event loop's,
+        /// fails the spawn with bad_file_descriptor.
         Inherit,
         /// Closed in the child, whatever this process has there, which it
         /// keeps; on Windows no handle. For a program started without the

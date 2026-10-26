@@ -69,9 +69,9 @@
 //                         prints whether that saw it: {"inherited": <bool>}
 //   handle <value> <name> Windows: exits with 1 when <value> is a handle of
 //                         the event named <name>, 0 otherwise
-//   open                  exits with a number whose bit i says that it has
-//                         standard stream i, on Windows a handle there: its
-//                         stdout may be the stream it has not
+//   open                  exits with 8 plus a number whose bit i says that it
+//                         has standard stream i, on Windows a handle there:
+//                         its stdout may be the stream it has not
 //   closed <i>            starts `sys_probe open`, its standard stream <i>
 //                         closed and the others this one's, and prints
 //                         {"open": <what that exited with>, "kept": <whether
@@ -414,7 +414,7 @@ int main() {
         });
     }
     if(command == "open") {
-        int held = 0;
+        int held = 8;
         for(int index = 0; index < 3; ++index) {
             held |= has_stream(index) ? 1 << index : 0;
         }

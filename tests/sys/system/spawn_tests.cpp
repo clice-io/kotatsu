@@ -5,6 +5,7 @@
 #include <expected>
 #include <filesystem>
 #include <format>
+#include <latch>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -874,15 +875,40 @@ ZEST_CASE(inherit_of_a_closed_stream_closes_it_in_the_child) {
         test::ScopedClosedStream closed(0);
         // cat fails to read a stdin it has not, and reads one it has to its
         // end. A pipe spawn makes, and the /dev/null it opens for stderr,
-        // take the number free here for a moment.
+        // take the number free here for a moment, and leave it.
         SpawnOptions options{.program = "/bin/cat"};
         options.streams = {Stdio::inherit(), Stdio::pipe(), Stdio::ignore()};
         auto child = spawn(options);
         ZASSERT(child.has_value());
+        ZEXPECT(::fcntl(0, F_GETFD) == -1);
         status = child->wait();
     }
     ZASSERT(status.has_value());
     ZEXPECT(status->code == 1);
+}
+
+// The descriptor on a stream's number reaches another stream before the
+// stream closes: stdout is what this process has on stdin's number.
+ZEST_CASE(closed_stream_lets_another_take_its_descriptor) {
+    int fds[2];
+    ZASSERT(::pipe(fds) == 0);
+    std::expected<ExitStatus, std::error_code> status;
+    {
+        test::ScopedClosedStream closed(0);
+        ZASSERT(::dup2(fds[1], 0) == 0);
+        ::close(fds[1]);
+        auto options = test::shell("echo given; test -e /dev/fd/0 && exit 1; exit 3");
+        options.streams = {Stdio::closed(), Stdio::from_fd(0), Stdio::ignore()};
+        auto child = spawn(options);
+        ZASSERT(child.has_value());
+        status = child->wait();
+    }
+    // The write end went with stdin put back.
+    auto text = test::read_to_end(fds[0]);
+    ::close(fds[0]);
+    ZASSERT(status.has_value());
+    ZEXPECT(status->code == 3);
+    ZEXPECT(trim_newlines(text) == "given");
 }
 
 #ifdef __linux__
@@ -951,7 +977,8 @@ ZEST_CASE(exit_with_parent_fails_on_macos) {
 
 // A wait goes through a kqueue of its own, which would take the number of a
 // standard stream this process closed while it waits. Nothing tells when
-// the wait has made it: the test looks for a while, to show it never does.
+// the wait has made it and moved it on: the test gives it a while, then
+// looks.
 ZEST_CASE(wait_takes_no_closed_stream) {
     test::ScopedClosedStream closed(0);
     auto options = test::shell("cat");
@@ -960,12 +987,14 @@ ZEST_CASE(wait_takes_no_closed_stream) {
     ZASSERT(child.has_value());
     auto end = child->take_pipe(0);
     std::expected<ExitStatus, std::error_code> status;
-    std::thread waiter([&] { status = child->wait(); });
-    bool taken = false;
-    for(int tries = 0; tries < 100 && !taken; ++tries) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        taken = ::fcntl(0, F_GETFD) != -1;
-    }
+    std::latch started(1);
+    std::thread waiter([&] {
+        started.count_down();
+        status = child->wait();
+    });
+    started.wait();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    const bool taken = ::fcntl(0, F_GETFD) != -1;
     test::close_end(end);
     waiter.join();
     ZEXPECT(!taken);

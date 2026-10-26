@@ -107,7 +107,10 @@ test("closed_stream_is_closed_in_the_child_alone", async (t) => {
     ]);
     const output = await driver.jsonLines().receive();
     await driver.expectExit(0);
-    assert.deepEqual(output, { open: 0b111 & ~(1 << index), kept: true });
+    assert.deepEqual(output, {
+      open: 0b1000 | (0b111 & ~(1 << index)),
+      kept: true,
+    });
   }
 });
 
