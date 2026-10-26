@@ -17,10 +17,11 @@ jobs:
       # prettier-ignore
       matrix:
         include:
-          - { os_label: linux,   os: ubuntu-24.04, config: default }
-          - { os_label: linux,   os: ubuntu-24.04, config: no-exceptions-no-rtti, flags: "--config=no-exceptions --config=no-rtti" }
-          - { os_label: macos,   os: macos-15,     config: default }
-          - { os_label: windows, os: windows-2025, config: default }
+          - { os_label: linux,       os: ubuntu-24.04,     config: default }
+          - { os_label: linux,       os: ubuntu-24.04,     config: no-exceptions-no-rtti, flags: "--config=no-exceptions --config=no-rtti" }
+          - { os_label: linux-arm64, os: ubuntu-24.04-arm, config: default }
+          - { os_label: macos,       os: macos-15,         config: default }
+          - { os_label: windows,     os: windows-2025,     config: default }
 
     steps:
       - name: Checkout repository
@@ -53,8 +54,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/bazel
-          key: bazel-${{ runner.os }}-${{ matrix.config }}/${{ github.sha }}
-          restore-keys: bazel-${{ runner.os }}-${{ matrix.config }}/
+          key: bazel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.config }}/${{ github.sha }}
+          restore-keys: bazel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.config }}/
 
       - name: Test
         id: test

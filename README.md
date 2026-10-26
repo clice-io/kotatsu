@@ -3,7 +3,7 @@
 `kotatsu` is a C++23 toolkit extracted from the `clice` ecosystem.
 It started as a coroutine wrapper around [libuv](https://github.com/libuv/libuv), and now also includes compile-time reflection, an attribute-driven codec framework, a typed IPC layer with generated LSP protocol bindings, an HTTP client on libcurl, a lightweight test framework, an LLVM-compatible option parsing library, a declarative CLI layer built on top, and a shared support layer of containers, traits, and string utilities.
 
-All public APIs live under the `kota::` namespace, public headers under `include/kota/`, and CMake/xmake options use the `KOTA_` prefix.
+All public APIs live under the `kota::` namespace, public headers under `include/kota/`, and CMake options use the `KOTA_` prefix.
 
 ## Feature Coverage
 

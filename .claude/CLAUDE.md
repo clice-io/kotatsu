@@ -4,11 +4,10 @@ A C++20/23 coroutine wrapper for libuv. Library modules live under
 `include/kota/<module>/` (`async`, `codec`, `deco`, `fs`, `http`, `ipc`,
 `meta`, `support`, `sys`, `zest`).
 
-## Build system
+## Build systems
 
-**CMake is the primary build system.** `xmake.lua` is an auxiliary build
-description for downstream xmake users, kept working by the small `xmake.yml`
-CI workflow — never use xmake for local development.
+kotatsu has two builds: **CMake**, the primary one, used for development and
+the main CI matrix, and **Bazel**, the one clice and catter consume.
 
 - All configuration lives in `CMakePresets.json`; trees land in
   `build/<preset>/`. Build with `pixi run build [preset]` (default `debug`;
@@ -16,14 +15,13 @@ CI workflow — never use xmake for local development.
   never the system compiler.
 - The main CI matrix is `cmake.yml` (all toolchains, sanitizers,
   no-exceptions/no-rtti variants), driving the same presets.
-- Bazel (`MODULE.bazel`) is the build clice consumes, kept in step with
-  CMake: a target per module in `BUILD.bazel`, the tests in
-  `tests/BUILD.bazel`, the third-party libraries and the toolchain (xclang)
-  from the clice Bazel registry, bazel.clice.io. `pixi run -e bazel bazel
-  test //...` builds and tests it with xclang (`--config=no-exceptions`,
-  `--config=no-rtti`, `--config=asan`, ... in `.bazelrc`); `bazel.yml` runs
-  it in CI. A source, test or dependency
-  added to CMake is added there too.
+- Bazel (`MODULE.bazel`) is kept in step with CMake: a target per module in
+  `BUILD.bazel`, the tests in `tests/BUILD.bazel`, the third-party libraries
+  and the toolchain (xclang) from the clice Bazel registry, bazel.clice.io.
+  `pixi run -e bazel bazel test //...` builds and tests it with xclang
+  (`--config=no-exceptions`, `--config=no-rtti`, `--config=asan`, ... in
+  `.bazelrc`); `bazel.yml` runs it in CI. A source, test or dependency added
+  to CMake is added there too.
 
 ## Testing
 
