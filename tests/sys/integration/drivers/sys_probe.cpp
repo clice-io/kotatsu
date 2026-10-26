@@ -70,15 +70,16 @@
 //   handle <value> <name> Windows: exits with 1 when <value> is a handle of
 //                         the event named <name>, 0 otherwise
 //   open                  exits with a number whose bit i says that it has
-//                         standard stream i, on Windows a handle there
+//                         standard stream i, on Windows a handle there: its
+//                         stdout may be the stream it has not
 //   closed <i>            starts `sys_probe open`, its standard stream <i>
 //                         closed and the others this one's, and prints
 //                         {"open": <what that exited with>, "kept": <whether
 //                         this one still has stream <i>>}
 //
-// Each prints one JSON line to stdout but for hang, traceme, handle and open,
-// and exits with 0; 1 when a call fails, saying why on stderr; 2 for a
-// command it does not know.
+// Each prints one JSON line to stdout and exits with 0 unless its entry says
+// otherwise; 1 when a call fails, saying why on stderr; 2 for a command it
+// does not know.
 
 #include <chrono>
 #include <cstddef>
@@ -413,11 +414,11 @@ int main() {
         });
     }
     if(command == "open") {
-        int open = 0;
+        int held = 0;
         for(int index = 0; index < 3; ++index) {
-            open |= has_stream(index) ? 1 << index : 0;
+            held |= has_stream(index) ? 1 << index : 0;
         }
-        return open;
+        return held;
     }
     if(command == "closed" && arguments.size() == 3 && arguments[2].size() == 1 &&
        arguments[2][0] >= '0' && arguments[2][0] <= '2') {

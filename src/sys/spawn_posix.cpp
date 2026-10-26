@@ -92,7 +92,7 @@ std::expected<std::array<Descriptor, 2>, std::error_code> connected_pair(bool so
     }
     std::array<Descriptor, 2> pair = {Descriptor(fds[0]), Descriptor(fds[1])};
     for(auto& end: pair) {
-        end = Descriptor(detail::above_standard_streams(end.release()));
+        end = Descriptor(detail::move_above_standard_streams(end.release()));
         if(end.fd < 0) {
             return std::unexpected(errno_code());
         }
@@ -271,7 +271,7 @@ struct ChildSetup {
 /// forbids it.
 int open_pidfd([[maybe_unused]] pid_t pid) {
 #ifdef SYS_pidfd_open
-    return detail::above_standard_streams(static_cast<int>(::syscall(SYS_pidfd_open, pid, 0)));
+    return detail::move_above_standard_streams(static_cast<int>(::syscall(SYS_pidfd_open, pid, 0)));
 #else
     return -1;
 #endif
@@ -284,7 +284,7 @@ int open_pidfd([[maybe_unused]] pid_t pid) {
 /// ignored. A zombie, or a process exiting, is none kqueue knows of.
 std::error_code wait_for_exit(pid_t pid) {
     // kqueue() makes it close-on-exec.
-    Descriptor queue(detail::above_standard_streams(::kqueue()));
+    Descriptor queue(detail::move_above_standard_streams(::kqueue()));
     if(queue.fd < 0) {
         return errno_code();
     }
@@ -318,7 +318,7 @@ std::error_code wait_for_exit(pid_t pid) {
 
 namespace detail {
 
-int above_standard_streams(int fd) noexcept {
+int move_above_standard_streams(int fd) noexcept {
     if(fd < 0 || fd > 2) {
         return fd;
     }

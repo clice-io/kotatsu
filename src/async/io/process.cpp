@@ -126,9 +126,9 @@ struct process::Self::Watch {
         // Made at the loop's first spawn, around which a program may close a
         // standard stream; kqueue() makes it close-on-exec.
 #ifdef __linux__
-        multiplexer = sys::detail::above_standard_streams(::epoll_create1(EPOLL_CLOEXEC));
+        multiplexer = sys::detail::move_above_standard_streams(::epoll_create1(EPOLL_CLOEXEC));
 #elif defined(__APPLE__)
-        multiplexer = sys::detail::above_standard_streams(::kqueue());
+        multiplexer = sys::detail::move_above_standard_streams(::kqueue());
 #endif
 #ifndef _WIN32
         // One the loop cannot poll is none, and SIGCHLD stands in: epoll

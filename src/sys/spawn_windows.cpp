@@ -443,8 +443,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
 
     Child child;
     // The child's standard handles, inheritable only while it is created and
-    // closed then; none for a stream closed, or this process's where it has
-    // none open.
+    // closed then; none for Closed, and for Inherit where this process has
+    // none.
     std::array<Handle, 3> handles;
     bool shares_streams = false;
     constexpr DWORD standard[] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};

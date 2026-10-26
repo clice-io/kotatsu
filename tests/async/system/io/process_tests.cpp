@@ -738,18 +738,6 @@ ZEST_CASE(first_spawn_takes_no_closed_stream) {
     ZEXPECT(test::exit_code_of(second_status) == 3);
 }
 
-// Whatever this process has there, which it keeps.
-ZEST_CASE(closed_stream_is_closed_in_the_child) {
-    auto opts = shell("test -e /dev/fd/1 && exit 1; exit 3");
-    opts.streams[1] = process::stdio::closed();
-    auto spawned = process::spawn(opts, loop);
-    ZASSERT(spawned.has_value());
-
-    auto [status] = run(spawned->proc.wait());
-    ZEXPECT(test::exit_code_of(status) == 3);
-    ZEXPECT(::fcntl(1, F_GETFD) != -1);
-}
-
 // The child is another's to reap once this test has: the wait says so
 // rather than wait for good.
 ZEST_CASE(wait_for_a_child_another_reaped_fails) {
