@@ -99,8 +99,8 @@ test("streams_may_swap_descriptors", async (t) => {
 });
 
 // Each in turn: the child has the other two. Its console on Windows is
-// sys_probe's, or with "hidden" a new one without a window, which gives it
-// no handle in place of none.
+// sys_probe's, or with "hidden" a new one without a window, which would put
+// its own handle in place of a null one.
 test("closed_stream_is_closed_in_the_child_alone", async (t) => {
   for (const index of [0, 1, 2]) {
     for (const hidden of [[], ["hidden"]]) {
