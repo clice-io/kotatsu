@@ -8,7 +8,6 @@ Build the requested cmake preset (default `debug`, the day-to-day tree).
 
 - `pixi run build [preset]` — configures (idempotent) and builds `build/<preset>/` with the pixi toolchain (reproducible; never use the system compiler). Presets are defined in `CMakePresets.json`; dependency sources are shared across presets via `.cache/cpm`.
 - Deleting a stale tree and rebuilding is always safe — `rm -rf build/<preset>` and rerun; presets make configuration reproducible.
-- The auxiliary xmake build is CI-only (`xmake.yml`); to reproduce a failure from it locally, run the workflow's inlined `xmake config`/`xmake --all`/`xmake test` commands verbatim.
 
 On failure:
 
