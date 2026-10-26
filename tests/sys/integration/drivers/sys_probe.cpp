@@ -72,10 +72,12 @@
 //   open                  exits with 8 plus a number whose bit i says that it
 //                         has standard stream i, on Windows a handle there:
 //                         its stdout may be the stream it has not
-//   closed <i>            starts `sys_probe open`, its standard stream <i>
-//                         closed and the others this one's, and prints
-//                         {"open": <what that exited with>, "kept": <whether
-//                         this one still has stream <i>>}
+//   closed <i> [hidden]   starts `sys_probe open`, its standard stream <i>
+//                         closed and the others this one's, or ignored with
+//                         `hidden`, which on Windows gives it a console of
+//                         its own without a window, and prints {"open":
+//                         <what that exited with>, "kept": <whether this one
+//                         still has stream <i>>}
 //
 // Each prints one JSON line to stdout and exits with 0 unless its entry says
 // otherwise; 1 when a call fails, saying why on stderr; 2 for a command it
@@ -420,10 +422,15 @@ int main() {
         }
         return held;
     }
-    if(command == "closed" && arguments.size() == 3 && arguments[2].size() == 1 &&
+    if(const bool hidden = arguments.size() == 4 && arguments[3] == "hidden";
+       command == "closed" && (arguments.size() == 3 || hidden) && arguments[2].size() == 1 &&
        arguments[2][0] >= '0' && arguments[2][0] <= '2') {
         const int index = arguments[2][0] - '0';
         auto options = probe({"open"});
+        if(hidden) {
+            options.streams = {sys::Stdio::ignore(), sys::Stdio::ignore(), sys::Stdio::ignore()};
+            options.creation.windows_hide_console = true;
+        }
         options.streams[index] = sys::Stdio::closed();
         auto child = sys::spawn(options);
         if(!child) {
