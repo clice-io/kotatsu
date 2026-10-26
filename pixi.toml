@@ -70,8 +70,9 @@ compiler-rt = "==20.1.8"
 CC = "clang"
 CXX = "clang++"
 
-# Keep clang's C++ standard library aligned with the linux-gcc toolchain pin;
-# unpinned, the devel headers drift ahead of the libstdcxx runtime.
+# Per architecture, the sysroot, and clang's C++ standard library kept aligned
+# with the linux-gcc toolchain pin; unpinned, the devel headers drift ahead of
+# the libstdcxx runtime.
 [feature.linux-clang.target.linux-64.dependencies]
 sysroot_linux-64 = "==2.17"
 libstdcxx-devel_linux-64 = "==14.2.0"

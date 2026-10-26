@@ -5,8 +5,7 @@ pixi.lock merge=binary linguist-language=YAML linguist-generated=true -diff
 *.snap eol=lf
 
 # C++ sources too: raw string literals keep the checkout's line endings, so a
-# CRLF checkout on Windows makes expected strings and generated text differ
-# from Linux.
+# CRLF checkout on Windows makes expected strings differ from Linux.
 *.cpp text eol=lf
 *.cc text eol=lf
 *.h text eol=lf

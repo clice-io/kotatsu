@@ -6,15 +6,16 @@ A C++20/23 coroutine wrapper for libuv. Library modules live under
 
 ## Build systems
 
-kotatsu has two builds: **CMake**, the primary one, used for development and
-the main CI matrix, and **Bazel**, the one clice and catter consume.
+kotatsu has two builds: **CMake**, the primary one, and **Bazel**, the one
+clice and catter consume.
 
-- All configuration lives in `CMakePresets.json`; trees land in
+- CMake's configuration lives in `CMakePresets.json`; trees land in
   `build/<preset>/`. Build with `pixi run build [preset]` (default `debug`;
   also `asan`, `tsan`, `no-exceptions`, ...) — this uses the pixi toolchain,
   never the system compiler.
 - The main CI matrix is `cmake.yml` (all toolchains, sanitizers,
-  no-exceptions/no-rtti variants), driving the same presets.
+  no-exceptions/no-rtti variants, Linux on x86-64 and arm64), driving the
+  same presets.
 - Bazel (`MODULE.bazel`) is kept in step with CMake: a target per module in
   `BUILD.bazel`, the tests in `tests/BUILD.bazel`, the third-party libraries
   and the toolchain (xclang) from the clice Bazel registry, bazel.clice.io.

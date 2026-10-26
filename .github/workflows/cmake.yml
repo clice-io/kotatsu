@@ -137,14 +137,15 @@ jobs:
           restore-keys: |
             cpm-${{ runner.os }}-
 
-      # The integration tests, which ctest runs, import npm packages.
+      # The integration tests, which ctest runs, import npm packages. Keyed per
+      # architecture: the TypeScript compiler is a native package.
       - name: Restore npm cache
         uses: actions/cache@v4
         with:
           path: ${{ env.npm_config_cache }}
-          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
-            npm-${{ runner.os }}-
+            npm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install npm packages
         run: pixi run -e ${{ env.PIXI_ENV }} npm-ci
