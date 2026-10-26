@@ -36,6 +36,25 @@ enum class Edge8 : std::int8_t {
     Max = 127,
 };
 
+/// Members on both sides of 128: the scan reaches the high one as -56.
+enum class High8 : std::uint8_t {
+    Low = 1,
+    High = 200,
+};
+
+/// A sentinel the scan reaches as -1.
+enum class Sentinel : std::uint32_t {
+    First,
+    Second,
+    Invalid = 0xFFFF'FFFF,
+};
+
+/// A high byte, negative where char is signed and above 127 where it is not (Linux on ARM).
+enum class Byte : char {
+    Letter = 'a',
+    High = '\xE9',
+};
+
 static_assert(reflection<Color>::member_count == 3);
 static_assert(reflection<Color>::member_names.size() == 3);
 static_assert(reflection<Color>::member_names[0] == "Red");
@@ -68,6 +87,17 @@ static_assert(reflection<Edge8>::member_values[1] == Edge8::Max);
 static_assert(reflection<Edge8>::member_names[0] == "Min");
 static_assert(reflection<Edge8>::member_names[1] == "Max");
 
+static_assert(reflection<High8>::member_count == 2);
+static_assert(reflection<High8>::member_values[0] == High8::Low);
+static_assert(reflection<High8>::member_values[1] == High8::High);
+
+static_assert(reflection<Sentinel>::member_count == 3);
+static_assert(reflection<Sentinel>::member_values[0] == Sentinel::First);
+static_assert(reflection<Sentinel>::member_values[1] == Sentinel::Second);
+static_assert(reflection<Sentinel>::member_values[2] == Sentinel::Invalid);
+
+static_assert(reflection<Byte>::member_count == 2);
+
 ZEST_SUITE(meta_enum) {
 
 ZEST_CASE(enum_member_names) {
@@ -91,6 +121,18 @@ ZEST_CASE(enum_member_names) {
 
     ZEXPECT(enum_name(Edge8::Min) == "Min");
     ZEXPECT(enum_name(Edge8::Max) == "Max");
+}
+
+ZEST_CASE(enum_name_unsigned_beyond_127) {
+    ZEXPECT(enum_name(High8::Low) == "Low");
+    ZEXPECT(enum_name(High8::High) == "High");
+
+    ZEXPECT(enum_name(Sentinel::First) == "First");
+    ZEXPECT(enum_name(Sentinel::Second) == "Second");
+    ZEXPECT(enum_name(Sentinel::Invalid) == "Invalid");
+
+    ZEXPECT(enum_name(Byte::Letter) == "Letter");
+    ZEXPECT(enum_name(Byte::High) == "High");
 }
 
 };  // ZEST_SUITE(meta_enum)
