@@ -15,6 +15,7 @@
 #ifndef _WIN32
 #include <cerrno>
 #include <fcntl.h>
+#include <pthread.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -46,6 +47,36 @@ std::vector<std::string> names_of(const std::vector<Directory::Entry>& entries) 
 FileType type_in(const std::vector<Directory::Entry>& entries, std::string_view name) {
     auto found = std::ranges::find(entries, name, &Directory::Entry::name);
     return found == entries.end() ? FileType::Unknown : found->type;
+}
+
+/// Runs `run` on a thread of its own, with a stack of 128 KiB.
+template <typename Run>
+void on_a_small_stack(Run run) {
+    constexpr std::size_t stack = 128 * 1024;
+#ifdef _WIN32
+    auto start = [](void* run) -> DWORD {
+        (*static_cast<Run*>(run))();
+        return 0;
+    };
+    HANDLE thread =
+        ::CreateThread(nullptr, stack, start, &run, STACK_SIZE_PARAM_IS_A_RESERVATION, nullptr);
+    ZASSERT(thread != nullptr);
+    ::WaitForSingleObject(thread, INFINITE);
+    ::CloseHandle(thread);
+#else
+    auto start = [](void* run) -> void* {
+        (*static_cast<Run*>(run))();
+        return nullptr;
+    };
+    pthread_attr_t attributes;
+    ZASSERT(::pthread_attr_init(&attributes) == 0);
+    ZASSERT(::pthread_attr_setstacksize(&attributes, stack) == 0);
+    pthread_t thread;
+    auto created = ::pthread_create(&thread, &attributes, start, &run);
+    ::pthread_attr_destroy(&attributes);
+    ZASSERT(created == 0);
+    ZASSERT(::pthread_join(thread, nullptr) == 0);
+#endif
 }
 
 #ifndef _WIN32
@@ -610,7 +641,8 @@ ZEST_CASE(remove_all_removes_a_deep_tree) {
     // far moved to the bottom of each, so that no path the test names grows
     // long; the paths into it outgrow MAX_PATH and macOS's PATH_MAX. macOS
     // and Windows take the longer to remove a name the deeper it lies, which
-    // bounds the depth.
+    // bounds the depth. Removed on a small stack, which a call a level
+    // would overflow.
     test::TempDir dir;
     constexpr int chain = 50;
     constexpr int chains = 20;
@@ -625,7 +657,9 @@ ZEST_CASE(remove_all_removes_a_deep_tree) {
         }
         std::filesystem::rename(dir.path / "next", dir.path / "tree");
     }
-    ZEXPECT(remove_all(dir.file("tree")) == std::uint64_t(chains * (chain + 1)));
+    std::expected<std::uint64_t, std::error_code> removed;
+    on_a_small_stack([&] { removed = remove_all(dir.file("tree")); });
+    ZEXPECT(removed == std::uint64_t(chains * (chain + 1)));
     ZEXPECT(exists(dir.file("tree")) == false);
 }
 
