@@ -18,7 +18,7 @@ A test's level is decided by what it touches, not by the module it tests.
 - The moment a test opens a file, spawns a process, binds a socket, installs a signal handler or starts a thread, it is a system test. zest's own I/O does not count: printing, and reading or writing snapshots through `zest::snapshot`, are fine in a unit test.
 - Compile-time facts that must hold are `ZSTATIC_EXPECT` in a unit case.
 - Nothing reaches the network beyond loopback. Tests that need the internet are not part of any suite.
-- A target that must build without another, as ipc's codecs without the event loop, is checked by a program linked against it alone, without zest, which needs the loop: `tests/<module>/<name>/main.cpp`, run by ctest and Bazel as `<module>_<name>` (label `unit`); it prints each failed check and exits with 1.
+- A target that must build without another, as ipc's codecs without the event loop, is checked by a program linked against it alone, without zest, which needs the loop; so is a check that replaces what a whole process shares, as fs's of remove_all() under failing allocations replaces the global operator new: `tests/<module>/<name>/main.cpp`, run by ctest and Bazel as `<module>_<name>` (label `unit`, or `system` for one that touches the operating system); it prints each failed check and exits with 1.
 - zest's own runner check (`tests/zest/integration/`) is integration-level, but it is the one integration test in C++ and CMake rather than TypeScript: it runs from CMake as a bootstrap stage (see Trust), so it needs nothing beyond the build.
 
 ## Layout
@@ -32,7 +32,7 @@ tests/<module>/
   integration/*.test.ts       integration tests, TypeScript; nothing else but drivers/
   integration/drivers/*.cpp   the programs they spawn, one per file, or one per
                               directory of sources
-  <name>/main.cpp             a check built against one target alone (Levels),
+  <name>/main.cpp             a check that is a program of its own (Levels),
                               in kota_check_programs so that it builds into the
                               build root beside the runtime DLLs
   harness/*.h, harness/*.ts   helpers for this module's tests and the modules above,
