@@ -169,6 +169,17 @@ kota_test(
     deps = ["//:fs"],
 )
 
+# copy_file() and rename_noreplace() where the system calls they start with
+# fail: see fs/syscall_fallbacks/main.cpp. A filter of system calls is Linux's.
+kota_test(
+    name = "fs_syscall_fallbacks",
+    size = "small",
+    srcs = ["fs/syscall_fallbacks/main.cpp"],
+    tags = ["system"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = ["//:fs"],
+)
+
 # The integration tests' drivers: integration/drivers/<name>.cpp of a module,
 # or the sources in integration/drivers/<name>/ for a driver too heavy for one
 # translation unit.

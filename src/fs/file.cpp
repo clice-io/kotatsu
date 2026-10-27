@@ -20,8 +20,24 @@
 #include <format>
 #include <sys/file.h>
 #include <unistd.h>
+#include <vector>
 #ifdef __APPLE__
+#include <sys/clonefile.h>
 #include <sys/param.h>
+#else
+#include <sys/sendfile.h>
+#include <sys/syscall.h>
+
+// copy_file_range's number on x86-64 and on the architectures of the generic
+// table (AArch64, RISC-V), which C libraries before glibc 2.27, and their
+// kernel headers before Linux 4.5, leave out.
+#ifndef SYS_copy_file_range
+#ifdef __x86_64__
+#define SYS_copy_file_range 326
+#else
+#define SYS_copy_file_range 285
+#endif
+#endif
 #endif
 
 #include "posix.h"
@@ -163,6 +179,37 @@ std::expected<bool, std::error_code> take_lock(int fd, int operation) {
         }
     }
     return true;
+}
+
+/// Copies `in` from where it stands to its end into `out` where it stands.
+std::error_code copy_bytes(File& in, File& out) {
+#ifndef __APPLE__
+    // copy_file_range lets the file system share the blocks (Btrfs, XFS) or
+    // copy on its server (NFS, SMB). It fails across file systems (but from
+    // Linux 5.3 to 5.18), before Linux 4.5, and where a filter of system
+    // calls denies it, where sendfile still copies in the kernel. Either
+    // stops at the end the file reports, which for one under /proc is its
+    // start: what they leave, the loop below reads, at the cost of a read
+    // when that is nothing. One that fails leaves the files where it stopped,
+    // for the next to go on from, or to fail the same way.
+    auto from = in.native_handle();
+    auto to = out.native_handle();
+    while(::syscall(SYS_copy_file_range, from, nullptr, to, nullptr, largest_call, 0u) > 0) {}
+    while(::sendfile(to, from, nullptr, largest_call) > 0) {}
+#endif
+    std::vector<char> buffer(std::size_t{1} << 17);
+    while(true) {
+        auto count = in.read(buffer);
+        if(!count) {
+            return count.error();
+        }
+        if(*count == 0) {
+            return {};
+        }
+        if(auto error = out.write({buffer.data(), *count})) {
+            return error;
+        }
+    }
 }
 
 #endif
@@ -656,6 +703,105 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
         [[maybe_unused]] auto removed = remove(sibling);
     }
     return error;
+}
+
+std::error_code copy_file(std::string_view from, std::string_view to) {
+#ifdef _WIN32
+    win32::WidePath source;
+    if(auto error = windows::to_native(source, from)) {
+        return error;
+    }
+    win32::WidePath target;
+    if(auto error = windows::to_native(target, to)) {
+        return error;
+    }
+    if(::CopyFileExW(source.c_str(), target.c_str(), nullptr, nullptr, nullptr, 0)) {
+        return {};
+    }
+    auto error = windows::last_error();
+    // CopyFileExW fails on a directory, and on two names of one file, as on
+    // any file it cannot open: these fail as they do elsewhere.
+    if(auto copied = status(from); copied && copied->type != FileType::Regular) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
+    if(is_directory(to)) {
+        return std::make_error_code(std::errc::is_a_directory);
+    }
+    if(equivalent(from, to) == true) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
+    return error;
+#else
+    auto source = File::open(from);
+    if(!source) {
+        return source.error();
+    }
+    struct stat copied;
+    if(::fstat(source->handle, &copied) != 0) {
+        return posix::last_error();
+    }
+    if(!S_ISREG(copied.st_mode)) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
+    posix::CPath target_path;
+    if(auto error = target_path.assign(to)) {
+        return error;
+    }
+    auto permissions = static_cast<mode_t>(copied.st_mode & 0777);
+#ifdef __APPLE__
+    // A clone shares the blocks until either file changes, and takes the
+    // permissions and the times itself. It makes only a new file (EEXIST),
+    // on the volume of `from` (EXDEV), where the file system clones (ENOTSUP:
+    // APFS does, HFS+ does not).
+    if(::fclonefileat(source->handle, AT_FDCWD, target_path.c_str(), 0) == 0) {
+        return {};
+    }
+    if(errno != EEXIST && errno != EXDEV && errno != ENOTSUP) {
+        return posix::last_error();
+    }
+    const auto& mtime = copied.st_mtimespec;
+#else
+    const auto& mtime = copied.st_mtim;
+#endif
+    // Created with the permissions it ends with, so that no one opens it
+    // meanwhile who could not read `from`.
+    int fd;
+    do {
+        fd = ::open(target_path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, permissions);
+    } while(fd < 0 && errno == EINTR);
+    if(fd < 0) {
+        return posix::last_error();
+    }
+    File target(fd);
+    struct stat existing;
+    if(::fstat(fd, &existing) != 0) {
+        return posix::last_error();
+    }
+    // Another name of `from`'s would lose its bytes once emptied, and a
+    // device's permissions are not the copy's to change.
+    if(!S_ISREG(existing.st_mode) ||
+       (existing.st_dev == copied.st_dev && existing.st_ino == copied.st_ino)) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
+    if(::fchmod(fd, permissions) != 0) {
+        return posix::last_error();
+    }
+    if(auto error = target.resize(0)) {
+        return error;
+    }
+    if(auto error = copy_bytes(*source, target)) {
+        return error;
+    }
+    // The writes moved the mtime, which goes back to `from`'s.
+    timespec times[2] = {
+        {.tv_sec = 0, .tv_nsec = UTIME_OMIT},
+        mtime
+    };
+    if(::futimens(fd, times) != 0) {
+        return posix::last_error();
+    }
+    return target.close();
+#endif
 }
 
 std::expected<File, std::error_code> create_temp_file(buffer_ref path,

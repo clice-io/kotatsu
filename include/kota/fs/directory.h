@@ -161,6 +161,23 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path);
 /// the file system allows (NTFS).
 std::error_code rename(std::string_view from, std::string_view to);
 
+/// Renames `from` to `to` where nothing is there: anything there, a dangling
+/// symlink too, fails with std::errc::file_exists, and both stay as they
+/// were, however processes race, so that of two renames to one name one
+/// takes it. `to` on another volume fails with cross_device_link.
+/// MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows,
+/// renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL) on macOS.
+///
+/// Where the system or the file system has no such rename (NFS, Linux before
+/// 3.15, a network file system on macOS), a hard link, which replaces nothing
+/// either, gives the file its new name before it loses the old one: both name
+/// it meanwhile, and both stay after a crash between. What takes no hard link
+/// there, a directory among others, fails as the system refused the rename:
+/// on Linux with std::errc::invalid_argument, as a directory moved into
+/// itself does (function_not_supported before 3.15), on macOS with
+/// not_supported.
+std::error_code rename_noreplace(std::string_view from, std::string_view to);
+
 /// Creates the symlink `link` to the file `target`, which stays as written:
 /// a relative target is relative to the link's directory. Windows lets only
 /// an administrator or a developer-mode system create one.

@@ -1,9 +1,13 @@
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <filesystem>
+#include <format>
+#include <latch>
 #include <ranges>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #ifndef _WIN32
@@ -557,6 +561,121 @@ ZEST_CASE(rename_of_nothing_fails) {
     test::TempDir dir;
     ZEXPECT(rename(dir.file("missing"), dir.file("to")) == std::errc::no_such_file_or_directory);
 }
+
+ZEST_CASE(rename_noreplace_renames_a_file) {
+    test::TempDir dir;
+    test::write_text(dir.file("from"), "text");
+    ZEXPECT(!rename_noreplace(dir.file("from"), dir.file("é中😀")));
+    ZEXPECT(test::read_text(dir.file("é中😀")) == "text");
+    ZEXPECT(exists(dir.file("from")) == false);
+}
+
+ZEST_CASE(rename_noreplace_renames_a_directory) {
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "from" / "inner");
+    ZEXPECT(!rename_noreplace(dir.file("from"), dir.file("to")));
+    ZEXPECT(is_directory(dir.file("to/inner")));
+    ZEXPECT(exists(dir.file("from")) == false);
+}
+
+ZEST_CASE(rename_noreplace_renames_a_symlink_itself) {
+    test::TempDir dir;
+    test::write_text(dir.file("target"), "text");
+    if(!test::linked(create_symlink("target", dir.file("link")))) {
+        return;
+    }
+    ZEXPECT(!rename_noreplace(dir.file("link"), dir.file("moved")));
+    ZEXPECT(is_symlink(dir.file("moved")));
+    ZEXPECT(is_file(dir.file("target")));
+}
+
+ZEST_CASE(rename_noreplace_over_a_file_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("from"), "new");
+    test::write_text(dir.file("to"), "old");
+    ZEXPECT(rename_noreplace(dir.file("from"), dir.file("to")) == std::errc::file_exists);
+    ZEXPECT(test::read_text(dir.file("to")) == "old");
+    ZEXPECT(test::read_text(dir.file("from")) == "new");
+}
+
+ZEST_CASE(rename_noreplace_over_a_directory_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("from"), "text");
+    std::filesystem::create_directory(dir.path / "to");
+    ZEXPECT(rename_noreplace(dir.file("from"), dir.file("to")) == std::errc::file_exists);
+    ZEXPECT(is_directory(dir.file("to")));
+    ZEXPECT(is_file(dir.file("from")));
+}
+
+ZEST_CASE(rename_noreplace_over_a_dangling_symlink_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("from"), "text");
+    if(!test::linked(create_symlink("missing", dir.file("to")))) {
+        return;
+    }
+    ZEXPECT(rename_noreplace(dir.file("from"), dir.file("to")) == std::errc::file_exists);
+    ZEXPECT(is_symlink(dir.file("to")));
+    ZEXPECT(is_file(dir.file("from")));
+}
+
+ZEST_CASE(rename_noreplace_of_nothing_fails) {
+    test::TempDir dir;
+    ZEXPECT(rename_noreplace(dir.file("missing"), dir.file("to")) ==
+            std::errc::no_such_file_or_directory);
+    ZEXPECT(exists(dir.file("to")) == false);
+}
+
+ZEST_CASE(rename_noreplace_gives_the_name_to_one_of_racing_renames) {
+    // Each round, renames of a file of their own to one name, all at once.
+    test::TempDir dir;
+    constexpr int renamers = 4;
+    for(int round = 0; round < 50; ++round) {
+        ZEST_CONTEXT("round {}", round);
+        auto to = dir.file(std::format("to-{}", round));
+        std::array<std::string, renamers> sources;
+        for(int i = 0; i < renamers; ++i) {
+            sources[i] = dir.file(std::format("from-{}-{}", round, i));
+            test::write_text(sources[i], std::to_string(i));
+        }
+        std::array<std::error_code, renamers> errors;
+        std::latch start(renamers);
+        std::vector<std::thread> threads;
+        for(int i = 0; i < renamers; ++i) {
+            threads.emplace_back([&, i] {
+                start.arrive_and_wait();
+                errors[i] = rename_noreplace(sources[i], to);
+            });
+        }
+        for(auto& thread: threads) {
+            thread.join();
+        }
+        ZEXPECT(std::ranges::count(errors, std::error_code()) == 1);
+        for(int i = 0; i < renamers; ++i) {
+            ZEST_CONTEXT("renamer {}", i);
+            if(errors[i]) {
+                ZEXPECT(errors[i] == std::errc::file_exists);
+                ZEXPECT(test::read_text(sources[i]) == std::to_string(i));
+            } else {
+                ZEXPECT(test::read_text(to) == std::to_string(i));
+                ZEXPECT(exists(sources[i]) == false);
+            }
+        }
+    }
+}
+
+#ifdef __linux__
+ZEST_CASE(rename_noreplace_across_file_systems_fails) {
+    if(!test::across_file_systems()) {
+        return;
+    }
+    test::TempDir dir;
+    test::TempDir other("/dev/shm");
+    test::write_text(dir.file("from"), "text");
+    ZEXPECT(rename_noreplace(dir.file("from"), other.file("to")) == std::errc::cross_device_link);
+    ZEXPECT(is_file(dir.file("from")));
+    ZEXPECT(exists(other.file("to")) == false);
+}
+#endif
 
 };  // ZEST_SUITE(fs_directory)
 

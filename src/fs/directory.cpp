@@ -22,6 +22,26 @@
 #include <unistd.h>
 
 #include "posix.h"
+
+#ifdef __APPLE__
+#include <stdio.h>
+#else
+#include <sys/syscall.h>
+
+// What C libraries before glibc 2.28, and their kernel headers before Linux
+// 3.15, leave out: renameat2's flag and its number on x86-64 and on the
+// architectures of the generic table (AArch64, RISC-V).
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE 1
+#endif
+#ifndef SYS_renameat2
+#ifdef __x86_64__
+#define SYS_renameat2 316
+#else
+#define SYS_renameat2 276
+#endif
+#endif
+#endif
 #endif
 
 namespace kota::fs {
@@ -896,6 +916,66 @@ std::error_code rename(std::string_view from, std::string_view to) {
         return error;
     }
     return ::rename(source.c_str(), target.c_str()) == 0 ? std::error_code() : posix::last_error();
+#endif
+}
+
+std::error_code rename_noreplace(std::string_view from, std::string_view to) {
+#ifdef _WIN32
+    win32::WidePath source;
+    if(auto error = windows::to_native(source, from)) {
+        return error;
+    }
+    win32::WidePath target;
+    if(auto error = windows::to_native(target, to)) {
+        return error;
+    }
+    if(!::MoveFileExW(source.c_str(), target.c_str(), 0)) {
+        return windows::last_error();
+    }
+    return {};
+#else
+    posix::CPath source;
+    if(auto error = source.assign(from)) {
+        return error;
+    }
+    posix::CPath target;
+    if(auto error = target.assign(to)) {
+        return error;
+    }
+    // What the system says when it has no such rename: ENOTSUP on macOS; on
+    // Linux EINVAL from a file system without it (NFS), ENOSYS from a kernel
+    // without it.
+#ifdef __APPLE__
+    if(::renamex_np(source.c_str(), target.c_str(), RENAME_EXCL) == 0) {
+        return {};
+    }
+    if(errno != ENOTSUP) {
+        return posix::last_error();
+    }
+#else
+    if(::syscall(SYS_renameat2,
+                 AT_FDCWD,
+                 source.c_str(),
+                 AT_FDCWD,
+                 target.c_str(),
+                 RENAME_NOREPLACE) == 0) {
+        return {};
+    }
+    if(errno != EINVAL && errno != ENOSYS) {
+        return posix::last_error();
+    }
+#endif
+    auto refused = posix::last_error();
+    // A hard link replaces nothing either. linkat() without its flag to
+    // follow a symlink links the symlink itself, which a rename moves. A
+    // directory takes none (EPERM), nor, where Linux protects hard links, a
+    // file of another owner: the system's refusal says why then.
+    if(::linkat(AT_FDCWD, source.c_str(), AT_FDCWD, target.c_str(), 0) != 0) {
+        return errno == EPERM ? refused : posix::last_error();
+    }
+    // The file has its new name: losing the old one is all that is left.
+    [[maybe_unused]] auto unlinked = ::unlink(source.c_str());
+    return {};
 #endif
 }
 
