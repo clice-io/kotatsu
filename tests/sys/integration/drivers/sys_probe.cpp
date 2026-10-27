@@ -452,7 +452,13 @@ int left_a_holder() {
 }
 
 int reaped() {
+#ifdef SYS_pidfd_open
     const int own = static_cast<int>(::syscall(SYS_pidfd_open, ::getpid(), 0));
+#else
+    // The C library names no pidfd_open (Alpha and MIPS with older headers),
+    // nor does spawn open one.
+    const int own = -1;
+#endif
     if(own < 0) {
         print_line(R"({"pidfds":false})");
         return 0;

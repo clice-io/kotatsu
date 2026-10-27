@@ -945,6 +945,9 @@ ZEST_CASE(pidfd_takes_no_closed_stream) {
     ZEXPECT(status->code == 3);
 }
 
+// Where the C library names no pidfd calls (Alpha and MIPS with older
+// headers), spawn opens no pidfd either.
+#ifdef SYS_pidfd_open
 // native_handle is a pidfd of the child itself, which it sends before it
 // execs: a signal sent through it ends the child.
 ZEST_CASE(native_handle_is_a_pidfd_of_the_child) {
@@ -963,6 +966,7 @@ ZEST_CASE(native_handle_is_a_pidfd_of_the_child) {
     ZASSERT(status.has_value());
     ZEXPECT(status->term_signal == SIGKILL);
 }
+#endif
 #endif
 
 // Spawn clears O_NONBLOCK of a stream it gives the child, which this process
