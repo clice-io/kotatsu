@@ -454,7 +454,22 @@ std::error_code File::resize(std::uint64_t size) {
 }
 
 std::error_code File::sync() {
-    return ::FlushFileBuffers(handle) ? std::error_code() : windows::last_error();
+    if(::FlushFileBuffers(handle)) {
+        return {};
+    }
+    if(::GetLastError() != ERROR_ACCESS_DENIED) {
+        return windows::last_error();
+    }
+    // FlushFileBuffers takes a handle that may write: one open to read
+    // flushes through the file reopened to write.
+    win32::Handle writable(::ReOpenFile(handle,
+                                        GENERIC_WRITE,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                        0));
+    if(writable.get() == INVALID_HANDLE_VALUE) {
+        return windows::last_error();
+    }
+    return ::FlushFileBuffers(writable.get()) ? std::error_code() : windows::last_error();
 }
 
 std::error_code File::set_sparse() {
@@ -622,7 +637,11 @@ std::error_code File::sync() {
     // away fails with EBADF too, and fsync() then succeeds without writing;
     // after any other error, such as a flush that failed (EIO), it could
     // succeed as well and hide the error.
-    if(::fcntl(handle, F_FULLFSYNC) == 0) {
+    int synced;
+    do {
+        synced = ::fcntl(handle, F_FULLFSYNC);
+    } while(synced != 0 && errno == EINTR);
+    if(synced == 0) {
         return {};
     }
     auto error = errno;
@@ -634,7 +653,12 @@ std::error_code File::sync() {
         return std::error_code(error, std::generic_category());
     }
 #endif
-    return ::fsync(handle) == 0 ? std::error_code() : posix::last_error();
+    while(::fsync(handle) != 0) {
+        if(errno != EINTR) {
+            return posix::last_error();
+        }
+    }
+    return {};
 }
 
 std::error_code File::set_sparse() {

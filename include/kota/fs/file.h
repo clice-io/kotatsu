@@ -132,7 +132,10 @@ public:
     /// Waits until the system has written the file's bytes and status to
     /// the disk, where a crash of the system does not lose them: fsync, on
     /// macOS F_FULLFSYNC (which also empties the disk's own cache, where
-    /// fsync stops at the disk), on Windows FlushFileBuffers.
+    /// fsync stops at the disk), on Windows FlushFileBuffers. That takes a
+    /// handle that may write, which a File open to read alone opens the
+    /// file again for: a read-only file, or one the caller may not write,
+    /// fails there with std::errc::permission_denied.
     std::error_code sync();
 
     /// Lets the file hold holes, ranges never written that take no space:

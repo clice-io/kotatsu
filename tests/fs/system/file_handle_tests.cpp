@@ -525,6 +525,26 @@ ZEST_CASE(sync_keeps_what_was_written) {
     ZEXPECT(test::read_text(dir.file("file")) == "text");
 }
 
+ZEST_CASE(sync_of_a_file_open_to_read_succeeds) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    auto file = File::open(dir.file("file"));
+    ZASSERT(file.has_value());
+    ZEXPECT(!file->sync());
+}
+
+#ifdef _WIN32
+ZEST_CASE(sync_of_a_read_only_file_fails) {
+    // Windows flushes a file only through a handle that may write it.
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    test::ScopedPermissions read_only(dir.path / "file", std::filesystem::perms::owner_read);
+    auto file = File::open(dir.file("file"));
+    ZASSERT(file.has_value());
+    ZEXPECT(file->sync() == std::errc::permission_denied);
+}
+#endif
+
 #ifdef __APPLE__
 // macOS refuses F_FULLFSYNC for a device, a read-only volume and a pipe,
 // where fsync() stands in, and for a file whose volume went, where fsync()
