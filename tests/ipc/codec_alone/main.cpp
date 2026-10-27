@@ -154,18 +154,26 @@ void ask() {
     close_remote(ends);
 }
 
-/// Asks a remote that has closed its end.
-void ask_the_gone() {
+/// Asks a remote that has closed its end, before the client took its own or
+/// after: macOS tells the socket not to raise SIGPIPE only in the second.
+void ask_the_gone(bool closed_first) {
     using namespace kota::ipc;
+    const auto what =
+        std::format("BlockingClient to a remote closed {}", closed_first ? "first" : "after");
     Ends ends;
-    if(!check(connect(ends), "BlockingClient to a closed remote: connect")) {
+    if(!check(connect(ends), std::format("{}: connect", what))) {
         return;
     }
-    close_remote(ends);
+    if(closed_first) {
+        close_remote(ends);
+    }
     BlockingClient<BincodeCodec> client(ends.client);
+    if(!closed_first) {
+        close_remote(ends);
+    }
     auto result = client.send_request<Params>("catter/check", Params{.text = "hook"});
     check(!result && result.error().code == static_cast<int>(protocol::ErrorCode::ConnectionClosed),
-          "BlockingClient to a closed remote: send_request");
+          std::format("{}: send_request", what));
 }
 
 #ifdef _WIN32
@@ -200,7 +208,8 @@ int main() {
     exchange<kota::ipc::BincodeCodec>("BincodeCodec");
     exchange<kota::ipc::JSONCodec>("JSONCodec");
     ask();
-    ask_the_gone();
+    ask_the_gone(true);
+    ask_the_gone(false);
 #ifdef _WIN32
     // What libuv links on Windows.
     constexpr std::array loop_dlls = {

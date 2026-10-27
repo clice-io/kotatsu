@@ -124,13 +124,17 @@ BlockingPipe::BlockingPipe(native_handle_type handle, std::size_t max_payload) n
     handle(handle), parser(max_payload) {
 #ifdef __APPLE__
     int on = 1;
-    ::setsockopt(handle, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof(on));
+    raises_sigpipe = ::setsockopt(handle, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof(on)) != 0;
 #endif
 }
 
 BlockingPipe::BlockingPipe(BlockingPipe&& other) noexcept :
     handle(std::exchange(other.handle, closed)), parser(std::move(other.parser)),
-    unread(std::move(other.unread)) {}
+    unread(std::move(other.unread)) {
+#ifdef __APPLE__
+    raises_sigpipe = other.raises_sigpipe;
+#endif
+}
 
 BlockingPipe::~BlockingPipe() {
     if(handle == closed) {
@@ -144,6 +148,11 @@ BlockingPipe::~BlockingPipe() {
 }
 
 std::error_code BlockingPipe::write(std::string_view payload) {
+#ifdef __APPLE__
+    if(raises_sigpipe) {
+        return std::make_error_code(std::errc::broken_pipe);
+    }
+#endif
     if(auto failed = write_all(handle, frame_header(payload.size()))) {
         return failed;
     }

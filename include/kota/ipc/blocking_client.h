@@ -45,6 +45,11 @@ public:
 
 private:
     native_handle_type handle;
+#ifdef __APPLE__
+    /// macOS would not have the socket's writes fail rather than raise
+    /// SIGPIPE, as it will not once its remote has gone: they fail untried.
+    bool raises_sigpipe = false;
+#endif
     FrameParser parser;
     /// What the last read brought past the frame it ended.
     std::string unread;
