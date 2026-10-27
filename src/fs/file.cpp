@@ -834,6 +834,14 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
 
 std::error_code copy_file(std::string_view from, std::string_view to) {
 #ifdef _WIN32
+    // CopyFileExW copies what it can read, a device or a pipe too.
+    auto copied = status(from);
+    if(!copied) {
+        return copied.error();
+    }
+    if(copied->type != FileType::Regular) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
     win32::WidePath source;
     if(auto error = windows::to_native(source, from)) {
         return error;
@@ -848,13 +856,6 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
     auto error = windows::last_error();
     // CopyFileExW fails on a directory, and on two names of one file, as on
     // any file it cannot open: these fail as they do elsewhere.
-    auto copied = status(from);
-    if(!copied) {
-        return error;
-    }
-    if(copied->type != FileType::Regular) {
-        return std::make_error_code(std::errc::invalid_argument);
-    }
     if(is_directory(to)) {
         return std::make_error_code(std::errc::is_a_directory);
     }
@@ -871,13 +872,23 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
     if(auto error = target_path.assign(to)) {
         return error;
     }
+    // Told apart before it is opened: a socket refuses an open, as a
+    // directory or a pipe the caller may not read does, and a device may
+    // take one for a command (a tape rewinds). Then again as opened,
+    // whatever took the name meanwhile.
+    struct stat copied;
+    if(::stat(source_path.c_str(), &copied) != 0) {
+        return posix::last_error();
+    }
+    if(!S_ISREG(copied.st_mode)) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
     // Here and for `to`, not to wait for a pipe's other end, as an open of
     // one does: a regular file takes no notice of O_NONBLOCK.
     File source(open_file(source_path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC));
     if(!source.is_open()) {
         return posix::last_error();
     }
-    struct stat copied;
     if(::fstat(source.handle, &copied) != 0) {
         return posix::last_error();
     }
@@ -929,8 +940,12 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
     if(refused(existing)) {
         return std::make_error_code(std::errc::invalid_argument);
     }
-    // Emptied before its permissions change, so that no one they let in
-    // reads what it held.
+    // Only its owner sets a file's permissions: set as they are, they fail
+    // for another's before it is emptied. Emptied before they change, so
+    // that no one they let in reads what it held.
+    if(::fchmod(target.handle, existing.st_mode & 07777) != 0) {
+        return posix::last_error();
+    }
     if(auto error = target.resize(0)) {
         return error;
     }

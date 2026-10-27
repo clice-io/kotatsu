@@ -34,13 +34,14 @@ inline DWORD attributes_of(std::string_view path) {
 }
 
 /// A named pipe of `access`, its name kept apart by the directory's, and
-/// written into `name` in UTF-8.
+/// written into `name` in UTF-8; another of the same directory is another
+/// instance of it.
 inline HANDLE make_pipe(std::string& name, const TempDir& dir, DWORD access, DWORD buffer) {
     auto wide = LR"(\\.\pipe\)" + std_path(fs::path::filename(dir.root())).wstring();
     HANDLE pipe = ::CreateNamedPipeW(wide.c_str(),
                                      access,
                                      PIPE_TYPE_BYTE | PIPE_WAIT,
-                                     1,
+                                     PIPE_UNLIMITED_INSTANCES,
                                      buffer,
                                      buffer,
                                      0,

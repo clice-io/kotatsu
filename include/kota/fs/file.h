@@ -262,13 +262,13 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
 /// sibling and rename() it over, or rename_noreplace() it to keep a file
 /// there.
 ///
-/// A `from` that is no regular file, a directory or a pipe among others, and
-/// a `to` that is another name of `from`'s, which emptying would lose, or on
-/// POSIX a pipe or a device, fail with std::errc::invalid_argument; a
-/// directory at `to` with is_a_directory. A read-only `to` fails with
-/// permission_denied, but for root, and on Windows a hidden one too; on POSIX
-/// a `to` of another owner, whose permissions only its owner sets, with
-/// operation_not_permitted.
+/// A `from` that is no regular file, a directory, a pipe or a device among
+/// others, and a `to` that is another name of `from`'s, which emptying would
+/// lose, or on POSIX a pipe or a device, fail with
+/// std::errc::invalid_argument; a directory at `to` with is_a_directory. A
+/// read-only `to` fails with permission_denied, but for root, and on Windows
+/// a hidden one too; on POSIX a `to` of another owner, whose permissions only
+/// its owner sets, with operation_not_permitted. These leave `to` as it was.
 std::error_code copy_file(std::string_view from, std::string_view to);
 
 /// Creates an empty file in `directory`, named `prefix`, random characters

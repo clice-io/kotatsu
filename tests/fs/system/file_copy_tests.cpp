@@ -4,7 +4,10 @@
 #include <system_error>
 
 #ifndef _WIN32
+#include <algorithm>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <unistd.h>
 #endif
 
@@ -196,12 +199,67 @@ ZEST_CASE(copy_file_of_a_directory_fails) {
     ZEXPECT(exists(dir.file("copy")) == false);
 }
 
-#ifndef _WIN32
+ZEST_CASE(copy_file_of_a_device_fails) {
+    test::TempDir dir;
+#ifdef _WIN32
+    ZEXPECT(copy_file("NUL", dir.file("copy")) == std::errc::invalid_argument);
+#else
+    ZEXPECT(copy_file("/dev/null", dir.file("copy")) == std::errc::invalid_argument);
+#endif
+    ZEXPECT(exists(dir.file("copy")) == false);
+}
+
+#ifdef _WIN32
+ZEST_CASE(copy_file_of_a_named_pipe_fails) {
+    // A query of its name connects to it, which takes an instance: it has
+    // two.
+    test::TempDir dir;
+    std::string name;
+    HANDLE first = test::make_pipe(name, dir, PIPE_ACCESS_OUTBOUND, 4096);
+    HANDLE second = test::make_pipe(name, dir, PIPE_ACCESS_OUTBOUND, 4096);
+    auto error = copy_file(name, dir.file("copy"));
+    ::CloseHandle(first);
+    ::CloseHandle(second);
+    ZEXPECT(error == std::errc::invalid_argument);
+    ZEXPECT(exists(dir.file("copy")) == false);
+}
+#else
 ZEST_CASE(copy_file_of_a_fifo_fails) {
     // Without waiting for a writer.
     test::TempDir dir;
     ZASSERT(::mkfifo(dir.file("fifo").c_str(), 0644) == 0);
     ZEXPECT(copy_file(dir.file("fifo"), dir.file("copy")) == std::errc::invalid_argument);
+    ZEXPECT(exists(dir.file("copy")) == false);
+}
+
+ZEST_CASE(copy_file_of_a_socket_fails) {
+    // Which no open reaches.
+    test::TempDir dir;
+    auto path = dir.file("socket");
+    sockaddr_un address{};
+    address.sun_family = AF_UNIX;
+    ZASSERT(path.size() < sizeof(address.sun_path));
+    std::ranges::copy(path, address.sun_path);
+    int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    ZASSERT(fd >= 0);
+    ZASSERT(::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
+    ZEXPECT(copy_file(path, dir.file("copy")) == std::errc::invalid_argument);
+    ZEXPECT(exists(dir.file("copy")) == false);
+    ::close(fd);
+}
+
+ZEST_CASE(copy_file_of_a_directory_or_fifo_that_may_not_be_read_fails) {
+    // As one that may be read does, though it cannot be opened.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "sub");
+    ZASSERT(::mkfifo(dir.file("fifo").c_str(), 0644) == 0);
+    using std::filesystem::perms;
+    test::ScopedPermissions closed_directory(dir.path / "sub", perms::none);
+    test::ScopedPermissions closed_fifo(dir.path / "fifo", perms::none);
+    for(auto name: {"sub", "fifo"}) {
+        ZEST_CONTEXT("{}", name);
+        ZEXPECT(copy_file(dir.file(name), dir.file("copy")) == std::errc::invalid_argument);
+    }
     ZEXPECT(exists(dir.file("copy")) == false);
 }
 
@@ -212,6 +270,26 @@ ZEST_CASE(copy_file_onto_a_fifo_fails) {
     ZASSERT(::mkfifo(dir.file("fifo").c_str(), 0644) == 0);
     ZEXPECT(copy_file(dir.file("file"), dir.file("fifo")) == std::errc::invalid_argument);
     ZEXPECT(status_of(dir.file("fifo")).type == FileType::Fifo);
+}
+
+ZEST_CASE(copy_file_over_a_file_of_another_owner_fails) {
+    // Before it empties the file, whose permissions it may not set.
+    if(::geteuid() != 0) {
+        // Only root gives a file to another user: the copy then runs as a
+        // third one.
+        zest::skip();
+        return;
+    }
+    test::TempDir dir;
+    test::write_text(dir.file("from"), "new");
+    test::write_text(dir.file("to"), "old");
+    ZASSERT(!set_permissions(dir.file("to"), 0666));
+    ZASSERT(::chown(dir.file("to").c_str(), 65534, 65534) == 0);
+    ZASSERT(::seteuid(65533) == 0);
+    auto error = copy_file(dir.file("from"), dir.file("to"));
+    ZASSERT(::seteuid(0) == 0);
+    ZEXPECT(error == std::errc::operation_not_permitted);
+    ZEXPECT(test::read_text(dir.file("to")) == "old");
 }
 
 ZEST_CASE(copy_file_onto_a_device_fails) {
