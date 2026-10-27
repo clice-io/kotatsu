@@ -53,7 +53,9 @@ public:
 
         /// Its status, as symlink_status() gives it. On Windows the listing
         /// holds it, as it was when listed, so that a large directory costs
-        /// about what a few statuses do, though without the link count.
+        /// about what a few statuses do, though without the link count. NTFS
+        /// lists a file's size as it was when a handle to the file last
+        /// closed or flushed it: that of a file being written lags behind.
         /// Elsewhere, and on a Windows file system that lists no IDs (FAT),
         /// the system is asked when this is called, through the directory,
         /// which stays open while an entry of it lives: an entry removed
