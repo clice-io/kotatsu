@@ -196,16 +196,20 @@ DWORD dispose(HANDLE handle) {
     return error;
 }
 
-/// What `path` names, a link itself, open to change its attributes: with
-/// them, its ID and when it was made, which together tell it, as far as
-/// FAT can, from a file that has taken its name since. FAT's ID is the
-/// place of the file's entry, which a new file may take over.
+/// A file open to change its attributes, with them, its ID and when it was
+/// made and last written, which together tell it, as far as FAT can, from a
+/// file that has taken its name since: FAT's ID is the place of the file's
+/// entry, which a new file may take over, and a file made under a name that
+/// went moments before takes over its creation time too (tunneling), though
+/// not its write time.
 struct AttributeHandle {
     win32::Handle handle;
     FILE_BASIC_INFO basic;
     FileID id;
 };
 
+/// What `path` names, a link itself, as an AttributeHandle; empty when it
+/// cannot be opened or read.
 std::optional<AttributeHandle> open_attributes(const wchar_t* path) {
     auto handle = win32::try_open(path,
                                   FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
@@ -855,10 +859,9 @@ std::error_code rename(std::string_view from, std::string_view to) {
         return windows::to_error_code(error);
     }
     // A file system without POSIX renames (FAT), which replaces no
-    // read-only file: `to` goes without the attribute meanwhile, taken off
-    // through a handle closed before the move, which fails while any handle
-    // to `to` is open. Should the move fail, the attribute goes back only on
-    // the same file, which another may have replaced meanwhile.
+    // read-only file: `to` goes without the attribute meanwhile. Should the
+    // move fail, the attribute goes back only on the same file, which
+    // another may have replaced meanwhile.
     handle = win32::Handle();
     if(::MoveFileExW(source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         return {};
@@ -870,6 +873,7 @@ std::error_code rename(std::string_view from, std::string_view to) {
                               before->basic.FileAttributes & ~FILE_ATTRIBUTE_READONLY)) {
         return windows::to_error_code(error);
     }
+    // The move fails while any handle to `to` is open.
     before->handle = win32::Handle();
     if(::MoveFileExW(source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         return {};
@@ -877,7 +881,8 @@ std::error_code rename(std::string_view from, std::string_view to) {
     error = ::GetLastError();
     if(auto after = open_attributes(target.c_str());
        after && after->id == before->id &&
-       after->basic.CreationTime.QuadPart == before->basic.CreationTime.QuadPart) {
+       after->basic.CreationTime.QuadPart == before->basic.CreationTime.QuadPart &&
+       after->basic.LastWriteTime.QuadPart == before->basic.LastWriteTime.QuadPart) {
         win32::set_attributes(after->handle.get(), before->basic.FileAttributes);
     }
     return windows::to_error_code(error);
