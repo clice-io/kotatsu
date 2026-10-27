@@ -722,6 +722,26 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     };
 }
 
+#ifdef _WIN32
+
+result<process> process::open(int pid, event_loop& loop) {
+    // Its watch would come after the loop closed its handles, as spawn's.
+    if(uv::destroying(*loop.native_handle())) {
+        return outcome_error(error::operation_aborted);
+    }
+    auto child = sys::Child::open(pid);
+    if(!child) {
+        return outcome_error(error_of(child.error()));
+    }
+    detail::unique_handle<Self> self(new Self(std::move(*child), *loop.native_handle()));
+    if(auto failed = Self::Watch::of(loop).add(*self)) {
+        return outcome_error(failed);
+    }
+    return process(std::move(self));
+}
+
+#endif
+
 task<process::capture_result, error> process::capture(options opts, event_loop& loop) {
     opts.streams = {stdio::ignore(), stdio::pipe(), stdio::pipe()};
     auto spawned = spawn(opts, loop);

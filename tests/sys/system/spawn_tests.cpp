@@ -1317,6 +1317,43 @@ ZEST_CASE(spawn_inheriting_a_stdin_not_open_runs_the_child) {
         ZEXPECT(status_of(options).code == 3);
     }
 }
+
+// spawn's Child keeps the process, and its ID, there.
+ZEST_CASE(open_reads_the_exit_of_a_process_another_started) {
+    auto child = spawn(test::shell("exit 3"));
+    ZASSERT(child.has_value());
+    auto opened = Child::open(child->pid());
+    ZASSERT(opened.has_value());
+    ZEXPECT(opened->pid() == child->pid());
+    auto status = opened->wait();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->code == 3);
+    ZEXPECT(status->term_signal == 0);
+    ZEXPECT(opened->kill_tree() == std::errc::invalid_argument);
+    ZEXPECT(child->wait().has_value());
+}
+
+ZEST_CASE(open_then_kill_ends_the_process) {
+    auto options = test::shell("more");
+    options.streams[0] = Stdio::pipe();
+    auto child = spawn(options);
+    ZASSERT(child.has_value());
+    auto opened = Child::open(child->pid());
+    ZASSERT(opened.has_value());
+    ZEXPECT(opened->try_wait() == std::optional<ExitStatus>());
+    ZEXPECT(!opened->kill(SIGTERM));
+    auto status = opened->wait();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->term_signal == SIGTERM);
+    ZEXPECT(child->wait().has_value());
+}
+
+ZEST_CASE(open_of_no_process_fails) {
+    // No process has an ID as high: IDs go by fours, 2^24 of them at most.
+    auto opened = Child::open(0x7FFF'FFFC);
+    ZASSERT(!opened.has_value());
+    ZEXPECT(opened.error() == std::errc::no_such_process);
+}
 #endif
 
 };  // ZEST_SUITE(sys_spawn)

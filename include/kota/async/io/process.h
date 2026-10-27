@@ -11,10 +11,11 @@
 
 namespace kota {
 
-/// A child process, started by sys::spawn, whose exit an event loop waits
-/// for: on Linux through a pidfd, or SIGCHLD where the kernel has none
-/// (before 5.3), a sandbox forbids them or the loop cannot poll their epoll
-/// set; on macOS through kqueue; on Windows through the process handle.
+/// A child process, started by sys::spawn, or on Windows a process open()
+/// opened by its ID, whose exit an event loop waits for: on Linux through a
+/// pidfd, or SIGCHLD where the kernel has none (before 5.3), a sandbox
+/// forbids them or the loop cannot poll their epoll set; on macOS through
+/// kqueue; on Windows through the process handle.
 /// libuv's uv_spawn is not used: its SIGCHLD handler and its job object stay
 /// out of the way, and libuv reaps only children of its own.
 ///
@@ -61,6 +62,15 @@ public:
     /// error::operation_aborted while the loop is being destroyed.
     static result<spawn_result> spawn(const options& opts,
                                       event_loop& loop = event_loop::current());
+
+#ifdef _WIN32
+    /// The process with ID `pid`, whichever process started it, as
+    /// sys::Child::open opens it: wait() gives its exit status, and kill()
+    /// ends it. Fails as that does, and with error::operation_aborted while
+    /// the loop is being destroyed. POSIX has no counterpart: there a process
+    /// this one did not start tells it no exit status.
+    static result<process> open(int pid, event_loop& loop = event_loop::current());
+#endif
 
     struct capture_result;
 

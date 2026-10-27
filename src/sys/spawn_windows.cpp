@@ -320,6 +320,23 @@ std::error_code Child::reap(bool block) {
     }
 }
 
+std::expected<Child, std::error_code> Child::open(int pid) {
+    // What wait(), try_wait() and kill() take: the exit, its code and CPU
+    // time, and TerminateProcess.
+    constexpr DWORD access = SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE;
+    HANDLE process = ::OpenProcess(access, FALSE, static_cast<DWORD>(pid));
+    if(process == nullptr) {
+        if(::GetLastError() == ERROR_INVALID_PARAMETER) {
+            return std::unexpected(std::make_error_code(std::errc::no_such_process));
+        }
+        return std::unexpected(fs::windows::last_error());
+    }
+    Child child;
+    child.id = pid;
+    child.handle = process;
+    return child;
+}
+
 std::error_code Child::kill(int signum) {
     if(id < 0 || (signum != 0 && !ends_a_process(signum))) {
         return std::make_error_code(std::errc::invalid_argument);
