@@ -13,6 +13,8 @@
 #include <vector>
 
 #ifndef _WIN32
+#include <cerrno>
+#include <fcntl.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -47,16 +49,19 @@ FileType type_in(const std::vector<Directory::Entry>& entries, std::string_view 
 }
 
 #ifndef _WIN32
-/// The descriptors the process may open cut, while this lives, to `more`
-/// past the lowest one free.
+/// The descriptors the process may open cut, while this lives, to `more`:
+/// the limit falls after as many free ones, counted from the lowest.
 struct ScopedDescriptorLimit {
     explicit ScopedDescriptorLimit(int more) {
         ZASSERT(::getrlimit(RLIMIT_NOFILE, &original) == 0);
-        int lowest = ::dup(STDIN_FILENO);
-        ZASSERT(lowest >= 0);
-        ::close(lowest);
+        int limit = 0;
+        for(int free = 0; free < more; ++limit) {
+            if(::fcntl(limit, F_GETFD) == -1 && errno == EBADF) {
+                ++free;
+            }
+        }
         auto lowered = original;
-        lowered.rlim_cur = static_cast<rlim_t>(lowest + more);
+        lowered.rlim_cur = static_cast<rlim_t>(limit);
         ZASSERT(::setrlimit(RLIMIT_NOFILE, &lowered) == 0);
     }
 
