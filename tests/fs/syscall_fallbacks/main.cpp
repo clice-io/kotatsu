@@ -2,25 +2,32 @@
 // fail, as on an old kernel or a file system without them: a filter of system
 // calls fails copy_file_range with ENOSYS, as Linux before 4.5 does, sendfile
 // with EINVAL, as a file it cannot splice does, and renameat2 with EINVAL, as
-// NFS does. A program of its own, since the filter holds for the whole
-// process and is never lifted; Linux's alone.
+// NFS does, then with ENOSYS, as Linux before 3.15 does. A program of its
+// own, since a filter holds for the whole process and is never lifted; Linux's
+// alone.
 
+#include <algorithm>
+#include <array>
 #include <cerrno>
 #include <chrono>
+#include <csignal>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <fcntl.h>
 #include <format>
-#include <iterator>
+#include <latch>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 #include <string>
 #include <string_view>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/syscall.h>
 #include <system_error>
+#include <thread>
 #include <unistd.h>
+#include <vector>
 
 #include "kota/fs/directory.h"
 #include "kota/fs/file.h"
@@ -28,16 +35,16 @@
 
 // The numbers the library takes where the C library's headers lack them.
 #ifndef SYS_copy_file_range
-#ifdef __x86_64__
+#if defined(__x86_64__)
 #define SYS_copy_file_range 326
-#else
+#elif defined(__aarch64__) || defined(__riscv)
 #define SYS_copy_file_range 285
 #endif
 #endif
 #ifndef SYS_renameat2
-#ifdef __x86_64__
+#if defined(__x86_64__)
 #define SYS_renameat2 316
-#else
+#elif defined(__aarch64__) || defined(__riscv)
 #define SYS_renameat2 276
 #endif
 #endif
@@ -55,9 +62,17 @@ bool check(bool passed, std::string_view what) {
     return passed;
 }
 
+/// Installs `filter`, which holds from now on.
+template <std::size_t N>
+bool install(std::array<sock_filter, N> filter) {
+    sock_fprog program{.len = static_cast<unsigned short>(N), .filter = filter.data()};
+    return ::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == 0 &&
+           ::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) == 0;
+}
+
 /// Fails copy_file_range, sendfile and renameat2 from now on.
 bool deny_calls() {
-    sock_filter filter[] = {
+    return install(std::to_array<sock_filter>({
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, nr)),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_copy_file_range, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | ENOSYS),
@@ -66,10 +81,18 @@ bool deny_calls() {
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_renameat2, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EINVAL),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-    };
-    sock_fprog program{.len = static_cast<unsigned short>(std::size(filter)), .filter = filter};
-    return ::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == 0 &&
-           ::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) == 0;
+    }));
+}
+
+/// Fails renameat2 with ENOSYS from now on: of two filters that fail a call,
+/// the newer says how.
+bool deny_renameat2() {
+    return install(std::to_array<sock_filter>({
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, nr)),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_renameat2, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | ENOSYS),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+    }));
 }
 
 /// Whether a system call's `result` says it failed with `expected`.
@@ -87,14 +110,20 @@ void write(const std::string& path, std::string_view text) {
     check(!kota::fs::write_file(path, text), std::format("write {}", path));
 }
 
+/// Text of `size` bytes that is no repetition of a short run.
+std::string text_of(std::size_t size) {
+    std::string text(size, '\0');
+    for(std::size_t i = 0; i < size; ++i) {
+        text[i] = static_cast<char>('a' + (i * 7 + i / 26) % 26);
+    }
+    return text;
+}
+
 /// The copy goes through the loop of reads and writes.
 void copy_reads_and_writes(const std::string& root) {
     using Time = std::chrono::sys_time<std::chrono::nanoseconds>;
     constexpr auto past = Time(std::chrono::nanoseconds(1'000'000'000'123'456'789));
-    std::string text(1024 * 1024 + 7, '\0');
-    for(std::size_t i = 0; i < text.size(); ++i) {
-        text[i] = static_cast<char>('a' + (i * 7 + i / 26) % 26);
-    }
+    auto text = text_of(1024 * 1024 + 7);
     auto from = root + "/copied";
     auto to = root + "/copy";
     write(from, text);
@@ -106,6 +135,29 @@ void copy_reads_and_writes(const std::string& root) {
     if(check(copied.has_value(), "status of the copy")) {
         check(copied->permissions == 0640, "copy_file takes the permissions");
         check(copied->mtime == past, "copy_file takes the mtime");
+    }
+}
+
+/// A write that fails, past the limit of a file's size, fails the copy, which
+/// leaves what it wrote before.
+void copy_fails_with_a_write(const std::string& root) {
+    constexpr std::size_t limit = 64 * 1024;
+    auto from = root + "/large";
+    auto to = root + "/cut";
+    write(from, text_of(4 * limit));
+    // The signal would end the process; without it the write fails.
+    std::signal(SIGXFSZ, SIG_IGN);
+    rlimit original;
+    check(::getrlimit(RLIMIT_FSIZE, &original) == 0, "getrlimit");
+    rlimit lowered = original;
+    lowered.rlim_cur = limit;
+    check(::setrlimit(RLIMIT_FSIZE, &lowered) == 0, "setrlimit");
+    auto error = kota::fs::copy_file(from, to);
+    check(::setrlimit(RLIMIT_FSIZE, &original) == 0, "setrlimit back");
+    check(error == std::errc::file_too_large, "copy_file past the limit fails");
+    auto cut = kota::fs::status(to);
+    if(check(cut.has_value(), "status of the cut copy")) {
+        check(cut->size == limit, "copy_file leaves what it wrote");
     }
 }
 
@@ -137,6 +189,72 @@ void rename_links(const std::string& root) {
     check(kota::fs::is_directory(directory), "rename_noreplace of a directory keeps it");
 }
 
+/// Runs `rename(i)` on `renamers` threads at once: what each returned.
+template <std::size_t renamers, typename Rename>
+std::array<std::error_code, renamers> race(Rename rename) {
+    std::array<std::error_code, renamers> errors;
+    std::latch start(renamers);
+    std::vector<std::thread> threads;
+    for(std::size_t i = 0; i < renamers; ++i) {
+        threads.emplace_back([&, i] {
+            start.arrive_and_wait();
+            errors[i] = rename(i);
+        });
+    }
+    for(auto& thread: threads) {
+        thread.join();
+    }
+    return errors;
+}
+
+/// Of renames that race, of files of their own to one name, or of one file
+/// to names of their own, one renames and the others fail.
+void rename_races(const std::string& root) {
+    constexpr std::size_t renamers = 4;
+    for(int round = 0; round < 50; ++round) {
+        auto one = std::format("{}/one-{}", root, round);
+        auto own = [&](std::size_t i) {
+            return std::format("{}/own-{}-{}", root, round, i);
+        };
+        for(std::size_t i = 0; i < renamers; ++i) {
+            write(own(i), std::to_string(i));
+        }
+        auto to_one =
+            race<renamers>([&](std::size_t i) { return kota::fs::rename_noreplace(own(i), one); });
+        check(std::ranges::count(to_one, std::error_code()) == 1,
+              std::format("round {}: one rename to one name succeeds", round));
+        check(std::ranges::count(to_one, std::make_error_code(std::errc::file_exists)) ==
+                  renamers - 1,
+              std::format("round {}: the other renames to one name find it taken", round));
+
+        // The one file goes back to names of its own.
+        auto to_own = race<renamers>(
+            [&](std::size_t i) { return kota::fs::rename_noreplace(one, own(i) + "-back"); });
+        check(std::ranges::count(to_own, std::error_code()) == 1,
+              std::format("round {}: one rename of one file succeeds", round));
+        check(std::ranges::count(to_own,
+                                 std::make_error_code(std::errc::no_such_file_or_directory)) ==
+                  renamers - 1,
+              std::format("round {}: the other renames of one file find it gone", round));
+        std::size_t named = 0;
+        for(std::size_t i = 0; i < renamers; ++i) {
+            named += kota::fs::exists(own(i) + "-back") == true;
+        }
+        check(named == 1, std::format("round {}: the one file has one new name", round));
+    }
+}
+
+/// With renameat2 failing as before Linux 3.15, a directory fails with what
+/// the kernel said.
+void rename_without_renameat2(const std::string& root) {
+    auto directory = root + "/directory";
+    check(deny_renameat2(), "install the second filter");
+    check(kota::fs::rename_noreplace(directory, root + "/elsewhere") ==
+              std::errc::function_not_supported,
+          "rename_noreplace of a directory fails as the old kernel refused it");
+    check(kota::fs::is_directory(directory), "rename_noreplace of a directory keeps it");
+}
+
 }  // namespace
 
 int main() {
@@ -158,7 +276,10 @@ int main() {
                      EINVAL),
               "the filter fails renameat2");
         copy_reads_and_writes(root);
+        copy_fails_with_a_write(root);
         rename_links(root);
+        rename_races(root);
+        rename_without_renameat2(root);
     }
     check(kota::fs::remove_all(root).has_value(), std::format("remove_all {}", root));
     return failures == 0 ? 0 : 1;

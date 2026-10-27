@@ -170,12 +170,13 @@ std::error_code rename(std::string_view from, std::string_view to);
 ///
 /// Where the system or the file system has no such rename (NFS, Linux before
 /// 3.15, a network file system on macOS), a hard link, which replaces nothing
-/// either, gives the file its new name before it loses the old one: both name
-/// it meanwhile, and both stay after a crash between. What takes no hard link
-/// there, a directory among others, fails as the system refused the rename:
-/// on Linux with std::errc::invalid_argument, as a directory moved into
-/// itself does (function_not_supported before 3.15), on macOS with
-/// not_supported.
+/// either, gives the file its new name before the old one goes: meanwhile
+/// both name it, after a crash between both stay, and a file another process
+/// puts at `from` meanwhile loses its name in the file's place. What takes
+/// no hard link there, a directory among others, fails as the system refused
+/// the rename: on Linux with std::errc::invalid_argument, as a directory
+/// moved into itself does (function_not_supported before 3.15), on macOS
+/// with not_supported.
 std::error_code rename_noreplace(std::string_view from, std::string_view to);
 
 /// Creates the symlink `link` to the file `target`, which stays as written:

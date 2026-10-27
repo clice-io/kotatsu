@@ -1,10 +1,10 @@
 #include <chrono>
-#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <system_error>
 
 #ifndef _WIN32
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -36,12 +36,16 @@ Status status_of(const std::string& path) {
 ZEST_SUITE(fs_file_copy) {
 
 ZEST_CASE(copy_file_copies_the_bytes) {
-    // Past what one read of the loop that copies takes.
+    // Into a new file and over one there, which on macOS takes no clone but
+    // the loop of reads and writes, past what one read of it takes.
     test::TempDir dir;
     auto text = test::text_of(3 * 1024 * 1024 + 7);
     test::write_text(dir.file("é中😀.txt"), text);
-    ZEXPECT(!copy_file(dir.file("é中😀.txt"), dir.file("copy.txt")));
-    ZEXPECT(test::read_text(dir.file("copy.txt")) == text);
+    test::write_text(dir.file("there.txt"), "old");
+    ZEXPECT(!copy_file(dir.file("é中😀.txt"), dir.file("new.txt")));
+    ZEXPECT(!copy_file(dir.file("é中😀.txt"), dir.file("there.txt")));
+    ZEXPECT(test::read_text(dir.file("new.txt")) == text);
+    ZEXPECT(test::read_text(dir.file("there.txt")) == text);
     ZEXPECT(test::read_text(dir.file("é中😀.txt")) == text);
 }
 
@@ -82,14 +86,17 @@ ZEST_CASE(copy_file_takes_the_attributes) {
                                  FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN));
     ZEXPECT(!copy_file(dir.file("from"), dir.file("new")));
     ZEXPECT(!copy_file(dir.file("from"), dir.file("there")));
+    // Each read-only file goes before a check could end the case: TempDir,
+    // through std::filesystem, would leave it.
     for(auto name: {"new", "there"}) {
         ZEST_CONTEXT("{}", name);
-        auto attributes = test::attributes_of(dir.file(name));
+        auto attributes = ::GetFileAttributesW(test::std_path(dir.file(name)).wstring().c_str());
+        auto found = status(dir.file(name));
+        ZEXPECT(remove(dir.file(name)) == true);
+        ZEXPECT(attributes != INVALID_FILE_ATTRIBUTES);
         ZEXPECT((attributes & FILE_ATTRIBUTE_READONLY) != 0);
         ZEXPECT((attributes & FILE_ATTRIBUTE_HIDDEN) != 0);
-        ZEXPECT(status_of(dir.file(name)).permissions == 0444u);
-        // TempDir, through std::filesystem, would leave a read-only file.
-        ZEXPECT(remove(dir.file(name)) == true);
+        ZEXPECT(found.transform(&Status::permissions) == 0444u);
     }
     ZEXPECT(remove(dir.file("from")) == true);
 }
@@ -169,12 +176,16 @@ ZEST_CASE(copy_file_writes_through_a_symlink) {
 }
 
 ZEST_CASE(copy_file_onto_itself_fails) {
-    // By its name or another, a hard link: emptying it would lose it.
+    // By its name or another, a hard link: emptying it would lose it. Read
+    // only, it fails the same, though no one may write it.
     test::TempDir dir;
     test::write_text(dir.file("file"), "text");
     ZASSERT(!create_hard_link(dir.file("file"), dir.file("other")));
     ZEXPECT(copy_file(dir.file("file"), dir.file("file")) == std::errc::invalid_argument);
     ZEXPECT(copy_file(dir.file("file"), dir.file("other")) == std::errc::invalid_argument);
+    ZASSERT(!set_permissions(dir.file("file"), 0444));
+    ZEXPECT(copy_file(dir.file("file"), dir.file("other")) == std::errc::invalid_argument);
+    ZEXPECT(!set_permissions(dir.file("file"), 0644));
     ZEXPECT(test::read_text(dir.file("file")) == "text");
 }
 
@@ -184,6 +195,34 @@ ZEST_CASE(copy_file_of_a_directory_fails) {
     ZEXPECT(copy_file(dir.file("sub"), dir.file("copy")) == std::errc::invalid_argument);
     ZEXPECT(exists(dir.file("copy")) == false);
 }
+
+#ifndef _WIN32
+ZEST_CASE(copy_file_of_a_fifo_fails) {
+    // Without waiting for a writer.
+    test::TempDir dir;
+    ZASSERT(::mkfifo(dir.file("fifo").c_str(), 0644) == 0);
+    ZEXPECT(copy_file(dir.file("fifo"), dir.file("copy")) == std::errc::invalid_argument);
+    ZEXPECT(exists(dir.file("copy")) == false);
+}
+
+ZEST_CASE(copy_file_onto_a_fifo_fails) {
+    // Without waiting for a reader.
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    ZASSERT(::mkfifo(dir.file("fifo").c_str(), 0644) == 0);
+    ZEXPECT(copy_file(dir.file("file"), dir.file("fifo")) == std::errc::invalid_argument);
+    ZEXPECT(status_of(dir.file("fifo")).type == FileType::Fifo);
+}
+
+ZEST_CASE(copy_file_onto_a_device_fails) {
+    // Whose permissions are not the copy's to change, root's or not.
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    auto before = status_of("/dev/null");
+    ZEXPECT(copy_file(dir.file("file"), "/dev/null") == std::errc::invalid_argument);
+    ZEXPECT(status_of("/dev/null").permissions == before.permissions);
+}
+#endif
 
 ZEST_CASE(copy_file_onto_a_directory_fails) {
     test::TempDir dir;

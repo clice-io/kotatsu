@@ -192,7 +192,6 @@ public:
     }
 
 private:
-    /// Opens `to` itself, with the permissions it ends with.
     friend std::error_code copy_file(std::string_view from, std::string_view to);
 
     explicit File(native_handle_type handle) : handle(handle) {}
@@ -232,18 +231,23 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
 /// hidden among them. The system's own copy does it where there is one, which
 /// may share the blocks or copy on a share's server: CopyFileExW on Windows,
 /// on macOS a clone where `to` is new on `from`'s APFS volume, on Linux
-/// copy_file_range, then sendfile across file systems. Extended attributes,
-/// ACLs and alternate streams go along only as those take them: Windows's
-/// copy and a macOS clone do.
+/// copy_file_range, then sendfile across file systems. What else a file
+/// carries goes along only as those take it: Windows's copy takes the
+/// alternate streams and extended attributes, a macOS clone the extended
+/// attributes and the flags (a locked file's clone is locked).
 ///
 /// `to` is written in place: a reader meanwhile may see a part, and after a
 /// failure it may hold a part, or nothing. For all or nothing, copy to a
-/// sibling and rename() it over. A `from` that is no regular file, a
-/// directory among others, and a `to` that is no regular file or another
-/// name of `from`'s, which emptying would lose, fail with
-/// std::errc::invalid_argument, but a directory at `to`, which fails with
-/// is_a_directory. A read-only `to` fails with permission_denied, but for
-/// root; on Windows a hidden one too.
+/// sibling and rename() it over, or rename_noreplace() it to keep a file
+/// there.
+///
+/// A `from` that is no regular file, a directory or a pipe among others, and
+/// a `to` that is another name of `from`'s, which emptying would lose, or on
+/// POSIX a pipe or a device, fail with std::errc::invalid_argument; a
+/// directory at `to` with is_a_directory. A read-only `to` fails with
+/// permission_denied, but for root, and on Windows a hidden one too; on POSIX
+/// a `to` of another owner, whose permissions only its owner sets, with
+/// operation_not_permitted.
 std::error_code copy_file(std::string_view from, std::string_view to);
 
 /// Creates an empty file in `directory`, named `prefix`, random characters

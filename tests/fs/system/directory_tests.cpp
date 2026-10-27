@@ -618,6 +618,17 @@ ZEST_CASE(rename_noreplace_over_a_dangling_symlink_fails) {
     ZEXPECT(is_file(dir.file("from")));
 }
 
+ZEST_CASE(rename_noreplace_onto_itself_fails) {
+    // By its name or another, a hard link.
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    ZASSERT(!create_hard_link(dir.file("file"), dir.file("other")));
+    ZEXPECT(rename_noreplace(dir.file("file"), dir.file("file")) == std::errc::file_exists);
+    ZEXPECT(rename_noreplace(dir.file("file"), dir.file("other")) == std::errc::file_exists);
+    ZEXPECT(is_file(dir.file("file")));
+    ZEXPECT(is_file(dir.file("other")));
+}
+
 ZEST_CASE(rename_noreplace_of_nothing_fails) {
     test::TempDir dir;
     ZEXPECT(rename_noreplace(dir.file("missing"), dir.file("to")) ==

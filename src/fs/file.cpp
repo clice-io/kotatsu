@@ -18,9 +18,9 @@
 #else
 #include <fcntl.h>
 #include <format>
+#include <memory>
 #include <sys/file.h>
 #include <unistd.h>
-#include <vector>
 #ifdef __APPLE__
 #include <sys/clonefile.h>
 #include <sys/param.h>
@@ -29,12 +29,12 @@
 #include <sys/syscall.h>
 
 // copy_file_range's number on x86-64 and on the architectures of the generic
-// table (AArch64, RISC-V), which C libraries before glibc 2.27, and their
-// kernel headers before Linux 4.5, leave out.
+// table, which C libraries before glibc 2.27, and their kernel headers before
+// Linux 4.5, leave out.
 #ifndef SYS_copy_file_range
-#ifdef __x86_64__
+#if defined(__x86_64__)
 #define SYS_copy_file_range 326
-#else
+#elif defined(__aarch64__) || defined(__riscv)
 #define SYS_copy_file_range 285
 #endif
 #endif
@@ -148,6 +148,15 @@ std::expected<bool, std::error_code> take_lock(HANDLE handle, DWORD flags) {
 
 #else
 
+/// open(), again while a signal interrupts it.
+int open_file(const char* path, int flags, mode_t mode = 0) {
+    int fd;
+    do {
+        fd = ::open(path, flags, mode);
+    } while(fd < 0 && errno == EINTR);
+    return fd;
+}
+
 /// The bytes from where `fd` stands to the end of the file, zero where it
 /// reports no size: a pipe, a file under /proc.
 std::uint64_t left_to_read(int fd) {
@@ -197,16 +206,17 @@ std::error_code copy_bytes(File& in, File& out) {
     while(::syscall(SYS_copy_file_range, from, nullptr, to, nullptr, largest_call, 0u) > 0) {}
     while(::sendfile(to, from, nullptr, largest_call) > 0) {}
 #endif
-    std::vector<char> buffer(std::size_t{1} << 17);
+    constexpr std::size_t size = std::size_t{1} << 17;
+    auto buffer = std::make_unique_for_overwrite<char[]>(size);
     while(true) {
-        auto count = in.read(buffer);
+        auto count = in.read({buffer.get(), size});
         if(!count) {
             return count.error();
         }
         if(*count == 0) {
             return {};
         }
-        if(auto error = out.write({buffer.data(), *count})) {
+        if(auto error = out.write({buffer.get(), *count})) {
             return error;
         }
     }
@@ -465,10 +475,7 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
     } else {
         flags |= (options.create ? O_CREAT : 0) | (options.truncate ? O_TRUNC : 0);
     }
-    int fd;
-    do {
-        fd = ::open(c_path.c_str(), flags, 0666);
-    } while(fd < 0 && errno == EINTR);
+    int fd = open_file(c_path.c_str(), flags, 0666);
     if(fd < 0) {
         return std::unexpected(posix::last_error());
     }
@@ -721,7 +728,11 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
     auto error = windows::last_error();
     // CopyFileExW fails on a directory, and on two names of one file, as on
     // any file it cannot open: these fail as they do elsewhere.
-    if(auto copied = status(from); copied && copied->type != FileType::Regular) {
+    auto copied = status(from);
+    if(!copied) {
+        return error;
+    }
+    if(copied->type != FileType::Regular) {
         return std::make_error_code(std::errc::invalid_argument);
     }
     if(is_directory(to)) {
@@ -732,20 +743,26 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
     }
     return error;
 #else
-    auto source = File::open(from);
-    if(!source) {
-        return source.error();
-    }
-    struct stat copied;
-    if(::fstat(source->handle, &copied) != 0) {
-        return posix::last_error();
-    }
-    if(!S_ISREG(copied.st_mode)) {
-        return std::make_error_code(std::errc::invalid_argument);
+    posix::CPath source_path;
+    if(auto error = source_path.assign(from)) {
+        return error;
     }
     posix::CPath target_path;
     if(auto error = target_path.assign(to)) {
         return error;
+    }
+    // Not to wait for a pipe's other end, as an open of one does: a regular
+    // file takes no notice of O_NONBLOCK.
+    File source(open_file(source_path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC));
+    if(!source.is_open()) {
+        return posix::last_error();
+    }
+    struct stat copied;
+    if(::fstat(source.handle, &copied) != 0) {
+        return posix::last_error();
+    }
+    if(!S_ISREG(copied.st_mode)) {
+        return std::make_error_code(std::errc::invalid_argument);
     }
     auto permissions = static_cast<mode_t>(copied.st_mode & 0777);
 #ifdef __APPLE__
@@ -753,7 +770,7 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
     // permissions and the times itself. It makes only a new file (EEXIST),
     // on the volume of `from` (EXDEV), where the file system clones (ENOTSUP:
     // APFS does, HFS+ does not).
-    if(::fclonefileat(source->handle, AT_FDCWD, target_path.c_str(), 0) == 0) {
+    if(::fclonefileat(source.handle, AT_FDCWD, target_path.c_str(), 0) == 0) {
         return {};
     }
     if(errno != EEXIST && errno != EXDEV && errno != ENOTSUP) {
@@ -763,33 +780,28 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
 #else
     const auto& mtime = copied.st_mtim;
 #endif
-    // Created with the permissions it ends with, so that no one opens it
-    // meanwhile who could not read `from`.
-    int fd;
-    do {
-        fd = ::open(target_path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, permissions);
-    } while(fd < 0 && errno == EINTR);
-    if(fd < 0) {
-        return posix::last_error();
-    }
-    File target(fd);
+    // Another name of `from`'s would lose its bytes once emptied, a pipe
+    // would wait for its other end, and a device's permissions are not the
+    // copy's to change. A directory fails to open below.
     struct stat existing;
-    if(::fstat(fd, &existing) != 0) {
-        return posix::last_error();
-    }
-    // Another name of `from`'s would lose its bytes once emptied, and a
-    // device's permissions are not the copy's to change.
-    if(!S_ISREG(existing.st_mode) ||
-       (existing.st_dev == copied.st_dev && existing.st_ino == copied.st_ino)) {
+    if(::stat(target_path.c_str(), &existing) == 0 && !S_ISDIR(existing.st_mode) &&
+       (!S_ISREG(existing.st_mode) ||
+        (existing.st_dev == copied.st_dev && existing.st_ino == copied.st_ino))) {
         return std::make_error_code(std::errc::invalid_argument);
     }
-    if(::fchmod(fd, permissions) != 0) {
+    // Created with the permissions it ends with, so that no one opens it
+    // meanwhile who could not read `from`.
+    File target(open_file(target_path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, permissions));
+    if(!target.is_open()) {
+        return posix::last_error();
+    }
+    if(::fchmod(target.handle, permissions) != 0) {
         return posix::last_error();
     }
     if(auto error = target.resize(0)) {
         return error;
     }
-    if(auto error = copy_bytes(*source, target)) {
+    if(auto error = copy_bytes(source, target)) {
         return error;
     }
     // The writes moved the mtime, which goes back to `from`'s.
@@ -797,7 +809,7 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
         {.tv_sec = 0, .tv_nsec = UTIME_OMIT},
         mtime
     };
-    if(::futimens(fd, times) != 0) {
+    if(::futimens(target.handle, times) != 0) {
         return posix::last_error();
     }
     return target.close();

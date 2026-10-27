@@ -265,6 +265,15 @@ ZEST_CASE(copy_file_copies_from_another_volume) {
     });
 }
 
+ZEST_CASE(rename_noreplace_renames_a_file) {
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("from.txt"), "text");
+        ZEXPECT(!rename_noreplace(dir.file("from.txt"), dir.file("to.txt")));
+        ZEXPECT(test::read_text(dir.file("to.txt")) == "text");
+        ZEXPECT(exists(dir.file("from.txt")) == false);
+    });
+}
+
 ZEST_CASE(rename_noreplace_over_a_file_fails) {
     on_fat([](const test::TempDir& dir) {
         test::write_text(dir.file("from.txt"), "new");
@@ -272,9 +281,7 @@ ZEST_CASE(rename_noreplace_over_a_file_fails) {
         ZEXPECT(rename_noreplace(dir.file("from.txt"), dir.file("to.txt")) ==
                 std::errc::file_exists);
         ZEXPECT(test::read_text(dir.file("to.txt")) == "old");
-        ZEXPECT(!rename_noreplace(dir.file("from.txt"), dir.file("new.txt")));
-        ZEXPECT(test::read_text(dir.file("new.txt")) == "new");
-        ZEXPECT(exists(dir.file("from.txt")) == false);
+        ZEXPECT(test::read_text(dir.file("from.txt")) == "new");
     });
 }
 

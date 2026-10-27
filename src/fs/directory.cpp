@@ -24,21 +24,24 @@
 #include "posix.h"
 
 #ifdef __APPLE__
+// renamex_np
 #include <stdio.h>
 #else
 #include <sys/syscall.h>
 
 // What C libraries before glibc 2.28, and their kernel headers before Linux
-// 3.15, leave out: renameat2's flag and its number on x86-64 and on the
-// architectures of the generic table (AArch64, RISC-V).
+// 3.15, leave out: renameat2's flag, and its number on x86-64 and on the
+// architectures of the generic table.
 #ifndef RENAME_NOREPLACE
 #define RENAME_NOREPLACE 1
 #endif
 #ifndef SYS_renameat2
-#ifdef __x86_64__
+#if defined(__x86_64__)
 #define SYS_renameat2 316
-#else
+#elif defined(__aarch64__) || defined(__riscv)
 #define SYS_renameat2 276
+#endif
+#endif
 #endif
 #endif
 #endif
@@ -966,16 +969,21 @@ std::error_code rename_noreplace(std::string_view from, std::string_view to) {
     }
 #endif
     auto refused = posix::last_error();
-    // A hard link replaces nothing either. linkat() without its flag to
-    // follow a symlink links the symlink itself, which a rename moves. A
-    // directory takes none (EPERM), nor, where Linux protects hard links, a
-    // file of another owner: the system's refusal says why then.
-    if(::linkat(AT_FDCWD, source.c_str(), AT_FDCWD, target.c_str(), 0) != 0) {
-        return errno == EPERM ? refused : posix::last_error();
+    // A hard link replaces nothing either. It takes no directory (EPERM),
+    // nor, where Linux protects hard links, a file of another owner: the
+    // system's refusal says why then.
+    if(auto error = create_hard_link(from, to)) {
+        return error == std::errc::operation_not_permitted ? refused : error;
     }
-    // The file has its new name: losing the old one is all that is left.
-    [[maybe_unused]] auto unlinked = ::unlink(source.c_str());
-    return {};
+    // An old name gone already went to another rename of `from`, which gave
+    // the file a new name of its own: this rename failed, and takes back the
+    // name it gave.
+    auto removed = remove(from);
+    if(removed == true) {
+        return {};
+    }
+    [[maybe_unused]] auto undone = remove(to);
+    return removed ? std::make_error_code(std::errc::no_such_file_or_directory) : removed.error();
 #endif
 }
 

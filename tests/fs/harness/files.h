@@ -21,6 +21,7 @@
 
 #ifdef __linux__
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 #include "kota/zest/zest.h"
@@ -143,10 +144,10 @@ inline bool linked(std::error_code error) {
 inline bool across_file_systems() {
     struct stat shm;
     struct stat temp;
-    if(::stat("/dev/shm", &shm) != 0 ||
+    if(::stat("/dev/shm", &shm) != 0 || ::access("/dev/shm", W_OK | X_OK) != 0 ||
        ::stat(std::filesystem::temp_directory_path().c_str(), &temp) != 0 ||
        shm.st_dev == temp.st_dev) {
-        // No tmpfs at /dev/shm, or the temp directory on it.
+        // No tmpfs at /dev/shm that takes files, or the temp directory on it.
         zest::skip();
         return false;
     }
