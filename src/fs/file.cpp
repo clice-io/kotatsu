@@ -809,11 +809,13 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
     if(refused(existing)) {
         return std::make_error_code(std::errc::invalid_argument);
     }
-    if(::fchmod(target.handle, permissions) != 0) {
-        return posix::last_error();
-    }
+    // Emptied before its permissions change, so that no one they let in
+    // reads what it held.
     if(auto error = target.resize(0)) {
         return error;
+    }
+    if(::fchmod(target.handle, permissions) != 0) {
+        return posix::last_error();
     }
     if(auto error = copy_bytes(source, target)) {
         return error;
