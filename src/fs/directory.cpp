@@ -364,6 +364,22 @@ struct DirCloser {
 
 using DirHandle = std::unique_ptr<DIR, DirCloser>;
 
+/// A descriptor, closed when this goes.
+struct Descriptor {
+    explicit Descriptor(int fd) : fd(fd) {}
+
+    Descriptor(const Descriptor&) = delete;
+    Descriptor& operator=(const Descriptor&) = delete;
+
+    ~Descriptor() {
+        if(fd >= 0) {
+            ::close(fd);
+        }
+    }
+
+    int fd;
+};
+
 std::expected<DirHandle, std::error_code> open_dir(std::string_view path) {
     posix::CPath c_path;
     if(auto error = c_path.assign(path)) {
@@ -435,11 +451,11 @@ std::error_code
         directory = S_ISDIR(info.st_mode);
     }
     if(directory) {
-        int fd = ::openat(dir_fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-        if(fd >= 0) {
-            auto error = remove_contents(fd, removed);
-            ::close(fd);
-            if(error) {
+        // Closed however the walk inside ends, a throw included, and before
+        // the directory is removed.
+        Descriptor opened(::openat(dir_fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+        if(opened.fd >= 0) {
+            if(auto error = remove_contents(opened.fd, removed)) {
                 return error;
             }
         } else if(errno == ENOENT) {
