@@ -1,11 +1,12 @@
-# The LSP base protocol's framing and the messages of each codec, without the
-# event loop: a program that only reads and writes messages takes neither
-# libuv nor the DLLs it imports.
+# The LSP base protocol's framing, the messages of each codec and the blocking
+# client, without the event loop: a program that only reads and writes
+# messages takes neither libuv nor the DLLs it imports.
 add_library(kota_ipc_codec STATIC)
 add_library(kota::ipc::codec ALIAS kota_ipc_codec)
 
 target_sources(kota_ipc_codec PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/framing.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/blocking_client.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/codec/bincode.cpp"
 )
 

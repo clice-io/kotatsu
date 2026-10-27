@@ -33,7 +33,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         ZEXPECT(ran.has_value());
         ZASSERT(asked.has_error());
         ZEXPECT(code_of(asked.error()) == ErrorCode::ConnectionClosed);
-        ZEXPECT(asked.error().message == "transport closed");
+        ZEXPECT(asked.error().message == "input ended");
     });
 
     kit.add("end_of_input_lets_running_handlers_answer", [](Fixture& f) {

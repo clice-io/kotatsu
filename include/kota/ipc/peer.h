@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -54,6 +55,53 @@ struct UnansweredRequest {
     /// Peer.
     std::string_view method;
     protocol::RequestID id;
+};
+
+/// What a Peer does at a message from its remote that breaks the protocol
+/// the two speak, one it can neither take as an answer or a request nor
+/// deliver: one that cannot be read as a request, a notification or a
+/// response, a response it cannot read included, which still fails the
+/// request it names; an error response without an id, as a remote sends
+/// when it could not read what it was sent; or a notification no handler
+/// takes, LSP's $/ ones included, or whose params do not decode. None of
+/// these breaks it: a request it reads and answers with an error, for a
+/// method it has no handler for, with params that do not decode or under
+/// the id of one it is answering; a response it reads to a request no
+/// longer pending; a $/cancelRequest, which the peer takes itself and
+/// ignores when it cannot read it; a frame too large to read, which
+/// concerns this side's limit.
+enum class ViolationPolicy : std::uint8_t {
+    /// Answers a request it cannot read with an error, as JSON-RPC asks of a
+    /// server, logs the rest, and reads on.
+    Tolerate,
+    /// Does the same, then stops reading, as at a frame that cannot be read:
+    /// the conversation ends Malformed, with what broke the protocol.
+    End,
+};
+
+/// Why a peer's conversation with its remote ended, as Peer::ended() tells
+/// it: no answer can come any more, so the requests pending have failed with
+/// ConnectionClosed and `message`, and a new one fails at once with
+/// ConnectionClosed.
+struct ConversationEnd {
+    enum class Kind : std::uint8_t {
+        /// The input ended: the remote closed its output, or the connection
+        /// went.
+        InputEnded,
+        /// The remote wrote what the protocol does not allow: a frame that
+        /// cannot be read, or, under ViolationPolicy::End, a message that
+        /// breaks the protocol.
+        Malformed,
+        /// A write to the remote, or the half-close of the output, failed.
+        WriteFailed,
+        /// This side shut it down, with close() or a cancel of run().
+        ShutDown,
+    };
+
+    Kind kind = Kind::InputEnded;
+    /// What ended it, in words: what the transport or the codec said, or
+    /// what in a message broke the protocol.
+    std::string message;
 };
 
 template <typename Params, typename ResultT = typename protocol::RequestTraits<Params>::Result>
@@ -130,6 +178,15 @@ public:
     void close_output();
 
     void set_logger(LogCallback callback, LogLevel min_level = LogLevel::info);
+
+    /// How the messages read from now on that break the protocol are taken;
+    /// Tolerate until set.
+    void set_violation_policy(ViolationPolicy policy);
+
+    /// Why the conversation ended, once it has: set before the pending
+    /// requests fail, and kept, the first reason only. None while answers
+    /// can still come, which close_output() leaves them.
+    std::optional<ConversationEnd> ended() const;
 
     /// Sends the request RequestTraits<Params> names.
     template <typename Params>

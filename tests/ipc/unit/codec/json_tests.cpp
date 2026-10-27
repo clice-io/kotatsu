@@ -230,6 +230,7 @@ ZEST_CASE(response_with_both_result_and_error_is_an_invalid_response) {
     ZASSERT(response != nullptr);
     ZEXPECT(response->id == protocol::RequestID(5));
     ZEXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+    ZEXPECT(response->unreadable);
 }
 
 ZEST_CASE(response_with_neither_result_nor_error_is_an_invalid_response) {
@@ -239,6 +240,7 @@ ZEST_CASE(response_with_neither_result_nor_error_is_an_invalid_response) {
     ZASSERT(response != nullptr);
     ZEXPECT(response->id == protocol::RequestID(5));
     ZEXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+    ZEXPECT(response->unreadable);
 }
 
 ZEST_CASE(object_without_method_or_id_is_an_invalid_request) {
@@ -265,6 +267,7 @@ ZEST_CASE(result_with_a_null_id_answers_no_request) {
     const auto* response = std::get_if<IncomingErrorResponse>(&parsed);
     ZASSERT(response != nullptr);
     ZEXPECT(!response->id.has_value());
+    ZEXPECT(response->unreadable);
 }
 
 ZEST_CASE(json_that_is_no_message_is_an_invalid_request) {
@@ -355,6 +358,7 @@ ZEST_CASE(response_with_a_malformed_error_keeps_its_id) {
         ZASSERT(response != nullptr);
         ZEXPECT(response->id == protocol::RequestID(1));
         ZEXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+        ZEXPECT(response->unreadable);
     }
 }
 
@@ -399,6 +403,7 @@ ZEST_CASE(response_without_jsonrpc_2_0_fails_its_request) {
     ZASSERT(response != nullptr);
     ZEXPECT(response->id == protocol::RequestID(3));
     ZEXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+    ZEXPECT(response->unreadable);
 }
 
 // JSON-RPC requires an error object's code and message.
@@ -414,6 +419,7 @@ ZEST_CASE(error_without_its_code_or_message_fails_its_request) {
         ZASSERT(response != nullptr);
         ZEXPECT(response->id == protocol::RequestID(1));
         ZEXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+        ZEXPECT(response->unreadable);
     }
 }
 
@@ -464,6 +470,7 @@ ZEST_CASE(response_with_deeply_nested_error_data_fails_its_request) {
     ZASSERT(response != nullptr);
     ZEXPECT(response->id == protocol::RequestID(3));
     ZEXPECT(code_of(response->error) == ErrorCode::InvalidRequest);
+    ZEXPECT(response->unreadable);
 }
 
 // A key with escapes names the member it spells.

@@ -280,6 +280,7 @@ void codec_protocol(const CodecKit<A>& kit) {
         ZEXPECT(response->id == RequestID(7));
         ZEXPECT(code_of(response->error) == ErrorCode::MethodNotFound);
         ZEXPECT(response->error.message == "method not found");
+        ZEXPECT(!response->unreadable);
     });
 
     kit.add("parse_message_reads_an_error_without_an_id", [] {
@@ -290,6 +291,7 @@ void codec_protocol(const CodecKit<A>& kit) {
         ZASSERT(response != nullptr);
         ZEXPECT(!response->id.has_value());
         ZEXPECT(code_of(response->error) == ErrorCode::ParseError);
+        ZEXPECT(!response->unreadable);
     });
 
     kit.add("request_without_params_roundtrip", [] {

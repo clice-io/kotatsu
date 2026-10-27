@@ -101,10 +101,11 @@ template <typename CodecT>
 struct Peer<CodecT>::Self {
     /// The params come as the codec read them from the message, which it
     /// decodes them from in place. A request's callback returns its answer,
-    /// encoded.
+    /// encoded; a notification's, what breaks the protocol in it, if
+    /// anything: params that do not decode.
     using RequestCallback = std::function<
         task<std::string, Error>(const protocol::RequestID&, PayloadSlice&, cancellation_token)>;
-    using NotificationCallback = std::function<void(PayloadSlice&)>;
+    using NotificationCallback = std::function<std::optional<std::string>(PayloadSlice&)>;
 
     using Clock = std::chrono::steady_clock;
 
@@ -212,6 +213,9 @@ struct Peer<CodecT>::Self {
     /// The read loop has ended and every handler has finished, so no more
     /// answers are queued.
     bool answers_done = false;
+    ViolationPolicy violation_policy = ViolationPolicy::Tolerate;
+    /// Why no answer can come any more, once none can: the first reason.
+    std::optional<ConversationEnd> ending;
     /// run() was called; it is called once.
     bool started = false;
     /// run() is running: the Peer must not go.
@@ -336,6 +340,9 @@ struct Peer<CodecT>::Self {
         }
         output_open = false;
         if(cancelled && !closed) {
+            // Before the transport's close ends the read loop, which may see
+            // that rather than its own cancel.
+            end_conversation({.kind = ConversationEnd::Kind::ShutDown, .message = "run() cancelled"});
             closed = true;
             if(auto result = transport->close(); !result) {
                 log(LogLevel::error, "closing the transport failed: {}", result.error().message);
@@ -368,6 +375,7 @@ struct Peer<CodecT>::Self {
         output_open = false;
         closing_output = false;
         outgoing_queue.clear();
+        end_conversation({.kind = ConversationEnd::Kind::WriteFailed, .message = message});
         fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, message));
         closed = true;
         // Their answers could not be written.
@@ -390,10 +398,20 @@ struct Peer<CodecT>::Self {
         incoming_requests.clear();
     }
 
-    /// The read loop ended: nothing can answer a pending request any more.
-    void end_input(const Error& why) {
+    /// Notes why the conversation ended, unless an earlier reason did.
+    void end_conversation(ConversationEnd why) {
+        if(!ending) {
+            ending = std::move(why);
+        }
+    }
+
+    /// The read loop ended, for `why`: nothing can answer a pending request
+    /// any more. One that a failed write or close() ended has failed
+    /// already.
+    void end_input(ConversationEnd why) {
         input_open = false;
-        fail_pending_requests(why);
+        end_conversation(std::move(why));
+        fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, ending->message));
         deadline_changed.set();
     }
 
@@ -403,15 +421,16 @@ struct Peer<CodecT>::Self {
 
         // Pending requests fail as soon as the input ends, before the
         // handlers still running finish and before run() returns. A
-        // connection that went away and a frame that cannot be read both
-        // fail them with ConnectionClosed.
+        // connection that went away and a frame or a message the protocol
+        // does not allow all fail them with ConnectionClosed, and what the
+        // transport or the codec said.
         auto reading = [&]() -> task<> {
             auto ended = co_await read_loop(handlers).catch_cancel();
-            const bool malformed = ended.has_value() && ended->kind == ReadError::Kind::Malformed;
-            end_input(Error(protocol::ErrorCode::ConnectionClosed,
-                            malformed ? ended->message : "transport closed"));
             if(ended.is_cancelled()) {
+                end_input({.kind = ConversationEnd::Kind::ShutDown, .message = "run() cancelled"});
                 handlers.cancel();
+            } else {
+                end_input(std::move(*ended));
             }
             co_await handlers.join();
             answers_done = true;
@@ -422,18 +441,30 @@ struct Peer<CodecT>::Self {
     }
 
     /// Reads and dispatches until the input ends, and returns why it ended:
-    /// Closed or Malformed.
-    task<ReadError> read_loop(task_group<>& handlers) {
+    /// InputEnded, or Malformed, as a frame that cannot be read ends it, and
+    /// under ViolationPolicy::End a message that breaks the protocol.
+    task<ConversationEnd> read_loop(task_group<>& handlers) {
         log(LogLevel::info, "read loop started");
         while(true) {
             auto message = co_await transport->read_message();
             if(message) {
-                dispatch_incoming_message(std::move(*message), handlers);
+                auto violation = dispatch_incoming_message(std::move(*message), handlers);
+                if(violation && violation_policy == ViolationPolicy::End) {
+                    log(LogLevel::info, "read loop ended: {}", *violation);
+                    co_return ConversationEnd{.kind = ConversationEnd::Kind::Malformed,
+                                              .message = std::move(*violation)};
+                }
             } else if(message.error().kind == ReadError::Kind::Oversized) {
                 skip_oversized(message.error());
             } else {
-                log(LogLevel::info, "read loop ended: {}", message.error().message);
-                co_return std::move(message).error();
+                auto& failure = message.error();
+                log(LogLevel::info, "read loop ended: {}", failure.message);
+                const bool malformed = failure.kind == ReadError::Kind::Malformed;
+                co_return ConversationEnd{
+                    .kind = malformed ? ConversationEnd::Kind::Malformed
+                                      : ConversationEnd::Kind::InputEnded,
+                    .message = std::move(failure.message),
+                };
             }
         }
     }
@@ -625,17 +656,25 @@ struct Peer<CodecT>::Self {
         }
     }
 
-    /// Logs that the params of the `kind` (request or notification) `method`
-    /// did not decode.
-    void log_params_failure(std::string_view kind, std::string_view method, const Error& error) {
-        log(LogLevel::warn,
-            "{} '{}' params deserialization failed: {}",
-            kind,
-            method,
-            error.message);
+    /// Logs `violation`, what in a message breaks the protocol, and returns
+    /// it.
+    std::string report_violation(std::string violation) {
+        log(LogLevel::warn, "{}", violation);
+        return violation;
     }
 
-    void dispatch_notification(const std::string& method, PayloadSlice& params) {
+    /// That the params of the `kind` (request or notification) `method` did
+    /// not decode.
+    static std::string params_failure(std::string_view kind,
+                                      std::string_view method,
+                                      const Error& error) {
+        return std::format("{} '{}' params deserialization failed: {}", kind, method, error.message);
+    }
+
+    /// Delivers the notification; what breaks the protocol in it, if
+    /// anything, logged.
+    std::optional<std::string> dispatch_notification(const std::string& method,
+                                                     PayloadSlice& params) {
         log(LogLevel::debug, "notification: {}", method);
 
         if(method == "$/cancelRequest") {
@@ -646,22 +685,23 @@ struct Peer<CodecT>::Self {
                     source->cancel();
                 }
             }
-            return;
+            return std::nullopt;
         }
 
         auto it = notification_callbacks.find(method);
         if(it == notification_callbacks.end()) {
-            log(LogLevel::warn, "unhandled notification: {}", method);
-            return;
+            return report_violation("unhandled notification: " + method);
         }
-        // A notification has no answer to carry the failure, so it is
-        // logged; the peer goes on reading.
+        // A handler that throws has no answer to carry the failure, so it is
+        // logged, and the peer goes on reading.
+        std::optional<std::string> violation;
         KOTA_TRY {
-            it->second(params);
+            violation = it->second(params);
         }
         KOTA_CATCH_ALL() {
             log(LogLevel::error, "notification handler for {} threw", method);
         }
+        return violation;
     }
 
     void dispatch_request(const std::string& method,
@@ -722,32 +762,44 @@ struct Peer<CodecT>::Self {
         auto answered = incoming_requests.extract(id);
     }
 
-    void dispatch_incoming_message(std::string payload, task_group<>& handlers) {
+    /// Dispatches the message `payload` holds; what breaks the protocol in
+    /// it, if anything, logged.
+    std::optional<std::string> dispatch_incoming_message(std::string payload,
+                                                         task_group<>& handlers) {
         log(LogLevel::trace, "recv: {}", payload);
         auto msg = codec.parse_message(std::move(payload));
-        std::visit(
-            [&](auto& m) {
+        return std::visit(
+            [&](auto& m) -> std::optional<std::string> {
                 using T = std::remove_cvref_t<decltype(m)>;
                 if constexpr(std::is_same_v<T, IncomingRequest>) {
                     dispatch_request(m.method, m.id, std::move(m.params), handlers);
+                    return std::nullopt;
                 } else if constexpr(std::is_same_v<T, IncomingNotification>) {
-                    dispatch_notification(m.method, m.params);
+                    return dispatch_notification(m.method, m.params);
                 } else if constexpr(std::is_same_v<T, IncomingResponse>) {
                     complete_pending_request(m.id, Result<PayloadSlice>(std::move(m.result)));
+                    return std::nullopt;
                 } else if constexpr(std::is_same_v<T, IncomingErrorResponse>) {
                     // An error that answers no request is not answered in
                     // turn, or two peers would trade such errors for good.
-                    if(m.id) {
-                        complete_pending_request(*m.id, outcome_error(std::move(m.error)));
-                    } else {
-                        log(LogLevel::warn, "error response without an id: {}", m.error.message);
+                    if(!m.id) {
+                        return report_violation("error response without an id: " + m.error.message);
                     }
-                } else if constexpr(std::is_same_v<T, IncomingParseError>) {
+                    // One that could not be read fails the request it names,
+                    // or is logged as an orphan, and breaks the protocol.
+                    std::optional<std::string> violation;
+                    if(m.unreadable) {
+                        violation = m.error.message;
+                    }
+                    complete_pending_request(*m.id, outcome_error(std::move(m.error)));
+                    return violation;
+                } else {
                     if(m.notification) {
                         log(LogLevel::warn, "dropped a notification: {}", m.error.message);
                     } else {
                         send_error(m.id, m.error);
                     }
+                    return std::move(m.error.message);
                 }
             },
             msg);
@@ -798,6 +850,7 @@ Result<void> Peer<CodecT>::close() {
     self->output_open = false;
     self->closing_output = false;
     self->log(LogLevel::info, "peer closing");
+    self->end_conversation({.kind = ConversationEnd::Kind::ShutDown, .message = "peer closed"});
     // The requests first: a handler cancelled below finds its own requests
     // settled, with nothing left to tell the remote.
     self->fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, "peer closed"));
@@ -821,6 +874,16 @@ template <typename CodecT>
 void Peer<CodecT>::set_logger(LogCallback callback, LogLevel min_level) {
     self->logger = std::move(callback);
     self->min_level = min_level;
+}
+
+template <typename CodecT>
+void Peer<CodecT>::set_violation_policy(ViolationPolicy policy) {
+    self->violation_policy = policy;
+}
+
+template <typename CodecT>
+std::optional<ConversationEnd> Peer<CodecT>::ended() const {
+    return self->ending;
 }
 
 template <typename CodecT>
@@ -933,7 +996,9 @@ void Peer<CodecT>::on_request_impl(std::string_view method, Callback&& callback)
             state.codec.template deserialize_value<Params>(params_raw,
                                                           protocol::ErrorCode::InvalidParams);
         if(!parsed_params) {
-            state.log_params_failure("request", method_name, parsed_params.error());
+            state.log(LogLevel::warn,
+                      "{}",
+                      Self::params_failure("request", method_name, parsed_params.error()));
             co_await fail(parsed_params.error());
         }
 
@@ -980,14 +1045,15 @@ void Peer<CodecT>::on_notification_impl(std::string_view method, Callback&& call
     using Params = detail::callback_param_t<Callback, 0>;
     auto wrapped = [cb = std::forward<Callback>(callback),
                     method_name = std::string(method),
-                    peer = this](PayloadSlice& params_raw) {
+                    peer = this](PayloadSlice& params_raw) -> std::optional<std::string> {
         auto& state = *peer->self;
         auto parsed_params = state.codec.template deserialize_value<Params>(params_raw);
         if(!parsed_params) {
-            state.log_params_failure("notification", method_name, parsed_params.error());
-            return;
+            return state.report_violation(
+                Self::params_failure("notification", method_name, parsed_params.error()));
         }
         std::invoke(cb, *parsed_params);
+        return std::nullopt;
     };
 
     self->notification_callbacks.insert_or_assign(std::string(method), std::move(wrapped));
