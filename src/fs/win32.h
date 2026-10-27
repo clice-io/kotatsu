@@ -132,8 +132,13 @@ constexpr bool is_name_surrogate(DWORD tag) {
     return (tag & 0x20000000) != 0;
 }
 
-/// IO_REPARSE_TAG_AF_UNIX, which older SDKs lack: a Unix socket's entry.
+/// Reparse tags older SDKs lack: a Unix socket's entry
+/// (IO_REPARSE_TAG_AF_UNIX), and a fifo, a character device and a block
+/// device WSL made (IO_REPARSE_TAG_LX_FIFO, _LX_CHR, _LX_BLK).
 constexpr DWORD af_unix_tag = 0x80000023;
+constexpr DWORD wsl_fifo_tag = 0x80000024;
+constexpr DWORD wsl_character_tag = 0x80000025;
+constexpr DWORD wsl_block_tag = 0x80000026;
 
 /// The type of a file with these attributes and reparse tag; a junction or
 /// a symlink stays itself.
@@ -142,8 +147,12 @@ inline FileType type_of(DWORD attributes, DWORD tag) {
         if(is_name_surrogate(tag)) {
             return FileType::Symlink;
         }
-        if(tag == af_unix_tag) {
-            return FileType::Socket;
+        switch(tag) {
+            case af_unix_tag: return FileType::Socket;
+            case wsl_fifo_tag: return FileType::Fifo;
+            case wsl_character_tag: return FileType::Character;
+            case wsl_block_tag: return FileType::Block;
+            default: break;
         }
     }
     return attributes & FILE_ATTRIBUTE_DIRECTORY ? FileType::Directory : FileType::Regular;

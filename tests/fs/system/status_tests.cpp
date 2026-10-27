@@ -1,8 +1,10 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <format>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #ifndef _WIN32
@@ -355,6 +357,28 @@ ZEST_CASE(junctions_are_links) {
 #endif
 
 #ifdef _WIN32
+ZEST_CASE(status_tells_a_wsl_fifo_or_device) {
+    // WSL keeps one as a reparse point of a tag of its own.
+    constexpr std::pair<DWORD, FileType> kinds[] = {
+        {0x80000024, FileType::Fifo     },
+        {0x80000025, FileType::Character},
+        {0x80000026, FileType::Block    },
+    };
+    test::TempDir dir;
+    for(auto [tag, type]: kinds) {
+        ZEST_CONTEXT("{:#x}", tag);
+        auto file = dir.file(std::format("{:x}", tag));
+        test::write_text(file, "");
+        test::set_reparse_point(file, tag);
+        auto itself = symlink_status(file);
+        ZASSERT(itself.has_value());
+        ZEXPECT(itself->type == type);
+        auto followed = status(file);
+        ZASSERT(followed.has_value());
+        ZEXPECT(followed->type == type);
+    }
+}
+
 ZEST_CASE(exists_follows_a_junction) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");

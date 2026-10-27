@@ -2,8 +2,9 @@
 
 // <windows.h> for the tests that call Win32 themselves, without the min and
 // max macros that break the standard library's, attributes_of() for those
-// that check a file's attributes and make_pipe() for those that need a named
-// pipe.
+// that check a file's attributes, make_pipe() for those that need a named
+// pipe and set_reparse_point() for those that need a reparse point of a tag
+// no tool makes.
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -15,6 +16,7 @@
 #include <string>
 #include <string_view>
 #include <windows.h>
+#include <winioctl.h>
 
 #include "fs/harness/files.h"
 #include "kota/zest/zest.h"
@@ -45,6 +47,38 @@ inline HANDLE make_pipe(std::string& name, const TempDir& dir, DWORD access, DWO
     ZASSERT(pipe != INVALID_HANDLE_VALUE);
     from_utf16(name, std::wstring_view(wide));
     return pipe;
+}
+
+/// Makes the file at `path` a reparse point of the Microsoft `tag` with no
+/// data, as WSL makes its fifos and devices.
+inline void set_reparse_point(std::string_view path, DWORD tag) {
+    HANDLE file = ::CreateFileW(std_path(path).wstring().c_str(),
+                                GENERIC_WRITE,
+                                0,
+                                nullptr,
+                                OPEN_EXISTING,
+                                FILE_FLAG_OPEN_REPARSE_POINT,
+                                nullptr);
+    ZASSERT(file != INVALID_HANDLE_VALUE);
+
+    // REPARSE_DATA_BUFFER's header, which only the driver headers declare.
+    struct {
+        DWORD tag;
+        WORD length = 0;
+        WORD reserved = 0;
+    } header{.tag = tag};
+
+    DWORD returned = 0;
+    bool set = ::DeviceIoControl(file,
+                                 FSCTL_SET_REPARSE_POINT,
+                                 &header,
+                                 sizeof(header),
+                                 nullptr,
+                                 0,
+                                 &returned,
+                                 nullptr);
+    ::CloseHandle(file);
+    ZASSERT(set);
 }
 
 }  // namespace kota::test

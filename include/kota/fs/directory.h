@@ -230,7 +230,9 @@ std::error_code create_directory_symlink(std::string_view target, std::string_vi
 /// directory it names; where the link keeps only the name the system
 /// follows, that name. Fails with std::errc::invalid_argument for a file
 /// that is no symlink, a Cygwin one included (cygwin::read_symlink reads
-/// those).
+/// those), and on Windows with not_supported for a link other than a
+/// symlink, a junction or a WSL link, whose target only its own driver
+/// knows.
 std::error_code read_symlink(buffer_ref out, std::string_view path);
 
 /// Creates `link`, another name of the existing file `target`, which must

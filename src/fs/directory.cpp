@@ -1132,7 +1132,12 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
             out.assign(std::string_view(data.wsl.target, end - start));
             return {};
         }
-        default: return std::make_error_code(std::errc::invalid_argument);
+        // Another link, whose target only its own driver knows, or a
+        // reparse point that holds the file itself, which is no link.
+        default:
+            return std::make_error_code(win32::is_name_surrogate(data.tag)
+                                            ? std::errc::not_supported
+                                            : std::errc::invalid_argument);
     }
 #else
     posix::CPath c_path;
