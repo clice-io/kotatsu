@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <format>
 #include <latch>
@@ -11,6 +13,7 @@
 #include <vector>
 
 #ifndef _WIN32
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -42,6 +45,31 @@ FileType type_in(const std::vector<Directory::Entry>& entries, std::string_view 
     auto found = std::ranges::find(entries, name, &Directory::Entry::name);
     return found == entries.end() ? FileType::Unknown : found->type;
 }
+
+#ifndef _WIN32
+/// The descriptors the process may open cut, while this lives, to `more`
+/// past the lowest one free.
+struct ScopedDescriptorLimit {
+    explicit ScopedDescriptorLimit(int more) {
+        ZASSERT(::getrlimit(RLIMIT_NOFILE, &original) == 0);
+        int lowest = ::dup(STDIN_FILENO);
+        ZASSERT(lowest >= 0);
+        ::close(lowest);
+        auto lowered = original;
+        lowered.rlim_cur = static_cast<rlim_t>(lowest + more);
+        ZASSERT(::setrlimit(RLIMIT_NOFILE, &lowered) == 0);
+    }
+
+    ScopedDescriptorLimit(const ScopedDescriptorLimit&) = delete;
+    ScopedDescriptorLimit& operator=(const ScopedDescriptorLimit&) = delete;
+
+    ~ScopedDescriptorLimit() {
+        ::setrlimit(RLIMIT_NOFILE, &original);
+    }
+
+    rlimit original;
+};
+#endif
 
 ZEST_SUITE(fs_directory) {
 
@@ -522,7 +550,59 @@ ZEST_CASE(remove_all_where_access_is_denied_fails) {
     ZEXPECT(removed.error() == std::errc::permission_denied);
     ZEXPECT(is_file(dir.file("tree/closed/file.txt")));
 }
+
+ZEST_CASE(remove_all_takes_a_directory_it_may_list_but_not_search) {
+    // Empty, it is removed from the directory above, never entered.
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "tree" / "unsearchable");
+    test::ScopedPermissions closed(dir.path / "tree" / "unsearchable",
+                                   std::filesystem::perms::owner_read);
+    ZEXPECT(remove_all(dir.file("tree")) == 2u);
+    ZEXPECT(exists(dir.file("tree")) == false);
+}
+
+ZEST_CASE(remove_all_removes_a_tree_deeper_than_the_descriptors_left) {
+    // A descriptor held for each level would take more than are left.
+    test::TempDir dir;
+    std::string bottom = dir.file("tree");
+    for(int level = 0; level < 32; ++level) {
+        bottom += "/d";
+    }
+    std::filesystem::create_directories(test::std_path(bottom));
+    test::write_text(bottom + "/file.txt", "text");
+    std::expected<std::uint64_t, std::error_code> removed;
+    {
+        ScopedDescriptorLimit few(8);
+        removed = remove_all(dir.file("tree"));
+    }
+    ZASSERT(removed.has_value());
+    ZEXPECT(*removed == 34u);
+}
 #endif
+
+ZEST_CASE(remove_all_removes_a_deep_tree) {
+    // A thousand levels, made a chain of directories at a time, the tree so
+    // far moved to the bottom of each, so that no path the test names grows
+    // long; the paths into it outgrow MAX_PATH and macOS's PATH_MAX. macOS
+    // and Windows take the longer to remove a name the deeper it lies, which
+    // bounds the depth.
+    test::TempDir dir;
+    constexpr int chain = 50;
+    constexpr int chains = 20;
+    std::filesystem::path bottom = "next";
+    for(int level = 0; level < chain; ++level) {
+        bottom /= "d";
+    }
+    for(int made = 0; made < chains; ++made) {
+        std::filesystem::create_directories(dir.path / bottom);
+        if(made > 0) {
+            std::filesystem::rename(dir.path / "tree", dir.path / bottom / "tree");
+        }
+        std::filesystem::rename(dir.path / "next", dir.path / "tree");
+    }
+    ZEXPECT(remove_all(dir.file("tree")) == std::uint64_t(chains * (chain + 1)));
+    ZEXPECT(exists(dir.file("tree")) == false);
+}
 
 ZEST_CASE(remove_all_of_dots_fails) {
     test::TempDir dir;

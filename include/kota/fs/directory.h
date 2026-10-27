@@ -185,7 +185,9 @@ std::expected<bool, std::error_code> remove(std::string_view path);
 /// Removes `path` and, for a directory, everything in it, never following a
 /// symlink or junction into what it points to: the number of entries it
 /// removed, `path` included. Nothing there removes nothing; a path ending
-/// in `.` or `..` fails with std::errc::invalid_argument.
+/// in `.` or `..` fails with std::errc::invalid_argument. On POSIX a
+/// directory the walk is in, moved meanwhile out of the one it came from,
+/// fails it with std::errc::no_such_file_or_directory.
 std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path);
 
 /// Renames `from` to `to`, replacing a file there. On Windows `to` goes even
