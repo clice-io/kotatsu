@@ -22,7 +22,7 @@
 
 // What NTFS does not show: the calls FAT32 and exFAT refuse, POSIX deletes
 // and renames, 128-bit IDs and listings with IDs among them, and the ways
-// around them.
+// around them; and, from the system temp directory, another volume.
 
 namespace kota::fs {
 
@@ -245,6 +245,54 @@ ZEST_CASE(write_file_atomic_replaces_the_whole_file) {
         ZEXPECT(!write_file_atomic(dir.file("file.txt"), "new"));
         ZEXPECT(test::read_text(dir.file("file.txt")) == "new");
         ZEXPECT(test::entries_of(dir.root()).size() == 1u);
+    });
+}
+
+ZEST_CASE(copy_file_copies_from_another_volume) {
+    // From the system temp directory's, an mtime FAT keeps whole.
+    on_fat([](const test::TempDir& dir) {
+        test::TempDir temp;
+        auto text = test::text_of(1024 * 1024 + 7);
+        test::write_text(temp.file("from"), text);
+        auto even =
+            std::chrono::sys_time<std::chrono::nanoseconds>(std::chrono::seconds(1'000'000'002));
+        ZASSERT(!set_times(temp.file("from"), {.mtime = even}));
+        ZEXPECT(!copy_file(temp.file("from"), dir.file("to")));
+        ZEXPECT(test::read_text(dir.file("to")) == text);
+        auto found = status(dir.file("to"));
+        ZASSERT(found.has_value());
+        ZEXPECT(found->mtime == even);
+    });
+}
+
+ZEST_CASE(rename_noreplace_renames_a_file) {
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("from.txt"), "text");
+        ZEXPECT(!rename_noreplace(dir.file("from.txt"), dir.file("to.txt")));
+        ZEXPECT(test::read_text(dir.file("to.txt")) == "text");
+        ZEXPECT(exists(dir.file("from.txt")) == false);
+    });
+}
+
+ZEST_CASE(rename_noreplace_over_a_file_fails) {
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("from.txt"), "new");
+        test::write_text(dir.file("to.txt"), "old");
+        ZEXPECT(rename_noreplace(dir.file("from.txt"), dir.file("to.txt")) ==
+                std::errc::file_exists);
+        ZEXPECT(test::read_text(dir.file("to.txt")) == "old");
+        ZEXPECT(test::read_text(dir.file("from.txt")) == "new");
+    });
+}
+
+ZEST_CASE(rename_noreplace_to_another_volume_fails) {
+    on_fat([](const test::TempDir& dir) {
+        test::TempDir temp;
+        test::write_text(temp.file("from"), "text");
+        ZEXPECT(rename_noreplace(temp.file("from"), dir.file("to")) ==
+                std::errc::cross_device_link);
+        ZEXPECT(is_file(temp.file("from")));
+        ZEXPECT(exists(dir.file("to")) == false);
     });
 }
 

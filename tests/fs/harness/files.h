@@ -4,7 +4,8 @@
 // ScopedCurrentDir, make_junction() on Windows and ScopedPermissions
 // elsewhere, all through std::filesystem, fstreams and cmd rather than
 // kota::fs, which the tests check; linked() for a case that makes a symlink;
-// text_of() and CountedBuffer for reads of large files.
+// across_file_systems() on Linux for one that crosses file systems; text_of()
+// and CountedBuffer for reads of large files.
 
 #include <cstddef>
 #include <cstdlib>
@@ -17,6 +18,11 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+
+#ifdef __linux__
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include "kota/zest/zest.h"
 
@@ -130,6 +136,24 @@ inline bool linked(std::error_code error) {
     zest::skip();
     return false;
 }
+
+#ifdef __linux__
+/// Whether /dev/shm, a tmpfs, is another file system than the system temp
+/// directory's, for a case that crosses file systems: one that is not is
+/// skipped.
+inline bool across_file_systems() {
+    struct stat shm;
+    struct stat temp;
+    if(::stat("/dev/shm", &shm) != 0 || ::access("/dev/shm", W_OK | X_OK) != 0 ||
+       ::stat(std::filesystem::temp_directory_path().c_str(), &temp) != 0 ||
+       shm.st_dev == temp.st_dev) {
+        // No tmpfs at /dev/shm that takes files, or the temp directory on it.
+        zest::skip();
+        return false;
+    }
+    return true;
+}
+#endif
 
 /// The current directory, put back when this goes.
 struct ScopedCurrentDir {
