@@ -61,8 +61,11 @@ private:
     void remove() const {
         std::error_code ignored;
 #ifdef _WIN32
-        // A case may leave paths longer than MAX_PATH.
-        std::filesystem::remove_all(LR"(\\?\)" + path.wstring(), ignored);
+        // A case may leave paths longer than MAX_PATH. A volume without a
+        // drive letter is spelled verbatim already.
+        auto wide = path.wstring();
+        std::filesystem::remove_all(wide.starts_with(LR"(\\?\)") ? wide : LR"(\\?\)" + wide,
+                                    ignored);
 #else
         std::filesystem::remove_all(path, ignored);
 #endif

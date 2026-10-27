@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -75,6 +76,32 @@ ZEST_CASE(canonical_spells_the_name_on_disk) {
     ZASSERT(!canonical(real, dir.file("mixedcase.TXT")));
     ZEXPECT(path::filename(real) == "MixedCase.txt");
     ZEXPECT(!zest::starts_with(real, R"(\\?\)"));
+}
+#endif
+
+#ifdef _WIN32
+ZEST_CASE(canonical_names_a_volume_without_a_drive_letter_by_its_guid) {
+    // KOTA_TEST_LETTERLESS_DIR is a volume's `\\?\Volume{...}\` that has
+    // neither a drive letter nor a mount folder.
+    const char* volume = std::getenv("KOTA_TEST_LETTERLESS_DIR");
+    if(volume == nullptr) {
+        // Only Windows CI mounts one.
+        zest::skip();
+        return;
+    }
+    test::TempDir dir{test::std_path(volume)};
+    test::write_text(dir.file("file.txt"), "text");
+    std::string real;
+    ZEXPECT(!canonical(real, dir.file("file.txt")));
+    ZEXPECT(real == dir.file("file.txt"));
+    auto file = File::open(dir.file("file.txt"));
+    ZASSERT(file.has_value());
+    ZEXPECT(!file->canonical(real));
+    ZEXPECT(real == dir.file("file.txt"));
+    auto directory = Directory::open(dir.root());
+    ZASSERT(directory.has_value());
+    ZEXPECT(!directory->canonical(real));
+    ZEXPECT(real == dir.root());
 }
 #endif
 

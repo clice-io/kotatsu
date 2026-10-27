@@ -223,12 +223,18 @@ std::expected<Handle, std::error_code> open(std::string_view path, DWORD access)
 
 std::error_code final_path(buffer_ref out, HANDLE handle) {
     WidePath final;
-    if(auto error = fill_wide(final, [&](wchar_t* buffer, DWORD size) {
-           return ::GetFinalPathNameByHandleW(handle,
-                                              buffer,
-                                              size,
-                                              FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-       })) {
+    auto ask = [&](DWORD volume) {
+        return fill_wide(final, [&](wchar_t* buffer, DWORD size) {
+            return ::GetFinalPathNameByHandleW(handle, buffer, size, FILE_NAME_NORMALIZED | volume);
+        });
+    };
+    // A volume with neither a drive letter nor a mount folder has no DOS
+    // name, only its GUID's: `\\?\Volume{...}\`.
+    auto error = ask(VOLUME_NAME_DOS);
+    if(error == std::errc::no_such_file_or_directory) {
+        error = ask(VOLUME_NAME_GUID);
+    }
+    if(error) {
         return error;
     }
     windows::from_native(out, final);
