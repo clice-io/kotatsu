@@ -11,7 +11,7 @@
 #include "ipc/harness/peer_suite/requests.h"
 #include "ipc/harness/peer_suite/timeout.h"
 #include "ipc/harness/peer_suite/unreadable.h"
-#include "kota/ipc/codec/json.h"
+#include "kota/ipc/peer/json.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/async/async.h"

@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "kota/ipc/codec.h"
-#include "kota/ipc/peer.h"
 #include "kota/codec/bincode/bincode.h"
 
 namespace kota::codec {
@@ -159,9 +158,5 @@ private:
         return std::string(reinterpret_cast<const char*>(bytes.data()), writer.size);
     }
 };
-
-using BincodePeer = Peer<BincodeCodec>;
-
-extern template class Peer<BincodeCodec>;
 
 }  // namespace kota::ipc

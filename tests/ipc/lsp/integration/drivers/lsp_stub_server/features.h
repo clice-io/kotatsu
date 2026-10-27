@@ -4,7 +4,7 @@
 // features. The codec instantiations of their requests are a translation unit
 // of their own, which compiles beside main's.
 
-#include "kota/ipc/codec/json.h"
+#include "kota/ipc/peer/json.h"
 #include "kota/ipc/lsp/protocol.h"
 
 namespace kota::test {

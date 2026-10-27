@@ -6,8 +6,8 @@
 
 #include "ipc/harness/codec_json.h"
 #include "ipc/harness/peer_fixture.h"
-#include "kota/ipc/codec/json.h"
 #include "kota/ipc/logger.h"
+#include "kota/ipc/peer/json.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 

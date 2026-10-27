@@ -3,7 +3,7 @@
 #include <print>
 #include <string>
 
-#include "kota/ipc/codec/json.h"
+#include "kota/ipc/peer/json.h"
 
 namespace ipc = kota::ipc;
 

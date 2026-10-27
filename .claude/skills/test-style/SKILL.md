@@ -18,6 +18,7 @@ A test's level is decided by what it touches, not by the module it tests.
 - The moment a test opens a file, spawns a process, binds a socket, installs a signal handler or starts a thread, it is a system test. zest's own I/O does not count: printing, and reading or writing snapshots through `zest::snapshot`, are fine in a unit test.
 - Compile-time facts that must hold are `ZSTATIC_EXPECT` in a unit case.
 - Nothing reaches the network beyond loopback. Tests that need the internet are not part of any suite.
+- What a target must stay without, such as ipc's codecs without the event loop, is checked by a program built against that target alone, which zest, on the loop itself, cannot be part of: `tests/<module>/<name>/main.cpp`, run by ctest and Bazel as the test `<module>_<name>` (label `unit`), printing each check that fails and exiting with 1 if one did.
 - zest's own runner check (`tests/zest/integration/`) is integration-level, but it is the one integration test in C++ and CMake rather than TypeScript: it runs from CMake as a bootstrap stage (see Trust), so it needs nothing beyond the build.
 
 ## Layout
@@ -31,6 +32,7 @@ tests/<module>/
   integration/*.test.ts       integration tests, TypeScript; nothing else but drivers/
   integration/drivers/*.cpp   the programs they spawn, one per file, or one per
                               directory of sources
+  <name>/main.cpp             a check built against one target alone (Levels)
   harness/*.h, harness/*.ts   helpers for this module's tests and the modules above,
                               integration tests' helpers included
   CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>)

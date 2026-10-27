@@ -77,10 +77,11 @@ All public APIs live under the `kota::` namespace, public headers under `include
 
 - JSON-RPC 2.0 protocol model with typed request / notification traits, structured errors (`Error { code, message, data }`), and the full set of spec error codes (including LSP-aligned `RequestCancelled`).
 - Transport abstraction for framed message IO: `Transport` interface, `StreamTransport` over stdio (`open_stdio`), a TCP connection (`connect_tcp`) or any pair of async streams, and a `RecordingTransport` decorator that captures traffic to JSONL for replay testing.
+- The framing, the protocol model and the codecs (`codec.h`, `codec/bincode.h`, `codec/json.h`) build without the event loop, as `kota::ipc::codec` (Bazel: `:ipc_codec`, `:ipc_codec_json`): a program that reads and writes messages itself, such as catter's hook library, links neither libuv nor, on Windows, the DLLs it imports.
 - The LSP base protocol's framing in `framing.h`: `frame_header()` writes the `Content-Length` header a payload goes after, and `FrameParser` reads frames from input split anywhere. `StreamTransport` writes each payload as it is after its header, and writes the messages queued together in one write. A frame larger than the transport's limit (64 MiB by default) is skipped, not buffered, and reading goes on; the peer fails only what the frame's first bytes say it concerns: a request is answered with `MessageTooLarge` (-32010), a response fails the request it answers, a notification is dropped, and a message of no kind it can tell fails every pending request.
-- Codec-parametric typed peer runtime (`Peer<Codec>`) supporting request dispatch, notifications, and nested RPC; predefined peers for JSON (with LSP camelCase policy) and Bincode codecs. A value is written into its message's buffer as it is encoded, rather than encoded apart and copied in, and params and results are decoded where they lie in the message read.
+- Codec-parametric typed peer runtime (`Peer<Codec>`) supporting request dispatch, notifications, and nested RPC; predefined peers for JSON (with LSP camelCase policy) and Bincode codecs, `JSONPeer` (`peer/json.h`) and `BincodePeer` (`peer/bincode.h`). A value is written into its message's buffer as it is encoded, rather than encoded apart and copied in, and params and results are decoded where they lie in the message read.
 - Externally-driven execution model: callers own the event loop, schedule the peer's run loop, and drive shutdown explicitly.
-- `std::expected`-based result type (`ipc::Result<T>`) with protocol validation aligned with the JSON-RPC spec:
+- `ipc::Result<T>`, an `outcome<T, Error>`, with protocol validation aligned with the JSON-RPC spec:
   - malformed payloads map to `ParseError` with null id
   - structurally invalid messages map to `InvalidRequest`, answered under the request's id when it can be read, and with null id otherwise
   - parameter decode failures map to `InvalidParams`
@@ -180,9 +181,10 @@ Synchronous paths and files on UTF-8 strings, depending on `support` alone (no l
 
 kotatsu is a Bazel module (Bazel 9). The targets are one per module:
 `@kotatsu//:support`, `:fs`, `:meta`, `:codec` with the backends `:codec_json`,
-`:codec_toml` and `:codec_flatbuffers`, `:option`, `:deco`, `:async`, `:ipc`
-with `:ipc_json` (JSON-RPC) and `:ipc_lsp`, and `:zest` with `:zest_async`;
-HTTP builds with CMake only for now.
+`:codec_toml` and `:codec_flatbuffers`, `:option`, `:deco`, `:async`,
+`:ipc_codec` with `:ipc_codec_json` (ipc's framing and codecs, without the
+event loop), `:ipc` with `:ipc_json` (JSON-RPC) and `:ipc_lsp`, and `:zest`
+with `:zest_async`; HTTP builds with CMake only for now.
 
 ```starlark
 bazel_dep(name = "kotatsu", version = "0.1.0.<n>")

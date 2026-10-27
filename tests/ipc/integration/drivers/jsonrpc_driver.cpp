@@ -26,7 +26,7 @@
 #include <utility>
 
 #include "ipc/harness/stderr_logger.h"
-#include "kota/ipc/codec/json.h"
+#include "kota/ipc/peer/json.h"
 #include "kota/async/async.h"
 #include "kota/codec/macro.h"
 
