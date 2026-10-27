@@ -1,6 +1,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <format>
 #include <iterator>
@@ -41,6 +42,59 @@ std::string rest_of(File& file) {
         content.append(buffer.data(), *count);
     }
 }
+
+#ifdef __APPLE__
+/// A disk image of 1 MB of HFS+ in a test's directory, attached beside it,
+/// which hdiutil lets any user do; detached, as though the disk went, when
+/// this goes or a failed ZASSERT ends the process.
+struct DiskImage {
+    explicit DiskImage(const test::TempDir& dir) :
+        image(dir.file("image.dmg")), mount(dir.file("volume")) {
+        std::filesystem::create_directory(test::std_path(mount));
+        ZASSERT(hdiutil(std::format("create -size 1m -fs HFS+ -volname kota '{}'", image)));
+        attach(false);
+    }
+
+    DiskImage(const DiskImage&) = delete;
+    DiskImage& operator=(const DiskImage&) = delete;
+
+    ~DiskImage() {
+        detach();
+    }
+
+    /// `name` on the volume.
+    std::string file(std::string_view name) const {
+        return std::format("{}/{}", mount, name);
+    }
+
+    void attach(bool read_only) {
+        attached =
+            hdiutil(std::format("attach {} -nobrowse -noverify -noautofsck -mountpoint '{}' '{}'",
+                                read_only ? "-readonly" : "",
+                                mount,
+                                image));
+        ZASSERT(attached);
+    }
+
+    /// Detaches it, files open on it or not: false when it stays attached.
+    bool detach() {
+        if(attached && hdiutil(std::format("detach -force '{}'", mount))) {
+            attached = false;
+        }
+        return !attached;
+    }
+
+private:
+    static bool hdiutil(std::string_view arguments) {
+        return std::system(std::format("hdiutil {} > /dev/null", arguments).c_str()) == 0;
+    }
+
+    const std::string image;
+    const std::string mount;
+    bool attached = false;
+    zest::FatalHook on_fatal{[this] { detach(); }};
+};
+#endif
 
 ZEST_SUITE(fs_file_handle) {
 
@@ -377,8 +431,10 @@ ZEST_CASE(sync_keeps_what_was_written) {
 }
 
 #ifdef __APPLE__
-// macOS refuses F_FULLFSYNC for these, which fsync() stands in for. Its
-// other errors, such as a flush that failed, take a failing disk to show.
+// macOS refuses F_FULLFSYNC for a device, a read-only volume and a pipe,
+// where fsync() stands in, and for a file whose volume went, where fsync()
+// would succeed. Its other errors, such as a flush that failed, take a
+// failing disk to show.
 
 ZEST_CASE(sync_of_a_device_succeeds) {
     auto file = File::open("/dev/null", {.write = true});
@@ -386,15 +442,35 @@ ZEST_CASE(sync_of_a_device_succeeds) {
     ZEXPECT(!file->sync());
 }
 
+ZEST_CASE(sync_of_a_file_on_a_read_only_volume_succeeds) {
+    test::TempDir dir;
+    DiskImage image(dir);
+    test::write_text(image.file("file"), "text");
+    ZASSERT(image.detach());
+    image.attach(true);
+    auto file = File::open(image.file("file"));
+    ZASSERT(file.has_value());
+    ZEXPECT(!file->sync());
+}
+
+ZEST_CASE(sync_of_a_file_whose_volume_went_fails) {
+    test::TempDir dir;
+    DiskImage image(dir);
+    auto file = File::open(image.file("file"), {.write = true, .create = true});
+    ZASSERT(file.has_value());
+    ZEXPECT(!file->write("text"));
+    ZASSERT(image.detach());
+    ZEXPECT(file->sync() == std::errc::bad_file_descriptor);
+}
+
 ZEST_CASE(sync_of_a_pipe_fails) {
     int ends[2];
     ZASSERT(::pipe(ends) == 0);
     auto file = File::open(std::format("/dev/fd/{}", ends[1]), {.write = true});
-    auto error = file ? file->sync() : file.error();
+    ZASSERT(file.has_value());
+    ZEXPECT(file->sync() == std::errc::not_supported);
     ::close(ends[0]);
     ::close(ends[1]);
-    ZASSERT(file.has_value());
-    ZEXPECT(error == std::errc::not_supported);
 }
 #endif
 

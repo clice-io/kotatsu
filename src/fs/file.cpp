@@ -533,14 +533,21 @@ std::error_code File::sync() {
 #ifdef __APPLE__
     // fsync() stands in only where the file takes no F_FULLFSYNC: on a
     // network file system (ENOTSUP), one without the call (ENOTTY), a
-    // device (ENODEV), a pipe or a socket (EBADF, where fsync() tells
-    // ENOTSUP). After any other error, such as a write that failed (EIO),
-    // fsync() could succeed and hide it.
+    // read-only one (EROFS), for a device (ENODEV), and for a pipe or a
+    // socket (EBADF, where fsync() tells ENOTSUP). A file whose volume went
+    // away fails with EBADF too, and fsync() then succeeds without writing;
+    // after any other error, such as a flush that failed (EIO), it could
+    // succeed as well and hide the error.
     if(::fcntl(handle, F_FULLFSYNC) == 0) {
         return {};
     }
-    if(errno != ENOTSUP && errno != ENOTTY && errno != ENODEV && errno != EBADF) {
-        return posix::last_error();
+    auto error = errno;
+    struct stat info;
+    bool unsupported = error == ENOTSUP || error == ENOTTY || error == EROFS || error == ENODEV ||
+                       (error == EBADF && ::fstat(handle, &info) == 0 &&
+                        (S_ISFIFO(info.st_mode) || S_ISSOCK(info.st_mode)));
+    if(!unsupported) {
+        return std::error_code(error, std::generic_category());
     }
 #endif
     return ::fsync(handle) == 0 ? std::error_code() : posix::last_error();
