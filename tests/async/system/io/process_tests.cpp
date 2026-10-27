@@ -12,7 +12,15 @@
 #include <utility>
 #include <vector>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <sys/stat.h>
 #include <sys/wait.h>
 
@@ -574,6 +582,7 @@ ZEST_CASE(inert_process_fails) {
     ZEXPECT(waited.error() == error::invalid_argument);
     ZEXPECT(inert.kill(SIGTERM) == error::invalid_argument);
     ZEXPECT(inert.pid() == -1);
+    ZEXPECT(inert.native_handle() == sys::Child().native_handle());
 }
 
 #ifndef _WIN32
@@ -728,13 +737,30 @@ ZEST_CASE(kill_tree_ends_the_childs_children) {
 }
 
 #ifdef _WIN32
+// The process handle ends the child with the exit code TerminateProcess
+// gives, which wait() reads, as catter ends a program that is not to run.
+ZEST_CASE(native_handle_is_the_process_handle) {
+    auto spawned = process::spawn(test::stdin_reader(), loop);
+    ZASSERT(spawned.has_value());
+    auto handle = spawned->proc.native_handle();
+    ZEXPECT(::GetProcessId(handle) == static_cast<DWORD>(spawned->proc.pid()));
+    // A failed TerminateProcess would leave the wait below waiting until the
+    // watchdog.
+    ZASSERT(::TerminateProcess(handle, 7));
+
+    auto [status] = run(spawned->proc.wait());
+    ZEXPECT(test::exit_code_of(status) == 7);
+    // It stays open once the child has been reaped.
+    ZEXPECT(::GetProcessId(handle) == static_cast<DWORD>(spawned->proc.pid()));
+}
+
 // The process is started without the loop, as catter's hook starts a program
 // and hands its ID to catter. The spawned Child holds the process's handle, so
 // its ID stays the process's while the case runs.
 ZEST_CASE(open_waits_for_a_process_the_loop_did_not_start) {
     auto child = sys::spawn(shell("exit 3"));
     ZASSERT(child.has_value());
-    auto opened = process::open(child->pid(), loop);
+    auto opened = process::open(child->pid(), 0, loop);
     ZASSERT(opened.has_value());
     ZEXPECT(opened->pid() == child->pid());
 
@@ -747,7 +773,7 @@ ZEST_CASE(open_waits_for_a_process_the_loop_did_not_start) {
 ZEST_CASE(open_then_kill_ends_the_process) {
     auto child = sys::spawn(test::stdin_reader());
     ZASSERT(child.has_value());
-    auto opened = process::open(child->pid(), loop);
+    auto opened = process::open(child->pid(), 0, loop);
     ZASSERT(opened.has_value());
     // A failed kill would leave the wait below waiting until the watchdog.
     ZASSERT(!opened->kill(SIGTERM));
@@ -758,9 +784,26 @@ ZEST_CASE(open_then_kill_ends_the_process) {
     ZEXPECT(child->wait().has_value());
 }
 
+// A right beyond those to wait and kill reaches the process through
+// native_handle(), as sys::Child::open gives it.
+ZEST_CASE(open_with_access_reaches_the_process_through_its_handle) {
+    auto child = sys::spawn(test::stdin_reader());
+    ZASSERT(child.has_value());
+    auto opened = process::open(child->pid(), PROCESS_VM_OPERATION, loop);
+    ZASSERT(opened.has_value());
+    ZEXPECT(::VirtualAllocEx(opened->native_handle(), nullptr, 4096, MEM_RESERVE, PAGE_NOACCESS) !=
+            nullptr);
+    // A failed kill would leave the wait below waiting until the watchdog.
+    ZASSERT(!opened->kill());
+
+    auto [status] = run(opened->wait());
+    ZEXPECT(status.has_value());
+    ZEXPECT(child->wait().has_value());
+}
+
 ZEST_CASE(open_of_no_process_fails) {
     // No process has an ID as high: IDs go by fours, 2^24 of them at most.
-    auto opened = process::open(0x7FFF'FFFC, loop);
+    auto opened = process::open(0x7FFF'FFFC, 0, loop);
     ZASSERT(opened.has_error());
     ZEXPECT(opened.error() == error::no_such_process);
 }
@@ -769,7 +812,7 @@ ZEST_CASE(open_while_its_loop_is_destroyed_fails) {
     auto child = sys::spawn(shell("exit 0"));
     ZASSERT(child.has_value());
     auto opened =
-        while_destroyed([&](event_loop& dying) { return process::open(child->pid(), dying); });
+        while_destroyed([&](event_loop& dying) { return process::open(child->pid(), 0, dying); });
     ZASSERT(opened.has_error());
     ZEXPECT(opened.error() == error::operation_aborted);
     ZEXPECT(child->wait().has_value());
@@ -914,6 +957,10 @@ ZEST_CASE(exit_is_seen_without_pidfds) {
         auto spawned = process::spawn(shell("exit 7"), own);
         if(!spawned || spawned->proc.pid() <= 0) {
             ::_exit(3);
+        }
+        // No pidfd to give.
+        if(spawned->proc.native_handle() != -1) {
+            ::_exit(6);
         }
         auto waited = spawned->proc.wait();
         own.schedule(waited);

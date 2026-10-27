@@ -22,6 +22,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+// After windows.h, whose types they use.
+#include <aclapi.h>
+#include <sddl.h>
 #else
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -31,6 +34,7 @@
 
 #include "fs/harness/files.h"
 #include "sys/harness/env.h"
+#include "sys/harness/privileges.h"
 #include "sys/harness/spawn.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -1385,6 +1389,123 @@ ZEST_CASE(open_then_kill_ends_the_process) {
     ZASSERT(status.has_value());
     ZEXPECT(status->term_signal == SIGTERM);
     ZEXPECT(child->wait().has_value());
+}
+
+// Its handle has the rights to wait for it and end it, and no more.
+ZEST_CASE(open_gives_only_the_rights_to_wait_and_end) {
+    auto options = test::shell("more");
+    options.streams[0] = Stdio::pipe();
+    auto child = spawn(options);
+    ZASSERT(child.has_value());
+    auto opened = Child::open(child->pid());
+    ZASSERT(opened.has_value());
+    ZEXPECT(::GetProcessId(opened->native_handle()) == static_cast<DWORD>(child->pid()));
+    void* page =
+        ::VirtualAllocEx(opened->native_handle(), nullptr, 4096, MEM_RESERVE, PAGE_NOACCESS);
+    const DWORD error = ::GetLastError();
+    ZEXPECT(page == nullptr);
+    ZEXPECT(error == static_cast<DWORD>(ERROR_ACCESS_DENIED));
+    test::close_end(child->take_pipe(0));
+    ZEXPECT(child->wait().has_value());
+}
+
+// What catter's hook asks for to inject into a program it opened: its memory
+// written and read back through the handle, which still waits for it and
+// ends it.
+ZEST_CASE(open_with_access_reaches_the_process_through_its_handle) {
+    auto options = test::shell("more");
+    options.streams[0] = Stdio::pipe();
+    auto child = spawn(options);
+    ZASSERT(child.has_value());
+    auto opened =
+        Child::open(child->pid(), PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE);
+    ZASSERT(opened.has_value());
+    void* page = ::VirtualAllocEx(opened->native_handle(),
+                                  nullptr,
+                                  4096,
+                                  MEM_RESERVE | MEM_COMMIT,
+                                  PAGE_READWRITE);
+    ZASSERT(page != nullptr);
+    const std::string_view written = "written";
+    ZEXPECT(::WriteProcessMemory(opened->native_handle(),
+                                 page,
+                                 written.data(),
+                                 written.size(),
+                                 nullptr));
+    std::string read(written.size(), '\0');
+    ZEXPECT(::ReadProcessMemory(opened->native_handle(), page, read.data(), read.size(), nullptr));
+    ZEXPECT(read == written);
+
+    // A failed kill would leave the wait below waiting for good.
+    ZASSERT(!opened->kill());
+    auto status = opened->wait();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->term_signal == 9);
+    test::close_end(child->take_pipe(0));
+    ZEXPECT(child->wait().has_value());
+}
+
+ZEST_CASE(open_with_all_access_reaches_the_process_through_its_handle) {
+    auto options = test::shell("more");
+    options.streams[0] = Stdio::pipe();
+    auto child = spawn(options);
+    ZASSERT(child.has_value());
+    auto opened = Child::open(child->pid(), PROCESS_ALL_ACCESS);
+    ZASSERT(opened.has_value());
+    ZEXPECT(::VirtualAllocEx(opened->native_handle(), nullptr, 4096, MEM_RESERVE, PAGE_NOACCESS) !=
+            nullptr);
+    test::close_end(child->take_pipe(0));
+    ZEXPECT(child->wait().has_value());
+}
+
+// A process that lets others wait for it and end it, and do nothing else.
+ZEST_CASE(open_with_access_the_process_does_not_grant_fails) {
+    auto options = test::shell("more");
+    options.streams[0] = Stdio::pipe();
+    auto child = spawn(options);
+    ZASSERT(child.has_value());
+    // Everyone gets the rights to wait for it and end it, and no more.
+    const auto sddl =
+        std::format(L"D:P(A;;{:#x};;;WD)",
+                    SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE);
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    ZASSERT(::ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(),
+                                                                   SDDL_REVISION_1,
+                                                                   &descriptor,
+                                                                   nullptr));
+    BOOL present = FALSE;
+    BOOL defaulted = FALSE;
+    PACL dacl = nullptr;
+    ZASSERT(::GetSecurityDescriptorDacl(descriptor, &present, &dacl, &defaulted));
+    const DWORD set =
+        ::SetSecurityInfo(child->native_handle(),
+                          SE_KERNEL_OBJECT,
+                          DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                          nullptr,
+                          nullptr,
+                          dacl,
+                          nullptr);
+    ::LocalFree(descriptor);
+    ZASSERT(set == static_cast<DWORD>(ERROR_SUCCESS));
+
+    // An administrator with the debug privilege would open it all the same.
+    test::ScopedNoPrivileges unprivileged({L"SeDebugPrivilege"});
+    ZEXPECT(Child::open(child->pid()).has_value());
+    auto opened = Child::open(child->pid(), PROCESS_VM_READ);
+    ZASSERT(!opened.has_value());
+    ZEXPECT(opened.error() == std::errc::permission_denied);
+
+    test::close_end(child->take_pipe(0));
+    ZEXPECT(child->wait().has_value());
+}
+
+// ACCESS_SYSTEM_SECURITY takes the security privilege, or the debug
+// privilege, which grants every right: an administrator may hold both.
+ZEST_CASE(open_with_a_right_that_takes_a_privilege_not_held_fails) {
+    test::ScopedNoPrivileges unprivileged({L"SeDebugPrivilege", L"SeSecurityPrivilege"});
+    auto opened = Child::open(static_cast<int>(::GetCurrentProcessId()), ACCESS_SYSTEM_SECURITY);
+    ZASSERT(!opened.has_value());
+    ZEXPECT(opened.error() == std::errc::operation_not_permitted);
 }
 
 ZEST_CASE(open_of_no_process_fails) {

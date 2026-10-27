@@ -19,6 +19,7 @@
 
 #include "fs/harness/files.h"
 #include "sys/harness/pids.h"
+#include "sys/harness/privileges.h"
 #include "sys/harness/spawn.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -81,40 +82,6 @@ struct UnopenableProcess {
 
     PROCESS_INFORMATION info{};
     zest::FatalHook on_fatal{[this] { ::TerminateProcess(info.hProcess, 0); }};
-};
-
-/// The calling thread without the debug privilege, with which an
-/// administrator opens any process, until this goes.
-struct ScopedNoDebugPrivilege {
-    ScopedNoDebugPrivilege() {
-        HANDLE own = nullptr;
-        ZASSERT(::OpenProcessToken(::GetCurrentProcess(), TOKEN_DUPLICATE, &own));
-        HANDLE token = nullptr;
-        auto duplicated = ::DuplicateTokenEx(own,
-                                             TOKEN_ADJUST_PRIVILEGES | TOKEN_IMPERSONATE,
-                                             nullptr,
-                                             SecurityImpersonation,
-                                             TokenImpersonation,
-                                             &token);
-        ::CloseHandle(own);
-        ZASSERT(duplicated);
-        TOKEN_PRIVILEGES privileges{};
-        privileges.PrivilegeCount = 1;
-        privileges.Privileges[0].Attributes = SE_PRIVILEGE_REMOVED;
-        ZASSERT(
-            ::LookupPrivilegeValueW(nullptr, L"SeDebugPrivilege", &privileges.Privileges[0].Luid));
-        // Succeeds, saying ERROR_NOT_ALL_ASSIGNED, for a token without it.
-        ZASSERT(::AdjustTokenPrivileges(token, FALSE, &privileges, 0, nullptr, nullptr));
-        ZASSERT(::SetThreadToken(nullptr, token));
-        ::CloseHandle(token);
-    }
-
-    ScopedNoDebugPrivilege(const ScopedNoDebugPrivilege&) = delete;
-    ScopedNoDebugPrivilege& operator=(const ScopedNoDebugPrivilege&) = delete;
-
-    ~ScopedNoDebugPrivilege() {
-        ::RevertToSelf();
-    }
 };
 #endif
 
@@ -217,7 +184,8 @@ ZEST_CASE(process_alive_of_a_child_waited_for_is_false) {
 #ifdef _WIN32
 ZEST_CASE(process_alive_holds_for_a_process_this_one_may_not_open) {
     UnopenableProcess process;
-    ScopedNoDebugPrivilege unprivileged;
+    // With the debug privilege an administrator opens any process.
+    test::ScopedNoPrivileges unprivileged({L"SeDebugPrivilege"});
     auto id = process.info.dwProcessId;
     HANDLE opened = ::OpenProcess(SYNCHRONIZE, FALSE, id);
     auto error = ::GetLastError();
