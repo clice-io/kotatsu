@@ -179,15 +179,19 @@ std::expected<bool, std::error_code> create_directories(std::string_view path);
 /// directory: true when it removed it, false when nothing was there. On
 /// Windows a read-only file goes as well, and the name goes at once, as on
 /// POSIX, while another process holds the file open, where it shares it for
-/// deletion and the file system allows (NTFS).
+/// deletion and the file system allows (NTFS). A root, and a path whose
+/// last name is `.` or `..`, fail with std::errc::invalid_argument, as does
+/// on Windows a last name made of dots and spaces alone, which Win32 would
+/// take off to leave the directory it is in, unless a separator follows or
+/// the path is verbatim.
 std::expected<bool, std::error_code> remove(std::string_view path);
 
 /// Removes `path` and, for a directory, everything in it, never following a
 /// symlink or junction into what it points to: the number of entries it
-/// removed, `path` included. Nothing there removes nothing; a path ending
-/// in `.` or `..` fails with std::errc::invalid_argument. On POSIX a
-/// directory the walk is in, moved meanwhile out of the one it came from,
-/// fails it with std::errc::no_such_file_or_directory.
+/// removed, `path` included. Nothing there removes nothing; a path remove()
+/// refuses fails as it does. On POSIX a directory the walk is in, moved
+/// meanwhile out of the one it came from, fails it with
+/// std::errc::no_such_file_or_directory.
 std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path);
 
 /// Renames `from` to `to`, replacing a file there. On Windows `to` goes even

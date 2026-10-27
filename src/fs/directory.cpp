@@ -673,6 +673,29 @@ std::error_code create_link(std::string_view target, std::string_view link, bool
 #endif
 }
 
+/// Whether `path` names a root, or by its last name a directory it goes
+/// through: `.` and `..`, which the OS refuses to remove only once their
+/// contents are gone, or on Windows, which resolves them first, not at all.
+/// Win32 also takes the trailing dots and spaces off a last name no
+/// separator follows, but in a verbatim path: one made of them alone names
+/// the directory it is in.
+bool names_root_or_ancestor(std::string_view path) {
+    auto name = path::filename(path);
+    if(name.empty()) {
+        // A root has no name, nor has an empty path, which names nothing.
+        return !path.empty();
+    }
+    if(name == "." || name == "..") {
+        return true;
+    }
+#ifdef _WIN32
+    return !path::is_separator(path.back()) && !path.starts_with(R"(\\?\)") &&
+           name.find_first_not_of(". ") == std::string_view::npos;
+#else
+    return false;
+#endif
+}
+
 }  // namespace
 
 struct detail::OpenDirectory {
@@ -898,6 +921,9 @@ std::expected<bool, std::error_code> create_directories(std::string_view path) {
 }
 
 std::expected<bool, std::error_code> remove(std::string_view path) {
+    if(names_root_or_ancestor(path)) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
 #ifdef _WIN32
     win32::WidePath native;
     if(auto error = windows::to_native(native, path)) {
@@ -946,9 +972,7 @@ std::expected<bool, std::error_code> remove(std::string_view path) {
 }
 
 std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) {
-    // Removing `.` or `..` would remove the directory a path is in, which
-    // the OS refuses only once its contents are gone.
-    if(auto name = path::filename(path); name == "." || name == "..") {
+    if(names_root_or_ancestor(path)) {
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
 #ifdef _WIN32

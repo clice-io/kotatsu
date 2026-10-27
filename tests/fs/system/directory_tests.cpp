@@ -604,17 +604,75 @@ ZEST_CASE(remove_all_removes_a_deep_tree) {
     ZEXPECT(exists(dir.file("tree")) == false);
 }
 
-ZEST_CASE(remove_all_of_dots_fails) {
+ZEST_CASE(remove_of_dots_fails) {
+    // Either would remove the directory the path is in: the OS refuses it
+    // only once its contents are gone, or on Windows, which resolves the
+    // path first, not at all.
     test::TempDir dir;
-    std::filesystem::create_directory(dir.path / "tree");
+    std::filesystem::create_directories(dir.path / "tree" / "empty");
     test::write_text(dir.file("tree/kept.txt"), "text");
-    for(auto name: {"tree/.", "tree/..", "tree/./"}) {
+    for(auto name: {"tree/empty/.", "tree/empty/..", "tree/empty/./", "tree/.", "tree/.."}) {
         ZEST_CONTEXT("{}", name);
-        auto removed = remove_all(dir.file(name));
+        auto removed = remove(dir.file(name));
         ZASSERT(!removed.has_value());
         ZEXPECT(removed.error() == std::errc::invalid_argument);
+        auto removed_all = remove_all(dir.file(name));
+        ZASSERT(!removed_all.has_value());
+        ZEXPECT(removed_all.error() == std::errc::invalid_argument);
     }
     ZEXPECT(is_file(dir.file("tree/kept.txt")));
+    ZEXPECT(is_directory(dir.file("tree/empty")));
+}
+
+#ifdef _WIN32
+ZEST_CASE(remove_of_a_name_win32_trims_away_fails) {
+    // Win32 takes trailing dots and spaces off a last name that no separator
+    // follows: one made of them alone leaves the directory it is in.
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "tree" / "empty");
+    test::write_text(dir.file("tree/kept.txt"), "text");
+    for(auto name: {"...", ". ", " ", ".. ", " ."}) {
+        ZEST_CONTEXT("[{}]", name);
+        auto removed = remove(dir.file(std::format("tree/empty/{}", name)));
+        ZASSERT(!removed.has_value());
+        ZEXPECT(removed.error() == std::errc::invalid_argument);
+        auto removed_all = remove_all(dir.file(std::format("tree/{}", name)));
+        ZASSERT(!removed_all.has_value());
+        ZEXPECT(removed_all.error() == std::errc::invalid_argument);
+    }
+    ZEXPECT(is_file(dir.file("tree/kept.txt")));
+    ZEXPECT(is_directory(dir.file("tree/empty")));
+    // Followed by a separator, the name is kept: a directory of its own.
+    ZASSERT(std::filesystem::create_directory(LR"(\\?\)" + (dir.path / "tree" / "...").wstring()));
+    ZEXPECT(remove_all(dir.file("tree/...") + "\\") == 1u);
+    ZEXPECT(is_file(dir.file("tree/kept.txt")));
+}
+#endif
+
+ZEST_CASE(remove_of_a_root_fails) {
+#ifdef _WIN32
+    // A drive no volume has: should the check fail, nothing is there.
+    auto drives = ::GetLogicalDrives();
+    auto letters = std::views::iota(0, 26) | std::views::reverse;
+    auto free = std::ranges::find_if(letters, [&](int i) { return !(drives & (1u << i)); });
+    ZASSERT(free != letters.end());
+    std::string drive = {static_cast<char>('A' + *free), ':'};
+    std::vector<std::string> roots = {drive + R"(\)", drive, R"(\\?\)" + drive + R"(\)"};
+#else
+    // Should the check fail, no descriptor is left to list the root
+    // through, which removing anything in it takes.
+    ScopedDescriptorLimit none(0);
+    std::vector<std::string> roots = {"/", "//"};
+#endif
+    for(const auto& root: roots) {
+        ZEST_CONTEXT("{}", root);
+        auto removed = remove(root);
+        ZASSERT(!removed.has_value());
+        ZEXPECT(removed.error() == std::errc::invalid_argument);
+        auto removed_all = remove_all(root);
+        ZASSERT(!removed_all.has_value());
+        ZEXPECT(removed_all.error() == std::errc::invalid_argument);
+    }
 }
 
 ZEST_CASE(rename_replaces_a_file) {
