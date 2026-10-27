@@ -148,6 +148,23 @@ ZEST_CASE(entry_status_of_a_removed_file_fails) {
     });
 }
 
+ZEST_CASE(entry_status_of_a_file_deleted_while_held_open_fails) {
+    // FAT deletes the classic way: the name stays until the last handle
+    // goes, but names a file going away.
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("file.txt"), "12345");
+        auto entries = test::entries_of(dir.root());
+        ZASSERT(entries.size() == 1u);
+        auto held = File::open(dir.file("file.txt"));
+        ZASSERT(held.has_value());
+        ZEXPECT(remove(dir.file("file.txt")) == true);
+        auto status = entries.front().status();
+        ZASSERT(!status.has_value());
+        ZEXPECT(status.error() == std::errc::no_such_file_or_directory);
+        ZEXPECT(exists(dir.file("file.txt")) == false);
+    });
+}
+
 ZEST_CASE(set_times_rounds_up_to_two_seconds) {
     // FAT32 and exFAT keep an mtime in two seconds.
     on_fat([](const test::TempDir& dir) {
@@ -281,6 +298,19 @@ ZEST_CASE(rename_noreplace_over_a_file_fails) {
         ZEXPECT(rename_noreplace(dir.file("from.txt"), dir.file("to.txt")) ==
                 std::errc::file_exists);
         ZEXPECT(test::read_text(dir.file("to.txt")) == "old");
+        ZEXPECT(test::read_text(dir.file("from.txt")) == "new");
+    });
+}
+
+ZEST_CASE(rename_noreplace_over_a_file_deleted_while_held_open_fails) {
+    // FAT refuses it as it refuses any open of the name, which is taken
+    // until the last handle goes.
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("from.txt"), "new");
+        test::write_text(dir.file("to.txt"), "old");
+        test::DeletePending pending(dir.file("to.txt"));
+        ZEXPECT(rename_noreplace(dir.file("from.txt"), dir.file("to.txt")) ==
+                std::errc::file_exists);
         ZEXPECT(test::read_text(dir.file("from.txt")) == "new");
     });
 }

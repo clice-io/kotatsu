@@ -458,6 +458,26 @@ ZEST_CASE(remove_takes_a_read_only_file) {
     ZEXPECT(remove(dir.file("file.txt")) == true);
 }
 
+#ifdef _WIN32
+ZEST_CASE(remove_of_a_file_deleted_while_held_open_removes_nothing) {
+    // The file is going already; its name stays, and keeps the directory
+    // it is in from going, until the last handle goes.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "tree");
+    test::write_text(dir.file("tree/file.txt"), "text");
+    test::write_text(dir.file("tree/other.txt"), "text");
+    {
+        test::DeletePending pending(dir.file("tree/file.txt"));
+        ZEXPECT(remove(dir.file("tree/file.txt")) == false);
+        ZEXPECT(remove_all(dir.file("tree/file.txt")) == 0u);
+        auto removed = remove_all(dir.file("tree"));
+        ZASSERT(!removed.has_value());
+        ZEXPECT(removed.error() == std::errc::directory_not_empty);
+    }
+    ZEXPECT(remove_all(dir.file("tree")) == 1u);
+}
+#endif
+
 ZEST_CASE(remove_all_removes_a_tree) {
     test::TempDir dir;
     std::filesystem::create_directories(dir.path / "tree" / "a" / "b");
@@ -869,6 +889,27 @@ ZEST_CASE(rename_noreplace_over_a_dangling_symlink_fails) {
     ZEXPECT(is_symlink(dir.file("to")));
     ZEXPECT(is_file(dir.file("from")));
 }
+
+#ifdef _WIN32
+ZEST_CASE(rename_noreplace_over_a_file_deleted_while_held_open_fails) {
+    // Its name is taken until the last handle goes.
+    test::TempDir dir;
+    test::write_text(dir.file("from"), "new");
+    test::write_text(dir.file("to"), "old");
+    test::DeletePending pending(dir.file("to"));
+    ZEXPECT(rename_noreplace(dir.file("from"), dir.file("to")) == std::errc::file_exists);
+    ZEXPECT(test::read_text(dir.file("from")) == "new");
+}
+
+ZEST_CASE(rename_noreplace_of_a_file_deleted_while_held_open_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("from"), "text");
+    test::DeletePending pending(dir.file("from"));
+    ZEXPECT(rename_noreplace(dir.file("from"), dir.file("to")) ==
+            std::errc::no_such_file_or_directory);
+    ZEXPECT(exists(dir.file("to")) == false);
+}
+#endif
 
 ZEST_CASE(rename_noreplace_onto_the_file_itself_keeps_it) {
     // By its own name or by another hard link of it, where the systems

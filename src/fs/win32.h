@@ -47,6 +47,12 @@ Function from_ntdll(std::atomic<Function>& cache, const char* name) {
 /// The Win32 error an NTSTATUS stands for.
 DWORD dos_error(NTSTATUS status);
 
+/// Whether a call failed with `error` on a file deleted while held open,
+/// whose name stays until the last handle to it goes but opens nothing
+/// meanwhile: access denied, told from a refusal by the NT status the
+/// thread keeps of the failure.
+bool delete_pending(DWORD error);
+
 /// A handle closed when this goes.
 class Handle {
 public:

@@ -248,10 +248,12 @@ std::optional<AttributeHandle> open_attributes(const wchar_t* path) {
     return AttributeHandle{.handle = std::move(handle), .basic = basic, .id = *id};
 }
 
-/// Whether an open failed because nothing is there: a missing name, or a
-/// component that is a file rather than a directory.
+/// Whether an open failed because nothing is there: a missing name, a
+/// component that is a file rather than a directory, or a file deleted
+/// while held open, which goes with the last handle.
 bool names_nothing(DWORD error) {
-    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ||
+           win32::delete_pending(error);
 }
 
 using NtCreateFileFn = NTSTATUS(NTAPI*)(PHANDLE,
@@ -847,9 +849,13 @@ std::expected<Status, std::error_code> Directory::Entry::status() const {
     if(child.get() != INVALID_HANDLE_VALUE) {
         return win32::handle_status(child.get());
     }
-    // A file no open reaches, as status() takes it: what the listing told,
+    // A file deleted while held open is gone but for the name. One no open
+    // reaches otherwise, as status() takes it: what the listing told,
     // without an ID or links.
     auto error = ::GetLastError();
+    if(win32::delete_pending(error)) {
+        return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
+    }
     if(error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED) {
         return *listed;
     }
@@ -984,10 +990,11 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) 
         return win32::try_open(native.c_str(), access, FILE_FLAG_OPEN_REPARSE_POINT);
     });
     if(handle.get() == INVALID_HANDLE_VALUE) {
-        if(names_nothing(::GetLastError())) {
+        auto error = ::GetLastError();
+        if(names_nothing(error)) {
             return 0;
         }
-        return std::unexpected(windows::last_error());
+        return std::unexpected(windows::to_error_code(error));
     }
     return remove_tree(std::move(handle));
 #else
@@ -1083,10 +1090,21 @@ std::error_code rename_noreplace(std::string_view from, std::string_view to) {
     if(auto error = windows::to_native(target, to)) {
         return error;
     }
-    if(!::MoveFileExW(source.c_str(), target.c_str(), 0)) {
-        return windows::last_error();
+    if(::MoveFileExW(source.c_str(), target.c_str(), 0)) {
+        return {};
     }
-    return {};
+    auto error = ::GetLastError();
+    if(!win32::delete_pending(error)) {
+        return windows::to_error_code(error);
+    }
+    // A file deleted while held open: `from`, which is gone but for the
+    // name, or on FAT `to`, which keeps the name taken until the last
+    // handle goes (NTFS says so itself).
+    auto opened = win32::try_open(source.c_str(), 0, FILE_FLAG_OPEN_REPARSE_POINT);
+    if(opened.get() == INVALID_HANDLE_VALUE && win32::delete_pending(::GetLastError())) {
+        return std::make_error_code(std::errc::no_such_file_or_directory);
+    }
+    return std::make_error_code(std::errc::file_exists);
 #else
     posix::CPath source;
     if(auto error = source.assign(from)) {

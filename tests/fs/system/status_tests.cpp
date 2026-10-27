@@ -399,7 +399,18 @@ ZEST_CASE(exists_tells_nothing_from_failure) {
     ZEXPECT(exists(dir.file("file.txt/child")) == false);
 }
 
-#ifndef _WIN32
+#ifdef _WIN32
+ZEST_CASE(status_of_a_file_deleted_while_held_open_fails) {
+    // Its name stays until the last handle goes, but names a file going away.
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
+    test::DeletePending pending(dir.file("file.txt"));
+    auto found = status(dir.file("file.txt"));
+    ZASSERT(!found.has_value());
+    ZEXPECT(found.error() == std::errc::no_such_file_or_directory);
+    ZEXPECT(exists(dir.file("file.txt")) == false);
+}
+#else
 ZEST_CASE(exists_where_access_is_denied_fails) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "closed");

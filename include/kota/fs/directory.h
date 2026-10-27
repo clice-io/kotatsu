@@ -59,10 +59,10 @@ public:
         /// Elsewhere, and on a Windows file system that lists no IDs (FAT),
         /// the system is asked when this is called, through the directory,
         /// which stays open while an entry of it lives: an entry removed
-        /// since fails with no_such_file_or_directory, and one on FAT that no
-        /// open reaches gets what the listing told, without an ID or the link
-        /// count. An entry made rather than listed fails with
-        /// bad_file_descriptor.
+        /// since fails with no_such_file_or_directory, a file deleted while
+        /// held open as well, and one on FAT that no open reaches otherwise
+        /// gets what the listing told, without an ID or the link count. An
+        /// entry made rather than listed fails with bad_file_descriptor.
         std::expected<Status, std::error_code> status() const;
 
     private:
@@ -179,11 +179,12 @@ std::expected<bool, std::error_code> create_directories(std::string_view path);
 /// directory: true when it removed it, false when nothing was there. On
 /// Windows a read-only file goes as well, and the name goes at once, as on
 /// POSIX, while another process holds the file open, where it shares it for
-/// deletion and the file system allows (NTFS). A root, and a path whose
-/// last name is `.` or `..`, fail with std::errc::invalid_argument, as does
-/// on Windows a last name made of dots and spaces alone, which Win32 would
-/// take off to leave the directory it is in, unless a separator follows or
-/// the path is verbatim.
+/// deletion and the file system allows (NTFS); elsewhere (FAT) it stays
+/// until the last handle goes, a file deleted in the meantime counting as
+/// nothing there. A root, and a path whose last name is `.` or `..`, fail
+/// with std::errc::invalid_argument, as does on Windows a last name made of
+/// dots and spaces alone, which Win32 would take off to leave the directory
+/// it is in, unless a separator follows or the path is verbatim.
 std::expected<bool, std::error_code> remove(std::string_view path);
 
 /// Removes `path` and, for a directory, everything in it, never following a
@@ -200,9 +201,12 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path);
 std::error_code rename(std::string_view from, std::string_view to);
 
 /// Renames `from` to `to` where nothing is there: anything there, a dangling
-/// symlink too, fails with std::errc::file_exists, and both stay as they
-/// were, however processes race, so that of two renames to one name one
-/// takes it. `to` on another volume fails with cross_device_link.
+/// symlink too, or on Windows a file deleted while held open, whose name
+/// stays until the last handle goes, fails with std::errc::file_exists, and
+/// both stay as they were, however processes race, so that of two renames
+/// to one name one takes it. `to` on another volume fails with
+/// cross_device_link; `from` deleted while held open fails as a missing
+/// one does, with no_such_file_or_directory.
 /// MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows,
 /// renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL) on macOS.
 ///

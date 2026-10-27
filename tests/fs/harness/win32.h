@@ -3,8 +3,9 @@
 // <windows.h> for the tests that call Win32 themselves, without the min and
 // max macros that break the standard library's, attributes_of() for those
 // that check a file's attributes, make_pipe() for those that need a named
-// pipe and set_reparse_point() for those that need a reparse point of a tag
-// no tool makes.
+// pipe, set_reparse_point() for those that need a reparse point of a tag no
+// tool makes and DeletePending for those that need a file deleted while held
+// open.
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -80,6 +81,33 @@ inline void set_reparse_point(std::string_view path, DWORD tag) {
     ::CloseHandle(file);
     ZASSERT(set);
 }
+
+/// The file at the UTF-8 `path` deleted the classic way, which keeps its
+/// name until the last handle to it goes and lets no open through it
+/// meanwhile, while this holds a handle to it.
+struct DeletePending {
+    explicit DeletePending(std::string_view path) :
+        handle(::CreateFileW(std_path(path).wstring().c_str(),
+                             DELETE,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             nullptr,
+                             OPEN_EXISTING,
+                             FILE_FLAG_BACKUP_SEMANTICS,
+                             nullptr)) {
+        ZASSERT(handle != INVALID_HANDLE_VALUE);
+        FILE_DISPOSITION_INFO info{TRUE};
+        ZASSERT(::SetFileInformationByHandle(handle, FileDispositionInfo, &info, sizeof(info)));
+    }
+
+    DeletePending(const DeletePending&) = delete;
+    DeletePending& operator=(const DeletePending&) = delete;
+
+    ~DeletePending() {
+        ::CloseHandle(handle);
+    }
+
+    HANDLE handle;
+};
 
 }  // namespace kota::test
 #endif

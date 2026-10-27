@@ -161,6 +161,14 @@ DWORD dos_error(NTSTATUS status) {
     return from_ntdll(to_dos_error, "RtlNtStatusToDosError")(status);
 }
 
+bool delete_pending(DWORD error) {
+    using GetLastNtStatusFn = NTSTATUS(NTAPI*)();
+    static constinit std::atomic<GetLastNtStatusFn> last_status = nullptr;
+    constexpr auto status_delete_pending = static_cast<NTSTATUS>(0xC0000056);
+    return error == ERROR_ACCESS_DENIED &&
+           from_ntdll(last_status, "RtlGetLastNtStatus")() == status_delete_pending;
+}
+
 std::error_code widen(basic_buffer_ref<wchar_t> out, std::string_view path) {
     if(path.find('\0') != std::string_view::npos) {
         return std::make_error_code(std::errc::invalid_argument);

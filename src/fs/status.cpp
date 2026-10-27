@@ -183,6 +183,11 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
         return win32::handle_status(handle.get());
     }
     auto error = ::GetLastError();
+    // A file deleted while held open is gone but for the name, which its
+    // directory still lists.
+    if(win32::delete_pending(error)) {
+        return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
+    }
     if(error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED) {
         auto listed = listed_status(native);
         if(listed && !(follow && listed->type == FileType::Symlink)) {
