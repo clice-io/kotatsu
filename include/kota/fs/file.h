@@ -201,6 +201,11 @@ public:
 private:
     friend std::error_code copy_file(std::string_view from, std::string_view to);
 
+    friend std::expected<File, std::error_code> create_temp_file(buffer_ref path,
+                                                                 std::string_view directory,
+                                                                 std::string_view prefix,
+                                                                 std::string_view suffix);
+
     explicit File(native_handle_type handle) : handle(handle) {}
 
     native_handle_type handle = closed;
@@ -221,8 +226,17 @@ std::error_code write_file(std::string_view path, std::string_view bytes);
 /// Writes `bytes` as the whole of a file through a sibling renamed over it,
 /// so a concurrent reader sees the old bytes or the new, never a part, and
 /// concurrent writers never mix. A symlink at `path` is replaced, not
-/// written through. It does not wait for the bytes to reach the disk: after
-/// a crash of the system, `path` may hold the old bytes, the new, or none.
+/// written through. On POSIX a file there lends the new one its permissions
+/// (0777: not setuid and setgid), and its owner and group where the caller
+/// may set them, as root always may; on Windows its read-only, hidden and
+/// system attributes. A new file takes the permissions write_file() gives
+/// one.
+///
+/// A crash of the process leaves `path` with the old bytes or the new, and
+/// may leave the sibling behind. It does not wait for the bytes to reach
+/// the disk: after a crash of the system, `path` may hold the old bytes,
+/// the new, a part of the new or none at all, or, where it was new, be
+/// gone.
 ///
 /// On Windows an open of `path` that races the rename may fail, with
 /// std::errc::permission_denied or no_such_file_or_directory, while the
@@ -259,9 +273,10 @@ std::error_code copy_file(std::string_view from, std::string_view to);
 
 /// Creates an empty file in `directory`, named `prefix`, random characters
 /// and `suffix`, and none of it there before: the file, open for reading and
-/// writing, and its path written into `path`. Nothing removes it. A `prefix`
-/// or `suffix` with a separator in it, or on Windows a `:`, which would
-/// name a file elsewhere, fails with std::errc::invalid_argument.
+/// writing, and its path written into `path`. On POSIX it is its owner's
+/// alone (0600), as mkstemp makes it. Nothing removes it. A `prefix` or
+/// `suffix` with a separator in it, or on Windows a `:`, which would name a
+/// file elsewhere, fails with std::errc::invalid_argument.
 std::expected<File, std::error_code> create_temp_file(buffer_ref path,
                                                       std::string_view directory,
                                                       std::string_view prefix,
@@ -269,8 +284,8 @@ std::expected<File, std::error_code> create_temp_file(buffer_ref path,
 
 /// Creates an empty directory in `directory`, named `prefix` and random
 /// characters, and none of it there before, and writes its path into `path`.
-/// Nothing removes it. `prefix` is refused as create_temp_file() refuses
-/// it.
+/// On POSIX it is its owner's alone (0700), as mkdtemp makes it. Nothing
+/// removes it. `prefix` is refused as create_temp_file() refuses it.
 std::error_code create_temp_directory(buffer_ref path,
                                       std::string_view directory,
                                       std::string_view prefix);

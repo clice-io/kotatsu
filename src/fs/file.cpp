@@ -100,6 +100,27 @@ std::error_code with_random_name(buffer_ref path,
     return error;
 }
 
+/// Creates an empty file named as with_random_name() names one, open to read
+/// and write, with what File::open() gives a new file.
+std::expected<File, std::error_code> create_named(buffer_ref path,
+                                                  std::string_view directory,
+                                                  std::string_view prefix,
+                                                  std::string_view suffix) {
+    File file;
+    auto error = with_random_name(path, directory, prefix, suffix, [&](std::string_view candidate) {
+        auto opened = File::open(candidate, {.read = true, .write = true, .create_new = true});
+        if(!opened) {
+            return opened.error();
+        }
+        file = std::move(*opened);
+        return std::error_code();
+    });
+    if(error) {
+        return std::unexpected(error);
+    }
+    return file;
+}
+
 #ifdef _WIN32
 
 /// The bytes from where `handle` stands to the end of the file, zero where
@@ -749,11 +770,56 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
     small_string<64> prefix(name);
     prefix.push_back('.');
     small_string<256> sibling;
-    auto file = create_temp_file(sibling, path::parent(path), prefix, ".tmp");
+    auto parent = path::parent(path);
+    // The rename leaves behind the attributes, or the permissions and owner,
+    // of a file it replaces, a link aside: the sibling takes them first.
+#ifdef _WIN32
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, path)) {
+        return error;
+    }
+    auto replaced = ::GetFileAttributesW(native.c_str());
+    constexpr DWORD no_file = FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT;
+    constexpr DWORD lent = FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
+    DWORD kept = replaced == INVALID_FILE_ATTRIBUTES || (replaced & no_file) ? 0 : replaced & lent;
+    auto file = create_named(sibling, parent, prefix, ".tmp");
+#else
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return error;
+    }
+    // Made for its owner alone until it takes the permissions of the file it
+    // replaces; a new file's are those write_file() gives one.
+    struct stat replaced;
+    bool replaces = ::lstat(c_path.c_str(), &replaced) == 0 && S_ISREG(replaced.st_mode);
+    auto file = replaces ? create_temp_file(sibling, parent, prefix, ".tmp")
+                         : create_named(sibling, parent, prefix, ".tmp");
+#endif
     if(!file) {
         return file.error();
     }
     auto error = file->write(bytes);
+#ifdef _WIN32
+    FILE_BASIC_INFO basic;
+    if(!error && kept != 0 &&
+       (!::GetFileInformationByHandleEx(file->native_handle(),
+                                        FileBasicInfo,
+                                        &basic,
+                                        sizeof(basic)) ||
+        !win32::set_attributes(file->native_handle(), basic.FileAttributes | kept))) {
+        error = windows::last_error();
+    }
+#else
+    if(!error && replaces) {
+        // The owner and group where the caller may give them: only root
+        // gives a file away.
+        [[maybe_unused]] auto owned =
+            ::fchown(file->native_handle(), replaced.st_uid, replaced.st_gid);
+        if(::fchmod(file->native_handle(), replaced.st_mode & 0777) != 0) {
+            error = posix::last_error();
+        }
+    }
+#endif
     if(auto closed = file->close(); !error) {
         error = closed;
     }
@@ -890,31 +956,45 @@ std::expected<File, std::error_code> create_temp_file(buffer_ref path,
                                                       std::string_view directory,
                                                       std::string_view prefix,
                                                       std::string_view suffix) {
-    File file;
+#ifdef _WIN32
+    return create_named(path, directory, prefix, suffix);
+#else
+    // For its owner alone, as mkstemp makes it.
+    int fd = File::closed;
     auto error = with_random_name(path, directory, prefix, suffix, [&](std::string_view candidate) {
-        auto opened = File::open(candidate, {.read = true, .write = true, .create_new = true});
-        if(!opened) {
-            return opened.error();
+        posix::CPath c_path;
+        if(auto invalid = c_path.assign(candidate)) {
+            return invalid;
         }
-        file = std::move(*opened);
-        return std::error_code();
+        fd = open_file(c_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+        return fd < 0 ? posix::last_error() : std::error_code();
     });
     if(error) {
         return std::unexpected(error);
     }
-    return file;
+    return File(fd);
+#endif
 }
 
 std::error_code create_temp_directory(buffer_ref path,
                                       std::string_view directory,
                                       std::string_view prefix) {
     return with_random_name(path, directory, prefix, "", [](std::string_view candidate) {
+#ifdef _WIN32
         auto made = create_directory(candidate);
         if(!made) {
             return made.error();
         }
         // A directory there already holds the name too.
         return *made ? std::error_code() : std::make_error_code(std::errc::file_exists);
+#else
+        // For its owner alone, as mkdtemp makes it.
+        posix::CPath c_path;
+        if(auto invalid = c_path.assign(candidate)) {
+            return invalid;
+        }
+        return ::mkdir(c_path.c_str(), 0700) == 0 ? std::error_code() : posix::last_error();
+#endif
     });
 }
 

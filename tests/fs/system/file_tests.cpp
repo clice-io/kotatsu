@@ -10,8 +10,14 @@
 #include <thread>
 #include <vector>
 
+#ifndef _WIN32
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 #include "fs/harness/dir.h"
 #include "fs/harness/files.h"
+#include "fs/harness/win32.h"
 #include "kota/zest/zest.h"
 #include "kota/support/small_string.h"
 #include "kota/fs/directory.h"
@@ -114,6 +120,70 @@ ZEST_CASE(write_file_atomic_replaces_a_link) {
     ZEXPECT(test::read_text(dir.file("target")) == "old");
     ZEXPECT(!is_symlink(dir.file("link")));
 }
+
+#ifdef _WIN32
+ZEST_CASE(write_file_atomic_keeps_the_attributes) {
+    // Read-only, hidden and system, which a file there refuses no rename for.
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "old");
+    constexpr DWORD kept = FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
+    ZASSERT(::SetFileAttributesW(test::std_path(dir.file("file")).wstring().c_str(), kept));
+    auto error = write_file_atomic(dir.file("file"), "new");
+    auto attributes = ::GetFileAttributesW(test::std_path(dir.file("file")).wstring().c_str());
+    auto content = test::read_text(dir.file("file"));
+    // The read-only file goes before a check could end the case: TempDir,
+    // through std::filesystem, would leave it.
+    ZEXPECT(remove(dir.file("file")) == true);
+    ZEXPECT(error == std::error_code());
+    ZEXPECT(attributes != INVALID_FILE_ATTRIBUTES);
+    ZEXPECT((attributes & kept) == kept);
+    ZEXPECT(content == "new");
+}
+#else
+ZEST_CASE(write_file_atomic_keeps_the_permissions) {
+    // A read-only file's too, which is no file the sibling cannot replace.
+    test::TempDir dir;
+    for(unsigned permissions: {0600u, 0755u, 0444u}) {
+        ZEST_CONTEXT("{:o}", permissions);
+        test::write_text(dir.file("file"), "old");
+        ZASSERT(!set_permissions(dir.file("file"), permissions));
+        ZEXPECT(!write_file_atomic(dir.file("file"), "new"));
+        ZEXPECT(test::read_text(dir.file("file")) == "new");
+        auto found = status(dir.file("file"));
+        ZASSERT(found.has_value());
+        ZEXPECT(found->permissions == permissions);
+        ZASSERT(remove(dir.file("file")) == true);
+    }
+}
+
+ZEST_CASE(write_file_atomic_makes_a_new_file_as_write_file_does) {
+    // Its permissions what the umask leaves.
+    test::TempDir dir;
+    ZEXPECT(!write_file(dir.file("written"), "text"));
+    ZEXPECT(!write_file_atomic(dir.file("replaced"), "text"));
+    auto written = status(dir.file("written"));
+    auto replaced = status(dir.file("replaced"));
+    ZASSERT(written.has_value());
+    ZASSERT(replaced.has_value());
+    ZEXPECT(replaced->permissions == written->permissions);
+}
+
+ZEST_CASE(write_file_atomic_keeps_the_owner) {
+    if(::geteuid() != 0) {
+        // Only root gives a file to another user.
+        zest::skip();
+        return;
+    }
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "old");
+    ZASSERT(::chown(dir.file("file").c_str(), 65534, 65534) == 0);
+    ZEXPECT(!write_file_atomic(dir.file("file"), "new"));
+    struct stat info;
+    ZASSERT(::stat(dir.file("file").c_str(), &info) == 0);
+    ZEXPECT(info.st_uid == 65534u);
+    ZEXPECT(info.st_gid == 65534u);
+}
+#endif
 
 ZEST_CASE(write_file_atomic_takes_a_name_near_the_limit) {
     test::TempDir dir;
@@ -285,6 +355,26 @@ ZEST_CASE(create_temp_directory_makes_a_new_empty_directory) {
     }
     ZEXPECT(made.size() == 8u);
 }
+
+#ifndef _WIN32
+ZEST_CASE(create_temp_file_lets_only_its_owner_in) {
+    test::TempDir dir;
+    std::string temp;
+    ZASSERT(create_temp_file(temp, dir.root(), "", "").has_value());
+    auto found = status(temp);
+    ZASSERT(found.has_value());
+    ZEXPECT(found->permissions == 0600u);
+}
+
+ZEST_CASE(create_temp_directory_lets_only_its_owner_in) {
+    test::TempDir dir;
+    std::string temp;
+    ZASSERT(!create_temp_directory(temp, dir.root(), ""));
+    auto found = status(temp);
+    ZASSERT(found.has_value());
+    ZEXPECT(found->permissions == 0700u);
+}
+#endif
 
 ZEST_CASE(create_temp_directory_in_nothing_fails) {
     test::TempDir dir;
