@@ -37,7 +37,11 @@
     using _deco_base_t::names;
 
 #define DECO_USING_FLAG DECO_USING_NAMED
-#define DECO_USING_INPUT DECO_USING_COMMON
+
+#define DECO_USING_INPUT                                                                           \
+    DECO_USING_COMMON                                                                              \
+    using _deco_base_t::arg_num;
+
 #define DECO_USING_PACK DECO_USING_COMMON
 
 #define DECO_USING_KV                                                                              \

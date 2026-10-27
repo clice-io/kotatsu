@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <expected>
 #include <format>
@@ -125,6 +126,10 @@ template <typename T>
 using ParsedResult = Invocation<T>;
 
 namespace detail {
+
+/// How many input arguments `arg_num` takes, in words: "1 input argument", "at least 2 input
+/// arguments", "1 to 3 input arguments".
+auto input_args_text(decl::ArgNum arg_num) -> std::string;
 
 /// The argv a static alias forward rewrites `arg` into: its tokens, then the values of `arg`;
 /// a comma alias joins the values to its last token instead, `--target,a,b`.
@@ -364,6 +369,8 @@ public:
         return decl::ParseControl::stop();
     }
 
+    /// Goes on parsing from element `index` of the argv being parsed, keeping what was parsed:
+    /// the inputs parsed so far count toward the DecoInput's `arg_num`.
     auto seek(std::uint32_t index) const -> decl::ParseControl {
         if(index >= argv_span.size()) {
             return resume_from(std::span<std::string>{});
@@ -371,10 +378,13 @@ public:
         return resume_from(argv_span.subspan(index));
     }
 
+    /// Goes on parsing from `next_argv`, which must outlive the parse, keeping what was parsed:
+    /// the inputs parsed so far count toward the DecoInput's `arg_num`.
     auto resume_from(std::span<std::string> next_argv) const -> decl::ParseControl {
         return decl::ParseControl::restart(next_argv);
     }
 
+    /// resume_from() an argv the parse keeps.
     auto resume_from(std::vector<std::string> next_argv) const -> decl::ParseControl {
         return decl::ParseControl::restart(std::move(next_argv));
     }
@@ -427,18 +437,30 @@ std::string check_valid(const T& options,
                         const std::set<const decl::Category*>& matched_categories) {
     const auto& generator = ::kota::deco::detail::generator_of<T>();
     std::string err = "";
-    // check required options
+    // check required options: those of a category matched, and a DecoInput of the default
+    // category, which is required whatever else is given but for an exclusive category, which
+    // rules the others out
+    const bool exclusive_given =
+        std::ranges::any_of(matched_categories,
+                            [](const decl::Category* category) { return category->exclusive; });
     generator.visit_fields(options, [&](auto& field, const auto& cfg, std::string_view name, auto) {
         using field_ty = std::remove_cvref_t<decltype(field)>;
         if constexpr(ty::deco_option_like<field_ty>) {
-            if(matched_categories.contains(cfg.category.ptr()) && cfg.required &&
-               !field.has_value()) {
+            if(!cfg.required || field.has_value()) {
+                return true;
+            }
+            const bool matched = matched_categories.contains(cfg.category.ptr());
+            if constexpr(ty::field_ty_of<field_ty>::deco_field_ty == decl::DecoType::Input) {
+                if(matched || (cfg.category.ptr() == &decl::default_category && !exclusive_given)) {
+                    err = std::format("expected {}, got 0",
+                                      detail::input_args_text(generator.input_arg_num));
+                }
+            } else if(matched) {
                 err = std::format("required option {} is missing",
                                   desc::from_deco_option(cfg, false, name));
-                return false;
             }
         }
-        return true;
+        return err.empty();
     });
     if(!err.empty()) {
         return err;
@@ -485,6 +507,8 @@ std::expected<Invocation<T>, ParseError>
     std::span<std::string> current_argv = argv;
     std::shared_ptr<std::vector<std::string>> current_owned_argv{};
     bool stopped_during_parse = false;
+    // The positional arguments the DecoInput was given, over every restart.
+    std::uint32_t inputs_given = 0;
     res.original_argv = argv;
 
     while(true) {
@@ -585,13 +609,26 @@ std::expected<Invocation<T>, ParseError>
                 restart_argv = *restart_owned_argv;
                 break;
             } else {
-                if(generator.is_input_argument(raw_parg) && !generator.has_input_option()) {
-                    err = ParseError{
-                        ParseError::Type::DecoParsing,
-                        into_context.format_error(
-                            std::format("unexpected input argument {}", raw_parg.spelling)),
-                    };
-                    break;
+                if(generator.is_input_argument(raw_parg)) {
+                    if(!generator.has_input_option()) {
+                        err = ParseError{
+                            ParseError::Type::DecoParsing,
+                            into_context.format_error(
+                                std::format("unexpected input argument {}", raw_parg.spelling)),
+                        };
+                        break;
+                    }
+                    if(inputs_given == generator.input_arg_num.max) {
+                        err = ParseError{
+                            ParseError::Type::DecoParsing,
+                            into_context.format_error(
+                                std::format("unexpected input argument {}: expected {}",
+                                            raw_parg.spelling,
+                                            input_args_text(generator.input_arg_num))),
+                        };
+                        break;
+                    }
+                    ++inputs_given;
                 }
                 field = generator.field_ptr_of(raw_parg.id, res.options);
                 category = generator.category_of(raw_parg.id);
@@ -636,14 +673,24 @@ std::expected<Invocation<T>, ParseError>
         return res;
     }
 
-    if(auto check_err = check_valid(res.options, res.matched_categories); !check_err.empty()) {
+    // An error found once the parse is over is shown at the end of the argv it ended on.
+    auto fail_at_end = [&](std::string_view reason) {
         const auto active_argv =
             std::span<const std::string>(res.active_argv.data(), res.active_argv.size());
         return std::unexpected(ParseError{
             ParseError::Type::DecoParsing,
             decl::IntoContext::at_cursor(active_argv, res.next_index, renderer)
-                .format_error(check_err),
+                .format_error(reason),
         });
+    };
+    if(const auto expected = generator.input_arg_num;
+       inputs_given != 0 && inputs_given < expected.min) {
+        return fail_at_end(
+            std::format("expected {}, got {}", input_args_text(expected), inputs_given));
+    }
+    if(const auto check_err = check_valid(res.options, res.matched_categories);
+       !check_err.empty()) {
+        return fail_at_end(check_err);
     }
     return res;
 }

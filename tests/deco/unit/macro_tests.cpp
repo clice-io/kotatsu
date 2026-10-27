@@ -72,6 +72,18 @@ struct Declared {
     stops;
 };
 
+/// Inputs of each count; never parsed: a parsed struct declares one DecoInput.
+struct CountedInputs {
+    DecoInput()
+    <std::vector<std::string>> any;
+
+    DecoInput(arg_num = 2;)
+    <std::vector<std::string>> pair;
+
+    DecoInput(arg_num = {1, 3};)
+    <std::vector<std::string>> range;
+};
+
 struct Aliases {
     DecoFlagAlias(names = {"-O1"}; forward = {"--optimize", "1"};) _;
 
@@ -120,6 +132,18 @@ ZEST_CASE(input_takes_the_type_given) {
     ZEXPECT(cfg.deco_field_ty == decl::DecoType::Input);
     ZEXPECT(cfg.meta_var.value == "FILE");
     ZEXPECT(cfg.meta_var.is_explicit());
+}
+
+ZEST_CASE(input_takes_one_or_more_unless_counted) {
+    const cfg_of<decltype(CountedInputs::any)> any;
+    ZEXPECT(any.arg_num.min == 1U);
+    ZEXPECT(any.arg_num.max == decl::ArgNum::unbounded);
+    const cfg_of<decltype(CountedInputs::pair)> pair;
+    ZEXPECT(pair.arg_num.min == 2U);
+    ZEXPECT(pair.arg_num.max == 2U);
+    const cfg_of<decltype(CountedInputs::range)> range;
+    ZEXPECT(range.arg_num.min == 1U);
+    ZEXPECT(range.arg_num.max == 3U);
 }
 
 ZEST_CASE(options_default_to_strings) {

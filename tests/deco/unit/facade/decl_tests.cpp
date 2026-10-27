@@ -294,6 +294,41 @@ ZEST_CASE(erased_parse_callback_starts_empty) {
     ZEXPECT(!decl::ErasedParseCallback{});
 }
 
+ZEST_CASE(input_list_takes_the_count_it_declares) {
+    using list = std::vector<std::string>;
+    ZSTATIC_EXPECT(decl::invalid_input_arg_num<list>({}).empty());
+    ZSTATIC_EXPECT(decl::invalid_input_arg_num<list>(2).empty());
+    ZSTATIC_EXPECT(decl::invalid_input_arg_num<list>({1, 3}).empty());
+    ZSTATIC_EXPECT(decl::input_arg_num<list>({1, 3}).min == 1U);
+    ZSTATIC_EXPECT(decl::input_arg_num<list>({1, 3}).max == 3U);
+}
+
+ZEST_CASE(scalar_input_takes_one) {
+    // Declared or not.
+    ZSTATIC_EXPECT(decl::invalid_input_arg_num<std::string>({}).empty());
+    ZSTATIC_EXPECT(decl::invalid_input_arg_num<std::string>(1).empty());
+    ZSTATIC_EXPECT(decl::input_arg_num<std::string>({}).min == 1U);
+    ZSTATIC_EXPECT(decl::input_arg_num<std::string>({}).max == 1U);
+}
+
+ZEST_CASE(input_arg_num_of_none_fails) {
+    using list = std::vector<std::string>;
+    ZSTATIC_EXPECT(decl::invalid_input_arg_num<list>(0).starts_with("DecoInput arg_num must be"));
+    ZSTATIC_EXPECT(!decl::invalid_input_arg_num<list>({0, 2}).empty());
+}
+
+ZEST_CASE(input_arg_num_min_above_max_fails) {
+    using list = std::vector<std::string>;
+    ZSTATIC_EXPECT(
+        decl::invalid_input_arg_num<list>({3, 2}).starts_with("DecoInput arg_num min must not"));
+}
+
+ZEST_CASE(scalar_input_of_another_count_fails) {
+    ZSTATIC_EXPECT(
+        decl::invalid_input_arg_num<std::string>(2).starts_with("DecoInput with a scalar result"));
+    ZSTATIC_EXPECT(!decl::invalid_input_arg_num<std::string>({1, 3}).empty());
+}
+
 };  // ZEST_SUITE(deco_facade_decl)
 
 }  // namespace

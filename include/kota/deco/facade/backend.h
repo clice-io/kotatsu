@@ -592,6 +592,10 @@ private:
     }
 
 public:
+    /// How many positional arguments the DecoInput takes; the default when the struct declares
+    /// none.
+    decl::ArgNum input_arg_num{};
+
     constexpr LLVMOptGenerator() :
         str_pool(resource), items(resource), accessors(resource), categories(resource),
         callbacks(resource), alias_metas(resource), alias_tokens(resource) {
@@ -617,6 +621,12 @@ public:
         if(has_input_option()) {
             KOTA_THROW("Only one DecoInput can be declared");
         }
+        using result_ty = typename CfgTy::result_type;
+        if(const auto reason = decl::invalid_input_arg_num<result_ty>(cfg.arg_num);
+           !reason.empty()) {
+            KOTA_THROW(reason);
+        }
+        input_arg_num = decl::input_arg_num<result_ty>(cfg.arg_num);
         accessors[input_option_id] = base_t::accessor_from_path(path);
         categories[input_option_id] = cfg.category.ptr();
         callbacks[input_option_id] = make_parse_callback(cfg);

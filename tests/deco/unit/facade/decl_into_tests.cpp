@@ -298,23 +298,21 @@ ZEST_CASE(input_reads_its_spelling) {
     ZEXPECT(input.as_optional() == std::optional(123));
 }
 
-ZEST_CASE(input_reads_one_value) {
-    decl::InputOption<std::string> input;
-    ZEXPECT(!input.into(arg_of("--", {"tail"})));
-    ZEXPECT(input.as_optional() == std::optional<std::string>("tail"));
-}
-
-ZEST_CASE(input_given_two_values_fails) {
-    decl::InputOption<std::string> input;
-    const auto error = input.into(arg_of("--", {"a", "b"}));
+ZEST_CASE(input_bad_value_fails) {
+    // Located at the argument, with the context it is given.
+    const auto renderer = test::tagged_renderer();
+    const auto argv = test::args("-v", "x");
+    decl::InputOption<int> input;
+    const auto error = input.into(arg_of("x", {}, 1), decl::IntoContext(argv, 1, 2, &renderer));
     ZASSERT(error.has_value());
-    ZEXPECT(*error == "input option expects at most one value");
+    ZEXPECT(*error == "ERR<1:invalid integer value: x>");
 }
 
 ZEST_CASE(input_list_gathers_every_argument) {
     decl::InputOption<std::vector<int>> inputs;
     ZEXPECT(!inputs.into(arg_of("7")));
-    ZEXPECT(!inputs.into(arg_of("--", {"8", "9"})));
+    ZEXPECT(!inputs.into(arg_of("8")));
+    ZEXPECT(!inputs.into(arg_of("9")));
     ZEXPECT(inputs.as_optional() == std::optional(std::vector<int>{7, 8, 9}));
 }
 

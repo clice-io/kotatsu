@@ -208,6 +208,9 @@ inline std::string base_meta_name(std::string_view value_token) {
     return std::string(value_token);
 }
 
+/// `arg_num` values written `value_token`, numbered: `<X1> <X2>`. A list of choices, `<a|b>`, is
+/// shown once for each value; any other token holding a space names each value itself,
+/// `<FROM> <TO>`, and is shown as written.
 inline std::string repeated_meta_vars(std::string_view value_token, unsigned arg_num) {
     if(arg_num <= 1) {
         return std::string(value_token);
@@ -215,6 +218,9 @@ inline std::string repeated_meta_vars(std::string_view value_token, unsigned arg
     if(value_token.find('|') != std::string_view::npos) {
         std::vector<std::string> values(arg_num, std::string(value_token));
         return join_strings(values, " ");
+    }
+    if(value_token.find(' ') != std::string_view::npos) {
+        return std::string(value_token);
     }
 
     const auto base_name = base_meta_name(value_token);
@@ -232,7 +238,12 @@ inline std::string usage_text(const CfgTy& cfg,
                               std::string_view fallback_name,
                               std::string_view value_token) {
     if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
-        return std::string(value_token);
+        // A fixed count shows each value, a range one followed by "...".
+        const auto arg_num = decl::input_arg_num<typename CfgTy::result_type>(cfg.arg_num);
+        if(arg_num.min != arg_num.max) {
+            return std::format("{}...", value_token);
+        }
+        return repeated_meta_vars(value_token, arg_num.min);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::TrailingInput) {
         return std::format("-- {}...", value_token);
     } else if constexpr(CfgTy::deco_field_ty == decl::DecoType::Flag) {
@@ -292,17 +303,10 @@ inline std::string usage_text_for_field(const FieldTy&,
                                         const config::Config& config) {
     if constexpr(ty::deco_option_like<FieldTy>) {
         using result_ty = typename ty::base_ty<FieldTy>::result_type;
-        const auto value_token = inferred_meta_var_token<result_ty>(cfg.meta_var, config);
-        if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
-            if constexpr(!trait::ScalarResultType<result_ty> &&
-                         trait::VectorResultType<result_ty>) {
-                return std::format("{}...", value_token);
-            } else {
-                return value_token;
-            }
-        } else {
-            return usage_text(cfg, help_mode, fallback_name, value_token);
-        }
+        return usage_text(cfg,
+                          help_mode,
+                          fallback_name,
+                          inferred_meta_var_token<result_ty>(cfg.meta_var, config));
     } else {
         return usage_text(cfg, help_mode, fallback_name, meta_var_token(cfg.meta_var));
     }

@@ -95,10 +95,18 @@ struct RestartsTwice {
         }
         return step.next();
     };)
-    <std::string> script;
+    <std::vector<std::string>> scripts;
 
     DecoKV(names = {"--name"}; required = false;)
     <std::string> name;
+};
+
+/// A scalar input that goes on from another input, which it does not take.
+struct RestartsOnASecondInput {
+    DecoInput(required = false; after_parsed = [](const Step& step) {
+        return step.restart(strings{"second.cc"});
+    };)
+    <std::string> script;
 };
 
 struct EveryName {
@@ -195,9 +203,21 @@ ZEST_CASE(restart_can_repeat) {
     const auto parsed = cli::parse<RestartsTwice>(argv);
     ZASSERT(parsed.has_value());
     ZEXPECT(Seen::calls == 2);
-    ZEXPECT(parsed->options.script.as_optional() == std::optional<std::string>("second.cc"));
+    // The inputs of every argv parsed add up.
+    ZEXPECT(parsed->options.scripts.as_optional() ==
+            std::optional(strings{"first.cc", "second.cc"}));
     ZEXPECT(parsed->options.name.as_optional() == std::optional<std::string>("final"));
     ZEXPECT(parsed->argv().size() == 2U);
+}
+
+ZEST_CASE(restart_on_a_second_input_to_a_scalar_fails) {
+    // The input before the restart counts.
+    auto argv = test::split("first.cc");
+    const auto parsed = cli::parse<RestartsOnASecondInput>(argv);
+    ZASSERT(!parsed.has_value());
+    ZEXPECT(parsed.error().type == cli::ParseError::Type::DecoParsing);
+    ZEXPECT(zest::ends_with(parsed.error().message,
+                            "unexpected input argument second.cc: expected 1 input argument"));
 }
 
 ZEST_CASE(restart_inside_a_forward_keeps_its_argv) {

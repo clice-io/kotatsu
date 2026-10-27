@@ -109,6 +109,11 @@ struct NoInput {
     verbose;
 };
 
+struct InputRange {
+    DecoInput(arg_num = {2, 4};)
+    <std::vector<std::string>> files;
+};
+
 /// What the table T's generator builds parses `line` into, up to the first error.
 struct Parsed {
     std::vector<std::string> argv;
@@ -170,6 +175,28 @@ ZEST_CASE(every_table_has_unknown_and_input) {
     ZEXPECT(infos[1].id == generator.input_option_id);
     ZEXPECT(!generator.has_input_option());
     ZEXPECT(!generator.has_trailing_option());
+}
+
+ZEST_CASE(input_takes_what_it_declares) {
+    // A scalar takes one.
+    const auto scalar = detail::generator_of<Everything>().input_arg_num;
+    ZEXPECT(scalar.min == 1U);
+    ZEXPECT(scalar.max == 1U);
+    const auto range = detail::generator_of<InputRange>().input_arg_num;
+    ZEXPECT(range.min == 2U);
+    ZEXPECT(range.max == 4U);
+}
+
+ZEST_CASE(input_arguments_carry_no_values) {
+    // Each positional is an argument of its own, a '/' that names no option too.
+    const auto parsed = parse_with_table<Everything>("a /x b");
+    ZASSERT(!parsed.error.has_value());
+    ZASSERT(parsed.args.size() == 3U);
+    for(const auto& arg: parsed.args) {
+        ZEST_CONTEXT("{}", arg.spelling);
+        ZEXPECT(arg.id == detail::generator_of<Everything>().input_option_id);
+        ZEXPECT(arg.values.empty());
+    }
 }
 
 ZEST_CASE(field_names_become_option_names) {

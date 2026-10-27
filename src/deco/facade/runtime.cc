@@ -1,5 +1,8 @@
 #include <algorithm>
+#include <format>
 #include <iostream>
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include "kota/deco/deco.h"
@@ -20,6 +23,17 @@ std::vector<std::string> argvify(int argc, const char* const* argv, unsigned ski
 }  // namespace kota::deco::util
 
 namespace kota::deco::cli {
+
+auto detail::input_args_text(decl::ArgNum arg_num) -> std::string {
+    const std::string_view noun = arg_num.min == 1 ? "input argument" : "input arguments";
+    if(arg_num.min == arg_num.max) {
+        return std::format("{} {}", arg_num.min, noun);
+    }
+    if(arg_num.max == decl::ArgNum::unbounded) {
+        return std::format("at least {} {}", arg_num.min, noun);
+    }
+    return std::format("{} to {} input arguments", arg_num.min, arg_num.max);
+}
 
 auto SubCommander::command_of(const decl::SubCommand& subcommand) -> std::string {
     if(subcommand.command.has_value()) {
