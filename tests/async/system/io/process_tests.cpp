@@ -37,6 +37,7 @@
 #include "async/harness/io.h"
 #include "async/harness/os.h"
 #include "sys/harness/signals.h"
+#include "sys/harness/streams.h"
 #include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
@@ -718,6 +719,25 @@ ZEST_CASE(kill_tree_ends_the_childs_children) {
 }
 
 #ifndef _WIN32
+// The loop's watch of its children, made at its first spawn, would take the
+// number of a standard stream this process closed around it: this process's
+// own reads of the stream would reach it, and a child inheriting the stream
+// would get it.
+ZEST_CASE(first_spawn_takes_no_closed_stream) {
+    test::ScopedClosedStream closed(0);
+    auto first = process::spawn(shell("exit 0"), loop);
+    ZASSERT(first.has_value());
+    ZEXPECT(::fcntl(0, F_GETFD) == -1);
+    auto opts = shell("test -e /dev/fd/0 && exit 1; exit 3");
+    opts.streams[0] = process::stdio::inherit();
+    auto second = process::spawn(opts, loop);
+    ZASSERT(second.has_value());
+
+    auto [first_status, second_status] = run(first->proc.wait(), second->proc.wait());
+    ZEXPECT(test::exit_code_of(first_status) == 0);
+    ZEXPECT(test::exit_code_of(second_status) == 3);
+}
+
 // The child is another's to reap once this test has: the wait says so
 // rather than wait for good.
 ZEST_CASE(wait_for_a_child_another_reaped_fails) {

@@ -443,8 +443,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
 
     Child child;
     // The child's standard handles, inheritable only while it is created and
-    // closed then; none where the stream is this process's and it has none
-    // open.
+    // closed then; a null one for Closed, and for Inherit or FD where this
+    // process has none, which a console the child gets of its own fills.
     std::array<Handle, 3> handles;
     bool shares_streams = false;
     constexpr DWORD standard[] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
@@ -453,6 +453,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         std::expected<Handle, std::error_code> made = Handle();
         switch(stream.kind) {
             case Stdio::Kind::Inherit: made = duplicate_standard(standard[i]); break;
+            case Stdio::Kind::Closed: break;
             case Stdio::Kind::Ignore: made = null_device(i == 0); break;
             case Stdio::Kind::FD:
                 if(stream.fd < 0) {

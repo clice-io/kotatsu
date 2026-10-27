@@ -23,10 +23,24 @@ namespace kota::sys {
 /// How a child's standard stream is set up.
 struct Stdio {
     enum class Kind : std::uint8_t {
-        /// This process's own stream; closed in the child where this process
-        /// has it closed, as a program may be started with one.
+        /// This process's own stream as it stands when the child starts:
+        /// what holds its number, on Windows its standard handle; where
+        /// there is none, closed in the child as Closed closes it, as a
+        /// program may be started with one closed. Whatever such a program
+        /// opens meanwhile takes the number, an event loop made since among
+        /// them, and reaches the child as the stream; on macOS a kqueue
+        /// there, an event loop's, fails the spawn with bad_file_descriptor.
         Inherit,
-        /// None: /dev/null, or NUL on Windows.
+        /// Closed in the child, whatever this process has there, which it
+        /// keeps; on Windows a null handle, in place of which a console the
+        /// child gets of its own puts one of its handles: one detached or
+        /// windows_hide_console gives it, or one Windows makes for a console
+        /// program when this process has none. For a program started
+        /// without the stream that holds its number open on /dev/null, so
+        /// that nothing it opens takes it, and starts its children as it
+        /// was started.
+        Closed,
+        /// /dev/null, or NUL on Windows.
         Ignore,
         /// File descriptor `fd` of this process, a C runtime one on Windows.
         FD,
@@ -48,6 +62,10 @@ struct Stdio {
 
     static Stdio inherit() {
         return {};
+    }
+
+    static Stdio closed() {
+        return {.kind = Kind::Closed};
     }
 
     static Stdio ignore() {

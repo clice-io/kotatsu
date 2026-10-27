@@ -18,6 +18,7 @@
 #include "child.h"
 #include "os.h"
 #include "signals.h"
+#include "kota/sys/detail/descriptors.h"
 #include "kota/sys/spawn.h"
 
 #ifdef __APPLE__
@@ -91,14 +92,9 @@ std::expected<std::array<Descriptor, 2>, std::error_code> connected_pair(bool so
     }
     std::array<Descriptor, 2> pair = {Descriptor(fds[0]), Descriptor(fds[1])};
     for(auto& end: pair) {
-        // Above the standard streams, which the child's are put in place of:
-        // in a process that closed one, a new descriptor takes its number.
-        if(end.fd < 3) {
-            Descriptor moved(::fcntl(end.fd, F_DUPFD_CLOEXEC, 3));
-            if(moved.fd < 0) {
-                return std::unexpected(errno_code());
-            }
-            end = std::move(moved);
+        end = Descriptor(detail::move_above_standard_streams(end.release()));
+        if(end.fd < 0) {
+            return std::unexpected(errno_code());
         }
     }
     if(socket) {
@@ -112,8 +108,8 @@ std::expected<std::array<Descriptor, 2>, std::error_code> connected_pair(bool so
     return pair;
 }
 
-/// What a stream's descriptor is for one that is /dev/null, and for one that
-/// is closed in the child as it is here.
+/// What a stream's descriptor is for one that is /dev/null, and for one
+/// closed in the child.
 constexpr int dev_null = -1;
 constexpr int closed_stream = -2;
 
@@ -275,16 +271,7 @@ struct ChildSetup {
 /// forbids it.
 int open_pidfd([[maybe_unused]] pid_t pid) {
 #ifdef SYS_pidfd_open
-    int fd = static_cast<int>(::syscall(SYS_pidfd_open, pid, 0));
-    // Above the standard streams, as connected_pair's ends: in a process
-    // that closed one it would take its number, and reach a child that
-    // inherits the stream.
-    if(fd >= 0 && fd < 3) {
-        int moved = ::fcntl(fd, F_DUPFD_CLOEXEC, 3);
-        ::close(fd);
-        fd = moved;
-    }
-    return fd;
+    return detail::move_above_standard_streams(static_cast<int>(::syscall(SYS_pidfd_open, pid, 0)));
 #else
     return -1;
 #endif
@@ -296,7 +283,8 @@ int open_pidfd([[maybe_unused]] pid_t pid) {
 /// waits for good on macOS for a child the system reaps itself, SIGCHLD
 /// ignored. A zombie, or a process exiting, is none kqueue knows of.
 std::error_code wait_for_exit(pid_t pid) {
-    Descriptor queue(::kqueue());
+    // kqueue() makes it close-on-exec.
+    Descriptor queue(detail::move_above_standard_streams(::kqueue()));
     if(queue.fd < 0) {
         return errno_code();
     }
@@ -327,6 +315,21 @@ std::error_code wait_for_exit(pid_t pid) {
 #endif
 
 }  // namespace
+
+namespace detail {
+
+int move_above_standard_streams(int fd) noexcept {
+    if(fd < 0 || fd > 2) {
+        return fd;
+    }
+    const int moved = ::fcntl(fd, F_DUPFD_CLOEXEC, 3);
+    const int error = errno;
+    ::close(fd);
+    errno = error;
+    return moved;
+}
+
+}  // namespace detail
 
 Child::~Child() {
     if(handle >= 0) {
@@ -494,6 +497,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
                 fds[i] =
                     ::fcntl(static_cast<int>(i), F_GETFD) < 0 ? closed_stream : static_cast<int>(i);
                 break;
+            case Stdio::Kind::Closed: fds[i] = closed_stream; break;
             case Stdio::Kind::Ignore: break;
             case Stdio::Kind::FD: fds[i] = stream.fd; break;
             case Stdio::Kind::File: fds[i] = stream.file; break;
@@ -591,8 +595,9 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         } else if(fd == target) {
             check(posix_spawn_file_actions_addinherit_np(&actions, fd));
         } else if(fd == closed_stream) {
-            // Closed whatever another thread opened there meanwhile: open
-            // first, as a close of what is not open fails the spawn.
+            // Closed whatever is there, this process's own or what another
+            // thread opened meanwhile: open first, as a close of what is not
+            // open fails the spawn.
             check(posix_spawn_file_actions_addopen(&actions, target, "/dev/null", O_RDONLY, 0));
             check(posix_spawn_file_actions_addclose(&actions, target));
         } else {

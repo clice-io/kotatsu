@@ -6,7 +6,8 @@
 //   on;
 // - its arguments, argv[0] among them, environment and working directory
 //   reach it as given, whatever their characters;
-// - its streams may be any of sys_probe's, swapped ones too;
+// - its streams may be any of sys_probe's, swapped ones too, and one closed
+//   in it alone, sys_probe keeping its own;
 // - on Linux it is started through the execve a hook preloaded into
 //   sys_probe would see, and a stop its tracer is told of ends nothing;
 // - on Windows it is born in a job nested in the one sys_probe is in, as a CI
@@ -95,6 +96,22 @@ test("streams_may_swap_descriptors", async (t) => {
   await driver.expectExit(0);
   assert.equal(output.trim(), '"to-stderr"');
   assert.equal(driver.stderr.trim(), '"to-stdout"');
+});
+
+// Each in turn: the child has the other two.
+test("closed_stream_is_closed_in_the_child_alone", async (t) => {
+  for (const index of [0, 1, 2]) {
+    const driver = await Driver.spawn(t, "sys_probe", [
+      "closed",
+      String(index),
+    ]);
+    const output = await driver.jsonLines().receive();
+    await driver.expectExit(0);
+    assert.deepEqual(output, {
+      open: 0b1000 | (0b111 & ~(1 << index)),
+      kept: true,
+    });
+  }
 });
 
 test(

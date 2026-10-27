@@ -69,10 +69,19 @@
 //                         prints whether that saw it: {"inherited": <bool>}
 //   handle <value> <name> Windows: exits with 1 when <value> is a handle of
 //                         the event named <name>, 0 otherwise
+//   open                  Windows: exits with 8 plus a number whose bit i
+//                         says that it has a handle for standard stream i:
+//                         its stdout may be the stream it has not
+//   closed <i>            starts a child that exits as open does, its
+//                         standard stream <i> closed and the others this
+//                         one's, and prints {"open": <what that exited with>,
+//                         "kept": <whether this one still has stream <i>>};
+//                         on Windows `sys_probe open`, in a console this one
+//                         shares, elsewhere the shell
 //
-// Each prints one JSON line to stdout but for hang and traceme, and exits
-// with 0; 1 when a call fails, saying why on stderr; 2 for a command it does
-// not know.
+// Each prints one JSON line to stdout and exits with 0 unless its entry says
+// otherwise; 1 when a call fails, saying why on stderr; 2 for a command it
+// does not know.
 
 #include <chrono>
 #include <cstddef>
@@ -110,6 +119,10 @@
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
+
+#ifndef _WIN32
+#include <fcntl.h>
 #endif
 
 #include "kota/fs/resolve.h"
@@ -270,6 +283,18 @@ kota::sys::SpawnOptions hanging(kota::sys::CreationOptions creation) {
     return options;
 }
 
+/// Whether this process has standard stream `index` (0 to 2): on Windows a
+/// handle there.
+bool has_stream(int index) {
+#ifdef _WIN32
+    constexpr DWORD standard[] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
+    HANDLE handle = ::GetStdHandle(standard[index]);
+    return handle != nullptr && handle != INVALID_HANDLE_VALUE;
+#else
+    return ::fcntl(index, F_GETFD) != -1;
+#endif
+}
+
 /// Runs `options`' child to its exit, and exits with its code.
 int run(const kota::sys::SpawnOptions& options) {
     auto child = kota::sys::spawn(options);
@@ -390,6 +415,38 @@ int main() {
             .args = std::vector<std::string>(arguments.begin() + 3, arguments.end()),
         });
     }
+    if(command == "closed" && arguments.size() == 3 && arguments[2].size() == 1 &&
+       arguments[2][0] >= '0' && arguments[2][0] <= '2') {
+        const int index = arguments[2][0] - '0';
+#ifdef _WIN32
+        // One the child shares: a console of its own, which Windows makes
+        // for it when this one has none, would fill the null handle.
+        ::AllocConsole();
+        auto options = probe({"open"});
+#else
+        // Not this program, which a sanitizer, as it starts, may give a
+        // descriptor of its own on a standard stream's number.
+        sys::SpawnOptions options{
+            .program = "/bin/sh",
+            .args = {"-c",
+                     "held=8; for i in 0 1 2; do [ -e /dev/fd/$i ] && held=$((held | 1 << i)); "
+                     "done; exit $held"},
+        };
+#endif
+        options.streams[index] = sys::Stdio::closed();
+        auto child = sys::spawn(options);
+        if(!child) {
+            return fail("spawn", child.error());
+        }
+        auto status = child->wait();
+        if(!status) {
+            return fail("wait", status.error());
+        }
+        print_line(std::format(R"({{"open":{},"kept":{}}})",
+                               status->code,
+                               has_stream(index) ? "true" : "false"));
+        return 0;
+    }
     if(command == "orphan") {
         auto child = sys::spawn(hanging({.exit_with_parent = true}));
         if(!child) {
@@ -472,6 +529,13 @@ int main() {
     }
 #endif
 #ifdef _WIN32
+    if(command == "open") {
+        int held = 8;
+        for(int index = 0; index < 3; ++index) {
+            held |= has_stream(index) ? 1 << index : 0;
+        }
+        return held;
+    }
     if(command == "nested") {
         // As a CI runner's: a job of its own, which its processes' children
         // may leave.
