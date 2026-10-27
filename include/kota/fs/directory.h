@@ -5,6 +5,7 @@
 #include <expected>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -38,7 +39,8 @@ struct DirEntry {
     /// when this is called, through the directory, which stays open while an
     /// entry of it lives: an entry removed since fails with
     /// no_such_file_or_directory, and one on FAT that no open reaches gets
-    /// what the listing told, without an ID or the link count.
+    /// what the listing told, without an ID or the link count. An entry made
+    /// rather than listed fails with bad_file_descriptor.
     std::expected<Status, std::error_code> status() const;
 
 private:
@@ -51,8 +53,8 @@ private:
 #ifdef _WIN32
     /// What the listing told of the status: all of it, or on a file system
     /// that lists no IDs (FAT) all but the ID and links, which `status()`
-    /// then opens the entry for.
-    Status listed;
+    /// then opens the entry for. Empty in an entry made rather than listed.
+    std::optional<Status> listed;
 #endif
 };
 

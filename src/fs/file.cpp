@@ -531,9 +531,23 @@ std::error_code File::resize(std::uint64_t size) {
 
 std::error_code File::sync() {
 #ifdef __APPLE__
-    // Network file systems, among others, have no F_FULLFSYNC.
+    // fsync() stands in only where the file takes no F_FULLFSYNC: on a
+    // network file system (ENOTSUP), one without the call (ENOTTY), a
+    // read-only one (EROFS), for a device (ENODEV), and for a pipe or a
+    // socket (EBADF, where fsync() tells ENOTSUP). A file whose volume went
+    // away fails with EBADF too, and fsync() then succeeds without writing;
+    // after any other error, such as a flush that failed (EIO), it could
+    // succeed as well and hide the error.
     if(::fcntl(handle, F_FULLFSYNC) == 0) {
         return {};
+    }
+    auto error = errno;
+    struct stat info;
+    bool unsupported = error == ENOTSUP || error == ENOTTY || error == EROFS || error == ENODEV ||
+                       (error == EBADF && ::fstat(handle, &info) == 0 &&
+                        (S_ISFIFO(info.st_mode) || S_ISSOCK(info.st_mode)));
+    if(!unsupported) {
+        return std::error_code(error, std::generic_category());
     }
 #endif
     return ::fsync(handle) == 0 ? std::error_code() : posix::last_error();

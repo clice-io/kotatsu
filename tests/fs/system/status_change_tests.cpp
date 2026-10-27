@@ -58,15 +58,6 @@ Time mtime_of(const std::string& path) {
     return found->mtime;
 }
 
-#ifdef _WIN32
-/// The attributes of `path`.
-DWORD attributes_of(const std::string& path) {
-    auto attributes = ::GetFileAttributesW(test::std_path(path).wstring().c_str());
-    ZASSERT(attributes != INVALID_FILE_ATTRIBUTES);
-    return attributes;
-}
-#endif
-
 /// The permissions of `path`.
 std::uint16_t permissions_of(const std::string& path) {
     auto found = status(path);
@@ -162,10 +153,10 @@ ZEST_CASE(set_permissions_sets_who_may_write) {
     ZEXPECT(!set_permissions(dir.file("é中😀.txt"), 0444));
 #ifdef _WIN32
     ZEXPECT(permissions_of(dir.file("é中😀.txt")) == 0444u);
-    ZEXPECT((attributes_of(dir.file("é中😀.txt")) & FILE_ATTRIBUTE_READONLY) != 0);
+    ZEXPECT((test::attributes_of(dir.file("é中😀.txt")) & FILE_ATTRIBUTE_READONLY) != 0);
     ZEXPECT(!set_permissions(dir.file("é中😀.txt"), 0644));
     ZEXPECT(permissions_of(dir.file("é中😀.txt")) == 0666u);
-    ZEXPECT((attributes_of(dir.file("é中😀.txt")) & FILE_ATTRIBUTE_READONLY) == 0);
+    ZEXPECT((test::attributes_of(dir.file("é中😀.txt")) & FILE_ATTRIBUTE_READONLY) == 0);
 #else
     ZEXPECT(permissions_of(dir.file("é中😀.txt")) == 0444u);
     ZEXPECT(!set_permissions(dir.file("é中😀.txt"), 0755));
@@ -183,7 +174,7 @@ ZEST_CASE(set_permissions_clears_the_only_attribute) {
     ZASSERT(::SetFileAttributesW(test::std_path(dir.file("file.txt")).wstring().c_str(),
                                  FILE_ATTRIBUTE_READONLY));
     ZEXPECT(!set_permissions(dir.file("file.txt"), 0666));
-    ZEXPECT((attributes_of(dir.file("file.txt")) & FILE_ATTRIBUTE_READONLY) == 0);
+    ZEXPECT((test::attributes_of(dir.file("file.txt")) & FILE_ATTRIBUTE_READONLY) == 0);
 }
 
 ZEST_CASE(set_permissions_keeps_the_other_attributes) {
@@ -192,10 +183,10 @@ ZEST_CASE(set_permissions_keeps_the_other_attributes) {
     ZASSERT(::SetFileAttributesW(test::std_path(dir.file("file.txt")).wstring().c_str(),
                                  FILE_ATTRIBUTE_HIDDEN));
     ZEXPECT(!set_permissions(dir.file("file.txt"), 0444));
-    ZEXPECT(attributes_of(dir.file("file.txt")) ==
+    ZEXPECT(test::attributes_of(dir.file("file.txt")) ==
             DWORD{FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_READONLY});
     ZEXPECT(!set_permissions(dir.file("file.txt"), 0666));
-    ZEXPECT(attributes_of(dir.file("file.txt")) == DWORD{FILE_ATTRIBUTE_HIDDEN});
+    ZEXPECT(test::attributes_of(dir.file("file.txt")) == DWORD{FILE_ATTRIBUTE_HIDDEN});
 }
 #endif
 

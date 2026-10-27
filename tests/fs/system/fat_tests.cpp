@@ -218,6 +218,27 @@ ZEST_CASE(rename_replaces_a_read_only_file) {
     });
 }
 
+ZEST_CASE(rename_onto_a_read_only_file_held_open_fails) {
+    // The move fails while any handle to the file is open: the attribute
+    // taken off for it goes back.
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("new.txt"), "new");
+        test::write_text(dir.file("old.txt"), "old");
+        make_read_only(dir.file("old.txt"));
+        {
+            auto held = File::open(dir.file("old.txt"));
+            ZASSERT(held.has_value());
+            ZEXPECT(rename(dir.file("new.txt"), dir.file("old.txt")) ==
+                    std::errc::permission_denied);
+        }
+        ZEXPECT((test::attributes_of(dir.file("old.txt")) & FILE_ATTRIBUTE_READONLY) != 0);
+        ZEXPECT(test::read_text(dir.file("old.txt")) == "old");
+        ZEXPECT(test::read_text(dir.file("new.txt")) == "new");
+        // TempDir, through std::filesystem, would leave a read-only file.
+        ZEXPECT(remove(dir.file("old.txt")) == true);
+    });
+}
+
 ZEST_CASE(write_file_atomic_replaces_the_whole_file) {
     on_fat([](const test::TempDir& dir) {
         test::write_text(dir.file("file.txt"), "old");

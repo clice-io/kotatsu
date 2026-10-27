@@ -196,6 +196,36 @@ DWORD dispose(HANDLE handle) {
     return error;
 }
 
+/// A file open to change its attributes, with them, its ID and when it was
+/// made and last written, which together tell it, as far as FAT can, from a
+/// file that has taken its name since: FAT's ID is the place of the file's
+/// entry, which a new file may take over, and a file made under a name that
+/// went moments before takes over its creation time too (tunneling), though
+/// not its write time.
+struct AttributeHandle {
+    win32::Handle handle;
+    FILE_BASIC_INFO basic;
+    FileID id;
+};
+
+/// What `path` names, a link itself, as an AttributeHandle; empty when it
+/// cannot be opened or read.
+std::optional<AttributeHandle> open_attributes(const wchar_t* path) {
+    auto handle = win32::try_open(path,
+                                  FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+                                  FILE_FLAG_OPEN_REPARSE_POINT);
+    FILE_BASIC_INFO basic;
+    if(handle.get() == INVALID_HANDLE_VALUE ||
+       !::GetFileInformationByHandleEx(handle.get(), FileBasicInfo, &basic, sizeof(basic))) {
+        return std::nullopt;
+    }
+    auto id = win32::file_id(handle.get());
+    if(!id) {
+        return std::nullopt;
+    }
+    return AttributeHandle{.handle = std::move(handle), .basic = basic, .id = *id};
+}
+
 /// Whether an open failed because nothing is there: a missing name, or a
 /// component that is a file rather than a directory.
 bool names_nothing(DWORD error) {
@@ -364,6 +394,22 @@ struct DirCloser {
 
 using DirHandle = std::unique_ptr<DIR, DirCloser>;
 
+/// A descriptor, closed when this goes.
+struct Descriptor {
+    explicit Descriptor(int fd) : fd(fd) {}
+
+    Descriptor(const Descriptor&) = delete;
+    Descriptor& operator=(const Descriptor&) = delete;
+
+    ~Descriptor() {
+        if(fd >= 0) {
+            ::close(fd);
+        }
+    }
+
+    int fd;
+};
+
 std::expected<DirHandle, std::error_code> open_dir(std::string_view path) {
     posix::CPath c_path;
     if(auto error = c_path.assign(path)) {
@@ -435,11 +481,11 @@ std::error_code
         directory = S_ISDIR(info.st_mode);
     }
     if(directory) {
-        int fd = ::openat(dir_fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-        if(fd >= 0) {
-            auto error = remove_contents(fd, removed);
-            ::close(fd);
-            if(error) {
+        // Closed however the walk inside ends, a throw included, and before
+        // the directory is removed.
+        Descriptor opened(::openat(dir_fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+        if(opened.fd >= 0) {
+            if(auto error = remove_contents(opened.fd, removed)) {
                 return error;
             }
         } else if(errno == ENOENT) {
@@ -565,7 +611,7 @@ void DirStream::advance() {
         const auto& info = *static_cast<const FILE_ID_EXTD_DIR_INFO*>(*entry);
         from_utf16(made.name, name_of<FILE_ID_EXTD_DIR_INFO>(*entry));
         made.listed = listed_status(info, info.ReparsePointTag);
-        made.listed.id = win32::id_of(directory->device, info.FileId);
+        made.listed->id = win32::id_of(directory->device, info.FileId);
     } else {
         // A reparse point's tag stands where the size of its extended
         // attributes would.
@@ -574,7 +620,7 @@ void DirStream::advance() {
         made.listed = listed_status(info, info.EaSize);
         made.directory = directory;
     }
-    made.type = made.listed.type;
+    made.type = made.listed->type;
 #else
     auto* dir = directory->dir.get();
     auto entry = next_entry(dir);
@@ -608,8 +654,12 @@ std::expected<Volume, std::error_code> DirStream::volume() const {
 
 std::expected<Status, std::error_code> DirEntry::status() const {
 #ifdef _WIN32
+    // One made rather than listed has no listing to tell it.
+    if(!listed) {
+        return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
+    }
     if(!directory) {
-        return listed;
+        return *listed;
     }
     // By the name as listed, relative to the directory, which Win32 would
     // rewrite (`a.` naming `a`); back in the UTF-16 it came from, which
@@ -624,7 +674,7 @@ std::expected<Status, std::error_code> DirEntry::status() const {
     // without an ID or links.
     auto error = ::GetLastError();
     if(error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED) {
-        return listed;
+        return *listed;
     }
     return std::unexpected(windows::to_error_code(error));
 #else
@@ -809,22 +859,32 @@ std::error_code rename(std::string_view from, std::string_view to) {
         return windows::to_error_code(error);
     }
     // A file system without POSIX renames (FAT), which replaces no
-    // read-only file: `to` goes without the attribute meanwhile.
+    // read-only file: `to` goes without the attribute meanwhile. Should the
+    // move fail, the attribute goes back only on the same file, which
+    // another may have replaced meanwhile.
     handle = win32::Handle();
     if(::MoveFileExW(source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         return {};
     }
     auto error = ::GetLastError();
-    auto attributes = ::GetFileAttributesW(target.c_str());
-    if(attributes == INVALID_FILE_ATTRIBUTES || !(attributes & FILE_ATTRIBUTE_READONLY) ||
-       !::SetFileAttributesW(target.c_str(), attributes & ~FILE_ATTRIBUTE_READONLY)) {
+    auto before = open_attributes(target.c_str());
+    if(!before || !(before->basic.FileAttributes & FILE_ATTRIBUTE_READONLY) ||
+       !win32::set_attributes(before->handle.get(),
+                              before->basic.FileAttributes & ~FILE_ATTRIBUTE_READONLY)) {
         return windows::to_error_code(error);
     }
+    // The move fails while any handle to `to` is open.
+    before->handle = win32::Handle();
     if(::MoveFileExW(source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         return {};
     }
     error = ::GetLastError();
-    ::SetFileAttributesW(target.c_str(), attributes);
+    if(auto after = open_attributes(target.c_str());
+       after && after->id == before->id &&
+       after->basic.CreationTime.QuadPart == before->basic.CreationTime.QuadPart &&
+       after->basic.LastWriteTime.QuadPart == before->basic.LastWriteTime.QuadPart) {
+        win32::set_attributes(after->handle.get(), before->basic.FileAttributes);
+    }
     return windows::to_error_code(error);
 #else
     posix::CPath source;

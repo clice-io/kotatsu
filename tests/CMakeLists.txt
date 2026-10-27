@@ -8,8 +8,10 @@
 #   integration/
 #             programs talking over real protocols: TypeScript tests on
 #             node's test runner, and the drivers they spawn
-#   <name>/   a check built against one target alone, which zest, on the
-#             event loop, cannot be part of; in kota_check_programs
+#   <name>/   a check that is a program of its own: one built against one
+#             target alone, which zest, on the event loop, cannot be part
+#             of, or one that replaces what a test binary shares, such as the
+#             global operator new; in kota_check_programs
 # Modules are added in dependency order; examples/ holds the tests of the
 # examples, by module, last. harness/ here holds what every module's
 # integration tests share.
