@@ -749,7 +749,8 @@ ZEST_CASE(open_then_kill_ends_the_process) {
     ZASSERT(child.has_value());
     auto opened = process::open(child->pid(), loop);
     ZASSERT(opened.has_value());
-    ZEXPECT(!opened->kill(SIGTERM));
+    // A failed kill would leave the wait below waiting until the watchdog.
+    ZASSERT(!opened->kill(SIGTERM));
 
     auto [status] = run(opened->wait());
     ZASSERT(status.has_value());

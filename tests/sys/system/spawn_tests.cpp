@@ -1319,10 +1319,11 @@ ZEST_CASE(spawn_inheriting_a_stdin_not_open_runs_the_child) {
 }
 
 // The spawned Child holds the process's handle, so its ID stays the
-// process's while the case runs.
-ZEST_CASE(open_reads_the_exit_of_a_process_another_started) {
+// process's while the case runs, after its exit too.
+ZEST_CASE(open_reads_the_exit_of_a_process_that_exited) {
     auto child = spawn(test::shell("exit 3"));
     ZASSERT(child.has_value());
+    ZASSERT(child->wait().has_value());
     auto opened = Child::open(child->pid());
     ZASSERT(opened.has_value());
     ZEXPECT(opened->pid() == child->pid());
@@ -1331,7 +1332,6 @@ ZEST_CASE(open_reads_the_exit_of_a_process_another_started) {
     ZEXPECT(status->code == 3);
     ZEXPECT(status->term_signal == 0);
     ZEXPECT(opened->kill_tree() == std::errc::invalid_argument);
-    ZEXPECT(child->wait().has_value());
 }
 
 ZEST_CASE(open_then_kill_ends_the_process) {
@@ -1342,7 +1342,8 @@ ZEST_CASE(open_then_kill_ends_the_process) {
     auto opened = Child::open(child->pid());
     ZASSERT(opened.has_value());
     ZEXPECT(opened->try_wait() == std::optional<ExitStatus>());
-    ZEXPECT(!opened->kill(SIGTERM));
+    // A failed kill would leave the wait below waiting for good.
+    ZASSERT(!opened->kill(SIGTERM));
     auto status = opened->wait();
     ZASSERT(status.has_value());
     ZEXPECT(status->term_signal == SIGTERM);
@@ -1354,6 +1355,13 @@ ZEST_CASE(open_of_no_process_fails) {
     auto opened = Child::open(0x7FFF'FFFC);
     ZASSERT(!opened.has_value());
     ZEXPECT(opened.error() == std::errc::no_such_process);
+}
+
+ZEST_CASE(open_of_a_process_this_one_may_not_end_fails) {
+    // The System process, which no program may end.
+    auto opened = Child::open(4);
+    ZASSERT(!opened.has_value());
+    ZEXPECT(opened.error() == std::errc::permission_denied);
 }
 #endif
 

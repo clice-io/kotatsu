@@ -20,13 +20,10 @@ target_link_libraries(kota_ipc_codec PUBLIC
 
 kota_apply_project_options(kota_ipc_codec)
 
+# kota::codec carries simdjson when it is enabled.
 if(KOTA_CODEC_ENABLE_SIMDJSON)
     target_sources(kota_ipc_codec PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/codec/json.cpp"
-    )
-
-    target_link_libraries(kota_ipc_codec PUBLIC
-        kota::codec::json
     )
 endif()
 
