@@ -128,6 +128,14 @@ struct HelpedDeep {
     <std::string> name;
 };
 
+/// A rename, of what is named to what it becomes.
+struct Rename {
+    DecoInput(meta_var = "<FROM> <TO>"; arg_num = 2; help = "the old name and the new";)
+    <std::vector<std::string>> names;
+
+    decl::HelpOption help;
+};
+
 /// The usage `command` prints.
 template <typename T>
 std::string usage_of(const cli::Command<T>& command) {
@@ -608,6 +616,15 @@ ZEST_CASE(command_renderer_beats_the_default_renderer) {
     auto command = cli::command<WebCli>("webcli [OPTIONS]");
     command.render_with(test::tagged_renderer());
     ZEXPECT(usage_of(command) == "USAGE<webcli [OPTIONS]:help>");
+}
+
+ZEST_CASE(help_shows_a_pair_of_inputs_as_named) {
+    auto command = cli::command<Rename>("rename [OPTIONS]");
+    int code = -1;
+    auto printed = test::printed_by([&] { code = run(command, "--help"); });
+    ZEXPECT(code == 0);
+    ZEXPECT(zest::contains(printed, "  <FROM> <TO>"));
+    ZEXPECT(zest::contains(printed, "the old name and the new"));
 }
 
 ZEST_CASE(usage_lists_the_options_by_category) {

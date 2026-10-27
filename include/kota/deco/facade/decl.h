@@ -163,6 +163,7 @@ struct ParseControl {
     /// IMPORTANT: `next_argv` must outlive the parsing session (and any returned Invocation that
     /// exposes `argv()`).
     /// For callback-local rewritten argv, use the `std::vector<std::string>` overload.
+    /// The inputs parsed before the restart count toward the DecoInput's `arg_num`.
     static auto restart(std::span<std::string> next_argv) -> ParseControl {
         return ParseControl(Action::Restart, next_argv);
     }
@@ -527,7 +528,9 @@ struct NamedOptionFields : CommonOptionFields {
 
 /// How many positional arguments a DecoInput with a vector result takes when it is given: `min`
 /// to `max`. A number is exactly that many; the default is one or more. Whether the input may be
-/// left out altogether is `required`'s to say.
+/// left out altogether is `required`'s to say. The parse counts every input it reads, those
+/// before a restart or an alias forward too; a hook that resets the DecoInput does not restart
+/// the count.
 struct ArgNum {
     constexpr static std::uint32_t unbounded = std::numeric_limits<std::uint32_t>::max();
 
@@ -539,6 +542,8 @@ struct ArgNum {
     constexpr ArgNum(std::uint32_t count) : min{count}, max{count} {}
 
     constexpr ArgNum(std::uint32_t min, std::uint32_t max) : min{min}, max{max} {}
+
+    constexpr bool operator==(const ArgNum&) const = default;
 };
 
 struct InputFields : CommonOptionFields {
@@ -547,15 +552,31 @@ struct InputFields : CommonOptionFields {
     constexpr InputFields() = default;
 };
 
-/// How many positional arguments DecoInput `cfg`, of result `ResTy`, takes when it is given: a
-/// scalar takes one, a vector what `cfg.arg_num` says.
+/// How many positional arguments a DecoInput of result `ResTy` declared with `arg_num` takes: a
+/// scalar one, a vector `arg_num`.
 template <typename ResTy>
-constexpr ArgNum input_arg_num(const InputFields& cfg) {
+constexpr ArgNum input_arg_num(ArgNum arg_num) {
     if constexpr(trait::ScalarResultType<ResTy>) {
         return ArgNum(1);
     } else {
-        return cfg.arg_num;
+        return arg_num;
     }
+}
+
+/// Why a DecoInput of result `ResTy` cannot be declared with `arg_num`, or nothing when it can.
+template <typename ResTy>
+constexpr std::string_view invalid_input_arg_num(ArgNum arg_num) {
+    if(arg_num.min == 0) {
+        return "DecoInput arg_num must be at least 1; required = false lets it be left out";
+    }
+    if(arg_num.min > arg_num.max) {
+        return "DecoInput arg_num min must not exceed its max";
+    }
+    // A count declared must be the one taken, which only a scalar's result overrides.
+    if(arg_num != ArgNum() && arg_num != input_arg_num<ResTy>(arg_num)) {
+        return "DecoInput with a scalar result takes exactly one input argument";
+    }
+    return {};
 }
 
 struct PackFields : CommonOptionFields {
@@ -953,9 +974,8 @@ struct ScalarOption : DecoOption<ResTy> {
     }
 };
 
-/// What a DecoInput parses into: each positional argument, its spelling, which carries no
-/// values. A scalar takes one, and a vector collects them; how many a DecoInput is given is
-/// counted by the parse, which knows its declaration.
+/// What a DecoInput parses into, one positional argument at a time: a scalar takes its spelling,
+/// a vector appends it. The parse counts them against `arg_num`.
 template <typename ResTy>
 struct InputOption : DecoOption<ResTy> {
     static_assert(trait::ValueResultType<ResTy>, DecoValueResultErrString);

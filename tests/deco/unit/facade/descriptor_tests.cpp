@@ -110,7 +110,8 @@ struct VectorInput {
     <std::vector<std::string>> files;
 };
 
-/// Inputs of each count, described one by one and never parsed, which takes one DecoInput.
+/// Inputs of each count, described one by one; never parsed: a parsed struct declares one
+/// DecoInput.
 struct CountedInputs {
     DecoInput(meta_var = "X"; arg_num = 1;)
     <std::vector<std::string>> one;
@@ -341,6 +342,15 @@ ZEST_CASE(enum_value_shows_its_names) {
     ZEXPECT(desc::from_deco_option(options.pair, false, "pair") ==
             "--pair <low|mid|high> <low|mid|high>");
     ZEXPECT(desc::from_deco_option(options.inputs) == "<low|mid|high>...");
+}
+
+ZEST_CASE(enum_names_joined_by_a_spaced_separator_show_once_for_each_value) {
+    // A space in a list of choices does not name each value.
+    const Enums options{};
+    auto config = config::get();
+    config.enum_meta_var.separator = " | ";
+    ZEXPECT(desc::from_deco_option(options.pair, false, "pair", &config) ==
+            "--pair <low | mid | high> <low | mid | high>");
 }
 
 ZEST_CASE(enum_names_past_the_limit_are_cut) {

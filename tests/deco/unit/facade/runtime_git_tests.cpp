@@ -100,6 +100,22 @@ ZEST_CASE(clone_takes_its_repository_and_branch) {
     ZEXPECT(git.cloned->branch.as_optional() == std::optional<std::string>("main"));
 }
 
+ZEST_CASE(clone_without_its_repository_fails) {
+    Git git;
+    git("clone -b main");
+    ZEXPECT(!git.cloned.has_value());
+    ZASSERT(git.error.has_value());
+    ZEXPECT(zest::ends_with(*git.error, "expected 1 input argument, got 0"));
+}
+
+ZEST_CASE(clone_of_two_repositories_fails) {
+    Git git;
+    git("clone a b");
+    ZEXPECT(!git.cloned.has_value());
+    ZASSERT(git.error.has_value());
+    ZEXPECT(zest::ends_with(*git.error, "unexpected input argument b: expected 1 input argument"));
+}
+
 ZEST_CASE(commit_without_its_message_fails) {
     Git git;
     git("commit -a");

@@ -208,16 +208,19 @@ inline std::string base_meta_name(std::string_view value_token) {
     return std::string(value_token);
 }
 
-/// `arg_num` values written `value_token`, numbered: `<X1> <X2>`. A token holding a space names
-/// each value itself, `<FROM> <TO>`, and is shown as written; a list of choices, `<a|b>`, is
-/// shown once for each value.
+/// `arg_num` values written `value_token`, numbered: `<X1> <X2>`. A list of choices, `<a|b>`, is
+/// shown once for each value; any other token holding a space names each value itself,
+/// `<FROM> <TO>`, and is shown as written.
 inline std::string repeated_meta_vars(std::string_view value_token, unsigned arg_num) {
-    if(arg_num <= 1 || value_token.find(' ') != std::string_view::npos) {
+    if(arg_num <= 1) {
         return std::string(value_token);
     }
     if(value_token.find('|') != std::string_view::npos) {
         std::vector<std::string> values(arg_num, std::string(value_token));
         return join_strings(values, " ");
+    }
+    if(value_token.find(' ') != std::string_view::npos) {
+        return std::string(value_token);
     }
 
     const auto base_name = base_meta_name(value_token);
@@ -236,7 +239,7 @@ inline std::string usage_text(const CfgTy& cfg,
                               std::string_view value_token) {
     if constexpr(CfgTy::deco_field_ty == decl::DecoType::Input) {
         // A fixed count shows each value, a range one followed by "...".
-        const auto arg_num = decl::input_arg_num<typename CfgTy::result_type>(cfg);
+        const auto arg_num = decl::input_arg_num<typename CfgTy::result_type>(cfg.arg_num);
         if(arg_num.min != arg_num.max) {
             return std::format("{}...", value_token);
         }

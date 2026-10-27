@@ -72,7 +72,7 @@ struct Declared {
     stops;
 };
 
-/// Inputs of each count, never parsed, which takes one DecoInput.
+/// Inputs of each count; never parsed: a parsed struct declares one DecoInput.
 struct CountedInputs {
     DecoInput()
     <std::vector<std::string>> any;

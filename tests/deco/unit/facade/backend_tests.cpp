@@ -179,10 +179,10 @@ ZEST_CASE(every_table_has_unknown_and_input) {
 
 ZEST_CASE(input_takes_what_it_declares) {
     // A scalar takes one.
-    const auto scalar = detail::generator_of<Everything>().input_arg_num();
+    const auto scalar = detail::generator_of<Everything>().input_arg_num;
     ZEXPECT(scalar.min == 1U);
     ZEXPECT(scalar.max == 1U);
-    const auto range = detail::generator_of<InputRange>().input_arg_num();
+    const auto range = detail::generator_of<InputRange>().input_arg_num;
     ZEXPECT(range.min == 2U);
     ZEXPECT(range.max == 4U);
 }

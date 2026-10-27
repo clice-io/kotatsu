@@ -389,9 +389,6 @@ private:
 
     Trailing trailing{};
 
-    /// How many positional arguments the DecoInput takes when it is given.
-    decl::ArgNum input_args{};
-
     /// Adds an option of `kind` taking `num_args` values, which parses into the field
     /// `accessor` reaches (an alias reaches none), and returns its id. It is named later.
     constexpr std::uint32_t new_option(backend::Kind kind,
@@ -538,28 +535,6 @@ private:
         return static_cast<unsigned char>(arg_num);
     }
 
-    /// How many positional arguments DecoInput `cfg` takes when it is given. Leaving it out is
-    /// `required = false`'s to allow, not a count of zero's; a scalar takes one, which it may
-    /// declare or leave to the default.
-    template <typename CfgTy>
-    constexpr static decl::ArgNum checked_input_arg_num(const CfgTy& cfg) {
-        using result_ty = typename CfgTy::result_type;
-        const auto arg_num = cfg.arg_num;
-        if(arg_num.min == 0) {
-            KOTA_THROW(
-                "DecoInput arg_num must be at least 1; required = false lets it be left out");
-        }
-        if(arg_num.min > arg_num.max) {
-            KOTA_THROW("DecoInput arg_num min must not exceed its max");
-        }
-        if constexpr(trait::ScalarResultType<result_ty>) {
-            if(arg_num.min != 1 || (arg_num.max != 1 && arg_num.max != decl::ArgNum::unbounded)) {
-                KOTA_THROW("DecoInput with a scalar result takes exactly one input argument");
-            }
-        }
-        return decl::input_arg_num<result_ty>(cfg);
-    }
-
     template <typename ResultTy, typename CallbackTy>
     static auto invoke_parse_callback(parse_callback_t::erased_fn callback,
                                       const ParsedArgOwning& arg,
@@ -617,6 +592,10 @@ private:
     }
 
 public:
+    /// How many positional arguments the DecoInput takes; the default when the struct declares
+    /// none.
+    decl::ArgNum input_arg_num{};
+
     constexpr LLVMOptGenerator() :
         str_pool(resource), items(resource), accessors(resource), categories(resource),
         callbacks(resource), alias_metas(resource), alias_tokens(resource) {
@@ -642,7 +621,12 @@ public:
         if(has_input_option()) {
             KOTA_THROW("Only one DecoInput can be declared");
         }
-        input_args = checked_input_arg_num(cfg);
+        using result_ty = typename CfgTy::result_type;
+        if(const auto reason = decl::invalid_input_arg_num<result_ty>(cfg.arg_num);
+           !reason.empty()) {
+            KOTA_THROW(reason);
+        }
+        input_arg_num = decl::input_arg_num<result_ty>(cfg.arg_num);
         accessors[input_option_id] = base_t::accessor_from_path(path);
         categories[input_option_id] = cfg.category.ptr();
         callbacks[input_option_id] = make_parse_callback(cfg);
@@ -750,13 +734,6 @@ public:
 
     constexpr bool has_trailing_option() const {
         return trailing.accessor != nullptr;
-    }
-
-    /// How many positional arguments the DecoInput takes when it is given; the struct must
-    /// declare one.
-    constexpr decl::ArgNum input_arg_num() const {
-        assert(has_input_option());
-        return input_args;
     }
 
     /// The options of the table, from the unknown option on (without the dummy).
