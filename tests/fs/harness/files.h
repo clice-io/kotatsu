@@ -70,15 +70,18 @@ private:
         auto wide = path.wstring();
         std::filesystem::path verbatim(wide.starts_with(LR"(\\?\)") ? wide : LR"(\\?\)" + wide);
         // std::filesystem removes no read-only file, MinGW's anywhere and
-        // MSVC's on FAT: what a case left goes writable first.
+        // MSVC's on FAT: what a case left goes writable first. A link is
+        // not followed to what may lie outside.
         using std::filesystem::recursive_directory_iterator;
         for(recursive_directory_iterator walk(verbatim, ignored);
             walk != recursive_directory_iterator();
             walk.increment(ignored)) {
-            std::filesystem::permissions(walk->path(),
-                                         std::filesystem::perms::owner_write,
-                                         std::filesystem::perm_options::add,
-                                         ignored);
+            if(walk->symlink_status(ignored).type() == std::filesystem::file_type::regular) {
+                std::filesystem::permissions(walk->path(),
+                                             std::filesystem::perms::owner_write,
+                                             std::filesystem::perm_options::add,
+                                             ignored);
+            }
         }
         std::filesystem::remove_all(verbatim, ignored);
 #else
