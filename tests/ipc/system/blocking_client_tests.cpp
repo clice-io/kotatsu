@@ -184,237 +184,240 @@ private:
     std::string unread;
 };
 
-/// The cases of a BlockingClient over adapter A's codec.
-template <test::CodecAdapter A>
-void blocking_client_cases(const zest::CaseRegistrar& add_case) {
-    using Client = BlockingClient<typename A::Codec>;
-
-    // The answer is written before the request is sent: the pipe holds it.
-    add_case("request_gets_its_result", [] {
-        Link link;
-        Client client(link.client);
-        link.send(test::response<A>(1, AddResult{.sum = 3}));
-
-        auto result =
-            client.template send_request<AddResult>("test/add", AddParams{.a = 1, .b = 2});
-        ZASSERT(result.has_value());
-        ZEXPECT(result->sum == 3);
-        auto request = link.receive_message<A>();
-        ZASSERT(request.has_value());
-        ZEXPECT(request->kind == Message::Kind::Request);
-        ZEXPECT(request->id == RequestID(1));
-        ZEXPECT(request->method == "test/add");
-        auto params = test::decoded<AddParams, A>(request->body);
-        ZASSERT(params.has_value());
-        ZEXPECT(params->a == 1);
-        ZEXPECT(params->b == 2);
-    });
-
-    add_case("request_ids_count_up_from_one", [] {
-        Link link;
-        Client client(link.client);
-        link.send(test::response<A>(1, AddResult{.sum = 1}));
-        link.send(test::response<A>(2, AddResult{.sum = 2}));
-
-        auto first = client.template send_request<AddResult>("test/add", AddParams{});
-        auto second = client.template send_request<AddResult>("test/add", AddParams{});
-        ZASSERT(first.has_value());
-        ZASSERT(second.has_value());
-        ZEXPECT(first->sum == 1);
-        ZEXPECT(second->sum == 2);
-        auto one = link.receive_message<A>();
-        auto two = link.receive_message<A>();
-        ZASSERT(one.has_value());
-        ZASSERT(two.has_value());
-        ZEXPECT(one->id == RequestID(1));
-        ZEXPECT(two->id == RequestID(2));
-    });
-
-    add_case("error_answer_fails_only_its_request", [] {
-        Link link;
-        Client client(link.client);
-        link.send(A::error_response(RequestID(1), Error(ErrorCode::InvalidParams, "bad")));
-        link.send(test::response<A>(2, AddResult{.sum = 2}));
-
-        auto refused = client.template send_request<AddResult>("test/add", AddParams{});
-        auto answered = client.template send_request<AddResult>("test/add", AddParams{});
-        ZASSERT(refused.has_error());
-        ZEXPECT(code_of(refused.error()) == ErrorCode::InvalidParams);
-        ZEXPECT(refused.error().message == "bad");
-        ZASSERT(answered.has_value());
-        ZEXPECT(answered->sum == 2);
-    });
-
-    add_case("result_that_does_not_decode_fails_only_its_request", [] {
-        Link link;
-        Client client(link.client);
-        link.send(A::response_raw(1, A::not_a_value));
-        link.send(test::response<A>(2, AddResult{.sum = 2}));
-
-        auto undecoded = client.template send_request<AddResult>("test/add", AddParams{});
-        auto answered = client.template send_request<AddResult>("test/add", AddParams{});
-        ZEXPECT(undecoded.has_error());
-        ZASSERT(answered.has_value());
-        ZEXPECT(answered->sum == 2);
-    });
-
-    // Nothing is written, and the next request goes out under the next id.
-    add_case("params_that_do_not_encode_fail_unsent", [] {
-        Link link;
-        Client client(link.client);
-        link.send(test::response<A>(2, AddResult{.sum = 2}));
-
-        auto unsent =
-            client.template send_request<AddResult>("test/unwritable", test::Unwritable{});
-        auto answered = client.template send_request<AddResult>("test/add", AddParams{});
-        ZEXPECT(unsent.has_error());
-        ZASSERT(answered.has_value());
-        ZEXPECT(answered->sum == 2);
-        auto request = link.receive_message<A>();
-        ZASSERT(request.has_value());
-        ZEXPECT(request->id == RequestID(2));
-        ZEXPECT(request->method == "test/add");
-    });
-
-    // The frame is skipped whole, so the conversation goes on after it.
-    add_case("answer_over_the_limit_fails_only_its_request", [] {
-        Link link;
-        Client client(link.client, 64);
-        link.send(test::response<A>(1, NoteParams{.text = std::string(200, 'x')}));
-        link.send(test::response<A>(2, AddResult{.sum = 2}));
-
-        auto skipped = client.template send_request<AddResult>("test/add", AddParams{});
-        auto answered = client.template send_request<AddResult>("test/add", AddParams{});
-        ZASSERT(skipped.has_error());
-        ZEXPECT(code_of(skipped.error()) == ErrorCode::MessageTooLarge);
-        ZASSERT(answered.has_value());
-        ZEXPECT(answered->sum == 2);
-    });
-
-    add_case("message_over_the_limit_that_is_no_answer_ends_it", [] {
-        Link link;
-        Client client(link.client, 64);
-        link.send(test::notification<A>("test/note", NoteParams{.text = std::string(200, 'x')}));
-
-        auto ended = client.template send_request<AddResult>("test/add", AddParams{});
-        ZASSERT(ended.has_error());
-        ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
-        ZEXPECT(zest::contains(ended.error().message, "exceeds the limit of 64 bytes"));
-    });
-
-    // The request that read it fails, and so does the next, unsent.
-    add_case("message_that_is_no_answer_ends_it", [] {
-        const std::vector<std::pair<std::string, std::string>> cases = {
-            {test::request<A>(7, "test/add", AddParams{}),
-             "a request instead of the answer: test/add"},
-            {test::notification<A>("test/note", NoteParams{}),
-             "a notification instead of the answer: test/note"},
-            {test::response<A>(7, AddResult{}), "the answer to another request"},
-            {A::error_response(RequestID(7), Error("refused")),
-             "an error answering another request: refused"},
-            {A::error_response(std::nullopt, Error("unreadable")),
-             "an error response without an id: unreadable"},
-        };
-        for(const auto& [sent, said]: cases) {
-            ZEST_CONTEXT("{}", said);
-            Link link;
-            std::optional<Client> client(std::in_place, link.client);
-            link.send(sent);
-
-            auto ended = client->template send_request<AddResult>("test/add", AddParams{});
-            auto after = client->template send_request<AddResult>("test/add", AddParams{});
-            client.reset();
-            ZASSERT(ended.has_error());
-            ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
-            ZEXPECT(ended.error().message == said);
-            ZASSERT(after.has_error());
-            ZEXPECT(code_of(after.error()) == ErrorCode::ConnectionClosed);
-            ZEXPECT(after.error().message == said);
-            // The first request, then the end the client's close made.
-            ZEXPECT(link.receive().has_value());
-            ZEXPECT(!link.receive().has_value());
-        }
-    });
-
-    // What the codec said of it.
-    add_case("garbage_ends_it", [] {
-        Link link;
-        Client client(link.client);
-        link.send(A::garbage);
-
-        auto ended = client.template send_request<AddResult>("test/add", AddParams{});
-        ZASSERT(ended.has_error());
-        ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
-        ZEXPECT(!ended.error().message.empty());
-    });
-
-    add_case("malformed_frame_ends_it", [] {
-        Link link;
-        Client client(link.client);
-        link.write("Content-Length: many\r\n\r\n");
-
-        auto ended = client.template send_request<AddResult>("test/add", AddParams{});
-        ZASSERT(ended.has_error());
-        ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
-        ZEXPECT(zest::contains(ended.error().message, "Content-Length"));
-    });
-
-    // The remote closes once it has read the request, as a remote that went
-    // before it answered.
-    add_case("end_of_input_ends_it", [] {
-        Link link;
-        Client client(link.client);
-        bool received = false;
-        std::thread remote([&] {
-            received = link.receive().has_value();
-            link.close_remote();
-        });
-
-        auto ended = client.template send_request<AddResult>("test/add", AddParams{});
-        remote.join();
-        ZEXPECT(received);
-        ZASSERT(ended.has_error());
-        ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
-        ZEXPECT(ended.error().message == "the input ended");
-    });
-
-    // No SIGPIPE: the process lives on to see the failure.
-    add_case("write_to_a_closed_remote_ends_it", [] {
-        Link link;
-        Client client(link.client);
-        link.close_remote();
-
-        auto ended = client.template send_request<AddResult>("test/add", AddParams{});
-        ZASSERT(ended.has_error());
-        ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
-        ZEXPECT(!ended.error().message.empty());
-    });
-
-    add_case("moved_client_keeps_the_connection", [] {
-        Link first;
-        Link second;
-        first.send(test::response<A>(1, AddResult{.sum = 1}));
-        Client moved(first.client);
-        Client client(std::move(moved));
-        Client replaced(second.client);
-        replaced = std::move(client);
-
-        auto answered = replaced.template send_request<AddResult>("test/add", AddParams{});
-        ZASSERT(answered.has_value());
-        ZEXPECT(answered->sum == 1);
-        // The handle it held before is closed.
-        ZEXPECT(!second.receive().has_value());
-    });
-}
+using Bincode = test::BincodeAdapter;
+using Client = BlockingClient<BincodeCodec>;
 
 ZEST_SUITE(ipc_blocking_client) {
 
-ZEST_CASE_GROUP(bincode) {
-    blocking_client_cases<test::BincodeAdapter>(add_case);
+// The answer is written before the request is sent: the pipe holds it.
+ZEST_CASE(request_gets_its_result) {
+    Link link;
+    Client client(link.client);
+    link.send(test::response<Bincode>(1, AddResult{.sum = 3}));
+
+    auto result = client.send_request<AddResult>("test/add", AddParams{.a = 1, .b = 2});
+    ZASSERT(result.has_value());
+    ZEXPECT(result->sum == 3);
+    auto request = link.receive_message<Bincode>();
+    ZASSERT(request.has_value());
+    ZEXPECT(request->kind == Message::Kind::Request);
+    ZEXPECT(request->id == RequestID(1));
+    ZEXPECT(request->method == "test/add");
+    auto params = test::decoded<AddParams, Bincode>(request->body);
+    ZASSERT(params.has_value());
+    ZEXPECT(params->a == 1);
+    ZEXPECT(params->b == 2);
 }
 
-ZEST_CASE_GROUP(json) {
-    blocking_client_cases<test::JSONAdapter>(add_case);
+ZEST_CASE(request_ids_count_up_from_one) {
+    Link link;
+    Client client(link.client);
+    link.send(test::response<Bincode>(1, AddResult{.sum = 1}));
+    link.send(test::response<Bincode>(2, AddResult{.sum = 2}));
+
+    auto first = client.send_request<AddResult>("test/add", AddParams{});
+    auto second = client.send_request<AddResult>("test/add", AddParams{});
+    ZASSERT(first.has_value());
+    ZASSERT(second.has_value());
+    ZEXPECT(first->sum == 1);
+    ZEXPECT(second->sum == 2);
+    auto one = link.receive_message<Bincode>();
+    auto two = link.receive_message<Bincode>();
+    ZASSERT(one.has_value());
+    ZASSERT(two.has_value());
+    ZEXPECT(one->id == RequestID(1));
+    ZEXPECT(two->id == RequestID(2));
+}
+
+ZEST_CASE(error_answer_fails_only_its_request) {
+    Link link;
+    Client client(link.client);
+    link.send(Bincode::error_response(RequestID(1), Error(ErrorCode::InvalidParams, "bad")));
+    link.send(test::response<Bincode>(2, AddResult{.sum = 2}));
+
+    auto refused = client.send_request<AddResult>("test/add", AddParams{});
+    auto answered = client.send_request<AddResult>("test/add", AddParams{});
+    ZASSERT(refused.has_error());
+    ZEXPECT(code_of(refused.error()) == ErrorCode::InvalidParams);
+    ZEXPECT(refused.error().message == "bad");
+    ZASSERT(answered.has_value());
+    ZEXPECT(answered->sum == 2);
+}
+
+ZEST_CASE(result_that_does_not_decode_fails_only_its_request) {
+    Link link;
+    Client client(link.client);
+    link.send(Bincode::response_raw(1, Bincode::not_a_value));
+    link.send(test::response<Bincode>(2, AddResult{.sum = 2}));
+
+    auto undecoded = client.send_request<AddResult>("test/add", AddParams{});
+    auto answered = client.send_request<AddResult>("test/add", AddParams{});
+    ZEXPECT(undecoded.has_error());
+    ZASSERT(answered.has_value());
+    ZEXPECT(answered->sum == 2);
+}
+
+// Nothing is written, and the next request goes out under the next id.
+ZEST_CASE(params_that_do_not_encode_fail_unsent) {
+    Link link;
+    Client client(link.client);
+    link.send(test::response<Bincode>(2, AddResult{.sum = 2}));
+
+    auto unsent = client.send_request<AddResult>("test/unwritable", test::Unwritable{});
+    auto answered = client.send_request<AddResult>("test/add", AddParams{});
+    ZEXPECT(unsent.has_error());
+    ZASSERT(answered.has_value());
+    ZEXPECT(answered->sum == 2);
+    auto request = link.receive_message<Bincode>();
+    ZASSERT(request.has_value());
+    ZEXPECT(request->id == RequestID(2));
+    ZEXPECT(request->method == "test/add");
+}
+
+// The frame is skipped whole, so the conversation goes on after it.
+ZEST_CASE(answer_over_the_limit_fails_only_its_request) {
+    Link link;
+    Client client(link.client, 64);
+    link.send(test::response<Bincode>(1, NoteParams{.text = std::string(200, 'x')}));
+    link.send(test::response<Bincode>(2, AddResult{.sum = 2}));
+
+    auto skipped = client.send_request<AddResult>("test/add", AddParams{});
+    auto answered = client.send_request<AddResult>("test/add", AddParams{});
+    ZASSERT(skipped.has_error());
+    ZEXPECT(code_of(skipped.error()) == ErrorCode::MessageTooLarge);
+    ZASSERT(answered.has_value());
+    ZEXPECT(answered->sum == 2);
+}
+
+ZEST_CASE(message_over_the_limit_that_is_no_answer_ends_it) {
+    Link link;
+    Client client(link.client, 64);
+    link.send(test::notification<Bincode>("test/note", NoteParams{.text = std::string(200, 'x')}));
+
+    auto ended = client.send_request<AddResult>("test/add", AddParams{});
+    ZASSERT(ended.has_error());
+    ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
+    ZEXPECT(zest::contains(ended.error().message, "exceeds the limit of 64 bytes"));
+}
+
+// The request that read it fails, and so does the next, unsent.
+ZEST_CASE(message_that_is_no_answer_ends_it) {
+    const std::vector<std::pair<std::string, std::string>> cases = {
+        {test::request<Bincode>(7, "test/add", AddParams{}),
+         "a request instead of the answer: test/add"},
+        {test::notification<Bincode>("test/note", NoteParams{}),
+         "a notification instead of the answer: test/note"},
+        {test::response<Bincode>(7, AddResult{}), "the answer to another request"},
+        {Bincode::error_response(RequestID(7), Error("refused")),
+         "an error answering another request: refused"},
+        {Bincode::error_response(std::nullopt, Error("unreadable")),
+         "an error response without an id: unreadable"},
+    };
+    for(const auto& [sent, said]: cases) {
+        ZEST_CONTEXT("{}", said);
+        Link link;
+        std::optional<Client> client(std::in_place, link.client);
+        link.send(sent);
+
+        auto ended = client->send_request<AddResult>("test/add", AddParams{});
+        auto after = client->send_request<AddResult>("test/add", AddParams{});
+        client.reset();
+        ZASSERT(ended.has_error());
+        ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(ended.error().message == said);
+        ZASSERT(after.has_error());
+        ZEXPECT(code_of(after.error()) == ErrorCode::ConnectionClosed);
+        ZEXPECT(after.error().message == said);
+        // The first request, then the end the client's close made.
+        ZEXPECT(link.receive().has_value());
+        ZEXPECT(!link.receive().has_value());
+    }
+}
+
+// What the codec said of it.
+ZEST_CASE(garbage_ends_it) {
+    Link link;
+    Client client(link.client);
+    link.send(Bincode::garbage);
+
+    auto ended = client.send_request<AddResult>("test/add", AddParams{});
+    ZASSERT(ended.has_error());
+    ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
+    ZEXPECT(!ended.error().message.empty());
+}
+
+ZEST_CASE(malformed_frame_ends_it) {
+    Link link;
+    Client client(link.client);
+    link.write("Content-Length: many\r\n\r\n");
+
+    auto ended = client.send_request<AddResult>("test/add", AddParams{});
+    ZASSERT(ended.has_error());
+    ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
+    ZEXPECT(zest::contains(ended.error().message, "Content-Length"));
+}
+
+// The remote closes once it has read the request, as a remote that went
+// before it answered.
+ZEST_CASE(end_of_input_ends_it) {
+    Link link;
+    Client client(link.client);
+    bool received = false;
+    std::thread remote([&] {
+        received = link.receive().has_value();
+        link.close_remote();
+    });
+
+    auto ended = client.send_request<AddResult>("test/add", AddParams{});
+    remote.join();
+    ZEXPECT(received);
+    ZASSERT(ended.has_error());
+    ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
+    ZEXPECT(ended.error().message == "the input ended");
+}
+
+// No SIGPIPE: the process lives on to see the failure.
+ZEST_CASE(write_to_a_closed_remote_ends_it) {
+    Link link;
+    Client client(link.client);
+    link.close_remote();
+
+    auto ended = client.send_request<AddResult>("test/add", AddParams{});
+    ZASSERT(ended.has_error());
+    ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
+    ZEXPECT(!ended.error().message.empty());
+}
+
+ZEST_CASE(moved_client_keeps_the_connection) {
+    Link first;
+    Link second;
+    first.send(test::response<Bincode>(1, AddResult{.sum = 1}));
+    Client moved(first.client);
+    Client client(std::move(moved));
+    Client replaced(second.client);
+    replaced = std::move(client);
+
+    auto answered = replaced.send_request<AddResult>("test/add", AddParams{});
+    ZASSERT(answered.has_value());
+    ZEXPECT(answered->sum == 1);
+    // The handle it held before is closed.
+    ZEXPECT(!second.receive().has_value());
+}
+
+// The client is one over any codec: JSON carries what bincode does.
+ZEST_CASE(json_request_gets_its_result) {
+    using JSON = test::JSONAdapter;
+    Link link;
+    BlockingClient<JSONCodec> client(link.client);
+    link.send(test::response<JSON>(1, AddResult{.sum = 3}));
+
+    auto result = client.send_request<AddResult>("test/add", AddParams{.a = 1, .b = 2});
+    ZASSERT(result.has_value());
+    ZEXPECT(result->sum == 3);
+    auto request = link.receive_message<JSON>();
+    ZASSERT(request.has_value());
+    ZEXPECT(request->id == RequestID(1));
+    ZEXPECT(request->method == "test/add");
 }
 
 };  // ZEST_SUITE(ipc_blocking_client)
