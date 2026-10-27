@@ -372,13 +372,14 @@ ZEST_CASE(root_enum_level_i16) {
 }
 
 ZEST_CASE(root_enum_value_outside_name_scan) {
-    // 65535 lies outside the [-128, 127] name-reflection scan, yet encodes
-    // fine as a number — the schema must not reject it, so the numeric form
-    // is the underlying integer's range rather than a reflected value list.
-    enum class big_u16 : std::uint16_t { a = 0, c = 65535 };
+    // 1000 lies outside the name-reflection scan (0..127 and the top 128
+    // values for an unsigned type), yet encodes fine as a number — the schema
+    // must not reject it, so the numeric form is the underlying integer's
+    // range rather than a reflected value list.
+    enum class big_u16 : std::uint16_t { a = 0, c = 1000 };
     const auto encoded = json::to_string(big_u16::c);
     ZASSERT(encoded);
-    ZEXPECT(*encoded == "65535");
+    ZEXPECT(*encoded == "1000");
 
     const auto result = json::schema_string<big_u16>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"

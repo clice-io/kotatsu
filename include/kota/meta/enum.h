@@ -33,13 +33,20 @@ struct enum_probe {
     constexpr static bool valid = !name.empty() && name.find(')') == std::string_view::npos;
 };
 
-template <int Offset, typename Seq>
-struct shifted_integer_sequence;
+template <typename U, int... Is>
+consteval auto make_scan_values(std::integer_sequence<int, Is...>) {
+    if constexpr(std::is_signed_v<U>) {
+        return std::integer_sequence<int, (Is - 128)...>{};
+    } else {
+        return std::integer_sequence<int, (Is < 128 ? Is : Is - 256)...>{};
+    }
+}
 
-template <int Offset, int... Is>
-struct shifted_integer_sequence<Offset, std::integer_sequence<int, Is...>> {
-    using type = std::integer_sequence<int, (Offset + Is)...>;
-};
+/// The values the reflection of an enum whose underlying type is U scans, -128..127, in
+/// ascending order of U, which enum_name's binary search needs: an unsigned U (char too, where
+/// it is unsigned) converts the negative ones to its largest values, so they come after 0..127.
+template <typename U>
+using scan_values = decltype(make_scan_values<U>(std::make_integer_sequence<int, 256>{}));
 
 template <typename E, int... Values>
 consteval auto make_candidate_values(std::integer_sequence<int, Values...>) {
@@ -79,13 +86,7 @@ concept enum_type = std::is_enum_v<T>;
 
 template <enum_type T>
 struct reflection<T> {
-    constexpr static int scan_min = -128;
-    constexpr static int scan_max = 127;
-    constexpr static int scan_size = scan_max - scan_min + 1;
-
-    using scan_sequence =
-        typename detail::shifted_integer_sequence<scan_min,
-                                                  std::make_integer_sequence<int, scan_size>>::type;
+    using scan_sequence = detail::scan_values<std::underlying_type_t<T>>;
 
     constexpr inline static auto candidate_values =
         detail::make_candidate_values<T>(scan_sequence{});

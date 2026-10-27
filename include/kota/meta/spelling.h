@@ -30,7 +30,7 @@ std::string map_enum_to_string(E value) {
     return apply_rename_policy<Policy>(true, enum_name(value));
 }
 
-/// The renamed names of E's enumerators, in declaration order.
+/// The renamed names of E's enumerators, in ascending order of value.
 template <enum_type E, typename Policy = naming::rename_policy::lower_camel>
 auto enum_strings() -> const std::vector<std::string>& {
     const static auto names = [] {

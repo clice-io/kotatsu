@@ -275,8 +275,10 @@ ZEST_CASE(annotated_type_info) {
         ZSTATIC_EXPECT(ei.member_names.size() == 2U);
         const auto* u64_vals = static_cast<const std::uint64_t*>(ei.member_values);
         const std::span<const std::uint64_t> values{u64_vals, ei.member_names.size()};
-        ZEXPECT(((values[0] == 0U && values[1] == std::numeric_limits<std::uint64_t>::max()) ||
-                 (values[1] == 0U && values[0] == std::numeric_limits<std::uint64_t>::max())));
+        ZEXPECT(values[0] == 0U);
+        ZEXPECT(values[1] == std::numeric_limits<std::uint64_t>::max());
+        ZSTATIC_EXPECT(ei.member_names[0] == "zero");
+        ZSTATIC_EXPECT(ei.member_names[1] == "max");
     }
 }
 
