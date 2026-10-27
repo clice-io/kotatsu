@@ -50,6 +50,20 @@ ZEST_CASE(volume_of_a_share_is_remote) {
 }
 #endif
 
+#ifdef __APPLE__
+ZEST_CASE(volume_of_an_automount_point_is_local) {
+    // Where autofs waits to mount home directories, which macOS does by
+    // default; the mount point is no file system of another machine.
+    auto found = volume("/home");
+    if(!found || found->type != "autofs") {
+        // No automount at /home here.
+        zest::skip();
+        return;
+    }
+    ZEXPECT(!found->remote);
+}
+#endif
+
 #ifdef __linux__
 ZEST_CASE(volume_names_a_kind_linux_knows) {
     auto found = volume("/proc/self");

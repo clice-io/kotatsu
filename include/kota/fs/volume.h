@@ -27,8 +27,9 @@ struct Volume {
     std::string type;
 
     /// Whether its files are served by another machine, or another system
-    /// on this one: NFS, SMB, AFS, Ceph, and 9p, through which WSL reaches
-    /// the Windows drives. FUSE is not, though what it serves may be.
+    /// on this one: NFS, SMB, AFS, Ceph, Lustre, GPFS, and 9p, through which
+    /// WSL reaches the Windows drives. FUSE and autofs are not, though what
+    /// they serve may be.
     bool remote = false;
 };
 
