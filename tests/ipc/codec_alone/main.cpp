@@ -1,8 +1,9 @@
 // A program that reads and writes messages as catter's hook library does,
-// built against the codec target alone, without the event loop: a reference
-// into the loop fails its link. On Windows it checks besides that it imports
-// none of the DLLs libuv brings, which would load into every process the hook
-// runs in. The codecs' behaviour is their unit tests'.
+// with each codec and with a BlockingClient over a pipe, built against the
+// codec target alone, without the event loop: a reference into the loop fails
+// its link. On Windows it checks besides that it imports none of the DLLs
+// libuv brings, which would load into every process the hook runs in. The
+// codecs' and the client's behaviour is their tests'.
 
 #include <cstdio>
 #include <format>
@@ -11,6 +12,7 @@
 #include <utility>
 #include <variant>
 
+#include "kota/ipc/blocking_client.h"
 #include "kota/ipc/codec/bincode.h"
 #include "kota/ipc/codec/json.h"
 #include "kota/ipc/framing.h"
@@ -20,7 +22,11 @@
 #include <array>
 #include <cctype>
 #include <cstddef>
+#include <random>
 #include <windows.h>
+#else
+#include <sys/socket.h>
+#include <unistd.h>
 #endif
 
 namespace {
@@ -64,6 +70,89 @@ void exchange(std::string_view name) {
     check(params && params->text == "hook", std::format("{}: deserialize_value", name));
 }
 
+/// Both ends of a connection: a pair of sockets, on Windows a named pipe and
+/// a handle opened to it.
+struct Ends {
+    kota::ipc::BlockingClient<kota::ipc::BincodeCodec>::native_handle_type client;
+    kota::ipc::BlockingClient<kota::ipc::BincodeCodec>::native_handle_type remote;
+};
+
+bool connect(Ends& ends) {
+#ifdef _WIN32
+    std::random_device random;
+    const auto name = std::format(LR"(\\.\pipe\kota-{:08x}{:08x})", random(), random());
+    ends.remote = ::CreateNamedPipeW(name.c_str(),
+                                     PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                                     PIPE_TYPE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                                     1,
+                                     4096,
+                                     4096,
+                                     0,
+                                     nullptr);
+    if(ends.remote == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    ends.client = ::CreateFileW(name.c_str(),
+                                GENERIC_READ | GENERIC_WRITE,
+                                0,
+                                nullptr,
+                                OPEN_EXISTING,
+                                0,
+                                nullptr);
+    return ends.client != INVALID_HANDLE_VALUE;
+#else
+    int fds[2] = {-1, -1};
+    if(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) {
+        return false;
+    }
+    ends.client = fds[0];
+    ends.remote = fds[1];
+    return true;
+#endif
+}
+
+/// Writes all of `bytes` to the remote's end.
+bool write_all(const Ends& ends, std::string_view bytes) {
+#ifdef _WIN32
+    DWORD written = 0;
+    return ::WriteFile(ends.remote,
+                       bytes.data(),
+                       static_cast<DWORD>(bytes.size()),
+                       &written,
+                       nullptr) &&
+           written == bytes.size();
+#else
+    return ::send(ends.remote, bytes.data(), bytes.size(), 0) == static_cast<ssize_t>(bytes.size());
+#endif
+}
+
+void close_remote(const Ends& ends) {
+#ifdef _WIN32
+    ::CloseHandle(ends.remote);
+#else
+    ::close(ends.remote);
+#endif
+}
+
+/// Asks with a BlockingClient, whose answer the remote's end holds already.
+void ask(std::string_view name) {
+    using namespace kota::ipc;
+    Ends ends;
+    if(!check(connect(ends), std::format("{}: connect", name))) {
+        return;
+    }
+    BincodeCodec codec;
+    auto answer = codec.encode_success_response(1, Params{.text = "catter"});
+    if(check(answer.has_value(), std::format("{}: encode_success_response", name)) &&
+       check(write_all(ends, frame_header(answer->size()) + *answer),
+             std::format("{}: write", name))) {
+        BlockingClient<BincodeCodec> client(ends.client);
+        auto result = client.send_request<Params>("catter/check", Params{.text = "hook"});
+        check(result && result->text == "catter", std::format("{}: send_request", name));
+    }
+    close_remote(ends);
+}
+
 #ifdef _WIN32
 
 /// Whether this program imports from `dll`, in its import directory: a DLL
@@ -95,6 +184,7 @@ bool imports(std::string_view dll) {
 int main() {
     exchange<kota::ipc::BincodeCodec>("BincodeCodec");
     exchange<kota::ipc::JSONCodec>("JSONCodec");
+    ask("BlockingClient");
 #ifdef _WIN32
     // What libuv links on Windows.
     constexpr std::array loop_dlls = {

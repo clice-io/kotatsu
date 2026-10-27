@@ -4,6 +4,7 @@
 #include "ipc/harness/peer_fixture.h"
 #include "ipc/harness/peer_suite/cancel.h"
 #include "ipc/harness/peer_suite/dispatch.h"
+#include "ipc/harness/peer_suite/ending.h"
 #include "ipc/harness/peer_suite/incoming.h"
 #include "ipc/harness/peer_suite/lifecycle.h"
 #include "ipc/harness/peer_suite/limit.h"
@@ -52,6 +53,10 @@ ZEST_CASE_GROUP(timeout) {
 
 ZEST_CASE_GROUP(lifecycle) {
     test::peer_lifecycle(Kit{add_case});
+}
+
+ZEST_CASE_GROUP(ending) {
+    test::peer_ending(Kit{add_case});
 }
 
 ZEST_CASE_GROUP(limit) {
@@ -157,6 +162,21 @@ ZEST_CASE(deeply_nested_notification_is_dropped) {
     ZEXPECT(ran.has_value());
     ZEXPECT(!called);
     ZEXPECT(f.written().empty());
+}
+
+// JSON-RPC never answers it, and it ends the conversation all the same.
+ZEST_CASE(unreadable_notification_ends_it_under_end) {
+    Fixture f;
+    f.peer.set_violation_policy(ViolationPolicy::End);
+    f.remote.send(R"({"jsonrpc":"1.0","method":"test/note","params":{"text":"x"}})");
+
+    auto [ran] = f.run(f.peer.run());
+    ZEXPECT(ran.has_value());
+    ZEXPECT(f.written().empty());
+    auto ended = f.peer.ended();
+    ZASSERT(ended.has_value());
+    ZEXPECT(ended->kind == ConversationEnd::Kind::Malformed);
+    ZEXPECT(ended->message == R"(jsonrpc must be "2.0")");
 }
 
 };  // ZEST_SUITE(ipc_peer_json)

@@ -147,17 +147,19 @@ kota_library(
     ],
 )
 
-# The LSP base protocol's framing, the protocol model and the bincode codec,
-# without the event loop: a program that only reads and writes messages, such
-# as catter's hook library, which runs in every process a build starts, takes
-# neither libuv nor the DLLs it imports.
+# The LSP base protocol's framing, the protocol model, the bincode codec and
+# the blocking client, without the event loop: a program that only reads and
+# writes messages, such as catter's hook library, which runs in every process a
+# build starts, takes neither libuv nor the DLLs it imports.
 kota_library(
     name = "ipc_codec",
     srcs = [
+        "src/ipc/blocking_client.cpp",
         "src/ipc/codec/bincode.cpp",
         "src/ipc/framing.cpp",
     ],
     hdrs = [
+        "include/kota/ipc/blocking_client.h",
         "include/kota/ipc/codec.h",
         "include/kota/ipc/codec/bincode.h",
         "include/kota/ipc/framing.h",

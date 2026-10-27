@@ -59,7 +59,7 @@ What each module's headers include, and so what its tests may use:
 
 - `support`; `fs` on support; `sys` on fs; `meta` on support; `deco` on meta.
 - `codec`: its core (`visit/`, `macro.h`) on meta; the backends `blob`, `debug`, `dyn`, `toml` and `fbs` on the core; `bincode` and `json` on the core and `dyn`.
-- `async` on support, `fs` and `sys`; `ipc`'s codecs (`codec.h`, `codec/`, `framing.h`, `protocol.h`) on codec (`json`, `dyn`, `bincode`), the rest of `ipc` on those and async; `ipc/lsp` on ipc; `http` on async and codec `json`.
+- `async` on support, `fs` and `sys`; `ipc`'s codecs (`codec.h`, `codec/`, `framing.h`, `protocol.h`) and its blocking client (`blocking_client.h`) on codec (`json`, `dyn`, `bincode`), the rest of `ipc` on those and async; `ipc/lsp` on ipc; `http` on async and codec `json`.
 - `zest` on all of the above that it checks, prints, parses or runs with. Every test includes zest; that is the one exception.
 
 Rules:
