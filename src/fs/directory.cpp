@@ -196,6 +196,32 @@ DWORD dispose(HANDLE handle) {
     return error;
 }
 
+/// What `path` names, a link itself, open to change its attributes: with
+/// them, its ID and when it was made, which together tell it, as far as
+/// FAT can, from a file that has taken its name since. FAT's ID is the
+/// place of the file's entry, which a new file may take over.
+struct AttributeHandle {
+    win32::Handle handle;
+    FILE_BASIC_INFO basic;
+    FileID id;
+};
+
+std::optional<AttributeHandle> open_attributes(const wchar_t* path) {
+    auto handle = win32::try_open(path,
+                                  FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+                                  FILE_FLAG_OPEN_REPARSE_POINT);
+    FILE_BASIC_INFO basic;
+    if(handle.get() == INVALID_HANDLE_VALUE ||
+       !::GetFileInformationByHandleEx(handle.get(), FileBasicInfo, &basic, sizeof(basic))) {
+        return std::nullopt;
+    }
+    auto id = win32::file_id(handle.get());
+    if(!id) {
+        return std::nullopt;
+    }
+    return AttributeHandle{.handle = std::move(handle), .basic = basic, .id = *id};
+}
+
 /// Whether an open failed because nothing is there: a missing name, or a
 /// component that is a file rather than a directory.
 bool names_nothing(DWORD error) {
@@ -829,22 +855,31 @@ std::error_code rename(std::string_view from, std::string_view to) {
         return windows::to_error_code(error);
     }
     // A file system without POSIX renames (FAT), which replaces no
-    // read-only file: `to` goes without the attribute meanwhile.
+    // read-only file: `to` goes without the attribute meanwhile, taken off
+    // through a handle closed before the move, which fails while any handle
+    // to `to` is open. Should the move fail, the attribute goes back only on
+    // the same file, which another may have replaced meanwhile.
     handle = win32::Handle();
     if(::MoveFileExW(source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         return {};
     }
     auto error = ::GetLastError();
-    auto attributes = ::GetFileAttributesW(target.c_str());
-    if(attributes == INVALID_FILE_ATTRIBUTES || !(attributes & FILE_ATTRIBUTE_READONLY) ||
-       !::SetFileAttributesW(target.c_str(), attributes & ~FILE_ATTRIBUTE_READONLY)) {
+    auto before = open_attributes(target.c_str());
+    if(!before || !(before->basic.FileAttributes & FILE_ATTRIBUTE_READONLY) ||
+       !win32::set_attributes(before->handle.get(),
+                              before->basic.FileAttributes & ~FILE_ATTRIBUTE_READONLY)) {
         return windows::to_error_code(error);
     }
+    before->handle = win32::Handle();
     if(::MoveFileExW(source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         return {};
     }
     error = ::GetLastError();
-    ::SetFileAttributesW(target.c_str(), attributes);
+    if(auto after = open_attributes(target.c_str());
+       after && after->id == before->id &&
+       after->basic.CreationTime.QuadPart == before->basic.CreationTime.QuadPart) {
+        win32::set_attributes(after->handle.get(), before->basic.FileAttributes);
+    }
     return windows::to_error_code(error);
 #else
     posix::CPath source;

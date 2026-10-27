@@ -69,6 +69,13 @@ void make_read_only(const std::string& path) {
     ZASSERT(::SetFileAttributesW(test::std_path(path).wstring().c_str(), FILE_ATTRIBUTE_READONLY));
 }
 
+/// Whether the file at `path` is read-only.
+bool is_read_only(const std::string& path) {
+    auto attributes = ::GetFileAttributesW(test::std_path(path).wstring().c_str());
+    ZASSERT(attributes != INVALID_FILE_ATTRIBUTES);
+    return (attributes & FILE_ATTRIBUTE_READONLY) != 0;
+}
+
 ZEST_SUITE(fs_fat) {
 
 ZEST_CASE(one_file_has_one_id_by_path_by_handle_and_listed) {
@@ -215,6 +222,27 @@ ZEST_CASE(rename_replaces_a_read_only_file) {
         ZEXPECT(!rename(dir.file("new.txt"), dir.file("old.txt")));
         ZEXPECT(test::read_text(dir.file("old.txt")) == "new");
         ZEXPECT(exists(dir.file("new.txt")) == false);
+    });
+}
+
+ZEST_CASE(rename_onto_a_read_only_file_held_open_fails) {
+    // The move fails while any handle to the file is open: the attribute
+    // taken off for it goes back.
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("new.txt"), "new");
+        test::write_text(dir.file("old.txt"), "old");
+        make_read_only(dir.file("old.txt"));
+        {
+            auto held = File::open(dir.file("old.txt"));
+            ZASSERT(held.has_value());
+            ZEXPECT(rename(dir.file("new.txt"), dir.file("old.txt")) ==
+                    std::errc::permission_denied);
+        }
+        ZEXPECT(is_read_only(dir.file("old.txt")));
+        ZEXPECT(test::read_text(dir.file("old.txt")) == "old");
+        ZEXPECT(test::read_text(dir.file("new.txt")) == "new");
+        // TempDir, through std::filesystem, would leave a read-only file.
+        ZEXPECT(remove(dir.file("old.txt")) == true);
     });
 }
 
