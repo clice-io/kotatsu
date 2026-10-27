@@ -436,7 +436,7 @@ int unblocking() {
     const bool waited = second.wait_for(waits) == std::future_status::timeout;
     gate.open();
     first.join();
-    second.get();
+    [[maybe_unused]] auto code = second.get();
     const bool non_blocking = (::fcntl(stream[1], F_GETFL) & O_NONBLOCK) != 0;
     print_line(std::format(R"({{"waited":{},"non_blocking":{}}})", waited, non_blocking));
     return 0;
