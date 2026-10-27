@@ -141,6 +141,8 @@ ZEST_CASE(set_times_of_nothing_fails) {
     test::TempDir dir;
     ZEXPECT(set_times(dir.file("missing"), {.mtime = first}) ==
             std::errc::no_such_file_or_directory);
+    // With no time to set, for which Linux looks no path up.
+    ZEXPECT(set_times(dir.file("missing"), {}) == std::errc::no_such_file_or_directory);
 }
 
 ZEST_CASE(set_permissions_sets_who_may_write) {

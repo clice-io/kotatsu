@@ -342,6 +342,11 @@ std::error_code set_times(std::string_view path, const FileTimes& times) {
     if(auto error = c_path.assign(path)) {
         return error;
     }
+    // Linux looks no path up for two times left as they are.
+    if(!times.atime && !times.mtime) {
+        struct stat info;
+        return ::stat(c_path.c_str(), &info) == 0 ? std::error_code() : posix::last_error();
+    }
     timespec specs[2] = {spec_of(times.atime), spec_of(times.mtime)};
     if(::utimensat(AT_FDCWD, c_path.c_str(), specs, 0) != 0) {
         return posix::last_error();
