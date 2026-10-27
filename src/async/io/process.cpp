@@ -4,6 +4,7 @@
 #include <array>
 #include <cerrno>
 #include <csignal>
+#include <cstdint>
 #include <cstdlib>
 #include <map>
 #include <memory>
@@ -713,12 +714,12 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
 
 #ifdef _WIN32
 
-result<process> process::open(int pid, event_loop& loop) {
+result<process> process::open(int pid, std::uint32_t access, event_loop& loop) {
     // Its watch would come after the loop closed its handles, as spawn's.
     if(uv::destroying(*loop.native_handle())) {
         return outcome_error(error::operation_aborted);
     }
-    auto child = sys::Child::open(pid);
+    auto child = sys::Child::open(pid, access);
     if(!child) {
         return outcome_error(error_of(child.error()));
     }
@@ -777,6 +778,10 @@ task<process::exit_status, error> process::wait() {
 
 int process::pid() const noexcept {
     return self ? self->child.pid() : -1;
+}
+
+process::native_handle_type process::native_handle() const noexcept {
+    return self ? self->child.native_handle() : sys::Child().native_handle();
 }
 
 error process::kill(int signum) {

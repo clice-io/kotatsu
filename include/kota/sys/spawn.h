@@ -274,12 +274,18 @@ public:
 #ifdef _WIN32
     /// The process with ID `pid`, whichever process started it, which this
     /// one may then wait for, read the exit of and kill as it does a child it
-    /// spawned. It leads no group: kill_tree fails. The ID must name the
+    /// spawned. Its handle, native_handle(), has the rights those take
+    /// (SYNCHRONIZE, PROCESS_QUERY_LIMITED_INFORMATION and PROCESS_TERMINATE)
+    /// and those `access` asks for, as OpenProcess takes them:
+    /// PROCESS_VM_READ to read its memory, PROCESS_ALL_ACCESS for every
+    /// right. It leads no group: kill_tree fails. The ID must name the
     /// process still: one that exited goes with the last handle to it, and
     /// its ID may then be another's. no_such_process for an ID no process
     /// has; permission_denied for a process this one may not wait for and
-    /// end.
-    static std::expected<Child, std::error_code> open(int pid);
+    /// end, or may not open with `access`; operation_not_permitted for a
+    /// right that takes a privilege this process does not hold enabled, as
+    /// ACCESS_SYSTEM_SECURITY takes the security or the debug privilege.
+    static std::expected<Child, std::error_code> open(int pid, std::uint32_t access = 0);
 #endif
 
     /// Its process ID; -1 for an inert Child.
