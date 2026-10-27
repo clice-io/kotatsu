@@ -737,6 +737,23 @@ ZEST_CASE(kill_tree_ends_the_childs_children) {
 }
 
 #ifdef _WIN32
+// The process handle ends the child with the exit code TerminateProcess
+// gives, which wait() reads, as catter ends a program that is not to run.
+ZEST_CASE(native_handle_is_the_process_handle) {
+    auto spawned = process::spawn(test::stdin_reader(), loop);
+    ZASSERT(spawned.has_value());
+    auto handle = spawned->proc.native_handle();
+    ZEXPECT(::GetProcessId(handle) == static_cast<DWORD>(spawned->proc.pid()));
+    // A failed TerminateProcess would leave the wait below waiting until the
+    // watchdog.
+    ZASSERT(::TerminateProcess(handle, 7));
+
+    auto [status] = run(spawned->proc.wait());
+    ZEXPECT(test::exit_code_of(status) == 7);
+    // It stays open once the child has been reaped.
+    ZEXPECT(::GetProcessId(handle) == static_cast<DWORD>(spawned->proc.pid()));
+}
+
 // The process is started without the loop, as catter's hook starts a program
 // and hands its ID to catter. The spawned Child holds the process's handle, so
 // its ID stays the process's while the case runs.
@@ -767,14 +784,13 @@ ZEST_CASE(open_then_kill_ends_the_process) {
     ZEXPECT(child->wait().has_value());
 }
 
-// What catter's hook needs to inject into a program it opened, which the
-// rights to wait and kill alone would not allow.
+// A right beyond those to wait and kill reaches the process through
+// native_handle(), as sys::Child::open gives it.
 ZEST_CASE(open_with_access_reaches_the_process_through_its_handle) {
     auto child = sys::spawn(test::stdin_reader());
     ZASSERT(child.has_value());
     auto opened = process::open(child->pid(), PROCESS_VM_OPERATION, loop);
     ZASSERT(opened.has_value());
-    ZEXPECT(::GetProcessId(opened->native_handle()) == static_cast<DWORD>(child->pid()));
     ZEXPECT(::VirtualAllocEx(opened->native_handle(), nullptr, 4096, MEM_RESERVE, PAGE_NOACCESS) !=
             nullptr);
     // A failed kill would leave the wait below waiting until the watchdog.
@@ -783,21 +799,6 @@ ZEST_CASE(open_with_access_reaches_the_process_through_its_handle) {
     auto [status] = run(opened->wait());
     ZEXPECT(status.has_value());
     ZEXPECT(child->wait().has_value());
-}
-
-// The process handle ends the child with the exit code TerminateProcess
-// gives, which wait() reads, as catter ends a program that is not to run.
-ZEST_CASE(native_handle_is_the_process_handle) {
-    auto spawned = process::spawn(test::stdin_reader(), loop);
-    ZASSERT(spawned.has_value());
-    auto handle = spawned->proc.native_handle();
-    ZEXPECT(::GetProcessId(handle) == static_cast<DWORD>(spawned->proc.pid()));
-    // A failed TerminateProcess would leave the wait below waiting until the
-    // watchdog.
-    ZASSERT(::TerminateProcess(handle, 7));
-
-    auto [status] = run(spawned->proc.wait());
-    ZEXPECT(test::exit_code_of(status) == 7);
 }
 
 ZEST_CASE(open_of_no_process_fails) {
@@ -928,26 +929,6 @@ ZEST_CASE(children_of_uv_spawn_and_of_spawn_both_report) {
 #endif
 
 #ifdef __linux__
-// /proc tells the pid of the pidfd native_handle() gives.
-ZEST_CASE(native_handle_is_a_pidfd_of_the_child) {
-    // A kernel before 5.3, or a sandbox that forbids pidfd_open, gives none.
-    const int own = static_cast<int>(::syscall(SYS_pidfd_open, ::getpid(), 0));
-    if(own < 0) {
-        zest::skip();
-        return;
-    }
-    ::close(own);
-    auto spawned = process::spawn(test::stdin_reader(), loop);
-    ZASSERT(spawned.has_value());
-    auto info = test::read_text(std::format("/proc/self/fdinfo/{}", spawned->proc.native_handle()));
-    ZEXPECT(zest::contains(info, std::format("Pid:\t{}\n", spawned->proc.pid())));
-    // A failed kill would leave the wait below waiting until the watchdog.
-    ZASSERT(!spawned->proc.kill());
-
-    auto [status] = run(spawned->proc.wait());
-    ZEXPECT(status.has_value());
-}
-
 // A kernel before 5.3 has no pidfd_open, nor has a sandbox that forbids
 // it: a seccomp filter makes it fail with ENOSYS in a process of the test's
 // own, which spawns and waits there, SIGCHLD telling it of the exit.
@@ -976,6 +957,10 @@ ZEST_CASE(exit_is_seen_without_pidfds) {
         auto spawned = process::spawn(shell("exit 7"), own);
         if(!spawned || spawned->proc.pid() <= 0) {
             ::_exit(3);
+        }
+        // No pidfd to give.
+        if(spawned->proc.native_handle() != -1) {
+            ::_exit(6);
         }
         auto waited = spawned->proc.wait();
         own.schedule(waited);

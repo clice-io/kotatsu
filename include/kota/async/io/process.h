@@ -68,9 +68,9 @@ public:
 
 #ifdef _WIN32
     /// The process with ID `pid`, whichever process started it, as
-    /// sys::Child::open opens it, with the rights `access` asks for besides:
-    /// wait() gives its exit status, kill() ends it, and native_handle()
-    /// reaches it as `access` allows. Fails as that does, and with
+    /// sys::Child::open(pid, access) opens it: wait() gives its exit status,
+    /// kill() ends it, and native_handle() has the rights it was opened
+    /// with. Fails as sys::Child::open does, and with
     /// error::operation_aborted while the loop is being destroyed. POSIX has
     /// no counterpart: there a process this one did not start tells it no
     /// exit status.
@@ -101,8 +101,9 @@ public:
     int pid() const noexcept;
 
     /// The child's sys::Child::native_handle: on Windows its process handle,
-    /// on Linux a pidfd or -1, and -1 elsewhere; an inert Child's for an
-    /// inert process. It stays open while the process is there.
+    /// on Linux a pidfd or -1, and -1 elsewhere; null on Windows and -1
+    /// elsewhere for an inert process. The process keeps it until it is
+    /// destroyed: it is not to be closed, nor the child reaped through it.
     native_handle_type native_handle() const noexcept;
 
     /// Sends a signal to the child; fails with no_such_process once its exit
