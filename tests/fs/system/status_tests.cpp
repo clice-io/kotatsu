@@ -228,10 +228,9 @@ ZEST_CASE(status_tells_permissions) {
     ZEXPECT(directory->permissions == 0777u);
     ZASSERT(::SetFileAttributesW(wide.c_str(), FILE_ATTRIBUTE_READONLY));
     auto read_only = status(dir.file("file.txt"));
-    auto entries = test::entries_of(dir.root());
-    ZEXPECT(::SetFileAttributesW(wide.c_str(), FILE_ATTRIBUTE_NORMAL));
     ZASSERT(read_only.has_value());
     ZEXPECT(read_only->permissions == 0444u);
+    auto entries = test::entries_of(dir.root());
     ZASSERT(entries.size() == 1u);
     auto listed = entries.front().status();
     ZASSERT(listed.has_value());

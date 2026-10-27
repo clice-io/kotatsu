@@ -249,8 +249,6 @@ ZEST_CASE(rename_onto_a_read_only_file_held_open_fails) {
         ZEXPECT((test::attributes_of(dir.file("old.txt")) & FILE_ATTRIBUTE_READONLY) != 0);
         ZEXPECT(test::read_text(dir.file("old.txt")) == "old");
         ZEXPECT(test::read_text(dir.file("new.txt")) == "new");
-        // TempDir, through std::filesystem, would leave a read-only file.
-        ZEXPECT(remove(dir.file("old.txt")) == true);
     });
 }
 

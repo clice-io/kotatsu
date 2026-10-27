@@ -11,7 +11,6 @@
 #include <vector>
 
 #ifndef _WIN32
-#include <cerrno>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -129,16 +128,9 @@ ZEST_CASE(write_file_atomic_keeps_the_attributes) {
     test::write_text(dir.file("file"), "old");
     constexpr DWORD kept = FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
     ZASSERT(::SetFileAttributesW(test::std_path(dir.file("file")).wstring().c_str(), kept));
-    auto error = write_file_atomic(dir.file("file"), "new");
-    auto attributes = ::GetFileAttributesW(test::std_path(dir.file("file")).wstring().c_str());
-    auto content = test::read_text(dir.file("file"));
-    // The read-only file goes before a check could end the case: TempDir,
-    // through std::filesystem, would leave it.
-    ZEXPECT(remove(dir.file("file")) == true);
-    ZEXPECT(error == std::error_code());
-    ZEXPECT(attributes != INVALID_FILE_ATTRIBUTES);
-    ZEXPECT((attributes & kept) == kept);
-    ZEXPECT(content == "new");
+    ZEXPECT(!write_file_atomic(dir.file("file"), "new"));
+    ZEXPECT((test::attributes_of(dir.file("file")) & kept) == kept);
+    ZEXPECT(test::read_text(dir.file("file")) == "new");
 }
 #else
 ZEST_CASE(write_file_atomic_keeps_the_permissions) {
@@ -170,14 +162,11 @@ ZEST_CASE(write_file_atomic_makes_a_new_file_as_write_file_does) {
 }
 
 ZEST_CASE(write_file_atomic_keeps_the_owner) {
-    if(::geteuid() != 0) {
-        // Only root gives a file to another user.
-        zest::skip();
-        return;
-    }
     test::TempDir dir;
     test::write_text(dir.file("file"), "old");
-    ZASSERT(::chown(dir.file("file").c_str(), 65534, 65534) == 0);
+    if(!test::chowned(dir.file("file"), 65534, 65534)) {
+        return;
+    }
     ZEXPECT(!write_file_atomic(dir.file("file"), "new"));
     struct stat info;
     ZASSERT(::stat(dir.file("file").c_str(), &info) == 0);
@@ -190,12 +179,7 @@ ZEST_CASE(write_file_atomic_keeps_the_group_of_a_file_of_another_owner) {
     // not the owner. The directory, setgid, gives a new file its own group.
     test::TempDir dir;
     test::write_text(dir.file("file"), "old");
-    if(::chown(dir.file("file").c_str(), 65534, 65532) != 0) {
-        // Only root gives a file to another user, and only to one its user
-        // namespace maps.
-        auto refused = errno;
-        ZASSERT((refused == EPERM || refused == EINVAL));
-        zest::skip();
+    if(!test::chowned(dir.file("file"), 65534, 65532)) {
         return;
     }
     ZASSERT(::chown(dir.root().c_str(), 65533, 0) == 0);

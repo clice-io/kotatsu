@@ -94,7 +94,9 @@ inline void set_reparse_point(std::string_view path, DWORD tag) {
 
 /// The file at the UTF-8 `path` deleted the classic way, which keeps its
 /// name until the last handle to it goes and lets no open through it
-/// meanwhile, while this holds a handle to it.
+/// meanwhile, while this holds a handle to it, or until a failed ZASSERT
+/// ends the process: then the handle goes first, so that TempDir can remove
+/// the directory the name keeps.
 struct DeletePending {
     explicit DeletePending(std::string_view path) :
         handle(::CreateFileW(std_path(path).wstring().c_str(),
@@ -117,6 +119,9 @@ struct DeletePending {
     }
 
     HANDLE handle;
+
+private:
+    zest::FatalHook on_fatal{[this] { ::CloseHandle(handle); }};
 };
 
 }  // namespace kota::test

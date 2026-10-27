@@ -5,8 +5,8 @@
 // link_directory(), all through std::filesystem, fstreams and cmd rather
 // than kota::fs, which the tests check; linked() for a case that makes
 // a symlink; across_file_systems() on Linux for one that crosses file
-// systems; ScopedUser on POSIX for one root runs as another user; text_of()
-// and CountedBuffer for reads of large files.
+// systems; chowned() and ScopedUser on POSIX for one root runs as other
+// users; text_of() and CountedBuffer for reads of large files.
 
 #include <cstddef>
 #include <cstdlib>
@@ -21,6 +21,7 @@
 #include <utility>
 
 #ifndef _WIN32
+#include <cerrno>
 #include <unistd.h>
 #endif
 #ifdef __linux__
@@ -67,8 +68,19 @@ private:
         // A case may leave paths longer than MAX_PATH. A volume without a
         // drive letter is spelled verbatim already.
         auto wide = path.wstring();
-        std::filesystem::remove_all(wide.starts_with(LR"(\\?\)") ? wide : LR"(\\?\)" + wide,
-                                    ignored);
+        std::filesystem::path verbatim(wide.starts_with(LR"(\\?\)") ? wide : LR"(\\?\)" + wide);
+        // std::filesystem removes no read-only file, MinGW's anywhere and
+        // MSVC's on FAT: what a case left goes writable first.
+        using std::filesystem::recursive_directory_iterator;
+        for(recursive_directory_iterator walk(verbatim, ignored);
+            walk != recursive_directory_iterator();
+            walk.increment(ignored)) {
+            std::filesystem::permissions(walk->path(),
+                                         std::filesystem::perms::owner_write,
+                                         std::filesystem::perm_options::add,
+                                         ignored);
+        }
+        std::filesystem::remove_all(verbatim, ignored);
 #else
         std::filesystem::remove_all(path, ignored);
 #endif
@@ -216,6 +228,19 @@ private:
 };
 
 #ifndef _WIN32
+/// Whether the file at `path` was given to the user `uid` and the group
+/// `gid`. Only root may, and only to the users its user namespace maps: a
+/// case refused it is skipped.
+inline bool chowned(std::string_view path, uid_t uid, gid_t gid) {
+    if(::chown(std::string(path).c_str(), uid, gid) == 0) {
+        return true;
+    }
+    auto refused = errno;
+    ZASSERT((refused == EPERM || refused == EINVAL));
+    zest::skip();
+    return false;
+}
+
 /// The user `uid` and group `gid` a process run by root acts as, for as long
 /// as this lives, or until a failed ZASSERT ends the process: then root
 /// again, before the hook of a TempDir declared before this removes what
