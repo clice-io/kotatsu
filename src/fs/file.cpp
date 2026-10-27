@@ -5,6 +5,7 @@
 #include <random>
 #include <utility>
 
+#include "native.h"
 #include "kota/support/small_string.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/path.h"
@@ -247,6 +248,14 @@ bool File::is_open() const {
     return handle != closed;
 }
 
+std::expected<Status, std::error_code> File::status() const {
+    return native::status(handle);
+}
+
+std::error_code File::canonical(buffer_ref out) const {
+    return native::canonical(out, handle);
+}
+
 // Every lock tried marks the File for close() to release: one that fails
 // may leave held the lock taken before it, as macOS does.
 
@@ -343,7 +352,13 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
                                   FILE_ATTRIBUTE_NORMAL | flags,
                                   nullptr);
     if(handle == INVALID_HANDLE_VALUE) {
-        return std::unexpected(windows::last_error());
+        // A directory, which CreateFileW opens only with
+        // FILE_FLAG_BACKUP_SEMANTICS, is refused as access is.
+        auto error = ::GetLastError();
+        if(error == ERROR_ACCESS_DENIED && is_directory(path)) {
+            return std::unexpected(std::make_error_code(std::errc::is_a_directory));
+        }
+        return std::unexpected(windows::to_error_code(error));
     }
     File file(handle);
     // TRUNCATE_EXISTING and CREATE_ALWAYS would drop a hidden or system
@@ -400,11 +415,11 @@ std::expected<std::uint64_t, std::error_code> File::seek(std::int64_t offset, Se
     return static_cast<std::uint64_t>(position.QuadPart);
 }
 
-std::expected<Status, std::error_code> File::status() const {
+std::expected<Status, std::error_code> native::status(File::native_handle_type handle) {
     return win32::handle_status(handle);
 }
 
-std::error_code File::canonical(buffer_ref out) const {
+std::error_code native::canonical(buffer_ref out, File::native_handle_type handle) {
     // Windows names a file deleted while open by where it keeps it until the
     // last handle goes, under `\$Extend\$Deleted`, or by its old name. A pipe
     // says it is deleted too.
@@ -477,9 +492,20 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
     }
     int fd = open_file(c_path.c_str(), flags, 0666);
     if(fd < 0) {
-        return std::unexpected(posix::last_error());
+        // A directory refused to read fails as a file would.
+        auto error = posix::last_error();
+        if(error == std::errc::permission_denied && is_directory(path)) {
+            return std::unexpected(std::make_error_code(std::errc::is_a_directory));
+        }
+        return std::unexpected(error);
     }
-    return File(fd);
+    // A directory fails to open for writing (EISDIR), but opens to read.
+    File file(fd);
+    struct stat info;
+    if(!writes && ::fstat(fd, &info) == 0 && S_ISDIR(info.st_mode)) {
+        return std::unexpected(std::make_error_code(std::errc::is_a_directory));
+    }
+    return file;
 }
 
 std::expected<std::size_t, std::error_code> File::read(std::span<char> buffer) {
@@ -517,7 +543,7 @@ std::expected<std::uint64_t, std::error_code> File::seek(std::int64_t offset, Se
     return static_cast<std::uint64_t>(position);
 }
 
-std::expected<Status, std::error_code> File::status() const {
+std::expected<Status, std::error_code> native::status(File::native_handle_type handle) {
     struct stat info;
     if(::fstat(handle, &info) != 0) {
         return std::unexpected(posix::last_error());
@@ -525,7 +551,7 @@ std::expected<Status, std::error_code> File::status() const {
     return posix::make_status(info);
 }
 
-std::error_code File::canonical(buffer_ref out) const {
+std::error_code native::canonical(buffer_ref out, File::native_handle_type handle) {
 #ifdef __APPLE__
     // macOS keeps the last name of a file whose names all went.
     struct stat opened;
@@ -543,7 +569,7 @@ std::error_code File::canonical(buffer_ref out) const {
     return {};
 #else
     // /proc would call a closed one's link missing.
-    if(!is_open()) {
+    if(handle == File::closed) {
         return std::make_error_code(std::errc::bad_file_descriptor);
     }
     char link[32];

@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "native.h"
 #include "kota/support/small_string.h"
 #include "kota/fs/path.h"
 
@@ -579,14 +580,24 @@ struct detail::OpenDirectory {
     std::uint64_t device;
 
     Listing listing{.extended = true};
+
+    HANDLE native() const {
+        return handle.get();
+    }
 #else
     DirHandle dir;
+
+    int native() const {
+        return ::dirfd(dir.get());
+    }
 #endif
 };
 
-std::expected<DirStream, std::error_code> read_dir(std::string_view dir) {
+Directory::Entry::Entry() = default;
+
+std::expected<Directory, std::error_code> Directory::open(std::string_view path) {
 #ifdef _WIN32
-    auto handle = open_directory(dir);
+    auto handle = open_directory(path);
     if(!handle) {
         return std::unexpected(handle.error());
     }
@@ -594,32 +605,32 @@ std::expected<DirStream, std::error_code> read_dir(std::string_view dir) {
     if(!id) {
         return std::unexpected(id.error());
     }
-    return DirStream(std::make_shared<detail::OpenDirectory>(std::move(*handle), id->device));
+    return Directory(std::make_shared<detail::OpenDirectory>(std::move(*handle), id->device));
 #else
-    auto opened = open_dir(dir);
+    auto opened = open_dir(path);
     if(!opened) {
         return std::unexpected(opened.error());
     }
-    return DirStream(std::make_shared<detail::OpenDirectory>(std::move(*opened)));
+    return Directory(std::make_shared<detail::OpenDirectory>(std::move(*opened)));
 #endif
 }
 
-DirStream::iterator DirStream::begin() {
+Directory::Iterator Directory::begin() {
     if(!started) {
         started = true;
         advance();
     }
-    return iterator(this);
+    return Iterator(this);
 }
 
-void DirStream::advance() {
+void Directory::advance() {
     if(!current) {
         done = true;
         return;
     }
-    DirEntry made;
+    Entry made;
 #ifdef _WIN32
-    auto entry = directory->listing.next(directory->handle.get());
+    auto entry = directory->listing.next(directory->native());
     if(!entry) {
         current = std::unexpected(windows::to_error_code(entry.error()));
         return;
@@ -665,15 +676,38 @@ void DirStream::advance() {
     current = std::move(made);
 }
 
-std::expected<Volume, std::error_code> DirStream::volume() const {
+std::expected<Volume, std::error_code> Directory::volume() const {
 #ifdef _WIN32
-    return win32::volume_of(directory->handle.get());
+    return win32::volume_of(native_handle());
 #else
-    return posix::volume_of(::dirfd(directory->dir.get()));
+    return posix::volume_of(native_handle());
 #endif
 }
 
-std::expected<Status, std::error_code> DirEntry::status() const {
+std::expected<Status, std::error_code> Directory::status() const {
+    return native::status(native_handle());
+}
+
+std::error_code Directory::canonical(buffer_ref out) const {
+    return native::canonical(out, native_handle());
+}
+
+void Directory::close() {
+    if(!directory) {
+        return;
+    }
+    // The entry the range stands on holds the directory too.
+    directory.reset();
+    started = true;
+    done = false;
+    current = std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
+}
+
+Directory::native_handle_type Directory::native_handle() const {
+    return directory ? directory->native() : File::closed;
+}
+
+std::expected<Status, std::error_code> Directory::Entry::status() const {
 #ifdef _WIN32
     // One made rather than listed has no listing to tell it.
     if(!listed) {
@@ -687,7 +721,7 @@ std::expected<Status, std::error_code> DirEntry::status() const {
     // cannot fail.
     win32::WidePath wide;
     [[maybe_unused]] auto converted = to_utf16(wide, name);
-    auto child = open_entry(directory->handle.get(), wide, FILE_READ_ATTRIBUTES);
+    auto child = open_entry(directory->native(), wide, FILE_READ_ATTRIBUTES);
     if(child.get() != INVALID_HANDLE_VALUE) {
         return win32::handle_status(child.get());
     }
@@ -704,7 +738,7 @@ std::expected<Status, std::error_code> DirEntry::status() const {
         return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
     }
     struct stat info;
-    if(::fstatat(::dirfd(directory->dir.get()), name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) {
+    if(::fstatat(directory->native(), name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) {
         return std::unexpected(posix::last_error());
     }
     return posix::make_status(info);

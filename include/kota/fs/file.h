@@ -45,9 +45,10 @@ enum class SeekFrom : std::uint8_t {
     End,
 };
 
-/// An open file, closed when this goes. Its handle is not inherited by
-/// child processes, and on Windows does not keep another process from
-/// renaming or removing the file.
+/// An open file to read or write bytes, closed when this goes: a regular
+/// file, a device or a pipe, never a directory, which a Directory opens. Its
+/// handle is not inherited by child processes, and on Windows does not keep
+/// another process from renaming or removing the file.
 class File {
 public:
 #ifdef _WIN32
@@ -71,6 +72,9 @@ public:
 
     ~File();
 
+    /// Opens the file at `path`, symlinks followed, as `options` say. A
+    /// directory fails with std::errc::is_a_directory, but for `create_new`,
+    /// which fails with file_exists for anything there.
     static std::expected<File, std::error_code> open(std::string_view path,
                                                      const OpenOptions& options = {.read = true});
 

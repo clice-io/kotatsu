@@ -84,7 +84,7 @@ std::error_code process_error(std::error_code error) {
 std::error_code count_thread_switches(ProcessStats& stats, int pid) {
     small_string<64> dir;
     proc_path(dir, pid, "task");
-    auto threads = fs::read_dir(dir);
+    auto threads = fs::Directory::open(dir);
     if(!threads) {
         return process_error(threads.error());
     }

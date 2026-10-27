@@ -101,7 +101,7 @@ ZEST_CASE(one_file_has_one_id_by_path_by_handle_and_listed) {
     });
 }
 
-ZEST_CASE(read_dir_tells_each_entry_its_own_status) {
+ZEST_CASE(directory_tells_each_entry_its_own_status) {
     // Win32 would take `a.` and `a ` for `a`, which FAT keeps apart.
     on_fat([](const test::TempDir& dir) {
         ZEXPECT(!write_file(verbatim(dir.file("a")), "1"));
@@ -126,16 +126,16 @@ ZEST_CASE(read_dir_tells_each_entry_its_own_status) {
     });
 }
 
-ZEST_CASE(read_dir_of_an_empty_directory_is_empty) {
+ZEST_CASE(an_empty_directory_lists_nothing) {
     // The first read refused for its IDs, the second finds nothing.
     on_fat([](const test::TempDir& dir) {
-        auto stream = read_dir(dir.root());
-        ZASSERT(stream.has_value());
-        ZEXPECT(stream->begin() == stream->end());
+        auto directory = Directory::open(dir.root());
+        ZASSERT(directory.has_value());
+        ZEXPECT(directory->begin() == directory->end());
     });
 }
 
-ZEST_CASE(read_dir_entry_status_of_a_removed_file_fails) {
+ZEST_CASE(entry_status_of_a_removed_file_fails) {
     // FAT lists no whole status: the entry is opened when asked.
     on_fat([](const test::TempDir& dir) {
         test::write_text(dir.file("file.txt"), "12345");
@@ -166,10 +166,10 @@ ZEST_CASE(set_times_rounds_up_to_two_seconds) {
 ZEST_CASE(volume_names_the_file_system) {
     on_fat([](const test::TempDir& dir) {
         auto named = volume(dir.root());
-        auto stream = read_dir(dir.root());
+        auto directory = Directory::open(dir.root());
         ZASSERT(named.has_value());
-        ZASSERT(stream.has_value());
-        auto listed = stream->volume();
+        ZASSERT(directory.has_value());
+        auto listed = directory->volume();
         ZASSERT(listed.has_value());
         ZEXPECT(named->type == listed->type);
         ZEXPECT((named->type == "FAT32" || named->type == "exFAT"));

@@ -2,10 +2,10 @@
 
 // TempDir, a directory of a test's own, write_text() and read_text(),
 // ScopedCurrentDir, make_junction() on Windows and ScopedPermissions
-// elsewhere, all through std::filesystem, fstreams and cmd rather than
-// kota::fs, which the tests check; linked() for a case that makes a symlink;
-// across_file_systems() on Linux for one that crosses file systems; text_of()
-// and CountedBuffer for reads of large files.
+// elsewhere, link_directory(), all through std::filesystem, fstreams and cmd
+// rather than kota::fs, which the tests check; linked() for a case that makes
+// a symlink; across_file_systems() on Linux for one that crosses file
+// systems; text_of() and CountedBuffer for reads of large files.
 
 #include <cstddef>
 #include <cstdlib>
@@ -219,5 +219,15 @@ inline void make_junction(std::string_view link, std::string_view target) {
     ZASSERT(::_wsystem(command.c_str()) == 0);
 }
 #endif
+
+/// Makes `link` lead to the directory `target`: a junction on Windows, which
+/// needs no privilege, a symlink elsewhere.
+inline void link_directory(std::string_view target, std::string_view link) {
+#ifdef _WIN32
+    make_junction(link, target);
+#else
+    std::filesystem::create_directory_symlink(std_path(target), std_path(link));
+#endif
+}
 
 }  // namespace kota::test

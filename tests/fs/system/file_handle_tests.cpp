@@ -43,6 +43,40 @@ std::string rest_of(File& file) {
     }
 }
 
+/// Opens the directory at `path` every way OpenOptions takes, each of which
+/// fails as for a directory: a File opens none.
+void expect_refused_as_a_directory(std::string_view path) {
+    struct Refused {
+        std::string_view label;
+        OpenOptions options;
+        std::errc error;
+    };
+
+    constexpr auto is_a_directory = std::errc::is_a_directory;
+    constexpr Refused refused[] = {
+        {"read",                    {.read = true},                       is_a_directory        },
+        {"write",                   {.write = true},                      is_a_directory        },
+        {"read, write",             {.read = true, .write = true},        is_a_directory        },
+        {"append",                  {.append = true},                     is_a_directory        },
+        {"read, append",            {.read = true, .append = true},       is_a_directory        },
+        {"write, truncate",         {.write = true, .truncate = true},    is_a_directory        },
+        {"write, create",           {.write = true, .create = true},      is_a_directory        },
+        {"write, truncate, create",
+         {.write = true, .truncate = true, .create = true},
+         is_a_directory                                                                         },
+        {"append, create",          {.append = true, .create = true},     is_a_directory        },
+        // Anything there, a directory too.
+        {"write, create_new",       {.write = true, .create_new = true},  std::errc::file_exists},
+        {"append, create_new",      {.append = true, .create_new = true}, std::errc::file_exists},
+    };
+    for(const auto& entry: refused) {
+        ZEST_CONTEXT("{}", entry.label);
+        auto file = File::open(path, entry.options);
+        ZASSERT(!file.has_value());
+        ZEXPECT(file.error() == entry.error);
+    }
+}
+
 #ifdef __APPLE__
 /// A disk image of 1 MB of HFS+ in a test's directory, attached beside it,
 /// which hdiutil lets any user do; detached, as though the disk went, when
@@ -276,6 +310,34 @@ ZEST_CASE(open_to_append_creates) {
     ZEXPECT(test::read_text(dir.file("file")) == "text");
 }
 
+ZEST_CASE(open_of_a_directory_fails) {
+    test::TempDir dir;
+    expect_refused_as_a_directory(dir.root());
+}
+
+ZEST_CASE(open_of_a_directory_through_a_link_fails) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    test::link_directory(dir.file("target"), dir.file("link"));
+    expect_refused_as_a_directory(dir.file("link"));
+}
+
+#ifndef _WIN32
+ZEST_CASE(open_of_a_directory_that_may_not_be_read_fails) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "closed");
+    test::ScopedPermissions closed(dir.path / "closed", std::filesystem::perms::none);
+    if(::access(dir.file("closed").c_str(), R_OK) == 0) {
+        // Root passes through any permission.
+        zest::skip();
+        return;
+    }
+    auto file = File::open(dir.file("closed"));
+    ZASSERT(!file.has_value());
+    ZEXPECT(file.error() == std::errc::is_a_directory);
+}
+#endif
+
 ZEST_CASE(seek_moves_where_reads_start) {
     test::TempDir dir;
     test::write_text(dir.file("file"), "0123456789");
@@ -502,13 +564,7 @@ ZEST_CASE(canonical_follows_a_link_the_file_was_opened_through) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
     test::write_text(dir.file("target/file.txt"), "text");
-#ifdef _WIN32
-    test::make_junction(dir.file("link"), dir.file("target"));
-#else
-    if(!test::linked(create_directory_symlink(dir.file("target"), dir.file("link")))) {
-        return;
-    }
-#endif
+    test::link_directory(dir.file("target"), dir.file("link"));
     auto file = File::open(dir.file("link/file.txt"));
     ZASSERT(file.has_value());
     std::string opened;
