@@ -60,6 +60,9 @@ struct IncomingErrorResponse {
     /// its sender could not read does; such a response is never answered.
     std::optional<protocol::RequestID> id;
     Error error;
+    /// A response that could not be read, rather than the remote's error:
+    /// `error` says why it could not, and fails the request it names.
+    bool unreadable = false;
 };
 
 /// A message that is no valid request, notification or response: it is

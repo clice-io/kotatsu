@@ -182,6 +182,31 @@ ZEST_CASE(unreadable_request_is_answered_before_it_ends_the_conversation_under_e
     ZEXPECT(ended->message == written[0].error.message);
 }
 
+// It fails the request it names; the other would wait for good.
+ZEST_CASE(unreadable_response_ends_the_conversation_under_end) {
+    Fixture f;
+    f.peer.set_violation_policy(ViolationPolicy::End);
+    auto remote = [&]() -> task<> {
+        co_await f.next();
+        co_await f.next();
+        f.remote.send(R"({"jsonrpc":"1.0","id":1,"result":0})");
+    };
+
+    auto [ran, first, second, scripted] = f.run(f.peer.run(),
+                                                f.peer.send_request(AddParams{}),
+                                                f.peer.send_request(AddParams{}),
+                                                remote());
+    ZEXPECT(ran.has_value());
+    ZASSERT(first.has_error());
+    ZEXPECT(code_of(first.error()) == ErrorCode::InvalidRequest);
+    ZASSERT(second.has_error());
+    ZEXPECT(code_of(second.error()) == ErrorCode::ConnectionClosed);
+    auto ended = f.peer.ended();
+    ZASSERT(ended.has_value());
+    ZEXPECT(ended->kind == ConversationEnd::Kind::Malformed);
+    ZEXPECT(ended->message == R"(malformed response: jsonrpc must be "2.0")");
+}
+
 // JSON-RPC never answers it, and it ends the conversation all the same.
 ZEST_CASE(unreadable_notification_ends_the_conversation_under_end) {
     Fixture f;

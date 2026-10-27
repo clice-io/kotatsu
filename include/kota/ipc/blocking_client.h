@@ -131,7 +131,7 @@ private:
             return std::move(answer->result);
         }
         if(auto* refusal = std::get_if<IncomingErrorResponse>(&message);
-           refusal && refusal->id == id) {
+           refusal && refusal->id == id && !refusal->unreadable) {
             return outcome_error(std::move(refusal->error));
         }
         return outcome_error(end(detail::not_the_answer(message)));

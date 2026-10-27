@@ -48,10 +48,15 @@ std::expected<std::size_t, std::error_code> read_some(native_handle_type handle,
     while(true) {
         DWORD got = 0;
         if(!::ReadFile(handle, buffer.data(), static_cast<DWORD>(buffer.size()), &got, nullptr)) {
-            if(::GetLastError() == ERROR_BROKEN_PIPE) {
+            const auto error = ::GetLastError();
+            if(error == ERROR_BROKEN_PIPE) {
                 return 0;
             }
-            return std::unexpected(last_error());
+            // A message larger than `buffer`, read in message mode: what
+            // fits is read, and the rest follows.
+            if(error != ERROR_MORE_DATA) {
+                return std::unexpected(last_error());
+            }
         }
         // None read is a write of none by the other end, not its close.
         if(got != 0) {
@@ -189,6 +194,9 @@ std::string not_the_answer(const IncomingMessage& message) {
             } else if constexpr(std::is_same_v<T, IncomingResponse>) {
                 return "the answer to another request";
             } else if constexpr(std::is_same_v<T, IncomingErrorResponse>) {
+                if(incoming.unreadable) {
+                    return incoming.error.message;
+                }
                 return (incoming.id ? "an error answering another request: "
                                     : "an error response without an id: ") +
                        incoming.error.message;

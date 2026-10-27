@@ -466,6 +466,7 @@ IncomingMessage read_malformed(std::string_view payload, std::string reason) {
     return IncomingErrorResponse{
         .id = std::move(members.id),
         .error = Error(protocol::ErrorCode::InvalidRequest, "malformed response: " + reason),
+        .unreadable = true,
     };
 }
 
@@ -595,6 +596,7 @@ IncomingMessage JSONCodec::parse_message(std::string payload) {
             .id = std::move(id),
             .error = Error(protocol::ErrorCode::InvalidRequest,
                            "response must contain exactly one of result or error"),
+            .unreadable = true,
         };
     }
     if(has_error) {
@@ -605,6 +607,7 @@ IncomingMessage JSONCodec::parse_message(std::string payload) {
             .id = std::nullopt,
             .error = Error(protocol::ErrorCode::InvalidRequest,
                            "response id must be an integer or a string"),
+            .unreadable = true,
         };
     }
     return IncomingResponse{.id = std::move(*id), .result = slice_of(false)};

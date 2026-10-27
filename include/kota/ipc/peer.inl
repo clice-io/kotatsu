@@ -785,8 +785,14 @@ struct Peer<CodecT>::Self {
                     if(!m.id) {
                         return report_violation("error response without an id: " + m.error.message);
                     }
+                    // One that could not be read fails the request it names,
+                    // or is logged as an orphan, and breaks the protocol.
+                    std::optional<std::string> violation;
+                    if(m.unreadable) {
+                        violation = m.error.message;
+                    }
                     complete_pending_request(*m.id, outcome_error(std::move(m.error)));
-                    return std::nullopt;
+                    return violation;
                 } else {
                     if(m.notification) {
                         log(LogLevel::warn, "dropped a notification: {}", m.error.message);

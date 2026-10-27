@@ -57,17 +57,19 @@ struct UnansweredRequest {
     protocol::RequestID id;
 };
 
-/// What a Peer does at a message from its remote that it can neither answer
-/// under a request's id nor deliver, which breaks the protocol the two
-/// speak: one that cannot be read as a request, a notification or a
-/// response; an error response without an id, as a remote sends when it
-/// could not read what it was sent; or a notification no handler takes,
-/// LSP's $/ ones included, or whose params do not decode. None of these
-/// breaks it: a request it reads and answers with an error, for a method it
-/// has no handler for, with params that do not decode or under the id of one
-/// it is answering; a response to a request no longer pending; a
-/// $/cancelRequest, which the peer takes itself and ignores when it cannot
-/// read it; a frame too large to read, which concerns this side's limit.
+/// What a Peer does at a message from its remote that breaks the protocol
+/// the two speak, one it can neither take as an answer or a request nor
+/// deliver: one that cannot be read as a request, a notification or a
+/// response, a response it cannot read included, which still fails the
+/// request it names; an error response without an id, as a remote sends
+/// when it could not read what it was sent; or a notification no handler
+/// takes, LSP's $/ ones included, or whose params do not decode. None of
+/// these breaks it: a request it reads and answers with an error, for a
+/// method it has no handler for, with params that do not decode or under
+/// the id of one it is answering; a response it reads to a request no
+/// longer pending; a $/cancelRequest, which the peer takes itself and
+/// ignores when it cannot read it; a frame too large to read, which
+/// concerns this side's limit.
 enum class ViolationPolicy : std::uint8_t {
     /// Answers a request it cannot read with an error, as JSON-RPC asks of a
     /// server, logs the rest, and reads on.

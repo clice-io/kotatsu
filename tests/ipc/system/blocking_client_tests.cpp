@@ -63,35 +63,27 @@ using Handle = BlockingClient<BincodeCodec>::native_handle_type;
 /// opened to it as a client's is.
 class Link {
 public:
-    Link() {
 #ifdef _WIN32
-        std::random_device random;
-        const auto name = std::format(LR"(\\.\pipe\kota-{:08x}{:08x})", random(), random());
-        remote = ::CreateNamedPipeW(name.c_str(),
-                                    PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
-                                    PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT |
-                                        PIPE_REJECT_REMOTE_CLIENTS,
-                                    1,
-                                    64 * 1024,
-                                    64 * 1024,
-                                    0,
-                                    nullptr);
-        ZASSERT(remote != INVALID_HANDLE_VALUE);
-        client = ::CreateFileW(name.c_str(),
-                               GENERIC_READ | GENERIC_WRITE,
-                               0,
-                               nullptr,
-                               OPEN_EXISTING,
-                               0,
-                               nullptr);
-        ZASSERT(client != INVALID_HANDLE_VALUE);
+    /// Over a pipe of messages, which the client's end reads as messages.
+    struct Messages {};
+
+    Link() {
+        open(PIPE_TYPE_BYTE | PIPE_READMODE_BYTE);
+    }
+
+    explicit Link(Messages) {
+        open(PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE);
+        DWORD mode = PIPE_READMODE_MESSAGE;
+        ZASSERT(::SetNamedPipeHandleState(client, &mode, nullptr, nullptr));
+    }
 #else
+    Link() {
         int ends[2] = {-1, -1};
         ZASSERT(::socketpair(AF_UNIX, SOCK_STREAM, 0, ends) == 0);
         client = ends[0];
         remote = ends[1];
-#endif
     }
+#endif
 
     Link(const Link&) = delete;
     Link& operator=(const Link&) = delete;
@@ -197,6 +189,32 @@ public:
     }
 
 private:
+#ifdef _WIN32
+    /// Opens a named pipe of a random name with `type`, as a server does, and
+    /// a handle to it, as a client opens one.
+    void open(DWORD type) {
+        std::random_device random;
+        const auto name = std::format(LR"(\\.\pipe\kota-{:08x}{:08x})", random(), random());
+        remote = ::CreateNamedPipeW(name.c_str(),
+                                    PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                                    type | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                                    1,
+                                    64 * 1024,
+                                    64 * 1024,
+                                    0,
+                                    nullptr);
+        ZASSERT(remote != INVALID_HANDLE_VALUE);
+        client = ::CreateFileW(name.c_str(),
+                               GENERIC_READ | GENERIC_WRITE,
+                               0,
+                               nullptr,
+                               OPEN_EXISTING,
+                               0,
+                               nullptr);
+        ZASSERT(client != INVALID_HANDLE_VALUE);
+    }
+#endif
+
     Handle remote;
     FrameParser parser;
     std::string unread;
@@ -484,6 +502,19 @@ ZEST_CASE(write_of_no_bytes_is_no_end) {
     ZASSERT(result.has_value());
     ZEXPECT(result->sum == 3);
 }
+
+// Each write a message, the payload's larger than one read: it is read in
+// pieces, as in byte mode.
+ZEST_CASE(message_larger_than_a_read_is_read_whole) {
+    Link link(Link::Messages{});
+    Client client(link.client);
+    const std::string text(16 * 1024, 'x');
+    link.send(test::response<Bincode>(1, NoteParams{.text = text}));
+
+    auto result = client.send_request<NoteParams>("test/note", NoteParams{});
+    ZASSERT(result.has_value());
+    ZEXPECT(result->text == text);
+}
 #endif
 
 // As a function that opens the connection returns it.
@@ -547,6 +578,21 @@ ZEST_CASE(json_request_gets_its_result) {
     ZASSERT(request.has_value());
     ZEXPECT(request->id == RequestID(1));
     ZEXPECT(request->method == "test/add");
+}
+
+// It names this request, but is no answer the protocol allows.
+ZEST_CASE(unreadable_response_ends_the_conversation) {
+    using JSON = test::JSONAdapter;
+    Link link;
+    BlockingClient<JSONCodec> client(link.client);
+    link.send(R"({"jsonrpc":"2.0","id":1})");
+
+    auto ended = client.send_request<AddResult>("test/add", AddParams{});
+    ZASSERT(ended.has_error());
+    ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
+    ZEXPECT(ended.error().message == "response must contain exactly one of result or error");
+    auto request = link.receive_message<JSON>();
+    ZASSERT(request.has_value());
 }
 
 };  // ZEST_SUITE(ipc_blocking_client)
