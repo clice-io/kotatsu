@@ -257,6 +257,19 @@ jobs:
             ctest --preset "${{ matrix.preset }}" --verbose
           fi
 
+      # The cases that give files to other users, which only root may and
+      # which skip otherwise, run as root on one leg; each must pass.
+      - name: Test as root
+        if: matrix.os_label == 'linux' && matrix.toolchain == 'clang' && matrix.preset == 'debug'
+        shell: bash
+        run: |
+          cases=copy_file_over_a_file_of_another_owner_fails
+          cases+=,write_file_atomic_keeps_the_owner
+          cases+=,write_file_atomic_keeps_the_group_of_a_file_of_another_owner
+          sudo ./build/debug/system_tests --snapshot-dir=tests/snapshots \
+            --test-filter="{fs_file_copy,fs_file}.{${cases}}" | tee "${RUNNER_TEMP}/root-tests.log"
+          grep -qF '[  PASSED  ] 3 tests.' "${RUNNER_TEMP}/root-tests.log"
+
       - name: Summarize coverage
         if: ${{ !cancelled() && hashFiles('build/coverage/report/summary.md') != '' }}
         shell: bash
