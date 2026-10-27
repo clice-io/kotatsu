@@ -930,9 +930,25 @@ ZEST_CASE(pidfd_takes_no_closed_stream) {
     ZASSERT(status.has_value());
     ZEXPECT(status->code == 3);
 }
+
+// The child sends a pidfd of itself before it execs, which names it however
+// soon it exits and whoever reaps it.
+ZEST_CASE(native_handle_is_a_pidfd_of_the_child) {
+    auto child = spawn(test::shell("exit 0"));
+    ZASSERT(child.has_value());
+    // A kernel before 5.3 has no pidfds.
+    if(child->native_handle() < 0) {
+        zest::skip();
+        return;
+    }
+    std::string info;
+    ZASSERT(!fs::read_file(info, std::format("/proc/self/fdinfo/{}", child->native_handle())));
+    ZEXPECT(zest::contains(info, std::format("Pid:\t{}\n", child->pid())));
+    ZEXPECT(child->wait().has_value());
+}
 #endif
 
-// The child clears O_NONBLOCK of a stream it is given, which this process
+// Spawn clears O_NONBLOCK of a stream it gives the child, which this process
 // shares, as libuv's does: one that never ran leaves it as it was.
 ZEST_CASE(spawn_that_fails_leaves_a_stream_non_blocking) {
     int fds[2];

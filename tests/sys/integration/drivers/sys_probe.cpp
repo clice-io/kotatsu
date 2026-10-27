@@ -12,6 +12,8 @@
 //                         when it fails>, "code": <the exit code of
 //                         `sys_probe parent` started by self_executable, or
 //                         null when it cannot be started>}
+//   started               prints {"started": <what started_path writes>,
+//                         "executable": <what executable_path writes>}
 //   other <pid>           sets the priority of process <pid> to BelowNormal and
 //                         prints what it reads back, as a number, and the
 //                         process's resident size and voluntary switches
@@ -21,9 +23,10 @@
 //   console <text>        Windows: writes <text>, a byte that is no UTF-8
 //                         and "!" to a console of its own, and prints what
 //                         the console shows
-//   job                   Windows: joins a job of at most 1 GiB a process and
-//                         one CPU's time, and prints memory().limit and
-//                         parallelism()
+//   job [min-max]         Windows: joins a job of at most 1 GiB a process and
+//                         one CPU's time, a hard cap or with `min-max` the
+//                         maximum of a minimum and maximum rate, and prints
+//                         memory().limit and parallelism()
 //   hang                  prints nothing and runs until it is killed
 //   streams               prints "to-stdout" to stdout and "to-stderr" to
 //                         stderr
@@ -224,15 +227,25 @@ int write_to_console(std::string_view text) {
     return 0;
 }
 
-int join_job() {
+int join_job(bool min_max) {
     HANDLE job = ::CreateJobObjectW(nullptr, nullptr);
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
     limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_PROCESS_MEMORY;
     limits.ProcessMemoryLimit = std::size_t(1) << 30;
     JOBOBJECT_CPU_RATE_CONTROL_INFORMATION rate{};
-    rate.ControlFlags = JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
     // In hundredths of a percent of all the CPUs.
-    rate.CpuRate = 10000 / ::GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+    const DWORD one_cpu = 10000 / ::GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+    if(min_max) {
+        // The maximum in the high half, which MinGW leaves unnamed; a minimum
+        // of 0 is refused.
+        rate.ControlFlags =
+            JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE;
+        rate.CpuRate = one_cpu << 16 | 1;
+    } else {
+        rate.ControlFlags =
+            JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
+        rate.CpuRate = one_cpu;
+    }
     if(job == nullptr ||
        !::SetInformationJobObject(job,
                                   JobObjectExtendedLimitInformation,
@@ -351,6 +364,19 @@ int main() {
             }
         }
         print_line(std::format(R"({{"path":{},"code":{}}})", found ? json(path) : "null", code));
+        return 0;
+    }
+    if(command == "started") {
+        std::string started;
+        if(auto error = sys::started_path(started)) {
+            return fail("started_path", error);
+        }
+        std::string executable;
+        if(auto error = sys::executable_path(executable)) {
+            return fail("executable_path", error);
+        }
+        print_line(
+            std::format(R"({{"started":{},"executable":{}}})", json(started), json(executable)));
         return 0;
     }
     if(command == "other" && arguments.size() == 3) {
@@ -605,8 +631,9 @@ int main() {
     if(command == "console" && arguments.size() == 3) {
         return write_to_console(arguments[2]);
     }
-    if(command == "job") {
-        return join_job();
+    if(command == "job" &&
+       (arguments.size() == 2 || (arguments.size() == 3 && arguments[2] == "min-max"))) {
+        return join_job(arguments.size() == 3);
     }
 #else
     if(command == "title" && arguments.size() == 4) {

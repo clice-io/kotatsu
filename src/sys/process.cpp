@@ -21,6 +21,7 @@
 #include <sys/stat.h>
 #else
 #include <signal.h>
+#include <sys/auxv.h>
 #include <sys/stat.h>
 
 #include "proc.h"
@@ -135,6 +136,37 @@ std::error_code executable_path(buffer_ref out) {
        image.st_dev != named.st_dev || image.st_ino != named.st_ino) {
         return std::make_error_code(std::errc::no_such_file_or_directory);
     }
+    return {};
+#endif
+}
+
+std::error_code started_path(buffer_ref out) {
+#ifdef _WIN32
+    small_wstring<264> path;
+    path.resize(MAX_PATH);
+    while(true) {
+        auto size = ::GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+        // Cut short when it fills the buffer.
+        if(size < path.size()) {
+            from_utf16(out, std::wstring_view(path.data(), size));
+            return {};
+        }
+        path.resize(path.size() * 2);
+    }
+#elif defined(__APPLE__)
+    // The first call tells the size it takes, the terminator included.
+    std::uint32_t size = 0;
+    ::_NSGetExecutablePath(nullptr, &size);
+    ::_NSGetExecutablePath(out.resize(size).data(), &size);
+    out.resize(size - 1);
+    return {};
+#else
+    // Absent only from a kernel before 2.6.26.
+    const auto* path = reinterpret_cast<const char*>(::getauxval(AT_EXECFN));
+    if(path == nullptr) {
+        return std::make_error_code(std::errc::not_supported);
+    }
+    out.assign(path);
     return {};
 #endif
 }

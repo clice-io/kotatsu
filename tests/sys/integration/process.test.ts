@@ -9,6 +9,7 @@
 //   file was removed or replaced, and a copy of it started through
 //   self_executable after the file was renamed, and on Linux removed or
 //   replaced;
+// - the path it was started by, a symbolic or hard link to its file;
 // - another process's priority, set and read back, and its memory; on Linux
 //   the switches of all its threads;
 // - on Linux and macOS the title it sets is what ps shows, and its own
@@ -21,11 +22,13 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
   copyFileSync,
+  linkSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
   renameSync,
   rmSync,
+  symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -197,6 +200,60 @@ test(
   },
 );
 
+type Started = { started: string; executable: string };
+
+/**
+ * What a copy of sys_probe running `started` tells when started through the
+ * path `link` makes to it, in a directory of their own; `null` when the link
+ * cannot be made.
+ */
+async function startedThrough(
+  t: TestContext,
+  link: (target: string, path: string) => void,
+): Promise<{ output: Started; path: string; target: string } | null> {
+  const dir = mkdtempSync(join(tmpdir(), "kota-started-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }));
+  const target = join(dir, `sys_probe${exe}`);
+  copyFileSync(driverPath("sys_probe"), target);
+  // A program named after one it stands for, as a compiler's shim is.
+  const path = join(dir, `cc${exe}`);
+  try {
+    link(target, path);
+  } catch (error) {
+    // Windows makes symbolic links for administrators and in developer mode.
+    if ((error as NodeJS.ErrnoException).code === "EPERM") {
+      return null;
+    }
+    throw error;
+  }
+  const driver = await Driver.spawn(t, "sys_probe", ["started"], {
+    program: path,
+  });
+  const output = (await printed(driver)) as Started;
+  await driver.expectExit(0);
+  return { output, path, target };
+}
+
+test("started_path_names_the_symbolic_link_it_was_started_by", async (t) => {
+  const started = await startedThrough(t, symlinkSync);
+  if (started === null) {
+    t.skip("no symbolic links for this user");
+    return;
+  }
+  assert.equal(started.output.started, started.path);
+  // Where executable_path follows it to the file.
+  assert.equal(
+    realpathSync.native(started.output.executable),
+    realpathSync.native(started.target),
+  );
+});
+
+test("started_path_names_the_hard_link_it_was_started_by", async (t) => {
+  const started = await startedThrough(t, linkSync);
+  assert.ok(started !== null);
+  assert.equal(started.output.started, started.path);
+});
+
 test("priority_of_another_process_is_set_and_read", async (t) => {
   const waiting = await Driver.spawn(t, "sys_probe", ["wait"]);
   assert.equal(await waiting.jsonLines().receive(), "ready");
@@ -344,6 +401,17 @@ test(
     };
     await driver.expectExit(0);
     assert.equal(output.limit, 2 ** 30);
+    assert.equal(output.parallelism, 1);
+  },
+);
+
+test(
+  "a_job_with_a_maximum_rate_limits_parallelism",
+  { skip: process.platform !== "win32" && "only Windows has job objects" },
+  async (t) => {
+    const driver = await Driver.spawn(t, "sys_probe", ["job", "min-max"]);
+    const output = (await printed(driver)) as { parallelism: number };
+    await driver.expectExit(0);
     assert.equal(output.parallelism, 1);
   },
 );

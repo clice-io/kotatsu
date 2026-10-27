@@ -30,17 +30,23 @@ unsigned parallelism() {
     unsigned count = spread ? ::GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)
                             : static_cast<unsigned>(std::popcount(process_mask));
     JOBOBJECT_CPU_RATE_CONTROL_INFORMATION rate{};
+    constexpr DWORD capped =
+        JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP | JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE;
     // Fails when the process is in no job.
     if(::QueryInformationJobObject(nullptr,
                                    JobObjectCpuRateControlInformation,
                                    &rate,
                                    sizeof(rate),
                                    nullptr) &&
-       (rate.ControlFlags & JOB_OBJECT_CPU_RATE_CONTROL_ENABLE) &&
-       (rate.ControlFlags & JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP)) {
-        // A share of all the machine's CPUs, in hundredths of a percent.
-        auto cpus =
-            std::ceil(::GetActiveProcessorCount(ALL_PROCESSOR_GROUPS) * rate.CpuRate / 10000.0);
+       (rate.ControlFlags & JOB_OBJECT_CPU_RATE_CONTROL_ENABLE) && (rate.ControlFlags & capped)) {
+        // A share of all the machine's CPUs, in hundredths of a percent, past
+        // which the job's threads wait: a hard cap's rate, or the maximum of a
+        // minimum and maximum, the rate's high half, which MinGW leaves
+        // unnamed.
+        const DWORD cap = (rate.ControlFlags & JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP)
+                              ? rate.CpuRate
+                              : rate.CpuRate >> 16;
+        auto cpus = std::ceil(::GetActiveProcessorCount(ALL_PROCESSOR_GROUPS) * cap / 10000.0);
         count = std::min(count, static_cast<unsigned>(cpus));
     }
     return std::max(count, 1u);

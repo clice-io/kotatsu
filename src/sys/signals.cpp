@@ -3,6 +3,7 @@
 #include "signals.h"
 
 #include <csignal>
+#include <mutex>
 
 #include "kota/sys/detail/signals.h"
 
@@ -17,6 +18,12 @@ constinit std::mutex spawning;
 #endif
 
 void stop_auto_reaping() noexcept {
+    // Two spawns that both found SIGCHLD ignored would both set its default,
+    // one over a handler set meanwhile for the other's child, as
+    // kota::process sets one where it has no pidfd. A child forked
+    // meanwhile, which may find it held, never takes it.
+    constinit static std::mutex reaping;
+    std::lock_guard lock(reaping);
     struct sigaction action = {};
     ::sigaction(SIGCHLD, nullptr, &action);
     const bool ignored = action.sa_handler == SIG_IGN;
