@@ -376,6 +376,28 @@ ZEST_CASE(sync_keeps_what_was_written) {
     ZEXPECT(test::read_text(dir.file("file")) == "text");
 }
 
+#ifdef __APPLE__
+// macOS refuses F_FULLFSYNC for these, which fsync() stands in for. Its
+// other errors, such as a flush that failed, take a failing disk to show.
+
+ZEST_CASE(sync_of_a_device_succeeds) {
+    auto file = File::open("/dev/null", {.write = true});
+    ZASSERT(file.has_value());
+    ZEXPECT(!file->sync());
+}
+
+ZEST_CASE(sync_of_a_pipe_fails) {
+    int ends[2];
+    ZASSERT(::pipe(ends) == 0);
+    auto file = File::open(std::format("/dev/fd/{}", ends[1]), {.write = true});
+    auto error = file ? file->sync() : file.error();
+    ::close(ends[0]);
+    ::close(ends[1]);
+    ZASSERT(file.has_value());
+    ZEXPECT(error == std::errc::not_supported);
+}
+#endif
+
 ZEST_CASE(set_sparse_lets_a_file_hold_a_hole) {
     test::TempDir dir;
     auto file = File::open(dir.file("file"), {.write = true, .create = true});
