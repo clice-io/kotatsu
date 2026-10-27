@@ -1489,7 +1489,7 @@ ZEST_CASE(open_with_access_the_process_does_not_grant_fails) {
     ZASSERT(set == static_cast<DWORD>(ERROR_SUCCESS));
 
     // An administrator with the debug privilege would open it all the same.
-    test::ScopedNoDebugPrivilege unprivileged;
+    test::ScopedNoPrivileges unprivileged({L"SeDebugPrivilege"});
     ZEXPECT(Child::open(child->pid()).has_value());
     auto opened = Child::open(child->pid(), PROCESS_VM_READ);
     ZASSERT(!opened.has_value());
@@ -1497,6 +1497,15 @@ ZEST_CASE(open_with_access_the_process_does_not_grant_fails) {
 
     test::close_end(child->take_pipe(0));
     ZEXPECT(child->wait().has_value());
+}
+
+// ACCESS_SYSTEM_SECURITY takes the security privilege, or the debug
+// privilege, which grants every right: an administrator may hold both.
+ZEST_CASE(open_with_a_right_that_takes_a_privilege_not_held_fails) {
+    test::ScopedNoPrivileges unprivileged({L"SeDebugPrivilege", L"SeSecurityPrivilege"});
+    auto opened = Child::open(static_cast<int>(::GetCurrentProcessId()), ACCESS_SYSTEM_SECURITY);
+    ZASSERT(!opened.has_value());
+    ZEXPECT(opened.error() == std::errc::operation_not_permitted);
 }
 
 ZEST_CASE(open_of_no_process_fails) {

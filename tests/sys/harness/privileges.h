@@ -1,7 +1,8 @@
 #pragma once
 
-// ScopedNoDebugPrivilege, on Windows the calling thread without the debug
-// privilege, with which an administrator opens any process.
+// ScopedNoPrivileges, on Windows the calling thread without privileges the
+// process holds, such as the debug privilege, with which an administrator
+// opens any process.
 
 #ifdef _WIN32
 
@@ -11,16 +12,17 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <initializer_list>
 #include <windows.h>
 
 #include "kota/zest/zest.h"
 
 namespace kota::test {
 
-/// The calling thread without the debug privilege, with which an
-/// administrator opens any process, until this goes.
-struct ScopedNoDebugPrivilege {
-    ScopedNoDebugPrivilege() {
+/// The calling thread without privileges `names`, such as L"SeDebugPrivilege",
+/// until this goes.
+struct ScopedNoPrivileges {
+    explicit ScopedNoPrivileges(std::initializer_list<const wchar_t*> names) {
         HANDLE own = nullptr;
         ZASSERT(::OpenProcessToken(::GetCurrentProcess(), TOKEN_DUPLICATE, &own));
         HANDLE token = nullptr;
@@ -32,21 +34,22 @@ struct ScopedNoDebugPrivilege {
                                              &token);
         ::CloseHandle(own);
         ZASSERT(duplicated);
-        TOKEN_PRIVILEGES privileges{};
-        privileges.PrivilegeCount = 1;
-        privileges.Privileges[0].Attributes = SE_PRIVILEGE_REMOVED;
-        ZASSERT(
-            ::LookupPrivilegeValueW(nullptr, L"SeDebugPrivilege", &privileges.Privileges[0].Luid));
-        // Succeeds, saying ERROR_NOT_ALL_ASSIGNED, for a token without it.
-        ZASSERT(::AdjustTokenPrivileges(token, FALSE, &privileges, 0, nullptr, nullptr));
+        for(const wchar_t* name: names) {
+            TOKEN_PRIVILEGES privileges{};
+            privileges.PrivilegeCount = 1;
+            privileges.Privileges[0].Attributes = SE_PRIVILEGE_REMOVED;
+            ZASSERT(::LookupPrivilegeValueW(nullptr, name, &privileges.Privileges[0].Luid));
+            // Succeeds, saying ERROR_NOT_ALL_ASSIGNED, for a token without it.
+            ZASSERT(::AdjustTokenPrivileges(token, FALSE, &privileges, 0, nullptr, nullptr));
+        }
         ZASSERT(::SetThreadToken(nullptr, token));
         ::CloseHandle(token);
     }
 
-    ScopedNoDebugPrivilege(const ScopedNoDebugPrivilege&) = delete;
-    ScopedNoDebugPrivilege& operator=(const ScopedNoDebugPrivilege&) = delete;
+    ScopedNoPrivileges(const ScopedNoPrivileges&) = delete;
+    ScopedNoPrivileges& operator=(const ScopedNoPrivileges&) = delete;
 
-    ~ScopedNoDebugPrivilege() {
+    ~ScopedNoPrivileges() {
         ::RevertToSelf();
     }
 };
