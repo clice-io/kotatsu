@@ -296,6 +296,15 @@ ZEST_CASE(rename_noreplace_to_another_volume_fails) {
     });
 }
 
+ZEST_CASE(read_symlink_of_a_file_fails) {
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("file"), "text");
+        std::string target;
+        ZEXPECT(read_symlink(target, dir.file("file")) == std::errc::invalid_argument);
+        ZEXPECT(read_symlink(target, dir.root()) == std::errc::invalid_argument);
+    });
+}
+
 };  // ZEST_SUITE(fs_fat)
 
 }  // namespace

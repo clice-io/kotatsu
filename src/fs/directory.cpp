@@ -1029,6 +1029,15 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
     if(handle.get() == INVALID_HANDLE_VALUE) {
         return windows::last_error();
     }
+    // A file that is no reparse point is told by its attributes: FAT, which
+    // keeps none, refuses to be asked for a reparse point's data.
+    FILE_BASIC_INFO basic;
+    if(!::GetFileInformationByHandleEx(handle.get(), FileBasicInfo, &basic, sizeof(basic))) {
+        return windows::last_error();
+    }
+    if(!(basic.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
 
     // REPARSE_DATA_BUFFER, which only the driver headers declare: a symlink
     // and a junction hold a substitute name, which the system follows, and a
@@ -1076,11 +1085,7 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
                           MAXIMUM_REPARSE_DATA_BUFFER_SIZE,
                           &returned,
                           nullptr)) {
-        auto error = ::GetLastError();
-        if(error == ERROR_NOT_A_REPARSE_POINT) {
-            return std::make_error_code(std::errc::invalid_argument);
-        }
-        return windows::to_error_code(error);
+        return windows::last_error();
     }
     auto& data = *reinterpret_cast<Reparse*>(buffer.get());
     // What the file system gave is checked before it is read: a name past
