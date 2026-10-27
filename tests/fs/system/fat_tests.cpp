@@ -149,15 +149,13 @@ ZEST_CASE(entry_status_of_a_removed_file_fails) {
 }
 
 ZEST_CASE(entry_status_of_a_file_deleted_while_held_open_fails) {
-    // FAT deletes the classic way: the name stays until the last handle
-    // goes, but names a file going away.
+    // FAT lists no whole status: the entry, whose name stays until the last
+    // handle goes, is opened when asked.
     on_fat([](const test::TempDir& dir) {
         test::write_text(dir.file("file.txt"), "12345");
         auto entries = test::entries_of(dir.root());
         ZASSERT(entries.size() == 1u);
-        auto held = File::open(dir.file("file.txt"));
-        ZASSERT(held.has_value());
-        ZEXPECT(remove(dir.file("file.txt")) == true);
+        test::DeletePending pending(dir.file("file.txt"));
         auto status = entries.front().status();
         ZASSERT(!status.has_value());
         ZEXPECT(status.error() == std::errc::no_such_file_or_directory);

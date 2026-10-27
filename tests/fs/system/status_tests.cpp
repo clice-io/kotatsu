@@ -360,9 +360,9 @@ ZEST_CASE(junctions_are_links) {
 ZEST_CASE(status_tells_a_wsl_fifo_or_device) {
     // WSL keeps one as a reparse point of a tag of its own.
     constexpr std::pair<DWORD, FileType> kinds[] = {
-        {0x80000024, FileType::Fifo     },
-        {0x80000025, FileType::Character},
-        {0x80000026, FileType::Block    },
+        {test::wsl_fifo_tag,      FileType::Fifo     },
+        {test::wsl_character_tag, FileType::Character},
+        {test::wsl_block_tag,     FileType::Block    },
     };
     test::TempDir dir;
     for(auto [tag, type]: kinds) {

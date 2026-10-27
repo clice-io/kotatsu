@@ -51,6 +51,15 @@ inline HANDLE make_pipe(std::string& name, const TempDir& dir, DWORD access, DWO
     return pipe;
 }
 
+/// Reparse tags for set_reparse_point(), which older SDKs lack: of a fifo,
+/// a character device and a block device WSL made (IO_REPARSE_TAG_LX_FIFO,
+/// _LX_CHR, _LX_BLK), and of a link a Windows container made
+/// (IO_REPARSE_TAG_WCI_LINK_1).
+constexpr DWORD wsl_fifo_tag = 0x80000024;
+constexpr DWORD wsl_character_tag = 0x80000025;
+constexpr DWORD wsl_block_tag = 0x80000026;
+constexpr DWORD container_link_tag = 0xA0000027;
+
 /// Makes the file at `path` a reparse point of the Microsoft `tag` with no
 /// data, as WSL makes its fifos and devices.
 inline void set_reparse_point(std::string_view path, DWORD tag) {

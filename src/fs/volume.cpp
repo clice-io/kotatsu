@@ -21,17 +21,7 @@
 
 namespace kota::fs {
 
-#ifdef __APPLE__
-
-namespace {
-
-/// The file systems macOS mounts from another machine, by the names it
-/// gives them. Not MNT_LOCAL, which autofs and macFUSE leave out as well.
-constexpr std::string_view remote_types[] = {"nfs", "smbfs", "afpfs", "webdav", "afs"};
-
-}  // namespace
-
-#elif !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__APPLE__)
 
 namespace {
 
@@ -145,6 +135,9 @@ namespace {
 
 Volume volume_from(const struct statfs& info) {
 #ifdef __APPLE__
+    // The file systems macOS mounts from another machine, by the names it
+    // gives them. Not MNT_LOCAL, which autofs and macFUSE leave out as well.
+    constexpr static std::string_view remote_types[] = {"nfs", "smbfs", "afpfs", "webdav", "afs"};
     std::uint64_t unit = info.f_bsize;
     std::string type = info.f_fstypename;
     bool remote = std::ranges::find(remote_types, type) != std::ranges::end(remote_types);

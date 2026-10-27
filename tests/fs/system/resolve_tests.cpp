@@ -84,7 +84,7 @@ ZEST_CASE(canonical_names_a_volume_without_a_drive_letter_by_its_guid) {
     // KOTA_TEST_LETTERLESS_DIR is a volume's `\\?\Volume{...}\` that has
     // neither a drive letter nor a mount folder.
     const char* volume = std::getenv("KOTA_TEST_LETTERLESS_DIR");
-    if(volume == nullptr) {
+    if(volume == nullptr || *volume == '\0') {
         // Only Windows CI mounts one.
         zest::skip();
         return;

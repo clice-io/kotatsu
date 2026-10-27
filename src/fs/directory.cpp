@@ -281,8 +281,9 @@ std::error_code list_names(std::vector<std::wstring>& names, HANDLE handle) {
     }
 }
 
-/// A directory remove_all() went into, held open until what it lists is
-/// gone, and where its names start among those listed.
+/// What remove_all() opened, held open until it goes, once what it lists,
+/// if it is a directory, is gone; and where its names start among those
+/// listed.
 struct Level {
     win32::Handle handle;
     std::size_t names;
@@ -315,19 +316,9 @@ std::expected<std::uint64_t, std::error_code> remove_tree(win32::Handle handle) 
                 return std::unexpected(error);
             }
         }
-        if(names.size() > start) {
-            levels.push_back({.handle = std::move(handle), .names = start});
-        } else {
-            if(auto error = dispose(handle.get()); error != ERROR_SUCCESS) {
-                return std::unexpected(windows::to_error_code(error));
-            }
-            ++removed;
-            // Closed before the directory it is in is deleted, which FAT,
-            // deleting the classic way, refuses until then.
-            handle = win32::Handle();
-        }
-        // The next entry to remove, from the deepest directory with any
-        // left; one with none left goes.
+        levels.push_back({.handle = std::move(handle), .names = start});
+        // The next entry to remove, from the deepest level with any left;
+        // one with none left goes.
         while(handle.get() == INVALID_HANDLE_VALUE) {
             if(levels.empty()) {
                 return removed;
@@ -338,6 +329,8 @@ std::expected<std::uint64_t, std::error_code> remove_tree(win32::Handle handle) 
                     return std::unexpected(windows::to_error_code(error));
                 }
                 ++removed;
+                // Closed before the directory it is in is deleted, which
+                // FAT, deleting the classic way, refuses until then.
                 levels.pop_back();
                 continue;
             }
@@ -495,10 +488,14 @@ std::expected<std::uint64_t, std::error_code> remove_tree(const char* path) {
     // Where entries go from: for `path` itself, the current directory.
     Descriptor dir(AT_FDCWD);
     while(true) {
+        // What goes next, from `dir`: an entry listed, or a directory whose
+        // entries are gone.
+        std::string name;
+        bool directory;
         if(listed.size() > (levels.empty() ? 0 : levels.back().entries)) {
             auto entry = std::move(listed.back());
             listed.pop_back();
-            bool directory = entry.type == DT_DIR;
+            directory = entry.type == DT_DIR;
             if(entry.type == DT_UNKNOWN) {
                 struct stat info;
                 if(::fstatat(dir.fd, entry.name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) {
@@ -539,35 +536,34 @@ std::expected<std::uint64_t, std::error_code> remove_tree(const char* path) {
                     return std::unexpected(posix::last_error());
                 }
             }
-            if(::unlinkat(dir.fd, entry.name.c_str(), directory ? AT_REMOVEDIR : 0) == 0) {
-                ++removed;
-            } else if(errno != ENOENT) {
-                return std::unexpected(posix::last_error());
-            }
-            continue;
-        }
-        if(levels.empty()) {
-            return removed;
-        }
-        // The directory is empty: back to the one above to remove it.
-        auto level = std::move(levels.back());
-        levels.pop_back();
-        if(levels.empty()) {
-            dir = Descriptor(AT_FDCWD);
+            name = std::move(entry.name);
         } else {
-            Descriptor above(::openat(dir.fd, "..", O_RDONLY | O_DIRECTORY | O_CLOEXEC));
-            struct stat info;
-            if(above.fd < 0 || ::fstat(above.fd, &info) != 0) {
-                return std::unexpected(posix::last_error());
+            if(levels.empty()) {
+                return removed;
             }
-            // A rename moved the directory out of the one the walk came
-            // from, which it has lost.
-            if(info.st_dev != levels.back().device || info.st_ino != levels.back().inode) {
-                return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
+            // The directory is empty: back to the one above to remove it.
+            auto level = std::move(levels.back());
+            levels.pop_back();
+            if(levels.empty()) {
+                dir = Descriptor(AT_FDCWD);
+            } else {
+                Descriptor above(::openat(dir.fd, "..", O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+                struct stat info;
+                if(above.fd < 0 || ::fstat(above.fd, &info) != 0) {
+                    return std::unexpected(posix::last_error());
+                }
+                // A rename moved the directory out of the one the walk came
+                // from, which it has lost.
+                if(info.st_dev != levels.back().device || info.st_ino != levels.back().inode) {
+                    return std::unexpected(
+                        std::make_error_code(std::errc::no_such_file_or_directory));
+                }
+                dir = std::move(above);
             }
-            dir = std::move(above);
+            name = std::move(level.name);
+            directory = true;
         }
-        if(::unlinkat(dir.fd, level.name.c_str(), AT_REMOVEDIR) == 0) {
+        if(::unlinkat(dir.fd, name.c_str(), directory ? AT_REMOVEDIR : 0) == 0) {
             ++removed;
         } else if(errno != ENOENT) {
             return std::unexpected(posix::last_error());

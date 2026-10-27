@@ -780,11 +780,10 @@ ZEST_CASE(read_symlink_gives_the_directory_of_a_junction) {
 
 ZEST_CASE(read_symlink_of_a_link_it_cannot_read_fails) {
     // A reparse point a path is resolved through, as Windows containers
-    // make (IO_REPARSE_TAG_WCI_LINK_1): a link, whose target only its own
-    // driver knows.
+    // make: a link, whose target only its own driver knows.
     test::TempDir dir;
     test::write_text(dir.file("link"), "");
-    test::set_reparse_point(dir.file("link"), 0xA0000027);
+    test::set_reparse_point(dir.file("link"), test::container_link_tag);
     auto itself = symlink_status(dir.file("link"));
     ZASSERT(itself.has_value());
     ZEXPECT(itself->type == FileType::Symlink);
@@ -792,7 +791,7 @@ ZEST_CASE(read_symlink_of_a_link_it_cannot_read_fails) {
     ZEXPECT(read_symlink(target, dir.file("link")) == std::errc::not_supported);
     // One that holds the file, a WSL fifo, is no link.
     test::write_text(dir.file("fifo"), "");
-    test::set_reparse_point(dir.file("fifo"), 0x80000024);
+    test::set_reparse_point(dir.file("fifo"), test::wsl_fifo_tag);
     ZEXPECT(read_symlink(target, dir.file("fifo")) == std::errc::invalid_argument);
 }
 #endif
