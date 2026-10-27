@@ -974,14 +974,10 @@ std::error_code rename_noreplace(std::string_view from, std::string_view to) {
         return error == std::errc::operation_not_permitted ? refused : error;
     }
     // An old name gone already went to another rename of `from`, which gave
-    // the file a new name of its own: this rename failed, and takes back the
-    // name it gave.
+    // the file a new name too. Taking this one back by name could remove a
+    // file put there since.
     auto removed = remove(from);
-    if(removed == true) {
-        return {};
-    }
-    [[maybe_unused]] auto undone = remove(to);
-    return removed ? std::make_error_code(std::errc::no_such_file_or_directory) : removed.error();
+    return removed ? std::error_code() : removed.error();
 #endif
 }
 

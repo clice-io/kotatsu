@@ -751,8 +751,8 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
     if(auto error = target_path.assign(to)) {
         return error;
     }
-    // Not to wait for a pipe's other end, as an open of one does: a regular
-    // file takes no notice of O_NONBLOCK.
+    // Here and for `to`, not to wait for a pipe's other end, as an open of
+    // one does: a regular file takes no notice of O_NONBLOCK.
     File source(open_file(source_path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC));
     if(!source.is_open()) {
         return posix::last_error();
@@ -780,20 +780,34 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
 #else
     const auto& mtime = copied.st_mtim;
 #endif
-    // Another name of `from`'s would lose its bytes once emptied, a pipe
-    // would wait for its other end, and a device's permissions are not the
-    // copy's to change. A directory fails to open below.
-    struct stat existing;
-    if(::stat(target_path.c_str(), &existing) == 0 && !S_ISDIR(existing.st_mode) &&
-       (!S_ISREG(existing.st_mode) ||
-        (existing.st_dev == copied.st_dev && existing.st_ino == copied.st_ino))) {
-        return std::make_error_code(std::errc::invalid_argument);
-    }
+    // Another name of `from`'s would lose its bytes once emptied, and a
+    // device's permissions are not the copy's to change: what was opened is
+    // checked, whatever replaced the name meanwhile.
+    auto refused = [&](const struct stat& existing) {
+        return !S_ISREG(existing.st_mode) ||
+               (existing.st_dev == copied.st_dev && existing.st_ino == copied.st_ino);
+    };
     // Created with the permissions it ends with, so that no one opens it
     // meanwhile who could not read `from`.
-    File target(open_file(target_path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, permissions));
+    File target(
+        open_file(target_path.c_str(), O_WRONLY | O_CREAT | O_NONBLOCK | O_CLOEXEC, permissions));
+    struct stat existing;
     if(!target.is_open()) {
+        auto error = posix::last_error();
+        // A pipe without a reader (ENXIO), and another name of a read-only
+        // `from`'s (EACCES), fail to open: they fail as they would open. A
+        // directory fails as it does (EISDIR).
+        if(::stat(target_path.c_str(), &existing) == 0 && !S_ISDIR(existing.st_mode) &&
+           refused(existing)) {
+            return std::make_error_code(std::errc::invalid_argument);
+        }
+        return error;
+    }
+    if(::fstat(target.handle, &existing) != 0) {
         return posix::last_error();
+    }
+    if(refused(existing)) {
+        return std::make_error_code(std::errc::invalid_argument);
     }
     if(::fchmod(target.handle, permissions) != 0) {
         return posix::last_error();

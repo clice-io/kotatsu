@@ -177,8 +177,10 @@ std::error_code rename(std::string_view from, std::string_view to);
 /// Where the system or the file system has no such rename (NFS, Linux before
 /// 3.15, a network file system on macOS), a hard link, which replaces nothing
 /// either, gives the file its new name before the old one goes: meanwhile
-/// both name it, after a crash between both stay, and a file another process
-/// puts at `from` meanwhile loses its name in the file's place. What takes
+/// both name it, and both stay after a crash between or should the old one
+/// fail to go; of renames of one file to names of their own, more than one
+/// may succeed, and leave it each name; and a file another process puts at
+/// `from` meanwhile loses its name in the file's place. What takes
 /// no hard link there, a directory among others, fails as the system refused
 /// the rename: on Linux with std::errc::invalid_argument, as a directory
 /// moved into itself does (function_not_supported before 3.15), on macOS

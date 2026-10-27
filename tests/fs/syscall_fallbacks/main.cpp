@@ -207,8 +207,8 @@ std::array<std::error_code, renamers> race(Rename rename) {
     return errors;
 }
 
-/// Of renames that race, of files of their own to one name, or of one file
-/// to names of their own, one renames and the others fail.
+/// Of renames that race of files of their own to one name, one renames and
+/// the others fail; of one file to names of their own, at least one.
 void rename_races(const std::string& root) {
     constexpr std::size_t renamers = 4;
     for(int round = 0; round < 50; ++round) {
@@ -227,20 +227,27 @@ void rename_races(const std::string& root) {
                   renamers - 1,
               std::format("round {}: the other renames to one name find it taken", round));
 
-        // The one file goes back to names of its own.
+        // The one file goes to names of its own: those that link it before
+        // its old name goes all succeed.
+        auto text = read(one);
         auto to_own = race<renamers>(
-            [&](std::size_t i) { return kota::fs::rename_noreplace(one, own(i) + "-back"); });
-        check(std::ranges::count(to_own, std::error_code()) == 1,
-              std::format("round {}: one rename of one file succeeds", round));
-        check(std::ranges::count(to_own,
-                                 std::make_error_code(std::errc::no_such_file_or_directory)) ==
-                  renamers - 1,
-              std::format("round {}: the other renames of one file find it gone", round));
-        std::size_t named = 0;
+            [&](std::size_t i) { return kota::fs::rename_noreplace(one, own(i) + "-moved"); });
+        check(kota::fs::exists(one) == false,
+              std::format("round {}: the one file loses its old name", round));
         for(std::size_t i = 0; i < renamers; ++i) {
-            named += kota::fs::exists(own(i) + "-back") == true;
+            auto what = std::format("round {}, renamer {}", round, i);
+            if(to_own[i]) {
+                check(to_own[i] == std::errc::no_such_file_or_directory,
+                      std::format("{}: a rename that lost finds the file gone", what));
+                check(kota::fs::exists(own(i) + "-moved") == false,
+                      std::format("{}: a rename that lost names nothing", what));
+            } else {
+                check(read(own(i) + "-moved") == text,
+                      std::format("{}: a rename that won names the one file", what));
+            }
         }
-        check(named == 1, std::format("round {}: the one file has one new name", round));
+        check(std::ranges::count(to_own, std::error_code()) >= 1,
+              std::format("round {}: a rename of one file succeeds", round));
     }
 }
 
