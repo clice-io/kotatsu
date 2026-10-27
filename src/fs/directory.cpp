@@ -13,8 +13,6 @@
 #include "kota/fs/path.h"
 
 #ifdef _WIN32
-#include <atomic>
-
 #include "win32.h"
 #include "kota/support/utf16.h"
 #else
@@ -163,7 +161,7 @@ struct Listing {
 /// A handle to list the directory `dir` through. The access to list a
 /// directory reads a file as well, so a file is told apart here.
 std::expected<win32::Handle, std::error_code> open_directory(std::string_view dir) {
-    auto handle = win32::open(dir, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES);
+    auto handle = win32::open(dir, FILE_LIST_DIRECTORY);
     if(!handle) {
         return handle;
     }
@@ -232,20 +230,18 @@ struct AttributeHandle {
 
 /// What `path` names, a link itself, as an AttributeHandle; empty when it
 /// cannot be opened or read.
-std::optional<AttributeHandle> open_attributes(const wchar_t* path) {
-    auto handle = win32::try_open(path,
-                                  FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
-                                  FILE_FLAG_OPEN_REPARSE_POINT);
+std::optional<AttributeHandle> open_attributes(std::wstring_view path) {
+    auto handle = win32::open_native(path, FILE_WRITE_ATTRIBUTES, false);
     FILE_BASIC_INFO basic;
-    if(handle.get() == INVALID_HANDLE_VALUE ||
-       !::GetFileInformationByHandleEx(handle.get(), FileBasicInfo, &basic, sizeof(basic))) {
+    if(!handle ||
+       !::GetFileInformationByHandleEx(handle->get(), FileBasicInfo, &basic, sizeof(basic))) {
         return std::nullopt;
     }
-    auto id = win32::file_id(handle.get());
+    auto id = win32::file_id(handle->get());
     if(!id) {
         return std::nullopt;
     }
-    return AttributeHandle{.handle = std::move(handle), .basic = basic, .id = *id};
+    return AttributeHandle{.handle = std::move(*handle), .basic = basic, .id = *id};
 }
 
 /// Whether an open failed because nothing is there: a missing name, a
@@ -253,72 +249,18 @@ std::optional<AttributeHandle> open_attributes(const wchar_t* path) {
 /// while held open, which goes with the last handle.
 bool names_nothing(DWORD error) {
     return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ||
-           win32::delete_pending(error);
-}
-
-using NtCreateFileFn = NTSTATUS(NTAPI*)(PHANDLE,
-                                        ACCESS_MASK,
-                                        POBJECT_ATTRIBUTES,
-                                        PIO_STATUS_BLOCK,
-                                        PLARGE_INTEGER,
-                                        ULONG,
-                                        ULONG,
-                                        ULONG,
-                                        ULONG,
-                                        PVOID,
-                                        ULONG);
-/// NtCreateFile's disposition and options, which only the DDK names.
-constexpr ULONG nt_open_existing = 1;
-constexpr ULONG nt_synchronous_io = 0x20;
-constexpr ULONG nt_backup_intent = 0x4000;
-constexpr ULONG nt_open_reparse_point = 0x200000;
-
-/// The entry `name` of the directory `parent`, itself when it is a link,
-/// opened through the parent's handle: Win32 opens names only from the
-/// root, through directories a rename may have replaced since. An invalid
-/// handle on failure, GetLastError() telling why.
-win32::Handle open_entry(HANDLE parent, std::wstring_view name, DWORD access) {
-    static constinit std::atomic<NtCreateFileFn> create = nullptr;
-    UNICODE_STRING object_name;
-    object_name.Length = static_cast<USHORT>(name.size() * sizeof(wchar_t));
-    object_name.MaximumLength = object_name.Length;
-    object_name.Buffer = const_cast<PWSTR>(name.data());
-    OBJECT_ATTRIBUTES attributes{};
-    attributes.Length = sizeof(attributes);
-    attributes.RootDirectory = parent;
-    attributes.ObjectName = &object_name;
-    IO_STATUS_BLOCK status_block{};
-    HANDLE handle = INVALID_HANDLE_VALUE;
-    auto status = win32::from_ntdll(create, "NtCreateFile")(
-        &handle,
-        access | SYNCHRONIZE,
-        &attributes,
-        &status_block,
-        nullptr,
-        0,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        nt_open_existing,
-        nt_synchronous_io | nt_backup_intent | nt_open_reparse_point,
-        nullptr,
-        0);
-    if(status < 0) {
-        ::SetLastError(win32::dos_error(status));
-        return win32::Handle();
-    }
-    return win32::Handle(handle);
+           error == ERROR_DELETE_PENDING;
 }
 
 /// Opens what remove_all() removes through `open(access)`: to list and
 /// delete it, or only to delete it when the caller may not read it or
 /// another process holds it open for everything but reading.
 template <typename Open>
-win32::Handle open_to_remove(Open open) {
-    auto handle = open(DELETE | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY);
-    if(handle.get() == INVALID_HANDLE_VALUE) {
-        if(auto error = ::GetLastError();
-           error == ERROR_ACCESS_DENIED || error == ERROR_SHARING_VIOLATION) {
-            handle = open(DELETE | FILE_READ_ATTRIBUTES);
-        }
+std::expected<win32::Handle, DWORD> open_to_remove(Open open) {
+    auto handle = open(DELETE | FILE_LIST_DIRECTORY);
+    if(!handle &&
+       (handle.error() == ERROR_ACCESS_DENIED || handle.error() == ERROR_SHARING_VIOLATION)) {
+        return open(DELETE);
     }
     return handle;
 }
@@ -401,13 +343,14 @@ std::expected<std::uint64_t, std::error_code> remove_tree(win32::Handle handle) 
             }
             auto name = std::move(names.back());
             names.pop_back();
-            handle = open_to_remove(
-                [&](DWORD access) { return open_entry(level.handle.get(), name, access); });
-            // One that names nothing went since it was listed.
-            if(handle.get() == INVALID_HANDLE_VALUE) {
-                if(auto error = ::GetLastError(); !names_nothing(error)) {
-                    return std::unexpected(windows::to_error_code(error));
-                }
+            auto opened = open_to_remove([&](DWORD access) {
+                return win32::open_at(level.handle.get(), name, access, false);
+            });
+            if(opened) {
+                handle = std::move(*opened);
+            } else if(!names_nothing(opened.error())) {
+                // One that names nothing went since it was listed.
+                return std::unexpected(windows::to_error_code(opened.error()));
             }
         }
     }
@@ -845,21 +788,16 @@ std::expected<Status, std::error_code> Directory::Entry::status() const {
     // cannot fail.
     win32::WidePath wide;
     [[maybe_unused]] auto converted = to_utf16(wide, name);
-    auto child = open_entry(directory->native_handle(), wide, FILE_READ_ATTRIBUTES);
-    if(child.get() != INVALID_HANDLE_VALUE) {
-        return win32::handle_status(child.get());
+    auto child = win32::open_at(directory->native_handle(), wide, 0, false);
+    if(child) {
+        return win32::handle_status(child->get());
     }
-    // A file deleted while held open is gone but for the name. One no open
-    // reaches otherwise, as status() takes it: what the listing told,
+    // One no open reaches, as status() takes it: what the listing told,
     // without an ID or links.
-    auto error = ::GetLastError();
-    if(win32::delete_pending(error)) {
-        return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
-    }
-    if(error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED) {
+    if(child.error() == ERROR_SHARING_VIOLATION || child.error() == ERROR_ACCESS_DENIED) {
         return *listed;
     }
-    return std::unexpected(windows::to_error_code(error));
+    return std::unexpected(windows::to_error_code(child.error()));
 #else
     // One made rather than listed has no directory to ask through.
     if(!directory) {
@@ -935,15 +873,14 @@ std::expected<bool, std::error_code> remove(std::string_view path) {
     if(auto error = windows::to_native(native, path)) {
         return std::unexpected(error);
     }
-    auto handle = win32::try_open(native.c_str(), DELETE, FILE_FLAG_OPEN_REPARSE_POINT);
-    if(handle.get() == INVALID_HANDLE_VALUE) {
-        auto error = ::GetLastError();
-        if(names_nothing(error)) {
+    auto handle = win32::open_native(native, DELETE, false);
+    if(!handle) {
+        if(names_nothing(handle.error())) {
             return false;
         }
-        return std::unexpected(windows::to_error_code(error));
+        return std::unexpected(windows::to_error_code(handle.error()));
     }
-    if(auto error = dispose(handle.get()); error != ERROR_SUCCESS) {
+    if(auto error = dispose(handle->get()); error != ERROR_SUCCESS) {
         return std::unexpected(windows::to_error_code(error));
     }
     return true;
@@ -986,17 +923,15 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) 
     if(auto error = windows::to_native(native, path)) {
         return std::unexpected(error);
     }
-    auto handle = open_to_remove([&](DWORD access) {
-        return win32::try_open(native.c_str(), access, FILE_FLAG_OPEN_REPARSE_POINT);
-    });
-    if(handle.get() == INVALID_HANDLE_VALUE) {
-        auto error = ::GetLastError();
-        if(names_nothing(error)) {
+    auto handle =
+        open_to_remove([&](DWORD access) { return win32::open_native(native, access, false); });
+    if(!handle) {
+        if(names_nothing(handle.error())) {
             return 0;
         }
-        return std::unexpected(windows::to_error_code(error));
+        return std::unexpected(windows::to_error_code(handle.error()));
     }
-    return remove_tree(std::move(handle));
+    return remove_tree(std::move(*handle));
 #else
     posix::CPath c_path;
     if(auto error = c_path.assign(posix::without_trailing_separators(path))) {
@@ -1016,10 +951,9 @@ std::error_code rename(std::string_view from, std::string_view to) {
     if(auto error = windows::to_native(target, to)) {
         return error;
     }
-    auto handle =
-        win32::try_open(source.c_str(), DELETE | SYNCHRONIZE, FILE_FLAG_OPEN_REPARSE_POINT);
-    if(handle.get() == INVALID_HANDLE_VALUE) {
-        return windows::last_error();
+    auto handle = win32::open_native(source, DELETE, false);
+    if(!handle) {
+        return windows::to_error_code(handle.error());
     }
     auto name_bytes = target.size() * sizeof(wchar_t);
     std::vector<std::byte> buffer(offsetof(RenameInfoEx, FileName) + name_bytes + sizeof(wchar_t));
@@ -1030,7 +964,7 @@ std::error_code rename(std::string_view from, std::string_view to) {
     std::memcpy(buffer.data() + offsetof(RenameInfoEx, FileName),
                 target.c_str(),
                 name_bytes + sizeof(wchar_t));
-    if(::SetFileInformationByHandle(handle.get(),
+    if(::SetFileInformationByHandle(handle->get(),
                                     rename_info_ex,
                                     info,
                                     static_cast<DWORD>(buffer.size()))) {
@@ -1043,12 +977,12 @@ std::error_code rename(std::string_view from, std::string_view to) {
     // read-only file: `to` goes without the attribute meanwhile. Should the
     // move fail, the attribute goes back only on the same file, which
     // another may have replaced meanwhile.
-    handle = win32::Handle();
+    *handle = win32::Handle();
     if(::MoveFileExW(source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         return {};
     }
     auto error = ::GetLastError();
-    auto before = open_attributes(target.c_str());
+    auto before = open_attributes(target);
     if(!before || !(before->basic.FileAttributes & FILE_ATTRIBUTE_READONLY) ||
        !win32::set_attributes(before->handle.get(),
                               before->basic.FileAttributes & ~FILE_ATTRIBUTE_READONLY)) {
@@ -1060,7 +994,7 @@ std::error_code rename(std::string_view from, std::string_view to) {
         return {};
     }
     error = ::GetLastError();
-    if(auto after = open_attributes(target.c_str());
+    if(auto after = open_attributes(target);
        after && after->id == before->id &&
        after->basic.CreationTime.QuadPart == before->basic.CreationTime.QuadPart &&
        after->basic.LastWriteTime.QuadPart == before->basic.LastWriteTime.QuadPart) {
@@ -1094,17 +1028,23 @@ std::error_code rename_noreplace(std::string_view from, std::string_view to) {
         return {};
     }
     auto error = ::GetLastError();
-    if(!win32::delete_pending(error)) {
+    if(error != ERROR_ACCESS_DENIED) {
         return windows::to_error_code(error);
     }
-    // A file deleted while held open: `from`, which is gone but for the
-    // name, or on FAT `to`, which keeps the name taken until the last
-    // handle goes (NTFS says so itself).
-    auto opened = win32::try_open(source.c_str(), 0, FILE_FLAG_OPEN_REPARSE_POINT);
-    if(opened.get() == INVALID_HANDLE_VALUE && win32::delete_pending(::GetLastError())) {
+    // Denied, as is a file deleted while held open: `from`, which is gone
+    // but for the name, or on FAT `to`, which keeps the name taken until
+    // the last handle goes (NTFS says so itself).
+    auto pending = [](std::wstring_view path) {
+        auto opened = win32::open_native(path, 0, false);
+        return !opened && opened.error() == ERROR_DELETE_PENDING;
+    };
+    if(pending(source)) {
         return std::make_error_code(std::errc::no_such_file_or_directory);
     }
-    return std::make_error_code(std::errc::file_exists);
+    if(pending(target)) {
+        return std::make_error_code(std::errc::file_exists);
+    }
+    return windows::to_error_code(error);
 #else
     posix::CPath source;
     if(auto error = source.assign(from)) {
@@ -1166,14 +1106,14 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
     if(auto error = windows::to_native(native, path)) {
         return error;
     }
-    auto handle = win32::try_open(native.c_str(), 0, FILE_FLAG_OPEN_REPARSE_POINT);
-    if(handle.get() == INVALID_HANDLE_VALUE) {
-        return windows::last_error();
+    auto handle = win32::open_native(native, 0, false);
+    if(!handle) {
+        return windows::to_error_code(handle.error());
     }
     // A file that is no reparse point is told by its attributes: FAT, which
     // keeps none, refuses to be asked for a reparse point's data.
     FILE_BASIC_INFO basic;
-    if(!::GetFileInformationByHandleEx(handle.get(), FileBasicInfo, &basic, sizeof(basic))) {
+    if(!::GetFileInformationByHandleEx(handle->get(), FileBasicInfo, &basic, sizeof(basic))) {
         return windows::last_error();
     }
     if(!(basic.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
@@ -1218,7 +1158,7 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
     constexpr ULONG wsl_symlink_tag = 0xA000001D;
     auto buffer = std::make_unique_for_overwrite<std::byte[]>(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
     DWORD returned = 0;
-    if(!::DeviceIoControl(handle.get(),
+    if(!::DeviceIoControl(handle->get(),
                           FSCTL_GET_REPARSE_POINT,
                           nullptr,
                           0,

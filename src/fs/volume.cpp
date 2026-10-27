@@ -182,7 +182,7 @@ std::expected<Volume, std::error_code> posix::volume_of(int fd) {
 
 std::expected<Volume, std::error_code> volume(std::string_view path) {
 #ifdef _WIN32
-    auto handle = win32::open(path, FILE_READ_ATTRIBUTES);
+    auto handle = win32::open(path, 0);
     if(!handle) {
         return std::unexpected(handle.error());
     }

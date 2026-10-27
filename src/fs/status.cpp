@@ -177,17 +177,11 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
             return std::unexpected(windows::to_error_code(error));
         }
     }
-    DWORD flags = follow ? 0 : FILE_FLAG_OPEN_REPARSE_POINT;
-    auto handle = win32::try_open(native.c_str(), 0, flags);
-    if(handle.get() != INVALID_HANDLE_VALUE) {
-        return win32::handle_status(handle.get());
+    auto handle = win32::open_native(native, 0, follow);
+    if(handle) {
+        return win32::handle_status(handle->get());
     }
-    auto error = ::GetLastError();
-    // A file deleted while held open is gone but for the name, which its
-    // directory still lists.
-    if(win32::delete_pending(error)) {
-        return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
-    }
+    auto error = handle.error();
     if(error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED) {
         auto listed = listed_status(native);
         if(listed && !(follow && listed->type == FileType::Symlink)) {
@@ -196,9 +190,8 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
     } else if(error == ERROR_CANT_ACCESS_FILE && follow) {
         // A reparse point no path is resolved through, which still cannot be
         // opened as a file: a Unix socket, an app execution alias.
-        auto itself = win32::try_open(native.c_str(), 0, FILE_FLAG_OPEN_REPARSE_POINT);
-        if(itself.get() != INVALID_HANDLE_VALUE) {
-            auto result = win32::handle_status(itself.get());
+        if(auto itself = win32::open_native(native, 0, false)) {
+            auto result = win32::handle_status(itself->get());
             if(result && result->type != FileType::Symlink) {
                 return result;
             }
@@ -363,7 +356,7 @@ std::error_code set_times(std::string_view path, const FileTimes& times) {
 std::error_code set_permissions(std::string_view path, std::uint16_t permissions) {
     assert(permissions <= 07777);
 #ifdef _WIN32
-    auto handle = win32::open(path, FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES);
+    auto handle = win32::open(path, FILE_WRITE_ATTRIBUTES);
     if(!handle) {
         return handle.error();
     }

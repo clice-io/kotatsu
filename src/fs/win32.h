@@ -47,12 +47,6 @@ Function from_ntdll(std::atomic<Function>& cache, const char* name) {
 /// The Win32 error an NTSTATUS stands for.
 DWORD dos_error(NTSTATUS status);
 
-/// Whether a call failed with `error` on a file deleted while held open,
-/// whose name stays until the last handle to it goes but opens nothing
-/// meanwhile: access denied, told from a refusal by the NT status the
-/// thread keeps of the failure.
-bool delete_pending(DWORD error);
-
 /// A handle closed when this goes.
 class Handle {
 public:
@@ -121,11 +115,25 @@ std::error_code widen(basic_buffer_ref<wchar_t> out, std::string_view path);
 /// Writes into `out` what GetFullPathNameW resolves `path` to.
 std::error_code full_path(basic_buffer_ref<wchar_t> out, const wchar_t* path);
 
-/// A handle to what the native `path` names, existing, with every sharing
-/// mode so that it never refuses another process, and
-/// FILE_FLAG_BACKUP_SEMANTICS, which opening a directory needs, before
-/// `flags`. An invalid handle on failure, GetLastError() telling why.
-Handle try_open(const wchar_t* path, DWORD access, DWORD flags);
+/// A handle to what `name` names, existing, a directory too: the entry of
+/// the directory `root`, which no rename meanwhile replaces as it may the
+/// directories of a path, or with no `root` the NT path (`\??\C:\x`). A
+/// link is followed where `follow` says. Every sharing mode is asked, so
+/// that it never refuses another process, and besides `access` the right to
+/// read the attributes, as CreateFileW asks it.
+///
+/// NtCreateFile opens it, which returns why it failed, where Win32 leaves
+/// that in the thread's last status, which any call meanwhile may replace.
+/// On failure the Win32 error, but for a file deleted while held open: its
+/// name stays until the last handle to it goes, but opens nothing, and Win32
+/// says ERROR_ACCESS_DENIED, as for a refusal. That fails here with
+/// ERROR_DELETE_PENDING, which to_error_code() takes for nothing there.
+std::expected<Handle, DWORD>
+    open_at(HANDLE root, std::wstring_view name, DWORD access, bool follow);
+
+/// A handle to what the native `path`, as to_native() writes it, names, as
+/// open_at() opens it.
+std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow);
 
 /// A handle to what `path` names, symlinks followed, failing with an error
 /// code.
