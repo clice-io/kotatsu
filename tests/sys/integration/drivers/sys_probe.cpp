@@ -62,6 +62,24 @@
 //                         signal that ended it once killed>}
 //   traceme               Linux: asks to be traced by its parent and stops,
 //                         as a debugger's child does
+//   unblocking            Linux: starts a child on a non-blocking pipe, whose
+//                         exec a hook holds and then fails, and meanwhile
+//                         another on the same pipe, and prints {"waited":
+//                         <whether the second waited for the first to
+//                         fail>, "non_blocking": <whether the pipe is left
+//                         non-blocking>}
+//   reaped                Linux: starts a child that exits instead of its
+//                         exec, leaving a process of its own to hold the
+//                         spawn back until another thread has reaped it, and
+//                         prints {"pid": <the Pid its pidfd's fdinfo shows,
+//                         or null when it has none>}; {"pidfds": false} where
+//                         this process may open none
+//   reaping               Linux: SIGCHLD ignored, starts a child from a thread
+//                         a hook holds where spawn sets SIGCHLD's default, and
+//                         meanwhile another, sets a handler once that has
+//                         started, as kota::process sets one, and prints
+//                         {"waited": <whether the second waited for the
+//                         first>, "kept": <whether the handler stayed>}
 //   nested                Windows: joins a job as a CI runner's, starts
 //                         `sys_probe hang` exit_with_parent in a tree of its
 //                         own, and prints whether that is in the runner's
@@ -117,6 +135,7 @@
 #elif defined(__linux__)
 #include <cerrno>
 #include <csignal>
+#include <dlfcn.h>
 #include <sys/ptrace.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
@@ -128,6 +147,7 @@
 #include <fcntl.h>
 #endif
 
+#include "kota/fs/file.h"
 #include "kota/fs/resolve.h"
 #include "kota/sys/env.h"
 #include "kota/sys/info.h"
@@ -135,10 +155,57 @@
 #include "kota/sys/spawn.h"
 
 #ifdef __linux__
+// For C libraries whose headers are older than it (Linux 5.3).
+#if !defined(SYS_pidfd_open) && !defined(__alpha__) && !defined(__mips__)
+#define SYS_pidfd_open 434
+#endif
+
+/// What the child of a spawn from a thread that sets it does instead of its
+/// exec, as a hook preloaded into this process might; the child has the
+/// thread's copy.
+thread_local int (*instead_of_exec)() = nullptr;
+
+/// Whether the next sigaction setting SIGCHLD from this thread waits for
+/// `gate` to open.
+thread_local bool hold_sigchld = false;
+
+/// Two pipes a thread, or a process it forks, waits at: it says it has come
+/// through `entered`, and goes on once the gate opens.
+struct Gate {
+    int entered[2] = {-1, -1};
+    int go[2] = {-1, -1};
+
+    bool make() {
+        return ::pipe(entered) == 0 && ::pipe(go) == 0;
+    }
+
+    /// From the thread or process that waits: async-signal-safe.
+    void wait() const {
+        char byte = 0;
+        while(::write(entered[1], &byte, 1) < 0 && errno == EINTR) {}
+        while(::read(go[0], &byte, 1) < 0 && errno == EINTR) {}
+    }
+
+    void wait_entered() const {
+        char byte = 0;
+        while(::read(entered[0], &byte, 1) < 0 && errno == EINTR) {}
+    }
+
+    void open() const {
+        char byte = 0;
+        while(::write(go[1], &byte, 1) < 0 && errno == EINTR) {}
+    }
+};
+
+constinit Gate gate;
+
 // What a hook preloaded into this process sees, as catter's: every execve it
 // makes, which this one marks, setting KOTA_EXECVE_HOOKED=1. The list is a
 // static one: in a child between fork and exec nothing may allocate.
 extern "C" int execve(const char* path, char* const argv[], char* const envp[]) noexcept {
+    if(instead_of_exec != nullptr) {
+        return instead_of_exec();
+    }
     static char marker[] = "KOTA_EXECVE_HOOKED=1";
     static char* marked[4096];
     std::size_t count = 0;
@@ -148,6 +215,20 @@ extern "C" int execve(const char* path, char* const argv[], char* const envp[]) 
     }
     marked[count] = nullptr;
     return static_cast<int>(::syscall(SYS_execve, path, argv, marked));
+}
+
+// Every sigaction this process makes, libc's own aside, held at `gate` where
+// hold_sigchld asks.
+extern "C" int sigaction(int signum,
+                         const struct sigaction* action,
+                         struct sigaction* old) noexcept {
+    using sigaction_fn = int (*)(int, const struct sigaction*, struct sigaction*);
+    const static auto next = reinterpret_cast<sigaction_fn>(::dlsym(RTLD_NEXT, "sigaction"));
+    if(hold_sigchld && signum == SIGCHLD && action != nullptr) {
+        hold_sigchld = false;
+        gate.wait();
+    }
+    return next(signum, action, old);
 }
 #endif
 
@@ -325,6 +406,133 @@ int run(const kota::sys::SpawnOptions& options) {
     return static_cast<int>(status->code);
 }
 
+#ifdef __linux__
+/// How long a spawn that should wait for another is given to show that it
+/// does not: one that does not wait has its child started well within it.
+constexpr std::chrono::seconds waits(1);
+
+/// Instead of the exec: waits at `gate`, then fails as for a missing file.
+int held_then_failed() {
+    gate.wait();
+    errno = ENOENT;
+    return -1;
+}
+
+int unblocking() {
+    int stream[2];
+    if(!gate.make() || ::pipe(stream) != 0 ||
+       ::fcntl(stream[1], F_SETFL, ::fcntl(stream[1], F_GETFL) | O_NONBLOCK) != 0) {
+        return fail("pipe", std::error_code(errno, std::generic_category()));
+    }
+    auto options = probe({"parent"});
+    options.streams[1] = kota::sys::Stdio::from_fd(stream[1]);
+    std::thread first([&] {
+        instead_of_exec = held_then_failed;
+        [[maybe_unused]] auto failed = kota::sys::spawn(options);
+    });
+    // The first's child has the stream, cleared, and its exec is held.
+    gate.wait_entered();
+    auto second = std::async(std::launch::async, [&] { return run(options); });
+    const bool waited = second.wait_for(waits) == std::future_status::timeout;
+    gate.open();
+    first.join();
+    second.get();
+    const bool non_blocking = (::fcntl(stream[1], F_GETFL) & O_NONBLOCK) != 0;
+    print_line(std::format(R"({{"waited":{},"non_blocking":{}}})", waited, non_blocking));
+    return 0;
+}
+
+/// Instead of the exec: leaves a process that holds what the child has of
+/// its spawn's report, waiting at `gate`, and exits.
+int left_a_holder() {
+    if(::fork() == 0) {
+        gate.wait();
+    }
+    ::_exit(0);
+}
+
+int reaped() {
+    const int own = static_cast<int>(::syscall(SYS_pidfd_open, ::getpid(), 0));
+    if(own < 0) {
+        print_line(R"({"pidfds":false})");
+        return 0;
+    }
+    ::close(own);
+    if(!gate.make()) {
+        return fail("pipe", std::error_code(errno, std::generic_category()));
+    }
+    // Another reaper, as a waitpid(-1) elsewhere in a program is.
+    std::thread reaper([] {
+        gate.wait_entered();
+        while(::waitpid(-1, nullptr, 0) < 0 && errno == EINTR) {}
+        gate.open();
+    });
+    instead_of_exec = left_a_holder;
+    auto child = kota::sys::spawn(probe({"parent"}));
+    instead_of_exec = nullptr;
+    reaper.join();
+    if(!child) {
+        return fail("spawn", child.error());
+    }
+    std::string pid = "null";
+    if(child->native_handle() >= 0) {
+        std::string info;
+        if(auto error =
+               kota::fs::read_file(info,
+                                   std::format("/proc/self/fdinfo/{}", child->native_handle()))) {
+            return fail("fdinfo", error);
+        }
+        constexpr std::string_view field = "Pid:\t";
+        auto at = info.find(field);
+        if(at != std::string::npos) {
+            at += field.size();
+            pid = info.substr(at, info.find('\n', at) - at);
+        }
+    }
+    print_line(std::format(R"({{"pid":{}}})", pid));
+    return 0;
+}
+
+void on_sigchld(int) {}
+
+int reaping() {
+    struct sigaction ignored = {};
+    ignored.sa_handler = SIG_IGN;
+    if(!gate.make() || ::sigaction(SIGCHLD, &ignored, nullptr) != 0) {
+        return fail("setup", std::error_code(errno, std::generic_category()));
+    }
+    auto options = probe({"parent"});
+    options.streams[1] = kota::sys::Stdio::ignore();
+    std::thread first([&] {
+        hold_sigchld = true;
+        run(options);
+    });
+    // The first found SIGCHLD ignored, and is about to set its default.
+    gate.wait_entered();
+    auto second = std::async(std::launch::async, [&] { return kota::sys::spawn(options); });
+    const bool waited = second.wait_for(waits) == std::future_status::timeout;
+    // The second's spawn returns once the first has set it.
+    if(waited) {
+        gate.open();
+    }
+    auto child = second.get();
+    struct sigaction handler = {};
+    handler.sa_handler = on_sigchld;
+    ::sigaction(SIGCHLD, &handler, nullptr);
+    if(!waited) {
+        gate.open();
+    }
+    first.join();
+    struct sigaction now = {};
+    ::sigaction(SIGCHLD, nullptr, &now);
+    if(child) {
+        [[maybe_unused]] auto status = child->wait();
+    }
+    print_line(std::format(R"({{"waited":{},"kept":{}}})", waited, now.sa_handler == on_sigchld));
+    return 0;
+}
+#endif
+
 }  // namespace
 
 int main() {
@@ -368,9 +576,7 @@ int main() {
     }
     if(command == "started") {
         std::string started;
-        if(auto error = sys::started_path(started)) {
-            return fail("started_path", error);
-        }
+        sys::started_path(started);
         std::string executable;
         if(auto error = sys::executable_path(executable)) {
             return fail("executable_path", error);
@@ -515,6 +721,15 @@ int main() {
     }
     if(command == "hooked") {
         return run(probe({"env", "KOTA_EXECVE_HOOKED"}));
+    }
+    if(command == "unblocking") {
+        return unblocking();
+    }
+    if(command == "reaped") {
+        return reaped();
+    }
+    if(command == "reaping") {
+        return reaping();
     }
     if(command == "traced") {
         auto child = sys::spawn(probe({"traceme"}));

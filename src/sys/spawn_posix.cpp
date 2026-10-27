@@ -1,5 +1,6 @@
 #ifndef _WIN32
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <csignal>
@@ -125,10 +126,16 @@ constexpr int closed_stream = -2;
 /// whoever else has them open, as libuv does, since a child given a
 /// non-blocking stream would see EAGAIN. Put back if the spawn fails.
 struct Unblocked {
-    /// Each stream's descriptor, or dev_null or closed_stream.
+    /// The descriptor of each stream shared with others; dev_null or
+    /// closed_stream for the others.
     std::array<int, 3> fds;
     /// The flags of each stream cleared, -1 for the others.
     std::array<int, 3> flags = {-1, -1, -1};
+
+    /// Whether the child shares a stream with others.
+    bool shares() const {
+        return std::ranges::any_of(fds, [](int fd) { return fd >= 0; });
+    }
 
     /// Clears O_NONBLOCK of each stream; whether any had it.
     bool clear() {
@@ -172,10 +179,20 @@ ExitStatus exit_status_of(int status, const rusage& usage) {
 
 #ifndef __APPLE__
 
-/// Writes errno to `error_fd` and exits, from the child.
-[[noreturn]] void fail_in_child(int error_fd) {
+/// A message of `data`, with room in `control` for a descriptor.
+msghdr message_of(iovec& data, char (&control)[CMSG_SPACE(sizeof(int))]) {
+    msghdr message = {};
+    message.msg_iov = &data;
+    message.msg_iovlen = 1;
+    message.msg_control = control;
+    message.msg_controllen = sizeof(control);
+    return message;
+}
+
+/// Writes errno to `report_fd` and exits, from the child.
+[[noreturn]] void fail_in_child(int report_fd) {
     int code = errno;
-    while(::write(error_fd, &code, sizeof(code)) < 0 && errno == EINTR) {}
+    while(::write(report_fd, &code, sizeof(code)) < 0 && errno == EINTR) {}
     ::_exit(127);
 }
 
@@ -195,7 +212,7 @@ struct ChildSetup {
     bool process_group;
     bool exit_with_parent;
     pid_t parent;
-    int error_fd;
+    int report_fd;
     /// SIGRTMIN and SIGRTMAX, which glibc reads through calls of its own.
     int rtmin;
     int rtmax;
@@ -230,15 +247,15 @@ struct ChildSetup {
                 continue;
             }
             if(::signal(signum, keep_signals ? exec_action(signum) : SIG_DFL) == SIG_ERR) {
-                fail_in_child(error_fd);
+                fail_in_child(report_fd);
             }
         }
         if(detached ? ::setsid() < 0 : process_group && ::setpgid(0, 0) < 0) {
-            fail_in_child(error_fd);
+            fail_in_child(report_fd);
         }
         if(exit_with_parent) {
             if(::prctl(PR_SET_PDEATHSIG, SIGKILL) < 0) {
-                fail_in_child(error_fd);
+                fail_in_child(report_fd);
             }
             // The parent died before the signal was armed: none will come.
             // A thread of it that exited would not show here, but the one
@@ -250,7 +267,7 @@ struct ChildSetup {
         // Before the streams change, which a working directory not there
         // would otherwise have changed for nothing.
         if(cwd != nullptr && ::chdir(cwd) < 0) {
-            fail_in_child(error_fd);
+            fail_in_child(report_fd);
         }
         // A descriptor below the stream it goes to may be a stream's
         // target before its turn (stdout and stderr swapped): it moves above
@@ -259,7 +276,7 @@ struct ChildSetup {
             if(fds[target] >= 0 && fds[target] < target) {
                 fds[target] = ::fcntl(fds[target], F_DUPFD_CLOEXEC, 3);
                 if(fds[target] < 0) {
-                    fail_in_child(error_fd);
+                    fail_in_child(report_fd);
                 }
             }
         }
@@ -273,15 +290,15 @@ struct ChildSetup {
                 ::close(target);
                 fd = ::open("/dev/null", target == 0 ? O_RDONLY : O_RDWR);
                 if(fd < 0) {
-                    fail_in_child(error_fd);
+                    fail_in_child(report_fd);
                 }
                 if(fd != target && (::dup2(fd, target) < 0 || ::close(fd) < 0)) {
-                    fail_in_child(error_fd);
+                    fail_in_child(report_fd);
                 }
                 continue;
             }
             if(fd == target ? ::fcntl(fd, F_SETFD, 0) < 0 : ::dup2(fd, target) < 0) {
-                fail_in_child(error_fd);
+                fail_in_child(report_fd);
             }
         }
         ::sigprocmask(SIG_SETMASK, &mask, nullptr);
@@ -290,10 +307,10 @@ struct ChildSetup {
         if(errno == ENOEXEC) {
             ::execve(shell_argv[0], shell_argv, envp);
         }
-        fail_in_child(error_fd);
+        fail_in_child(report_fd);
     }
 
-    /// Sends the parent a pidfd of this process through `error_fd`, opened
+    /// Sends the parent a pidfd of this process through `report_fd`, opened
     /// here, where it cannot name another: one the parent opened by the pid
     /// would, once the child exited, another reaped it and its pid went to
     /// another process. Nothing where the kernel has none or a sandbox
@@ -307,65 +324,52 @@ struct ChildSetup {
         int none = 0;
         iovec data = {.iov_base = &none, .iov_len = sizeof(none)};
         alignas(cmsghdr) char control[CMSG_SPACE(sizeof(int))] = {};
-        msghdr message = {};
-        message.msg_iov = &data;
-        message.msg_iovlen = 1;
-        message.msg_control = control;
-        message.msg_controllen = sizeof(control);
+        auto message = message_of(data, control);
         auto* header = CMSG_FIRSTHDR(&message);
         header->cmsg_level = SOL_SOCKET;
         header->cmsg_type = SCM_RIGHTS;
         header->cmsg_len = CMSG_LEN(sizeof(int));
         std::memcpy(CMSG_DATA(header), &pidfd, sizeof(int));
-        while(::sendmsg(error_fd, &message, MSG_NOSIGNAL) < 0 && errno == EINTR) {}
+        while(::sendmsg(report_fd, &message, MSG_NOSIGNAL) < 0 && errno == EINTR) {}
         ::close(pidfd);
 #endif
     }
 };
 
 /// Held by a spawn that clears a stream's O_NONBLOCK until its child has
-/// exec'd or failed to, and by the others while they look at theirs: a
-/// spawn that failed would otherwise put the flag back on a stream another
-/// child, which found it cleared, started with. Never taken in a child.
+/// exec'd or failed to, and by the others that share a stream while they
+/// look at theirs: a spawn that failed would otherwise put the flag back on
+/// a stream another child, which found it cleared, started with. Never
+/// taken in a child.
 constinit std::mutex unblocking;
 
-/// What the child at the other end of `report` reports: the pidfd it sends
-/// itself, and how it failed, 0 once it has exec'd.
-struct Report {
+/// What the child at the other end of `report` sends once it has exec'd:
+/// the pidfd it sent of itself, none where it has none; how it failed
+/// otherwise.
+std::expected<Descriptor, std::error_code> read_report(int report) {
     Descriptor pidfd;
-    int error = 0;
-};
-
-Report read_report(int report) {
-    Report read;
     while(true) {
         int value = 0;
         iovec data = {.iov_base = &value, .iov_len = sizeof(value)};
         alignas(cmsghdr) char control[CMSG_SPACE(sizeof(int))] = {};
-        msghdr message = {};
-        message.msg_iov = &data;
-        message.msg_iovlen = 1;
-        message.msg_control = control;
-        message.msg_controllen = sizeof(control);
+        auto message = message_of(data, control);
         auto got = ::recvmsg(report, &message, MSG_CMSG_CLOEXEC);
         if(got < 0 && errno == EINTR) {
             continue;
         }
         // The end of it, at the exec.
         if(got <= 0) {
-            return read;
+            return pidfd;
         }
         if(value != 0) {
-            read.error = value;
-            return read;
+            return std::unexpected(std::error_code(value, std::generic_category()));
         }
-        // The pidfd's, which holds 0, no errno; without it where this
-        // process may open no more descriptors.
-        if(const auto* header = CMSG_FIRSTHDR(&message);
-           header != nullptr && header->cmsg_type == SCM_RIGHTS) {
-            int pidfd = -1;
-            std::memcpy(&pidfd, CMSG_DATA(header), sizeof(int));
-            read.pidfd = Descriptor(detail::move_above_standard_streams(pidfd));
+        // The pidfd's message, which holds 0, no errno; without it where
+        // this process may open no more descriptors.
+        if(const auto* header = CMSG_FIRSTHDR(&message)) {
+            int fd = -1;
+            std::memcpy(&fd, CMSG_DATA(header), sizeof(int));
+            pidfd = Descriptor(detail::move_above_standard_streams(fd));
         }
     }
 }
@@ -608,6 +612,13 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
             }
         }
     }
+    // The streams the child shares with others, which no pipe made for it is.
+    Unblocked unblocked{.fds = fds};
+    for(std::size_t i = 0; i < 3; ++i) {
+        if(child_ends[i].fd >= 0) {
+            unblocked.fds[i] = dev_null;
+        }
+    }
     child.leads_group = creation.detached || creation.process_group;
     // Before the child exists.
     stop_auto_reaping();
@@ -705,7 +716,6 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         return std::unexpected(std::error_code(setup_error, std::generic_category()));
     }
     // No other spawn starts a child meanwhile: `spawning` is held.
-    Unblocked unblocked{.fds = fds};
     unblocked.clear();
     pid_t pid = -1;
     int failed = 0;
@@ -728,8 +738,8 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     }
     child.id = pid;
 #else
-    // A message each, which the pidfd goes along with; close-on-exec, so
-    // that the exec ends it.
+    // One message for each report, the pidfd riding with its own;
+    // close-on-exec, so that the exec ends it.
     int ends[2];
     if(::socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, ends) != 0) {
         return std::unexpected(errno_code());
@@ -749,16 +759,18 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         .process_group = creation.process_group,
         .exit_with_parent = creation.exit_with_parent,
         .parent = ::getpid(),
-        .error_fd = (*report)[1].fd,
+        .report_fd = (*report)[1].fd,
         .rtmin = SIGRTMIN,
         .rtmax = SIGRTMAX,
         .keep_signals = creation.keep_signals,
         .mask = {},
     };
-    std::unique_lock lock(unblocking);
-    Unblocked unblocked{.fds = fds};
-    if(!unblocked.clear()) {
-        lock.unlock();
+    std::unique_lock lock(unblocking, std::defer_lock);
+    if(unblocked.shares()) {
+        lock.lock();
+        if(!unblocked.clear()) {
+            lock.unlock();
+        }
     }
     // A signal arriving before the child has reset its handlers would run
     // this process's in it: they wait until it has. A crash still ends it.
@@ -793,14 +805,14 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     (*report)[1] = Descriptor();
     // Until the exec this thread waits, so that it is the parent
     // PR_SET_PDEATHSIG watches throughout.
-    auto [pidfd, error] = read_report((*report)[0].fd);
-    if(error != 0) {
+    auto pidfd = read_report((*report)[0].fd);
+    if(!pidfd) {
         unblocked.restore();
         while(::waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {}
-        return std::unexpected(std::error_code(error, std::generic_category()));
+        return std::unexpected(pidfd.error());
     }
     child.id = pid;
-    child.handle = pidfd.release();
+    child.handle = pidfd->release();
 #endif
     return child;
 }

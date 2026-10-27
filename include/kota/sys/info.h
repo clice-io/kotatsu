@@ -97,10 +97,9 @@ std::error_code set_oom_score_adjustment(int value, int pid = 0);
 /// The CPUs this process can run on at once, at least 1: the least of its
 /// affinity and, on Linux, the CPU quota of every level of its cgroups,
 /// rounded up. On Windows 11 and Server 2022 across all processor groups,
-/// before them the one group a process's threads stay in; less the hard cap
-/// of the job object it is in. A job nested in another has a share of that
-/// one's cap, which a process cannot read: there this counts more CPUs than
-/// it gets.
+/// before them the one group a process's threads stay in; less the CPU cap
+/// of the job object it is in, a hard cap or a maximum rate. A job nested in another has a share of
+/// that one's cap, which a process cannot read: there this counts more CPUs than it gets.
 unsigned parallelism();
 
 /// The size of a page of memory.

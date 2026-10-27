@@ -43,6 +43,20 @@
 #include "kota/sys/detail/signals.h"
 #endif
 
+#ifdef __linux__
+#include <sys/syscall.h>
+
+// For C libraries whose headers are older than them (Linux 5.1 and 5.3).
+#if !defined(__alpha__) && !defined(__mips__)
+#ifndef SYS_pidfd_send_signal
+#define SYS_pidfd_send_signal 424
+#endif
+#ifndef SYS_pidfd_open
+#define SYS_pidfd_open 434
+#endif
+#endif
+#endif
+
 namespace kota::sys {
 
 namespace {
@@ -931,20 +945,23 @@ ZEST_CASE(pidfd_takes_no_closed_stream) {
     ZEXPECT(status->code == 3);
 }
 
-// The child sends a pidfd of itself before it execs, which names it however
-// soon it exits and whoever reaps it.
+// native_handle is a pidfd of the child itself, which it sends before it
+// execs: a signal sent through it ends the child.
 ZEST_CASE(native_handle_is_a_pidfd_of_the_child) {
-    auto child = spawn(test::shell("exit 0"));
-    ZASSERT(child.has_value());
-    // A kernel before 5.3 has no pidfds.
-    if(child->native_handle() < 0) {
+    // A kernel before 5.3, or a sandbox that forbids pidfd_open, gives none.
+    const int own = static_cast<int>(::syscall(SYS_pidfd_open, ::getpid(), 0));
+    if(own < 0) {
         zest::skip();
         return;
     }
-    std::string info;
-    ZASSERT(!fs::read_file(info, std::format("/proc/self/fdinfo/{}", child->native_handle())));
-    ZEXPECT(zest::contains(info, std::format("Pid:\t{}\n", child->pid())));
-    ZEXPECT(child->wait().has_value());
+    ::close(own);
+    auto child = spawn(test::shell("exec sleep 30"));
+    ZASSERT(child.has_value());
+    ZASSERT(child->native_handle() >= 0);
+    ZASSERT(::syscall(SYS_pidfd_send_signal, child->native_handle(), SIGKILL, nullptr, 0) == 0);
+    auto status = child->wait();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->term_signal == SIGKILL);
 }
 #endif
 

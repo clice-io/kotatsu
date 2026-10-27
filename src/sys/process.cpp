@@ -140,7 +140,7 @@ std::error_code executable_path(buffer_ref out) {
 #endif
 }
 
-std::error_code started_path(buffer_ref out) {
+void started_path(buffer_ref out) {
 #ifdef _WIN32
     small_wstring<264> path;
     path.resize(MAX_PATH);
@@ -149,7 +149,7 @@ std::error_code started_path(buffer_ref out) {
         // Cut short when it fills the buffer.
         if(size < path.size()) {
             from_utf16(out, std::wstring_view(path.data(), size));
-            return {};
+            return;
         }
         path.resize(path.size() * 2);
     }
@@ -159,15 +159,8 @@ std::error_code started_path(buffer_ref out) {
     ::_NSGetExecutablePath(nullptr, &size);
     ::_NSGetExecutablePath(out.resize(size).data(), &size);
     out.resize(size - 1);
-    return {};
 #else
-    // Absent only from a kernel before 2.6.26.
-    const auto* path = reinterpret_cast<const char*>(::getauxval(AT_EXECFN));
-    if(path == nullptr) {
-        return std::make_error_code(std::errc::not_supported);
-    }
-    out.assign(path);
-    return {};
+    out.assign(reinterpret_cast<const char*>(::getauxval(AT_EXECFN)));
 #endif
 }
 

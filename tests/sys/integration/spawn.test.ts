@@ -10,6 +10,11 @@
 //   in it alone, sys_probe keeping its own;
 // - on Linux it is started through the execve a hook preloaded into
 //   sys_probe would see, and a stop its tracer is told of ends nothing;
+// - on Linux, where such a hook holds a spawn, another waits that would
+//   otherwise start a child on a stream the first gives O_NONBLOCK back to
+//   when it fails, or set SIGCHLD's default over a handler set for its
+//   child; a child reaped by another before its spawn returns has a pidfd
+//   of its own all the same;
 // - on Windows it is born in a job nested in the one sys_probe is in, as a CI
 //   runner puts its processes in one, and inherits no handle of sys_probe's
 //   but its standard ones, unless it is to inherit every inheritable one;
@@ -122,6 +127,59 @@ test(
     const output = await driver.jsonLines().receive();
     await driver.expectExit(0);
     assert.equal(output, "1");
+  },
+);
+
+const linuxHook = {
+  skip: process.platform !== "linux" && "a hook preloaded into sys_probe",
+};
+
+test(
+  "spawn_that_fails_gives_no_other_child_its_stream_non_blocking",
+  linuxHook,
+  async (t) => {
+    const driver = await Driver.spawn(t, "sys_probe", ["unblocking"]);
+    const output = (await driver.jsonLines().receive()) as {
+      waited: boolean;
+      non_blocking: boolean;
+    };
+    await driver.expectExit(0);
+    assert.equal(output.waited, true);
+    assert.equal(output.non_blocking, false);
+  },
+);
+
+test(
+  "child_reaped_before_its_spawn_returns_has_its_own_pidfd",
+  linuxHook,
+  async (t) => {
+    const driver = await Driver.spawn(t, "sys_probe", ["reaped"]);
+    const output = (await driver.jsonLines().receive()) as {
+      pid?: number | null;
+      pidfds?: false;
+    };
+    await driver.expectExit(0);
+    if (output.pidfds === false) {
+      t.skip("no pidfds: a kernel before 5.3, or a sandbox");
+      return;
+    }
+    // Its own, the child's, which it no longer has; never another's.
+    assert.equal(output.pid, -1);
+  },
+);
+
+test(
+  "first_spawns_at_once_keep_a_sigchld_handler_set_for_either",
+  linuxHook,
+  async (t) => {
+    const driver = await Driver.spawn(t, "sys_probe", ["reaping"]);
+    const output = (await driver.jsonLines().receive()) as {
+      waited: boolean;
+      kept: boolean;
+    };
+    await driver.expectExit(0);
+    assert.equal(output.waited, true);
+    assert.equal(output.kept, true);
   },
 );
 

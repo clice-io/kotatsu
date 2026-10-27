@@ -23,6 +23,7 @@ import { execFileSync } from "node:child_process";
 import {
   copyFileSync,
   linkSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -31,7 +32,7 @@ import {
   symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, sep } from "node:path";
 import { test, type TestContext } from "node:test";
 
 import { Driver, driverPath } from "../../harness/driver.ts";
@@ -204,8 +205,8 @@ type Started = { started: string; executable: string };
 
 /**
  * What a copy of sys_probe running `started` tells when started through the
- * path `link` makes to it, in a directory of their own; `null` when the link
- * cannot be made.
+ * link `link` makes to it, in a directory of their own, by a path that holds
+ * `..`; `null` when this user may not make the link.
  */
 async function startedThrough(
   t: TestContext,
@@ -216,9 +217,12 @@ async function startedThrough(
   const target = join(dir, `sys_probe${exe}`);
   copyFileSync(driverPath("sys_probe"), target);
   // A program named after one it stands for, as a compiler's shim is.
-  const path = join(dir, `cc${exe}`);
+  const linked = join(dir, `cc${exe}`);
+  mkdirSync(join(dir, "sub"));
+  // join() would take the `..` out.
+  const path = [dir, "sub", "..", `cc${exe}`].join(sep);
   try {
-    link(target, path);
+    link(target, linked);
   } catch (error) {
     // Windows makes symbolic links for administrators and in developer mode.
     if ((error as NodeJS.ErrnoException).code === "EPERM") {

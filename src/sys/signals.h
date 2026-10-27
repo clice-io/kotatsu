@@ -25,7 +25,9 @@ extern std::atomic<bool> sigchld_was_ignored;
 /// is for: macOS sets close-on-exec only after it makes one, which another
 /// of these spawns would otherwise give its child. Held too while
 /// ignore_sigpipe ignores SIGPIPE, so that the child posix_spawn starts
-/// reads sigpipe_was_default as it stood with SIGPIPE's action.
+/// reads sigpipe_was_default as it stood with SIGPIPE's action, and while a
+/// spawn clears its streams' O_NONBLOCK, so that one that fails puts it back
+/// on no stream another child started with.
 extern std::mutex spawning;
 #endif
 

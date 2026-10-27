@@ -30,16 +30,16 @@ bool process_alive(int pid) noexcept;
 /// removes no file a program runs from.
 std::error_code executable_path(buffer_ref out);
 
-/// Writes into `out` the path this program was started by, as exec was given
-/// it: links not resolved, so that a program started through a symbolic or a
-/// hard link to its file, as one that stands for the programs it is named
-/// after, tells which link it was. Unlike argv[0], which the starter picks,
-/// it reached the file; unlike executable_path(), it is not followed after a
-/// rename. On Linux AT_EXECFN, relative when exec was given a relative path,
-/// to the directory the program started in; on macOS _NSGetExecutablePath,
-/// which the loader made absolute against that directory, `..` kept; on
-/// Windows GetModuleFileNameW, absolute as CreateProcess took it, `..` kept.
-std::error_code started_path(buffer_ref out);
+/// Writes into `out` the path this program was started by, links not
+/// resolved: started through a symbolic or a hard link to its file, as a
+/// program that acts as whichever it is named after is, it names the link.
+/// Unlike argv[0], which the starter picks, it is a path that reached the
+/// file; unlike executable_path(), it does not follow a rename. `..` stays
+/// in it. On Linux what exec was given (AT_EXECFN), relative to the
+/// directory the program started in when that was relative; on macOS that
+/// made absolute against that directory (_NSGetExecutablePath); on Windows
+/// the absolute path CreateProcess took (GetModuleFileNameW).
+void started_path(buffer_ref out);
 
 /// Writes into `out` a path that starts this very program, the image this
 /// process runs, for this process to start another copy of it that speaks

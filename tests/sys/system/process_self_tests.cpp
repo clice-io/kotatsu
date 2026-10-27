@@ -166,7 +166,7 @@ ZEST_CASE(executable_path_names_this_program) {
 // tests start sys_probe through links.
 ZEST_CASE(started_path_names_this_program) {
     std::string started;
-    ZASSERT(!started_path(started));
+    started_path(started);
     std::string path;
     ZASSERT(!executable_path(path));
     ZEXPECT(std::filesystem::equivalent(test::std_path(started), test::std_path(path)));
