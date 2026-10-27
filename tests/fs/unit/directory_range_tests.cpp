@@ -30,7 +30,7 @@ ZEST_CASE(directory_is_an_input_range) {
     ZSTATIC_EXPECT(std::movable<Directory>);
 }
 
-ZEST_CASE(entry_made_rather_than_listed_has_no_status_fails) {
+ZEST_CASE(entry_status_of_one_made_rather_than_listed_fails) {
     // No directory to ask through, nor a listing that told it.
     Directory::Entry entry;
     auto status = entry.status();

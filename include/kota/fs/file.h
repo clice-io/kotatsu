@@ -72,9 +72,9 @@ public:
 
     ~File();
 
-    /// Opens the file at `path`, symlinks followed, as `options` say. A
-    /// directory fails with std::errc::is_a_directory, but for `create_new`,
-    /// which fails with file_exists for anything there.
+    /// Opens the file at `path` as `options` say: a directory fails with
+    /// std::errc::is_a_directory, or for `create_new` with file_exists, as
+    /// anything there does.
     static std::expected<File, std::error_code> open(std::string_view path,
                                                      const OpenOptions& options = {.read = true});
 

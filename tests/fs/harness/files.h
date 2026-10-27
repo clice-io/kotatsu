@@ -1,9 +1,9 @@
 #pragma once
 
 // TempDir, a directory of a test's own, write_text() and read_text(),
-// ScopedCurrentDir, make_junction() on Windows and ScopedPermissions
-// elsewhere, link_directory(), all through std::filesystem, fstreams and cmd
-// rather than kota::fs, which the tests check; linked() for a case that makes
+// ScopedCurrentDir, ScopedPermissions, make_junction() on Windows,
+// link_directory(), all through std::filesystem, fstreams and cmd rather
+// than kota::fs, which the tests check; linked() for a case that makes
 // a symlink; across_file_systems() on Linux for one that crosses file
 // systems; text_of() and CountedBuffer for reads of large files.
 
@@ -181,10 +181,10 @@ private:
     zest::FatalHook on_fatal{[this] { restore(); }};
 };
 
-#ifndef _WIN32
 /// The permissions of `path` replaced by `perms` for as long as this lives,
 /// or until a failed ZASSERT ends the process: then the owner's again, so
-/// that TempDir can remove what is inside.
+/// that TempDir can remove what is inside. On Windows the owner's write bit
+/// alone counts, as the read-only attribute.
 struct ScopedPermissions {
     ScopedPermissions(std::filesystem::path path, std::filesystem::perms perms) :
         path(std::move(path)) {
@@ -208,7 +208,6 @@ private:
 
     zest::FatalHook on_fatal{[this] { restore(); }};
 };
-#endif
 
 #ifdef _WIN32
 /// Makes `link` a junction to the directory `target`, as a link that needs

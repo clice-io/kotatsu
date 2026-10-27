@@ -5,7 +5,7 @@
 #include <random>
 #include <utility>
 
-#include "native.h"
+#include "handle.h"
 #include "kota/support/small_string.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/path.h"
@@ -249,11 +249,11 @@ bool File::is_open() const {
 }
 
 std::expected<Status, std::error_code> File::status() const {
-    return native::status(handle);
+    return detail::handle_status(handle);
 }
 
 std::error_code File::canonical(buffer_ref out) const {
-    return native::canonical(out, handle);
+    return detail::handle_canonical(out, handle);
 }
 
 // Every lock tried marks the File for close() to release: one that fails
@@ -352,10 +352,14 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
                                   FILE_ATTRIBUTE_NORMAL | flags,
                                   nullptr);
     if(handle == INVALID_HANDLE_VALUE) {
-        // A directory, which CreateFileW opens only with
-        // FILE_FLAG_BACKUP_SEMANTICS, is refused as access is.
+        // CreateFileW fails with ERROR_ACCESS_DENIED for a directory, which it
+        // opens only with FILE_FLAG_BACKUP_SEMANTICS, and for a new file asked
+        // for where a directory, or a link to one, dangling or not, is.
         auto error = ::GetLastError();
-        if(error == ERROR_ACCESS_DENIED && is_directory(path)) {
+        if(error == ERROR_ACCESS_DENIED && options.create_new && symlink_status(path)) {
+            return std::unexpected(std::make_error_code(std::errc::file_exists));
+        }
+        if(error == ERROR_ACCESS_DENIED && !options.create_new && is_directory(path)) {
             return std::unexpected(std::make_error_code(std::errc::is_a_directory));
         }
         return std::unexpected(windows::to_error_code(error));
@@ -415,11 +419,11 @@ std::expected<std::uint64_t, std::error_code> File::seek(std::int64_t offset, Se
     return static_cast<std::uint64_t>(position.QuadPart);
 }
 
-std::expected<Status, std::error_code> native::status(File::native_handle_type handle) {
+std::expected<Status, std::error_code> detail::handle_status(File::native_handle_type handle) {
     return win32::handle_status(handle);
 }
 
-std::error_code native::canonical(buffer_ref out, File::native_handle_type handle) {
+std::error_code detail::handle_canonical(buffer_ref out, File::native_handle_type handle) {
     // Windows names a file deleted while open by where it keeps it until the
     // last handle goes, under `\$Extend\$Deleted`, or by its old name. A pipe
     // says it is deleted too.
@@ -492,7 +496,7 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
     }
     int fd = open_file(c_path.c_str(), flags, 0666);
     if(fd < 0) {
-        // A directory refused to read fails as a file would.
+        // A directory the caller may not read fails as a directory still.
         auto error = posix::last_error();
         if(error == std::errc::permission_denied && is_directory(path)) {
             return std::unexpected(std::make_error_code(std::errc::is_a_directory));
@@ -543,7 +547,7 @@ std::expected<std::uint64_t, std::error_code> File::seek(std::int64_t offset, Se
     return static_cast<std::uint64_t>(position);
 }
 
-std::expected<Status, std::error_code> native::status(File::native_handle_type handle) {
+std::expected<Status, std::error_code> detail::handle_status(File::native_handle_type handle) {
     struct stat info;
     if(::fstat(handle, &info) != 0) {
         return std::unexpected(posix::last_error());
@@ -551,7 +555,7 @@ std::expected<Status, std::error_code> native::status(File::native_handle_type h
     return posix::make_status(info);
 }
 
-std::error_code native::canonical(buffer_ref out, File::native_handle_type handle) {
+std::error_code detail::handle_canonical(buffer_ref out, File::native_handle_type handle) {
 #ifdef __APPLE__
     // macOS keeps the last name of a file whose names all went.
     struct stat opened;

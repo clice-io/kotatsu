@@ -277,30 +277,58 @@ ZEST_CASE(close_lets_go_of_the_directory) {
     auto directory = Directory::open(dir.root());
     ZASSERT(directory.has_value());
     ZEXPECT(directory->native_handle() != File::closed);
-    auto first = directory->begin();
-    ZASSERT((*first).has_value());
-    auto entry = std::move(**first);
+    auto at = directory->begin();
+    ZASSERT((*at).has_value());
+    const auto& entry = **at;
 
     directory->close();
     ZEXPECT(directory->native_handle() == File::closed);
     auto status = directory->status();
     ZASSERT(!status.has_value());
     ZEXPECT(status.error() == std::errc::bad_file_descriptor);
-    // What the range had not given, it gives no more.
-    auto rest = directory->begin();
-    ZASSERT(rest != directory->end());
-    ZASSERT(!(*rest).has_value());
-    ZEXPECT((*rest).error() == std::errc::bad_file_descriptor);
-    ++rest;
-    ZEXPECT(rest == directory->end());
-    directory->close();
-    ZEXPECT(directory->begin() == directory->end());
-
-    // An entry it gave holds the directory still.
+    std::string name;
+    ZEXPECT(directory->canonical(name) == std::errc::bad_file_descriptor);
+    auto volume = directory->volume();
+    ZASSERT(!volume.has_value());
+    ZEXPECT(volume.error() == std::errc::bad_file_descriptor);
+    // The entry the range stands on holds the directory still.
     auto listed = entry.status();
     ZASSERT(listed.has_value());
     ZEXPECT(listed->size == 5u);
+    // Going on, it gives no more of what it had not given.
+    ++at;
+    ZASSERT(at != directory->end());
+    ZASSERT(!(*at).has_value());
+    ZEXPECT((*at).error() == std::errc::bad_file_descriptor);
+    ++at;
+    ZEXPECT(at == directory->end());
+    directory->close();
+    ZEXPECT(directory->begin() == directory->end());
 }
+
+ZEST_CASE(range_of_a_closed_directory_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
+    auto directory = Directory::open(dir.root());
+    ZASSERT(directory.has_value());
+    directory->close();
+    auto at = directory->begin();
+    ZASSERT(at != directory->end());
+    ZASSERT(!(*at).has_value());
+    ZEXPECT((*at).error() == std::errc::bad_file_descriptor);
+}
+
+#ifdef _WIN32
+ZEST_CASE(close_lets_the_directories_above_be_renamed) {
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "outer" / "inner");
+    auto directory = Directory::open(dir.file("outer/inner"));
+    ZASSERT(directory.has_value());
+    ZEXPECT(rename(dir.file("outer"), dir.file("moved")) == std::errc::permission_denied);
+    directory->close();
+    ZEXPECT(!rename(dir.file("outer"), dir.file("moved")));
+}
+#endif
 
 ZEST_CASE(create_directory_says_whether_it_made_one) {
     test::TempDir dir;

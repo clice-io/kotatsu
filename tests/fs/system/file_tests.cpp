@@ -91,13 +91,7 @@ ZEST_CASE(read_file_of_nothing_fails) {
 ZEST_CASE(read_file_of_a_directory_fails) {
     test::TempDir dir;
     std::string content;
-    auto error = read_file(content, dir.root());
-#ifdef _WIN32
-    // Windows opens a directory only for its metadata.
-    ZEXPECT(error == std::errc::permission_denied);
-#else
-    ZEXPECT(error == std::errc::is_a_directory);
-#endif
+    ZEXPECT(read_file(content, dir.root()) == std::errc::is_a_directory);
 }
 
 ZEST_CASE(write_file_atomic_replaces_the_whole_file) {

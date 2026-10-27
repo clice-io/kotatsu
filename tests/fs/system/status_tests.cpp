@@ -278,11 +278,7 @@ ZEST_CASE(symlink_status_does_not_follow) {
 ZEST_CASE(symlink_status_of_a_link_and_a_separator_is_the_link) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
-#ifdef _WIN32
-    test::make_junction(dir.file("link"), dir.file("target"));
-#else
-    ZASSERT(!create_directory_symlink(dir.file("target"), dir.file("link")));
-#endif
+    test::link_directory(dir.file("target"), dir.file("link"));
     for(auto spelled: {"link/", "link//"}) {
         ZEST_CONTEXT("{}", spelled);
         auto itself = symlink_status(dir.file(spelled));

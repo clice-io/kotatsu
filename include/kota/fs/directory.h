@@ -26,9 +26,9 @@ struct OpenDirectory;
 
 }  // namespace detail
 
-/// An open directory, closed when this goes and no entry it gave holds it: a
-/// File opens none. Its handle is not inherited by child processes; on
-/// Windows, while open, it keeps the directories above it from being renamed.
+/// An open directory, closed when this goes and no entry it gave holds it.
+/// Its handle is not inherited by child processes; on Windows, while open,
+/// it keeps the directories above it from being renamed.
 ///
 /// It is a range to go through once of the directory's entries, `.` and
 /// `..` left out, in the order the system lists them, each read when the
@@ -41,8 +41,9 @@ public:
 
     /// An entry of a directory.
     struct Entry {
-        /// Declared rather than implicit, so that Directory may hold an
-        /// Entry: within Directory the default of `type` is not yet known.
+        /// Defaulted in directory.cpp: an implicit one would need the
+        /// default of `type` before Directory, which holds an Entry, is
+        /// complete.
         Entry();
 
         std::string name;
@@ -85,11 +86,11 @@ public:
         using iterator_concept = std::input_iterator_tag;
 
         value_type& operator*() const {
-            return directory->current;
+            return range->current;
         }
 
         Iterator& operator++() {
-            directory->advance();
+            range->advance();
             return *this;
         }
 
@@ -98,15 +99,15 @@ public:
         }
 
         bool operator==(std::default_sentinel_t) const {
-            return directory->done;
+            return range->done;
         }
 
     private:
         friend class Directory;
 
-        explicit Iterator(Directory* directory) : directory(directory) {}
+        explicit Iterator(Directory* range) : range(range) {}
 
-        Directory* directory;
+        Directory* range;
     };
 
     Directory(Directory&&) noexcept = default;
@@ -136,9 +137,9 @@ public:
     std::error_code canonical(buffer_ref out) const;
 
     /// Lets go of the directory, which closes once no entry it gave holds
-    /// it. The range then gives std::errc::bad_file_descriptor and ends, and
-    /// what asks the open directory fails with it. Closing a closed
-    /// directory does nothing.
+    /// it, the one the range stands on among them. Going on, the range then
+    /// gives std::errc::bad_file_descriptor and ends, and what asks the open
+    /// directory fails with it. Closing a closed directory does nothing.
     void close();
 
     /// The descriptor, or on Windows the HANDLE, File::closed once closed;

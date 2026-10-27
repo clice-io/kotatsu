@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "native.h"
+#include "handle.h"
 #include "kota/support/small_string.h"
 #include "kota/fs/path.h"
 
@@ -581,13 +581,13 @@ struct detail::OpenDirectory {
 
     Listing listing{.extended = true};
 
-    HANDLE native() const {
+    HANDLE native_handle() const {
         return handle.get();
     }
 #else
     DirHandle dir;
 
-    int native() const {
+    int native_handle() const {
         return ::dirfd(dir.get());
     }
 #endif
@@ -628,9 +628,13 @@ void Directory::advance() {
         done = true;
         return;
     }
+    if(!directory) {
+        current = std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
+        return;
+    }
     Entry made;
 #ifdef _WIN32
-    auto entry = directory->listing.next(directory->native());
+    auto entry = directory->listing.next(directory->native_handle());
     if(!entry) {
         current = std::unexpected(windows::to_error_code(entry.error()));
         return;
@@ -654,8 +658,7 @@ void Directory::advance() {
     }
     made.type = made.listed->type;
 #else
-    auto* dir = directory->dir.get();
-    auto entry = next_entry(dir);
+    auto entry = next_entry(directory->dir.get());
     if(!entry) {
         current = std::unexpected(entry.error());
         return;
@@ -669,7 +672,7 @@ void Directory::advance() {
     made.directory = directory;
     struct stat info;
     if(made.type == FileType::Unknown &&
-       ::fstatat(::dirfd(dir), made.name.c_str(), &info, AT_SYMLINK_NOFOLLOW) == 0) {
+       ::fstatat(directory->native_handle(), made.name.c_str(), &info, AT_SYMLINK_NOFOLLOW) == 0) {
         made.type = posix::make_status(info).type;
     }
 #endif
@@ -685,26 +688,19 @@ std::expected<Volume, std::error_code> Directory::volume() const {
 }
 
 std::expected<Status, std::error_code> Directory::status() const {
-    return native::status(native_handle());
+    return detail::handle_status(native_handle());
 }
 
 std::error_code Directory::canonical(buffer_ref out) const {
-    return native::canonical(out, native_handle());
+    return detail::handle_canonical(out, native_handle());
 }
 
 void Directory::close() {
-    if(!directory) {
-        return;
-    }
-    // The entry the range stands on holds the directory too.
     directory.reset();
-    started = true;
-    done = false;
-    current = std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
 }
 
 Directory::native_handle_type Directory::native_handle() const {
-    return directory ? directory->native() : File::closed;
+    return directory ? directory->native_handle() : File::closed;
 }
 
 std::expected<Status, std::error_code> Directory::Entry::status() const {
@@ -721,7 +717,7 @@ std::expected<Status, std::error_code> Directory::Entry::status() const {
     // cannot fail.
     win32::WidePath wide;
     [[maybe_unused]] auto converted = to_utf16(wide, name);
-    auto child = open_entry(directory->native(), wide, FILE_READ_ATTRIBUTES);
+    auto child = open_entry(directory->native_handle(), wide, FILE_READ_ATTRIBUTES);
     if(child.get() != INVALID_HANDLE_VALUE) {
         return win32::handle_status(child.get());
     }
@@ -738,7 +734,7 @@ std::expected<Status, std::error_code> Directory::Entry::status() const {
         return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
     }
     struct stat info;
-    if(::fstatat(directory->native(), name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) {
+    if(::fstatat(directory->native_handle(), name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) {
         return std::unexpected(posix::last_error());
     }
     return posix::make_status(info);
