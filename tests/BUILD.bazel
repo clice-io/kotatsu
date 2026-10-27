@@ -149,7 +149,8 @@ kota_test(
 
 # remove_all() with each allocation it makes failing in turn: see
 # fs/remove_all_bad_alloc/main.cpp. Built where its walk holds descriptors
-# (POSIX) and an allocation can throw.
+# (POSIX) and an allocation can throw, but for TSan, whose runtime defines the
+# operator new it replaces.
 kota_test(
     name = "fs_remove_all_bad_alloc",
     size = "small",
@@ -160,6 +161,9 @@ kota_test(
         "//conditions:default": [],
     }) + select({
         "//bazel:no_exceptions": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }) + select({
+        "//bazel:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = ["//:fs"],

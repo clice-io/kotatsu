@@ -31,6 +31,14 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
+# .bazelrc's tsan config, whose runtime defines operator new: a test that
+# replaces it cannot link there.
+config_setting(
+    name = "tsan",
+    values = {"features": "tsan"},
+    visibility = ["//:__subpackages__"],
+)
+
 # What every kotatsu target and its dependents compile with, as CMake's
 # kota::project_options: the defines are public, so a consumer's view of
 # kotatsu's headers matches how kotatsu was built.
