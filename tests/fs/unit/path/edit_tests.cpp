@@ -73,6 +73,12 @@ ZEST_CASE(push_keeps_the_windows_base_spelling) {
     ZEXPECT(joined(R"(\\?\C:\a)", "b/c", windows) == R"(\\?\C:\a\b\c)");
 }
 
+ZEST_CASE(push_after_a_bare_windows_prefix_adds_no_separator) {
+    ZEXPECT(joined(R"(\\?\UNC\server\)", "x", windows) == R"(\\?\UNC\server\x)");
+    ZEXPECT(joined(R"(\\.\)", "x", windows) == R"(\\.\x)");
+    ZEXPECT(joined(R"(\\?\)", "x", windows) == R"(\\?\x)");
+}
+
 ZEST_CASE(push_rooted_windows_paths_keep_the_base_prefix) {
     ZEXPECT(joined("C:\\a", "\\b", windows) == "C:\\b");
     ZEXPECT(joined(R"(\\server\share\a)", "/b", windows) == R"(\\server\share/b)");

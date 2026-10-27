@@ -82,6 +82,27 @@ ZEST_CASE(windows_device_and_verbatim_prefixes) {
     ZEXPECT(root("//?/C:/x", windows).prefix == Prefix::Device);
 }
 
+ZEST_CASE(windows_prefixes_end_before_a_separator_with_no_name_after_it) {
+    auto share = root(R"(\\?\UNC\server\)", windows);
+    ZEXPECT(share.prefix == Prefix::VerbatimUNC);
+    ZEXPECT(share.name == R"(\\?\UNC\server)");
+    ZEXPECT(share.directory == "\\");
+    ZEXPECT(root(R"(\\?\UNC\server\\x)", windows).name == R"(\\?\UNC\server)");
+    ZEXPECT(root(R"(\\?\UNC\server\\x)", windows).directory == R"(\\)");
+    ZEXPECT(root(R"(\\?\UNC\)", windows).name == R"(\\?\UNC)");
+
+    auto device = root(R"(\\.\)", windows);
+    ZEXPECT(device.prefix == Prefix::Device);
+    ZEXPECT(device.name == R"(\\.)");
+    ZEXPECT(device.directory == "\\");
+    ZEXPECT(root("//./", windows).name == "//.");
+
+    auto verbatim = root(R"(\\?\)", windows);
+    ZEXPECT(verbatim.prefix == Prefix::Verbatim);
+    ZEXPECT(verbatim.name == R"(\\?)");
+    ZEXPECT(verbatim.directory == "\\");
+}
+
 ZEST_CASE(absolute_means_independent_of_the_current_directory) {
     ZEXPECT(is_absolute("/x", posix));
     ZEXPECT(!is_absolute("x", posix));
