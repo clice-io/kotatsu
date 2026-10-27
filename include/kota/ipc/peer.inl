@@ -342,7 +342,7 @@ struct Peer<CodecT>::Self {
         if(cancelled && !closed) {
             // Before the transport's close ends the read loop, which may see
             // that rather than its own cancel.
-            end_conversation(ConversationEnd::Kind::ShutDown, "run() cancelled");
+            end_conversation({.kind = ConversationEnd::Kind::ShutDown, .message = "run() cancelled"});
             closed = true;
             if(auto result = transport->close(); !result) {
                 log(LogLevel::error, "closing the transport failed: {}", result.error().message);
@@ -375,7 +375,7 @@ struct Peer<CodecT>::Self {
         output_open = false;
         closing_output = false;
         outgoing_queue.clear();
-        end_conversation(ConversationEnd::Kind::WriteFailed, message);
+        end_conversation({.kind = ConversationEnd::Kind::WriteFailed, .message = message});
         fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, message));
         closed = true;
         // Their answers could not be written.
@@ -399,9 +399,9 @@ struct Peer<CodecT>::Self {
     }
 
     /// Notes why the conversation ended, unless an earlier reason did.
-    void end_conversation(ConversationEnd::Kind kind, std::string message) {
+    void end_conversation(ConversationEnd why) {
         if(!ending) {
-            ending = ConversationEnd{.kind = kind, .message = std::move(message)};
+            ending = std::move(why);
         }
     }
 
@@ -410,7 +410,7 @@ struct Peer<CodecT>::Self {
     /// already.
     void end_input(ConversationEnd why) {
         input_open = false;
-        end_conversation(why.kind, std::move(why.message));
+        end_conversation(std::move(why));
         fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, ending->message));
         deadline_changed.set();
     }
@@ -844,7 +844,7 @@ Result<void> Peer<CodecT>::close() {
     self->output_open = false;
     self->closing_output = false;
     self->log(LogLevel::info, "peer closing");
-    self->end_conversation(ConversationEnd::Kind::ShutDown, "peer closed");
+    self->end_conversation({.kind = ConversationEnd::Kind::ShutDown, .message = "peer closed"});
     // The requests first: a handler cancelled below finds its own requests
     // settled, with nothing left to tell the remote.
     self->fail_pending_requests(Error(protocol::ErrorCode::ConnectionClosed, "peer closed"));
