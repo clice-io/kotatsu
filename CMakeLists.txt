@@ -402,9 +402,8 @@ if(KOTA_ENABLE_HTTP)
     add_subdirectory(src/http)
 endif()
 
-if(KOTA_ENABLE_ASYNC)
-    add_subdirectory(src/ipc)
-endif()
+# Its codecs build without async; its peers with it.
+add_subdirectory(src/ipc)
 
 if(KOTA_ENABLE_ZEST AND (NOT KOTA_ENABLE_TEST OR BUILD_TESTING))
     add_subdirectory(src/zest)

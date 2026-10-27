@@ -1,6 +1,7 @@
 #pragma once
 
 #include "kota/support/config.h"
+#include "kota/support/outcome.h"
 #include "kota/async/io/endpoint.h"
 #include "kota/async/io/fs.h"
 #include "kota/async/io/loop.h"
@@ -17,4 +18,3 @@
 #include "kota/async/runtime/task_group.h"
 #include "kota/async/runtime/when.h"
 #include "kota/async/vocab/error.h"
-#include "kota/async/vocab/outcome.h"

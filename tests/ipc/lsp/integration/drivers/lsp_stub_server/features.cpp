@@ -5,7 +5,7 @@
 #include <tuple>
 #include <vector>
 
-#include "kota/ipc/codec/json.h"
+#include "kota/ipc/peer/json.h"
 #include "kota/ipc/lsp/progress.h"
 #include "kota/ipc/lsp/protocol.h"
 

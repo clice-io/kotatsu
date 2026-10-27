@@ -27,7 +27,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
   - stream base abstraction, with `read_line()` and `read_to_end()`
   - pipes, TCP sockets, TCP acceptors, console / TTY streams
   - UDP sockets with multicast and per-packet send/recv
-- Child process API (`process::spawn`) on `sys::spawn` rather than libuv's: stdio piping, environment changes, a group of its own (`process_group`) that `kill_tree` ends as a whole, children killed with their parent (`exit_with_parent`; Linux and Windows), async wait/kill, exit statuses that tell how the child ended and the CPU time it used; the exit is watched through a pidfd on Linux (SIGCHLD before 5.3), kqueue on macOS and the process handle on Windows, and a child whose process was dropped is still reaped. `process::capture` runs a child to its exit and returns its output, killing it, or its group, if cancelled.
+- Child process API (`process::spawn`) on `sys::spawn` rather than libuv's: stdio piping, environment changes, a group of its own (`process_group`) that `kill_tree` ends as a whole, children killed with their parent (`exit_with_parent`; Linux and Windows), async wait/kill, exit statuses that tell how the child ended and the CPU time it used; the exit is watched through a pidfd on Linux (SIGCHLD before 5.3), kqueue on macOS and the process handle on Windows, and a child whose process was dropped is still reaped. `process::capture` runs a child to its exit and returns its output, killing it, or its group, if cancelled. On Windows `process::open(pid)` waits the same way for a process another started, and reads its exit status; POSIX tells a process no exit status of one it did not start.
 - Async filesystem API, `kota::fs::async`, covering the full libuv fs surface on libuv's thread pool (stat / mkdir / scandir / chmod / link / rename / sendfile / utime / mkstemp / …); `fs` below does the same synchronously, without libuv.
 - Libuv watcher wrappers: timer, idle, prepare, check, signal, plus a `sleep` helper.
 
@@ -41,7 +41,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Blocking-work offload via `queue(fn, loop)` onto the libuv thread pool.
 - Coroutine-friendly sync primitives: mutex, semaphore, event, and condition variable; `scoped_lock()` / `scoped_acquire()` give guards that let go when a cancel ends the task.
 - `co_invoke(fn, args...)` keeps a capturing lambda coroutine and its arguments alive for its task.
-- Error vocabulary: `error` (libuv status wrapper with named codes), `result<T>`, and the general `outcome<T, E, C>`.
+- Error vocabulary: `error` (libuv status wrapper with named codes) and `result<T>`, an `outcome<T, error>`.
 
 ### `meta` (`include/kota/meta/*`)
 
@@ -78,9 +78,10 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - JSON-RPC 2.0 protocol model with typed request / notification traits, structured errors (`Error { code, message, data }`), and the full set of spec error codes (including LSP-aligned `RequestCancelled`).
 - Transport abstraction for framed message IO: `Transport` interface, `StreamTransport` over stdio (`open_stdio`), a TCP connection (`connect_tcp`) or any pair of async streams, and a `RecordingTransport` decorator that captures traffic to JSONL for replay testing.
 - The LSP base protocol's framing in `framing.h`: `frame_header()` writes the `Content-Length` header a payload goes after, and `FrameParser` reads frames from input split anywhere. `StreamTransport` writes each payload as it is after its header, and writes the messages queued together in one write. A frame larger than the transport's limit (64 MiB by default) is skipped, not buffered, and reading goes on; the peer fails only what the frame's first bytes say it concerns: a request is answered with `MessageTooLarge` (-32010), a response fails the request it answers, a notification is dropped, and a message of no kind it can tell fails every pending request.
-- Codec-parametric typed peer runtime (`Peer<Codec>`) supporting request dispatch, notifications, and nested RPC; predefined peers for JSON (with LSP camelCase policy) and Bincode codecs. A value is written into its message's buffer as it is encoded, rather than encoded apart and copied in, and params and results are decoded where they lie in the message read.
+- The framing, the protocol model and the codecs (`codec.h`, `codec/bincode.h`, `codec/json.h`) build without the event loop, as the CMake target `kota::ipc::codec` (Bazel: `:ipc_codec`, `:ipc_codec_json`): a program that reads and writes messages itself, such as catter's hook library, links neither libuv nor, on Windows, the DLLs it imports.
+- Codec-parametric typed peer runtime (`Peer<Codec>`) supporting request dispatch, notifications, and nested RPC; predefined peers for JSON (with LSP camelCase policy) and Bincode codecs, `JSONPeer` (`peer/json.h`) and `BincodePeer` (`peer/bincode.h`). A value is written into its message's buffer as it is encoded, rather than encoded apart and copied in, and params and results are decoded where they lie in the message read.
 - Externally-driven execution model: callers own the event loop, schedule the peer's run loop, and drive shutdown explicitly.
-- `std::expected`-based result type (`ipc::Result<T>`) with protocol validation aligned with the JSON-RPC spec:
+- `ipc::Result<T>`, an `outcome<T, Error>`, with protocol validation aligned with the JSON-RPC spec:
   - malformed payloads map to `ParseError` with null id
   - structurally invalid messages map to `InvalidRequest`, answered under the request's id when it can be read, and with null id otherwise
   - parameter decode failures map to `InvalidParams`
@@ -159,16 +160,17 @@ Synchronous paths and files on UTF-8 strings, depending on `support` alone (no l
 - Type-erased string references (`buffer_ref.h`, `string_list_ref.h`): `buffer_ref`, any contiguous resizable buffer of characters for a function to write into, and `string_list_ref`, any contiguous range of string-likes for a function to read.
 - `small_wstring<N>`, a `small_vector<wchar_t, N>` whose `c_str()` gives the Windows API its NUL-terminated wide strings.
 - Naming-convention conversion (`naming.h`): identity, lower-snake, lower-camel, upper-camel, upper-snake.
+- `outcome<T, E, C>` (`outcome.h`): a value, an error or a cancellation, which `async`'s tasks, `ipc`'s codecs and `http`'s requests return.
 - Type-level utilities: `type_list<Ts...>`, `tuple_traits`, `type_traits`, `expected_try`, `comptime` helpers, and miscellaneous `memory` / `ranges` / `functional` adapters.
 
 ### `sys` (`include/kota/sys/*`)
 
 - The process and its system without libuv or `async`, in a static library of one object per area: a program links only what it calls, and on Windows imports only those objects' DLLs. catter's hook library, injected into every process a build starts, takes the environment and program lookup without the rest.
-- Platform-specific concepts follow one rule: what portable code calls is declared on every host and fails with `not_supported` where it cannot work (the process title, the OOM score); what only Windows-specific code calls lives in `sys::windows` (`windows.h`).
+- Platform-specific concepts follow one rule: what portable code calls is declared on every host and fails with `not_supported` where it cannot work (the process title, the OOM score); what only Windows-specific code calls lives in `sys::windows` (`windows.h`), or, a member of a portable type (`Child::open`), is declared on Windows alone.
 - Text out goes into a buffer the caller gives (`buffer_ref`) and lists of strings come in as `string_list_ref`, as in `fs`.
 - `env.h`: `get_env` / `set_env` / `unset_env` / `environment` (name and value pairs) on the OS's own block (Windows' `GetEnvironmentVariableW`, never the CRT's copy), `env_name_equal`, and `split_paths` (a lazy view) / `join_paths` for PATH-like lists in either style.
 - `process.h`: `pid`, `parent_pid`, `process_alive` (a zombie, or a process this one may not signal or open, included), `executable_path` (under the name its file has now), `self_executable` (a path that starts this very image, for spawning a copy that speaks its protocol: `/proc/self/exe` on Linux, which survives the file's replacement), `arguments` (read from the system, without main's argv; on Windows from `GetCommandLineW`, in WTF-8, by the CRT's rules and without wildcard expansion), `find_program` (execvp's search on POSIX; on Windows PATH and PATHEXT directory by directory, Cygwin symlinks followed; the first file it cannot run named when it fails), the process title (`set_process_title`, Linux and macOS) and name (`set_process_name`, the main thread's on Linux), and `signal_name`.
-- `spawn.h`: `spawn` starts a child without an event loop, as Rust's `Command` describes it (`program`, `args` after argv[0], `arg0`, `Stdio::pipe()` by its slot), refusing a string with a NUL, which the child would get cut short, and `Child` waits for it, kills it or its group, and reports its exit with CPU time (POSIX: fork and execve on Linux, `posix_spawn` on macOS, descriptors without close-on-exec inherited, signals at their defaults or as exec leaves them with `keep_signals`, an ignored SIGCHLD put back to its default so that no exit status is lost; Windows: `CreateProcessW` with the three standard handles alone inherited (every inheritable one with `windows_inherit_handles`) and a job object of the child's own from birth, a command line taken as given, a hook while the child is suspended, batch files run through cmd with their arguments escaped as Rust's `Command` escapes them since BatBadBut); `capture` runs one to its end and reads its stdout and stderr into the caller's buffers.
+- `spawn.h`: `spawn` starts a child without an event loop, as Rust's `Command` describes it (`program`, `args` after argv[0], `arg0`, `Stdio::pipe()` by its slot), refusing a string with a NUL, which the child would get cut short, and `Child` waits for it, kills it or its group, and reports its exit with CPU time (POSIX: fork and execve on Linux, `posix_spawn` on macOS, descriptors without close-on-exec inherited, signals at their defaults or as exec leaves them with `keep_signals`, an ignored SIGCHLD put back to its default so that no exit status is lost; Windows: `CreateProcessW` with the three standard handles alone inherited (every inheritable one with `windows_inherit_handles`) and a job object of the child's own from birth, a command line taken as given, a hook while the child is suspended, batch files run through cmd with their arguments escaped as Rust's `Command` escapes them since BatBadBut); `capture` runs one to its end and reads its stdout and stderr into the caller's buffers; on Windows `Child::open(pid)` opens a process another started, to wait for, read the exit of and kill as a child.
 - `windows.h`: Windows command lines (`quote_argument` / `join_command_line` / `split_command_line`, a lazy view that reads by the C runtime's rules or LLVM's: `cl::TokenizeWindowsCommandLine`, by which clang reads a compilation database and a clang-cl response file, and its `Full` variant, by which an LLVM tool reads its own command line) and `ntstatus_name` (`0xC0000135` is `STATUS_DLL_NOT_FOUND`) on every host; CreateProcess's own program search (`create_process_directories`, `find_create_process_program`) on Windows.
 - `dirs.h`: `home_dir`, `expand_tilde` (`~` and, on POSIX, `~user` from the password database), `temp_dir`, and the user's `cache_dir` / `config_dir` / `data_dir` (XDG, `~/Library`, known folders).
 - `console.h`: `write_console`, UTF-8 to a Windows console as UTF-16 and bytes anywhere else, allocating nothing and never throwing, and `is_console` / `is_pipe` (a socket included), false for a descriptor not open.
@@ -179,9 +181,10 @@ Synchronous paths and files on UTF-8 strings, depending on `support` alone (no l
 
 kotatsu is a Bazel module (Bazel 9). The targets are one per module:
 `@kotatsu//:support`, `:fs`, `:meta`, `:codec` with the backends `:codec_json`,
-`:codec_toml` and `:codec_flatbuffers`, `:option`, `:deco`, `:async`, `:ipc`
-with `:ipc_json` (JSON-RPC) and `:ipc_lsp`, and `:zest` with `:zest_async`;
-HTTP builds with CMake only for now.
+`:codec_toml` and `:codec_flatbuffers`, `:option`, `:deco`, `:async`,
+`:ipc_codec` with `:ipc_codec_json` (ipc's framing and codecs, without the
+event loop), `:ipc` with `:ipc_json` (JSON-RPC) and `:ipc_lsp`, and `:zest`
+with `:zest_async`; HTTP builds with CMake only for now.
 
 ```starlark
 bazel_dep(name = "kotatsu", version = "0.1.0.<n>")
@@ -239,7 +242,8 @@ bazel/         # Bazel: build settings, the rule running the tests' commands
 tests/
   <module>/    # Tests per module, mirroring include/kota/<module>/:
                #   unit/ in memory, system/ touching the OS, harness/ helpers,
-               #   integration/ programs over real protocols (TypeScript)
+               #   integration/ programs over real protocols (TypeScript),
+               #   <name>/ a check built against one target alone
   examples/    # Tests of the examples, and the examples run end to end
   fixtures/    # Types shared by several modules' tests
   snapshots/   # Snapshot files, one directory per suite

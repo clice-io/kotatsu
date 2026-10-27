@@ -2,7 +2,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include "async/harness/exceptions.h"
+#include "support/harness/throws.h"
 #include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"

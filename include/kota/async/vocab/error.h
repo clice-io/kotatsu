@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-#include "kota/async/vocab/outcome.h"
+#include "kota/support/outcome.h"
 
 namespace kota {
 

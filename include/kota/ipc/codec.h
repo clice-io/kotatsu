@@ -9,7 +9,7 @@
 
 #include "kota/ipc/protocol.h"
 #include "kota/support/naming.h"
-#include "kota/async/async.h"
+#include "kota/support/outcome.h"
 
 namespace kota::ipc {
 

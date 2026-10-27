@@ -640,6 +640,4 @@ Result<std::string> JSONCodec::encode_error_response(const std::optional<protoco
                   protocol::ErrorCode::InternalError);
 }
 
-template class Peer<JSONCodec>;
-
 }  // namespace kota::ipc

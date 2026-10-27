@@ -8,7 +8,6 @@
 #include <utility>
 
 #include "kota/ipc/codec.h"
-#include "kota/ipc/peer.h"
 #include "kota/codec/json/json.h"
 
 namespace kota::ipc {
@@ -127,9 +126,5 @@ private:
         return std::move(*value);
     }
 };
-
-using JSONPeer = Peer<JSONCodec>;
-
-extern template class Peer<JSONCodec>;
 
 }  // namespace kota::ipc

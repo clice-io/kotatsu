@@ -39,6 +39,7 @@ cc_library(
     ]),
     ("async", [
         ":fs_harness",
+        ":support_harness",
         ":sys_harness",
         "//:async",
     ]),
@@ -132,6 +133,19 @@ cc_library(
         "//examples:build_system_graph",
     ]),
 ]]
+
+# The ipc codecs built into a program alone, without the event loop: see
+# ipc/codec_alone/main.cpp.
+kota_test(
+    name = "ipc_codec_alone",
+    size = "small",
+    srcs = ["ipc/codec_alone/main.cpp"],
+    tags = ["unit"],
+    deps = [
+        "//:ipc_codec",
+        "//:ipc_codec_json",
+    ],
+)
 
 # The integration tests' drivers: integration/drivers/<name>.cpp of a module,
 # or the sources in integration/drivers/<name>/ for a driver too heavy for one

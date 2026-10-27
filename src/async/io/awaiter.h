@@ -7,9 +7,9 @@
 #include <utility>
 
 #include "../libuv.h"
+#include "kota/support/outcome.h"
 #include "kota/async/runtime/node.h"
 #include "kota/async/vocab/error.h"
-#include "kota/async/vocab/outcome.h"
 #include "kota/async/vocab/owned.h"
 
 namespace kota::uv {

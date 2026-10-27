@@ -5,11 +5,11 @@
 #include <type_traits>
 #include <utility>
 
+#include "kota/support/outcome.h"
 #include "kota/support/type_list.h"
 #include "kota/support/type_traits.h"
 #include "kota/async/runtime/awaitable.h"
 #include "kota/async/runtime/task.h"
-#include "kota/async/vocab/outcome.h"
 
 namespace kota::detail {
 

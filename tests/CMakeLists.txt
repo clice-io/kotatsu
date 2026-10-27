@@ -8,6 +8,8 @@
 #   integration/
 #             programs talking over real protocols: TypeScript tests on
 #             node's test runner, and the drivers they spawn
+#   <name>/   a check built against one target alone, which zest, on the
+#             event loop, cannot be part of; in kota_check_programs
 # Modules are added in dependency order; examples/ holds the tests of the
 # examples, by module, last. harness/ here holds what every module's
 # integration tests share.
@@ -208,16 +210,19 @@ if(KOTA_ENABLE_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-# The test executables, zest's runner fixture, the integration drivers and the
-# programs the integration tests run sit together in the build root so that
-# they find the same runtime DLLs.
+# The test executables, zest's runner fixture, the integration drivers, the
+# programs the integration tests run and the checks that are programs of
+# their own sit together in the build root so that they find the same runtime
+# DLLs.
 get_property(kota_integration_drivers GLOBAL PROPERTY kota_integration_drivers)
 get_property(kota_integration_programs GLOBAL PROPERTY kota_integration_programs)
+get_property(kota_check_programs GLOBAL PROPERTY kota_check_programs)
 set(kota_test_programs
     ${kota_test_binaries}
     zest_runner_fixture
     ${kota_integration_drivers}
     ${kota_integration_programs}
+    ${kota_check_programs}
 )
 set_target_properties(${kota_test_programs} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
@@ -301,7 +306,7 @@ endif()
 add_test(NAME zest_bootstrap_unit
     COMMAND unit_tests
         --no-isolation
-        "--test-filter={support_*,sys_windows_command_line,sys_process_signal_name,sys_spawn_exit_status,sys_windows_exit_status,sys_detail_memory_model,meta_compare,meta_name,meta_spelling,codec_debug_*,deco_*,async_vocab_outcome,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_watcher,zest_async}.*"
+        "--test-filter={support_*,sys_windows_command_line,sys_process_signal_name,sys_spawn_exit_status,sys_windows_exit_status,sys_detail_memory_model,meta_compare,meta_name,meta_spelling,codec_debug_*,deco_*,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_watcher,zest_async}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )

@@ -154,6 +154,4 @@ Result<std::string>
     return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }
 
-template class Peer<BincodeCodec>;
-
 }  // namespace kota::ipc

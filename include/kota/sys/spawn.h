@@ -245,10 +245,11 @@ struct ExitStatus {
     friend bool operator==(const ExitStatus&, const ExitStatus&) = default;
 };
 
-/// A child process, which this process alone waits for. Destroying it
-/// leaves the child running; on POSIX a child not waited for stays a zombie
-/// until this process exits, and on Windows one started exit_with_parent is
-/// killed then, its job closing.
+/// A child process, which this process alone waits for, or on Windows a
+/// process open() opened by its ID. Destroying it leaves the child running;
+/// on POSIX a child not waited for stays a zombie until this process exits,
+/// and on Windows one started exit_with_parent is killed then, its job
+/// closing.
 ///
 /// A default-constructed or moved-from Child is inert: what can fail fails
 /// with invalid_argument.
@@ -269,6 +270,17 @@ public:
     Child& operator=(Child&& other) noexcept;
 
     ~Child();
+
+#ifdef _WIN32
+    /// The process with ID `pid`, whichever process started it, which this
+    /// one may then wait for, read the exit of and kill as it does a child it
+    /// spawned. It leads no group: kill_tree fails. The ID must name the
+    /// process still: one that exited goes with the last handle to it, and
+    /// its ID may then be another's. no_such_process for an ID no process
+    /// has; permission_denied for a process this one may not wait for and
+    /// end.
+    static std::expected<Child, std::error_code> open(int pid);
+#endif
 
     /// Its process ID; -1 for an inert Child.
     int pid() const noexcept {

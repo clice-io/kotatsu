@@ -42,6 +42,7 @@
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/file.h"
+#include "kota/sys/spawn.h"
 #include "kota/async/async.h"
 
 namespace kota {
@@ -115,6 +116,33 @@ process::options print_two(std::string_view first, std::string_view second) {
 /// the reference as it was written.
 std::string unset(std::string_view name) {
     return std::string(by_platform("unset", std::format("%{}%", name)));
+}
+
+/// What `start` gives on a loop being destroyed. ~event_loop runs the loop
+/// until the thread pool's work is done, and so resumes the task that queued
+/// it: a watch made then would come after the loop closed its handles, and
+/// keep it from closing.
+template <typename Start>
+auto while_destroyed(Start start) {
+    std::latch gate(1);
+    std::optional<decltype(start(std::declval<event_loop&>()))> started;
+    std::optional<event_loop> dying(std::in_place);
+    auto late = [&]() -> task<> {
+        co_await queue([&] { gate.wait(); }, *dying);
+        started.emplace(start(*dying));
+    };
+    auto stop = [&]() -> task<> {
+        dying->stop();
+        co_return;
+    };
+    dying->schedule(late());
+    dying->schedule(stop());
+    dying->run();
+
+    gate.count_down();
+    dying.reset();
+    ZASSERT(started.has_value());
+    return std::move(*started);
 }
 
 ZEST_SUITE(async_io_process, zest::LoopFixture) {
@@ -531,30 +559,11 @@ ZEST_CASE(wait_cancelled_after_its_process_is_destroyed_ends) {
     ZEXPECT(*result == 1U);
 }
 
-// ~event_loop runs the loop until the thread pool's work is done, and so
-// resumes the task that queued it: a watch made then would come after the
-// loop closed its handles, and keep it from closing.
 ZEST_CASE(spawn_while_its_loop_is_destroyed_fails) {
-    std::latch gate(1);
-    std::optional<result<process::spawn_result>> spawned;
-    std::optional<event_loop> dying(std::in_place);
-    auto late = [&]() -> task<> {
-        co_await queue([&] { gate.wait(); }, *dying);
-        spawned.emplace(process::spawn(shell("exit 0"), *dying));
-    };
-    auto stop = [&]() -> task<> {
-        dying->stop();
-        co_return;
-    };
-    dying->schedule(late());
-    dying->schedule(stop());
-    dying->run();
-
-    gate.count_down();
-    dying.reset();
-    ZASSERT(spawned.has_value());
-    ZASSERT(spawned->has_error());
-    ZEXPECT(spawned->error() == error::operation_aborted);
+    auto spawned =
+        while_destroyed([](event_loop& dying) { return process::spawn(shell("exit 0"), dying); });
+    ZASSERT(spawned.has_error());
+    ZEXPECT(spawned.error() == error::operation_aborted);
 }
 
 ZEST_CASE(inert_process_fails) {
@@ -717,6 +726,55 @@ ZEST_CASE(kill_tree_ends_the_childs_children) {
     ZASSERT(status.has_value());
     ZEXPECT(status->term_signal == 9);
 }
+
+#ifdef _WIN32
+// The process is started without the loop, as catter's hook starts a program
+// and hands its ID to catter. The spawned Child holds the process's handle, so
+// its ID stays the process's while the case runs.
+ZEST_CASE(open_waits_for_a_process_the_loop_did_not_start) {
+    auto child = sys::spawn(shell("exit 3"));
+    ZASSERT(child.has_value());
+    auto opened = process::open(child->pid(), loop);
+    ZASSERT(opened.has_value());
+    ZEXPECT(opened->pid() == child->pid());
+
+    auto [status] = run(opened->wait());
+    ZEXPECT(test::exit_code_of(status) == 3);
+    ZEXPECT(opened->kill_tree() == error::invalid_argument);
+    ZEXPECT(child->wait().has_value());
+}
+
+ZEST_CASE(open_then_kill_ends_the_process) {
+    auto child = sys::spawn(test::stdin_reader());
+    ZASSERT(child.has_value());
+    auto opened = process::open(child->pid(), loop);
+    ZASSERT(opened.has_value());
+    // A failed kill would leave the wait below waiting until the watchdog.
+    ZASSERT(!opened->kill(SIGTERM));
+
+    auto [status] = run(opened->wait());
+    ZASSERT(status.has_value());
+    ZEXPECT(status->term_signal == SIGTERM);
+    ZEXPECT(child->wait().has_value());
+}
+
+ZEST_CASE(open_of_no_process_fails) {
+    // No process has an ID as high: IDs go by fours, 2^24 of them at most.
+    auto opened = process::open(0x7FFF'FFFC, loop);
+    ZASSERT(opened.has_error());
+    ZEXPECT(opened.error() == error::no_such_process);
+}
+
+ZEST_CASE(open_while_its_loop_is_destroyed_fails) {
+    auto child = sys::spawn(shell("exit 0"));
+    ZASSERT(child.has_value());
+    auto opened =
+        while_destroyed([&](event_loop& dying) { return process::open(child->pid(), dying); });
+    ZASSERT(opened.has_error());
+    ZEXPECT(opened.error() == error::operation_aborted);
+    ZEXPECT(child->wait().has_value());
+}
+#endif
 
 #ifndef _WIN32
 // The loop's watch of its children, made at its first spawn, would take the
