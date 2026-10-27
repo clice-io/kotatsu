@@ -8,11 +8,11 @@
 #include <vector>
 
 #include "kota/support/config.h"
+#include "kota/support/outcome.h"
 #include "kota/support/type_list.h"
 #include "kota/async/runtime/node.h"
 #include "kota/async/runtime/task.h"
 #include "kota/async/runtime/traits.h"
-#include "kota/async/vocab/outcome.h"
 
 namespace kota {
 

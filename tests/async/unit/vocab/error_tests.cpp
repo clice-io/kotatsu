@@ -1,5 +1,6 @@
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/support/outcome.h"
 #include "kota/async/vocab/error.h"
 
 namespace kota {
@@ -35,6 +36,10 @@ ZEST_CASE(clear_resets_to_success) {
     e.clear();
     ZEXPECT(!e);
     ZEXPECT(e == error());
+}
+
+ZEST_CASE(result_is_an_outcome_of_an_error) {
+    ZEXPECT(zest::type_eq<result<int>, outcome<int, error, void>>());
 }
 
 };  // ZEST_SUITE(async_vocab_error)

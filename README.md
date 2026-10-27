@@ -41,7 +41,7 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - Blocking-work offload via `queue(fn, loop)` onto the libuv thread pool.
 - Coroutine-friendly sync primitives: mutex, semaphore, event, and condition variable; `scoped_lock()` / `scoped_acquire()` give guards that let go when a cancel ends the task.
 - `co_invoke(fn, args...)` keeps a capturing lambda coroutine and its arguments alive for its task.
-- Error vocabulary: `error` (libuv status wrapper with named codes), `result<T>`, and the general `outcome<T, E, C>`.
+- Error vocabulary: `error` (libuv status wrapper with named codes) and `result<T>`, an `outcome<T, error>`.
 
 ### `meta` (`include/kota/meta/*`)
 
@@ -159,6 +159,7 @@ Synchronous paths and files on UTF-8 strings, depending on `support` alone (no l
 - Type-erased string references (`buffer_ref.h`, `string_list_ref.h`): `buffer_ref`, any contiguous resizable buffer of characters for a function to write into, and `string_list_ref`, any contiguous range of string-likes for a function to read.
 - `small_wstring<N>`, a `small_vector<wchar_t, N>` whose `c_str()` gives the Windows API its NUL-terminated wide strings.
 - Naming-convention conversion (`naming.h`): identity, lower-snake, lower-camel, upper-camel, upper-snake.
+- `outcome<T, E, C>` (`outcome.h`): a value, an error or a cancellation, which `async`'s tasks and `ipc`'s codecs return.
 - Type-level utilities: `type_list<Ts...>`, `tuple_traits`, `type_traits`, `expected_try`, `comptime` helpers, and miscellaneous `memory` / `ranges` / `functional` adapters.
 
 ### `sys` (`include/kota/sys/*`)

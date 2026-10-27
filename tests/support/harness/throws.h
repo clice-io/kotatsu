@@ -1,5 +1,10 @@
 #pragma once
 
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <utility>
+
 #include "kota/support/config.h"
 
 #if KOTA_ENABLE_EXCEPTIONS
@@ -17,6 +22,18 @@ bool throws(Action&& action) {
         return false;
     }
     return false;
+}
+
+/// The message of the `Exception` that `fn` throws, or nothing when it
+/// throws none; an exception of another type propagates and fails the test.
+template <typename Exception = std::runtime_error, typename Fn>
+std::optional<std::string> thrown(Fn&& fn) {
+    try {
+        std::forward<Fn>(fn)();
+    } catch(const Exception& e) {
+        return e.what();
+    }
+    return std::nullopt;
 }
 
 }  // namespace kota::test

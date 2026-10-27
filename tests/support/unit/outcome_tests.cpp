@@ -1,25 +1,36 @@
 #include <concepts>
 #include <string>
+#include <string_view>
 #include <utility>
 
-#include "async/harness/exceptions.h"
+#include "support/harness/throws.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
 #include "kota/support/config.h"
-#include "kota/async/vocab/error.h"
-#include "kota/async/vocab/outcome.h"
+#include "kota/support/outcome.h"
 
 namespace kota {
 
 namespace {
 
-using Full = outcome<int, error, cancellation>;
+/// An error that says what went wrong, as kota::error does.
+struct Failure {
+    int code = 0;
+
+    std::string_view message() const {
+        return "operation failed";
+    }
+};
+
+struct Cancelled {};
+
+using Full = outcome<int, Failure, Cancelled>;
 
 struct Plain {
     int code = 0;
 };
 
-ZEST_SUITE(async_vocab_outcome) {
+ZEST_SUITE(support_outcome) {
 
 ZEST_CASE(value_is_the_ok_state) {
     Full o = 42;
@@ -32,31 +43,31 @@ ZEST_CASE(value_is_the_ok_state) {
 }
 
 ZEST_CASE(error_is_the_err_state) {
-    Full o = outcome_error(error::invalid_argument);
+    Full o = outcome_error(Failure{.code = 1});
     ZASSERT(o.has_error());
     ZEXPECT(!o.has_value());
     ZEXPECT(!o.is_cancelled());
     ZEXPECT(!static_cast<bool>(o));
-    ZEXPECT(o.error() == error::invalid_argument);
+    ZEXPECT(o.error().code == 1);
 }
 
 ZEST_CASE(cancellation_is_the_cancelled_state) {
-    Full o = outcome_cancel(cancellation{});
+    Full o = outcome_cancel(Cancelled{});
     ZEXPECT(o.is_cancelled());
     ZEXPECT(!o.has_value());
     ZEXPECT(!o.has_error());
 }
 
 ZEST_CASE(void_value_is_ok) {
-    outcome<void, error, cancellation> defaulted;
+    outcome<void, Failure, Cancelled> defaulted;
     ZEXPECT(defaulted.has_value());
 
-    outcome<void, error, cancellation> tagged = outcome_value();
+    outcome<void, Failure, Cancelled> tagged = outcome_value();
     ZEXPECT(tagged.has_value());
 }
 
 ZEST_CASE(arrow_reaches_into_the_value) {
-    outcome<std::string, error> o = std::string("kotatsu");
+    outcome<std::string, Failure> o = std::string("kotatsu");
     ZASSERT(o.has_value());
     ZEXPECT(o->size() == 7U);
 
@@ -66,7 +77,7 @@ ZEST_CASE(arrow_reaches_into_the_value) {
 }
 
 ZEST_CASE(accessors_follow_the_value_category) {
-    outcome<std::string, error, cancellation> value = std::string("payload");
+    outcome<std::string, Failure, Cancelled> value = std::string("payload");
     const auto& constant = value;
     ZASSERT(value.has_value());
     ZEXPECT(zest::type_eq<decltype(value.value()), std::string&>());
@@ -77,14 +88,14 @@ ZEST_CASE(accessors_follow_the_value_category) {
     std::string taken = std::move(value).value();
     ZEXPECT(taken == "payload");
 
-    outcome<std::string, error, cancellation> failed = outcome_error(error::io_error);
+    outcome<std::string, Failure, Cancelled> failed = outcome_error(Failure{.code = 2});
     ZASSERT(failed.has_error());
-    ZEXPECT(zest::type_eq<decltype(std::move(failed).error()), error&&>());
-    ZEXPECT(std::move(failed).error() == error::io_error);
+    ZEXPECT(zest::type_eq<decltype(std::move(failed).error()), Failure&&>());
+    ZEXPECT(std::move(failed).error().code == 2);
 
-    outcome<std::string, error, cancellation> cancelled = outcome_cancel(cancellation{});
+    outcome<std::string, Failure, Cancelled> cancelled = outcome_cancel(Cancelled{});
     ZASSERT(cancelled.is_cancelled());
-    ZEXPECT(zest::type_eq<decltype(std::move(cancelled).cancellation()), cancellation&&>());
+    ZEXPECT(zest::type_eq<decltype(std::move(cancelled).cancellation()), Cancelled&&>());
 }
 
 ZEST_CASE(outcome_without_channels_always_holds_a_value) {
@@ -99,22 +110,22 @@ ZEST_CASE(outcome_without_channels_always_holds_a_value) {
 
 ZEST_CASE(channel_types_are_exposed) {
     ZEXPECT(zest::type_eq<Full::value_type, int>());
-    ZEXPECT(zest::type_eq<Full::error_type, error>());
-    ZEXPECT(zest::type_eq<Full::cancel_type, cancellation>());
-    ZEXPECT(zest::type_eq<result<int>, outcome<int, error, void>>());
-    ZSTATIC_EXPECT(is_outcome_v<result<int>>);
+    ZEXPECT(zest::type_eq<Full::error_type, Failure>());
+    ZEXPECT(zest::type_eq<Full::cancel_type, Cancelled>());
+    ZSTATIC_EXPECT(is_outcome_v<Full>);
     ZSTATIC_EXPECT(!is_outcome_v<int>);
 }
 
 ZEST_CASE(value_is_not_converted_from_another_outcome) {
     // An outcome's explicit operator bool would otherwise build a bool value.
-    ZSTATIC_EXPECT(!std::constructible_from<outcome<bool, error>, outcome<int, error>>);
+    ZSTATIC_EXPECT(!std::constructible_from<outcome<bool, Failure>, outcome<int, Failure>>);
     // An outcome of exactly that type is a value like any other.
-    ZSTATIC_EXPECT(std::constructible_from<outcome<result<int>, error>, result<int>>);
+    ZSTATIC_EXPECT(
+        std::constructible_from<outcome<outcome<int, Failure>, Failure>, outcome<int, Failure>>);
 }
 
 ZEST_CASE(unwrap_gives_the_value_in_its_value_category) {
-    outcome<std::string, error, cancellation> value = std::string("payload");
+    outcome<std::string, Failure, Cancelled> value = std::string("payload");
     const auto& constant = value;
     ZEXPECT(zest::type_eq<decltype(value.unwrap()), std::string&>());
     ZEXPECT(zest::type_eq<decltype(constant.unwrap()), const std::string&>());
@@ -123,7 +134,7 @@ ZEST_CASE(unwrap_gives_the_value_in_its_value_category) {
     std::string taken = std::move(value).unwrap();
     ZEXPECT(taken == "payload");
 
-    outcome<void, error> nothing;
+    outcome<void, Failure> nothing;
     ZEXPECT(zest::type_eq<decltype(nothing.unwrap()), void>());
     nothing.unwrap();
 
@@ -134,23 +145,22 @@ ZEST_CASE(unwrap_gives_the_value_in_its_value_category) {
 #if KOTA_ENABLE_EXCEPTIONS
 
 ZEST_CASE(unwrap_of_an_error_fails) {
-    result<int> failed = outcome_error(error::connection_refused);
-    ZEXPECT(test::thrown<bad_outcome_access>([&] { failed.unwrap(); }) ==
-            std::string(error::connection_refused.message()));
+    outcome<int, Failure> failed = outcome_error(Failure{.code = 1});
+    ZEXPECT(test::thrown<bad_outcome_access>([&] { failed.unwrap(); }) == "operation failed");
 
     outcome<void, Plain> plain = outcome_error(Plain{.code = 7});
     ZEXPECT(test::thrown<bad_outcome_access>([&] { plain.unwrap(); }) == "outcome holds an error");
 }
 
 ZEST_CASE(unwrap_of_a_cancellation_fails) {
-    outcome<int, error, cancellation> cancelled = outcome_cancel(cancellation{});
+    outcome<int, Failure, Cancelled> cancelled = outcome_cancel(Cancelled{});
     ZEXPECT(test::thrown<bad_outcome_access>([&] { std::move(cancelled).unwrap(); }) ==
             "outcome was cancelled");
 }
 
 #endif  // KOTA_ENABLE_EXCEPTIONS
 
-};  // ZEST_SUITE(async_vocab_outcome)
+};  // ZEST_SUITE(support_outcome)
 
 }  // namespace
 
