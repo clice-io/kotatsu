@@ -688,13 +688,14 @@ struct Peer<CodecT>::Self {
         }
         // A notification has no answer to carry the failure, so it is
         // logged; the peer goes on reading.
+        std::optional<std::string> violation;
         KOTA_TRY {
-            return it->second(params);
+            violation = it->second(params);
         }
         KOTA_CATCH_ALL() {
             log(LogLevel::error, "notification handler for {} threw", method);
         }
-        return std::nullopt;
+        return violation;
     }
 
     void dispatch_request(const std::string& method,
@@ -766,10 +767,12 @@ struct Peer<CodecT>::Self {
                 using T = std::remove_cvref_t<decltype(m)>;
                 if constexpr(std::is_same_v<T, IncomingRequest>) {
                     dispatch_request(m.method, m.id, std::move(m.params), handlers);
+                    return std::nullopt;
                 } else if constexpr(std::is_same_v<T, IncomingNotification>) {
                     return dispatch_notification(m.method, m.params);
                 } else if constexpr(std::is_same_v<T, IncomingResponse>) {
                     complete_pending_request(m.id, Result<PayloadSlice>(std::move(m.result)));
+                    return std::nullopt;
                 } else if constexpr(std::is_same_v<T, IncomingErrorResponse>) {
                     // An error that answers no request is not answered in
                     // turn, or two peers would trade such errors for good.
@@ -777,7 +780,9 @@ struct Peer<CodecT>::Self {
                         return violated("error response without an id: " + m.error.message);
                     }
                     complete_pending_request(*m.id, outcome_error(std::move(m.error)));
-                } else if constexpr(std::is_same_v<T, IncomingParseError>) {
+                    return std::nullopt;
+                } else {
+                    static_assert(std::is_same_v<T, IncomingParseError>);
                     if(m.notification) {
                         log(LogLevel::warn, "dropped a notification: {}", m.error.message);
                     } else {
@@ -785,7 +790,6 @@ struct Peer<CodecT>::Self {
                     }
                     return std::move(m.error.message);
                 }
-                return std::nullopt;
             },
             msg);
     }
