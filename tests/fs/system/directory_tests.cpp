@@ -618,15 +618,28 @@ ZEST_CASE(rename_noreplace_over_a_dangling_symlink_fails) {
     ZEXPECT(is_file(dir.file("from")));
 }
 
-ZEST_CASE(rename_noreplace_onto_itself_fails) {
-    // By its name or another, a hard link.
+ZEST_CASE(rename_noreplace_onto_the_file_itself_keeps_it) {
+    // By its own name or by another hard link of it, where the systems
+    // differ.
     test::TempDir dir;
     test::write_text(dir.file("file"), "text");
     ZASSERT(!create_hard_link(dir.file("file"), dir.file("other")));
-    ZEXPECT(rename_noreplace(dir.file("file"), dir.file("file")) == std::errc::file_exists);
-    ZEXPECT(rename_noreplace(dir.file("file"), dir.file("other")) == std::errc::file_exists);
+    auto same = rename_noreplace(dir.file("file"), dir.file("file"));
+    auto linked = rename_noreplace(dir.file("file"), dir.file("other"));
+#if defined(_WIN32)
+    ZEXPECT(!same);
+    ZEXPECT(!linked);
+    ZEXPECT(exists(dir.file("file")) == false);
+#elif defined(__APPLE__)
+    ZEXPECT(!same);
+    ZEXPECT(linked == std::errc::file_exists);
     ZEXPECT(is_file(dir.file("file")));
-    ZEXPECT(is_file(dir.file("other")));
+#else
+    ZEXPECT(same == std::errc::file_exists);
+    ZEXPECT(linked == std::errc::file_exists);
+    ZEXPECT(is_file(dir.file("file")));
+#endif
+    ZEXPECT(test::read_text(dir.file("other")) == "text");
 }
 
 ZEST_CASE(rename_noreplace_of_nothing_fails) {

@@ -168,6 +168,12 @@ std::error_code rename(std::string_view from, std::string_view to);
 /// MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows,
 /// renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL) on macOS.
 ///
+/// Where `to` names the file `from` names, there is no other file to keep,
+/// and the systems differ: Linux fails with file_exists; macOS does nothing
+/// for `from`'s own name, and fails for another hard link of the file;
+/// Windows does nothing for the one, and for the other takes the name `from`
+/// away.
+///
 /// Where the system or the file system has no such rename (NFS, Linux before
 /// 3.15, a network file system on macOS), a hard link, which replaces nothing
 /// either, gives the file its new name before the old one goes: meanwhile
