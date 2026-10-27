@@ -13,8 +13,9 @@ namespace kota::fs {
 /// Writes into `out` the name the OS gives the existing file `path`
 /// names: absolute, every symlink followed; on Windows also with each name's
 /// on-disk case and long form, and through junctions and substituted
-/// drives. Asks for no access, so a file the caller may not read resolves
-/// too.
+/// drives; on a volume with neither a drive letter nor a mount folder,
+/// under the volume's GUID (`\\?\Volume{...}\`). Asks for no access, so a
+/// file the caller may not read resolves too.
 std::error_code canonical(buffer_ref out, std::string_view path);
 
 /// Writes into `out` canonical() of the longest part of `path` that exists,

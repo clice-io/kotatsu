@@ -2,8 +2,10 @@
 
 // <windows.h> for the tests that call Win32 themselves, without the min and
 // max macros that break the standard library's, attributes_of() for those
-// that check a file's attributes and make_pipe() for those that need a named
-// pipe.
+// that check a file's attributes, make_pipe() for those that need a named
+// pipe, set_reparse_point() for those that need a reparse point of a tag no
+// tool makes and DeletePending for those that need a file deleted while held
+// open.
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -15,6 +17,7 @@
 #include <string>
 #include <string_view>
 #include <windows.h>
+#include <winioctl.h>
 
 #include "fs/harness/files.h"
 #include "kota/zest/zest.h"
@@ -31,13 +34,14 @@ inline DWORD attributes_of(std::string_view path) {
 }
 
 /// A named pipe of `access`, its name kept apart by the directory's, and
-/// written into `name` in UTF-8.
+/// written into `name` in UTF-8; another of the same directory is another
+/// instance of it.
 inline HANDLE make_pipe(std::string& name, const TempDir& dir, DWORD access, DWORD buffer) {
     auto wide = LR"(\\.\pipe\)" + std_path(fs::path::filename(dir.root())).wstring();
     HANDLE pipe = ::CreateNamedPipeW(wide.c_str(),
                                      access,
                                      PIPE_TYPE_BYTE | PIPE_WAIT,
-                                     1,
+                                     PIPE_UNLIMITED_INSTANCES,
                                      buffer,
                                      buffer,
                                      0,
@@ -46,6 +50,79 @@ inline HANDLE make_pipe(std::string& name, const TempDir& dir, DWORD access, DWO
     from_utf16(name, std::wstring_view(wide));
     return pipe;
 }
+
+/// Reparse tags for set_reparse_point(), which older SDKs lack: of a fifo,
+/// a character device and a block device WSL made (IO_REPARSE_TAG_LX_FIFO,
+/// _LX_CHR, _LX_BLK), and of a link a Windows container made
+/// (IO_REPARSE_TAG_WCI_LINK_1).
+constexpr DWORD wsl_fifo_tag = 0x80000024;
+constexpr DWORD wsl_character_tag = 0x80000025;
+constexpr DWORD wsl_block_tag = 0x80000026;
+constexpr DWORD container_link_tag = 0xA0000027;
+
+/// Makes the file at `path` a reparse point of the Microsoft `tag` with no
+/// data, as WSL makes its fifos and devices.
+inline void set_reparse_point(std::string_view path, DWORD tag) {
+    HANDLE file = ::CreateFileW(std_path(path).wstring().c_str(),
+                                GENERIC_WRITE,
+                                0,
+                                nullptr,
+                                OPEN_EXISTING,
+                                FILE_FLAG_OPEN_REPARSE_POINT,
+                                nullptr);
+    ZASSERT(file != INVALID_HANDLE_VALUE);
+
+    // REPARSE_DATA_BUFFER's header, which only the driver headers declare.
+    struct {
+        DWORD tag;
+        WORD length = 0;
+        WORD reserved = 0;
+    } header{.tag = tag};
+
+    DWORD returned = 0;
+    bool set = ::DeviceIoControl(file,
+                                 FSCTL_SET_REPARSE_POINT,
+                                 &header,
+                                 sizeof(header),
+                                 nullptr,
+                                 0,
+                                 &returned,
+                                 nullptr);
+    ::CloseHandle(file);
+    ZASSERT(set);
+}
+
+/// The file at the UTF-8 `path` deleted the classic way, which keeps its
+/// name until the last handle to it goes and lets no open through it
+/// meanwhile, while this holds a handle to it, or until a failed ZASSERT
+/// ends the process: then the handle goes first, so that TempDir can remove
+/// the directory the name keeps.
+struct DeletePending {
+    explicit DeletePending(std::string_view path) :
+        handle(::CreateFileW(std_path(path).wstring().c_str(),
+                             DELETE,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             nullptr,
+                             OPEN_EXISTING,
+                             FILE_FLAG_BACKUP_SEMANTICS,
+                             nullptr)) {
+        ZASSERT(handle != INVALID_HANDLE_VALUE);
+        FILE_DISPOSITION_INFO info{TRUE};
+        ZASSERT(::SetFileInformationByHandle(handle, FileDispositionInfo, &info, sizeof(info)));
+    }
+
+    DeletePending(const DeletePending&) = delete;
+    DeletePending& operator=(const DeletePending&) = delete;
+
+    ~DeletePending() {
+        ::CloseHandle(handle);
+    }
+
+    HANDLE handle;
+
+private:
+    zest::FatalHook on_fatal{[this] { ::CloseHandle(handle); }};
+};
 
 }  // namespace kota::test
 #endif

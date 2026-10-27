@@ -151,26 +151,34 @@ jobs:
         run: pixi run -e ${{ env.PIXI_ENV }} npm-ci
 
       # fs's FAT tests (tests/fs/system/fat_tests.cpp) take a FAT32 and an
-      # exFAT volume, which refuse calls NTFS takes, from these images.
-      - name: Mount FAT volumes
+      # exFAT volume, which refuse calls NTFS takes, from these images, and
+      # its resolve tests an NTFS volume with neither a drive letter nor a
+      # mount folder, which only its GUID names.
+      - name: Mount test volumes
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $script = Join-Path $env:RUNNER_TEMP "fat-volumes.txt"
-          $volumes = @(@{ fs = "fat32"; letter = "R" }, @{ fs = "exfat"; letter = "S" })
+          $script = Join-Path $env:RUNNER_TEMP "test-volumes.txt"
+          $volumes = @(
+            @{ fs = "fat32"; label = "fat32"; letter = "R" },
+            @{ fs = "exfat"; label = "exfat"; letter = "S" },
+            @{ fs = "ntfs"; label = "letterless" })
           $lines = foreach ($volume in $volumes) {
             $image = Join-Path $env:RUNNER_TEMP "$($volume.fs).vhdx"
             "create vdisk file=`"$image`" maximum=100 type=expandable"
             "select vdisk file=`"$image`""
             "attach vdisk"
             "create partition primary"
-            "format fs=$($volume.fs) quick"
-            "assign letter=$($volume.letter)"
+            "format fs=$($volume.fs) label=$($volume.label) quick"
+            if ($volume.letter) { "assign letter=$($volume.letter)" }
           }
           Set-Content -Path $script -Value $lines
           diskpart /s $script
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $letterless = (Get-Volume -FileSystemLabel letterless).Path
+          if (-not $letterless) { exit 1 }
           "KOTA_TEST_FAT_DIRS=R:\;S:\" >> $env:GITHUB_ENV
+          "KOTA_TEST_LETTERLESS_DIR=$letterless" >> $env:GITHUB_ENV
 
       # An entry cannot be overwritten, so each run saves a new one keyed on its
       # commit and restores the newest by prefix. GitHub keeps an entry to the
@@ -248,6 +256,19 @@ jobs:
           else
             ctest --preset "${{ matrix.preset }}" --verbose
           fi
+
+      # The cases that give files to other users, which only root may and
+      # which skip otherwise, run as root on one leg; each must pass.
+      - name: Test as root
+        if: matrix.os_label == 'linux' && matrix.toolchain == 'clang' && matrix.preset == 'debug'
+        shell: bash
+        run: |
+          cases=copy_file_over_a_file_of_another_owner_fails
+          cases+=,write_file_atomic_keeps_the_owner
+          cases+=,write_file_atomic_keeps_the_group_of_a_file_of_another_owner
+          sudo ./build/debug/system_tests --snapshot-dir=tests/snapshots \
+            --test-filter="{fs_file_copy,fs_file}.{${cases}}" | tee "${RUNNER_TEMP}/root-tests.log"
+          grep -qF '[  PASSED  ] 3 tests.' "${RUNNER_TEMP}/root-tests.log"
 
       - name: Summarize coverage
         if: ${{ !cancelled() && hashFiles('build/coverage/report/summary.md') != '' }}

@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "kota/support/buffer_ref.h"
+#include "kota/fs/file.h"
 #include "kota/fs/status.h"
 #include "kota/fs/volume.h"
 
@@ -19,64 +20,79 @@ namespace kota::fs {
 
 namespace detail {
 
-/// A directory open for listing, which the DirStream that reads it shares
+/// A directory open for listing, which the Directory that reads it shares
 /// with the entries it gave, as they ask for their statuses.
 struct OpenDirectory;
 
 }  // namespace detail
 
-/// An entry of a directory.
-struct DirEntry {
-    std::string name;
-
-    /// Its type, a link not followed.
-    FileType type = FileType::Unknown;
-
-    /// Its status, as symlink_status() gives it. On Windows the listing
-    /// holds it, as it was when listed, so that a large directory costs about
-    /// what a few statuses do, though without the link count. Elsewhere, and
-    /// on a Windows file system that lists no IDs (FAT), the system is asked
-    /// when this is called, through the directory, which stays open while an
-    /// entry of it lives: an entry removed since fails with
-    /// no_such_file_or_directory, and one on FAT that no open reaches gets
-    /// what the listing told, without an ID or the link count. An entry made
-    /// rather than listed fails with bad_file_descriptor.
-    std::expected<Status, std::error_code> status() const;
-
-private:
-    friend class DirStream;
-
-    /// The directory to ask its status through; on Windows only where the
-    /// listing told not all of it.
-    std::shared_ptr<detail::OpenDirectory> directory;
-
-#ifdef _WIN32
-    /// What the listing told of the status: all of it, or on a file system
-    /// that lists no IDs (FAT) all but the ID and links, which `status()`
-    /// then opens the entry for. Empty in an entry made rather than listed.
-    std::optional<Status> listed;
-#endif
-};
-
-/// The entries of a directory, `.` and `..` left out, in the order the
-/// system lists them, each read when the stream goes on to it: a range to go
-/// through once, of entries, or of the error that ends it. Taking part of it
+/// An open directory, closed when this goes and no entry it gave holds it.
+/// Its handle is not inherited by child processes; on Windows, while open,
+/// it keeps the directories above it from being renamed.
+///
+/// It is a range to go through once of the directory's entries, `.` and
+/// `..` left out, in the order the system lists them, each read when the
+/// range goes on to it, or of the error that ends it. Taking part of it
 /// leaves the rest unread, but for the entry after it: std::views::take(n)
 /// reads n + 1, as it does of std::views::istream.
-class DirStream {
+class Directory {
 public:
-    class iterator {
+    using native_handle_type = File::native_handle_type;
+
+    /// An entry of a directory.
+    struct Entry {
+        /// Defaulted in directory.cpp: an implicit one would need the
+        /// default of `type` before Directory, which holds an Entry, is
+        /// complete.
+        Entry();
+
+        std::string name;
+
+        /// Its type, a link not followed.
+        FileType type = FileType::Unknown;
+
+        /// Its status, as symlink_status() gives it. On Windows the listing
+        /// holds it, as it was when listed, so that a large directory costs
+        /// about what a few statuses do, though without the link count. NTFS
+        /// lists a file's size as it was when a handle to the file last
+        /// closed or flushed it: that of a file being written lags behind.
+        /// Elsewhere, and on a Windows file system that lists no IDs (FAT),
+        /// the system is asked when this is called, through the directory,
+        /// which stays open while an entry of it lives: an entry removed
+        /// since fails with no_such_file_or_directory, a file deleted while
+        /// held open as well, and one on FAT that no open reaches otherwise
+        /// gets what the listing told, without an ID or the link count. An
+        /// entry made rather than listed fails with bad_file_descriptor.
+        std::expected<Status, std::error_code> status() const;
+
+    private:
+        friend class Directory;
+
+        /// The directory to ask its status through; on Windows only where
+        /// the listing told not all of it.
+        std::shared_ptr<detail::OpenDirectory> directory;
+
+#ifdef _WIN32
+        /// What the listing told of the status: all of it, or on a file
+        /// system that lists no IDs (FAT) all but the ID and links, which
+        /// `status()` then opens the entry for. Empty in an entry made rather
+        /// than listed.
+        std::optional<Status> listed;
+#endif
+    };
+
+    class Iterator {
     public:
-        using value_type = std::expected<DirEntry, std::error_code>;
+        using value_type = std::expected<Entry, std::error_code>;
         using difference_type = std::ptrdiff_t;
         using iterator_concept = std::input_iterator_tag;
 
         value_type& operator*() const {
-            return stream->current;
+            return range->current;
         }
 
-        iterator& operator++() {
-            stream->advance();
+        Iterator& operator++() {
+            range->advance();
             return *this;
         }
 
@@ -85,23 +101,27 @@ public:
         }
 
         bool operator==(std::default_sentinel_t) const {
-            return stream->done;
+            return range->done;
         }
 
     private:
-        friend class DirStream;
+        friend class Directory;
 
-        explicit iterator(DirStream* stream) : stream(stream) {}
+        explicit Iterator(Directory* range) : range(range) {}
 
-        DirStream* stream;
+        Directory* range;
     };
 
-    DirStream(DirStream&&) noexcept = default;
+    Directory(Directory&&) noexcept = default;
 
-    DirStream& operator=(DirStream&&) noexcept = default;
+    Directory& operator=(Directory&&) noexcept = default;
 
-    /// Where the stream stands, its first entry read the first time.
-    iterator begin();
+    /// Opens the directory at `path`, symlinks followed, to list its
+    /// entries: a file fails with std::errc::not_a_directory.
+    static std::expected<Directory, std::error_code> open(std::string_view path);
+
+    /// Where the range stands, its first entry read the first time.
+    Iterator begin();
 
     std::default_sentinel_t end() const {
         return {};
@@ -111,27 +131,39 @@ public:
     /// open directory rather than by name.
     std::expected<Volume, std::error_code> volume() const;
 
-private:
-    friend std::expected<DirStream, std::error_code> read_dir(std::string_view dir);
+    /// The status of the open directory, as File::status() tells a file's.
+    std::expected<Status, std::error_code> status() const;
 
-    explicit DirStream(std::shared_ptr<detail::OpenDirectory> directory) :
+    /// Writes into `out` the name the OS gives the open directory, as
+    /// File::canonical() does a file's.
+    std::error_code canonical(buffer_ref out) const;
+
+    /// Lets go of the directory, which closes once no entry it gave holds
+    /// it, the one the range stands on among them. Going on, the range then
+    /// gives std::errc::bad_file_descriptor and ends, and what asks the open
+    /// directory fails with it. Closing a closed directory does nothing.
+    void close();
+
+    /// The descriptor, or on Windows the HANDLE, File::closed once closed;
+    /// this keeps it.
+    native_handle_type native_handle() const;
+
+private:
+    explicit Directory(std::shared_ptr<detail::OpenDirectory> directory) :
         directory(std::move(directory)) {}
 
     /// Reads the next entry into `current`, or after an error, or at the
-    /// end, ends the stream.
+    /// end, ends the range.
     void advance();
 
     std::shared_ptr<detail::OpenDirectory> directory;
 
-    std::expected<DirEntry, std::error_code> current;
+    std::expected<Entry, std::error_code> current;
 
     bool started = false;
 
     bool done = false;
 };
-
-/// Opens the directory `dir` to list its entries.
-std::expected<DirStream, std::error_code> read_dir(std::string_view dir);
 
 /// Creates the directory `path`: true when it made it, false when a
 /// directory was there already.
@@ -147,13 +179,21 @@ std::expected<bool, std::error_code> create_directories(std::string_view path);
 /// directory: true when it removed it, false when nothing was there. On
 /// Windows a read-only file goes as well, and the name goes at once, as on
 /// POSIX, while another process holds the file open, where it shares it for
-/// deletion and the file system allows (NTFS).
+/// deletion and the file system allows (NTFS); elsewhere (FAT) it stays
+/// until the last handle goes. A file deleted while held open whose name
+/// stays so, on any file system, counts as nothing there. A root, and a
+/// path whose last name is `.` or `..`, fail with
+/// std::errc::invalid_argument, as does on Windows a last name made of dots
+/// and spaces alone, which Win32 would take off to leave the directory it
+/// is in, unless a separator follows or the path is verbatim.
 std::expected<bool, std::error_code> remove(std::string_view path);
 
 /// Removes `path` and, for a directory, everything in it, never following a
 /// symlink or junction into what it points to: the number of entries it
-/// removed, `path` included. Nothing there removes nothing; a path ending
-/// in `.` or `..` fails with std::errc::invalid_argument.
+/// removed, `path` included. Nothing there removes nothing; a root, or a
+/// last name remove() refuses, fails with std::errc::invalid_argument as
+/// there. On POSIX a directory the walk is in, moved meanwhile out of the
+/// one it came from, fails it with std::errc::no_such_file_or_directory.
 std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path);
 
 /// Renames `from` to `to`, replacing a file there. On Windows `to` goes even
@@ -162,9 +202,12 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path);
 std::error_code rename(std::string_view from, std::string_view to);
 
 /// Renames `from` to `to` where nothing is there: anything there, a dangling
-/// symlink too, fails with std::errc::file_exists, and both stay as they
-/// were, however processes race, so that of two renames to one name one
-/// takes it. `to` on another volume fails with cross_device_link.
+/// symlink too, or on Windows a file deleted while held open, whose name
+/// stays until the last handle goes, fails with std::errc::file_exists, and
+/// both stay as they were, however processes race, so that of two renames
+/// to one name one takes it. `to` on another volume fails with
+/// cross_device_link; `from` deleted while held open fails as a missing
+/// one does, with no_such_file_or_directory.
 /// MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows,
 /// renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL) on macOS.
 ///
@@ -200,7 +243,9 @@ std::error_code create_directory_symlink(std::string_view target, std::string_vi
 /// directory it names; where the link keeps only the name the system
 /// follows, that name. Fails with std::errc::invalid_argument for a file
 /// that is no symlink, a Cygwin one included (cygwin::read_symlink reads
-/// those).
+/// those), and on Windows with not_supported for a link other than a
+/// symlink, a junction or a WSL link, whose target only its own driver
+/// knows.
 std::error_code read_symlink(buffer_ref out, std::string_view path);
 
 /// Creates `link`, another name of the existing file `target`, which must

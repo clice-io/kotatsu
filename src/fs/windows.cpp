@@ -57,7 +57,10 @@ std::error_code to_error_code(unsigned long code) {
             case ERROR_BAD_NETPATH:
             case ERROR_BAD_NET_NAME:
             case ERROR_INVALID_NAME:
-            case ERROR_BAD_PATHNAME: return std::errc::no_such_file_or_directory;
+            case ERROR_BAD_PATHNAME:
+            // A file deleted while held open, as win32::open_at() tells it:
+            // gone but for its name.
+            case ERROR_DELETE_PENDING: return std::errc::no_such_file_or_directory;
             case ERROR_DIRECTORY: return std::errc::not_a_directory;
             case ERROR_DIRECTORY_NOT_SUPPORTED: return std::errc::is_a_directory;
             case ERROR_ACCESS_DENIED:
@@ -199,14 +202,78 @@ void verbatim(basic_buffer_ref<wchar_t> path) {
     std::ranges::copy(prefix, chars.begin());
 }
 
-Handle try_open(const wchar_t* path, DWORD access, DWORD flags) {
-    return Handle(::CreateFileW(path,
-                                access,
-                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                nullptr,
-                                OPEN_EXISTING,
-                                FILE_FLAG_BACKUP_SEMANTICS | flags,
-                                nullptr));
+std::expected<Handle, DWORD>
+    open_at(HANDLE root, std::wstring_view name, DWORD access, bool follow) {
+    using NtCreateFileFn = NTSTATUS(NTAPI*)(PHANDLE,
+                                            ACCESS_MASK,
+                                            POBJECT_ATTRIBUTES,
+                                            PIO_STATUS_BLOCK,
+                                            PLARGE_INTEGER,
+                                            ULONG,
+                                            ULONG,
+                                            ULONG,
+                                            ULONG,
+                                            PVOID,
+                                            ULONG);
+    static constinit std::atomic<NtCreateFileFn> create = nullptr;
+    // NtCreateFile's disposition, options and status, which only the DDK
+    // names.
+    constexpr ULONG open_existing = 1;
+    constexpr ULONG synchronous_io = 0x20;
+    constexpr ULONG backup_intent = 0x4000;
+    constexpr ULONG open_reparse_point = 0x200000;
+    constexpr auto delete_pending = static_cast<NTSTATUS>(0xC0000056);
+    // A UNICODE_STRING counts its bytes in 16 bits.
+    if(name.size() > std::numeric_limits<USHORT>::max() / sizeof(wchar_t)) {
+        return std::unexpected(DWORD{ERROR_FILENAME_EXCED_RANGE});
+    }
+    UNICODE_STRING object_name;
+    object_name.Length = static_cast<USHORT>(name.size() * sizeof(wchar_t));
+    object_name.MaximumLength = object_name.Length;
+    object_name.Buffer = const_cast<PWSTR>(name.data());
+    OBJECT_ATTRIBUTES attributes{};
+    attributes.Length = sizeof(attributes);
+    attributes.RootDirectory = root;
+    attributes.ObjectName = &object_name;
+    attributes.Attributes = OBJ_CASE_INSENSITIVE;
+    IO_STATUS_BLOCK status_block{};
+    HANDLE handle = INVALID_HANDLE_VALUE;
+    auto status = from_ntdll(create, "NtCreateFile")(
+        &handle,
+        access | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        &attributes,
+        &status_block,
+        nullptr,
+        0,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        open_existing,
+        synchronous_io | backup_intent | (follow ? 0 : open_reparse_point),
+        nullptr,
+        0);
+    if(status == delete_pending) {
+        return std::unexpected(DWORD{ERROR_DELETE_PENDING});
+    }
+    if(status < 0) {
+        return std::unexpected(dos_error(status));
+    }
+    return Handle(handle);
+}
+
+std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow) {
+    // NT spells Win32's prefixes `\??\`, a share's `\??\UNC\`; a path
+    // to_native() leaves without one, which Win32 resolves to itself, takes
+    // one all the same.
+    WidePath name;
+    name.append(std::wstring_view(LR"(\??\)"));
+    if(path.starts_with(LR"(\\?\)") || path.starts_with(LR"(\\.\)")) {
+        name.append(path.substr(4));
+    } else if(path.starts_with(LR"(\\)")) {
+        name.append(std::wstring_view(LR"(UNC\)"));
+        name.append(path.substr(2));
+    } else {
+        name.append(path);
+    }
+    return open_at(nullptr, name, access, follow);
 }
 
 std::expected<Handle, std::error_code> open(std::string_view path, DWORD access) {
@@ -214,21 +281,25 @@ std::expected<Handle, std::error_code> open(std::string_view path, DWORD access)
     if(auto error = windows::to_native(native, path)) {
         return std::unexpected(error);
     }
-    auto handle = try_open(native.c_str(), access, 0);
-    if(handle.get() == INVALID_HANDLE_VALUE) {
-        return std::unexpected(windows::last_error());
-    }
-    return handle;
+    return open_native(native, access, true).transform_error([](DWORD error) {
+        return windows::to_error_code(error);
+    });
 }
 
 std::error_code final_path(buffer_ref out, HANDLE handle) {
     WidePath final;
-    if(auto error = fill_wide(final, [&](wchar_t* buffer, DWORD size) {
-           return ::GetFinalPathNameByHandleW(handle,
-                                              buffer,
-                                              size,
-                                              FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
-       })) {
+    auto ask = [&](DWORD volume) {
+        return fill_wide(final, [&](wchar_t* buffer, DWORD size) {
+            return ::GetFinalPathNameByHandleW(handle, buffer, size, FILE_NAME_NORMALIZED | volume);
+        });
+    };
+    // A volume with neither a drive letter nor a mount folder has no DOS
+    // name, only its GUID's: `\\?\Volume{...}\`.
+    auto error = ask(VOLUME_NAME_DOS);
+    if(error == std::errc::no_such_file_or_directory) {
+        error = ask(VOLUME_NAME_GUID);
+    }
+    if(error) {
         return error;
     }
     windows::from_native(out, final);

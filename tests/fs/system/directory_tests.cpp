@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <format>
 #include <latch>
@@ -11,15 +13,21 @@
 #include <vector>
 
 #ifndef _WIN32
+#include <cerrno>
+#include <fcntl.h>
+#include <pthread.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
 
 #include "fs/harness/dir.h"
 #include "fs/harness/files.h"
+#include "fs/harness/win32.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/file.h"
+#include "kota/fs/resolve.h"
 #include "kota/fs/status.h"
 
 namespace kota::fs {
@@ -27,7 +35,7 @@ namespace kota::fs {
 namespace {
 
 /// The entries' names, sorted: the system lists them in no set order.
-std::vector<std::string> names_of(const std::vector<DirEntry>& entries) {
+std::vector<std::string> names_of(const std::vector<Directory::Entry>& entries) {
     std::vector<std::string> names;
     for(const auto& entry: entries) {
         names.push_back(entry.name);
@@ -36,14 +44,72 @@ std::vector<std::string> names_of(const std::vector<DirEntry>& entries) {
     return names;
 }
 
-FileType type_in(const std::vector<DirEntry>& entries, std::string_view name) {
-    auto found = std::ranges::find(entries, name, &DirEntry::name);
+FileType type_in(const std::vector<Directory::Entry>& entries, std::string_view name) {
+    auto found = std::ranges::find(entries, name, &Directory::Entry::name);
     return found == entries.end() ? FileType::Unknown : found->type;
 }
 
+/// Runs `run` on a thread of its own, with a stack of 128 KiB.
+template <typename Run>
+void on_a_small_stack(Run run) {
+    constexpr std::size_t stack = 128 * 1024;
+#ifdef _WIN32
+    auto start = [](void* run) -> DWORD {
+        (*static_cast<Run*>(run))();
+        return 0;
+    };
+    HANDLE thread =
+        ::CreateThread(nullptr, stack, start, &run, STACK_SIZE_PARAM_IS_A_RESERVATION, nullptr);
+    ZASSERT(thread != nullptr);
+    ::WaitForSingleObject(thread, INFINITE);
+    ::CloseHandle(thread);
+#else
+    auto start = [](void* run) -> void* {
+        (*static_cast<Run*>(run))();
+        return nullptr;
+    };
+    pthread_attr_t attributes;
+    ZASSERT(::pthread_attr_init(&attributes) == 0);
+    ZASSERT(::pthread_attr_setstacksize(&attributes, stack) == 0);
+    pthread_t thread;
+    auto created = ::pthread_create(&thread, &attributes, start, &run);
+    ::pthread_attr_destroy(&attributes);
+    ZASSERT(created == 0);
+    ZASSERT(::pthread_join(thread, nullptr) == 0);
+#endif
+}
+
+#ifndef _WIN32
+/// The descriptors the process may open cut, while this lives, to `more`:
+/// the limit falls after as many free ones, counted from the lowest.
+struct ScopedDescriptorLimit {
+    explicit ScopedDescriptorLimit(int more) {
+        ZASSERT(::getrlimit(RLIMIT_NOFILE, &original) == 0);
+        int limit = 0;
+        for(int free = 0; free < more; ++limit) {
+            if(::fcntl(limit, F_GETFD) == -1 && errno == EBADF) {
+                ++free;
+            }
+        }
+        auto lowered = original;
+        lowered.rlim_cur = static_cast<rlim_t>(limit);
+        ZASSERT(::setrlimit(RLIMIT_NOFILE, &lowered) == 0);
+    }
+
+    ScopedDescriptorLimit(const ScopedDescriptorLimit&) = delete;
+    ScopedDescriptorLimit& operator=(const ScopedDescriptorLimit&) = delete;
+
+    ~ScopedDescriptorLimit() {
+        ::setrlimit(RLIMIT_NOFILE, &original);
+    }
+
+    rlimit original;
+};
+#endif
+
 ZEST_SUITE(fs_directory) {
 
-ZEST_CASE(read_dir_lists_names_and_types) {
+ZEST_CASE(directory_lists_names_and_types) {
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "text");
     test::write_text(dir.file("é中😀"), "text");
@@ -55,36 +121,36 @@ ZEST_CASE(read_dir_lists_names_and_types) {
     ZEXPECT(type_in(entries, "sub") == FileType::Directory);
 }
 
-ZEST_CASE(read_dir_of_an_empty_directory_is_empty) {
+ZEST_CASE(an_empty_directory_lists_nothing) {
     test::TempDir dir;
-    auto stream = read_dir(dir.root());
-    ZASSERT(stream.has_value());
-    ZEXPECT(stream->begin() == stream->end());
+    auto directory = Directory::open(dir.root());
+    ZASSERT(directory.has_value());
+    ZEXPECT(directory->begin() == directory->end());
 }
 
-ZEST_CASE(read_dir_of_nothing_fails) {
+ZEST_CASE(open_of_nothing_fails) {
     test::TempDir dir;
-    auto stream = read_dir(dir.file("missing"));
-    ZASSERT(!stream.has_value());
-    ZEXPECT(stream.error() == std::errc::no_such_file_or_directory);
+    auto directory = Directory::open(dir.file("missing"));
+    ZASSERT(!directory.has_value());
+    ZEXPECT(directory.error() == std::errc::no_such_file_or_directory);
 }
 
-ZEST_CASE(read_dir_of_a_file_fails) {
+ZEST_CASE(open_of_a_file_fails) {
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "text");
-    auto stream = read_dir(dir.file("file.txt"));
-    ZASSERT(!stream.has_value());
-    ZEXPECT(stream.error() == std::errc::not_a_directory);
+    auto directory = Directory::open(dir.file("file.txt"));
+    ZASSERT(!directory.has_value());
+    ZEXPECT(directory.error() == std::errc::not_a_directory);
 }
 
-ZEST_CASE(read_dir_leaves_links_unfollowed) {
+ZEST_CASE(directory_leaves_links_unfollowed) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
     if(!test::linked(create_directory_symlink("target", dir.file("link")))) {
         return;
     }
     auto entries = test::entries_of(dir.root());
-    auto found = std::ranges::find(entries, "link", &DirEntry::name);
+    auto found = std::ranges::find(entries, "link", &Directory::Entry::name);
     ZASSERT(found != entries.end());
     ZEXPECT(found->type == FileType::Symlink);
     auto status = found->status();
@@ -93,12 +159,12 @@ ZEST_CASE(read_dir_leaves_links_unfollowed) {
 }
 
 #ifdef _WIN32
-ZEST_CASE(read_dir_lists_a_junction_as_a_link) {
+ZEST_CASE(directory_lists_a_junction_as_a_link) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
     test::make_junction(dir.file("junction"), dir.file("target"));
     auto entries = test::entries_of(dir.root());
-    auto found = std::ranges::find(entries, "junction", &DirEntry::name);
+    auto found = std::ranges::find(entries, "junction", &Directory::Entry::name);
     ZASSERT(found != entries.end());
     ZEXPECT(found->type == FileType::Symlink);
     auto status = found->status();
@@ -106,11 +172,11 @@ ZEST_CASE(read_dir_lists_a_junction_as_a_link) {
     ZEXPECT(status->type == FileType::Symlink);
 }
 #else
-ZEST_CASE(read_dir_tells_a_fifo) {
+ZEST_CASE(directory_tells_a_fifo) {
     test::TempDir dir;
     ZASSERT(::mkfifo(dir.file("fifo").c_str(), 0600) == 0);
     auto entries = test::entries_of(dir.root());
-    auto found = std::ranges::find(entries, "fifo", &DirEntry::name);
+    auto found = std::ranges::find(entries, "fifo", &Directory::Entry::name);
     ZASSERT(found != entries.end());
     ZEXPECT(found->type == FileType::Fifo);
     auto status = found->status();
@@ -119,7 +185,7 @@ ZEST_CASE(read_dir_tells_a_fifo) {
 }
 #endif
 
-ZEST_CASE(read_dir_entries_tell_their_statuses) {
+ZEST_CASE(entries_tell_their_statuses) {
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "12345");
     std::filesystem::create_directory(dir.path / "sub");
@@ -143,7 +209,7 @@ ZEST_CASE(read_dir_entries_tell_their_statuses) {
     }
 }
 
-ZEST_CASE(read_dir_entries_tell_their_statuses_once_the_stream_is_gone) {
+ZEST_CASE(entries_tell_their_statuses_once_the_directory_is_gone) {
     // The directory stays open while an entry of it lives.
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "12345");
@@ -154,7 +220,7 @@ ZEST_CASE(read_dir_entries_tell_their_statuses_once_the_stream_is_gone) {
     ZEXPECT(status->size == 5u);
 }
 
-ZEST_CASE(read_dir_gives_only_what_is_taken) {
+ZEST_CASE(directory_gives_only_what_is_taken) {
     test::TempDir dir;
     std::vector<std::string> names = {"a", "b", "c", "d", "e"};
     for(const auto& name: names) {
@@ -162,11 +228,11 @@ ZEST_CASE(read_dir_gives_only_what_is_taken) {
     }
     for(std::size_t count = 0; count <= names.size() + 1; ++count) {
         ZEST_CONTEXT("count {}", count);
-        auto stream = read_dir(dir.root());
-        ZASSERT(stream.has_value());
+        auto directory = Directory::open(dir.root());
+        ZASSERT(directory.has_value());
         // Whichever the system lists first, each once.
         std::vector<std::string> taken;
-        for(const auto& entry: *stream | std::views::take(count)) {
+        for(const auto& entry: *directory | std::views::take(count)) {
             ZASSERT(entry.has_value());
             ZEXPECT(std::ranges::find(names, entry->name) != names.end());
             taken.push_back(entry->name);
@@ -178,8 +244,8 @@ ZEST_CASE(read_dir_gives_only_what_is_taken) {
 }
 
 #ifdef _WIN32
-ZEST_CASE(read_dir_entries_leave_the_directory_closed) {
-    // The listing tells each entry its whole status: once the stream is
+ZEST_CASE(entries_leave_the_directory_closed) {
+    // The listing tells each entry its whole status: once the Directory is
     // gone, nothing holds the directory open, which would keep its parent
     // from being renamed.
     test::TempDir dir;
@@ -190,7 +256,7 @@ ZEST_CASE(read_dir_entries_leave_the_directory_closed) {
     ZEXPECT(!rename(dir.file("outer"), dir.file("moved")));
 }
 
-ZEST_CASE(read_dir_entry_status_of_a_removed_file_is_as_listed) {
+ZEST_CASE(entry_status_of_a_removed_file_is_as_listed) {
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "12345");
     auto entries = test::entries_of(dir.root());
@@ -201,7 +267,7 @@ ZEST_CASE(read_dir_entry_status_of_a_removed_file_is_as_listed) {
     ZEXPECT(status->size == 5u);
 }
 #else
-ZEST_CASE(read_dir_entry_status_of_a_removed_file_fails) {
+ZEST_CASE(entry_status_of_a_removed_file_fails) {
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "12345");
     auto entries = test::entries_of(dir.root());
@@ -213,27 +279,121 @@ ZEST_CASE(read_dir_entry_status_of_a_removed_file_fails) {
 }
 #endif
 
-ZEST_CASE(read_dir_goes_on_where_it_stopped) {
+ZEST_CASE(directory_goes_on_where_it_stopped) {
     // A range to go through once: a second loop takes up the rest.
     test::TempDir dir;
     for(auto name: {"a", "b", "c"}) {
         test::write_text(dir.file(name), name);
     }
-    auto stream = read_dir(dir.root());
-    ZASSERT(stream.has_value());
+    auto directory = Directory::open(dir.root());
+    ZASSERT(directory.has_value());
     std::vector<std::string> taken;
-    for(const auto& entry: *stream | std::views::take(1)) {
+    for(const auto& entry: *directory | std::views::take(1)) {
         ZASSERT(entry.has_value());
         taken.push_back(entry->name);
     }
     ZEXPECT(taken.size() == 1u);
-    for(const auto& entry: *stream) {
+    for(const auto& entry: *directory) {
         ZASSERT(entry.has_value());
         taken.push_back(entry->name);
     }
     std::ranges::sort(taken);
     ZEXPECT(taken == std::vector<std::string>{"a", "b", "c"});
 }
+
+ZEST_CASE(open_follows_a_link) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    test::write_text(dir.file("target/file.txt"), "text");
+    test::link_directory(dir.file("target"), dir.file("link"));
+    auto entries = test::entries_of(dir.file("link"));
+    ZEXPECT(names_of(entries) == std::vector<std::string>{"file.txt"});
+}
+
+ZEST_CASE(status_tells_the_open_directory) {
+    test::TempDir dir;
+    auto directory = Directory::open(dir.root());
+    ZASSERT(directory.has_value());
+    auto opened = directory->status();
+    auto named = fs::status(dir.root());
+    ZASSERT(opened.has_value());
+    ZASSERT(named.has_value());
+    ZEXPECT(opened->type == FileType::Directory);
+    ZEXPECT(opened->id == named->id);
+}
+
+ZEST_CASE(canonical_names_the_open_directory_as_canonical_does) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    test::link_directory(dir.file("target"), dir.file("link"));
+    auto directory = Directory::open(dir.file("link"));
+    ZASSERT(directory.has_value());
+    std::string opened;
+    ZEXPECT(!directory->canonical(opened));
+    std::string named;
+    ZEXPECT(!fs::canonical(named, dir.file("target")));
+    ZEXPECT(opened == named);
+}
+
+ZEST_CASE(close_lets_go_of_the_directory) {
+    test::TempDir dir;
+    test::write_text(dir.file("a"), "12345");
+    test::write_text(dir.file("b"), "12345");
+    auto directory = Directory::open(dir.root());
+    ZASSERT(directory.has_value());
+    ZEXPECT(directory->native_handle() != File::closed);
+    auto at = directory->begin();
+    ZASSERT((*at).has_value());
+    const auto& entry = **at;
+
+    directory->close();
+    ZEXPECT(directory->native_handle() == File::closed);
+    auto status = directory->status();
+    ZASSERT(!status.has_value());
+    ZEXPECT(status.error() == std::errc::bad_file_descriptor);
+    std::string name;
+    ZEXPECT(directory->canonical(name) == std::errc::bad_file_descriptor);
+    auto volume = directory->volume();
+    ZASSERT(!volume.has_value());
+    ZEXPECT(volume.error() == std::errc::bad_file_descriptor);
+    // The entry the range stands on holds the directory still.
+    auto listed = entry.status();
+    ZASSERT(listed.has_value());
+    ZEXPECT(listed->size == 5u);
+    // Going on, it gives no more of what it had not given.
+    ++at;
+    ZASSERT(at != directory->end());
+    ZASSERT(!(*at).has_value());
+    ZEXPECT((*at).error() == std::errc::bad_file_descriptor);
+    ++at;
+    ZEXPECT(at == directory->end());
+    directory->close();
+    ZEXPECT(directory->begin() == directory->end());
+}
+
+ZEST_CASE(range_of_a_closed_directory_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
+    auto directory = Directory::open(dir.root());
+    ZASSERT(directory.has_value());
+    directory->close();
+    auto at = directory->begin();
+    ZASSERT(at != directory->end());
+    ZASSERT(!(*at).has_value());
+    ZEXPECT((*at).error() == std::errc::bad_file_descriptor);
+}
+
+#ifdef _WIN32
+ZEST_CASE(close_lets_the_directories_above_be_renamed) {
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "outer" / "inner");
+    auto directory = Directory::open(dir.file("outer/inner"));
+    ZASSERT(directory.has_value());
+    ZEXPECT(rename(dir.file("outer"), dir.file("moved")) == std::errc::permission_denied);
+    directory->close();
+    ZEXPECT(!rename(dir.file("outer"), dir.file("moved")));
+}
+#endif
 
 ZEST_CASE(create_directory_says_whether_it_made_one) {
     test::TempDir dir;
@@ -334,6 +494,26 @@ ZEST_CASE(remove_takes_a_read_only_file) {
     ZEXPECT(remove(dir.file("file.txt")) == true);
 }
 
+#ifdef _WIN32
+ZEST_CASE(remove_of_a_file_deleted_while_held_open_removes_nothing) {
+    // The file is going already; its name stays, and keeps the directory
+    // it is in from going, until the last handle goes.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "tree");
+    test::write_text(dir.file("tree/file.txt"), "text");
+    test::write_text(dir.file("tree/other.txt"), "text");
+    {
+        test::DeletePending pending(dir.file("tree/file.txt"));
+        ZEXPECT(remove(dir.file("tree/file.txt")) == false);
+        ZEXPECT(remove_all(dir.file("tree/file.txt")) == 0u);
+        auto removed = remove_all(dir.file("tree"));
+        ZASSERT(!removed.has_value());
+        ZEXPECT(removed.error() == std::errc::directory_not_empty);
+    }
+    ZEXPECT(remove_all(dir.file("tree")) == 1u);
+}
+#endif
+
 ZEST_CASE(remove_all_removes_a_tree) {
     test::TempDir dir;
     std::filesystem::create_directories(dir.path / "tree" / "a" / "b");
@@ -426,19 +606,141 @@ ZEST_CASE(remove_all_where_access_is_denied_fails) {
     ZEXPECT(removed.error() == std::errc::permission_denied);
     ZEXPECT(is_file(dir.file("tree/closed/file.txt")));
 }
+
+ZEST_CASE(remove_all_takes_a_directory_it_may_list_but_not_search) {
+    // Empty, it is removed from the directory above, never entered.
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "tree" / "unsearchable");
+    test::ScopedPermissions closed(dir.path / "tree" / "unsearchable",
+                                   std::filesystem::perms::owner_read);
+    ZEXPECT(remove_all(dir.file("tree")) == 2u);
+    ZEXPECT(exists(dir.file("tree")) == false);
+}
+
+ZEST_CASE(remove_all_removes_a_tree_deeper_than_the_descriptors_left) {
+    // A descriptor held for each level would take more than are left.
+    test::TempDir dir;
+    std::string bottom = dir.file("tree");
+    for(int level = 0; level < 32; ++level) {
+        bottom += "/d";
+    }
+    std::filesystem::create_directories(test::std_path(bottom));
+    test::write_text(bottom + "/file.txt", "text");
+    std::expected<std::uint64_t, std::error_code> removed;
+    {
+        ScopedDescriptorLimit few(8);
+        removed = remove_all(dir.file("tree"));
+    }
+    ZASSERT(removed.has_value());
+    ZEXPECT(*removed == 34u);
+}
 #endif
 
-ZEST_CASE(remove_all_of_dots_fails) {
+ZEST_CASE(remove_all_removes_a_deep_tree) {
+    // A thousand levels, made a chain of directories at a time, the tree so
+    // far moved to the bottom of each, so that no path the test names grows
+    // long; the paths into it outgrow MAX_PATH and macOS's PATH_MAX. macOS
+    // and Windows take the longer to remove a name the deeper it lies, which
+    // bounds the depth. Removed on a small stack, which a call a level
+    // would overflow.
     test::TempDir dir;
-    std::filesystem::create_directory(dir.path / "tree");
+    constexpr int chain = 50;
+    constexpr int chains = 20;
+    std::filesystem::path bottom = "next";
+    for(int level = 0; level < chain; ++level) {
+        bottom /= "d";
+    }
+    for(int made = 0; made < chains; ++made) {
+        std::filesystem::create_directories(dir.path / bottom);
+        if(made > 0) {
+            std::filesystem::rename(dir.path / "tree", dir.path / bottom / "tree");
+        }
+        std::filesystem::rename(dir.path / "next", dir.path / "tree");
+    }
+    std::expected<std::uint64_t, std::error_code> removed;
+    on_a_small_stack([&] { removed = remove_all(dir.file("tree")); });
+    ZEXPECT(removed == std::uint64_t(chains * (chain + 1)));
+    ZEXPECT(exists(dir.file("tree")) == false);
+}
+
+ZEST_CASE(remove_of_dots_fails) {
+    // Either would remove the directory the path is in: the OS refuses it
+    // only once its contents are gone, or on Windows, which resolves the
+    // path first, not at all.
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "tree" / "empty");
     test::write_text(dir.file("tree/kept.txt"), "text");
-    for(auto name: {"tree/.", "tree/..", "tree/./"}) {
+    for(auto name: {"tree/empty/.", "tree/empty/..", "tree/empty/./", "tree/.", "tree/.."}) {
         ZEST_CONTEXT("{}", name);
-        auto removed = remove_all(dir.file(name));
+        auto removed = remove(dir.file(name));
         ZASSERT(!removed.has_value());
         ZEXPECT(removed.error() == std::errc::invalid_argument);
+        auto removed_all = remove_all(dir.file(name));
+        ZASSERT(!removed_all.has_value());
+        ZEXPECT(removed_all.error() == std::errc::invalid_argument);
     }
     ZEXPECT(is_file(dir.file("tree/kept.txt")));
+    ZEXPECT(is_directory(dir.file("tree/empty")));
+}
+
+#ifdef _WIN32
+ZEST_CASE(remove_of_a_name_win32_trims_away_fails) {
+    // Win32 takes trailing dots and spaces off a last name that no separator
+    // follows: one made of them alone leaves the directory it is in.
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "tree" / "empty");
+    test::write_text(dir.file("tree/kept.txt"), "text");
+    for(auto name: {"...", ". ", " ", ".. ", " ."}) {
+        ZEST_CONTEXT("[{}]", name);
+        auto removed = remove(dir.file(std::format("tree/empty/{}", name)));
+        ZASSERT(!removed.has_value());
+        ZEXPECT(removed.error() == std::errc::invalid_argument);
+        auto removed_all = remove_all(dir.file(std::format("tree/{}", name)));
+        ZASSERT(!removed_all.has_value());
+        ZEXPECT(removed_all.error() == std::errc::invalid_argument);
+    }
+    ZEXPECT(is_file(dir.file("tree/kept.txt")));
+    ZEXPECT(is_directory(dir.file("tree/empty")));
+    // Followed by a separator, the name is kept: a directory of its own.
+    ZASSERT(std::filesystem::create_directory(LR"(\\?\)" + (dir.path / "tree" / "...").wstring()));
+    ZEXPECT(remove_all(dir.file("tree/...") + "\\") == 1u);
+    ZEXPECT(is_file(dir.file("tree/kept.txt")));
+}
+#endif
+
+ZEST_CASE(remove_of_a_root_fails) {
+#ifdef _WIN32
+    // A drive no volume has: should the check fail, nothing is there.
+    auto drives = ::GetLogicalDrives();
+    auto letters = std::views::iota(0, 26) | std::views::reverse;
+    auto free = std::ranges::find_if(letters, [&](int i) { return !(drives & (1u << i)); });
+    ZASSERT(free != letters.end());
+    std::string drive = {static_cast<char>('A' + *free), ':'};
+    std::vector<std::string> roots = {drive + R"(\)", drive, R"(\\?\)" + drive + R"(\)"};
+#else
+    std::vector<std::string> roots = {"/", "//"};
+#endif
+    std::vector<std::expected<bool, std::error_code>> removed;
+    std::vector<std::expected<std::uint64_t, std::error_code>> removed_all;
+    {
+#ifndef _WIN32
+        // Should the check fail, no descriptor is left to list the root
+        // through, which removing anything in it takes. The checks wait for
+        // the limit to go: a sanitizer's runtime takes descriptors too.
+        ScopedDescriptorLimit none(0);
+#endif
+        for(const auto& root: roots) {
+            removed.push_back(remove(root));
+            removed_all.push_back(remove_all(root));
+        }
+    }
+    for(std::size_t i = 0; i < roots.size(); ++i) {
+        ZEST_CONTEXT("{}", roots[i]);
+        ZASSERT(!removed[i].has_value());
+        ZEXPECT(removed[i].error() == std::errc::invalid_argument);
+        ZASSERT(!removed_all[i].has_value());
+        ZEXPECT(removed_all[i].error() == std::errc::invalid_argument);
+    }
 }
 
 ZEST_CASE(rename_replaces_a_file) {
@@ -508,6 +810,23 @@ ZEST_CASE(read_symlink_gives_the_directory_of_a_junction) {
     std::string target;
     ZEXPECT(!read_symlink(target, dir.file("junction")));
     ZEXPECT(target == dir.file("target"));
+}
+
+ZEST_CASE(read_symlink_of_a_link_it_cannot_read_fails) {
+    // A reparse point a path is resolved through, as Windows containers
+    // make: a link, whose target only its own driver knows.
+    test::TempDir dir;
+    test::write_text(dir.file("link"), "");
+    test::set_reparse_point(dir.file("link"), test::container_link_tag);
+    auto itself = symlink_status(dir.file("link"));
+    ZASSERT(itself.has_value());
+    ZEXPECT(itself->type == FileType::Symlink);
+    std::string target;
+    ZEXPECT(read_symlink(target, dir.file("link")) == std::errc::not_supported);
+    // One that holds the file, a WSL fifo, is no link.
+    test::write_text(dir.file("fifo"), "");
+    test::set_reparse_point(dir.file("fifo"), test::wsl_fifo_tag);
+    ZEXPECT(read_symlink(target, dir.file("fifo")) == std::errc::invalid_argument);
 }
 #endif
 
@@ -617,6 +936,27 @@ ZEST_CASE(rename_noreplace_over_a_dangling_symlink_fails) {
     ZEXPECT(is_symlink(dir.file("to")));
     ZEXPECT(is_file(dir.file("from")));
 }
+
+#ifdef _WIN32
+ZEST_CASE(rename_noreplace_over_a_file_deleted_while_held_open_fails) {
+    // Its name is taken until the last handle goes.
+    test::TempDir dir;
+    test::write_text(dir.file("from"), "new");
+    test::write_text(dir.file("to"), "old");
+    test::DeletePending pending(dir.file("to"));
+    ZEXPECT(rename_noreplace(dir.file("from"), dir.file("to")) == std::errc::file_exists);
+    ZEXPECT(test::read_text(dir.file("from")) == "new");
+}
+
+ZEST_CASE(rename_noreplace_of_a_file_deleted_while_held_open_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("from"), "text");
+    test::DeletePending pending(dir.file("from"));
+    ZEXPECT(rename_noreplace(dir.file("from"), dir.file("to")) ==
+            std::errc::no_such_file_or_directory);
+    ZEXPECT(exists(dir.file("to")) == false);
+}
+#endif
 
 ZEST_CASE(rename_noreplace_onto_the_file_itself_keeps_it) {
     // By its own name or by another hard link of it, where the systems

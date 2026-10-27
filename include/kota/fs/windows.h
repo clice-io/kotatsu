@@ -15,6 +15,10 @@ namespace kota::fs::windows {
 /// the error has a POSIX counterpart, so that `ec ==
 /// std::errc::no_such_file_or_directory` holds with any standard library;
 /// otherwise the code itself, in std::system_category().
+/// ERROR_DELETE_PENDING, which kotatsu tells where Win32 says
+/// ERROR_ACCESS_DENIED of a file deleted while held open (its name stays
+/// until the last handle to it goes, but opens nothing), is
+/// no_such_file_or_directory.
 std::error_code to_error_code(unsigned long code);
 
 /// to_error_code(GetLastError()).

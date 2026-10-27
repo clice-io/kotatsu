@@ -43,6 +43,45 @@ std::string rest_of(File& file) {
     }
 }
 
+/// Opens the directory at `path` each kind of way OpenOptions takes, all of
+/// which fail: a File opens no directory.
+void expect_refused_as_a_directory(std::string_view path) {
+    struct Refused {
+        std::string_view label;
+        OpenOptions options;
+        std::errc error;
+    };
+
+    constexpr auto is_a_directory = std::errc::is_a_directory;
+    constexpr Refused refused[] = {
+        {"read",                    {.read = true},                                  is_a_directory        },
+        {"write",                   {.write = true},                                 is_a_directory        },
+        {"read, write",             {.read = true, .write = true},                   is_a_directory        },
+        {"append",                  {.append = true},                                is_a_directory        },
+        {"read, append",            {.read = true, .append = true},                  is_a_directory        },
+        {"write, truncate",         {.write = true, .truncate = true},               is_a_directory        },
+        {"read, write, truncate",   {.read = true, .write = true, .truncate = true}, is_a_directory        },
+        {"write, create",           {.write = true, .create = true},                 is_a_directory        },
+        {"read, write, create",     {.read = true, .write = true, .create = true},   is_a_directory        },
+        {"write, truncate, create",
+         {.write = true, .truncate = true, .create = true},
+         is_a_directory                                                                                    },
+        {"append, create",          {.append = true, .create = true},                is_a_directory        },
+        // Anything there, a directory too.
+        {"write, create_new",       {.write = true, .create_new = true},             std::errc::file_exists},
+        {"read, write, create_new",
+         {.read = true, .write = true, .create_new = true},
+         std::errc::file_exists                                                                            },
+        {"append, create_new",      {.append = true, .create_new = true},            std::errc::file_exists},
+    };
+    for(const auto& entry: refused) {
+        ZEST_CONTEXT("{}", entry.label);
+        auto file = File::open(path, entry.options);
+        ZASSERT(!file.has_value());
+        ZEXPECT(file.error() == entry.error);
+    }
+}
+
 #ifdef __APPLE__
 /// A disk image of 1 MB of HFS+ in a test's directory, attached beside it,
 /// which hdiutil lets any user do; detached, as though the disk went, when
@@ -276,6 +315,62 @@ ZEST_CASE(open_to_append_creates) {
     ZEXPECT(test::read_text(dir.file("file")) == "text");
 }
 
+ZEST_CASE(open_of_a_directory_fails) {
+    test::TempDir dir;
+    expect_refused_as_a_directory(dir.root());
+}
+
+ZEST_CASE(open_of_a_directory_through_a_link_fails) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    test::link_directory(dir.file("target"), dir.file("link"));
+    expect_refused_as_a_directory(dir.file("link"));
+}
+
+#ifndef _WIN32
+ZEST_CASE(open_of_a_directory_that_may_not_be_read_fails) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "closed");
+    test::ScopedPermissions closed(dir.path / "closed", std::filesystem::perms::none);
+    if(::access(dir.file("closed").c_str(), R_OK) == 0) {
+        // Root passes through any permission.
+        zest::skip();
+        return;
+    }
+    expect_refused_as_a_directory(dir.file("closed"));
+}
+#endif
+
+ZEST_CASE(open_to_write_a_read_only_file_fails) {
+    // Refused as a directory is on Windows, and still a file.
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    test::ScopedPermissions read_only(dir.path / "file", std::filesystem::perms::owner_read);
+#ifndef _WIN32
+    if(::access(dir.file("file").c_str(), W_OK) == 0) {
+        // Root passes through any permission.
+        zest::skip();
+        return;
+    }
+#endif
+    auto file = File::open(dir.file("file"), {.write = true});
+    ZASSERT(!file.has_value());
+    ZEXPECT(file.error() == std::errc::permission_denied);
+}
+
+#ifdef _WIN32
+ZEST_CASE(open_to_create_new_over_a_dangling_junction_fails) {
+    // Refused as a directory is.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "gone");
+    test::make_junction(dir.file("dangling"), dir.file("gone"));
+    std::filesystem::remove(dir.path / "gone");
+    auto file = File::open(dir.file("dangling"), {.write = true, .create_new = true});
+    ZASSERT(!file.has_value());
+    ZEXPECT(file.error() == std::errc::file_exists);
+}
+#endif
+
 ZEST_CASE(seek_moves_where_reads_start) {
     test::TempDir dir;
     test::write_text(dir.file("file"), "0123456789");
@@ -430,6 +525,26 @@ ZEST_CASE(sync_keeps_what_was_written) {
     ZEXPECT(test::read_text(dir.file("file")) == "text");
 }
 
+ZEST_CASE(sync_of_a_file_open_to_read_succeeds) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    auto file = File::open(dir.file("file"));
+    ZASSERT(file.has_value());
+    ZEXPECT(!file->sync());
+}
+
+#ifdef _WIN32
+ZEST_CASE(sync_of_a_read_only_file_fails) {
+    // Windows flushes a file only through a handle that may write it.
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    test::ScopedPermissions read_only(dir.path / "file", std::filesystem::perms::owner_read);
+    auto file = File::open(dir.file("file"));
+    ZASSERT(file.has_value());
+    ZEXPECT(file->sync() == std::errc::permission_denied);
+}
+#endif
+
 #ifdef __APPLE__
 // macOS refuses F_FULLFSYNC for a device, a read-only volume and a pipe,
 // where fsync() stands in, and for a file whose volume went, where fsync()
@@ -502,13 +617,7 @@ ZEST_CASE(canonical_follows_a_link_the_file_was_opened_through) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
     test::write_text(dir.file("target/file.txt"), "text");
-#ifdef _WIN32
-    test::make_junction(dir.file("link"), dir.file("target"));
-#else
-    if(!test::linked(create_directory_symlink(dir.file("target"), dir.file("link")))) {
-        return;
-    }
-#endif
+    test::link_directory(dir.file("target"), dir.file("link"));
     auto file = File::open(dir.file("link/file.txt"));
     ZASSERT(file.has_value());
     std::string opened;

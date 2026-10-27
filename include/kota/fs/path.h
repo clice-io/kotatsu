@@ -56,7 +56,8 @@ struct Root {
     Prefix prefix = Prefix::None;
 
     /// The prefix: `C:`, `\\server\share`, `\\?\UNC\server\share`; empty
-    /// when there is none.
+    /// when there is none. It ends before a separator with no name after
+    /// it: `\\.\` is the prefix `\\.` and its root directory.
     std::string_view name;
 
     /// The separators after the prefix: `/` in `/x`, `\` in `C:\x`; empty

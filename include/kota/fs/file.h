@@ -45,9 +45,10 @@ enum class SeekFrom : std::uint8_t {
     End,
 };
 
-/// An open file, closed when this goes. Its handle is not inherited by
-/// child processes, and on Windows does not keep another process from
-/// renaming or removing the file.
+/// An open file to read or write bytes, closed when this goes: a regular
+/// file, a device or a pipe, never a directory, which a Directory opens. Its
+/// handle is not inherited by child processes, and on Windows does not keep
+/// another process from renaming or removing the file.
 class File {
 public:
 #ifdef _WIN32
@@ -71,6 +72,9 @@ public:
 
     ~File();
 
+    /// Opens the file at `path` as `options` say: a directory fails with
+    /// std::errc::is_a_directory, or for `create_new` with file_exists, as
+    /// anything there does.
     static std::expected<File, std::error_code> open(std::string_view path,
                                                      const OpenOptions& options = {.read = true});
 
@@ -128,7 +132,10 @@ public:
     /// Waits until the system has written the file's bytes and status to
     /// the disk, where a crash of the system does not lose them: fsync, on
     /// macOS F_FULLFSYNC (which also empties the disk's own cache, where
-    /// fsync stops at the disk), on Windows FlushFileBuffers.
+    /// fsync stops at the disk), on Windows FlushFileBuffers. That takes a
+    /// handle that may write, which a File open to read alone opens the
+    /// file again for: a read-only file, or one the caller may not write,
+    /// fails there with std::errc::permission_denied.
     std::error_code sync();
 
     /// Lets the file hold holes, ranges never written that take no space:
@@ -194,6 +201,11 @@ public:
 private:
     friend std::error_code copy_file(std::string_view from, std::string_view to);
 
+    friend std::expected<File, std::error_code> create_temp_file(buffer_ref path,
+                                                                 std::string_view directory,
+                                                                 std::string_view prefix,
+                                                                 std::string_view suffix);
+
     explicit File(native_handle_type handle) : handle(handle) {}
 
     native_handle_type handle = closed;
@@ -214,8 +226,17 @@ std::error_code write_file(std::string_view path, std::string_view bytes);
 /// Writes `bytes` as the whole of a file through a sibling renamed over it,
 /// so a concurrent reader sees the old bytes or the new, never a part, and
 /// concurrent writers never mix. A symlink at `path` is replaced, not
-/// written through. It does not wait for the bytes to reach the disk: after
-/// a crash of the system, `path` may hold the old bytes, the new, or none.
+/// written through. On POSIX a file there lends the new one its permissions
+/// (0777: not setuid, setgid and sticky), and its owner and group where the
+/// caller may set them, as root always may, or else its group alone where
+/// the caller is in it; on Windows its read-only, hidden and system
+/// attributes. A new file takes the permissions write_file() gives one.
+///
+/// A crash of the process leaves `path` with the old bytes or the new, and
+/// may leave the sibling behind. It does not wait for the bytes to reach
+/// the disk: after a crash of the system, `path` may hold the old bytes,
+/// the new, a part of the new or none at all, or, where it was new, be
+/// gone.
 ///
 /// On Windows an open of `path` that races the rename may fail, with
 /// std::errc::permission_denied or no_such_file_or_directory, while the
@@ -241,20 +262,21 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
 /// sibling and rename() it over, or rename_noreplace() it to keep a file
 /// there.
 ///
-/// A `from` that is no regular file, a directory or a pipe among others, and
-/// a `to` that is another name of `from`'s, which emptying would lose, or on
-/// POSIX a pipe or a device, fail with std::errc::invalid_argument; a
-/// directory at `to` with is_a_directory. A read-only `to` fails with
-/// permission_denied, but for root, and on Windows a hidden one too; on POSIX
-/// a `to` of another owner, whose permissions only its owner sets, with
-/// operation_not_permitted.
+/// A `from` that is no regular file, a directory, a pipe or a device among
+/// others, and a `to` that is another name of `from`'s, which emptying would
+/// lose, or on POSIX a pipe or a device, fail with
+/// std::errc::invalid_argument; a directory at `to` with is_a_directory. A
+/// read-only `to` fails with permission_denied, but for root, and on Windows
+/// a hidden one too; on POSIX a `to` of another owner, whose permissions only
+/// its owner sets, with operation_not_permitted. These leave `to` as it was.
 std::error_code copy_file(std::string_view from, std::string_view to);
 
 /// Creates an empty file in `directory`, named `prefix`, random characters
 /// and `suffix`, and none of it there before: the file, open for reading and
-/// writing, and its path written into `path`. Nothing removes it. A `prefix`
-/// or `suffix` with a separator in it, or on Windows a `:`, which would
-/// name a file elsewhere, fails with std::errc::invalid_argument.
+/// writing, and its path written into `path`. On POSIX it is its owner's
+/// alone (0600), as mkstemp makes it. Nothing removes it. A `prefix` or
+/// `suffix` with a separator in it, or on Windows a `:`, which would name a
+/// file elsewhere, fails with std::errc::invalid_argument.
 std::expected<File, std::error_code> create_temp_file(buffer_ref path,
                                                       std::string_view directory,
                                                       std::string_view prefix,
@@ -262,8 +284,8 @@ std::expected<File, std::error_code> create_temp_file(buffer_ref path,
 
 /// Creates an empty directory in `directory`, named `prefix` and random
 /// characters, and none of it there before, and writes its path into `path`.
-/// Nothing removes it. `prefix` is refused as create_temp_file() refuses
-/// it.
+/// On POSIX it is its owner's alone (0700), as mkdtemp makes it. Nothing
+/// removes it. `prefix` is refused as create_temp_file() refuses it.
 std::error_code create_temp_directory(buffer_ref path,
                                       std::string_view directory,
                                       std::string_view prefix);

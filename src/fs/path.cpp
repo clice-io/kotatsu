@@ -48,7 +48,12 @@ Root windows_prefix(std::string_view p) {
     auto sep = [](char c) {
         return c == '/' || c == '\\';
     };
+    // A prefix whose last name is empty, as in `\\.\` and `\\?\UNC\server\`,
+    // ends before the separator, which is the root directory.
     auto prefix_of = [&](Prefix kind, std::size_t end) {
+        while(separates(p[end - 1], Style::Windows, kind)) {
+            --end;
+        }
         return Root{.prefix = kind, .name = p.substr(0, end), .directory = {}};
     };
     if(p.starts_with(R"(\\?\)")) {

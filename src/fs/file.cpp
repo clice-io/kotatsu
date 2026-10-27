@@ -5,6 +5,7 @@
 #include <random>
 #include <utility>
 
+#include "handle.h"
 #include "kota/support/small_string.h"
 #include "kota/fs/directory.h"
 #include "kota/fs/path.h"
@@ -97,6 +98,27 @@ std::error_code with_random_name(buffer_ref path,
         }
     }
     return error;
+}
+
+/// Creates an empty file named as with_random_name() names one, open to read
+/// and write, with what File::open() gives a new file.
+std::expected<File, std::error_code> create_named(buffer_ref path,
+                                                  std::string_view directory,
+                                                  std::string_view prefix,
+                                                  std::string_view suffix) {
+    File file;
+    auto error = with_random_name(path, directory, prefix, suffix, [&](std::string_view candidate) {
+        auto opened = File::open(candidate, {.read = true, .write = true, .create_new = true});
+        if(!opened) {
+            return opened.error();
+        }
+        file = std::move(*opened);
+        return std::error_code();
+    });
+    if(error) {
+        return std::unexpected(error);
+    }
+    return file;
 }
 
 #ifdef _WIN32
@@ -247,6 +269,14 @@ bool File::is_open() const {
     return handle != closed;
 }
 
+std::expected<Status, std::error_code> File::status() const {
+    return detail::handle_status(handle);
+}
+
+std::error_code File::canonical(buffer_ref out) const {
+    return detail::handle_canonical(out, handle);
+}
+
 // Every lock tried marks the File for close() to release: one that fails
 // may leave held the lock taken before it, as macOS does.
 
@@ -343,7 +373,17 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
                                   FILE_ATTRIBUTE_NORMAL | flags,
                                   nullptr);
     if(handle == INVALID_HANDLE_VALUE) {
-        return std::unexpected(windows::last_error());
+        // CreateFileW fails with ERROR_ACCESS_DENIED for a directory, which it
+        // opens only with FILE_FLAG_BACKUP_SEMANTICS, and for a new file asked
+        // for where a directory, or a link to one, dangling or not, is.
+        auto error = ::GetLastError();
+        if(error == ERROR_ACCESS_DENIED && options.create_new && symlink_status(path)) {
+            return std::unexpected(std::make_error_code(std::errc::file_exists));
+        }
+        if(error == ERROR_ACCESS_DENIED && !options.create_new && is_directory(path)) {
+            return std::unexpected(std::make_error_code(std::errc::is_a_directory));
+        }
+        return std::unexpected(windows::to_error_code(error));
     }
     File file(handle);
     // TRUNCATE_EXISTING and CREATE_ALWAYS would drop a hidden or system
@@ -400,11 +440,11 @@ std::expected<std::uint64_t, std::error_code> File::seek(std::int64_t offset, Se
     return static_cast<std::uint64_t>(position.QuadPart);
 }
 
-std::expected<Status, std::error_code> File::status() const {
+std::expected<Status, std::error_code> detail::handle_status(File::native_handle_type handle) {
     return win32::handle_status(handle);
 }
 
-std::error_code File::canonical(buffer_ref out) const {
+std::error_code detail::handle_canonical(buffer_ref out, File::native_handle_type handle) {
     // Windows names a file deleted while open by where it keeps it until the
     // last handle goes, under `\$Extend\$Deleted`, or by its old name. A pipe
     // says it is deleted too.
@@ -435,7 +475,22 @@ std::error_code File::resize(std::uint64_t size) {
 }
 
 std::error_code File::sync() {
-    return ::FlushFileBuffers(handle) ? std::error_code() : windows::last_error();
+    if(::FlushFileBuffers(handle)) {
+        return {};
+    }
+    if(::GetLastError() != ERROR_ACCESS_DENIED) {
+        return windows::last_error();
+    }
+    // FlushFileBuffers takes a handle that may write: one open to read
+    // flushes through the file reopened to write.
+    win32::Handle writable(::ReOpenFile(handle,
+                                        GENERIC_WRITE,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                        0));
+    if(writable.get() == INVALID_HANDLE_VALUE) {
+        return windows::last_error();
+    }
+    return ::FlushFileBuffers(writable.get()) ? std::error_code() : windows::last_error();
 }
 
 std::error_code File::set_sparse() {
@@ -477,9 +532,20 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
     }
     int fd = open_file(c_path.c_str(), flags, 0666);
     if(fd < 0) {
-        return std::unexpected(posix::last_error());
+        // A directory the caller may not read fails as a directory still.
+        auto error = posix::last_error();
+        if(error == std::errc::permission_denied && is_directory(path)) {
+            return std::unexpected(std::make_error_code(std::errc::is_a_directory));
+        }
+        return std::unexpected(error);
     }
-    return File(fd);
+    // A directory fails to open for writing (EISDIR), but opens to read.
+    File file(fd);
+    struct stat info;
+    if(!writes && ::fstat(fd, &info) == 0 && S_ISDIR(info.st_mode)) {
+        return std::unexpected(std::make_error_code(std::errc::is_a_directory));
+    }
+    return file;
 }
 
 std::expected<std::size_t, std::error_code> File::read(std::span<char> buffer) {
@@ -517,7 +583,7 @@ std::expected<std::uint64_t, std::error_code> File::seek(std::int64_t offset, Se
     return static_cast<std::uint64_t>(position);
 }
 
-std::expected<Status, std::error_code> File::status() const {
+std::expected<Status, std::error_code> detail::handle_status(File::native_handle_type handle) {
     struct stat info;
     if(::fstat(handle, &info) != 0) {
         return std::unexpected(posix::last_error());
@@ -525,7 +591,7 @@ std::expected<Status, std::error_code> File::status() const {
     return posix::make_status(info);
 }
 
-std::error_code File::canonical(buffer_ref out) const {
+std::error_code detail::handle_canonical(buffer_ref out, File::native_handle_type handle) {
 #ifdef __APPLE__
     // macOS keeps the last name of a file whose names all went.
     struct stat opened;
@@ -543,7 +609,7 @@ std::error_code File::canonical(buffer_ref out) const {
     return {};
 #else
     // /proc would call a closed one's link missing.
-    if(!is_open()) {
+    if(handle == File::closed) {
         return std::make_error_code(std::errc::bad_file_descriptor);
     }
     char link[32];
@@ -592,7 +658,11 @@ std::error_code File::sync() {
     // away fails with EBADF too, and fsync() then succeeds without writing;
     // after any other error, such as a flush that failed (EIO), it could
     // succeed as well and hide the error.
-    if(::fcntl(handle, F_FULLFSYNC) == 0) {
+    int synced;
+    do {
+        synced = ::fcntl(handle, F_FULLFSYNC);
+    } while(synced != 0 && errno == EINTR);
+    if(synced == 0) {
         return {};
     }
     auto error = errno;
@@ -604,7 +674,12 @@ std::error_code File::sync() {
         return std::error_code(error, std::generic_category());
     }
 #endif
-    return ::fsync(handle) == 0 ? std::error_code() : posix::last_error();
+    while(::fsync(handle) != 0) {
+        if(errno != EINTR) {
+            return posix::last_error();
+        }
+    }
+    return {};
 }
 
 std::error_code File::set_sparse() {
@@ -695,11 +770,58 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
     small_string<64> prefix(name);
     prefix.push_back('.');
     small_string<256> sibling;
-    auto file = create_temp_file(sibling, path::parent(path), prefix, ".tmp");
+    auto parent = path::parent(path);
+    // The rename leaves behind the attributes, or the permissions and owner,
+    // of a file it replaces, a link aside: the sibling takes them first.
+#ifdef _WIN32
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, path)) {
+        return error;
+    }
+    auto replaced = ::GetFileAttributesW(native.c_str());
+    constexpr DWORD no_file = FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT;
+    constexpr DWORD lent = FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
+    DWORD kept = replaced == INVALID_FILE_ATTRIBUTES || (replaced & no_file) ? 0 : replaced & lent;
+    auto file = create_named(sibling, parent, prefix, ".tmp");
+#else
+    posix::CPath c_path;
+    if(auto error = c_path.assign(path)) {
+        return error;
+    }
+    // Made for its owner alone until it takes the permissions of the file it
+    // replaces; a new file's are those write_file() gives one.
+    struct stat replaced;
+    bool replaces = ::lstat(c_path.c_str(), &replaced) == 0 && S_ISREG(replaced.st_mode);
+    auto file = replaces ? create_temp_file(sibling, parent, prefix, ".tmp")
+                         : create_named(sibling, parent, prefix, ".tmp");
+#endif
     if(!file) {
         return file.error();
     }
     auto error = file->write(bytes);
+#ifdef _WIN32
+    FILE_BASIC_INFO basic;
+    if(!error && kept != 0 &&
+       (!::GetFileInformationByHandleEx(file->native_handle(),
+                                        FileBasicInfo,
+                                        &basic,
+                                        sizeof(basic)) ||
+        !win32::set_attributes(file->native_handle(), basic.FileAttributes | kept))) {
+        error = windows::last_error();
+    }
+#else
+    if(!error && replaces) {
+        // The owner and group where the caller may give them: only root
+        // gives a file away, but its owner may give it a group it is in.
+        if(::fchown(file->native_handle(), replaced.st_uid, replaced.st_gid) != 0) {
+            [[maybe_unused]] auto grouped =
+                ::fchown(file->native_handle(), static_cast<uid_t>(-1), replaced.st_gid);
+        }
+        if(::fchmod(file->native_handle(), replaced.st_mode & 0777) != 0) {
+            error = posix::last_error();
+        }
+    }
+#endif
     if(auto closed = file->close(); !error) {
         error = closed;
     }
@@ -714,6 +836,14 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
 
 std::error_code copy_file(std::string_view from, std::string_view to) {
 #ifdef _WIN32
+    // CopyFileExW copies what it can read, a device or a pipe too.
+    auto copied = status(from);
+    if(!copied) {
+        return copied.error();
+    }
+    if(copied->type != FileType::Regular) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
     win32::WidePath source;
     if(auto error = windows::to_native(source, from)) {
         return error;
@@ -726,15 +856,8 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
         return {};
     }
     auto error = windows::last_error();
-    // CopyFileExW fails on a directory, and on two names of one file, as on
-    // any file it cannot open: these fail as they do elsewhere.
-    auto copied = status(from);
-    if(!copied) {
-        return error;
-    }
-    if(copied->type != FileType::Regular) {
-        return std::make_error_code(std::errc::invalid_argument);
-    }
+    // CopyFileExW fails on a directory at `to`, and on two names of one
+    // file, as on any file it cannot open: these fail as they do elsewhere.
     if(is_directory(to)) {
         return std::make_error_code(std::errc::is_a_directory);
     }
@@ -751,13 +874,23 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
     if(auto error = target_path.assign(to)) {
         return error;
     }
+    // Told apart before it is opened: a socket refuses an open, as a
+    // directory or a pipe the caller may not read does, and a device may
+    // take one for a command (a tape rewinds). Then again as opened,
+    // whatever took the name meanwhile.
+    struct stat copied;
+    if(::stat(source_path.c_str(), &copied) != 0) {
+        return posix::last_error();
+    }
+    if(!S_ISREG(copied.st_mode)) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
     // Here and for `to`, not to wait for a pipe's other end, as an open of
     // one does: a regular file takes no notice of O_NONBLOCK.
     File source(open_file(source_path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC));
     if(!source.is_open()) {
         return posix::last_error();
     }
-    struct stat copied;
     if(::fstat(source.handle, &copied) != 0) {
         return posix::last_error();
     }
@@ -809,8 +942,12 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
     if(refused(existing)) {
         return std::make_error_code(std::errc::invalid_argument);
     }
-    // Emptied before its permissions change, so that no one they let in
-    // reads what it held.
+    // Only its owner sets a file's permissions: set as they are, they fail
+    // for another's before it is emptied. Emptied before they change, so
+    // that no one they let in reads what it held.
+    if(::fchmod(target.handle, existing.st_mode & 07777) != 0) {
+        return posix::last_error();
+    }
     if(auto error = target.resize(0)) {
         return error;
     }
@@ -836,31 +973,45 @@ std::expected<File, std::error_code> create_temp_file(buffer_ref path,
                                                       std::string_view directory,
                                                       std::string_view prefix,
                                                       std::string_view suffix) {
-    File file;
+#ifdef _WIN32
+    return create_named(path, directory, prefix, suffix);
+#else
+    // For its owner alone, as mkstemp makes it.
+    int fd = File::closed;
     auto error = with_random_name(path, directory, prefix, suffix, [&](std::string_view candidate) {
-        auto opened = File::open(candidate, {.read = true, .write = true, .create_new = true});
-        if(!opened) {
-            return opened.error();
+        posix::CPath c_path;
+        if(auto invalid = c_path.assign(candidate)) {
+            return invalid;
         }
-        file = std::move(*opened);
-        return std::error_code();
+        fd = open_file(c_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+        return fd < 0 ? posix::last_error() : std::error_code();
     });
     if(error) {
         return std::unexpected(error);
     }
-    return file;
+    return File(fd);
+#endif
 }
 
 std::error_code create_temp_directory(buffer_ref path,
                                       std::string_view directory,
                                       std::string_view prefix) {
     return with_random_name(path, directory, prefix, "", [](std::string_view candidate) {
+#ifdef _WIN32
         auto made = create_directory(candidate);
         if(!made) {
             return made.error();
         }
         // A directory there already holds the name too.
         return *made ? std::error_code() : std::make_error_code(std::errc::file_exists);
+#else
+        // For its owner alone, as mkdtemp makes it.
+        posix::CPath c_path;
+        if(auto invalid = c_path.assign(candidate)) {
+            return invalid;
+        }
+        return ::mkdir(c_path.c_str(), 0700) == 0 ? std::error_code() : posix::last_error();
+#endif
     });
 }
 

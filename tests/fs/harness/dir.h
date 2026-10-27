@@ -1,6 +1,6 @@
 #pragma once
 
-// entries_of(), what kota::fs::read_dir() lists, for the tests of what made
+// entries_of(), what a kota::fs::Directory lists, for the tests of what made
 // the entries.
 
 #include <string_view>
@@ -13,12 +13,12 @@
 namespace kota::test {
 
 /// The entries of `dir`, each read without an error.
-inline std::vector<fs::DirEntry> entries_of(std::string_view dir) {
+inline std::vector<fs::Directory::Entry> entries_of(std::string_view dir) {
     ZEST_CONTEXT("{}", dir);
-    auto stream = fs::read_dir(dir);
-    ZASSERT(stream.has_value());
-    std::vector<fs::DirEntry> entries;
-    for(auto& entry: *stream) {
+    auto directory = fs::Directory::open(dir);
+    ZASSERT(directory.has_value());
+    std::vector<fs::Directory::Entry> entries;
+    for(auto& entry: *directory) {
         ZASSERT(entry.has_value());
         entries.push_back(std::move(*entry));
     }

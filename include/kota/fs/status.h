@@ -78,7 +78,9 @@ struct Status {
 /// opens the file, asking for no access, so that no sharing mode refuses
 /// it. A file no open reaches, such as a running system's page file, is
 /// asked through its directory's listing instead, which tells no change
-/// time, ID or links.
+/// time, ID or links; but for one deleted while held open, whose name stays
+/// until the last handle goes and which fails with
+/// std::errc::no_such_file_or_directory.
 std::expected<Status, std::error_code> status(std::string_view path);
 
 /// The status of `path` itself: a symlink, or a junction on Windows, is not

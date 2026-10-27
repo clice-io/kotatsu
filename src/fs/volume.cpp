@@ -56,8 +56,12 @@ constexpr Kind kinds[] = {
     {0xFE534D42, "smb2", true},
     {0xFF534D42, "cifs", true},
     {0x01021997, "9p", true},
+    // OpenAFS's number, then the kernel's own client's.
     {0x5346414F, "afs", true},
+    {0x6B414653, "afs", true},
     {0x00C36400, "ceph", true},
+    {0x0BD00BD0, "lustre", true},
+    {0x47504653, "gpfs", true},
 };
 
 }  // namespace
@@ -131,9 +135,12 @@ namespace {
 
 Volume volume_from(const struct statfs& info) {
 #ifdef __APPLE__
+    // The file systems macOS mounts from another machine, by the names it
+    // gives them. Not MNT_LOCAL, which autofs and macFUSE leave out as well.
+    constexpr static std::string_view remote_types[] = {"nfs", "smbfs", "afpfs", "webdav", "afs"};
     std::uint64_t unit = info.f_bsize;
     std::string type = info.f_fstypename;
-    bool remote = !(info.f_flags & MNT_LOCAL);
+    bool remote = std::ranges::find(remote_types, type) != std::ranges::end(remote_types);
 #else
     // Blocks count in fragments where the file system has them, as
     // statvfs(3) counts them.
@@ -168,7 +175,7 @@ std::expected<Volume, std::error_code> posix::volume_of(int fd) {
 
 std::expected<Volume, std::error_code> volume(std::string_view path) {
 #ifdef _WIN32
-    auto handle = win32::open(path, FILE_READ_ATTRIBUTES);
+    auto handle = win32::open(path, 0);
     if(!handle) {
         return std::unexpected(handle.error());
     }

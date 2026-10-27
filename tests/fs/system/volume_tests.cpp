@@ -42,11 +42,25 @@ ZEST_CASE(volume_of_a_share_is_remote) {
         return;
     }
     ZEXPECT(found->remote);
-    auto stream = read_dir(R"(\\localhost\C$)");
-    ZASSERT(stream.has_value());
-    auto listed = stream->volume();
+    auto directory = Directory::open(R"(\\localhost\C$)");
+    ZASSERT(directory.has_value());
+    auto listed = directory->volume();
     ZASSERT(listed.has_value());
     ZEXPECT(listed->remote);
+}
+#endif
+
+#ifdef __APPLE__
+ZEST_CASE(volume_of_an_automount_point_is_local) {
+    // Where autofs waits to mount home directories, which macOS does by
+    // default; the mount point is no file system of another machine.
+    auto found = volume("/home");
+    if(!found || found->type != "autofs") {
+        // No automount at /home here.
+        zest::skip();
+        return;
+    }
+    ZEXPECT(!found->remote);
 }
 #endif
 
@@ -58,13 +72,13 @@ ZEST_CASE(volume_names_a_kind_linux_knows) {
 }
 #endif
 
-ZEST_CASE(dir_stream_volume_matches_the_volume_of_its_path) {
+ZEST_CASE(directory_volume_matches_the_volume_of_its_path) {
     test::TempDir dir;
     auto named = volume(dir.root());
-    auto stream = read_dir(dir.root());
+    auto directory = Directory::open(dir.root());
     ZASSERT(named.has_value());
-    ZASSERT(stream.has_value());
-    auto listed = stream->volume();
+    ZASSERT(directory.has_value());
+    auto listed = directory->volume();
     ZASSERT(listed.has_value());
     ZEXPECT(listed->type == named->type);
     ZEXPECT(listed->capacity == named->capacity);

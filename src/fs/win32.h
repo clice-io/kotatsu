@@ -115,11 +115,25 @@ std::error_code widen(basic_buffer_ref<wchar_t> out, std::string_view path);
 /// Writes into `out` what GetFullPathNameW resolves `path` to.
 std::error_code full_path(basic_buffer_ref<wchar_t> out, const wchar_t* path);
 
-/// A handle to what the native `path` names, existing, with every sharing
-/// mode so that it never refuses another process, and
-/// FILE_FLAG_BACKUP_SEMANTICS, which opening a directory needs, before
-/// `flags`. An invalid handle on failure, GetLastError() telling why.
-Handle try_open(const wchar_t* path, DWORD access, DWORD flags);
+/// A handle to what `name` names, existing, a directory too: the entry of
+/// the directory `root`, which no rename meanwhile replaces as it may the
+/// directories of a path, or with no `root` the NT path (`\??\C:\x`). A
+/// link is followed where `follow` says. Every sharing mode is asked, so
+/// that it never refuses another process, and besides `access` the right to
+/// read the attributes, as CreateFileW asks it.
+///
+/// NtCreateFile opens it, which returns why it failed, where Win32 leaves
+/// that in the thread's last status, which any call meanwhile may replace.
+/// On failure the Win32 error, but for a file deleted while held open: its
+/// name stays until the last handle to it goes, but opens nothing, and Win32
+/// says ERROR_ACCESS_DENIED, as for a refusal. That fails here with
+/// ERROR_DELETE_PENDING, which to_error_code() takes for nothing there.
+std::expected<Handle, DWORD>
+    open_at(HANDLE root, std::wstring_view name, DWORD access, bool follow);
+
+/// A handle to what the native `path`, as to_native() writes it, names, as
+/// open_at() opens it.
+std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow);
 
 /// A handle to what `path` names, symlinks followed, failing with an error
 /// code.
@@ -132,8 +146,13 @@ constexpr bool is_name_surrogate(DWORD tag) {
     return (tag & 0x20000000) != 0;
 }
 
-/// IO_REPARSE_TAG_AF_UNIX, which older SDKs lack: a Unix socket's entry.
+/// Reparse tags older SDKs lack: a Unix socket's entry
+/// (IO_REPARSE_TAG_AF_UNIX), and a fifo, a character device and a block
+/// device WSL made (IO_REPARSE_TAG_LX_FIFO, _LX_CHR, _LX_BLK).
 constexpr DWORD af_unix_tag = 0x80000023;
+constexpr DWORD wsl_fifo_tag = 0x80000024;
+constexpr DWORD wsl_character_tag = 0x80000025;
+constexpr DWORD wsl_block_tag = 0x80000026;
 
 /// The type of a file with these attributes and reparse tag; a junction or
 /// a symlink stays itself.
@@ -142,8 +161,12 @@ inline FileType type_of(DWORD attributes, DWORD tag) {
         if(is_name_surrogate(tag)) {
             return FileType::Symlink;
         }
-        if(tag == af_unix_tag) {
-            return FileType::Socket;
+        switch(tag) {
+            case af_unix_tag: return FileType::Socket;
+            case wsl_fifo_tag: return FileType::Fifo;
+            case wsl_character_tag: return FileType::Character;
+            case wsl_block_tag: return FileType::Block;
+            default: break;
         }
     }
     return attributes & FILE_ATTRIBUTE_DIRECTORY ? FileType::Directory : FileType::Regular;

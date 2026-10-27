@@ -97,11 +97,7 @@ ZEST_CASE(set_times_sets_a_directory) {
 ZEST_CASE(set_times_follows_a_link) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
-#ifdef _WIN32
-    test::make_junction(dir.file("link"), dir.file("target"));
-#else
-    ZASSERT(!create_directory_symlink(dir.file("target"), dir.file("link")));
-#endif
+    test::link_directory(dir.file("target"), dir.file("link"));
     ZEXPECT(!set_times(dir.file("link"), {.mtime = first}));
     ZEXPECT(mtime_of(dir.file("target")) == first);
 }
@@ -145,6 +141,8 @@ ZEST_CASE(set_times_of_nothing_fails) {
     test::TempDir dir;
     ZEXPECT(set_times(dir.file("missing"), {.mtime = first}) ==
             std::errc::no_such_file_or_directory);
+    // With no time to set, for which Linux looks no path up.
+    ZEXPECT(set_times(dir.file("missing"), {}) == std::errc::no_such_file_or_directory);
 }
 
 ZEST_CASE(set_permissions_sets_who_may_write) {
@@ -217,11 +215,7 @@ ZEST_CASE(set_permissions_sets_the_special_bits) {
 ZEST_CASE(set_permissions_follows_a_link) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
-#ifdef _WIN32
-    test::make_junction(dir.file("link"), dir.file("target"));
-#else
-    ZASSERT(!create_directory_symlink(dir.file("target"), dir.file("link")));
-#endif
+    test::link_directory(dir.file("target"), dir.file("link"));
     ZEXPECT(!set_permissions(dir.file("link"), 0555));
     ZEXPECT(permissions_of(dir.file("target")) == 0555u);
     ZEXPECT(!set_permissions(dir.file("link"), 0755));

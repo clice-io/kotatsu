@@ -8,12 +8,11 @@
 #include <utility>
 #include <vector>
 
+#include "handle.h"
 #include "kota/support/small_string.h"
 #include "kota/fs/path.h"
 
 #ifdef _WIN32
-#include <atomic>
-
 #include "win32.h"
 #include "kota/support/utf16.h"
 #else
@@ -162,7 +161,7 @@ struct Listing {
 /// A handle to list the directory `dir` through. The access to list a
 /// directory reads a file as well, so a file is told apart here.
 std::expected<win32::Handle, std::error_code> open_directory(std::string_view dir) {
-    auto handle = win32::open(dir, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES);
+    auto handle = win32::open(dir, FILE_LIST_DIRECTORY);
     if(!handle) {
         return handle;
     }
@@ -231,145 +230,123 @@ struct AttributeHandle {
 
 /// What `path` names, a link itself, as an AttributeHandle; empty when it
 /// cannot be opened or read.
-std::optional<AttributeHandle> open_attributes(const wchar_t* path) {
-    auto handle = win32::try_open(path,
-                                  FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
-                                  FILE_FLAG_OPEN_REPARSE_POINT);
+std::optional<AttributeHandle> open_attributes(std::wstring_view path) {
+    auto handle = win32::open_native(path, FILE_WRITE_ATTRIBUTES, false);
     FILE_BASIC_INFO basic;
-    if(handle.get() == INVALID_HANDLE_VALUE ||
-       !::GetFileInformationByHandleEx(handle.get(), FileBasicInfo, &basic, sizeof(basic))) {
+    if(!handle ||
+       !::GetFileInformationByHandleEx(handle->get(), FileBasicInfo, &basic, sizeof(basic))) {
         return std::nullopt;
     }
-    auto id = win32::file_id(handle.get());
+    auto id = win32::file_id(handle->get());
     if(!id) {
         return std::nullopt;
     }
-    return AttributeHandle{.handle = std::move(handle), .basic = basic, .id = *id};
+    return AttributeHandle{.handle = std::move(*handle), .basic = basic, .id = *id};
 }
 
-/// Whether an open failed because nothing is there: a missing name, or a
-/// component that is a file rather than a directory.
+/// Whether an open failed because nothing is there: a missing name, a
+/// component that is a file rather than a directory, or a file deleted
+/// while held open, which goes with the last handle.
 bool names_nothing(DWORD error) {
-    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
-}
-
-using NtCreateFileFn = NTSTATUS(NTAPI*)(PHANDLE,
-                                        ACCESS_MASK,
-                                        POBJECT_ATTRIBUTES,
-                                        PIO_STATUS_BLOCK,
-                                        PLARGE_INTEGER,
-                                        ULONG,
-                                        ULONG,
-                                        ULONG,
-                                        ULONG,
-                                        PVOID,
-                                        ULONG);
-/// NtCreateFile's disposition and options, which only the DDK names.
-constexpr ULONG nt_open_existing = 1;
-constexpr ULONG nt_synchronous_io = 0x20;
-constexpr ULONG nt_backup_intent = 0x4000;
-constexpr ULONG nt_open_reparse_point = 0x200000;
-
-/// The entry `name` of the directory `parent`, itself when it is a link,
-/// opened through the parent's handle: Win32 opens names only from the
-/// root, through directories a rename may have replaced since. An invalid
-/// handle on failure, GetLastError() telling why.
-win32::Handle open_entry(HANDLE parent, std::wstring_view name, DWORD access) {
-    static constinit std::atomic<NtCreateFileFn> create = nullptr;
-    UNICODE_STRING object_name;
-    object_name.Length = static_cast<USHORT>(name.size() * sizeof(wchar_t));
-    object_name.MaximumLength = object_name.Length;
-    object_name.Buffer = const_cast<PWSTR>(name.data());
-    OBJECT_ATTRIBUTES attributes{};
-    attributes.Length = sizeof(attributes);
-    attributes.RootDirectory = parent;
-    attributes.ObjectName = &object_name;
-    IO_STATUS_BLOCK status_block{};
-    HANDLE handle = INVALID_HANDLE_VALUE;
-    auto status = win32::from_ntdll(create, "NtCreateFile")(
-        &handle,
-        access | SYNCHRONIZE,
-        &attributes,
-        &status_block,
-        nullptr,
-        0,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        nt_open_existing,
-        nt_synchronous_io | nt_backup_intent | nt_open_reparse_point,
-        nullptr,
-        0);
-    if(status < 0) {
-        ::SetLastError(win32::dos_error(status));
-        return win32::Handle();
-    }
-    return win32::Handle(handle);
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ||
+           error == ERROR_DELETE_PENDING;
 }
 
 /// Opens what remove_all() removes through `open(access)`: to list and
 /// delete it, or only to delete it when the caller may not read it or
 /// another process holds it open for everything but reading.
 template <typename Open>
-win32::Handle open_to_remove(Open open) {
-    auto handle = open(DELETE | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY);
-    if(handle.get() == INVALID_HANDLE_VALUE) {
-        if(auto error = ::GetLastError();
-           error == ERROR_ACCESS_DENIED || error == ERROR_SHARING_VIOLATION) {
-            handle = open(DELETE | FILE_READ_ATTRIBUTES);
-        }
+std::expected<win32::Handle, DWORD> open_to_remove(Open open) {
+    auto handle = open(DELETE | FILE_LIST_DIRECTORY);
+    if(!handle &&
+       (handle.error() == ERROR_ACCESS_DENIED || handle.error() == ERROR_SHARING_VIOLATION)) {
+        return open(DELETE);
     }
     return handle;
 }
 
+/// Appends to `names` the names the directory `handle` lists. The listing's
+/// buffer goes once they are read.
+std::error_code list_names(std::vector<std::wstring>& names, HANDLE handle) {
+    Listing listing{.extended = false};
+    while(true) {
+        auto entry = listing.next(handle);
+        if(!entry) {
+            return windows::to_error_code(entry.error());
+        }
+        if(*entry == nullptr) {
+            return {};
+        }
+        names.emplace_back(name_of<FILE_FULL_DIR_INFO>(*entry));
+    }
+}
+
+/// What remove_all() opened, held open until it goes, once what it lists,
+/// if it is a directory, is gone; and where its names start among those
+/// listed.
+struct Level {
+    win32::Handle handle;
+    std::size_t names;
+};
+
 /// Removes what `handle`, from open_to_remove(), refers to, and for a
-/// directory everything in it. The handle that decides whether to list an
-/// entry lists it, opens each entry inside, and deletes it, so that no
-/// rename meanwhile makes the walk follow a link: a link put in a
-/// directory's place goes as the link, and a directory moved away goes
-/// with what it held.
-std::expected<std::uint64_t, std::error_code> remove_opened(const win32::Handle& handle) {
-    FILE_BASIC_INFO info;
-    if(!::GetFileInformationByHandleEx(handle.get(), FileBasicInfo, &info, sizeof(info))) {
-        return std::unexpected(windows::last_error());
-    }
-    auto tag = win32::reparse_tag(handle.get(), info.FileAttributes);
-    if(!tag) {
-        return std::unexpected(tag.error());
-    }
+/// directory everything in it, a level at a time rather than a call deeper.
+/// The handle that decides whether to list an entry lists it, opens each
+/// entry inside, and deletes it, so that no rename meanwhile makes the walk
+/// follow a link: a link put in a directory's place goes as the link, and a
+/// directory moved away goes with what it held. Each level holds its
+/// handle: Windows sets no limit on handles that a tree's depth comes near,
+/// and FAT, which opens nothing by ID, offers no other way back up.
+std::expected<std::uint64_t, std::error_code> remove_tree(win32::Handle handle) {
     std::uint64_t removed = 0;
-    if(win32::type_of(info.FileAttributes, *tag) == FileType::Directory) {
-        std::vector<std::wstring> names;
-        Listing listing{.extended = false};
-        while(true) {
-            auto entry = listing.next(handle.get());
-            if(!entry) {
-                return std::unexpected(windows::to_error_code(entry.error()));
-            }
-            if(*entry == nullptr) {
-                break;
-            }
-            names.emplace_back(name_of<FILE_FULL_DIR_INFO>(*entry));
+    std::vector<std::wstring> names;
+    std::vector<Level> levels;
+    while(true) {
+        FILE_BASIC_INFO info;
+        if(!::GetFileInformationByHandleEx(handle.get(), FileBasicInfo, &info, sizeof(info))) {
+            return std::unexpected(windows::last_error());
         }
-        for(const auto& name: names) {
-            auto child = open_to_remove(
-                [&](DWORD access) { return open_entry(handle.get(), name, access); });
-            if(child.get() == INVALID_HANDLE_VALUE) {
-                // Gone since it was listed.
-                if(names_nothing(::GetLastError())) {
-                    continue;
+        auto tag = win32::reparse_tag(handle.get(), info.FileAttributes);
+        if(!tag) {
+            return std::unexpected(tag.error());
+        }
+        auto start = names.size();
+        if(win32::type_of(info.FileAttributes, *tag) == FileType::Directory) {
+            if(auto error = list_names(names, handle.get())) {
+                return std::unexpected(error);
+            }
+        }
+        levels.push_back({.handle = std::move(handle), .names = start});
+        // The next entry to remove, from the deepest level with any left;
+        // one with none left goes.
+        while(handle.get() == INVALID_HANDLE_VALUE) {
+            if(levels.empty()) {
+                return removed;
+            }
+            auto& level = levels.back();
+            if(names.size() == level.names) {
+                if(auto error = dispose(level.handle.get()); error != ERROR_SUCCESS) {
+                    return std::unexpected(windows::to_error_code(error));
                 }
-                return std::unexpected(windows::last_error());
+                ++removed;
+                // Closed before the directory it is in is deleted, which
+                // FAT, deleting the classic way, refuses until then.
+                levels.pop_back();
+                continue;
             }
-            auto count = remove_opened(child);
-            if(!count) {
-                return count;
+            auto name = std::move(names.back());
+            names.pop_back();
+            auto opened = open_to_remove([&](DWORD access) {
+                return win32::open_at(level.handle.get(), name, access, false);
+            });
+            if(opened) {
+                handle = std::move(*opened);
+            } else if(!names_nothing(opened.error())) {
+                // One that names nothing went since it was listed.
+                return std::unexpected(windows::to_error_code(opened.error()));
             }
-            removed += *count;
         }
     }
-    if(auto error = dispose(handle.get()); error != ERROR_SUCCESS) {
-        return std::unexpected(windows::to_error_code(error));
-    }
-    return removed + 1;
 }
 
 #else
@@ -415,12 +392,15 @@ struct DirCloser {
 
 using DirHandle = std::unique_ptr<DIR, DirCloser>;
 
-/// A descriptor, closed when this goes.
+/// A descriptor, closed when this goes; AT_FDCWD is none to close.
 struct Descriptor {
     explicit Descriptor(int fd) : fd(fd) {}
 
-    Descriptor(const Descriptor&) = delete;
-    Descriptor& operator=(const Descriptor&) = delete;
+    /// Takes `other`'s descriptor, which closes this one's when it goes.
+    Descriptor& operator=(Descriptor&& other) noexcept {
+        std::swap(fd, other.fd);
+        return *this;
+    }
 
     ~Descriptor() {
         if(fd >= 0) {
@@ -449,81 +429,146 @@ bool names_nothing(int error) {
     return error == ENOENT || error == ENOTDIR;
 }
 
-std::error_code
-    remove_entry(int dir_fd, const char* name, unsigned char type, std::uint64_t& removed);
+/// An entry remove_all() listed and has yet to remove, with its d_type,
+/// DT_UNKNOWN for one not listed.
+struct Listed {
+    std::string name;
+    unsigned char type;
+};
 
-/// Removes everything in the open directory `fd`, adding what it removed to
-/// `removed`.
-std::error_code remove_contents(int fd, std::uint64_t& removed) {
-    // fdopendir() takes the descriptor it is given. The names are all read
-    // before any is removed, so a level of the walk holds one descriptor.
-    int listed = ::fcntl(fd, F_DUPFD_CLOEXEC, 0);
-    if(listed < 0) {
+/// Appends to `listed` the entries of the open directory `fd`.
+std::error_code list_entries(std::vector<Listed>& listed, int fd) {
+    // fdopendir() takes the descriptor it is given.
+    int duplicate = ::fcntl(fd, F_DUPFD_CLOEXEC, 0);
+    if(duplicate < 0) {
         return posix::last_error();
     }
-    DirHandle dir(::fdopendir(listed));
+    DirHandle dir(::fdopendir(duplicate));
     if(!dir) {
         auto error = posix::last_error();
-        ::close(listed);
+        ::close(duplicate);
         return error;
     }
-    std::vector<std::pair<std::string, unsigned char>> entries;
     while(true) {
         auto entry = next_entry(dir.get());
         if(!entry) {
             return entry.error();
         }
         if(*entry == nullptr) {
-            break;
+            return {};
         }
-        entries.emplace_back((*entry)->d_name, (*entry)->d_type);
+        listed.push_back({.name = (*entry)->d_name, .type = (*entry)->d_type});
     }
-    dir.reset();
-    for(auto& [name, type]: entries) {
-        if(auto failed = remove_entry(fd, name.c_str(), type, removed)) {
-            return failed;
-        }
-    }
-    return {};
 }
 
-/// Removes the entry `name` of the directory `dir_fd` and everything in it,
-/// by names relative to the directory each is in, never following a link:
-/// a directory replaced by a link meanwhile goes as the link. `type` is its
-/// d_type, DT_UNKNOWN for one not listed.
-std::error_code
-    remove_entry(int dir_fd, const char* name, unsigned char type, std::uint64_t& removed) {
-    bool directory = type == DT_DIR;
-    if(type == DT_UNKNOWN) {
-        struct stat info;
-        if(::fstatat(dir_fd, name, &info, AT_SYMLINK_NOFOLLOW) != 0) {
-            return names_nothing(errno) ? std::error_code() : posix::last_error();
-        }
-        directory = S_ISDIR(info.st_mode);
-    }
-    if(directory) {
-        // Closed however the walk inside ends, a throw included, and before
-        // the directory is removed.
-        Descriptor opened(::openat(dir_fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
-        if(opened.fd >= 0) {
-            if(auto error = remove_contents(opened.fd, removed)) {
-                return error;
+/// A directory remove_all() went into: its name in the one above, its
+/// device and inode, which tell whether `..` leads back to it, and where
+/// its entries start among those listed.
+struct Level {
+    std::string name;
+    dev_t device;
+    ino_t inode;
+    std::size_t entries;
+};
+
+/// Removes `path` and everything in it, a level at a time rather than a
+/// call deeper, by names relative to the directory each is in, never
+/// following a link: a directory replaced by a link meanwhile goes as the
+/// link. It holds open only the directory it removes from and climbs back
+/// through `..`, so that a tree of any depth takes a few descriptors; a
+/// directory that lists nothing goes from the one above without the walk
+/// going in, since it could not climb out of one it may read but not
+/// search.
+std::expected<std::uint64_t, std::error_code> remove_tree(const char* path) {
+    std::uint64_t removed = 0;
+    std::vector<Listed> listed = {
+        {.name = path, .type = DT_UNKNOWN}
+    };
+    std::vector<Level> levels;
+    // Where entries go from: for `path` itself, the current directory.
+    Descriptor dir(AT_FDCWD);
+    while(true) {
+        // What goes next, from `dir`: an entry listed, or a directory whose
+        // entries are gone.
+        std::string name;
+        bool directory;
+        if(listed.size() > (levels.empty() ? 0 : levels.back().entries)) {
+            auto entry = std::move(listed.back());
+            listed.pop_back();
+            directory = entry.type == DT_DIR;
+            if(entry.type == DT_UNKNOWN) {
+                struct stat info;
+                if(::fstatat(dir.fd, entry.name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) {
+                    if(names_nothing(errno)) {
+                        continue;
+                    }
+                    return std::unexpected(posix::last_error());
+                }
+                directory = S_ISDIR(info.st_mode);
             }
-        } else if(errno == ENOENT) {
-            return {};
-        } else if(errno == ENOTDIR || errno == ELOOP) {
-            // No longer a directory: it goes as a file.
-            directory = false;
+            if(directory) {
+                Descriptor opened(::openat(dir.fd,
+                                           entry.name.c_str(),
+                                           O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
+                if(opened.fd >= 0) {
+                    auto start = listed.size();
+                    if(auto error = list_entries(listed, opened.fd)) {
+                        return std::unexpected(error);
+                    }
+                    if(listed.size() > start) {
+                        struct stat info;
+                        if(::fstat(opened.fd, &info) != 0) {
+                            return std::unexpected(posix::last_error());
+                        }
+                        levels.push_back({.name = std::move(entry.name),
+                                          .device = info.st_dev,
+                                          .inode = info.st_ino,
+                                          .entries = start});
+                        dir = std::move(opened);
+                        continue;
+                    }
+                } else if(errno == ENOENT) {
+                    continue;
+                } else if(errno == ENOTDIR || errno == ELOOP) {
+                    // No longer a directory: it goes as a file.
+                    directory = false;
+                } else {
+                    return std::unexpected(posix::last_error());
+                }
+            }
+            name = std::move(entry.name);
         } else {
-            return posix::last_error();
+            if(levels.empty()) {
+                return removed;
+            }
+            // The directory is empty: back to the one above to remove it.
+            auto level = std::move(levels.back());
+            levels.pop_back();
+            if(levels.empty()) {
+                dir = Descriptor(AT_FDCWD);
+            } else {
+                Descriptor above(::openat(dir.fd, "..", O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+                struct stat info;
+                if(above.fd < 0 || ::fstat(above.fd, &info) != 0) {
+                    return std::unexpected(posix::last_error());
+                }
+                // A rename moved the directory out of the one the walk came
+                // from, which it has lost.
+                if(info.st_dev != levels.back().device || info.st_ino != levels.back().inode) {
+                    return std::unexpected(
+                        std::make_error_code(std::errc::no_such_file_or_directory));
+                }
+                dir = std::move(above);
+            }
+            name = std::move(level.name);
+            directory = true;
+        }
+        if(::unlinkat(dir.fd, name.c_str(), directory ? AT_REMOVEDIR : 0) == 0) {
+            ++removed;
+        } else if(errno != ENOENT) {
+            return std::unexpected(posix::last_error());
         }
     }
-    if(::unlinkat(dir_fd, name, directory ? AT_REMOVEDIR : 0) == 0) {
-        ++removed;
-    } else if(errno != ENOENT) {
-        return posix::last_error();
-    }
-    return {};
 }
 
 #endif
@@ -569,6 +614,29 @@ std::error_code create_link(std::string_view target, std::string_view link, bool
 #endif
 }
 
+/// Whether `path` names a root, or by its last name a directory it goes
+/// through: `.` and `..`, which the OS refuses to remove only once their
+/// contents are gone, or on Windows, which resolves them first, not at all.
+/// Win32 also takes the trailing dots and spaces off a last name no
+/// separator follows, but in a verbatim path: one made of them alone names
+/// the directory it is in.
+bool names_root_or_ancestor(std::string_view path) {
+    auto name = path::filename(path);
+    if(name.empty()) {
+        // A root has no name, nor has an empty path, which names nothing.
+        return !path.empty();
+    }
+    if(name == "." || name == "..") {
+        return true;
+    }
+#ifdef _WIN32
+    return !path::is_separator(path.back()) && !path.starts_with(R"(\\?\)") &&
+           name.find_first_not_of(". ") == std::string_view::npos;
+#else
+    return false;
+#endif
+}
+
 }  // namespace
 
 struct detail::OpenDirectory {
@@ -579,14 +647,24 @@ struct detail::OpenDirectory {
     std::uint64_t device;
 
     Listing listing{.extended = true};
+
+    HANDLE native_handle() const {
+        return handle.get();
+    }
 #else
     DirHandle dir;
+
+    int native_handle() const {
+        return ::dirfd(dir.get());
+    }
 #endif
 };
 
-std::expected<DirStream, std::error_code> read_dir(std::string_view dir) {
+Directory::Entry::Entry() = default;
+
+std::expected<Directory, std::error_code> Directory::open(std::string_view path) {
 #ifdef _WIN32
-    auto handle = open_directory(dir);
+    auto handle = open_directory(path);
     if(!handle) {
         return std::unexpected(handle.error());
     }
@@ -594,32 +672,36 @@ std::expected<DirStream, std::error_code> read_dir(std::string_view dir) {
     if(!id) {
         return std::unexpected(id.error());
     }
-    return DirStream(std::make_shared<detail::OpenDirectory>(std::move(*handle), id->device));
+    return Directory(std::make_shared<detail::OpenDirectory>(std::move(*handle), id->device));
 #else
-    auto opened = open_dir(dir);
+    auto opened = open_dir(path);
     if(!opened) {
         return std::unexpected(opened.error());
     }
-    return DirStream(std::make_shared<detail::OpenDirectory>(std::move(*opened)));
+    return Directory(std::make_shared<detail::OpenDirectory>(std::move(*opened)));
 #endif
 }
 
-DirStream::iterator DirStream::begin() {
+Directory::Iterator Directory::begin() {
     if(!started) {
         started = true;
         advance();
     }
-    return iterator(this);
+    return Iterator(this);
 }
 
-void DirStream::advance() {
+void Directory::advance() {
     if(!current) {
         done = true;
         return;
     }
-    DirEntry made;
+    if(!directory) {
+        current = std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
+        return;
+    }
+    Entry made;
 #ifdef _WIN32
-    auto entry = directory->listing.next(directory->handle.get());
+    auto entry = directory->listing.next(directory->native_handle());
     if(!entry) {
         current = std::unexpected(windows::to_error_code(entry.error()));
         return;
@@ -643,8 +725,7 @@ void DirStream::advance() {
     }
     made.type = made.listed->type;
 #else
-    auto* dir = directory->dir.get();
-    auto entry = next_entry(dir);
+    auto entry = next_entry(directory->dir.get());
     if(!entry) {
         current = std::unexpected(entry.error());
         return;
@@ -658,22 +739,38 @@ void DirStream::advance() {
     made.directory = directory;
     struct stat info;
     if(made.type == FileType::Unknown &&
-       ::fstatat(::dirfd(dir), made.name.c_str(), &info, AT_SYMLINK_NOFOLLOW) == 0) {
+       ::fstatat(directory->native_handle(), made.name.c_str(), &info, AT_SYMLINK_NOFOLLOW) == 0) {
         made.type = posix::make_status(info).type;
     }
 #endif
     current = std::move(made);
 }
 
-std::expected<Volume, std::error_code> DirStream::volume() const {
+std::expected<Volume, std::error_code> Directory::volume() const {
 #ifdef _WIN32
-    return win32::volume_of(directory->handle.get());
+    return win32::volume_of(native_handle());
 #else
-    return posix::volume_of(::dirfd(directory->dir.get()));
+    return posix::volume_of(native_handle());
 #endif
 }
 
-std::expected<Status, std::error_code> DirEntry::status() const {
+std::expected<Status, std::error_code> Directory::status() const {
+    return detail::handle_status(native_handle());
+}
+
+std::error_code Directory::canonical(buffer_ref out) const {
+    return detail::handle_canonical(out, native_handle());
+}
+
+void Directory::close() {
+    directory.reset();
+}
+
+Directory::native_handle_type Directory::native_handle() const {
+    return directory ? directory->native_handle() : File::closed;
+}
+
+std::expected<Status, std::error_code> Directory::Entry::status() const {
 #ifdef _WIN32
     // One made rather than listed has no listing to tell it.
     if(!listed) {
@@ -687,24 +784,23 @@ std::expected<Status, std::error_code> DirEntry::status() const {
     // cannot fail.
     win32::WidePath wide;
     [[maybe_unused]] auto converted = to_utf16(wide, name);
-    auto child = open_entry(directory->handle.get(), wide, FILE_READ_ATTRIBUTES);
-    if(child.get() != INVALID_HANDLE_VALUE) {
-        return win32::handle_status(child.get());
+    auto child = win32::open_at(directory->native_handle(), wide, 0, false);
+    if(child) {
+        return win32::handle_status(child->get());
     }
-    // A file no open reaches, as status() takes it: what the listing told,
+    // One no open reaches, as status() takes it: what the listing told,
     // without an ID or links.
-    auto error = ::GetLastError();
-    if(error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED) {
+    if(child.error() == ERROR_SHARING_VIOLATION || child.error() == ERROR_ACCESS_DENIED) {
         return *listed;
     }
-    return std::unexpected(windows::to_error_code(error));
+    return std::unexpected(windows::to_error_code(child.error()));
 #else
     // One made rather than listed has no directory to ask through.
     if(!directory) {
         return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
     }
     struct stat info;
-    if(::fstatat(::dirfd(directory->dir.get()), name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) {
+    if(::fstatat(directory->native_handle(), name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) {
         return std::unexpected(posix::last_error());
     }
     return posix::make_status(info);
@@ -765,20 +861,22 @@ std::expected<bool, std::error_code> create_directories(std::string_view path) {
 }
 
 std::expected<bool, std::error_code> remove(std::string_view path) {
+    if(names_root_or_ancestor(path)) {
+        return std::unexpected(std::make_error_code(std::errc::invalid_argument));
+    }
 #ifdef _WIN32
     win32::WidePath native;
     if(auto error = windows::to_native(native, path)) {
         return std::unexpected(error);
     }
-    auto handle = win32::try_open(native.c_str(), DELETE, FILE_FLAG_OPEN_REPARSE_POINT);
-    if(handle.get() == INVALID_HANDLE_VALUE) {
-        auto error = ::GetLastError();
-        if(names_nothing(error)) {
+    auto handle = win32::open_native(native, DELETE, false);
+    if(!handle) {
+        if(names_nothing(handle.error())) {
             return false;
         }
-        return std::unexpected(windows::to_error_code(error));
+        return std::unexpected(windows::to_error_code(handle.error()));
     }
-    if(auto error = dispose(handle.get()); error != ERROR_SUCCESS) {
+    if(auto error = dispose(handle->get()); error != ERROR_SUCCESS) {
         return std::unexpected(windows::to_error_code(error));
     }
     return true;
@@ -813,9 +911,7 @@ std::expected<bool, std::error_code> remove(std::string_view path) {
 }
 
 std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) {
-    // Removing `.` or `..` would remove the directory a path is in, which
-    // the OS refuses only once its contents are gone.
-    if(auto name = path::filename(path); name == "." || name == "..") {
+    if(names_root_or_ancestor(path)) {
         return std::unexpected(std::make_error_code(std::errc::invalid_argument));
     }
 #ifdef _WIN32
@@ -823,26 +919,21 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) 
     if(auto error = windows::to_native(native, path)) {
         return std::unexpected(error);
     }
-    auto handle = open_to_remove([&](DWORD access) {
-        return win32::try_open(native.c_str(), access, FILE_FLAG_OPEN_REPARSE_POINT);
-    });
-    if(handle.get() == INVALID_HANDLE_VALUE) {
-        if(names_nothing(::GetLastError())) {
+    auto handle =
+        open_to_remove([&](DWORD access) { return win32::open_native(native, access, false); });
+    if(!handle) {
+        if(names_nothing(handle.error())) {
             return 0;
         }
-        return std::unexpected(windows::last_error());
+        return std::unexpected(windows::to_error_code(handle.error()));
     }
-    return remove_opened(handle);
+    return remove_tree(std::move(*handle));
 #else
     posix::CPath c_path;
     if(auto error = c_path.assign(posix::without_trailing_separators(path))) {
         return std::unexpected(error);
     }
-    std::uint64_t removed = 0;
-    if(auto error = remove_entry(AT_FDCWD, c_path.c_str(), DT_UNKNOWN, removed)) {
-        return std::unexpected(error);
-    }
-    return removed;
+    return remove_tree(c_path.c_str());
 #endif
 }
 
@@ -856,10 +947,9 @@ std::error_code rename(std::string_view from, std::string_view to) {
     if(auto error = windows::to_native(target, to)) {
         return error;
     }
-    auto handle =
-        win32::try_open(source.c_str(), DELETE | SYNCHRONIZE, FILE_FLAG_OPEN_REPARSE_POINT);
-    if(handle.get() == INVALID_HANDLE_VALUE) {
-        return windows::last_error();
+    auto handle = win32::open_native(source, DELETE, false);
+    if(!handle) {
+        return windows::to_error_code(handle.error());
     }
     auto name_bytes = target.size() * sizeof(wchar_t);
     std::vector<std::byte> buffer(offsetof(RenameInfoEx, FileName) + name_bytes + sizeof(wchar_t));
@@ -870,7 +960,7 @@ std::error_code rename(std::string_view from, std::string_view to) {
     std::memcpy(buffer.data() + offsetof(RenameInfoEx, FileName),
                 target.c_str(),
                 name_bytes + sizeof(wchar_t));
-    if(::SetFileInformationByHandle(handle.get(),
+    if(::SetFileInformationByHandle(handle->get(),
                                     rename_info_ex,
                                     info,
                                     static_cast<DWORD>(buffer.size()))) {
@@ -883,12 +973,12 @@ std::error_code rename(std::string_view from, std::string_view to) {
     // read-only file: `to` goes without the attribute meanwhile. Should the
     // move fail, the attribute goes back only on the same file, which
     // another may have replaced meanwhile.
-    handle = win32::Handle();
+    *handle = win32::Handle();
     if(::MoveFileExW(source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         return {};
     }
     auto error = ::GetLastError();
-    auto before = open_attributes(target.c_str());
+    auto before = open_attributes(target);
     if(!before || !(before->basic.FileAttributes & FILE_ATTRIBUTE_READONLY) ||
        !win32::set_attributes(before->handle.get(),
                               before->basic.FileAttributes & ~FILE_ATTRIBUTE_READONLY)) {
@@ -900,7 +990,7 @@ std::error_code rename(std::string_view from, std::string_view to) {
         return {};
     }
     error = ::GetLastError();
-    if(auto after = open_attributes(target.c_str());
+    if(auto after = open_attributes(target);
        after && after->id == before->id &&
        after->basic.CreationTime.QuadPart == before->basic.CreationTime.QuadPart &&
        after->basic.LastWriteTime.QuadPart == before->basic.LastWriteTime.QuadPart) {
@@ -930,10 +1020,27 @@ std::error_code rename_noreplace(std::string_view from, std::string_view to) {
     if(auto error = windows::to_native(target, to)) {
         return error;
     }
-    if(!::MoveFileExW(source.c_str(), target.c_str(), 0)) {
-        return windows::last_error();
+    if(::MoveFileExW(source.c_str(), target.c_str(), 0)) {
+        return {};
     }
-    return {};
+    auto error = ::GetLastError();
+    if(error != ERROR_ACCESS_DENIED) {
+        return windows::to_error_code(error);
+    }
+    // Denied, as is a file deleted while held open: `from`, which is gone
+    // but for the name, or on FAT `to`, which keeps the name taken until
+    // the last handle goes (NTFS says so itself).
+    auto pending = [](std::wstring_view path) {
+        auto opened = win32::open_native(path, 0, false);
+        return !opened && opened.error() == ERROR_DELETE_PENDING;
+    };
+    if(pending(source)) {
+        return std::make_error_code(std::errc::no_such_file_or_directory);
+    }
+    if(pending(target)) {
+        return std::make_error_code(std::errc::file_exists);
+    }
+    return windows::to_error_code(error);
 #else
     posix::CPath source;
     if(auto error = source.assign(from)) {
@@ -995,9 +1102,18 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
     if(auto error = windows::to_native(native, path)) {
         return error;
     }
-    auto handle = win32::try_open(native.c_str(), 0, FILE_FLAG_OPEN_REPARSE_POINT);
-    if(handle.get() == INVALID_HANDLE_VALUE) {
+    auto handle = win32::open_native(native, 0, false);
+    if(!handle) {
+        return windows::to_error_code(handle.error());
+    }
+    // A file that is no reparse point is told by its attributes: FAT, which
+    // keeps none, refuses to be asked for a reparse point's data.
+    FILE_BASIC_INFO basic;
+    if(!::GetFileInformationByHandleEx(handle->get(), FileBasicInfo, &basic, sizeof(basic))) {
         return windows::last_error();
+    }
+    if(!(basic.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+        return std::make_error_code(std::errc::invalid_argument);
     }
 
     // REPARSE_DATA_BUFFER, which only the driver headers declare: a symlink
@@ -1038,7 +1154,7 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
     constexpr ULONG wsl_symlink_tag = 0xA000001D;
     auto buffer = std::make_unique_for_overwrite<std::byte[]>(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
     DWORD returned = 0;
-    if(!::DeviceIoControl(handle.get(),
+    if(!::DeviceIoControl(handle->get(),
                           FSCTL_GET_REPARSE_POINT,
                           nullptr,
                           0,
@@ -1046,11 +1162,7 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
                           MAXIMUM_REPARSE_DATA_BUFFER_SIZE,
                           &returned,
                           nullptr)) {
-        auto error = ::GetLastError();
-        if(error == ERROR_NOT_A_REPARSE_POINT) {
-            return std::make_error_code(std::errc::invalid_argument);
-        }
-        return windows::to_error_code(error);
+        return windows::last_error();
     }
     auto& data = *reinterpret_cast<Reparse*>(buffer.get());
     // What the file system gave is checked before it is read: a name past
@@ -1097,7 +1209,12 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
             out.assign(std::string_view(data.wsl.target, end - start));
             return {};
         }
-        default: return std::make_error_code(std::errc::invalid_argument);
+        // Another link, whose target only its own driver knows, or a
+        // reparse point that holds the file itself, which is no link.
+        default:
+            return std::make_error_code(win32::is_name_surrogate(data.tag)
+                                            ? std::errc::not_supported
+                                            : std::errc::invalid_argument);
     }
 #else
     posix::CPath c_path;

@@ -27,14 +27,15 @@ struct Volume {
     std::string type;
 
     /// Whether its files are served by another machine, or another system
-    /// on this one: NFS, SMB, AFS, Ceph, and 9p, through which WSL reaches
-    /// the Windows drives. FUSE is not, though what it serves may be.
+    /// on this one: NFS, SMB, AFS, Ceph, Lustre, GPFS, and 9p, through which
+    /// WSL reaches the Windows drives. FUSE and autofs are not, though what
+    /// they serve may be.
     bool remote = false;
 };
 
 /// The volume `path`, an existing file, lives on, symlinks followed: on
-/// Windows asked of the file opened, which takes one open; DirStream::volume
-/// asks it of a directory open for listing.
+/// Windows asked of the file opened, which takes one open; Directory::volume
+/// asks it of an open directory.
 std::expected<Volume, std::error_code> volume(std::string_view path);
 
 }  // namespace kota::fs

@@ -1,8 +1,10 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <format>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #ifndef _WIN32
@@ -226,10 +228,9 @@ ZEST_CASE(status_tells_permissions) {
     ZEXPECT(directory->permissions == 0777u);
     ZASSERT(::SetFileAttributesW(wide.c_str(), FILE_ATTRIBUTE_READONLY));
     auto read_only = status(dir.file("file.txt"));
-    auto entries = test::entries_of(dir.root());
-    ZEXPECT(::SetFileAttributesW(wide.c_str(), FILE_ATTRIBUTE_NORMAL));
     ZASSERT(read_only.has_value());
     ZEXPECT(read_only->permissions == 0444u);
+    auto entries = test::entries_of(dir.root());
     ZASSERT(entries.size() == 1u);
     auto listed = entries.front().status();
     ZASSERT(listed.has_value());
@@ -278,11 +279,7 @@ ZEST_CASE(symlink_status_does_not_follow) {
 ZEST_CASE(symlink_status_of_a_link_and_a_separator_is_the_link) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
-#ifdef _WIN32
-    test::make_junction(dir.file("link"), dir.file("target"));
-#else
-    ZASSERT(!create_directory_symlink(dir.file("target"), dir.file("link")));
-#endif
+    test::link_directory(dir.file("target"), dir.file("link"));
     for(auto spelled: {"link/", "link//"}) {
         ZEST_CONTEXT("{}", spelled);
         auto itself = symlink_status(dir.file(spelled));
@@ -359,6 +356,28 @@ ZEST_CASE(junctions_are_links) {
 #endif
 
 #ifdef _WIN32
+ZEST_CASE(status_tells_a_wsl_fifo_or_device) {
+    // WSL keeps one as a reparse point of a tag of its own.
+    constexpr std::pair<DWORD, FileType> kinds[] = {
+        {test::wsl_fifo_tag,      FileType::Fifo     },
+        {test::wsl_character_tag, FileType::Character},
+        {test::wsl_block_tag,     FileType::Block    },
+    };
+    test::TempDir dir;
+    for(auto [tag, type]: kinds) {
+        ZEST_CONTEXT("{:#x}", tag);
+        auto file = dir.file(std::format("{:x}", tag));
+        test::write_text(file, "");
+        test::set_reparse_point(file, tag);
+        auto itself = symlink_status(file);
+        ZASSERT(itself.has_value());
+        ZEXPECT(itself->type == type);
+        auto followed = status(file);
+        ZASSERT(followed.has_value());
+        ZEXPECT(followed->type == type);
+    }
+}
+
 ZEST_CASE(exists_follows_a_junction) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
@@ -379,7 +398,18 @@ ZEST_CASE(exists_tells_nothing_from_failure) {
     ZEXPECT(exists(dir.file("file.txt/child")) == false);
 }
 
-#ifndef _WIN32
+#ifdef _WIN32
+ZEST_CASE(status_of_a_file_deleted_while_held_open_fails) {
+    // Its name stays until the last handle goes, but names a file going away.
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
+    test::DeletePending pending(dir.file("file.txt"));
+    auto found = status(dir.file("file.txt"));
+    ZASSERT(!found.has_value());
+    ZEXPECT(found.error() == std::errc::no_such_file_or_directory);
+    ZEXPECT(exists(dir.file("file.txt")) == false);
+}
+#else
 ZEST_CASE(exists_where_access_is_denied_fails) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "closed");

@@ -101,7 +101,7 @@ ZEST_CASE(one_file_has_one_id_by_path_by_handle_and_listed) {
     });
 }
 
-ZEST_CASE(read_dir_tells_each_entry_its_own_status) {
+ZEST_CASE(directory_tells_each_entry_its_own_status) {
     // Win32 would take `a.` and `a ` for `a`, which FAT keeps apart.
     on_fat([](const test::TempDir& dir) {
         ZEXPECT(!write_file(verbatim(dir.file("a")), "1"));
@@ -126,16 +126,16 @@ ZEST_CASE(read_dir_tells_each_entry_its_own_status) {
     });
 }
 
-ZEST_CASE(read_dir_of_an_empty_directory_is_empty) {
+ZEST_CASE(an_empty_directory_lists_nothing) {
     // The first read refused for its IDs, the second finds nothing.
     on_fat([](const test::TempDir& dir) {
-        auto stream = read_dir(dir.root());
-        ZASSERT(stream.has_value());
-        ZEXPECT(stream->begin() == stream->end());
+        auto directory = Directory::open(dir.root());
+        ZASSERT(directory.has_value());
+        ZEXPECT(directory->begin() == directory->end());
     });
 }
 
-ZEST_CASE(read_dir_entry_status_of_a_removed_file_fails) {
+ZEST_CASE(entry_status_of_a_removed_file_fails) {
     // FAT lists no whole status: the entry is opened when asked.
     on_fat([](const test::TempDir& dir) {
         test::write_text(dir.file("file.txt"), "12345");
@@ -145,6 +145,21 @@ ZEST_CASE(read_dir_entry_status_of_a_removed_file_fails) {
         auto status = entries.front().status();
         ZASSERT(!status.has_value());
         ZEXPECT(status.error() == std::errc::no_such_file_or_directory);
+    });
+}
+
+ZEST_CASE(entry_status_of_a_file_deleted_while_held_open_fails) {
+    // FAT lists no whole status: the entry, whose name stays until the last
+    // handle goes, is opened when asked.
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("file.txt"), "12345");
+        auto entries = test::entries_of(dir.root());
+        ZASSERT(entries.size() == 1u);
+        test::DeletePending pending(dir.file("file.txt"));
+        auto status = entries.front().status();
+        ZASSERT(!status.has_value());
+        ZEXPECT(status.error() == std::errc::no_such_file_or_directory);
+        ZEXPECT(exists(dir.file("file.txt")) == false);
     });
 }
 
@@ -166,10 +181,10 @@ ZEST_CASE(set_times_rounds_up_to_two_seconds) {
 ZEST_CASE(volume_names_the_file_system) {
     on_fat([](const test::TempDir& dir) {
         auto named = volume(dir.root());
-        auto stream = read_dir(dir.root());
+        auto directory = Directory::open(dir.root());
         ZASSERT(named.has_value());
-        ZASSERT(stream.has_value());
-        auto listed = stream->volume();
+        ZASSERT(directory.has_value());
+        auto listed = directory->volume();
         ZASSERT(listed.has_value());
         ZEXPECT(named->type == listed->type);
         ZEXPECT((named->type == "FAT32" || named->type == "exFAT"));
@@ -234,8 +249,6 @@ ZEST_CASE(rename_onto_a_read_only_file_held_open_fails) {
         ZEXPECT((test::attributes_of(dir.file("old.txt")) & FILE_ATTRIBUTE_READONLY) != 0);
         ZEXPECT(test::read_text(dir.file("old.txt")) == "old");
         ZEXPECT(test::read_text(dir.file("new.txt")) == "new");
-        // TempDir, through std::filesystem, would leave a read-only file.
-        ZEXPECT(remove(dir.file("old.txt")) == true);
     });
 }
 
@@ -285,6 +298,19 @@ ZEST_CASE(rename_noreplace_over_a_file_fails) {
     });
 }
 
+ZEST_CASE(rename_noreplace_over_a_file_deleted_while_held_open_fails) {
+    // FAT refuses it as it refuses any open of the name, which is taken
+    // until the last handle goes.
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("from.txt"), "new");
+        test::write_text(dir.file("to.txt"), "old");
+        test::DeletePending pending(dir.file("to.txt"));
+        ZEXPECT(rename_noreplace(dir.file("from.txt"), dir.file("to.txt")) ==
+                std::errc::file_exists);
+        ZEXPECT(test::read_text(dir.file("from.txt")) == "new");
+    });
+}
+
 ZEST_CASE(rename_noreplace_to_another_volume_fails) {
     on_fat([](const test::TempDir& dir) {
         test::TempDir temp;
@@ -293,6 +319,15 @@ ZEST_CASE(rename_noreplace_to_another_volume_fails) {
                 std::errc::cross_device_link);
         ZEXPECT(is_file(temp.file("from")));
         ZEXPECT(exists(dir.file("to")) == false);
+    });
+}
+
+ZEST_CASE(read_symlink_of_a_file_fails) {
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("file"), "text");
+        std::string target;
+        ZEXPECT(read_symlink(target, dir.file("file")) == std::errc::invalid_argument);
+        ZEXPECT(read_symlink(target, dir.root()) == std::errc::invalid_argument);
     });
 }
 
