@@ -11,6 +11,7 @@
 #include <vector>
 
 #ifndef _WIN32
+#include <cerrno>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -182,6 +183,33 @@ ZEST_CASE(write_file_atomic_keeps_the_owner) {
     ZASSERT(::stat(dir.file("file").c_str(), &info) == 0);
     ZEXPECT(info.st_uid == 65534u);
     ZEXPECT(info.st_gid == 65534u);
+}
+
+ZEST_CASE(write_file_atomic_keeps_the_group_of_a_file_of_another_owner) {
+    // Replaced by a caller in the group, who may give the new file that but
+    // not the owner. The directory, setgid, gives a new file its own group.
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "old");
+    if(::chown(dir.file("file").c_str(), 65534, 65532) != 0) {
+        // Only root gives a file to another user, and only to one its user
+        // namespace maps.
+        auto refused = errno;
+        ZASSERT((refused == EPERM || refused == EINVAL));
+        zest::skip();
+        return;
+    }
+    ZASSERT(::chown(dir.root().c_str(), 65533, 0) == 0);
+    ZASSERT(::chmod(dir.root().c_str(), 02755) == 0);
+    std::error_code error;
+    {
+        test::ScopedUser caller(65533, 65532);
+        error = write_file_atomic(dir.file("file"), "new");
+    }
+    ZEXPECT(error == std::error_code());
+    struct stat info;
+    ZASSERT(::stat(dir.file("file").c_str(), &info) == 0);
+    ZEXPECT(info.st_uid == 65533u);
+    ZEXPECT(info.st_gid == 65532u);
 }
 #endif
 

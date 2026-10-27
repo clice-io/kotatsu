@@ -812,9 +812,11 @@ std::error_code write_file_atomic(std::string_view path, std::string_view bytes)
 #else
     if(!error && replaces) {
         // The owner and group where the caller may give them: only root
-        // gives a file away.
-        [[maybe_unused]] auto owned =
-            ::fchown(file->native_handle(), replaced.st_uid, replaced.st_gid);
+        // gives a file away, but its owner may give it a group it is in.
+        if(::fchown(file->native_handle(), replaced.st_uid, replaced.st_gid) != 0) {
+            [[maybe_unused]] auto grouped =
+                ::fchown(file->native_handle(), static_cast<uid_t>(-1), replaced.st_gid);
+        }
         if(::fchmod(file->native_handle(), replaced.st_mode & 0777) != 0) {
             error = posix::last_error();
         }

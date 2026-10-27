@@ -5,7 +5,8 @@
 // link_directory(), all through std::filesystem, fstreams and cmd rather
 // than kota::fs, which the tests check; linked() for a case that makes
 // a symlink; across_file_systems() on Linux for one that crosses file
-// systems; text_of() and CountedBuffer for reads of large files.
+// systems; ScopedUser on POSIX for one root runs as another user; text_of()
+// and CountedBuffer for reads of large files.
 
 #include <cstddef>
 #include <cstdlib>
@@ -19,9 +20,11 @@
 #include <system_error>
 #include <utility>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 #ifdef __linux__
 #include <sys/stat.h>
-#include <unistd.h>
 #endif
 
 #include "kota/zest/zest.h"
@@ -211,6 +214,34 @@ private:
 
     zest::FatalHook on_fatal{[this] { restore(); }};
 };
+
+#ifndef _WIN32
+/// The user `uid` and group `gid` a process run by root acts as, for as long
+/// as this lives, or until a failed ZASSERT ends the process: then root
+/// again, before the hook of a TempDir declared before this removes what
+/// root made there.
+struct ScopedUser {
+    ScopedUser(uid_t uid, gid_t gid) {
+        ZASSERT(::setegid(gid) == 0);
+        ZASSERT(::seteuid(uid) == 0);
+    }
+
+    ~ScopedUser() {
+        restore();
+    }
+
+    ScopedUser(const ScopedUser&) = delete;
+    ScopedUser& operator=(const ScopedUser&) = delete;
+
+private:
+    static void restore() {
+        [[maybe_unused]] auto user = ::seteuid(0);
+        [[maybe_unused]] auto group = ::setegid(0);
+    }
+
+    zest::FatalHook on_fatal{[] { restore(); }};
+};
+#endif
 
 #ifdef _WIN32
 /// Makes `link` a junction to the directory `target`, as a link that needs

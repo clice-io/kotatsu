@@ -227,10 +227,10 @@ std::error_code write_file(std::string_view path, std::string_view bytes);
 /// so a concurrent reader sees the old bytes or the new, never a part, and
 /// concurrent writers never mix. A symlink at `path` is replaced, not
 /// written through. On POSIX a file there lends the new one its permissions
-/// (0777: not setuid and setgid), and its owner and group where the caller
-/// may set them, as root always may; on Windows its read-only, hidden and
-/// system attributes. A new file takes the permissions write_file() gives
-/// one.
+/// (0777: not setuid, setgid and sticky), and its owner and group where the
+/// caller may set them, as root always may, or else its group alone where
+/// the caller is in it; on Windows its read-only, hidden and system
+/// attributes. A new file takes the permissions write_file() gives one.
 ///
 /// A crash of the process leaves `path` with the old bytes or the new, and
 /// may leave the sibling behind. It does not wait for the bytes to reach
