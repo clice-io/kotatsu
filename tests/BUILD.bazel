@@ -175,6 +175,8 @@ kota_test(
     name = "fs_syscall_fallbacks",
     size = "small",
     srcs = ["fs/syscall_fallbacks/main.cpp"],
+    # Its races' threads, in libc itself only from glibc 2.34.
+    linkopts = ["-lpthread"],
     tags = ["system"],
     target_compatible_with = ["@platforms//os:linux"],
     deps = ["//:fs"],

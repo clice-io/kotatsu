@@ -16,8 +16,9 @@ endif()
 # copy_file() and rename_noreplace() where the system calls they start with
 # fail: see syscall_fallbacks/main.cpp. A filter of system calls is Linux's.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(Threads REQUIRED)
     add_executable(fs_syscall_fallbacks syscall_fallbacks/main.cpp)
-    target_link_libraries(fs_syscall_fallbacks PRIVATE kota::fs)
+    target_link_libraries(fs_syscall_fallbacks PRIVATE kota::fs Threads::Threads)
     kota_apply_project_options(fs_syscall_fallbacks)
     set_property(GLOBAL APPEND PROPERTY kota_check_programs fs_syscall_fallbacks)
     add_test(NAME fs_syscall_fallbacks COMMAND fs_syscall_fallbacks)

@@ -96,7 +96,7 @@ ZEST_CASE(copy_file_takes_the_attributes) {
         ZEXPECT(attributes != INVALID_FILE_ATTRIBUTES);
         ZEXPECT((attributes & FILE_ATTRIBUTE_READONLY) != 0);
         ZEXPECT((attributes & FILE_ATTRIBUTE_HIDDEN) != 0);
-        ZEXPECT(found.transform(&Status::permissions) == 0444u);
+        ZEXPECT(found.transform([](const Status& status) { return status.permissions; }) == 0444u);
     }
     ZEXPECT(remove(dir.file("from")) == true);
 }
