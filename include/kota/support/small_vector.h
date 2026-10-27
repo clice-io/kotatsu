@@ -520,11 +520,11 @@ public:
             // An input range is read once: its elements are appended, as they come, and then
             // rotated into place. If one fails, those appended are dropped.
             const size_type old_size = size();
-            ScopeExit appended([this, old_size] { truncate(old_size); });
+            ScopeExit drop_appended([this, old_size] { truncate(old_size); });
             for(auto&& value: range) {
                 emplace_back(std::forward<decltype(value)>(value));
             }
-            appended.release();
+            drop_appended.release();
             std::rotate(head + index, head + old_size, end());
             return head + index;
         }

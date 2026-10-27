@@ -13,7 +13,8 @@ namespace kota::test {
 template <typename Body>
 std::string printed_by(Body&& body) {
     std::ostringstream out;
-    ScopeExit restore([previous = std::cout.rdbuf(out.rdbuf())] { std::cout.rdbuf(previous); });
+    std::streambuf* previous = std::cout.rdbuf(out.rdbuf());
+    ScopeExit restore([previous] { std::cout.rdbuf(previous); });
     body();
     return out.str();
 }

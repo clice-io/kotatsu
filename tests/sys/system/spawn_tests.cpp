@@ -614,8 +614,8 @@ ZEST_CASE(kill_tree_ends_the_childs_children) {
     options.streams[1] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
-    // A case failing before it kills the tree leaves nothing running.
-    ScopeExit killer([&child] { child->kill_tree(); });
+    // A failed ZASSERT leaves nothing running.
+    zest::FatalHook on_fatal{[&child] { child->kill_tree(); }};
     auto end = child->take_pipe(1);
     ZEXPECT(!test::read_some(end).empty());
     ZEXPECT(!child->kill_tree());
@@ -634,8 +634,8 @@ ZEST_CASE(kill_tree_reaches_the_group_after_its_leader_exited) {
     options.streams[1] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
-    // A case failing before it kills the tree leaves nothing running.
-    ScopeExit killer([&child] { child->kill_tree(); });
+    // A failed ZASSERT leaves nothing running.
+    zest::FatalHook on_fatal{[&child] { child->kill_tree(); }};
     auto end = child->take_pipe(1);
     ZEXPECT(!test::read_some(end).empty());
     auto status = child->wait();

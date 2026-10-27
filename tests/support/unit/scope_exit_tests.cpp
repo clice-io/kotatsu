@@ -1,5 +1,7 @@
+#include <memory>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 
 #include "kota/zest/zest.h"
 #include "kota/support/config.h"
@@ -9,8 +11,8 @@ namespace kota {
 
 namespace {
 
-/// How many times a guard counting its calls ran once its scope was left,
-/// released first when `released`.
+/// How many times a guard's action has run once the guard's scope is left,
+/// the guard released first when `released`.
 constexpr int calls_after_scope(bool released) {
     int calls = 0;
     {
@@ -22,11 +24,11 @@ constexpr int calls_after_scope(bool released) {
     return calls;
 }
 
-/// Whether ScopeExit<F> is a type.
+/// Whether ScopeExit takes an F.
 template <typename F>
-concept guards = requires { typename ScopeExit<F>; };
+concept accepts = requires { typename ScopeExit<F>; };
 
-/// A function whose move may throw.
+/// An action whose move may throw.
 struct ThrowingMove {
     ThrowingMove() = default;
 
@@ -46,6 +48,15 @@ ZEST_CASE(runs_once_its_scope_is_left) {
     ZEXPECT(calls == 1);
 }
 
+// An action that can only be moved, and that changes what it holds.
+ZEST_CASE(runs_an_action_it_can_only_move) {
+    int seen = 0;
+    {
+        ScopeExit count([held = std::make_unique<int>(1), &seen]() mutable { seen = ++*held; });
+    }
+    ZEXPECT(seen == 2);
+}
+
 ZEST_CASE(release_keeps_it_from_running) {
     int calls = 0;
     {
@@ -60,7 +71,7 @@ ZEST_CASE(runs_in_constant_evaluation) {
     ZSTATIC_EXPECT(calls_after_scope(true) == 0);
 }
 
-// Its function may throw, but the destructor that calls it does not: a throw
+// Its action may throw, but the destructor that calls it does not: a throw
 // from it ends the program.
 ZEST_CASE(neither_copies_nor_moves_nor_throws) {
     using Guard = ScopeExit<void (*)()>;
@@ -69,14 +80,15 @@ ZEST_CASE(neither_copies_nor_moves_nor_throws) {
     ZSTATIC_EXPECT(noexcept(std::declval<Guard&>().release()));
     ZSTATIC_EXPECT(!std::is_copy_constructible_v<Guard>);
     ZSTATIC_EXPECT(!std::is_move_constructible_v<Guard>);
+    ZSTATIC_EXPECT(!std::is_copy_assignable_v<Guard>);
+    ZSTATIC_EXPECT(!std::is_move_assignable_v<Guard>);
 }
 
-// Its construction cannot throw, so that the function it is given always
-// runs.
-ZEST_CASE(takes_a_function_moved_without_throwing) {
-    ZSTATIC_EXPECT(guards<void (*)()>);
-    ZSTATIC_EXPECT(!guards<int>);
-    ZSTATIC_EXPECT(!guards<ThrowingMove>);
+// Moving the action in cannot throw, so that once given it always runs.
+ZEST_CASE(takes_an_action_moved_without_throwing) {
+    ZSTATIC_EXPECT(accepts<void (*)()>);
+    ZSTATIC_EXPECT(!accepts<int>);
+    ZSTATIC_EXPECT(!accepts<ThrowingMove>);
 }
 
 #if KOTA_ENABLE_EXCEPTIONS
