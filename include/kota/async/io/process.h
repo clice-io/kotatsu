@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include "kota/sys/spawn.h"
@@ -45,6 +46,8 @@ public:
 
     using exit_status = sys::ExitStatus;
 
+    using native_handle_type = sys::Child::native_handle_type;
+
     process() noexcept;
 
     process(const process&) = delete;
@@ -65,11 +68,15 @@ public:
 
 #ifdef _WIN32
     /// The process with ID `pid`, whichever process started it, as
-    /// sys::Child::open opens it: wait() gives its exit status, and kill()
-    /// ends it. Fails as that does, and with error::operation_aborted while
-    /// the loop is being destroyed. POSIX has no counterpart: there a process
-    /// this one did not start tells it no exit status.
-    static result<process> open(int pid, event_loop& loop = event_loop::current());
+    /// sys::Child::open opens it, with the rights `access` asks for besides:
+    /// wait() gives its exit status, kill() ends it, and native_handle()
+    /// reaches it as `access` allows. Fails as that does, and with
+    /// error::operation_aborted while the loop is being destroyed. POSIX has
+    /// no counterpart: there a process this one did not start tells it no
+    /// exit status.
+    static result<process> open(int pid,
+                                std::uint32_t access = 0,
+                                event_loop& loop = event_loop::current());
 #endif
 
     struct capture_result;
@@ -92,6 +99,11 @@ public:
 
     /// The OS process ID; -1 for an inert process.
     int pid() const noexcept;
+
+    /// The child's sys::Child::native_handle: on Windows its process handle,
+    /// on Linux a pidfd or -1, and -1 elsewhere; an inert Child's for an
+    /// inert process. It stays open while the process is there.
+    native_handle_type native_handle() const noexcept;
 
     /// Sends a signal to the child; fails with no_such_process once its exit
     /// has been observed. On Windows SIGINT, SIGTERM and SIGKILL (9) end it.

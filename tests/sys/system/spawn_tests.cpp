@@ -22,6 +22,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+// After windows.h, whose types they use.
+#include <aclapi.h>
+#include <sddl.h>
 #else
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -1384,6 +1387,85 @@ ZEST_CASE(open_then_kill_ends_the_process) {
     auto status = opened->wait();
     ZASSERT(status.has_value());
     ZEXPECT(status->term_signal == SIGTERM);
+    ZEXPECT(child->wait().has_value());
+}
+
+// What catter's hook asks for to inject into a program it opened: its memory
+// written and read back through the handle, which the rights to wait and kill
+// alone would not allow.
+ZEST_CASE(open_with_access_reaches_the_process_through_its_handle) {
+    auto options = test::shell("more");
+    options.streams[0] = Stdio::pipe();
+    auto child = spawn(options);
+    ZASSERT(child.has_value());
+
+    auto waiting = Child::open(child->pid());
+    ZASSERT(waiting.has_value());
+    ZEXPECT(::GetProcessId(waiting->native_handle()) == static_cast<DWORD>(child->pid()));
+    void* denied =
+        ::VirtualAllocEx(waiting->native_handle(), nullptr, 4096, MEM_RESERVE, PAGE_NOACCESS);
+    const DWORD error = ::GetLastError();
+    ZEXPECT(denied == nullptr);
+    ZEXPECT(error == DWORD(ERROR_ACCESS_DENIED));
+
+    ZEXPECT(Child::open(child->pid(), PROCESS_ALL_ACCESS).has_value());
+    auto opened =
+        Child::open(child->pid(), PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE);
+    ZASSERT(opened.has_value());
+    void* page = ::VirtualAllocEx(opened->native_handle(),
+                                  nullptr,
+                                  4096,
+                                  MEM_RESERVE | MEM_COMMIT,
+                                  PAGE_READWRITE);
+    ZASSERT(page != nullptr);
+    const std::string_view written = "written";
+    ZEXPECT(::WriteProcessMemory(opened->native_handle(),
+                                 page,
+                                 written.data(),
+                                 written.size(),
+                                 nullptr));
+    std::string read(written.size(), '\0');
+    ZEXPECT(::ReadProcessMemory(opened->native_handle(), page, read.data(), read.size(), nullptr));
+    ZEXPECT(read == written);
+
+    test::close_end(child->take_pipe(0));
+    ZEXPECT(child->wait().has_value());
+}
+
+// A process that lets others wait for it and end it, and do nothing else.
+ZEST_CASE(open_with_access_the_process_does_not_grant_fails) {
+    auto options = test::shell("more");
+    options.streams[0] = Stdio::pipe();
+    auto child = spawn(options);
+    ZASSERT(child.has_value());
+    // Everyone gets SYNCHRONIZE, PROCESS_QUERY_LIMITED_INFORMATION and
+    // PROCESS_TERMINATE, and no more.
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    ZASSERT(::ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:P(A;;0x101001;;;WD)",
+                                                                   SDDL_REVISION_1,
+                                                                   &descriptor,
+                                                                   nullptr));
+    BOOL present = FALSE;
+    BOOL defaulted = FALSE;
+    PACL dacl = nullptr;
+    ZASSERT(::GetSecurityDescriptorDacl(descriptor, &present, &dacl, &defaulted));
+    const DWORD set =
+        ::SetSecurityInfo(child->native_handle(),
+                          SE_KERNEL_OBJECT,
+                          DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                          nullptr,
+                          nullptr,
+                          dacl,
+                          nullptr);
+    ::LocalFree(descriptor);
+    ZASSERT(set == DWORD(ERROR_SUCCESS));
+
+    ZEXPECT(Child::open(child->pid()).has_value());
+    auto opened = Child::open(child->pid(), PROCESS_VM_READ);
+    ZASSERT(!opened.has_value());
+    ZEXPECT(opened.error() == std::errc::permission_denied);
+
+    test::close_end(child->take_pipe(0));
     ZEXPECT(child->wait().has_value());
 }
 

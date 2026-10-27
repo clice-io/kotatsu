@@ -320,11 +320,11 @@ std::error_code Child::reap(bool block) {
     }
 }
 
-std::expected<Child, std::error_code> Child::open(int pid) {
+std::expected<Child, std::error_code> Child::open(int pid, std::uint32_t access) {
     // What wait(), try_wait() and kill() take: the exit, its code and CPU
     // time, and TerminateProcess.
-    constexpr DWORD access = SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE;
-    HANDLE process = ::OpenProcess(access, FALSE, static_cast<DWORD>(pid));
+    constexpr DWORD own = SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE;
+    HANDLE process = ::OpenProcess(own | access, FALSE, static_cast<DWORD>(pid));
     if(process == nullptr) {
         if(::GetLastError() == ERROR_INVALID_PARAMETER) {
             return std::unexpected(std::make_error_code(std::errc::no_such_process));
