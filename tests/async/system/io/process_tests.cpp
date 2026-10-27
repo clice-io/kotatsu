@@ -41,6 +41,7 @@
 #include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/support/scope_exit.h"
 #include "kota/fs/file.h"
 #include "kota/sys/spawn.h"
 #include "kota/async/async.h"
@@ -239,20 +240,13 @@ ZEST_CASE(stdin_pipe_feeds_the_child) {
 // child, which reads to its end.
 ZEST_CASE(stdin_pipe_closed_where_stdin_was_closed_ends_the_child) {
     // The worker reads its runner elsewhere: its stdin reads nothing.
-    struct ClosedStdin {
-        int saved = ::_dup(0);
-
-        ClosedStdin() {
-            test::close_fd(0);
-        }
-
-        ~ClosedStdin() {
-            ::_dup2(saved, 0);
-            test::close_fd(saved);
-        }
-    } closed;
-
-    ZASSERT(closed.saved >= 0);
+    const int saved = ::_dup(0);
+    ZASSERT(saved >= 0);
+    test::close_fd(0);
+    ScopeExit restore([saved] {
+        ::_dup2(saved, 0);
+        test::close_fd(saved);
+    });
     auto spawned = process::spawn(test::stdin_reader(), loop);
     ZASSERT(spawned.has_value());
     spawned->stdin_pipe = pipe{};
@@ -931,15 +925,12 @@ ZEST_CASE(exit_is_seen_without_pidfds) {
 // others, it refuses the loop the set of the pidfds, and SIGCHLD tells of
 // the exit.
 ZEST_CASE(exit_is_seen_when_the_loop_cannot_poll_the_pidfds) {
-    struct Sets {
-        std::vector<int> fds;
-
-        ~Sets() {
-            for(int fd: fds) {
-                ::close(fd);
-            }
+    std::vector<int> outer;
+    ScopeExit closer([&outer] {
+        for(int fd: outer) {
+            ::close(fd);
         }
-    } outer;
+    });
 
     const int backend = ::uv_backend_fd(loop.native_handle());
     epoll_event event{.events = EPOLLIN, .data = {}};
@@ -947,7 +938,7 @@ ZEST_CASE(exit_is_seen_when_the_loop_cannot_poll_the_pidfds) {
     for(int depth = 0; depth < 4; ++depth) {
         const int set = ::epoll_create1(EPOLL_CLOEXEC);
         ZASSERT(set >= 0);
-        outer.fds.push_back(set);
+        outer.push_back(set);
         ZASSERT(::epoll_ctl(set, EPOLL_CTL_ADD, inner, &event) == 0);
         inner = set;
     }
@@ -994,19 +985,15 @@ ZEST_CASE(cancelled_capture_kills_the_group) {
     ZASSERT(held.has_value());
 
     // What the cancel left running ends with the test.
-    struct Cleanup {
-        int end;
-        int group = -1;
-
-        ~Cleanup() {
-            if(end >= 0) {
-                ::close(end);
-            }
-            if(group > 0) {
-                ::killpg(group, SIGKILL);
-            }
+    int group = -1;
+    ScopeExit cleanup([&] {
+        if(hold[1] >= 0) {
+            ::close(hold[1]);
         }
-    } cleanup{hold[1]};
+        if(group > 0) {
+            ::killpg(group, SIGKILL);
+        }
+    });
 
     auto opts = shell("sleep 1000 & echo $$ > pid; wait");
     opts.cwd = dir.root();
@@ -1015,7 +1002,7 @@ ZEST_CASE(cancelled_capture_kills_the_group) {
     auto canceller = [&]() -> task<std::optional<std::string>, error> {
         auto pid = co_await reader->read_line().or_fail();
         // The shell has it: this process's goes.
-        ::close(std::exchange(cleanup.end, -1));
+        ::close(std::exchange(hold[1], -1));
         source.cancel();
         co_return pid;
     };
@@ -1025,13 +1012,13 @@ ZEST_CASE(cancelled_capture_kills_the_group) {
     ZEXPECT(captured.is_cancelled());
     ZASSERT(pid.has_value());
     ZASSERT(pid->has_value());
-    cleanup.group = std::stoi(**pid);
-    ZEXPECT(reaped(cleanup.group));
+    group = std::stoi(**pid);
+    ZEXPECT(reaped(group));
 
     auto [rest] = run(held->read_to_end());
     ZEXPECT(rest.has_value());
     if(rest.has_value()) {
-        cleanup.group = -1;
+        cleanup.release();
     }
 }
 
@@ -1051,19 +1038,15 @@ ZEST_CASE(capture_cancelled_after_the_child_exited_kills_the_group) {
     auto held = pipe::open(hold[0], loop);
     ZASSERT(held.has_value());
 
-    struct Cleanup {
-        int end;
-        int group = -1;
-
-        ~Cleanup() {
-            if(end >= 0) {
-                ::close(end);
-            }
-            if(group > 0) {
-                ::killpg(group, SIGKILL);
-            }
+    int group = -1;
+    ScopeExit cleanup([&] {
+        if(hold[1] >= 0) {
+            ::close(hold[1]);
         }
-    } cleanup{hold[1]};
+        if(group > 0) {
+            ::killpg(group, SIGKILL);
+        }
+    });
 
     auto opts = shell("sleep 1000 & echo $$ > pid");
     opts.cwd = dir.root();
@@ -1071,12 +1054,12 @@ ZEST_CASE(capture_cancelled_after_the_child_exited_kills_the_group) {
     cancellation_source source;
     auto canceller = [&]() -> task<bool, error> {
         auto pid = co_await reader->read_line().or_fail();
-        ::close(std::exchange(cleanup.end, -1));
-        cleanup.group = pid ? std::stoi(*pid) : -1;
+        ::close(std::exchange(hold[1], -1));
+        group = pid ? std::stoi(*pid) : -1;
         // Nothing tells when the loop has reaped the shell: this looks until
         // it has.
         bool gone = false;
-        for(int tries = 0; tries < 1000 && !(gone = reaped(cleanup.group)); ++tries) {
+        for(int tries = 0; tries < 1000 && !(gone = reaped(group)); ++tries) {
             co_await sleep(5, loop);
         }
         source.cancel();
@@ -1092,7 +1075,7 @@ ZEST_CASE(capture_cancelled_after_the_child_exited_kills_the_group) {
     auto [rest] = run(held->read_to_end());
     ZEXPECT(rest.has_value());
     if(rest.has_value()) {
-        cleanup.group = -1;
+        cleanup.release();
     }
 }
 #endif

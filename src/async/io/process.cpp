@@ -23,6 +23,7 @@
 #endif
 
 #include "awaiter.h"
+#include "kota/support/scope_exit.h"
 #include "kota/sys/detail/descriptors.h"
 #include "kota/async/runtime/when.h"
 
@@ -530,19 +531,13 @@ result<pipe> open_pipe(fs::File::native_handle_type end, event_loop& loop) {
 #endif
     // Closed unless the pipe takes it: its open failed or threw, or on Windows
     // libuv took a duplicate.
-    struct Unopened {
-        int fd;
-
-        ~Unopened() {
-            if(fd >= 0) {
+    ScopeExit unopened([fd] {
 #ifdef _WIN32
-                ::_close(fd);
+        ::_close(fd);
 #else
-                ::close(fd);
+        ::close(fd);
 #endif
-            }
-        }
-    } unopened{fd};
+    });
 
     auto opened = pipe::open(fd, loop);
 #ifdef _WIN32
@@ -554,7 +549,7 @@ result<pipe> open_pipe(fs::File::native_handle_type end, event_loop& loop) {
     const bool taken = opened.has_value();
 #endif
     if(taken) {
-        unopened.fd = -1;
+        unopened.release();
     }
     return opened;
 }
@@ -688,16 +683,10 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     // Until the loop watches it, a failure, returned or thrown, ends the
     // child and its tree and reaps it, so that none is left behind; it has
     // not run much.
-    struct Rollback {
-        sys::Child* child;
-
-        ~Rollback() {
-            if(child != nullptr) {
-                [[maybe_unused]] auto killed = end_tree(*child);
-                [[maybe_unused]] auto reaped = child->wait();
-            }
-        }
-    } rollback{&self->child};
+    ScopeExit rollback([&self] {
+        [[maybe_unused]] auto killed = end_tree(self->child);
+        [[maybe_unused]] auto reaped = self->child.wait();
+    });
 
     std::array<pipe, 3> pipes;
     for(std::size_t i = 0; i < pipes.size(); ++i) {
@@ -713,7 +702,7 @@ result<process::spawn_result> process::spawn(const options& opts, event_loop& lo
     if(auto failed = Self::Watch::of(loop).add(*self)) {
         return outcome_error(failed);
     }
-    rollback.child = nullptr;
+    rollback.release();
     return spawn_result{
         .proc = process(std::move(self)),
         .stdin_pipe = std::move(pipes[0]),
@@ -751,16 +740,8 @@ task<process::capture_result, error> process::capture(options opts, event_loop& 
 
     // A capture that ends before both pipes did, cancelled once the child
     // exited while what it started holds them, kills its group too.
-    struct TreeKiller {
-        Self& self;
-        bool read = false;
-
-        ~TreeKiller() {
-            if(!read) {
-                [[maybe_unused]] auto killed = end_tree(self.child);
-            }
-        }
-    } killer{*spawned->proc.self};
+    ScopeExit killer(
+        [&spawned] { [[maybe_unused]] auto killed = end_tree(spawned->proc.self->child); });
 
     // The exit wait starts first, so that a read failing at once still kills
     // the child and waits for it. Both pipes are read while the child runs:
@@ -769,7 +750,7 @@ task<process::capture_result, error> process::capture(options opts, event_loop& 
         co_await or_fail(co_await when_all(Self::ExitWait(*spawned->proc.self),
                                            spawned->stdout_pipe.read_to_end(),
                                            spawned->stderr_pipe.read_to_end()));
-    killer.read = true;
+    killer.release();
     co_return capture_result{
         .status = co_await or_fail(std::move(status)),
         .stdout_data = std::move(stdout_data),

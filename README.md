@@ -161,6 +161,7 @@ Synchronous paths and files on UTF-8 strings, depending on `support` alone (no l
 - `small_wstring<N>`, a `small_vector<wchar_t, N>` whose `c_str()` gives the Windows API its NUL-terminated wide strings.
 - Naming-convention conversion (`naming.h`): identity, lower-snake, lower-camel, upper-camel, upper-snake.
 - `outcome<T, E, C>` (`outcome.h`): a value, an error or a cancellation, which `async`'s tasks, `ipc`'s codecs and `http`'s requests return.
+- `ScopeExit` (`scope_exit.h`): calls a function when it goes out of scope, unless `release()` was called first, as `std::experimental::scope_exit`; usable in constant evaluation and in coroutines.
 - Type-level utilities: `type_list<Ts...>`, `tuple_traits`, `type_traits`, `expected_try`, `comptime` helpers, and miscellaneous `memory` / `ranges` / `functional` adapters.
 
 ### `sys` (`include/kota/sys/*`)

@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "kota/zest/zest.h"
+#include "kota/support/scope_exit.h"
 #include "kota/async/async.h"
 
 namespace kota::zest {
@@ -111,20 +112,6 @@ private:
     template <typename Task>
     using caught_t = task<typename Task::value_type, typename Task::error_type, cancellation>;
 
-    /// Counts a task off on every way out of its tracker, a throw included,
-    /// and stops the loop after the last one.
-    struct Countdown {
-        std::size_t& remaining;
-        event_loop& loop;
-
-        ~Countdown() {
-            remaining -= 1;
-            if(remaining == 0) {
-                loop.stop();
-            }
-        }
-    };
-
     template <typename T, typename E, typename C>
     static caught_t<task<T, E, C>> catching(task<T, E, C>&& owned) {
         return std::move(owned).catch_cancel();
@@ -149,7 +136,14 @@ private:
 
     template <typename Frame, typename Result>
     task<> track(Frame& frame, std::optional<Result>& result, std::size_t& remaining) {
-        Countdown countdown{remaining, loop};
+        // Counts the task off on every way out, a throw included, and stops
+        // the loop after the last one.
+        ScopeExit countdown([this, &remaining] {
+            remaining -= 1;
+            if(remaining == 0) {
+                loop.stop();
+            }
+        });
         result.emplace(co_await frame);
     }
 };

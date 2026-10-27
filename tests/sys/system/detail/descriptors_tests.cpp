@@ -9,6 +9,7 @@
 #include "sys/harness/streams.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/support/scope_exit.h"
 #include "kota/sys/detail/descriptors.h"
 
 namespace kota::sys::detail {
@@ -60,25 +61,13 @@ ZEST_CASE(move_past_the_descriptor_limit_fails) {
     const int fd = open_null();
     ZASSERT(fd == 0);
 
-    /// This process's soft limit of descriptors set to `limit` until this
-    /// goes, which puts it back.
-    struct ScopedLimit {
-        explicit ScopedLimit(rlim_t limit) {
-            ZASSERT(::getrlimit(RLIMIT_NOFILE, &previous) == 0);
-            rlimit lowered = previous;
-            lowered.rlim_cur = limit;
-            ZASSERT(::setrlimit(RLIMIT_NOFILE, &lowered) == 0);
-        }
-
-        ScopedLimit(const ScopedLimit&) = delete;
-        ScopedLimit& operator=(const ScopedLimit&) = delete;
-
-        ~ScopedLimit() {
-            ::setrlimit(RLIMIT_NOFILE, &previous);
-        }
-
-        rlimit previous = {};
-    } limit(3);
+    // This process's soft limit of descriptors is 3 until the case ends.
+    rlimit previous = {};
+    ZASSERT(::getrlimit(RLIMIT_NOFILE, &previous) == 0);
+    rlimit lowered = previous;
+    lowered.rlim_cur = 3;
+    ZASSERT(::setrlimit(RLIMIT_NOFILE, &lowered) == 0);
+    ScopeExit restore([&previous] { ::setrlimit(RLIMIT_NOFILE, &previous); });
 
     errno = 0;
     ZEXPECT(move_above_standard_streams(fd) == -1);

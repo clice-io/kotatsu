@@ -4,23 +4,18 @@
 #include <sstream>
 #include <string>
 
+#include "kota/support/scope_exit.h"
+
 namespace kota::test {
 
 /// What `body` prints to std::cout while it runs. std::cout is given back its
 /// own buffer however `body` ends.
 template <typename Body>
 std::string printed_by(Body&& body) {
-    struct Capture {
-        std::ostringstream out;
-        std::streambuf* previous = std::cout.rdbuf(out.rdbuf());
-
-        ~Capture() {
-            std::cout.rdbuf(previous);
-        }
-    } capture;
-
+    std::ostringstream out;
+    ScopeExit restore([previous = std::cout.rdbuf(out.rdbuf())] { std::cout.rdbuf(previous); });
     body();
-    return capture.out.str();
+    return out.str();
 }
 
 }  // namespace kota::test
