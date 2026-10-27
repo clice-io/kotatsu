@@ -95,7 +95,7 @@ struct RestartsTwice {
         }
         return step.next();
     };)
-    <std::string> script;
+    <std::vector<std::string>> scripts;
 
     DecoKV(names = {"--name"}; required = false;)
     <std::string> name;
@@ -195,7 +195,9 @@ ZEST_CASE(restart_can_repeat) {
     const auto parsed = cli::parse<RestartsTwice>(argv);
     ZASSERT(parsed.has_value());
     ZEXPECT(Seen::calls == 2);
-    ZEXPECT(parsed->options.script.as_optional() == std::optional<std::string>("second.cc"));
+    // The inputs of every argv parsed add up.
+    ZEXPECT(parsed->options.scripts.as_optional() ==
+            std::optional(strings{"first.cc", "second.cc"}));
     ZEXPECT(parsed->options.name.as_optional() == std::optional<std::string>("final"));
     ZEXPECT(parsed->argv().size() == 2U);
 }

@@ -126,6 +126,10 @@ using ParsedResult = Invocation<T>;
 
 namespace detail {
 
+/// How many input arguments `arg_num` takes, in words: "1 input argument", "at least 2 input
+/// arguments", "1 to 3 input arguments".
+auto input_args_text(decl::ArgNum arg_num) -> std::string;
+
 /// The argv a static alias forward rewrites `arg` into: its tokens, then the values of `arg`;
 /// a comma alias joins the values to its last token instead, `--target,a,b`.
 template <typename AliasMeta>
@@ -485,6 +489,9 @@ std::expected<Invocation<T>, ParseError>
     std::span<std::string> current_argv = argv;
     std::shared_ptr<std::vector<std::string>> current_owned_argv{};
     bool stopped_during_parse = false;
+    // The positional arguments the DecoInput was given, over every restart, as its value
+    // collects them.
+    std::uint32_t inputs_given = 0;
     res.original_argv = argv;
 
     while(true) {
@@ -585,13 +592,27 @@ std::expected<Invocation<T>, ParseError>
                 restart_argv = *restart_owned_argv;
                 break;
             } else {
-                if(generator.is_input_argument(raw_parg) && !generator.has_input_option()) {
-                    err = ParseError{
-                        ParseError::Type::DecoParsing,
-                        into_context.format_error(
-                            std::format("unexpected input argument {}", raw_parg.spelling)),
-                    };
-                    break;
+                if(generator.is_input_argument(raw_parg)) {
+                    if(!generator.has_input_option()) {
+                        err = ParseError{
+                            ParseError::Type::DecoParsing,
+                            into_context.format_error(
+                                std::format("unexpected input argument {}", raw_parg.spelling)),
+                        };
+                        break;
+                    }
+                    if(const auto expected = generator.input_arg_num();
+                       inputs_given == expected.max) {
+                        err = ParseError{
+                            ParseError::Type::DecoParsing,
+                            into_context.format_error(
+                                std::format("unexpected input argument {}: expected {}",
+                                            raw_parg.spelling,
+                                            input_args_text(expected))),
+                        };
+                        break;
+                    }
+                    ++inputs_given;
                 }
                 field = generator.field_ptr_of(raw_parg.id, res.options);
                 category = generator.category_of(raw_parg.id);
@@ -636,7 +657,13 @@ std::expected<Invocation<T>, ParseError>
         return res;
     }
 
-    if(auto check_err = check_valid(res.options, res.matched_categories); !check_err.empty()) {
+    // Fewer input arguments than the DecoInput takes; none is `required`'s to judge.
+    const auto check_err = inputs_given != 0 && inputs_given < generator.input_arg_num().min
+                               ? std::format("expected {}, got {}",
+                                             input_args_text(generator.input_arg_num()),
+                                             inputs_given)
+                               : check_valid(res.options, res.matched_categories);
+    if(!check_err.empty()) {
         const auto active_argv =
             std::span<const std::string>(res.active_argv.data(), res.active_argv.size());
         return std::unexpected(ParseError{

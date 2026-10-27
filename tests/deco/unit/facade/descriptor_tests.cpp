@@ -110,6 +110,27 @@ struct VectorInput {
     <std::vector<std::string>> files;
 };
 
+/// Inputs of each count, described one by one and never parsed, which takes one DecoInput.
+struct CountedInputs {
+    DecoInput(meta_var = "X"; arg_num = 1;)
+    <std::vector<std::string>> one;
+
+    DecoInput(meta_var = "X"; arg_num = 2;)
+    <std::vector<std::string>> pair;
+
+    DecoInput(meta_var = "<FROM> <TO>"; arg_num = 2;)
+    <std::vector<std::string>> named_pair;
+
+    DecoInput(meta_var = "X"; arg_num = {1, 3};)
+    <std::vector<std::string>> range;
+
+    DecoInput(meta_var = "X"; arg_num = 1;)
+    <std::string> scalar;
+
+    DecoMulti(2, names = {"--range"}; meta_var = "<FROM> <TO>";)
+    <std::vector<std::string>> multi;
+};
+
 /// An option of each kind, and of a scalar and a vector result where it takes either.
 struct Kinds {
     DECO_CFG_START(required = false);
@@ -269,6 +290,24 @@ ZEST_CASE(input_and_pack_show_their_values) {
     ZEXPECT(desc::from_deco_option(options.trailing) == "-- <ARG>...");
     const VectorInput vector{};
     ZEXPECT(desc::from_deco_option(vector.files) == "<FILE>...");
+}
+
+ZEST_CASE(input_of_a_fixed_count_shows_each_value) {
+    const CountedInputs inputs{};
+    ZEXPECT(desc::from_deco_option(inputs.one) == "<X>");
+    ZEXPECT(desc::from_deco_option(inputs.pair) == "<X1> <X2>");
+    ZEXPECT(desc::from_deco_option(inputs.scalar) == "<X>");
+}
+
+ZEST_CASE(input_range_shows_its_values_once) {
+    const CountedInputs inputs{};
+    ZEXPECT(desc::from_deco_option(inputs.range) == "<X>...");
+}
+
+ZEST_CASE(meta_var_naming_each_value_shows_as_written) {
+    const CountedInputs inputs{};
+    ZEXPECT(desc::from_deco_option(inputs.named_pair) == "<FROM> <TO>");
+    ZEXPECT(desc::from_deco_option(inputs.multi) == "--range <FROM> <TO>");
 }
 
 ZEST_CASE(unnamed_option_takes_its_field_name) {

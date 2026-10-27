@@ -170,6 +170,42 @@ struct ScriptArgs {
     <std::vector<std::string>> command;
 };
 
+struct OptionalPath {
+    DecoInput(required = false;)
+    <std::string> path;
+};
+
+/// Two input arguments, or none.
+struct Ends {
+    DecoInput(meta_var = "<FROM> <TO>"; arg_num = 2; required = false;)
+    <std::vector<std::string>> ends;
+
+    DecoFlag(names = {"-v"}; required = false;)
+    verbose;
+
+    DecoFlagAlias(names = {"--here"}; forward = {"."};) _;
+
+    decl::HelpOption help;
+};
+
+struct RequiredPair {
+    DecoInput(arg_num = 2;)
+    <std::vector<std::string>> pair;
+
+    DecoFlag(required = false;)
+    other;
+};
+
+struct OneToThree {
+    DecoInput(arg_num = {1, 3};)
+    <std::vector<std::string>> files;
+};
+
+struct TwoOrMore {
+    DecoInput(arg_num = {2, decl::ArgNum::unbounded};)
+    <std::vector<std::string>> files;
+};
+
 ZEST_SUITE(deco_facade_runtime_parse) {
 
 ZEST_CASE(options_of_each_kind_are_set) {
@@ -327,6 +363,135 @@ ZEST_CASE(input_list_gathers_every_positional) {
     const auto parsed = cli::parse<Inputs>(argv);
     ZASSERT(parsed.has_value());
     ZEXPECT(parsed->options.files.as_optional() == std::optional(strings{"a", "b", "c"}));
+}
+
+ZEST_CASE(scalar_input_given_two_fails) {
+    auto argv = test::split("a.json b.json");
+    const auto parsed = cli::parse<OptionalPath>(argv);
+    ZASSERT(!parsed.has_value());
+    ZEXPECT(parsed.error().type == cli::ParseError::Type::DecoParsing);
+    ZEXPECT(parsed.error().message ==
+            "at argv[1]:\n  a.json b.json\n         ^~~~~~\n"
+            "  unexpected input argument b.json: expected 1 input argument");
+}
+
+ZEST_CASE(scalar_input_left_out_parses) {
+    std::vector<std::string> argv;
+    const auto parsed = cli::parse<OptionalPath>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(!parsed->options.path.has_value());
+}
+
+ZEST_CASE(input_list_takes_one_or_more) {
+    auto one = test::split("a");
+    const auto parsed = cli::parse<Inputs>(one);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.files.as_optional() == std::optional(strings{"a"}));
+
+    auto many = test::split("a b c d e");
+    ZEXPECT(cli::parse<Inputs>(many).has_value());
+}
+
+ZEST_CASE(input_pair_given_two_parses) {
+    auto argv = test::split("a b");
+    const auto parsed = cli::parse<Ends>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.ends.as_optional() == std::optional(strings{"a", "b"}));
+}
+
+ZEST_CASE(input_pair_given_one_fails) {
+    auto argv = test::split("a");
+    const auto parsed = cli::parse<Ends>(argv);
+    ZASSERT(!parsed.has_value());
+    ZEXPECT(parsed.error().type == cli::ParseError::Type::DecoParsing);
+    ZEXPECT(parsed.error().message ==
+            "at end of argv:\n  a\n   ^\n  expected 2 input arguments, got 1");
+}
+
+ZEST_CASE(input_pair_given_three_fails) {
+    auto argv = test::split("a b c");
+    const auto parsed = cli::parse<Ends>(argv);
+    ZASSERT(!parsed.has_value());
+    ZEXPECT(parsed.error().type == cli::ParseError::Type::DecoParsing);
+    ZEXPECT(parsed.error().message ==
+            "at argv[2]:\n  a b c\n      ^\n"
+            "  unexpected input argument c: expected 2 input arguments");
+}
+
+ZEST_CASE(optional_input_pair_left_out_parses) {
+    auto argv = test::split("-v");
+    const auto parsed = cli::parse<Ends>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(!parsed->options.ends.has_value());
+}
+
+ZEST_CASE(required_input_pair_missing_fails) {
+    auto argv = test::split("--other");
+    const auto parsed = cli::parse<RequiredPair>(argv);
+    ZASSERT(!parsed.has_value());
+    ZEXPECT(parsed.error().type == cli::ParseError::Type::DecoParsing);
+    ZEXPECT(
+        zest::ends_with(parsed.error().message, "required option <value1> <value2> is missing"));
+}
+
+ZEST_CASE(inputs_between_options_count_together) {
+    auto two = test::split("a -v b");
+    const auto parsed = cli::parse<Ends>(two);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.ends.as_optional() == std::optional(strings{"a", "b"}));
+
+    auto three = test::split("a -v b -v c");
+    const auto failed = cli::parse<Ends>(three);
+    ZASSERT(!failed.has_value());
+    ZEXPECT(zest::ends_with(failed.error().message,
+                            "unexpected input argument c: expected 2 input arguments"));
+}
+
+ZEST_CASE(inputs_through_a_forward_count_together) {
+    // The forward goes on from an argv of its own; the inputs before it still count.
+    auto two = test::split("a --here");
+    const auto parsed = cli::parse<Ends>(two);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.ends.as_optional() == std::optional(strings{"a", "."}));
+
+    auto three = test::split("a b --here");
+    const auto failed = cli::parse<Ends>(three);
+    ZASSERT(!failed.has_value());
+    ZEXPECT(zest::ends_with(failed.error().message,
+                            "unexpected input argument .: expected 2 input arguments"));
+}
+
+ZEST_CASE(help_with_too_few_inputs_parses) {
+    // Help stops the parse before the inputs are counted up.
+    auto argv = test::split("a -h");
+    const auto parsed = cli::parse<Ends>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(parsed->options.help.has_value());
+    ZEXPECT(parsed->options.ends.as_optional() == std::optional(strings{"a"}));
+}
+
+ZEST_CASE(input_range_takes_its_bounds) {
+    for(const auto* line: {"a", "a b c"}) {
+        ZEST_CONTEXT("{}", line);
+        auto argv = test::split(line);
+        ZEXPECT(cli::parse<OneToThree>(argv).has_value());
+    }
+
+    auto four = test::split("a b c d");
+    const auto failed = cli::parse<OneToThree>(four);
+    ZASSERT(!failed.has_value());
+    ZEXPECT(zest::ends_with(failed.error().message,
+                            "unexpected input argument d: expected 1 to 3 input arguments"));
+}
+
+ZEST_CASE(input_of_at_least_two_given_one_fails) {
+    auto one = test::split("a");
+    const auto failed = cli::parse<TwoOrMore>(one);
+    ZASSERT(!failed.has_value());
+    ZEXPECT(zest::ends_with(failed.error().message, "expected at least 2 input arguments, got 1"));
+
+    auto many = test::split("a b c d e");
+    ZEXPECT(cli::parse<TwoOrMore>(many).has_value());
 }
 
 ZEST_CASE(input_and_pack_match_their_categories) {

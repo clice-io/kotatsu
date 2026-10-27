@@ -6,8 +6,10 @@
 #include <cerrno>
 #include <charconv>
 #include <concepts>
+#include <cstdint>
 #include <cstdlib>
 #include <expected>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -523,10 +525,38 @@ struct NamedOptionFields : CommonOptionFields {
     constexpr NamedOptionFields() = default;
 };
 
+/// How many positional arguments a DecoInput with a vector result takes when it is given: `min`
+/// to `max`. A number is exactly that many; the default is one or more. Whether the input may be
+/// left out altogether is `required`'s to say.
+struct ArgNum {
+    constexpr static std::uint32_t unbounded = std::numeric_limits<std::uint32_t>::max();
+
+    std::uint32_t min = 1;
+    std::uint32_t max = unbounded;
+
+    constexpr ArgNum() = default;
+
+    constexpr ArgNum(std::uint32_t count) : min{count}, max{count} {}
+
+    constexpr ArgNum(std::uint32_t min, std::uint32_t max) : min{min}, max{max} {}
+};
+
 struct InputFields : CommonOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::Input;
+    ArgNum arg_num{};
     constexpr InputFields() = default;
 };
+
+/// How many positional arguments DecoInput `cfg`, of result `ResTy`, takes when it is given: a
+/// scalar takes one, a vector what `cfg.arg_num` says.
+template <typename ResTy>
+constexpr ArgNum input_arg_num(const InputFields& cfg) {
+    if constexpr(trait::ScalarResultType<ResTy>) {
+        return ArgNum(1);
+    } else {
+        return cfg.arg_num;
+    }
+}
 
 struct PackFields : CommonOptionFields {
     constexpr static DecoType deco_field_ty = DecoType::TrailingInput;
@@ -923,6 +953,9 @@ struct ScalarOption : DecoOption<ResTy> {
     }
 };
 
+/// What a DecoInput parses into: each positional argument, its spelling, which carries no
+/// values. A scalar takes one, and a vector collects them; how many a DecoInput is given is
+/// counted by the parse, which knows its declaration.
 template <typename ResTy>
 struct InputOption : DecoOption<ResTy> {
     static_assert(trait::ValueResultType<ResTy>, DecoValueResultErrString);
@@ -937,32 +970,13 @@ struct InputOption : DecoOption<ResTy> {
 
     std::optional<std::string> into(const ParsedArgOwning& arg,
                                     const IntoContext& context) override {
+        assert(arg.values.empty());
         if constexpr(trait::ScalarResultType<ResTy>) {
-            if(arg.values.empty()) {
-                const auto value_context =
-                    IntoContext::from_value(context.argv(), arg, arg.spelling, context.renderer());
-                return detail::assign_scalar(this->as_optional(), arg.spelling, value_context);
-            }
-            if(arg.values.size() == 1) {
-                const auto value_context = IntoContext::from_value(context.argv(),
-                                                                   arg,
-                                                                   arg.values.front(),
-                                                                   context.renderer());
-                return detail::assign_scalar(this->as_optional(),
-                                             arg.values.front(),
-                                             value_context);
-            }
-            return context.format_error("input option expects at most one value");
+            return detail::assign_scalar(this->as_optional(), arg.spelling, context);
         } else {
-            if(arg.values.empty()) {
-                return detail::append_vector(this->as_optional(),
-                                             this->raw_values,
-                                             {&arg.spelling, 1},
-                                             context);
-            }
             return detail::append_vector(this->as_optional(),
                                          this->raw_values,
-                                         arg.values,
+                                         {&arg.spelling, 1},
                                          context);
         }
     }
