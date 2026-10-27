@@ -43,6 +43,20 @@
 #include "kota/sys/detail/signals.h"
 #endif
 
+#ifdef __linux__
+#include <sys/syscall.h>
+
+// For C libraries whose headers are older than them (Linux 5.1 and 5.3).
+#if !defined(__alpha__) && !defined(__mips__)
+#ifndef SYS_pidfd_send_signal
+#define SYS_pidfd_send_signal 424
+#endif
+#ifndef SYS_pidfd_open
+#define SYS_pidfd_open 434
+#endif
+#endif
+#endif
+
 namespace kota::sys {
 
 namespace {
@@ -930,9 +944,32 @@ ZEST_CASE(pidfd_takes_no_closed_stream) {
     ZASSERT(status.has_value());
     ZEXPECT(status->code == 3);
 }
+
+// Where the C library names no pidfd calls (Alpha and MIPS with older
+// headers), spawn opens no pidfd either.
+#ifdef SYS_pidfd_open
+// native_handle is a pidfd of the child itself, which it sends before it
+// execs: a signal sent through it ends the child.
+ZEST_CASE(native_handle_is_a_pidfd_of_the_child) {
+    // A kernel before 5.3, or a sandbox that forbids pidfd_open, gives none.
+    const int own = static_cast<int>(::syscall(SYS_pidfd_open, ::getpid(), 0));
+    if(own < 0) {
+        zest::skip();
+        return;
+    }
+    ::close(own);
+    auto child = spawn(test::shell("exec sleep 30"));
+    ZASSERT(child.has_value());
+    ZASSERT(child->native_handle() >= 0);
+    ZASSERT(::syscall(SYS_pidfd_send_signal, child->native_handle(), SIGKILL, nullptr, 0) == 0);
+    auto status = child->wait();
+    ZASSERT(status.has_value());
+    ZEXPECT(status->term_signal == SIGKILL);
+}
+#endif
 #endif
 
-// The child clears O_NONBLOCK of a stream it is given, which this process
+// Spawn clears O_NONBLOCK of a stream it gives the child, which this process
 // shares, as libuv's does: one that never ran leaves it as it was.
 ZEST_CASE(spawn_that_fails_leaves_a_stream_non_blocking) {
     int fds[2];

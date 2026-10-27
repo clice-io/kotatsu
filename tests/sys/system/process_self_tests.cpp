@@ -162,6 +162,16 @@ ZEST_CASE(executable_path_names_this_program) {
     ZEXPECT(std::filesystem::is_regular_file(test::std_path(path)));
 }
 
+// The path this program was started by reaches its file; the integration
+// tests start sys_probe through links.
+ZEST_CASE(started_path_names_this_program) {
+    std::string started;
+    started_path(started);
+    std::string path;
+    ZASSERT(!executable_path(path));
+    ZEXPECT(std::filesystem::equivalent(test::std_path(started), test::std_path(path)));
+}
+
 // Linux names the image itself, which outlives its file; elsewhere the file.
 // sys_probe starts copies of itself through it.
 ZEST_CASE(self_executable_names_this_program) {

@@ -159,6 +159,12 @@ kota_test(
         ],
         allow_empty = True,
     ),
+    # sys_probe's sigaction finds libc's through dlsym, in libdl before glibc
+    # 2.34.
+    linkopts = select({
+        "@platforms//os:linux": ["-ldl"],
+        "//conditions:default": [],
+    }) if driver == "sys_probe" else [],
     # One translation unit instantiating the codec for every LSP type: about
     # 2 minutes and 2.7 GB in a debug build, far more optimized or sanitized.
     tags = ["manual"] if driver == "lsp_roundtrip" else [],

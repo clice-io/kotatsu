@@ -12,6 +12,8 @@
 //                         when it fails>, "code": <the exit code of
 //                         `sys_probe parent` started by self_executable, or
 //                         null when it cannot be started>}
+//   started               prints {"started": <what started_path writes>,
+//                         "executable": <what executable_path writes>}
 //   other <pid>           sets the priority of process <pid> to BelowNormal and
 //                         prints what it reads back, as a number, and the
 //                         process's resident size and voluntary switches
@@ -21,9 +23,10 @@
 //   console <text>        Windows: writes <text>, a byte that is no UTF-8
 //                         and "!" to a console of its own, and prints what
 //                         the console shows
-//   job                   Windows: joins a job of at most 1 GiB a process and
-//                         one CPU's time, and prints memory().limit and
-//                         parallelism()
+//   job [min-max]         Windows: joins a job of at most 1 GiB a process and
+//                         one CPU's time, a hard cap or with `min-max` the
+//                         maximum of a minimum and maximum rate, and prints
+//                         memory().limit and parallelism()
 //   hang                  prints nothing and runs until it is killed
 //   streams               prints "to-stdout" to stdout and "to-stderr" to
 //                         stderr
@@ -59,6 +62,24 @@
 //                         signal that ended it once killed>}
 //   traceme               Linux: asks to be traced by its parent and stops,
 //                         as a debugger's child does
+//   unblocking            Linux: starts a child on a non-blocking pipe, whose
+//                         exec a hook holds and then fails, and meanwhile
+//                         another on the same pipe, and prints {"waited":
+//                         <whether the second waited for the first to
+//                         fail>, "non_blocking": <whether the pipe is left
+//                         non-blocking>}
+//   reaped                Linux: starts a child that exits instead of its
+//                         exec, leaving a process of its own to hold the
+//                         spawn back until another thread has reaped it, and
+//                         prints {"pid": <the Pid its pidfd's fdinfo shows,
+//                         or null when it has none>}; {"pidfds": false} where
+//                         this process may open none
+//   reaping               Linux: SIGCHLD ignored, starts a child from a thread
+//                         a hook holds where spawn sets SIGCHLD's default, and
+//                         meanwhile another, sets a handler once that has
+//                         started, as kota::process sets one, and prints
+//                         {"waited": <whether the second waited for the
+//                         first>, "kept": <whether the handler stayed>}
 //   nested                Windows: joins a job as a CI runner's, starts
 //                         `sys_probe hang` exit_with_parent in a tree of its
 //                         own, and prints whether that is in the runner's
@@ -114,6 +135,7 @@
 #elif defined(__linux__)
 #include <cerrno>
 #include <csignal>
+#include <dlfcn.h>
 #include <sys/ptrace.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
@@ -125,6 +147,7 @@
 #include <fcntl.h>
 #endif
 
+#include "kota/fs/file.h"
 #include "kota/fs/resolve.h"
 #include "kota/sys/env.h"
 #include "kota/sys/info.h"
@@ -132,10 +155,57 @@
 #include "kota/sys/spawn.h"
 
 #ifdef __linux__
+// For C libraries whose headers are older than it (Linux 5.3).
+#if !defined(SYS_pidfd_open) && !defined(__alpha__) && !defined(__mips__)
+#define SYS_pidfd_open 434
+#endif
+
+/// What the child of a spawn from a thread that sets it does instead of its
+/// exec, as a hook preloaded into this process might; the child has the
+/// thread's copy.
+thread_local int (*instead_of_exec)() = nullptr;
+
+/// Whether the next sigaction setting SIGCHLD from this thread waits for
+/// `gate` to open.
+thread_local bool hold_sigchld = false;
+
+/// Two pipes a thread, or a process it forks, waits at: it says it has come
+/// through `entered`, and goes on once the gate opens.
+struct Gate {
+    int entered[2] = {-1, -1};
+    int go[2] = {-1, -1};
+
+    bool make() {
+        return ::pipe(entered) == 0 && ::pipe(go) == 0;
+    }
+
+    /// From the thread or process that waits: async-signal-safe.
+    void wait() const {
+        char byte = 0;
+        while(::write(entered[1], &byte, 1) < 0 && errno == EINTR) {}
+        while(::read(go[0], &byte, 1) < 0 && errno == EINTR) {}
+    }
+
+    void wait_entered() const {
+        char byte = 0;
+        while(::read(entered[0], &byte, 1) < 0 && errno == EINTR) {}
+    }
+
+    void open() const {
+        char byte = 0;
+        while(::write(go[1], &byte, 1) < 0 && errno == EINTR) {}
+    }
+};
+
+constinit Gate gate;
+
 // What a hook preloaded into this process sees, as catter's: every execve it
 // makes, which this one marks, setting KOTA_EXECVE_HOOKED=1. The list is a
 // static one: in a child between fork and exec nothing may allocate.
 extern "C" int execve(const char* path, char* const argv[], char* const envp[]) noexcept {
+    if(instead_of_exec != nullptr) {
+        return instead_of_exec();
+    }
     static char marker[] = "KOTA_EXECVE_HOOKED=1";
     static char* marked[4096];
     std::size_t count = 0;
@@ -145,6 +215,20 @@ extern "C" int execve(const char* path, char* const argv[], char* const envp[]) 
     }
     marked[count] = nullptr;
     return static_cast<int>(::syscall(SYS_execve, path, argv, marked));
+}
+
+// Every sigaction this process makes, libc's own aside, held at `gate` where
+// hold_sigchld asks.
+extern "C" int sigaction(int signum,
+                         const struct sigaction* action,
+                         struct sigaction* old) noexcept {
+    using sigaction_fn = int (*)(int, const struct sigaction*, struct sigaction*);
+    const static auto next = reinterpret_cast<sigaction_fn>(::dlsym(RTLD_NEXT, "sigaction"));
+    if(hold_sigchld && signum == SIGCHLD && action != nullptr) {
+        hold_sigchld = false;
+        gate.wait();
+    }
+    return next(signum, action, old);
 }
 #endif
 
@@ -224,15 +308,25 @@ int write_to_console(std::string_view text) {
     return 0;
 }
 
-int join_job() {
+int join_job(bool min_max) {
     HANDLE job = ::CreateJobObjectW(nullptr, nullptr);
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
     limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_PROCESS_MEMORY;
     limits.ProcessMemoryLimit = std::size_t(1) << 30;
     JOBOBJECT_CPU_RATE_CONTROL_INFORMATION rate{};
-    rate.ControlFlags = JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
     // In hundredths of a percent of all the CPUs.
-    rate.CpuRate = 10000 / ::GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+    const DWORD one_cpu = 10000 / ::GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+    if(min_max) {
+        // The maximum in the high half, which MinGW leaves unnamed; a minimum
+        // of 0 is refused.
+        rate.ControlFlags =
+            JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_MIN_MAX_RATE;
+        rate.CpuRate = one_cpu << 16 | 1;
+    } else {
+        rate.ControlFlags =
+            JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP;
+        rate.CpuRate = one_cpu;
+    }
     if(job == nullptr ||
        !::SetInformationJobObject(job,
                                   JobObjectExtendedLimitInformation,
@@ -312,6 +406,139 @@ int run(const kota::sys::SpawnOptions& options) {
     return static_cast<int>(status->code);
 }
 
+#ifdef __linux__
+/// How long a spawn that should wait for another is given to show that it
+/// does not: one that does not wait has its child started well within it.
+constexpr std::chrono::seconds waits(1);
+
+/// Instead of the exec: waits at `gate`, then fails as for a missing file.
+int held_then_failed() {
+    gate.wait();
+    errno = ENOENT;
+    return -1;
+}
+
+int unblocking() {
+    int stream[2];
+    if(!gate.make() || ::pipe(stream) != 0 ||
+       ::fcntl(stream[1], F_SETFL, ::fcntl(stream[1], F_GETFL) | O_NONBLOCK) != 0) {
+        return fail("pipe", std::error_code(errno, std::generic_category()));
+    }
+    auto options = probe({"parent"});
+    options.streams[1] = kota::sys::Stdio::from_fd(stream[1]);
+    std::thread first([&] {
+        instead_of_exec = held_then_failed;
+        [[maybe_unused]] auto failed = kota::sys::spawn(options);
+    });
+    // The first's child has the stream, cleared, and its exec is held.
+    gate.wait_entered();
+    auto second = std::async(std::launch::async, [&] { return run(options); });
+    const bool waited = second.wait_for(waits) == std::future_status::timeout;
+    gate.open();
+    first.join();
+    [[maybe_unused]] auto code = second.get();
+    const bool non_blocking = (::fcntl(stream[1], F_GETFL) & O_NONBLOCK) != 0;
+    print_line(std::format(R"({{"waited":{},"non_blocking":{}}})", waited, non_blocking));
+    return 0;
+}
+
+/// Instead of the exec: leaves a process that holds what the child has of
+/// its spawn's report, waiting at `gate`, and exits.
+int left_a_holder() {
+    if(::fork() == 0) {
+        gate.wait();
+    }
+    ::_exit(0);
+}
+
+int reaped() {
+#ifdef SYS_pidfd_open
+    const int own = static_cast<int>(::syscall(SYS_pidfd_open, ::getpid(), 0));
+#else
+    // The C library names no pidfd_open (Alpha and MIPS with older headers),
+    // nor does spawn open one.
+    const int own = -1;
+#endif
+    if(own < 0) {
+        print_line(R"({"pidfds":false})");
+        return 0;
+    }
+    ::close(own);
+    if(!gate.make()) {
+        return fail("pipe", std::error_code(errno, std::generic_category()));
+    }
+    // Another reaper, as a waitpid(-1) elsewhere in a program is.
+    std::thread reaper([] {
+        gate.wait_entered();
+        while(::waitpid(-1, nullptr, 0) < 0 && errno == EINTR) {}
+        gate.open();
+    });
+    instead_of_exec = left_a_holder;
+    auto child = kota::sys::spawn(probe({"parent"}));
+    instead_of_exec = nullptr;
+    reaper.join();
+    if(!child) {
+        return fail("spawn", child.error());
+    }
+    std::string pid = "null";
+    if(child->native_handle() >= 0) {
+        std::string info;
+        if(auto error =
+               kota::fs::read_file(info,
+                                   std::format("/proc/self/fdinfo/{}", child->native_handle()))) {
+            return fail("fdinfo", error);
+        }
+        constexpr std::string_view field = "Pid:\t";
+        auto at = info.find(field);
+        if(at != std::string::npos) {
+            at += field.size();
+            pid = info.substr(at, info.find('\n', at) - at);
+        }
+    }
+    print_line(std::format(R"({{"pid":{}}})", pid));
+    return 0;
+}
+
+void on_sigchld(int) {}
+
+int reaping() {
+    struct sigaction ignored = {};
+    ignored.sa_handler = SIG_IGN;
+    if(!gate.make() || ::sigaction(SIGCHLD, &ignored, nullptr) != 0) {
+        return fail("setup", std::error_code(errno, std::generic_category()));
+    }
+    auto options = probe({"parent"});
+    options.streams[1] = kota::sys::Stdio::ignore();
+    std::thread first([&] {
+        hold_sigchld = true;
+        run(options);
+    });
+    // The first found SIGCHLD ignored, and is about to set its default.
+    gate.wait_entered();
+    auto second = std::async(std::launch::async, [&] { return kota::sys::spawn(options); });
+    const bool waited = second.wait_for(waits) == std::future_status::timeout;
+    // The second's spawn returns once the first has set it.
+    if(waited) {
+        gate.open();
+    }
+    auto child = second.get();
+    struct sigaction handler = {};
+    handler.sa_handler = on_sigchld;
+    ::sigaction(SIGCHLD, &handler, nullptr);
+    if(!waited) {
+        gate.open();
+    }
+    first.join();
+    struct sigaction now = {};
+    ::sigaction(SIGCHLD, nullptr, &now);
+    if(child) {
+        [[maybe_unused]] auto status = child->wait();
+    }
+    print_line(std::format(R"({{"waited":{},"kept":{}}})", waited, now.sa_handler == on_sigchld));
+    return 0;
+}
+#endif
+
 }  // namespace
 
 int main() {
@@ -351,6 +578,17 @@ int main() {
             }
         }
         print_line(std::format(R"({{"path":{},"code":{}}})", found ? json(path) : "null", code));
+        return 0;
+    }
+    if(command == "started") {
+        std::string started;
+        sys::started_path(started);
+        std::string executable;
+        if(auto error = sys::executable_path(executable)) {
+            return fail("executable_path", error);
+        }
+        print_line(
+            std::format(R"({{"started":{},"executable":{}}})", json(started), json(executable)));
         return 0;
     }
     if(command == "other" && arguments.size() == 3) {
@@ -490,6 +728,15 @@ int main() {
     if(command == "hooked") {
         return run(probe({"env", "KOTA_EXECVE_HOOKED"}));
     }
+    if(command == "unblocking") {
+        return unblocking();
+    }
+    if(command == "reaped") {
+        return reaped();
+    }
+    if(command == "reaping") {
+        return reaping();
+    }
     if(command == "traced") {
         auto child = sys::spawn(probe({"traceme"}));
         if(!child) {
@@ -605,8 +852,9 @@ int main() {
     if(command == "console" && arguments.size() == 3) {
         return write_to_console(arguments[2]);
     }
-    if(command == "job") {
-        return join_job();
+    if(command == "job" &&
+       (arguments.size() == 2 || (arguments.size() == 3 && arguments[2] == "min-max"))) {
+        return join_job(arguments.size() == 3);
     }
 #else
     if(command == "title" && arguments.size() == 4) {
