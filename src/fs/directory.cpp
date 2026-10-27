@@ -581,7 +581,7 @@ void DirStream::advance() {
         const auto& info = *static_cast<const FILE_ID_EXTD_DIR_INFO*>(*entry);
         from_utf16(made.name, name_of<FILE_ID_EXTD_DIR_INFO>(*entry));
         made.listed = listed_status(info, info.ReparsePointTag);
-        made.listed.id = win32::id_of(directory->device, info.FileId);
+        made.listed->id = win32::id_of(directory->device, info.FileId);
     } else {
         // A reparse point's tag stands where the size of its extended
         // attributes would.
@@ -590,7 +590,7 @@ void DirStream::advance() {
         made.listed = listed_status(info, info.EaSize);
         made.directory = directory;
     }
-    made.type = made.listed.type;
+    made.type = made.listed->type;
 #else
     auto* dir = directory->dir.get();
     auto entry = next_entry(dir);
@@ -624,8 +624,12 @@ std::expected<Volume, std::error_code> DirStream::volume() const {
 
 std::expected<Status, std::error_code> DirEntry::status() const {
 #ifdef _WIN32
+    // One made rather than listed has no listing to tell it.
+    if(!listed) {
+        return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
+    }
     if(!directory) {
-        return listed;
+        return *listed;
     }
     // By the name as listed, relative to the directory, which Win32 would
     // rewrite (`a.` naming `a`); back in the UTF-16 it came from, which
@@ -640,7 +644,7 @@ std::expected<Status, std::error_code> DirEntry::status() const {
     // without an ID or links.
     auto error = ::GetLastError();
     if(error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED) {
-        return listed;
+        return *listed;
     }
     return std::unexpected(windows::to_error_code(error));
 #else
