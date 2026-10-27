@@ -69,13 +69,6 @@ void make_read_only(const std::string& path) {
     ZASSERT(::SetFileAttributesW(test::std_path(path).wstring().c_str(), FILE_ATTRIBUTE_READONLY));
 }
 
-/// Whether the file at `path` is read-only.
-bool is_read_only(const std::string& path) {
-    auto attributes = ::GetFileAttributesW(test::std_path(path).wstring().c_str());
-    ZASSERT(attributes != INVALID_FILE_ATTRIBUTES);
-    return (attributes & FILE_ATTRIBUTE_READONLY) != 0;
-}
-
 ZEST_SUITE(fs_fat) {
 
 ZEST_CASE(one_file_has_one_id_by_path_by_handle_and_listed) {
@@ -238,7 +231,7 @@ ZEST_CASE(rename_onto_a_read_only_file_held_open_fails) {
             ZEXPECT(rename(dir.file("new.txt"), dir.file("old.txt")) ==
                     std::errc::permission_denied);
         }
-        ZEXPECT(is_read_only(dir.file("old.txt")));
+        ZEXPECT((test::attributes_of(dir.file("old.txt")) & FILE_ATTRIBUTE_READONLY) != 0);
         ZEXPECT(test::read_text(dir.file("old.txt")) == "old");
         ZEXPECT(test::read_text(dir.file("new.txt")) == "new");
         // TempDir, through std::filesystem, would leave a read-only file.

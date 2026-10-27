@@ -1,8 +1,9 @@
 #pragma once
 
 // <windows.h> for the tests that call Win32 themselves, without the min and
-// max macros that break the standard library's, and make_pipe() for those
-// that need a named pipe.
+// max macros that break the standard library's, attributes_of() for those
+// that check a file's attributes and make_pipe() for those that need a named
+// pipe.
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -21,6 +22,13 @@
 #include "kota/fs/path.h"
 
 namespace kota::test {
+
+/// The attributes of the file at the UTF-8 `path`.
+inline DWORD attributes_of(std::string_view path) {
+    auto attributes = ::GetFileAttributesW(std_path(path).wstring().c_str());
+    ZASSERT(attributes != INVALID_FILE_ATTRIBUTES);
+    return attributes;
+}
 
 /// A named pipe of `access`, its name kept apart by the directory's, and
 /// written into `name` in UTF-8.
