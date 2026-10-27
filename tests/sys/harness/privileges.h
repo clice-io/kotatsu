@@ -1,8 +1,7 @@
 #pragma once
 
-// ScopedNoPrivilege, on Windows the calling thread without a privilege the
-// process may hold, such as the debug privilege, with which an administrator
-// opens any process.
+// ScopedNoDebugPrivilege, on Windows the calling thread without the debug
+// privilege, with which an administrator opens any process.
 
 #ifdef _WIN32
 
@@ -18,10 +17,10 @@
 
 namespace kota::test {
 
-/// The calling thread without privilege `name`, such as L"SeDebugPrivilege",
-/// until this goes.
-struct ScopedNoPrivilege {
-    explicit ScopedNoPrivilege(const wchar_t* name) {
+/// The calling thread without the debug privilege, with which an
+/// administrator opens any process, until this goes.
+struct ScopedNoDebugPrivilege {
+    ScopedNoDebugPrivilege() {
         HANDLE own = nullptr;
         ZASSERT(::OpenProcessToken(::GetCurrentProcess(), TOKEN_DUPLICATE, &own));
         HANDLE token = nullptr;
@@ -36,17 +35,18 @@ struct ScopedNoPrivilege {
         TOKEN_PRIVILEGES privileges{};
         privileges.PrivilegeCount = 1;
         privileges.Privileges[0].Attributes = SE_PRIVILEGE_REMOVED;
-        ZASSERT(::LookupPrivilegeValueW(nullptr, name, &privileges.Privileges[0].Luid));
+        ZASSERT(
+            ::LookupPrivilegeValueW(nullptr, L"SeDebugPrivilege", &privileges.Privileges[0].Luid));
         // Succeeds, saying ERROR_NOT_ALL_ASSIGNED, for a token without it.
         ZASSERT(::AdjustTokenPrivileges(token, FALSE, &privileges, 0, nullptr, nullptr));
         ZASSERT(::SetThreadToken(nullptr, token));
         ::CloseHandle(token);
     }
 
-    ScopedNoPrivilege(const ScopedNoPrivilege&) = delete;
-    ScopedNoPrivilege& operator=(const ScopedNoPrivilege&) = delete;
+    ScopedNoDebugPrivilege(const ScopedNoDebugPrivilege&) = delete;
+    ScopedNoDebugPrivilege& operator=(const ScopedNoDebugPrivilege&) = delete;
 
-    ~ScopedNoPrivilege() {
+    ~ScopedNoDebugPrivilege() {
         ::RevertToSelf();
     }
 };

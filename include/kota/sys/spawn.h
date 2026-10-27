@@ -282,9 +282,7 @@ public:
     /// process still: one that exited goes with the last handle to it, and
     /// its ID may then be another's. no_such_process for an ID no process
     /// has; permission_denied for a process this one may not wait for and
-    /// end, or may not open with `access`; operation_not_permitted for a
-    /// right that takes a privilege this process does not hold, as
-    /// ACCESS_SYSTEM_SECURITY does.
+    /// end, or may not open with `access`.
     static std::expected<Child, std::error_code> open(int pid, std::uint32_t access = 0);
 #endif
 

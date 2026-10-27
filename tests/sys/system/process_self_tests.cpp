@@ -184,8 +184,7 @@ ZEST_CASE(process_alive_of_a_child_waited_for_is_false) {
 #ifdef _WIN32
 ZEST_CASE(process_alive_holds_for_a_process_this_one_may_not_open) {
     UnopenableProcess process;
-    // With the debug privilege an administrator opens any process.
-    test::ScopedNoPrivilege unprivileged(L"SeDebugPrivilege");
+    test::ScopedNoDebugPrivilege unprivileged;
     auto id = process.info.dwProcessId;
     HANDLE opened = ::OpenProcess(SYNCHRONIZE, FALSE, id);
     auto error = ::GetLastError();
