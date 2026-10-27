@@ -856,8 +856,8 @@ std::error_code copy_file(std::string_view from, std::string_view to) {
         return {};
     }
     auto error = windows::last_error();
-    // CopyFileExW fails on a directory, and on two names of one file, as on
-    // any file it cannot open: these fail as they do elsewhere.
+    // CopyFileExW fails on a directory at `to`, and on two names of one
+    // file, as on any file it cannot open: these fail as they do elsewhere.
     if(is_directory(to)) {
         return std::make_error_code(std::errc::is_a_directory);
     }
