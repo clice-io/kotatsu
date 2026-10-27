@@ -1,5 +1,6 @@
 kota_add_module_tests(LIBS kota::ipc kota::zest::async)
 kota_add_integration_tests(LIBS kota::ipc)
+add_subdirectory(lsp)
 
 # The codecs built into a program alone, without the event loop: see
 # codec_alone/main.cpp.

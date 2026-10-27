@@ -77,8 +77,8 @@ All public APIs live under the `kota::` namespace, public headers under `include
 
 - JSON-RPC 2.0 protocol model with typed request / notification traits, structured errors (`Error { code, message, data }`), and the full set of spec error codes (including LSP-aligned `RequestCancelled`).
 - Transport abstraction for framed message IO: `Transport` interface, `StreamTransport` over stdio (`open_stdio`), a TCP connection (`connect_tcp`) or any pair of async streams, and a `RecordingTransport` decorator that captures traffic to JSONL for replay testing.
-- The framing, the protocol model and the codecs (`codec.h`, `codec/bincode.h`, `codec/json.h`) build without the event loop, as `kota::ipc::codec` (Bazel: `:ipc_codec`, `:ipc_codec_json`): a program that reads and writes messages itself, such as catter's hook library, links neither libuv nor, on Windows, the DLLs it imports.
 - The LSP base protocol's framing in `framing.h`: `frame_header()` writes the `Content-Length` header a payload goes after, and `FrameParser` reads frames from input split anywhere. `StreamTransport` writes each payload as it is after its header, and writes the messages queued together in one write. A frame larger than the transport's limit (64 MiB by default) is skipped, not buffered, and reading goes on; the peer fails only what the frame's first bytes say it concerns: a request is answered with `MessageTooLarge` (-32010), a response fails the request it answers, a notification is dropped, and a message of no kind it can tell fails every pending request.
+- The framing, the protocol model and the codecs (`codec.h`, `codec/bincode.h`, `codec/json.h`) build without the event loop, as the CMake target `kota::ipc::codec` (Bazel: `:ipc_codec`, `:ipc_codec_json`): a program that reads and writes messages itself, such as catter's hook library, links neither libuv nor, on Windows, the DLLs it imports.
 - Codec-parametric typed peer runtime (`Peer<Codec>`) supporting request dispatch, notifications, and nested RPC; predefined peers for JSON (with LSP camelCase policy) and Bincode codecs, `JSONPeer` (`peer/json.h`) and `BincodePeer` (`peer/bincode.h`). A value is written into its message's buffer as it is encoded, rather than encoded apart and copied in, and params and results are decoded where they lie in the message read.
 - Externally-driven execution model: callers own the event loop, schedule the peer's run loop, and drive shutdown explicitly.
 - `ipc::Result<T>`, an `outcome<T, Error>`, with protocol validation aligned with the JSON-RPC spec:
@@ -160,13 +160,13 @@ Synchronous paths and files on UTF-8 strings, depending on `support` alone (no l
 - Type-erased string references (`buffer_ref.h`, `string_list_ref.h`): `buffer_ref`, any contiguous resizable buffer of characters for a function to write into, and `string_list_ref`, any contiguous range of string-likes for a function to read.
 - `small_wstring<N>`, a `small_vector<wchar_t, N>` whose `c_str()` gives the Windows API its NUL-terminated wide strings.
 - Naming-convention conversion (`naming.h`): identity, lower-snake, lower-camel, upper-camel, upper-snake.
-- `outcome<T, E, C>` (`outcome.h`): a value, an error or a cancellation, which `async`'s tasks and `ipc`'s codecs return.
+- `outcome<T, E, C>` (`outcome.h`): a value, an error or a cancellation, which `async`'s tasks, `ipc`'s codecs and `http`'s requests return.
 - Type-level utilities: `type_list<Ts...>`, `tuple_traits`, `type_traits`, `expected_try`, `comptime` helpers, and miscellaneous `memory` / `ranges` / `functional` adapters.
 
 ### `sys` (`include/kota/sys/*`)
 
 - The process and its system without libuv or `async`, in a static library of one object per area: a program links only what it calls, and on Windows imports only those objects' DLLs. catter's hook library, injected into every process a build starts, takes the environment and program lookup without the rest.
-- Platform-specific concepts follow one rule: what portable code calls is declared on every host and fails with `not_supported` where it cannot work (the process title, the OOM score); what only Windows-specific code calls lives in `sys::windows` (`windows.h`).
+- Platform-specific concepts follow one rule: what portable code calls is declared on every host and fails with `not_supported` where it cannot work (the process title, the OOM score); what only Windows-specific code calls lives in `sys::windows` (`windows.h`), or, a member of a portable type (`Child::open`), is declared on Windows alone.
 - Text out goes into a buffer the caller gives (`buffer_ref`) and lists of strings come in as `string_list_ref`, as in `fs`.
 - `env.h`: `get_env` / `set_env` / `unset_env` / `environment` (name and value pairs) on the OS's own block (Windows' `GetEnvironmentVariableW`, never the CRT's copy), `env_name_equal`, and `split_paths` (a lazy view) / `join_paths` for PATH-like lists in either style.
 - `process.h`: `pid`, `parent_pid`, `process_alive` (a zombie, or a process this one may not signal or open, included), `executable_path` (under the name its file has now), `self_executable` (a path that starts this very image, for spawning a copy that speaks its protocol: `/proc/self/exe` on Linux, which survives the file's replacement), `arguments` (read from the system, without main's argv; on Windows from `GetCommandLineW`, in WTF-8, by the CRT's rules and without wildcard expansion), `find_program` (execvp's search on POSIX; on Windows PATH and PATHEXT directory by directory, Cygwin symlinks followed; the first file it cannot run named when it fails), the process title (`set_process_title`, Linux and macOS) and name (`set_process_name`, the main thread's on Linux), and `signal_name`.
@@ -242,7 +242,8 @@ bazel/         # Bazel: build settings, the rule running the tests' commands
 tests/
   <module>/    # Tests per module, mirroring include/kota/<module>/:
                #   unit/ in memory, system/ touching the OS, harness/ helpers,
-               #   integration/ programs over real protocols (TypeScript)
+               #   integration/ programs over real protocols (TypeScript),
+               #   <name>/ a check built against one target alone
   examples/    # Tests of the examples, and the examples run end to end
   fixtures/    # Types shared by several modules' tests
   snapshots/   # Snapshot files, one directory per suite

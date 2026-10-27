@@ -118,6 +118,33 @@ std::string unset(std::string_view name) {
     return std::string(by_platform("unset", std::format("%{}%", name)));
 }
 
+/// What `start` gives on a loop being destroyed. ~event_loop runs the loop
+/// until the thread pool's work is done, and so resumes the task that queued
+/// it: a watch made then would come after the loop closed its handles, and
+/// keep it from closing.
+template <typename Start>
+auto while_destroyed(Start start) {
+    std::latch gate(1);
+    std::optional<decltype(start(std::declval<event_loop&>()))> started;
+    std::optional<event_loop> dying(std::in_place);
+    auto late = [&]() -> task<> {
+        co_await queue([&] { gate.wait(); }, *dying);
+        started.emplace(start(*dying));
+    };
+    auto stop = [&]() -> task<> {
+        dying->stop();
+        co_return;
+    };
+    dying->schedule(late());
+    dying->schedule(stop());
+    dying->run();
+
+    gate.count_down();
+    dying.reset();
+    ZASSERT(started.has_value());
+    return std::move(*started);
+}
+
 ZEST_SUITE(async_io_process, zest::LoopFixture) {
 
 ZEST_CASE(wait_reports_the_exit_code) {
@@ -532,30 +559,11 @@ ZEST_CASE(wait_cancelled_after_its_process_is_destroyed_ends) {
     ZEXPECT(*result == 1U);
 }
 
-// ~event_loop runs the loop until the thread pool's work is done, and so
-// resumes the task that queued it: a watch made then would come after the
-// loop closed its handles, and keep it from closing.
 ZEST_CASE(spawn_while_its_loop_is_destroyed_fails) {
-    std::latch gate(1);
-    std::optional<result<process::spawn_result>> spawned;
-    std::optional<event_loop> dying(std::in_place);
-    auto late = [&]() -> task<> {
-        co_await queue([&] { gate.wait(); }, *dying);
-        spawned.emplace(process::spawn(shell("exit 0"), *dying));
-    };
-    auto stop = [&]() -> task<> {
-        dying->stop();
-        co_return;
-    };
-    dying->schedule(late());
-    dying->schedule(stop());
-    dying->run();
-
-    gate.count_down();
-    dying.reset();
-    ZASSERT(spawned.has_value());
-    ZASSERT(spawned->has_error());
-    ZEXPECT(spawned->error() == error::operation_aborted);
+    auto spawned =
+        while_destroyed([](event_loop& dying) { return process::spawn(shell("exit 0"), dying); });
+    ZASSERT(spawned.has_error());
+    ZEXPECT(spawned.error() == error::operation_aborted);
 }
 
 ZEST_CASE(inert_process_fails) {
@@ -721,7 +729,8 @@ ZEST_CASE(kill_tree_ends_the_childs_children) {
 
 #ifdef _WIN32
 // The process is started without the loop, as catter's hook starts a program
-// and hands its ID to catter, and spawn's Child keeps it, and its ID, there.
+// and hands its ID to catter. The spawned Child holds the process's handle, so
+// its ID stays the process's while the case runs.
 ZEST_CASE(open_waits_for_a_process_the_loop_did_not_start) {
     auto child = sys::spawn(shell("exit 3"));
     ZASSERT(child.has_value());
@@ -755,30 +764,13 @@ ZEST_CASE(open_of_no_process_fails) {
     ZEXPECT(opened.error() == error::no_such_process);
 }
 
-// As spawn_while_its_loop_is_destroyed_fails.
 ZEST_CASE(open_while_its_loop_is_destroyed_fails) {
     auto child = sys::spawn(shell("exit 0"));
     ZASSERT(child.has_value());
-    std::latch gate(1);
-    std::optional<result<process>> opened;
-    std::optional<event_loop> dying(std::in_place);
-    auto late = [&]() -> task<> {
-        co_await queue([&] { gate.wait(); }, *dying);
-        opened.emplace(process::open(child->pid(), *dying));
-    };
-    auto stop = [&]() -> task<> {
-        dying->stop();
-        co_return;
-    };
-    dying->schedule(late());
-    dying->schedule(stop());
-    dying->run();
-
-    gate.count_down();
-    dying.reset();
-    ZASSERT(opened.has_value());
-    ZASSERT(opened->has_error());
-    ZEXPECT(opened->error() == error::operation_aborted);
+    auto opened =
+        while_destroyed([&](event_loop& dying) { return process::open(child->pid(), dying); });
+    ZASSERT(opened.has_error());
+    ZEXPECT(opened.error() == error::operation_aborted);
     ZEXPECT(child->wait().has_value());
 }
 #endif

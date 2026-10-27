@@ -2,14 +2,10 @@
 // built against the codec target alone, without the event loop: a reference
 // into the loop fails its link. On Windows it checks besides that it imports
 // none of the DLLs libuv brings, which would load into every process the hook
-// runs in.
-//
-// It prints each check that fails, and exits with 1 when one did.
+// runs in. The codecs' behaviour is their unit tests'.
 
-#include <cstdint>
 #include <cstdio>
 #include <format>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -31,82 +27,41 @@ namespace {
 
 struct Params {
     std::string text;
-    std::int64_t number = 0;
 };
 
 int failures = 0;
 
-void check(bool passed, std::string_view what) {
+/// Whether `passed`; prints `what` when not.
+bool check(bool passed, std::string_view what) {
     if(!passed) {
         std::fprintf(stderr, "failed: %s\n", std::string(what).c_str());
         ++failures;
     }
+    return passed;
 }
 
-/// The payload of the one frame `stream` holds, read a byte at a time.
-std::optional<std::string> unframe(std::string_view stream) {
-    kota::ipc::FrameParser parser;
-    for(std::size_t i = 0; i < stream.size(); ++i) {
-        auto step = parser.feed(stream.substr(i, 1));
-        if(step.frame) {
-            if(!*step.frame || i + 1 != stream.size()) {
-                return std::nullopt;
-            }
-            return std::move(**step.frame);
-        }
-    }
-    return std::nullopt;
-}
-
-/// A request and its response, each written, framed, read back and decoded
-/// by Codec.
+/// Writes a request with Codec, frames it, reads it back and decodes its
+/// params.
 template <typename Codec>
 void exchange(std::string_view name) {
     using namespace kota::ipc;
-    auto expect = [&](bool passed, std::string_view what) {
-        check(passed, std::format("{}: {}", name, what));
-    };
     Codec codec;
-    const Params sent{.text = "hook", .number = 7};
-
-    auto request = codec.encode_request(1, "catter/check", sent);
-    expect(request.has_value(), "encode_request");
-    if(!request) {
+    auto request = codec.encode_request(1, "catter/check", Params{.text = "hook"});
+    if(!check(request.has_value(), std::format("{}: encode_request", name))) {
         return;
     }
-    auto payload = unframe(frame_header(request->size()) + *request);
-    expect(payload.has_value(), "the request's frame");
-    if(!payload) {
+    FrameParser parser;
+    auto step = parser.feed(frame_header(request->size()) + *request);
+    if(!check(step.frame && *step.frame, std::format("{}: FrameParser", name))) {
         return;
     }
-    auto incoming = codec.parse_message(std::move(*payload));
+    auto incoming = codec.parse_message(std::move(**step.frame));
     auto* read = std::get_if<IncomingRequest>(&incoming);
-    expect(read != nullptr, "parse_message of the request");
-    if(read == nullptr) {
+    if(!check(read != nullptr, std::format("{}: parse_message", name))) {
         return;
     }
-    expect(read->method == "catter/check", "the request's method");
     auto params = codec.template deserialize_value<Params>(read->params);
-    expect(params.has_value(), "deserialize_value of the params");
-    if(params) {
-        expect(params->text == sent.text, "the params' text");
-        expect(params->number == sent.number, "the params' number");
-    }
-
-    auto response = codec.encode_success_response(read->id, std::string("done"));
-    expect(response.has_value(), "encode_success_response");
-    if(!response) {
-        return;
-    }
-    auto answer = codec.parse_message(std::move(*response));
-    auto* result = std::get_if<IncomingResponse>(&answer);
-    expect(result != nullptr, "parse_message of the response");
-    if(result == nullptr) {
-        return;
-    }
-    expect(result->id == protocol::RequestID(1), "the response's id");
-    auto value = codec.template deserialize_value<std::string>(result->result);
-    expect(value.has_value() && *value == "done", "deserialize_value of the result");
+    check(params && params->text == "hook", std::format("{}: deserialize_value", name));
 }
 
 #ifdef _WIN32

@@ -1318,7 +1318,8 @@ ZEST_CASE(spawn_inheriting_a_stdin_not_open_runs_the_child) {
     }
 }
 
-// spawn's Child keeps the process, and its ID, there.
+// The spawned Child holds the process's handle, so its ID stays the
+// process's while the case runs.
 ZEST_CASE(open_reads_the_exit_of_a_process_another_started) {
     auto child = spawn(test::shell("exit 3"));
     ZASSERT(child.has_value());

@@ -147,10 +147,10 @@ kota_library(
     ],
 )
 
-# The LSP base protocol's framing and the messages of each codec, without the
-# event loop: a program that only reads and writes messages, such as catter's
-# hook library, which runs in every process a build starts, takes neither
-# libuv nor the DLLs it imports.
+# The LSP base protocol's framing, the protocol model and the bincode codec,
+# without the event loop: a program that only reads and writes messages, such
+# as catter's hook library, which runs in every process a build starts, takes
+# neither libuv nor the DLLs it imports.
 kota_library(
     name = "ipc_codec",
     srcs = [
@@ -165,11 +165,12 @@ kota_library(
     ],
     deps = [
         ":codec",
-        ":meta",
         ":support",
     ],
 )
 
+# The JSON codec, without the event loop: CMake builds it into
+# kota::ipc::codec when simdjson is enabled.
 kota_library(
     name = "ipc_codec_json",
     srcs = ["src/ipc/codec/json.cpp"],
@@ -227,6 +228,7 @@ kota_library(
     deps = [
         ":codec",
         ":ipc",
+        ":ipc_codec",
         ":meta",
         ":support",
     ],

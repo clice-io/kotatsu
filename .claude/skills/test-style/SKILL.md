@@ -18,7 +18,7 @@ A test's level is decided by what it touches, not by the module it tests.
 - The moment a test opens a file, spawns a process, binds a socket, installs a signal handler or starts a thread, it is a system test. zest's own I/O does not count: printing, and reading or writing snapshots through `zest::snapshot`, are fine in a unit test.
 - Compile-time facts that must hold are `ZSTATIC_EXPECT` in a unit case.
 - Nothing reaches the network beyond loopback. Tests that need the internet are not part of any suite.
-- What a target must stay without, such as ipc's codecs without the event loop, is checked by a program built against that target alone, which zest, on the loop itself, cannot be part of: `tests/<module>/<name>/main.cpp`, run by ctest and Bazel as the test `<module>_<name>` (label `unit`), printing each check that fails and exiting with 1 if one did.
+- A target that must build without another, as ipc's codecs without the event loop, is checked by a program linked against it alone, without zest, which needs the loop: `tests/<module>/<name>/main.cpp`, run by ctest and Bazel as `<module>_<name>` (label `unit`); it prints each failed check and exits with 1.
 - zest's own runner check (`tests/zest/integration/`) is integration-level, but it is the one integration test in C++ and CMake rather than TypeScript: it runs from CMake as a bootstrap stage (see Trust), so it needs nothing beyond the build.
 
 ## Layout
@@ -32,7 +32,9 @@ tests/<module>/
   integration/*.test.ts       integration tests, TypeScript; nothing else but drivers/
   integration/drivers/*.cpp   the programs they spawn, one per file, or one per
                               directory of sources
-  <name>/main.cpp             a check built against one target alone (Levels)
+  <name>/main.cpp             a check built against one target alone (Levels),
+                              in kota_check_programs so that it builds into the
+                              build root beside the runtime DLLs
   harness/*.h, harness/*.ts   helpers for this module's tests and the modules above,
                               integration tests' helpers included
   CMakeLists.txt              kota_add_module_tests(LIBS <the module's libraries>)
@@ -57,12 +59,12 @@ What each module's headers include, and so what its tests may use:
 
 - `support`; `fs` on support; `sys` on fs; `meta` on support; `deco` on meta.
 - `codec`: its core (`visit/`, `macro.h`) on meta; the backends `blob`, `debug`, `dyn`, `toml` and `fbs` on the core; `bincode` and `json` on the core and `dyn`.
-- `async` on support, `fs` and `sys`; `ipc` on async and codec (`json`, `dyn`, `bincode`); `ipc/lsp` on ipc; `http` on async and codec `json`.
+- `async` on support, `fs` and `sys`; `ipc`'s codecs (`codec.h`, `codec/`, `framing.h`, `protocol.h`) on codec (`json`, `dyn`, `bincode`), the rest of `ipc` on those and async; `ipc/lsp` on ipc; `http` on async and codec `json`.
 - `zest` on all of the above that it checks, prints, parses or runs with. Every test includes zest; that is the one exception.
 
 Rules:
 
-- A module's tests include only what their module depends on, plus the harnesses of those modules: `#include "async/harness/exceptions.h"`, rooted at `tests/`. Shared fixtures in `tests/fixtures/` follow the same rule for the lowest module that uses them. The build does not enforce this; review does.
+- A module's tests include only what their module depends on, plus the harnesses of those modules: `#include "support/harness/throws.h"`, rooted at `tests/`. Shared fixtures in `tests/fixtures/` follow the same rule for the lowest module that uses them. The build does not enforce this; review does.
 - Tests use the public API: `include/kota/`, never a header from `src/`, nor anything from `examples/` outside `tests/examples/`.
 - Behaviour defined once in the library is tested once. Backends of one protocol share one suite through the module's harness; a backend's own files test only what is specific to that backend.
 
