@@ -44,8 +44,6 @@
 #endif
 #endif
 #endif
-#endif
-#endif
 
 namespace kota::fs {
 
