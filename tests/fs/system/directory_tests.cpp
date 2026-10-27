@@ -684,19 +684,28 @@ ZEST_CASE(remove_of_a_root_fails) {
     std::string drive = {static_cast<char>('A' + *free), ':'};
     std::vector<std::string> roots = {drive + R"(\)", drive, R"(\\?\)" + drive + R"(\)"};
 #else
-    // Should the check fail, no descriptor is left to list the root
-    // through, which removing anything in it takes.
-    ScopedDescriptorLimit none(0);
     std::vector<std::string> roots = {"/", "//"};
 #endif
-    for(const auto& root: roots) {
-        ZEST_CONTEXT("{}", root);
-        auto removed = remove(root);
-        ZASSERT(!removed.has_value());
-        ZEXPECT(removed.error() == std::errc::invalid_argument);
-        auto removed_all = remove_all(root);
-        ZASSERT(!removed_all.has_value());
-        ZEXPECT(removed_all.error() == std::errc::invalid_argument);
+    std::vector<std::expected<bool, std::error_code>> removed;
+    std::vector<std::expected<std::uint64_t, std::error_code>> removed_all;
+    {
+#ifndef _WIN32
+        // Should the check fail, no descriptor is left to list the root
+        // through, which removing anything in it takes. The checks wait for
+        // the limit to go: a sanitizer's runtime takes descriptors too.
+        ScopedDescriptorLimit none(0);
+#endif
+        for(const auto& root: roots) {
+            removed.push_back(remove(root));
+            removed_all.push_back(remove_all(root));
+        }
+    }
+    for(std::size_t i = 0; i < roots.size(); ++i) {
+        ZEST_CONTEXT("{}", roots[i]);
+        ZASSERT(!removed[i].has_value());
+        ZEXPECT(removed[i].error() == std::errc::invalid_argument);
+        ZASSERT(!removed_all[i].has_value());
+        ZEXPECT(removed_all[i].error() == std::errc::invalid_argument);
     }
 }
 
