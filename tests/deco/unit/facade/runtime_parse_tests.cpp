@@ -231,6 +231,22 @@ struct Copy {
     quiet;
 };
 
+constexpr decl::Category version_category{
+    .exclusive = true,
+    .required = false,
+    .name = "version",
+    .description = "print the version",
+};
+
+/// A required input beside a flag of an exclusive category, which rules the input out.
+struct Versioned {
+    DecoInput()
+    <std::string> path;
+
+    DecoFlag(names = {"--version"}; required = false; category = version_category;)
+    version;
+};
+
 ZEST_SUITE(deco_facade_runtime_parse) {
 
 ZEST_CASE(options_of_each_kind_are_set) {
@@ -479,6 +495,13 @@ ZEST_CASE(required_input_pair_left_out_fails) {
     ZASSERT(!empty.has_value());
     ZEXPECT(empty.error().type == cli::ParseError::Type::DecoParsing);
     ZEXPECT(zest::ends_with(empty.error().message, "expected 2 input arguments, got 0"));
+}
+
+ZEST_CASE(required_input_beside_an_exclusive_category_given_parses) {
+    auto argv = test::split("--version");
+    const auto parsed = cli::parse<Versioned>(argv);
+    ZASSERT(parsed.has_value());
+    ZEXPECT(!parsed->options.path.has_value());
 }
 
 ZEST_CASE(input_of_an_unmatched_category_left_out_parses) {

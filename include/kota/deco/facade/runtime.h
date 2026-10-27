@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <expected>
 #include <format>
@@ -437,7 +438,11 @@ std::string check_valid(const T& options,
     const auto& generator = ::kota::deco::detail::generator_of<T>();
     std::string err = "";
     // check required options: those of a category matched, and a DecoInput of the default
-    // category, which is required whatever else is given
+    // category, which is required whatever else is given but for an exclusive category, which
+    // rules the others out
+    const bool exclusive_given =
+        std::ranges::any_of(matched_categories,
+                            [](const decl::Category* category) { return category->exclusive; });
     generator.visit_fields(options, [&](auto& field, const auto& cfg, std::string_view name, auto) {
         using field_ty = std::remove_cvref_t<decltype(field)>;
         if constexpr(ty::deco_option_like<field_ty>) {
@@ -446,7 +451,7 @@ std::string check_valid(const T& options,
             }
             const bool matched = matched_categories.contains(cfg.category.ptr());
             if constexpr(ty::field_ty_of<field_ty>::deco_field_ty == decl::DecoType::Input) {
-                if(matched || cfg.category.ptr() == &decl::default_category) {
+                if(matched || (cfg.category.ptr() == &decl::default_category && !exclusive_given)) {
                     err = std::format("expected {}, got 0",
                                       detail::input_args_text(generator.input_arg_num));
                 }
