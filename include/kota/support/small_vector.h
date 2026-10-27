@@ -18,6 +18,7 @@
 
 #include "kota/support/config.h"
 #include "kota/support/memory.h"
+#include "kota/support/scope_exit.h"
 
 namespace kota {
 
@@ -518,23 +519,13 @@ public:
         } else {
             // An input range is read once: its elements are appended, as they come, and then
             // rotated into place. If one fails, those appended are dropped.
-            struct Appended {
-                hybrid_vector& vector;
-                size_type old_size;
-                bool kept = false;
-
-                constexpr ~Appended() {
-                    if(!kept) {
-                        vector.truncate(old_size);
-                    }
-                }
-            } appended{*this, size()};
-
+            const size_type old_size = size();
+            ScopeExit drop_appended([this, old_size] { truncate(old_size); });
             for(auto&& value: range) {
                 emplace_back(std::forward<decltype(value)>(value));
             }
-            appended.kept = true;
-            std::rotate(head + index, head + appended.old_size, end());
+            drop_appended.release();
+            std::rotate(head + index, head + old_size, end());
             return head + index;
         }
     }

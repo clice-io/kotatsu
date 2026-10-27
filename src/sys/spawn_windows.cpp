@@ -13,6 +13,7 @@
 
 #include "child.h"
 #include "os.h"
+#include "kota/support/scope_exit.h"
 #include "kota/support/small_string.h"
 #include "kota/support/string_list_ref.h"
 #include "kota/support/string_ref.h"
@@ -545,13 +546,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         return std::unexpected(fs::windows::last_error());
     }
 
-    struct Attributes {
-        LPPROC_THREAD_ATTRIBUTE_LIST list;
-
-        ~Attributes() {
-            ::DeleteProcThreadAttributeList(list);
-        }
-    } owned{attributes};
+    ScopeExit deleter([attributes] { ::DeleteProcThreadAttributeList(attributes); });
 
     // Inherited alone, and only when there are some: an empty list fails.
     if(!inherited.empty() && !::UpdateProcThreadAttribute(attributes,
@@ -601,28 +596,20 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         // Closed, and the lock let go, before the hook below runs: a child it
         // starts inheriting every handle gets none of these, and does not
         // wait for a lock this thread holds.
-        struct Inheriting {
-            std::array<Handle, 3>& handles;
-            bool exclusive;
-
-            Inheriting(std::array<Handle, 3>& handles, bool exclusive) :
-                handles(handles), exclusive(exclusive) {
-                if(exclusive) {
-                    ::AcquireSRWLockExclusive(&inheritance);
-                } else {
-                    ::AcquireSRWLockShared(&inheritance);
-                }
+        const bool exclusive = creation.windows_inherit_handles;
+        if(exclusive) {
+            ::AcquireSRWLockExclusive(&inheritance);
+        } else {
+            ::AcquireSRWLockShared(&inheritance);
+        }
+        ScopeExit inheriting([&handles, exclusive] {
+            handles = {};
+            if(exclusive) {
+                ::ReleaseSRWLockExclusive(&inheritance);
+            } else {
+                ::ReleaseSRWLockShared(&inheritance);
             }
-
-            ~Inheriting() {
-                handles = {};
-                if(exclusive) {
-                    ::ReleaseSRWLockExclusive(&inheritance);
-                } else {
-                    ::ReleaseSRWLockShared(&inheritance);
-                }
-            }
-        } inheriting(handles, creation.windows_inherit_handles);
+        });
 
         for(const auto& handle: handles) {
             if(handle.handle != nullptr &&
@@ -653,17 +640,10 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     if(options.windows_before_start) {
         // Ended unless it runs: a hook's error, or its exception, leaves no
         // child suspended for good.
-        struct Suspended {
-            HANDLE process;
-            bool resumed = false;
-
-            ~Suspended() {
-                if(!resumed) {
-                    ::TerminateProcess(process, 1);
-                    ::WaitForSingleObject(process, INFINITE);
-                }
-            }
-        } suspended{process.handle};
+        ScopeExit suspended([&process] {
+            ::TerminateProcess(process.handle, 1);
+            ::WaitForSingleObject(process.handle, INFINITE);
+        });
 
         if(auto error = options.windows_before_start(process.handle, thread.handle)) {
             return std::unexpected(error);
@@ -671,7 +651,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
         if(::ResumeThread(thread.handle) == static_cast<DWORD>(-1)) {
             return std::unexpected(fs::windows::last_error());
         }
-        suspended.resumed = true;
+        suspended.release();
     }
     child.id = static_cast<int>(created.dwProcessId);
     child.handle = process.release();

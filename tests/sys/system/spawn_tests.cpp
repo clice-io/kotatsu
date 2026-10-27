@@ -38,6 +38,7 @@
 #include "sys/harness/spawn.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/support/scope_exit.h"
 #include "kota/fs/file.h"
 #include "kota/sys/spawn.h"
 
@@ -607,16 +608,6 @@ ZEST_CASE(kill_tree_without_a_group_fails) {
     ZEXPECT(child->wait().has_value());
 }
 
-/// Kills the tree `child` leads when it goes, for a test that fails before
-/// it does: nothing it started is left running.
-struct TreeKiller {
-    Child& child;
-
-    ~TreeKiller() {
-        child.kill_tree();
-    }
-};
-
 // The pipe ends only once the shell and the command it left running are
 // both gone: the tree's kill reached it.
 ZEST_CASE(kill_tree_ends_the_childs_children) {
@@ -627,7 +618,8 @@ ZEST_CASE(kill_tree_ends_the_childs_children) {
     options.streams[1] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
-    TreeKiller killer{*child};
+    // A failed ZASSERT leaves nothing running.
+    zest::FatalHook on_fatal{[&child] { child->kill_tree(); }};
     auto end = child->take_pipe(1);
     ZEXPECT(!test::read_some(end).empty());
     ZEXPECT(!child->kill_tree());
@@ -646,7 +638,8 @@ ZEST_CASE(kill_tree_reaches_the_group_after_its_leader_exited) {
     options.streams[1] = Stdio::pipe();
     auto child = spawn(options);
     ZASSERT(child.has_value());
-    TreeKiller killer{*child};
+    // A failed ZASSERT leaves nothing running.
+    zest::FatalHook on_fatal{[&child] { child->kill_tree(); }};
     auto end = child->take_pipe(1);
     ZEXPECT(!test::read_some(end).empty());
     auto status = child->wait();
@@ -1332,27 +1325,15 @@ ZEST_CASE(windows_inherit_handles_takes_none_of_another_childs) {
 // A program may be given a standard handle that is none, closed or never
 // valid: a child inheriting it starts all the same.
 ZEST_CASE(spawn_inheriting_a_stdin_not_open_runs_the_child) {
-    /// This process's stdin set to `handle`, put back when this goes.
-    struct ScopedStdin {
-        explicit ScopedStdin(HANDLE handle) {
-            ::SetStdHandle(STD_INPUT_HANDLE, handle);
-        }
-
-        ScopedStdin(const ScopedStdin&) = delete;
-        ScopedStdin& operator=(const ScopedStdin&) = delete;
-
-        ~ScopedStdin() {
-            ::SetStdHandle(STD_INPUT_HANDLE, previous);
-        }
-
-        HANDLE previous = ::GetStdHandle(STD_INPUT_HANDLE);
-    };
-
     // No process has a handle as high: they go by fours, 2^24 of them at most.
     auto* never_valid = reinterpret_cast<HANDLE>(std::uintptr_t(0x7FFF'FFFC));
     for(HANDLE handle: {HANDLE(nullptr), INVALID_HANDLE_VALUE, never_valid}) {
         ZEST_CONTEXT("stdin {}", handle);
-        ScopedStdin given(handle);
+        // This process's stdin, put back once the child has run.
+        ScopeExit restore([previous = ::GetStdHandle(STD_INPUT_HANDLE)] {
+            ::SetStdHandle(STD_INPUT_HANDLE, previous);
+        });
+        ::SetStdHandle(STD_INPUT_HANDLE, handle);
         auto options = test::shell("exit 3");
         options.streams[0] = Stdio::inherit();
         ZEXPECT(status_of(options).code == 3);

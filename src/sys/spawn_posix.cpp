@@ -21,6 +21,7 @@
 #include "child.h"
 #include "os.h"
 #include "signals.h"
+#include "kota/support/scope_exit.h"
 #include "kota/sys/detail/descriptors.h"
 #include "kota/sys/spawn.h"
 
@@ -626,27 +627,16 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
 #ifdef __APPLE__
     // posix_spawn, a system call of its own on macOS: no fork of this
     // process, however large, and nothing of it runs in the child.
-    struct Setup {
-        posix_spawnattr_t attributes;
-        posix_spawn_file_actions_t actions;
-        int attributes_error = posix_spawnattr_init(&attributes);
-        int actions_error = posix_spawn_file_actions_init(&actions);
-
-        ~Setup() {
-            if(actions_error == 0) {
-                posix_spawn_file_actions_destroy(&actions);
-            }
-            if(attributes_error == 0) {
-                posix_spawnattr_destroy(&attributes);
-            }
-        }
-    } setup;
-
-    if(int error = setup.attributes_error != 0 ? setup.attributes_error : setup.actions_error) {
+    posix_spawnattr_t attributes;
+    if(int error = posix_spawnattr_init(&attributes)) {
         return std::unexpected(std::error_code(error, std::generic_category()));
     }
-    auto& attributes = setup.attributes;
-    auto& actions = setup.actions;
+    ScopeExit destroy_attributes([&attributes] { posix_spawnattr_destroy(&attributes); });
+    posix_spawn_file_actions_t actions;
+    if(int error = posix_spawn_file_actions_init(&actions)) {
+        return std::unexpected(std::error_code(error, std::generic_category()));
+    }
+    ScopeExit destroy_actions([&actions] { posix_spawn_file_actions_destroy(&actions); });
     // The first error of the calls that set it up, a path too long among
     // them, which the spawn fails with.
     int setup_error = 0;

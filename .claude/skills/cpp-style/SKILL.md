@@ -196,6 +196,7 @@ process(result.value());
 - Use C++20/23 APIs whenever possible.
 - Library code does not print — it returns. Do NOT use `<iostream>` facilities (`std::cout`, `std::cin`, `std::cerr`, etc.) or C-style I/O (`printf`, `fprintf`, etc.) in library components. Exempt are components whose purpose is producing output: CLI presentation (e.g. `deco` usage printing), test reporting in `zest`, and fatal-diagnostic paths that must emit before aborting.
 - Prefer `std::format` for string building.
+- A cleanup a scope owes on its way out, or undoes unless the scope succeeds, is a `kota::ScopeExit` (`support/scope_exit.h`), released once nothing is left to undo, not a local struct with a destructor; a type with state of its own beyond that stays a named type. What must happen even when a failed `ZASSERT` ends a test's process is a `zest::FatalHook`.
 - Prefer `std::ranges` / `std::views` APIs over raw loops and traditional `<algorithm>` calls.
 
 ## Parameter Passing Preferences

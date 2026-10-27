@@ -6,6 +6,7 @@
 
 #include "child.h"
 #include "os.h"
+#include "kota/support/scope_exit.h"
 #include "kota/sys/spawn.h"
 
 #ifndef _WIN32
@@ -123,17 +124,13 @@ std::error_code read_both(Child& child, buffer_ref out, buffer_ref err) {
     std::array<buffer_ref, 2> sinks = {out, err};
 
     // The pipes close when this goes, read to their end or not.
-    struct Closer {
-        std::array<pollfd, 2>& polls;
-
-        ~Closer() {
-            for(auto& poll: polls) {
-                if(poll.fd >= 0) {
-                    ::close(poll.fd);
-                }
+    ScopeExit closer([&polls] {
+        for(auto& poll: polls) {
+            if(poll.fd >= 0) {
+                ::close(poll.fd);
             }
         }
-    } closer{polls};
+    });
 
     auto bytes = std::make_unique_for_overwrite<char[]>(chunk);
     while(polls[0].fd >= 0 || polls[1].fd >= 0) {
@@ -180,31 +177,20 @@ std::expected<ExitStatus, std::error_code> capture(buffer_ref out,
     // Ends the child unless its streams were read to their end, and its
     // group first when it leads one: what it started may hold the pipes. The
     // child itself may have left the group.
-    struct Ender {
-        Child& child;
-
-        bool group;
-
-        bool read = false;
-
-        ~Ender() {
-            if(read) {
-                return;
-            }
-            if(group) {
-                [[maybe_unused]] auto ended = child.kill_tree();
-            }
-            [[maybe_unused]] auto killed = child.kill();
-            [[maybe_unused]] auto reaped = child.wait();
+    ScopeExit ender([&child, group = options.creation.process_group || options.creation.detached] {
+        if(group) {
+            [[maybe_unused]] auto ended = child->kill_tree();
         }
-    } ender{*child, options.creation.process_group || options.creation.detached};
+        [[maybe_unused]] auto killed = child->kill();
+        [[maybe_unused]] auto reaped = child->wait();
+    });
 
     out.clear();
     err.clear();
     if(auto error = read_both(*child, out, err)) {
         return std::unexpected(error);
     }
-    ender.read = true;
+    ender.release();
     return child->wait();
 }
 
