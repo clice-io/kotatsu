@@ -135,7 +135,8 @@ cc_library(
 ]]
 
 # The ipc codecs and the blocking client built into a program alone, without
-# the event loop: see ipc/codec_alone/main.cpp. Its client talks over a pipe.
+# the event loop: see ipc/codec_alone/main.cpp. Its client talks over a pipe or
+# a socket.
 kota_test(
     name = "ipc_codec_alone",
     size = "small",

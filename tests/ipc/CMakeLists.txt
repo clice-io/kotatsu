@@ -3,7 +3,8 @@ kota_add_integration_tests(LIBS kota::ipc)
 add_subdirectory(lsp)
 
 # The codecs and the blocking client built into a program alone, without the
-# event loop: see codec_alone/main.cpp. Its client talks over a pipe.
+# event loop: see codec_alone/main.cpp. Its client talks over a pipe or a
+# socket.
 add_executable(ipc_codec_alone codec_alone/main.cpp)
 target_link_libraries(ipc_codec_alone PRIVATE kota::ipc::codec)
 kota_apply_project_options(ipc_codec_alone)

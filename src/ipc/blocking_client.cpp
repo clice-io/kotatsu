@@ -1,6 +1,5 @@
 #include "kota/ipc/blocking_client.h"
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <expected>
@@ -13,6 +12,7 @@
 #include <variant>
 
 #ifdef _WIN32
+#include <algorithm>
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -32,14 +32,10 @@ namespace {
 
 using native_handle_type = BlockingPipe::native_handle_type;
 
-/// What a moved-from BlockingPipe holds.
 #ifdef _WIN32
-constexpr native_handle_type no_handle = nullptr;
-#else
-constexpr native_handle_type no_handle = -1;
-#endif
 
-#ifdef _WIN32
+/// What a moved-from BlockingPipe holds.
+constexpr native_handle_type closed = nullptr;
 
 std::error_code last_error() {
     return std::error_code(static_cast<int>(::GetLastError()), std::system_category());
@@ -49,14 +45,19 @@ std::error_code last_error() {
 /// byte: how many bytes, zero once the other end has closed.
 std::expected<std::size_t, std::error_code> read_some(native_handle_type handle,
                                                       std::span<char> buffer) {
-    DWORD got = 0;
-    if(!::ReadFile(handle, buffer.data(), static_cast<DWORD>(buffer.size()), &got, nullptr)) {
-        if(::GetLastError() == ERROR_BROKEN_PIPE) {
-            return 0;
+    while(true) {
+        DWORD got = 0;
+        if(!::ReadFile(handle, buffer.data(), static_cast<DWORD>(buffer.size()), &got, nullptr)) {
+            if(::GetLastError() == ERROR_BROKEN_PIPE) {
+                return 0;
+            }
+            return std::unexpected(last_error());
         }
-        return std::unexpected(last_error());
+        // None read is a write of none by the other end, not its close.
+        if(got != 0) {
+            return got;
+        }
     }
-    return got;
 }
 
 /// Writes all of `bytes`.
@@ -74,6 +75,8 @@ std::error_code write_all(native_handle_type handle, std::string_view bytes) {
 }
 
 #else
+
+constexpr native_handle_type closed = -1;
 
 std::error_code last_error() {
     return std::error_code(errno, std::generic_category());
@@ -126,25 +129,11 @@ BlockingPipe::BlockingPipe(native_handle_type handle, std::size_t max_payload) n
 }
 
 BlockingPipe::BlockingPipe(BlockingPipe&& other) noexcept :
-    handle(std::exchange(other.handle, no_handle)), parser(std::move(other.parser)),
+    handle(std::exchange(other.handle, closed)), parser(std::move(other.parser)),
     unread(std::move(other.unread)) {}
 
-BlockingPipe& BlockingPipe::operator=(BlockingPipe&& other) noexcept {
-    if(this != &other) {
-        close();
-        handle = std::exchange(other.handle, no_handle);
-        parser = std::move(other.parser);
-        unread = std::move(other.unread);
-    }
-    return *this;
-}
-
 BlockingPipe::~BlockingPipe() {
-    close();
-}
-
-void BlockingPipe::close() noexcept {
-    if(handle == no_handle) {
+    if(handle == closed) {
         return;
     }
 #ifdef _WIN32
@@ -152,7 +141,6 @@ void BlockingPipe::close() noexcept {
 #else
     ::close(handle);
 #endif
-    handle = no_handle;
 }
 
 std::error_code BlockingPipe::write(std::string_view payload) {

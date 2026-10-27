@@ -81,13 +81,13 @@ All public APIs live under the `kota::` namespace, public headers under `include
 - The framing, the protocol model and the codecs (`codec.h`, `codec/bincode.h`, `codec/json.h`) build without the event loop, as the CMake target `kota::ipc::codec` (Bazel: `:ipc_codec`, `:ipc_codec_json`): a program that reads and writes messages itself, such as catter's hook library, links neither libuv nor, on Windows, the DLLs it imports.
 - `BlockingClient<Codec>` (`blocking_client.h`, in the same target) asks a peer without an event loop: over a pipe's handle on Windows, or a connected socket elsewhere, it sends a request and blocks until its answer. The remote writes nothing but that answer; anything else, or a read or write that fails, ends the conversation, and that request and every later one fail with `ConnectionClosed`.
 - Codec-parametric typed peer runtime (`Peer<Codec>`) supporting request dispatch, notifications, and nested RPC; predefined peers for JSON (with LSP camelCase policy) and Bincode codecs, `JSONPeer` (`peer/json.h`) and `BincodePeer` (`peer/bincode.h`). A value is written into its message's buffer as it is encoded, rather than encoded apart and copied in, and params and results are decoded where they lie in the message read.
-- Externally-driven execution model: callers own the event loop, schedule the peer's run loop, and drive shutdown explicitly. `Peer::ended()` says why the conversation ended once no answer can come (the input ended, the remote wrote what the protocol does not allow, a write failed, or this side closed it), with what the transport or codec said; the pending requests fail with `ConnectionClosed` and that message.
+- Externally-driven execution model: callers own the event loop, schedule the peer's run loop, and drive shutdown explicitly. `Peer::ended()` says why the conversation ended once no answer can come (the input ended, the remote wrote what the protocol does not allow, a write failed, or this side shut it down), in words; the requests pending then fail with `ConnectionClosed` and those words.
 - `ipc::Result<T>`, an `outcome<T, Error>`, with protocol validation aligned with the JSON-RPC spec:
   - malformed payloads map to `ParseError` with null id
   - structurally invalid messages map to `InvalidRequest`, answered under the request's id when it can be read, and with null id otherwise
   - parameter decode failures map to `InvalidParams`
   - a handler that throws is answered with `InternalError`
-  - a peer whose remote is not to break the protocol (`set_violation_policy(ViolationPolicy::End)`) answers as above, then stops reading at a message it cannot read, an error response without an id, or a notification no handler takes, and its pending requests fail; by default it reads on, as JSON-RPC asks of a server
+  - a peer whose remote is not to break the protocol (`set_violation_policy(ViolationPolicy::End)`) answers as above, then stops reading at a message it cannot read, an error response without an id, or a notification no handler takes or whose params do not decode, and its pending requests fail; by default it reads on, as JSON-RPC asks of a server
 - Cancellation integration with the `async` runtime:
   - inbound `$/cancelRequest` cancels the matching in-flight handler and reports `RequestCancelled`
   - outbound requests accept an optional cancellation token and/or timeout; cancelling a still-pending request sends `$/cancelRequest` to the peer
@@ -185,8 +185,9 @@ kotatsu is a Bazel module (Bazel 9). The targets are one per module:
 `@kotatsu//:support`, `:fs`, `:meta`, `:codec` with the backends `:codec_json`,
 `:codec_toml` and `:codec_flatbuffers`, `:option`, `:deco`, `:async`,
 `:ipc_codec` with `:ipc_codec_json` (ipc's framing, codecs and blocking
-client, without the event loop), `:ipc` with `:ipc_json` (JSON-RPC) and `:ipc_lsp`, and `:zest`
-with `:zest_async`; HTTP builds with CMake only for now.
+client, without the event loop), `:ipc` with `:ipc_json` (JSON-RPC) and
+`:ipc_lsp`, and `:zest` with `:zest_async`; HTTP builds with CMake only for
+now.
 
 ```starlark
 bazel_dep(name = "kotatsu", version = "0.1.0.<n>")

@@ -1,8 +1,10 @@
 // A program that reads and writes messages as catter's hook library does,
-// with each codec and with a BlockingClient over a pipe, built against the
-// codec target alone, without the event loop: a reference into the loop fails
-// its link. On Windows it checks besides that it imports none of the DLLs
-// libuv brings, which would load into every process the hook runs in. The
+// with each codec and with a BlockingClient over a pipe, or elsewhere a
+// socket, built against the codec target alone, without the event loop: a
+// reference into the loop fails its link. On Windows it checks besides that
+// it imports none of the DLLs libuv brings, which would load into every
+// process the hook runs in. Elsewhere, where no loop has ignored SIGPIPE, a
+// write to a remote that went must fail rather than end the program. The
 // codecs' and the client's behaviour is their tests'.
 
 #include <cstdio>
@@ -135,22 +137,35 @@ void close_remote(const Ends& ends) {
 }
 
 /// Asks with a BlockingClient, whose answer the remote's end holds already.
-void ask(std::string_view name) {
+void ask() {
     using namespace kota::ipc;
     Ends ends;
-    if(!check(connect(ends), std::format("{}: connect", name))) {
+    if(!check(connect(ends), "BlockingClient: connect")) {
         return;
     }
     BincodeCodec codec;
     auto answer = codec.encode_success_response(1, Params{.text = "catter"});
-    if(check(answer.has_value(), std::format("{}: encode_success_response", name)) &&
-       check(write_all(ends, frame_header(answer->size()) + *answer),
-             std::format("{}: write", name))) {
+    if(check(answer.has_value(), "BlockingClient: encode_success_response") &&
+       check(write_all(ends, frame_header(answer->size()) + *answer), "BlockingClient: write")) {
         BlockingClient<BincodeCodec> client(ends.client);
         auto result = client.send_request<Params>("catter/check", Params{.text = "hook"});
-        check(result && result->text == "catter", std::format("{}: send_request", name));
+        check(result && result->text == "catter", "BlockingClient: send_request");
     }
     close_remote(ends);
+}
+
+/// Asks a remote that has closed its end.
+void ask_the_gone() {
+    using namespace kota::ipc;
+    Ends ends;
+    if(!check(connect(ends), "BlockingClient to a closed remote: connect")) {
+        return;
+    }
+    close_remote(ends);
+    BlockingClient<BincodeCodec> client(ends.client);
+    auto result = client.send_request<Params>("catter/check", Params{.text = "hook"});
+    check(!result && result.error().code == static_cast<int>(protocol::ErrorCode::ConnectionClosed),
+          "BlockingClient to a closed remote: send_request");
 }
 
 #ifdef _WIN32
@@ -184,7 +199,8 @@ bool imports(std::string_view dll) {
 int main() {
     exchange<kota::ipc::BincodeCodec>("BincodeCodec");
     exchange<kota::ipc::JSONCodec>("JSONCodec");
-    ask("BlockingClient");
+    ask();
+    ask_the_gone();
 #ifdef _WIN32
     // What libuv links on Windows.
     constexpr std::array loop_dlls = {

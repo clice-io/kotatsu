@@ -4,8 +4,8 @@
 // end it under ViolationPolicy::End, or that it reads past.
 
 #include <optional>
+#include <stdexcept>
 #include <string>
-#include <utility>
 
 #include "ipc/harness/peer_fixture.h"
 #include "kota/zest/zest.h"
@@ -18,6 +18,19 @@ struct EndedRequest {
     ipc::Error error;
     std::optional<ipc::ConversationEnd> ended;
 };
+
+/// Has `seen` take what Peer::ended() says as the peer logs that it fails
+/// its pending requests, before any of them has.
+template <CodecAdapter A>
+void watch_failing(PeerFixture<A>& f, std::optional<ipc::ConversationEnd>& seen) {
+    f.peer.set_logger(
+        [&f, &seen](ipc::LogLevel, std::string text) {
+            if(text.starts_with("failing ")) {
+                seen = f.peer.ended();
+            }
+        },
+        ipc::LogLevel::error);
+}
 
 /// Sends test/add, which is to fail, and reports how.
 template <CodecAdapter A>
@@ -53,7 +66,9 @@ void peer_ending(const PeerKit<A>& kit) {
     });
 
     // What the transport said of the end is what the request fails with.
-    kit.add("end_of_input_ends_it_with_what_the_transport_said", [](Fixture& f) {
+    kit.add("end_of_input_is_reported_with_what_the_transport_said", [](Fixture& f) {
+        std::optional<ipc::ConversationEnd> seen;
+        watch_failing(f, seen);
         auto remote = [&]() -> task<> {
             co_await f.next();
             f.remote.end_input();
@@ -67,9 +82,11 @@ void peer_ending(const PeerKit<A>& kit) {
         ZASSERT(failed->ended.has_value());
         ZEXPECT(failed->ended->kind == Kind::InputEnded);
         ZEXPECT(failed->ended->message == "input ended");
+        ZASSERT(seen.has_value());
+        ZEXPECT(seen->kind == Kind::InputEnded);
     });
 
-    kit.add("malformed_frame_ends_it_malformed", [](Fixture& f) {
+    kit.add("malformed_frame_is_reported_malformed", [](Fixture& f) {
         auto remote = [&]() -> task<> {
             co_await f.next();
             f.remote.send_unreadable(ipc::ReadError{
@@ -88,7 +105,9 @@ void peer_ending(const PeerKit<A>& kit) {
 
     // The transport closes then, which ends the input too: the first reason
     // is the one kept.
-    kit.add("write_failure_ends_it_write_failed", [](Fixture& f) {
+    kit.add("write_failure_is_reported_write_failed", [](Fixture& f) {
+        std::optional<ipc::ConversationEnd> seen;
+        watch_failing(f, seen);
         f.remote.fail_writes();
 
         auto [ran, failed] = f.run(f.peer.run(), failing_request(f));
@@ -99,12 +118,14 @@ void peer_ending(const PeerKit<A>& kit) {
         ZASSERT(failed->ended.has_value());
         ZEXPECT(failed->ended->kind == Kind::WriteFailed);
         ZEXPECT(failed->ended->message == "write failed");
+        ZASSERT(seen.has_value());
+        ZEXPECT(seen->kind == Kind::WriteFailed);
         auto last = f.peer.ended();
         ZASSERT(last.has_value());
         ZEXPECT(last->kind == Kind::WriteFailed);
     });
 
-    kit.add("failed_close_output_ends_it_write_failed", [](Fixture& f) {
+    kit.add("failed_close_output_is_reported_write_failed", [](Fixture& f) {
         f.remote.fail_close_output();
         auto closer = [&]() -> task<> {
             co_await f.next();
@@ -120,7 +141,7 @@ void peer_ending(const PeerKit<A>& kit) {
     });
 
     // Its own half-close leaves the answers to come.
-    kit.add("close_output_leaves_it_going", [](Fixture& f) {
+    kit.add("close_output_leaves_the_conversation_going", [](Fixture& f) {
         std::optional<ipc::ConversationEnd> after;
         auto remote = [&]() -> task<> {
             co_await f.next();
@@ -141,7 +162,9 @@ void peer_ending(const PeerKit<A>& kit) {
         ZEXPECT(asked->sum == 1);
     });
 
-    kit.add("close_ends_it_closed", [](Fixture& f) {
+    kit.add("close_is_reported_shut_down", [](Fixture& f) {
+        std::optional<ipc::ConversationEnd> seen;
+        watch_failing(f, seen);
         auto closer = [&]() -> task<> {
             co_await f.next();
             f.peer.close();
@@ -151,11 +174,16 @@ void peer_ending(const PeerKit<A>& kit) {
         ZEXPECT(ran.has_value());
         ZASSERT(failed.has_value());
         ZASSERT(failed->ended.has_value());
-        ZEXPECT(failed->ended->kind == Kind::Closed);
+        ZEXPECT(failed->ended->kind == Kind::ShutDown);
         ZEXPECT(failed->ended->message == "peer closed");
+        ZASSERT(seen.has_value());
+        ZEXPECT(seen->kind == Kind::ShutDown);
+        auto last = f.peer.ended();
+        ZASSERT(last.has_value());
+        ZEXPECT(last->kind == Kind::ShutDown);
     });
 
-    kit.add("cancelled_run_ends_it_closed", [](Fixture& f) {
+    kit.add("cancelled_run_is_reported_shut_down", [](Fixture& f) {
         cancellation_source source;
         auto remote = [&]() -> task<> {
             co_await f.next();
@@ -169,7 +197,8 @@ void peer_ending(const PeerKit<A>& kit) {
         ZEXPECT(code_of(failed->error) == ErrorCode::ConnectionClosed);
         ZEXPECT(failed->error.message == "run() cancelled");
         ZASSERT(failed->ended.has_value());
-        ZEXPECT(failed->ended->kind == Kind::Closed);
+        ZEXPECT(failed->ended->kind == Kind::ShutDown);
+        ZEXPECT(failed->ended->message == "run() cancelled");
     });
 
     kit.add("close_after_the_end_keeps_the_first_reason", [](Fixture& f) {
@@ -185,7 +214,7 @@ void peer_ending(const PeerKit<A>& kit) {
 
     // The remote's answer, sent after it, is never read; what the peer
     // answers the message with still goes out.
-    kit.add("garbage_ends_it_under_end", [](Fixture& f) {
+    kit.add("garbage_ends_the_conversation_under_end", [](Fixture& f) {
         f.peer.set_violation_policy(ipc::ViolationPolicy::End);
         auto remote = [&]() -> task<> {
             co_await f.next();
@@ -206,9 +235,12 @@ void peer_ending(const PeerKit<A>& kit) {
         ZEXPECT(code_of(written[1].error) == ErrorCode::ParseError);
         ZEXPECT(written[1].error.message == failed->ended->message);
         ZEXPECT(f.remote.output_ended());
+        auto last = f.peer.ended();
+        ZASSERT(last.has_value());
+        ZEXPECT(last->kind == Kind::Malformed);
     });
 
-    kit.add("error_response_without_an_id_ends_it_under_end", [](Fixture& f) {
+    kit.add("error_response_without_an_id_ends_the_conversation_under_end", [](Fixture& f) {
         f.peer.set_violation_policy(ipc::ViolationPolicy::End);
         auto remote = [&]() -> task<> {
             co_await f.next();
@@ -225,7 +257,7 @@ void peer_ending(const PeerKit<A>& kit) {
         ZEXPECT(f.written().size() == 1U);
     });
 
-    kit.add("unhandled_notification_ends_it_under_end", [](Fixture& f) {
+    kit.add("unhandled_notification_ends_the_conversation_under_end", [](Fixture& f) {
         f.peer.set_violation_policy(ipc::ViolationPolicy::End);
         auto remote = [&]() -> task<> {
             co_await f.next();
@@ -240,24 +272,26 @@ void peer_ending(const PeerKit<A>& kit) {
         ZEXPECT(failed->ended->message == "unhandled notification: test/note");
     });
 
-    kit.add("notification_params_that_do_not_decode_end_it_under_end", [](Fixture& f) {
-        f.peer.set_violation_policy(ipc::ViolationPolicy::End);
-        bool called = false;
-        f.peer.on_notification([&](const NoteParams&) { called = true; });
-        auto remote = [&]() -> task<> {
-            co_await f.next();
-            f.remote.send(A::notification_raw("test/note", A::not_a_value));
-        };
+    kit.add("notification_params_that_do_not_decode_end_the_conversation_under_end",
+            [](Fixture& f) {
+                f.peer.set_violation_policy(ipc::ViolationPolicy::End);
+                bool called = false;
+                f.peer.on_notification([&](const NoteParams&) { called = true; });
+                auto remote = [&]() -> task<> {
+                    co_await f.next();
+                    f.remote.send(A::notification_raw("test/note", A::not_a_value));
+                };
 
-        auto [ran, failed, scripted] = f.run(f.peer.run(), failing_request(f), remote());
-        ZEXPECT(ran.has_value());
-        ZEXPECT(!called);
-        ZASSERT(failed.has_value());
-        ZASSERT(failed->ended.has_value());
-        ZEXPECT(failed->ended->kind == Kind::Malformed);
-        ZEXPECT(zest::starts_with(failed->ended->message,
-                                  "notification 'test/note' params deserialization failed: "));
-    });
+                auto [ran, failed, scripted] = f.run(f.peer.run(), failing_request(f), remote());
+                ZEXPECT(ran.has_value());
+                ZEXPECT(!called);
+                ZASSERT(failed.has_value());
+                ZASSERT(failed->ended.has_value());
+                ZEXPECT(failed->ended->kind == Kind::Malformed);
+                ZEXPECT(
+                    zest::starts_with(failed->ended->message,
+                                      "notification 'test/note' params deserialization failed: "));
+            });
 
     // The peer stops reading, not answering: a handler already running
     // answers, and run() returns once it has.
@@ -289,7 +323,7 @@ void peer_ending(const PeerKit<A>& kit) {
 
     // A request the peer answers with an error, a $/cancelRequest it cannot
     // read and answers to no pending request leave the protocol whole.
-    kit.add("answered_and_late_messages_do_not_end_it_under_end", [](Fixture& f) {
+    kit.add("answered_and_late_messages_leave_the_conversation_going_under_end", [](Fixture& f) {
         f.peer.set_violation_policy(ipc::ViolationPolicy::End);
         f.serve_add();
         event answered;
@@ -324,8 +358,73 @@ void peer_ending(const PeerKit<A>& kit) {
         ZEXPECT(code_of(written[2].error) == ErrorCode::InvalidParams);
     });
 
+    // The size limit is this side's, which the remote did not break.
+    kit.add("oversized_notification_leaves_the_conversation_going_under_end", [](Fixture& f) {
+        f.peer.set_violation_policy(ipc::ViolationPolicy::End);
+        event answered;
+        std::optional<ipc::ConversationEnd> ended;
+        auto ask = [&]() -> task<ipc::Result<AddResult>> {
+            auto asked = co_await f.peer.send_request(AddParams{});
+            ended = f.peer.ended();
+            answered.set();
+            co_return asked;
+        };
+        auto remote = [&]() -> task<> {
+            co_await f.next();
+            auto note = notification<A>("test/note", NoteParams{.text = std::string(64, 'x')});
+            f.remote.send_unreadable(ipc::ReadError{
+                .kind = ipc::ReadError::Kind::Oversized,
+                .message = "too large",
+                .size = note.size(),
+                .prefix = note.substr(0, note.size() - 16),
+            });
+            f.remote.send(response<A>(1, AddResult{.sum = 3}));
+            co_await answered.wait();
+            f.remote.end_input();
+        };
+
+        auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+        ZEXPECT(ran.has_value());
+        ZASSERT(asked.has_value());
+        ZASSERT(asked->has_value());
+        ZEXPECT((*asked)->sum == 3);
+        ZEXPECT(!ended.has_value());
+    });
+
+#if KOTA_ENABLE_EXCEPTIONS
+    // The fault is this side's handler, not the remote.
+    kit.add("throwing_notification_handler_leaves_the_conversation_going_under_end",
+            [](Fixture& f) {
+                f.peer.set_violation_policy(ipc::ViolationPolicy::End);
+                f.peer.on_notification(
+                    [](const NoteParams&) { throw std::runtime_error("handler failed"); });
+                event answered;
+                std::optional<ipc::ConversationEnd> ended;
+                auto ask = [&]() -> task<ipc::Result<AddResult>> {
+                    auto asked = co_await f.peer.send_request(AddParams{});
+                    ended = f.peer.ended();
+                    answered.set();
+                    co_return asked;
+                };
+                auto remote = [&]() -> task<> {
+                    co_await f.next();
+                    f.remote.send(notification<A>("test/note", NoteParams{}));
+                    f.remote.send(response<A>(1, AddResult{.sum = 3}));
+                    co_await answered.wait();
+                    f.remote.end_input();
+                };
+
+                auto [ran, asked, scripted] = f.run(f.peer.run(), ask(), remote());
+                ZEXPECT(ran.has_value());
+                ZASSERT(asked.has_value());
+                ZASSERT(asked->has_value());
+                ZEXPECT((*asked)->sum == 3);
+                ZEXPECT(!ended.has_value());
+            });
+#endif
+
     // What JSON-RPC asks of a server: answer, and read on.
-    kit.add("violations_leave_it_going_by_default", [](Fixture& f) {
+    kit.add("violations_leave_the_conversation_going_by_default", [](Fixture& f) {
         event answered;
         std::optional<ipc::ConversationEnd> ended;
         auto ask = [&]() -> task<ipc::Result<AddResult>> {

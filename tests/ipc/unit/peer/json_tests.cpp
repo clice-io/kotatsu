@@ -164,8 +164,26 @@ ZEST_CASE(deeply_nested_notification_is_dropped) {
     ZEXPECT(f.written().empty());
 }
 
+// Answered under the id it names, and then the end.
+ZEST_CASE(unreadable_request_is_answered_before_it_ends_the_conversation_under_end) {
+    Fixture f;
+    f.peer.set_violation_policy(ViolationPolicy::End);
+    f.remote.send(R"({"jsonrpc":"2.0","id":4,"method":5})");
+
+    auto [ran] = f.run(f.peer.run());
+    ZEXPECT(ran.has_value());
+    const auto& written = f.written();
+    ZASSERT(written.size() == 1U);
+    ZEXPECT(written[0].id == protocol::RequestID(4));
+    ZEXPECT(code_of(written[0].error) == ErrorCode::InvalidRequest);
+    auto ended = f.peer.ended();
+    ZASSERT(ended.has_value());
+    ZEXPECT(ended->kind == ConversationEnd::Kind::Malformed);
+    ZEXPECT(ended->message == written[0].error.message);
+}
+
 // JSON-RPC never answers it, and it ends the conversation all the same.
-ZEST_CASE(unreadable_notification_ends_it_under_end) {
+ZEST_CASE(unreadable_notification_ends_the_conversation_under_end) {
     Fixture f;
     f.peer.set_violation_policy(ViolationPolicy::End);
     f.remote.send(R"({"jsonrpc":"1.0","method":"test/note","params":{"text":"x"}})");

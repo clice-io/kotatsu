@@ -32,7 +32,7 @@ public:
 
     BlockingPipe(BlockingPipe&& other) noexcept;
 
-    BlockingPipe& operator=(BlockingPipe&& other) noexcept;
+    BlockingPipe& operator=(BlockingPipe&&) = delete;
 
     ~BlockingPipe();
 
@@ -44,8 +44,6 @@ public:
     std::expected<std::string, ReadError> read();
 
 private:
-    void close() noexcept;
-
     native_handle_type handle;
     FrameParser parser;
     /// What the last read brought past the frame it ended.
@@ -73,9 +71,9 @@ public:
     /// Windows a pipe's HANDLE, open to read and write without
     /// FILE_FLAG_OVERLAPPED; elsewhere the descriptor of a connected stream
     /// socket, such as one to what kota::pipe::listen() listens on, without
-    /// O_NONBLOCK, whose writes to a remote that has gone fail rather than
+    /// O_NONBLOCK. A write to a remote that has gone fails, rather than
     /// raise SIGPIPE. An answer whose payload is larger than `max_payload`
-    /// is not read.
+    /// is skipped, as StreamTransport skips one.
     explicit BlockingClient(native_handle_type handle,
                             std::size_t max_payload = default_max_payload,
                             Codec codec = {}) :
@@ -112,16 +110,16 @@ private:
         }
         auto frame = pipe.read();
         if(!frame) {
-            auto& unread = frame.error();
+            auto& failure = frame.error();
             // Skipped whole: the answer of this request fails it alone.
-            if(unread.kind == ReadError::Kind::Oversized) {
-                auto head = codec.peek(unread.prefix);
+            if(failure.kind == ReadError::Kind::Oversized) {
+                auto head = codec.peek(failure.prefix);
                 if(head.kind == MessageHead::Kind::Response && head.id == id) {
                     return outcome_error(
-                        Error(protocol::ErrorCode::MessageTooLarge, std::move(unread.message)));
+                        Error(protocol::ErrorCode::MessageTooLarge, std::move(failure.message)));
                 }
             }
-            return outcome_error(end(std::move(unread.message)));
+            return outcome_error(end(std::move(failure.message)));
         }
         auto message = codec.parse_message(std::move(*frame));
         if(auto* answer = std::get_if<IncomingResponse>(&message); answer && answer->id == id) {

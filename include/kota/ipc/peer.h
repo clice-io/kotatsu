@@ -57,14 +57,17 @@ struct UnansweredRequest {
     protocol::RequestID id;
 };
 
-/// What a Peer does at a message from its remote that breaks the protocol:
-/// one that cannot be read as a request, a notification or a response, an
-/// error response without an id, as a remote sends when it could not read
-/// what it was sent, or a notification no handler takes or whose params do
-/// not decode. $/cancelRequest, which the peer takes itself and ignores when
-/// it cannot read it, never breaks it; nor does a request it reads and
-/// answers with an error, for a method it has no handler for or with params
-/// that do not decode, nor a response to a request no longer pending.
+/// What a Peer does at a message from its remote that it can neither answer
+/// under a request's id nor deliver, which breaks the protocol the two
+/// speak: one that cannot be read as a request, a notification or a
+/// response; an error response without an id, as a remote sends when it
+/// could not read what it was sent; or a notification no handler takes,
+/// LSP's $/ ones included, or whose params do not decode. None of these
+/// breaks it: a request it reads and answers with an error, for a method it
+/// has no handler for, with params that do not decode or under the id of one
+/// it is answering; a response to a request no longer pending; a
+/// $/cancelRequest, which the peer takes itself and ignores when it cannot
+/// read it; a frame too large to read, which concerns this side's limit.
 enum class ViolationPolicy : std::uint8_t {
     /// Answers a request it cannot read with an error, as JSON-RPC asks of a
     /// server, logs the rest, and reads on.
@@ -75,8 +78,9 @@ enum class ViolationPolicy : std::uint8_t {
 };
 
 /// Why a peer's conversation with its remote ended, as Peer::ended() tells
-/// it: no answer can come any more, so the requests pending have failed, with
-/// ConnectionClosed and `message`, and a new one fails too.
+/// it: no answer can come any more, so the requests pending have failed with
+/// ConnectionClosed and `message`, and a new one fails at once with
+/// ConnectionClosed.
 struct ConversationEnd {
     enum class Kind : std::uint8_t {
         /// The input ended: the remote closed its output, or the connection
@@ -88,12 +92,13 @@ struct ConversationEnd {
         Malformed,
         /// A write to the remote, or the half-close of the output, failed.
         WriteFailed,
-        /// This side ended it, with close() or a cancel of run().
-        Closed,
+        /// This side shut it down, with close() or a cancel of run().
+        ShutDown,
     };
 
     Kind kind = Kind::InputEnded;
-    /// What the transport or the codec said of it.
+    /// What ended it, in words: what the transport or the codec said, or
+    /// what in a message broke the protocol.
     std::string message;
 };
 

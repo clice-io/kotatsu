@@ -1,14 +1,19 @@
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <format>
+#include <memory>
 #include <optional>
 #include <random>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include "fs/harness/files.h"
 #include "ipc/harness/codec_bincode.h"
 #include "ipc/harness/codec_json.h"
 #include "ipc/harness/codec_kit.h"
@@ -17,8 +22,12 @@
 #include "kota/ipc/codec/bincode.h"
 #include "kota/ipc/codec/json.h"
 #include "kota/ipc/framing.h"
+#include "kota/ipc/peer/bincode.h"
+#include "kota/ipc/transport.h"
+#include "kota/zest/async.h"
 #include "kota/zest/macro.h"
 #include "kota/zest/zest.h"
+#include "kota/async/async.h"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -30,6 +39,7 @@
 #include <windows.h>
 #else
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 #endif
 
@@ -111,6 +121,14 @@ public:
         }
     }
 
+#ifdef _WIN32
+    /// Writes no bytes, which the client reads as a read of none.
+    void write_nothing() {
+        DWORD written = 0;
+        ZASSERT(::WriteFile(remote, "", 0, &written, nullptr));
+    }
+#endif
+
     /// Writes `payload` in a frame.
     void send(std::string_view payload) {
         write(frame_header(payload.size()));
@@ -187,7 +205,42 @@ private:
 using Bincode = test::BincodeAdapter;
 using Client = BlockingClient<BincodeCodec>;
 
-ZEST_SUITE(ipc_blocking_client) {
+/// A name for pipe::listen() nobody else uses: a socket in `dir`, or on
+/// Windows a named pipe named after it.
+std::string pipe_name(const test::TempDir& dir) {
+#ifdef _WIN32
+    return R"(\\.\pipe\)" + dir.path.filename().string();
+#else
+    return dir.file("socket");
+#endif
+}
+
+/// A handle connected to what pipe::listen() listens on at `name`, opened as
+/// a program without an event loop opens it.
+Handle connect_to(const std::string& name) {
+#ifdef _WIN32
+    const std::wstring wide(name.begin(), name.end());
+    Handle handle = ::CreateFileW(wide.c_str(),
+                                  GENERIC_READ | GENERIC_WRITE,
+                                  0,
+                                  nullptr,
+                                  OPEN_EXISTING,
+                                  0,
+                                  nullptr);
+    ZASSERT(handle != INVALID_HANDLE_VALUE);
+#else
+    Handle handle = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    ZASSERT(handle >= 0);
+    sockaddr_un address = {};
+    address.sun_family = AF_UNIX;
+    ZASSERT(name.size() < sizeof(address.sun_path));
+    std::memcpy(address.sun_path, name.data(), name.size());
+    ZASSERT(::connect(handle, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0);
+#endif
+    return handle;
+}
+
+ZEST_SUITE(ipc_blocking_client, zest::LoopFixture) {
 
 // The answer is written before the request is sent: the pipe holds it.
 ZEST_CASE(request_gets_its_result) {
@@ -229,7 +282,7 @@ ZEST_CASE(request_ids_count_up_from_one) {
     ZEXPECT(two->id == RequestID(2));
 }
 
-ZEST_CASE(error_answer_fails_only_its_request) {
+ZEST_CASE(request_answered_with_an_error_fails) {
     Link link;
     Client client(link.client);
     link.send(Bincode::error_response(RequestID(1), Error(ErrorCode::InvalidParams, "bad")));
@@ -244,7 +297,8 @@ ZEST_CASE(error_answer_fails_only_its_request) {
     ZEXPECT(answered->sum == 2);
 }
 
-ZEST_CASE(result_that_does_not_decode_fails_only_its_request) {
+// The next request is answered: only the result was wrong.
+ZEST_CASE(request_whose_result_does_not_decode_fails) {
     Link link;
     Client client(link.client);
     link.send(Bincode::response_raw(1, Bincode::not_a_value));
@@ -252,20 +306,22 @@ ZEST_CASE(result_that_does_not_decode_fails_only_its_request) {
 
     auto undecoded = client.send_request<AddResult>("test/add", AddParams{});
     auto answered = client.send_request<AddResult>("test/add", AddParams{});
-    ZEXPECT(undecoded.has_error());
+    ZASSERT(undecoded.has_error());
+    ZEXPECT(code_of(undecoded.error()) == ErrorCode::RequestFailed);
     ZASSERT(answered.has_value());
     ZEXPECT(answered->sum == 2);
 }
 
 // Nothing is written, and the next request goes out under the next id.
-ZEST_CASE(params_that_do_not_encode_fail_unsent) {
+ZEST_CASE(request_whose_params_do_not_encode_fails) {
     Link link;
     Client client(link.client);
     link.send(test::response<Bincode>(2, AddResult{.sum = 2}));
 
     auto unsent = client.send_request<AddResult>("test/unwritable", test::Unwritable{});
     auto answered = client.send_request<AddResult>("test/add", AddParams{});
-    ZEXPECT(unsent.has_error());
+    ZASSERT(unsent.has_error());
+    ZEXPECT(code_of(unsent.error()) == ErrorCode::InternalError);
     ZASSERT(answered.has_value());
     ZEXPECT(answered->sum == 2);
     auto request = link.receive_message<Bincode>();
@@ -274,22 +330,39 @@ ZEST_CASE(params_that_do_not_encode_fail_unsent) {
     ZEXPECT(request->method == "test/add");
 }
 
-// The frame is skipped whole, so the conversation goes on after it.
-ZEST_CASE(answer_over_the_limit_fails_only_its_request) {
+// Larger than the pipe holds, so written as the client reads it.
+ZEST_CASE(answer_larger_than_a_read_is_read_whole) {
+    Link link;
+    Client client(link.client);
+    const std::string text(256 * 1024, 'x');
+    std::thread remote([&] { link.send(test::response<Bincode>(1, NoteParams{.text = text})); });
+
+    auto result = client.send_request<NoteParams>("test/note", NoteParams{});
+    remote.join();
+    ZASSERT(result.has_value());
+    ZEXPECT(result->text == text);
+}
+
+// The frame is skipped whole, over many reads, and the conversation goes on
+// after it.
+ZEST_CASE(request_answered_over_the_limit_fails) {
     Link link;
     Client client(link.client, 64);
-    link.send(test::response<Bincode>(1, NoteParams{.text = std::string(200, 'x')}));
-    link.send(test::response<Bincode>(2, AddResult{.sum = 2}));
+    std::thread remote([&] {
+        link.send(test::response<Bincode>(1, NoteParams{.text = std::string(256 * 1024, 'x')}));
+        link.send(test::response<Bincode>(2, AddResult{.sum = 2}));
+    });
 
     auto skipped = client.send_request<AddResult>("test/add", AddParams{});
     auto answered = client.send_request<AddResult>("test/add", AddParams{});
+    remote.join();
     ZASSERT(skipped.has_error());
     ZEXPECT(code_of(skipped.error()) == ErrorCode::MessageTooLarge);
     ZASSERT(answered.has_value());
     ZEXPECT(answered->sum == 2);
 }
 
-ZEST_CASE(message_over_the_limit_that_is_no_answer_ends_it) {
+ZEST_CASE(oversized_message_that_is_no_answer_ends_the_conversation) {
     Link link;
     Client client(link.client, 64);
     link.send(test::notification<Bincode>("test/note", NoteParams{.text = std::string(200, 'x')}));
@@ -301,7 +374,7 @@ ZEST_CASE(message_over_the_limit_that_is_no_answer_ends_it) {
 }
 
 // The request that read it fails, and so does the next, unsent.
-ZEST_CASE(message_that_is_no_answer_ends_it) {
+ZEST_CASE(message_that_is_no_answer_ends_the_conversation) {
     const std::vector<std::pair<std::string, std::string>> cases = {
         {test::request<Bincode>(7, "test/add", AddParams{}),
          "a request instead of the answer: test/add"},
@@ -334,8 +407,8 @@ ZEST_CASE(message_that_is_no_answer_ends_it) {
     }
 }
 
-// What the codec said of it.
-ZEST_CASE(garbage_ends_it) {
+// With what the codec said of it.
+ZEST_CASE(garbage_ends_the_conversation) {
     Link link;
     Client client(link.client);
     link.send(Bincode::garbage);
@@ -343,10 +416,13 @@ ZEST_CASE(garbage_ends_it) {
     auto ended = client.send_request<AddResult>("test/add", AddParams{});
     ZASSERT(ended.has_error());
     ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
-    ZEXPECT(!ended.error().message.empty());
+    auto read = BincodeCodec().parse_message(std::string(Bincode::garbage));
+    auto* unreadable = std::get_if<IncomingParseError>(&read);
+    ZASSERT(unreadable != nullptr);
+    ZEXPECT(ended.error().message == unreadable->error.message);
 }
 
-ZEST_CASE(malformed_frame_ends_it) {
+ZEST_CASE(malformed_frame_ends_the_conversation) {
     Link link;
     Client client(link.client);
     link.write("Content-Length: many\r\n\r\n");
@@ -358,17 +434,19 @@ ZEST_CASE(malformed_frame_ends_it) {
 }
 
 // The remote closes once it has read the request, as a remote that went
-// before it answered.
-ZEST_CASE(end_of_input_ends_it) {
+// before it answered. The client closes before the join, so that a request
+// it never wrote fails the case rather than hangs it.
+ZEST_CASE(end_of_input_ends_the_conversation) {
     Link link;
-    Client client(link.client);
+    std::optional<Client> client(std::in_place, link.client);
     bool received = false;
     std::thread remote([&] {
         received = link.receive().has_value();
         link.close_remote();
     });
 
-    auto ended = client.send_request<AddResult>("test/add", AddParams{});
+    auto ended = client->send_request<AddResult>("test/add", AddParams{});
+    client.reset();
     remote.join();
     ZEXPECT(received);
     ZASSERT(ended.has_error());
@@ -376,32 +454,83 @@ ZEST_CASE(end_of_input_ends_it) {
     ZEXPECT(ended.error().message == "the input ended");
 }
 
-// No SIGPIPE: the process lives on to see the failure.
-ZEST_CASE(write_to_a_closed_remote_ends_it) {
+// The write fails, rather than the read after it, and the next request fails
+// with it. That no SIGPIPE ends the process is the codec_alone check's: an
+// event loop, which another case of this process may have run, ignores it.
+ZEST_CASE(write_to_a_closed_remote_fails) {
     Link link;
     Client client(link.client);
     link.close_remote();
 
     auto ended = client.send_request<AddResult>("test/add", AddParams{});
+    auto after = client.send_request<AddResult>("test/add", AddParams{});
     ZASSERT(ended.has_error());
     ZEXPECT(code_of(ended.error()) == ErrorCode::ConnectionClosed);
     ZEXPECT(!ended.error().message.empty());
+    ZEXPECT(ended.error().message != "the input ended");
+    ZASSERT(after.has_error());
+    ZEXPECT(after.error().message == ended.error().message);
 }
 
-ZEST_CASE(moved_client_keeps_the_connection) {
-    Link first;
-    Link second;
-    first.send(test::response<Bincode>(1, AddResult{.sum = 1}));
-    Client moved(first.client);
-    Client client(std::move(moved));
-    Client replaced(second.client);
-    replaced = std::move(client);
+#ifdef _WIN32
+// A pipe reads a write of no bytes as a read of none, which is not its end.
+ZEST_CASE(write_of_no_bytes_is_no_end) {
+    Link link;
+    Client client(link.client);
+    link.write_nothing();
+    link.send(test::response<Bincode>(1, AddResult{.sum = 3}));
 
-    auto answered = replaced.send_request<AddResult>("test/add", AddParams{});
+    auto result = client.send_request<AddResult>("test/add", AddParams{});
+    ZASSERT(result.has_value());
+    ZEXPECT(result->sum == 3);
+}
+#endif
+
+// As a function that opens the connection returns it.
+ZEST_CASE(moved_client_keeps_the_connection) {
+    Link link;
+    link.send(test::response<Bincode>(1, AddResult{.sum = 1}));
+    std::optional<Client> opened(std::in_place, link.client);
+    Client client(std::move(*opened));
+    opened.reset();
+
+    auto answered = client.send_request<AddResult>("test/add", AddParams{});
     ZASSERT(answered.has_value());
     ZEXPECT(answered->sum == 1);
-    // The handle it held before is closed.
-    ZEXPECT(!second.receive().has_value());
+}
+
+// What a hook library asks: a BincodePeer over a connection pipe::listen()
+// accepted, on a loop the client knows nothing of. The peer's run() ends once
+// the client, done, closes its end.
+ZEST_CASE(requests_reach_a_peer_over_a_pipe) {
+    test::TempDir dir;
+    const auto name = pipe_name(dir);
+    auto listener = pipe::listen(name, loop);
+    ZASSERT(listener.has_value());
+    auto serve = [&]() -> task<> {
+        auto accepted = co_await listener->accept();
+        ZASSERT(accepted.has_value());
+        BincodePeer peer(loop, std::make_unique<StreamTransport>(stream(std::move(*accepted))));
+        peer.on_request(
+            "test/add",
+            [](BincodePeer::RequestContext&, const AddParams& params) -> RequestResult<AddParams> {
+                co_return AddResult{.sum = params.a + params.b};
+            });
+        co_await peer.run();
+    };
+    std::vector<std::optional<std::int64_t>> sums;
+    std::thread asking([&] {
+        Client client(connect_to(name));
+        for(std::int64_t a: {1, 2}) {
+            auto result = client.send_request<AddResult>("test/add", AddParams{.a = a, .b = 10});
+            sums.push_back(result ? std::optional(result->sum) : std::nullopt);
+        }
+    });
+
+    auto [served] = run(serve());
+    asking.join();
+    ZEXPECT(served.has_value());
+    ZEXPECT(sums == std::vector<std::optional<std::int64_t>>{11, 12});
 }
 
 // The client is one over any codec: JSON carries what bincode does.
