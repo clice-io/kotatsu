@@ -396,7 +396,8 @@ ZEST_CASE(close_lets_the_directories_above_be_renamed) {
 }
 #endif
 
-ZEST_CASE(sync_keeps_what_the_directory_holds) {
+ZEST_CASE(sync_of_a_directory_succeeds) {
+    // What a crash would lose no test can tell.
     test::TempDir dir;
     test::write_text(dir.file("new.txt"), "text");
     ZASSERT(!rename(dir.file("new.txt"), dir.file("renamed.txt")));

@@ -416,8 +416,19 @@ ZEST_CASE(try_exists_tells_nothing_from_failure) {
     ZEXPECT(try_exists(dir.file("missing")) == false);
     // A file in place of a directory leaves nothing to find.
     ZEXPECT(try_exists(dir.file("file.txt/child")) == false);
+}
+
+ZEST_CASE(exists_is_false_on_any_error) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
     ZEXPECT(exists(dir.file("file.txt")));
     ZEXPECT(!exists(dir.file("missing")));
+    // No system takes a name with a null in it.
+    std::string_view nul("a\0b", 3);
+    auto found = try_exists(nul);
+    ZASSERT(!found.has_value());
+    ZEXPECT(found.error() == std::errc::invalid_argument);
+    ZEXPECT(!exists(nul));
 }
 
 #ifdef _WIN32
@@ -445,7 +456,6 @@ ZEST_CASE(try_exists_where_access_is_denied_fails) {
     auto found = try_exists(dir.file("closed/file.txt"));
     ZASSERT(!found.has_value());
     ZEXPECT(found.error() == std::errc::permission_denied);
-    ZEXPECT(!exists(dir.file("closed/file.txt")));
 }
 #endif
 

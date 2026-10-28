@@ -18,6 +18,7 @@
 #include "kota/fs/directory.h"
 #include "kota/fs/file.h"
 #include "kota/fs/status.h"
+#include "kota/fs/temp.h"
 #include "kota/fs/volume.h"
 
 // What NTFS does not show: the calls FAT32 and exFAT refuse, POSIX deletes
@@ -238,6 +239,26 @@ ZEST_CASE(remove_all_takes_a_read_only_directory) {
         make_read_only(dir.file("tree/inner"));
         ZEXPECT(remove_all(dir.file("tree")) == 3u);
         ZEXPECT(try_exists(dir.file("tree")) == false);
+    });
+}
+
+ZEST_CASE(temp_file_goes_at_once) {
+    // FAT deletes the classic way: a name held open stays until it closes.
+    on_fat([](const test::TempDir& dir) {
+        auto temp = TempFile::create(dir.root(), "case-");
+        ZASSERT(temp.has_value());
+        std::string held(temp->path());
+        ZEXPECT(!temp->remove());
+        ZEXPECT(try_exists(held) == false);
+    });
+}
+
+ZEST_CASE(sync_of_a_directory_succeeds) {
+    on_fat([](const test::TempDir& dir) {
+        test::write_text(dir.file("file.txt"), "text");
+        auto directory = Directory::open(dir.root());
+        ZASSERT(directory.has_value());
+        ZEXPECT(!directory->sync());
     });
 }
 
