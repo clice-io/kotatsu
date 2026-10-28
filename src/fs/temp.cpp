@@ -79,6 +79,8 @@ TempFile::TempFile(TempFile&& other) noexcept :
 TempFile& TempFile::operator=(TempFile&& other) noexcept {
     if(this != &other) {
         [[maybe_unused]] auto error = remove();
+        // One kept is still open, which a swap would hand to `other`.
+        [[maybe_unused]] auto closed = opened.close();
         location = std::exchange(other.location, {});
         opened = std::move(other.opened);
     }

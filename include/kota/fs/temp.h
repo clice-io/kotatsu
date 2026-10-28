@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 
 #include "kota/fs/file.h"
 
@@ -23,8 +24,8 @@ public:
 
     TempDirectory(TempDirectory&& other) noexcept;
 
-    /// Removes the directory this held, as the destructor does, and takes
-    /// `other`'s.
+    /// Removes the directory this held, as the destructor does, its error
+    /// left untold, and takes `other`'s: remove() first tells it.
     TempDirectory& operator=(TempDirectory&& other) noexcept;
 
     /// Removes the directory as remove() does, its error left untold.
@@ -68,8 +69,8 @@ public:
 
     TempFile(TempFile&& other) noexcept;
 
-    /// Removes the file this held, as the destructor does, and takes
-    /// `other`'s.
+    /// Removes the file this held, as the destructor does, its error left
+    /// untold, and takes `other`'s: remove() first tells it.
     TempFile& operator=(TempFile&& other) noexcept;
 
     /// Removes the file as remove() does, its error left untold.
