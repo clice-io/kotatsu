@@ -15,6 +15,12 @@
 #else
 #include <unistd.h>
 #endif
+#ifdef __APPLE__
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+#include <thread>
+#endif
 
 #include "fs/harness/files.h"
 #include "fs/harness/win32.h"
@@ -107,18 +113,32 @@ struct DiskImage {
     }
 
     void attach(bool read_only) {
-        attached =
-            hdiutil(std::format("attach {} -nobrowse -noverify -noautofsck -mountpoint '{}' '{}'",
-                                read_only ? "-readonly" : "",
-                                mount,
-                                image));
+        auto command =
+            std::format("hdiutil attach {} -nobrowse -noverify -noautofsck -mountpoint '{}' '{}'",
+                        read_only ? "-readonly" : "",
+                        mount,
+                        image);
+        // The disk's device, which hdiutil names first, before its volume.
+        FILE* out = ::popen(command.c_str(), "r");
+        ZASSERT(out != nullptr);
+        char line[256] = {};
+        bool named = std::fgets(line, sizeof(line), out) != nullptr;
+        for(char rest[256]; std::fgets(rest, sizeof(rest), out) != nullptr;) {}
+        attached = ::pclose(out) == 0 && named;
         ZASSERT(attached);
+        device.assign(line, std::strcspn(line, " \t\n"));
     }
 
     /// Detaches it, files open on it or not: false when it stays attached.
+    /// A daemon may hold the disk for a moment once its volume is unmounted,
+    /// which -force does not override ("Resource busy"): the disk is tried
+    /// again by its device, a few times.
     bool detach() {
-        if(attached && hdiutil(std::format("detach -force '{}'", mount))) {
-            attached = false;
+        for(int tries = 0; attached && tries < 10; ++tries) {
+            if(tries != 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+            attached = !hdiutil(std::format("detach -force '{}'", device));
         }
         return !attached;
     }
@@ -130,6 +150,7 @@ private:
 
     const std::string image;
     const std::string mount;
+    std::string device;
     bool attached = false;
     zest::FatalHook on_fatal{[this] { detach(); }};
 };
