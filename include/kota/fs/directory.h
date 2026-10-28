@@ -346,7 +346,7 @@ std::expected<bool, std::error_code> create_directories(std::string_view path);
 
 /// Removes a file, a symlink (not what it points to) or an empty
 /// directory: true when it removed it, false when nothing was there. On
-/// Windows a read-only file goes as well, and the name goes at once, as on
+/// Windows a read-only file or directory goes as well, and the name goes at once, as on
 /// POSIX, while another process holds the file open, where it shares it for
 /// deletion and the file system allows (NTFS); elsewhere (FAT) it stays
 /// until the last handle goes. A file deleted while held open whose name

@@ -64,7 +64,7 @@ std::string verbatim(const std::string& path) {
     return R"(\\?\)" + path;
 }
 
-/// Makes the file at `path` read-only.
+/// Makes the file or directory at `path` read-only.
 void make_read_only(const std::string& path) {
     ZASSERT(::SetFileAttributesW(test::std_path(path).wstring().c_str(), FILE_ATTRIBUTE_READONLY));
 }
@@ -217,6 +217,25 @@ ZEST_CASE(remove_all_takes_a_read_only_file) {
         std::filesystem::create_directories(dir.path / "tree" / "inner");
         test::write_text(dir.file("tree/inner/file.txt"), "text");
         make_read_only(dir.file("tree/inner/file.txt"));
+        ZEXPECT(remove_all(dir.file("tree")) == 3u);
+        ZEXPECT(try_exists(dir.file("tree")) == false);
+    });
+}
+
+ZEST_CASE(remove_takes_a_read_only_directory) {
+    on_fat([](const test::TempDir& dir) {
+        std::filesystem::create_directory(dir.path / "empty");
+        make_read_only(dir.file("empty"));
+        ZEXPECT(remove(dir.file("empty")) == true);
+        ZEXPECT(try_exists(dir.file("empty")) == false);
+    });
+}
+
+ZEST_CASE(remove_all_takes_a_read_only_directory) {
+    on_fat([](const test::TempDir& dir) {
+        std::filesystem::create_directories(dir.path / "tree" / "inner");
+        test::write_text(dir.file("tree/inner/file.txt"), "text");
+        make_read_only(dir.file("tree/inner"));
         ZEXPECT(remove_all(dir.file("tree")) == 3u);
         ZEXPECT(try_exists(dir.file("tree")) == false);
     });

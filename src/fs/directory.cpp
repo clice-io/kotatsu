@@ -179,7 +179,7 @@ std::expected<win32::Handle, std::error_code> open_directory(std::string_view di
 /// Deletes what `handle`, opened for DELETE, refers to: by POSIX semantics,
 /// so that the name goes even while others hold it open, and a read-only
 /// file too; where the file system has none (FAT), the classic way, a
-/// read-only file without the attribute meanwhile.
+/// read-only file or directory without the attribute meanwhile.
 DWORD dispose(HANDLE handle) {
     DispositionInfoEx posix{dispose_delete | dispose_posix_semantics | dispose_ignore_readonly};
     if(::SetFileInformationByHandle(handle, disposition_info_ex, &posix, sizeof(posix))) {
@@ -196,24 +196,22 @@ DWORD dispose(HANDLE handle) {
     if(error != ERROR_ACCESS_DENIED) {
         return error;
     }
-    // The attributes take a handle of their own, the same file reopened.
-    win32::Handle attributes(
-        ::ReOpenFile(handle,
-                     FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
-                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                     FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT));
+    // The attributes take a handle of their own, the same file reopened by
+    // an empty name relative to it, which ReOpenFile refuses for a
+    // directory.
+    auto attributes = win32::open_at(handle, L"", FILE_WRITE_ATTRIBUTES, false);
     FILE_BASIC_INFO basic;
-    if(attributes.get() == INVALID_HANDLE_VALUE ||
-       !::GetFileInformationByHandleEx(attributes.get(), FileBasicInfo, &basic, sizeof(basic)) ||
+    if(!attributes ||
+       !::GetFileInformationByHandleEx(attributes->get(), FileBasicInfo, &basic, sizeof(basic)) ||
        !(basic.FileAttributes & FILE_ATTRIBUTE_READONLY) ||
-       !win32::set_attributes(attributes.get(), basic.FileAttributes & ~FILE_ATTRIBUTE_READONLY)) {
+       !win32::set_attributes(attributes->get(), basic.FileAttributes & ~FILE_ATTRIBUTE_READONLY)) {
         return error;
     }
     if(::SetFileInformationByHandle(handle, FileDispositionInfo, &classic, sizeof(classic))) {
         return ERROR_SUCCESS;
     }
     error = ::GetLastError();
-    win32::set_attributes(attributes.get(), basic.FileAttributes);
+    win32::set_attributes(attributes->get(), basic.FileAttributes);
     return error;
 }
 
