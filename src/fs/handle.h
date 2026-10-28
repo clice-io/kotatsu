@@ -18,4 +18,8 @@ std::expected<Status, std::error_code> handle_status(File::native_handle_type ha
 /// File::canonical() tells it.
 std::error_code handle_canonical(buffer_ref out, File::native_handle_type handle);
 
+/// Waits until the system has written what `handle` has open to the disk,
+/// as File::sync() tells it.
+std::error_code handle_sync(File::native_handle_type handle);
+
 }  // namespace kota::fs::detail

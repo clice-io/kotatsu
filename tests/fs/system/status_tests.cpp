@@ -330,7 +330,7 @@ ZEST_CASE(a_dangling_symlink_exists_only_itself) {
     if(!test::linked(create_symlink("missing", dir.file("link")))) {
         return;
     }
-    ZEXPECT(exists(dir.file("link")) == false);
+    ZEXPECT(try_exists(dir.file("link")) == false);
     ZEXPECT(symlink_status(dir.file("link")).has_value());
 }
 
@@ -398,24 +398,37 @@ ZEST_CASE(status_tells_a_wsl_fifo_or_device) {
     }
 }
 
-ZEST_CASE(exists_follows_a_junction) {
+ZEST_CASE(try_exists_follows_a_junction) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
     test::make_junction(dir.file("junction"), dir.file("target"));
-    ZEXPECT(exists(dir.file("junction")) == true);
+    ZEXPECT(try_exists(dir.file("junction")) == true);
     std::filesystem::remove(dir.path / "target");
-    ZEXPECT(exists(dir.file("junction")) == false);
+    ZEXPECT(try_exists(dir.file("junction")) == false);
     ZEXPECT(symlink_status(dir.file("junction")).has_value());
 }
 #endif
 
-ZEST_CASE(exists_tells_nothing_from_failure) {
+ZEST_CASE(try_exists_tells_nothing_from_failure) {
     test::TempDir dir;
     test::write_text(dir.file("file.txt"), "text");
-    ZEXPECT(exists(dir.file("file.txt")) == true);
-    ZEXPECT(exists(dir.file("missing")) == false);
+    ZEXPECT(try_exists(dir.file("file.txt")) == true);
+    ZEXPECT(try_exists(dir.file("missing")) == false);
     // A file in place of a directory leaves nothing to find.
-    ZEXPECT(exists(dir.file("file.txt/child")) == false);
+    ZEXPECT(try_exists(dir.file("file.txt/child")) == false);
+}
+
+ZEST_CASE(exists_is_false_on_any_error) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
+    ZEXPECT(exists(dir.file("file.txt")));
+    ZEXPECT(!exists(dir.file("missing")));
+    // No system takes a name with a null in it.
+    std::string_view nul("a\0b", 3);
+    auto found = try_exists(nul);
+    ZASSERT(!found.has_value());
+    ZEXPECT(found.error() == std::errc::invalid_argument);
+    ZEXPECT(!exists(nul));
 }
 
 #ifdef _WIN32
@@ -427,10 +440,10 @@ ZEST_CASE(status_of_a_file_deleted_while_held_open_fails) {
     auto found = status(dir.file("file.txt"));
     ZASSERT(!found.has_value());
     ZEXPECT(found.error() == std::errc::no_such_file_or_directory);
-    ZEXPECT(exists(dir.file("file.txt")) == false);
+    ZEXPECT(try_exists(dir.file("file.txt")) == false);
 }
 #else
-ZEST_CASE(exists_where_access_is_denied_fails) {
+ZEST_CASE(try_exists_where_access_is_denied_fails) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "closed");
     test::write_text(dir.file("closed/file.txt"), "text");
@@ -440,7 +453,7 @@ ZEST_CASE(exists_where_access_is_denied_fails) {
         zest::skip();
         return;
     }
-    auto found = exists(dir.file("closed/file.txt"));
+    auto found = try_exists(dir.file("closed/file.txt"));
     ZASSERT(!found.has_value());
     ZEXPECT(found.error() == std::errc::permission_denied);
 }

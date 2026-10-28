@@ -1,6 +1,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "kota/zest/zest.h"
 #include "kota/support/small_string.h"
@@ -19,6 +20,13 @@ std::optional<std::string> relative_of(std::string_view p, std::string_view base
     if(!relative(out, p, base, style)) {
         return std::nullopt;
     }
+    return out;
+}
+
+/// What resolve() writes.
+std::string resolved(std::string_view p, std::string_view base, DotDot dot_dot, Style style) {
+    std::string out;
+    resolve(out, p, base, dot_dot, style);
     return out;
 }
 
@@ -63,6 +71,49 @@ ZEST_CASE(relative_writes_over_what_the_buffer_held) {
     ZEXPECT(std::string_view(out) == "../b/c");
     ZEXPECT(relative(out, "/a", "/a", posix));
     ZEXPECT(std::string_view(out) == ".");
+}
+
+ZEST_CASE(resolve_joins_a_relative_path_onto_the_base) {
+    ZEXPECT(resolved("c", "/a/b", DotDot::Fold, posix) == "/a/b/c");
+    ZEXPECT(resolved("../c", "/a/b", DotDot::Fold, posix) == "/a/c");
+    ZEXPECT(resolved("./c/", "/a/b/", DotDot::Fold, posix) == "/a/b/c");
+    ZEXPECT(resolved("", "/a/b", DotDot::Fold, posix) == "/a/b");
+    ZEXPECT(resolved("c", "a", DotDot::Fold, posix) == "a/c");
+    ZEXPECT(resolved("..\\c", "C:\\a\\b", DotDot::Fold, windows) == "C:\\a\\c");
+}
+
+ZEST_CASE(resolve_takes_an_absolute_path_alone) {
+    ZEXPECT(resolved("/x/./y", "/a", DotDot::Fold, posix) == "/x/y");
+    ZEXPECT(resolved("D:\\x", "C:\\a", DotDot::Fold, windows) == "D:\\x");
+    // A rooted `\x` keeps the base's drive.
+    ZEXPECT(resolved("\\x", "C:\\a", DotDot::Fold, windows) == "C:\\x");
+}
+
+ZEST_CASE(resolve_keeps_dot_dot_when_asked) {
+    ZEXPECT(resolved("../c", "/a/b", DotDot::Keep, posix) == "/a/b/../c");
+    ZEXPECT(resolved("./c", "/a/./b", DotDot::Keep, posix) == "/a/b/c");
+}
+
+ZEST_CASE(resolve_inverts_relative) {
+    for(auto [p, base]: {
+            std::pair{"/a/b/c", "/a/d"  },
+            {"/a",     "/a/b/c"},
+            {"/a/b",   "/a/b"  }
+    }) {
+        ZEST_CONTEXT("{} from {}", p, base);
+        std::string way;
+        ZASSERT(relative(way, p, base, posix));
+        ZEXPECT(resolved(way, base, DotDot::Fold, posix) == p);
+    }
+}
+
+ZEST_CASE(resolve_takes_a_path_that_views_its_buffer) {
+    std::string out = "../c";
+    resolve(out, out, "/a/b", DotDot::Fold, posix);
+    ZEXPECT(out == "/a/c");
+    out = "/a/b";
+    resolve(out, "c", out, DotDot::Fold, posix);
+    ZEXPECT(out == "/a/b/c");
 }
 
 ZEST_CASE(strip_prefix_takes_whole_components) {

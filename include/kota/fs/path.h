@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -250,6 +252,51 @@ inline ancestors_view ancestors(std::string_view p, Style style = native_style) 
 /// uses, or `p` uses, or `/`.
 void push(buffer_ref path, std::string_view p, Style style = native_style);
 
+namespace detail {
+
+/// Whether push() joins `Parts`: two or more names, which the style they are
+/// spelled in may follow.
+template <typename... Parts>
+constexpr bool joins = [] {
+    constexpr std::array<bool, sizeof...(Parts)> names = {
+        std::convertible_to<const Parts&, std::string_view>...};
+    constexpr std::array<bool, sizeof...(Parts)> styles = {std::same_as<Parts, Style>...};
+    std::size_t count = 0;
+    for(std::size_t i = 0; i < names.size(); ++i) {
+        if(names[i]) {
+            ++count;
+        } else if(!styles[i] || i + 1 != names.size()) {
+            return false;
+        }
+    }
+    return count >= 2;
+}();
+
+}  // namespace detail
+
+/// Joins each of `parts` onto `path` in turn, as push() joins one: two or
+/// more names, then the style they are spelled in, native_style when none
+/// follows. No part may view `path`.
+template <typename... Parts>
+    requires detail::joins<Parts...>
+void push(buffer_ref path, const Parts&... parts) {
+    auto style = native_style;
+    (
+        [&] {
+            if constexpr(std::same_as<Parts, Style>) {
+                style = parts;
+            }
+        }(),
+        ...);
+    (
+        [&] {
+            if constexpr(!std::same_as<Parts, Style>) {
+                push(path, std::string_view(parts), style);
+            }
+        }(),
+        ...);
+}
+
 /// Cuts `path` to its parent(), the empty one of a single relative name
 /// (`a`) included; false, leaving it as it is, when it has no filename to
 /// cut (`/`, `C:`, ``).
@@ -290,6 +337,17 @@ void normalize(buffer_ref path, DotDot dot_dot = DotDot::Fold, Style style = nat
 bool
     relative(buffer_ref out, std::string_view p, std::string_view base, Style style = native_style);
 
+/// Writes into `out` the path `p` names from the directory `base`, both
+/// taken as written: `p` itself where it is absolute, or else `p` pushed onto
+/// `base`, then normalized with `..` folded or kept as `dot_dot` says. The
+/// inverse of relative(): `../c` from `a/b` is `a/c`. `p` and `base` may view
+/// `out`.
+void resolve(buffer_ref out,
+             std::string_view p,
+             std::string_view base,
+             DotDot dot_dot = DotDot::Fold,
+             Style style = native_style);
+
 /// The rest of `p` after the components of `prefix`, without the separators
 /// before it: `c/d` of `a/b/c/d` under `a/b`, empty for `a/b` itself; none
 /// when `p` is not under `prefix`. components_view compare whole and as written,
@@ -304,6 +362,11 @@ bool is_within(std::string_view p, std::string_view ancestor, Style style = nati
 /// Turns each `\` of `path` into `/` where `\` separates: in a Windows
 /// path that is not verbatim. Any other path stays as it is.
 void to_slash(buffer_ref path, Style style = native_style);
+
+/// Turns the drive letter of a Windows `path` into lower case: `c:\x` of
+/// `C:\x`, as LSP clients spell it. Any other path, a verbatim `\\?\C:` among
+/// them, stays as it is.
+void lowercase_drive(buffer_ref path, Style style = native_style);
 
 /// Turns each `/` of a Windows `path` into `\`, the way Windows programs
 /// print paths; a verbatim one, where `/` is a name's character, stays as it

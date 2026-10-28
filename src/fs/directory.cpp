@@ -1,5 +1,6 @@
 #include "kota/fs/directory.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -178,7 +179,7 @@ std::expected<win32::Handle, std::error_code> open_directory(std::string_view di
 /// Deletes what `handle`, opened for DELETE, refers to: by POSIX semantics,
 /// so that the name goes even while others hold it open, and a read-only
 /// file too; where the file system has none (FAT), the classic way, a
-/// read-only file without the attribute meanwhile.
+/// read-only file or directory without the attribute meanwhile.
 DWORD dispose(HANDLE handle) {
     DispositionInfoEx posix{dispose_delete | dispose_posix_semantics | dispose_ignore_readonly};
     if(::SetFileInformationByHandle(handle, disposition_info_ex, &posix, sizeof(posix))) {
@@ -195,24 +196,22 @@ DWORD dispose(HANDLE handle) {
     if(error != ERROR_ACCESS_DENIED) {
         return error;
     }
-    // The attributes take a handle of their own, the same file reopened.
-    win32::Handle attributes(
-        ::ReOpenFile(handle,
-                     FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
-                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                     FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT));
+    // The attributes take a handle of their own, the same file reopened by
+    // an empty name relative to it, which ReOpenFile refuses for a
+    // directory.
+    auto attributes = win32::open_at(handle, L"", FILE_WRITE_ATTRIBUTES, false);
     FILE_BASIC_INFO basic;
-    if(attributes.get() == INVALID_HANDLE_VALUE ||
-       !::GetFileInformationByHandleEx(attributes.get(), FileBasicInfo, &basic, sizeof(basic)) ||
+    if(!attributes ||
+       !::GetFileInformationByHandleEx(attributes->get(), FileBasicInfo, &basic, sizeof(basic)) ||
        !(basic.FileAttributes & FILE_ATTRIBUTE_READONLY) ||
-       !win32::set_attributes(attributes.get(), basic.FileAttributes & ~FILE_ATTRIBUTE_READONLY)) {
+       !win32::set_attributes(attributes->get(), basic.FileAttributes & ~FILE_ATTRIBUTE_READONLY)) {
         return error;
     }
     if(::SetFileInformationByHandle(handle, FileDispositionInfo, &classic, sizeof(classic))) {
         return ERROR_SUCCESS;
     }
     error = ::GetLastError();
-    win32::set_attributes(attributes.get(), basic.FileAttributes);
+    win32::set_attributes(attributes->get(), basic.FileAttributes);
     return error;
 }
 
@@ -762,6 +761,10 @@ std::error_code Directory::canonical(buffer_ref out) const {
     return detail::handle_canonical(out, native_handle());
 }
 
+std::error_code Directory::sync() {
+    return detail::handle_sync(native_handle());
+}
+
 void Directory::close() {
     directory.reset();
 }
@@ -805,6 +808,79 @@ std::expected<Status, std::error_code> Directory::Entry::status() const {
     }
     return posix::make_status(info);
 #endif
+}
+
+Walk::Entry::Entry() = default;
+
+Walk::Walk(std::string_view root, const Options& options) :
+    root(root), options(options), reached(Listed{.name = {}, .type = FileType::Directory}) {}
+
+Walk walk(std::string_view root, const Walk::Options& options) {
+    return Walk(root, options);
+}
+
+Walk::Iterator Walk::begin() {
+    if(!started) {
+        started = true;
+        // The root, which is read first, is no directory to skip.
+        skipped = false;
+        advance();
+    }
+    return Iterator(this);
+}
+
+void Walk::advance() {
+    if(reached && reached->type == FileType::Directory && !skipped &&
+       levels.size() < options.max_depth) {
+        // The root, or the directory the range stands on.
+        std::string path = root;
+        if(!levels.empty()) {
+            path = levels.back().path;
+            path::push(path, reached->name);
+        }
+        auto start = listed.size();
+        auto directory = Directory::open(path);
+        std::error_code error = directory ? std::error_code() : directory.error();
+        if(directory) {
+            for(auto& entry: *directory) {
+                if(!entry) {
+                    error = entry.error();
+                    break;
+                }
+                listed.push_back({.name = std::move(entry->name), .type = entry->type});
+            }
+        }
+        if(error) {
+            listed.resize(start);
+            reached.reset();
+            current = std::unexpected(Error{.path = std::move(path), .code = error});
+            return;
+        }
+        // Reached from the back, in the order listed.
+        std::ranges::reverse(listed.begin() + static_cast<std::ptrdiff_t>(start), listed.end());
+        levels.push_back({.path = std::move(path), .listed = start});
+    }
+    skipped = false;
+    while(!levels.empty() && listed.size() == levels.back().listed) {
+        levels.pop_back();
+    }
+    if(levels.empty()) {
+        done = true;
+        return;
+    }
+    reached = std::move(listed.back());
+    listed.pop_back();
+    Entry entry;
+    entry.path = levels.back().path;
+    path::push(entry.path, reached->name);
+    entry.depth = levels.size();
+    entry.type = reached->type;
+    entry.name_start = entry.path.size() - reached->name.size();
+    if(entry.depth == 1) {
+        relative_start = entry.name_start;
+    }
+    entry.relative_start = relative_start;
+    current = std::move(entry);
 }
 
 std::expected<bool, std::error_code> create_directory(std::string_view path) {

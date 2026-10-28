@@ -248,7 +248,7 @@ std::expected<Status, std::error_code> symlink_status(std::string_view path) {
     return status_of(path, false);
 }
 
-std::expected<bool, std::error_code> exists(std::string_view path) {
+std::expected<bool, std::error_code> try_exists(std::string_view path) {
 #ifdef _WIN32
     // GetFileAttributesW opens nothing, where status() opens the file before
     // Windows 11 24H2: only a link to follow, or a file the attributes do not
@@ -276,6 +276,10 @@ std::expected<bool, std::error_code> exists(std::string_view path) {
         return false;
     }
     return std::unexpected(found.error());
+}
+
+bool exists(std::string_view path) {
+    return try_exists(path).value_or(false);
 }
 
 bool is_file(std::string_view path) {

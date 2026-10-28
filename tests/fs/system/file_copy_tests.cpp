@@ -191,7 +191,7 @@ ZEST_CASE(copy_file_of_a_directory_fails) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "sub");
     ZEXPECT(copy_file(dir.file("sub"), dir.file("copy")) == std::errc::invalid_argument);
-    ZEXPECT(exists(dir.file("copy")) == false);
+    ZEXPECT(try_exists(dir.file("copy")) == false);
 }
 
 ZEST_CASE(copy_file_of_a_device_fails) {
@@ -201,7 +201,7 @@ ZEST_CASE(copy_file_of_a_device_fails) {
 #else
     ZEXPECT(copy_file("/dev/null", dir.file("copy")) == std::errc::invalid_argument);
 #endif
-    ZEXPECT(exists(dir.file("copy")) == false);
+    ZEXPECT(try_exists(dir.file("copy")) == false);
 }
 
 #ifdef _WIN32
@@ -213,7 +213,7 @@ ZEST_CASE(copy_file_of_a_named_pipe_fails) {
     auto error = copy_file(name, dir.file("copy"));
     ::CloseHandle(pipe);
     ZEXPECT(error == std::errc::invalid_argument);
-    ZEXPECT(exists(dir.file("copy")) == false);
+    ZEXPECT(try_exists(dir.file("copy")) == false);
 }
 #else
 ZEST_CASE(copy_file_of_a_fifo_fails) {
@@ -221,7 +221,7 @@ ZEST_CASE(copy_file_of_a_fifo_fails) {
     test::TempDir dir;
     ZASSERT(::mkfifo(dir.file("fifo").c_str(), 0644) == 0);
     ZEXPECT(copy_file(dir.file("fifo"), dir.file("copy")) == std::errc::invalid_argument);
-    ZEXPECT(exists(dir.file("copy")) == false);
+    ZEXPECT(try_exists(dir.file("copy")) == false);
 }
 
 ZEST_CASE(copy_file_of_a_socket_fails) {
@@ -238,7 +238,7 @@ ZEST_CASE(copy_file_of_a_socket_fails) {
         ZASSERT(::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
     }
     ZEXPECT(copy_file(dir.file("socket"), dir.file("copy")) == std::errc::invalid_argument);
-    ZEXPECT(exists(dir.file("copy")) == false);
+    ZEXPECT(try_exists(dir.file("copy")) == false);
     ::close(fd);
 }
 
@@ -254,7 +254,7 @@ ZEST_CASE(copy_file_of_a_directory_or_fifo_that_may_not_be_read_fails) {
         ZEST_CONTEXT("{}", name);
         ZEXPECT(copy_file(dir.file(name), dir.file("copy")) == std::errc::invalid_argument);
     }
-    ZEXPECT(exists(dir.file("copy")) == false);
+    ZEXPECT(try_exists(dir.file("copy")) == false);
 }
 
 ZEST_CASE(copy_file_onto_a_fifo_fails) {
@@ -313,7 +313,7 @@ ZEST_CASE(copy_file_of_nothing_fails) {
             std::errc::no_such_file_or_directory);
     ZEXPECT(copy_file(dir.file("file"), dir.file("missing/copy")) ==
             std::errc::no_such_file_or_directory);
-    ZEXPECT(exists(dir.file("copy")) == false);
+    ZEXPECT(try_exists(dir.file("copy")) == false);
 }
 
 #ifdef __linux__

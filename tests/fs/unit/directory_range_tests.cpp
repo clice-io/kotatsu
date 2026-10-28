@@ -30,6 +30,17 @@ ZEST_CASE(directory_is_an_input_range) {
     ZSTATIC_EXPECT(std::movable<Directory>);
 }
 
+ZEST_CASE(walk_is_an_input_range) {
+    ZSTATIC_EXPECT(std::input_iterator<Walk::Iterator>);
+    ZSTATIC_EXPECT(std::sentinel_for<std::default_sentinel_t, Walk::Iterator>);
+    ZSTATIC_EXPECT(std::ranges::input_range<Walk>);
+    ZSTATIC_EXPECT(std::ranges::viewable_range<Walk>);
+    ZEXPECT(zest::type_eq<std::iter_reference_t<Walk::Iterator>,
+                          std::expected<Walk::Entry, Walk::Error>&>());
+    ZSTATIC_EXPECT(!std::copyable<Walk>);
+    ZSTATIC_EXPECT(std::movable<Walk>);
+}
+
 ZEST_CASE(entry_status_of_one_made_rather_than_listed_fails) {
     // No directory to ask through, nor a listing that told it.
     Directory::Entry entry;

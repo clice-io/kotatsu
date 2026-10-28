@@ -33,6 +33,11 @@ std::string with_extension(std::string_view p, std::string_view ext, Style style
     return buffer;
 }
 
+/// Whether push() takes `Parts` after the path.
+template <typename... Parts>
+constexpr bool pushes =
+    requires(std::string& path, const Parts&... parts) { push(path, parts...); };
+
 ZEST_SUITE(fs_path_edit) {
 
 ZEST_CASE(push_joins_in_place) {
@@ -92,6 +97,36 @@ ZEST_CASE(push_drive_relative_windows_paths_join_on_their_drive) {
     ZEXPECT(joined("D:\\a", "C:b", windows) == "C:b");
     ZEXPECT(joined("a", "C:b", windows) == "C:b");
     ZEXPECT(joined("C:", "b", windows) == "C:b");
+}
+
+ZEST_CASE(push_joins_several_names_in_turn) {
+    std::string p = "a";
+    push(p, "b", std::string("c"), std::string_view("d"), posix);
+    ZEXPECT(p == "a/b/c/d");
+    p = "C:\\a";
+    push(p, "b", "c", windows);
+    ZEXPECT(p == "C:\\a\\b\\c");
+    // An absolute name takes the place of what came before it.
+    p = "a";
+    push(p, "b", "/c", "d", posix);
+    ZEXPECT(p == "/c/d");
+}
+
+ZEST_CASE(push_of_several_names_without_a_style_spells_them_natively) {
+    std::string several = "a";
+    push(several, "b", "c");
+    std::string one_by_one = "a";
+    push(one_by_one, "b", native_style);
+    push(one_by_one, "c", native_style);
+    ZEXPECT(several == one_by_one);
+}
+
+ZEST_CASE(push_takes_a_style_only_after_the_last_name) {
+    ZSTATIC_EXPECT(pushes<const char*, const char*, Style>);
+    ZSTATIC_EXPECT(pushes<std::string, std::string_view, const char*>);
+    ZSTATIC_EXPECT(!pushes<Style, const char*, const char*>);
+    ZSTATIC_EXPECT(!pushes<const char*, Style, const char*>);
+    ZSTATIC_EXPECT(!pushes<const char*, int, const char*>);
 }
 
 ZEST_CASE(pop_cuts_the_path_to_its_parent) {
@@ -193,6 +228,33 @@ ZEST_CASE(separators_convert_where_they_separate) {
     p = "C:/a/b";
     to_backslash(p);
     ZEXPECT(p == "C:\\a\\b");
+}
+
+ZEST_CASE(lowercase_drive_lowers_the_drive_letter_alone) {
+    std::string p = "C:\\A\\B";
+    lowercase_drive(p, windows);
+    ZEXPECT(p == "c:\\A\\B");
+    p = "D:";
+    lowercase_drive(p, windows);
+    ZEXPECT(p == "d:");
+    // With to_slash(), the spelling LSP clients key documents by.
+    p = "E:\\src\\a.cpp";
+    to_slash(p, windows);
+    lowercase_drive(p, windows);
+    ZEXPECT(p == "e:/src/a.cpp");
+}
+
+ZEST_CASE(lowercase_drive_leaves_other_roots_alone) {
+    for(std::string_view written: {R"(\\?\C:\a)", R"(\\Server\Share\A)", R"(\A)"}) {
+        ZEST_CONTEXT("{}", written);
+        std::string p(written);
+        lowercase_drive(p, windows);
+        ZEXPECT(p == written);
+    }
+    // No drive in a POSIX path.
+    std::string p = "A:";
+    lowercase_drive(p, posix);
+    ZEXPECT(p == "A:");
 }
 
 };  // ZEST_SUITE(fs_path_edit)

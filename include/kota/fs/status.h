@@ -93,7 +93,10 @@ std::expected<Status, std::error_code> symlink_status(std::string_view path);
 /// Whether `path` names anything, symlinks followed: false when the OS says
 /// nothing is there (a dangling symlink, a component that is no
 /// directory), an error when it cannot tell, such as when it denies access.
-std::expected<bool, std::error_code> exists(std::string_view path);
+std::expected<bool, std::error_code> try_exists(std::string_view path);
+
+/// try_exists(), false on any error.
+bool exists(std::string_view path);
 
 /// Whether `path` names a regular file, symlinks followed; false on any
 /// error.

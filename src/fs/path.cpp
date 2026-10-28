@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstring>
 
+#include "kota/support/small_string.h"
 #include "kota/support/small_vector.h"
 #include "kota/support/string_ref.h"
 
@@ -413,6 +414,18 @@ bool relative(buffer_ref out, std::string_view p, std::string_view base, Style s
     return true;
 }
 
+void resolve(buffer_ref out,
+             std::string_view p,
+             std::string_view base,
+             DotDot dot_dot,
+             Style style) {
+    // Joined apart from `out`, which `p` and `base` may view.
+    small_string<256> joined(base);
+    push(joined, p, style);
+    normalize(joined, dot_dot, style);
+    out.assign(joined);
+}
+
 std::optional<std::string_view> strip_prefix(std::string_view p,
                                              std::string_view prefix,
                                              Style style) {
@@ -441,6 +454,13 @@ bool is_within(std::string_view p, std::string_view ancestor, Style style) {
 void to_slash(buffer_ref path, Style style) {
     if(style == Style::Windows && !is_verbatim(root(path.view(), style).prefix)) {
         std::ranges::replace(path.chars(), '\\', '/');
+    }
+}
+
+void lowercase_drive(buffer_ref path, Style style) {
+    if(root(path.view(), style).prefix == Prefix::Drive) {
+        auto& letter = path.chars().front();
+        letter = ascii_lower(letter);
     }
 }
 

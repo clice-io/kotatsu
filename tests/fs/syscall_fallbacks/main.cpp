@@ -169,7 +169,7 @@ void rename_links(const std::string& root) {
     write(from, "new");
     write(taken, "old");
     check(!kota::fs::rename_noreplace(from, to), "rename_noreplace of a file");
-    check(kota::fs::exists(from) == false, "rename_noreplace takes the old name");
+    check(kota::fs::try_exists(from) == false, "rename_noreplace takes the old name");
     check(read(to) == "new", "rename_noreplace gives the new name");
 
     check(kota::fs::rename_noreplace(to, taken) == std::errc::file_exists,
@@ -232,14 +232,14 @@ void rename_races(const std::string& root) {
         auto text = read(one);
         auto to_own = race<renamers>(
             [&](std::size_t i) { return kota::fs::rename_noreplace(one, own(i) + "-moved"); });
-        check(kota::fs::exists(one) == false,
+        check(kota::fs::try_exists(one) == false,
               std::format("round {}: the one file loses its old name", round));
         for(std::size_t i = 0; i < renamers; ++i) {
             auto what = std::format("round {}, renamer {}", round, i);
             if(to_own[i]) {
                 check(to_own[i] == std::errc::no_such_file_or_directory,
                       std::format("{}: a rename that lost finds the file gone", what));
-                check(kota::fs::exists(own(i) + "-moved") == false,
+                check(kota::fs::try_exists(own(i) + "-moved") == false,
                       std::format("{}: a rename that lost names nothing", what));
             } else {
                 check(read(own(i) + "-moved") == text,

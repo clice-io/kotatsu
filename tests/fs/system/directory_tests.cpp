@@ -356,6 +356,7 @@ ZEST_CASE(close_lets_go_of_the_directory) {
     auto volume = directory->volume();
     ZASSERT(!volume.has_value());
     ZEXPECT(volume.error() == std::errc::bad_file_descriptor);
+    ZEXPECT(directory->sync() == std::errc::bad_file_descriptor);
     // The entry the range stands on holds the directory still.
     auto listed = entry.status();
     ZASSERT(listed.has_value());
@@ -394,6 +395,16 @@ ZEST_CASE(close_lets_the_directories_above_be_renamed) {
     ZEXPECT(!rename(dir.file("outer"), dir.file("moved")));
 }
 #endif
+
+ZEST_CASE(sync_of_a_directory_succeeds) {
+    // What a crash would lose no test can tell.
+    test::TempDir dir;
+    test::write_text(dir.file("new.txt"), "text");
+    ZASSERT(!rename(dir.file("new.txt"), dir.file("renamed.txt")));
+    auto directory = Directory::open(dir.root());
+    ZASSERT(directory.has_value());
+    ZEXPECT(!directory->sync());
+}
 
 ZEST_CASE(create_directory_says_whether_it_made_one) {
     test::TempDir dir;
@@ -443,8 +454,8 @@ ZEST_CASE(remove_takes_files_links_and_empty_directories) {
     ZEXPECT(remove(dir.file("file.txt")) == true);
     ZEXPECT(remove(dir.file("empty")) == true);
     ZEXPECT(remove(dir.file("file.txt")) == false);
-    ZEXPECT(exists(dir.file("file.txt")) == false);
-    ZEXPECT(exists(dir.file("empty")) == false);
+    ZEXPECT(try_exists(dir.file("file.txt")) == false);
+    ZEXPECT(try_exists(dir.file("empty")) == false);
 }
 
 ZEST_CASE(remove_under_a_file_removes_nothing) {
@@ -483,7 +494,7 @@ ZEST_CASE(remove_takes_a_file_held_open) {
     ZASSERT(held.has_value());
     ZEXPECT(remove(dir.file("file.txt")) == true);
     // The name is gone at once, and may be taken again.
-    ZEXPECT(exists(dir.file("file.txt")) == false);
+    ZEXPECT(try_exists(dir.file("file.txt")) == false);
     ZEXPECT(!write_file(dir.file("file.txt"), "again"));
 }
 
@@ -520,7 +531,7 @@ ZEST_CASE(remove_all_removes_a_tree) {
     test::write_text(dir.file("tree/a/b/file.txt"), "text");
     test::write_text(dir.file("tree/a/é中.txt"), "text");
     ZEXPECT(remove_all(dir.file("tree")) == 5u);
-    ZEXPECT(exists(dir.file("tree")) == false);
+    ZEXPECT(try_exists(dir.file("tree")) == false);
     ZEXPECT(remove_all(dir.file("tree")) == 0u);
     test::write_text(dir.file("file.txt"), "text");
     ZEXPECT(remove_all(dir.file("file.txt")) == 1u);
@@ -614,7 +625,7 @@ ZEST_CASE(remove_all_takes_a_directory_it_may_list_but_not_search) {
     test::ScopedPermissions closed(dir.path / "tree" / "unsearchable",
                                    std::filesystem::perms::owner_read);
     ZEXPECT(remove_all(dir.file("tree")) == 2u);
-    ZEXPECT(exists(dir.file("tree")) == false);
+    ZEXPECT(try_exists(dir.file("tree")) == false);
 }
 
 ZEST_CASE(remove_all_removes_a_tree_deeper_than_the_descriptors_left) {
@@ -660,7 +671,7 @@ ZEST_CASE(remove_all_removes_a_deep_tree) {
     std::expected<std::uint64_t, std::error_code> removed;
     on_a_small_stack([&] { removed = remove_all(dir.file("tree")); });
     ZEXPECT(removed == std::uint64_t(chains * (chain + 1)));
-    ZEXPECT(exists(dir.file("tree")) == false);
+    ZEXPECT(try_exists(dir.file("tree")) == false);
 }
 
 ZEST_CASE(remove_of_dots_fails) {
@@ -760,7 +771,7 @@ ZEST_CASE(rename_replaces_a_file) {
     test::write_text(dir.file("to"), "old");
     ZEXPECT(!rename(dir.file("from"), dir.file("to")));
     ZEXPECT(test::read_text(dir.file("to")) == "new");
-    ZEXPECT(exists(dir.file("from")) == false);
+    ZEXPECT(try_exists(dir.file("from")) == false);
 }
 
 ZEST_CASE(rename_replaces_a_file_held_open) {
@@ -884,7 +895,7 @@ ZEST_CASE(create_hard_link_to_a_directory_fails) {
 #else
     ZEXPECT(error == std::errc::operation_not_permitted);
 #endif
-    ZEXPECT(exists(dir.file("other")) == false);
+    ZEXPECT(try_exists(dir.file("other")) == false);
 }
 
 ZEST_CASE(rename_of_dots_fails) {
@@ -902,7 +913,7 @@ ZEST_CASE(rename_of_dots_fails) {
     }
     ZEXPECT(is_directory(dir.file("tree/empty")));
     ZEXPECT(is_directory(dir.file("other")));
-    ZEXPECT(exists(dir.file("moved")) == false);
+    ZEXPECT(try_exists(dir.file("moved")) == false);
 }
 
 #ifdef _WIN32
@@ -922,7 +933,7 @@ ZEST_CASE(rename_of_a_name_win32_trims_away_fails) {
     }
     ZEXPECT(is_directory(dir.file("tree/empty")));
     ZEXPECT(is_directory(dir.file("other")));
-    ZEXPECT(exists(dir.file("moved")) == false);
+    ZEXPECT(try_exists(dir.file("moved")) == false);
 }
 #endif
 
@@ -936,7 +947,7 @@ ZEST_CASE(rename_noreplace_renames_a_file) {
     test::write_text(dir.file("from"), "text");
     ZEXPECT(!rename_noreplace(dir.file("from"), dir.file("é中😀")));
     ZEXPECT(test::read_text(dir.file("é中😀")) == "text");
-    ZEXPECT(exists(dir.file("from")) == false);
+    ZEXPECT(try_exists(dir.file("from")) == false);
 }
 
 ZEST_CASE(rename_noreplace_renames_a_directory) {
@@ -944,7 +955,7 @@ ZEST_CASE(rename_noreplace_renames_a_directory) {
     std::filesystem::create_directories(dir.path / "from" / "inner");
     ZEXPECT(!rename_noreplace(dir.file("from"), dir.file("to")));
     ZEXPECT(is_directory(dir.file("to/inner")));
-    ZEXPECT(exists(dir.file("from")) == false);
+    ZEXPECT(try_exists(dir.file("from")) == false);
 }
 
 ZEST_CASE(rename_noreplace_renames_a_symlink_itself) {
@@ -1004,7 +1015,7 @@ ZEST_CASE(rename_noreplace_of_a_file_deleted_while_held_open_fails) {
     test::DeletePending pending(dir.file("from"));
     ZEXPECT(rename_noreplace(dir.file("from"), dir.file("to")) ==
             std::errc::no_such_file_or_directory);
-    ZEXPECT(exists(dir.file("to")) == false);
+    ZEXPECT(try_exists(dir.file("to")) == false);
 }
 #endif
 
@@ -1019,7 +1030,7 @@ ZEST_CASE(rename_noreplace_onto_the_file_itself_keeps_it) {
 #if defined(_WIN32)
     ZEXPECT(!same);
     ZEXPECT(!linked);
-    ZEXPECT(exists(dir.file("file")) == false);
+    ZEXPECT(try_exists(dir.file("file")) == false);
 #elif defined(__APPLE__)
     ZEXPECT(!same);
     ZEXPECT(linked == std::errc::file_exists);
@@ -1036,7 +1047,7 @@ ZEST_CASE(rename_noreplace_of_nothing_fails) {
     test::TempDir dir;
     ZEXPECT(rename_noreplace(dir.file("missing"), dir.file("to")) ==
             std::errc::no_such_file_or_directory);
-    ZEXPECT(exists(dir.file("to")) == false);
+    ZEXPECT(try_exists(dir.file("to")) == false);
 }
 
 ZEST_CASE(rename_noreplace_gives_the_name_to_one_of_racing_renames) {
@@ -1071,7 +1082,7 @@ ZEST_CASE(rename_noreplace_gives_the_name_to_one_of_racing_renames) {
                 ZEXPECT(test::read_text(sources[i]) == std::to_string(i));
             } else {
                 ZEXPECT(test::read_text(to) == std::to_string(i));
-                ZEXPECT(exists(sources[i]) == false);
+                ZEXPECT(try_exists(sources[i]) == false);
             }
         }
     }
@@ -1087,7 +1098,7 @@ ZEST_CASE(rename_noreplace_across_file_systems_fails) {
     test::write_text(dir.file("from"), "text");
     ZEXPECT(rename_noreplace(dir.file("from"), other.file("to")) == std::errc::cross_device_link);
     ZEXPECT(is_file(dir.file("from")));
-    ZEXPECT(exists(other.file("to")) == false);
+    ZEXPECT(try_exists(other.file("to")) == false);
 }
 #endif
 
