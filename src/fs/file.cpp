@@ -482,15 +482,14 @@ std::error_code detail::handle_sync(File::native_handle_type handle) {
         return windows::last_error();
     }
     // FlushFileBuffers takes a handle that may write: one open to read, a
-    // directory's among them, flushes through the file reopened to write.
-    win32::Handle writable(::ReOpenFile(handle,
-                                        GENERIC_WRITE,
-                                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                        FILE_FLAG_BACKUP_SEMANTICS));
-    if(writable.get() == INVALID_HANDLE_VALUE) {
-        return windows::last_error();
+    // directory's among them, flushes through the file reopened to write, by
+    // an empty name relative to the handle, which ReOpenFile refuses for a
+    // directory.
+    auto writable = win32::open_at(handle, L"", GENERIC_WRITE, false);
+    if(!writable) {
+        return windows::to_error_code(writable.error());
     }
-    return ::FlushFileBuffers(writable.get()) ? std::error_code() : windows::last_error();
+    return ::FlushFileBuffers(writable->get()) ? std::error_code() : windows::last_error();
 }
 
 std::error_code File::set_sparse() {
