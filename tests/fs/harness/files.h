@@ -72,10 +72,17 @@ struct TempDir {
 private:
     void remove() const {
 #ifdef _WIN32
-        // A case may leave paths longer than MAX_PATH. A volume without a
+        // A case may leave paths longer than MAX_PATH, which a verbatim path
+        // takes: a share's `\\server` as `\\?\UNC\server`. A volume without a
         // drive letter is spelled verbatim already.
         auto wide = path.wstring();
-        remove_tree(wide.starts_with(LR"(\\?\)") ? wide : LR"(\\?\)" + wide);
+        if(wide.starts_with(LR"(\\?\)")) {
+            remove_tree(wide);
+        } else if(wide.starts_with(LR"(\\)")) {
+            remove_tree(LR"(\\?\UNC\)" + wide.substr(2));
+        } else {
+            remove_tree(LR"(\\?\)" + wide);
+        }
 #else
         std::error_code ignored;
         std::filesystem::remove_all(path, ignored);
