@@ -99,10 +99,12 @@ private:
             ::DeleteFileW(path.c_str());
             return;
         }
+        // A link to a directory goes as itself, its contents left alone.
         WIN32_FIND_DATAW entry;
-        HANDLE find = attributes & FILE_ATTRIBUTE_REPARSE_POINT
-                          ? INVALID_HANDLE_VALUE
-                          : ::FindFirstFileW((path + LR"(\*)").c_str(), &entry);
+        HANDLE find = INVALID_HANDLE_VALUE;
+        if(!(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            find = ::FindFirstFileW((path + LR"(\*)").c_str(), &entry);
+        }
         if(find != INVALID_HANDLE_VALUE) {
             do {
                 std::wstring_view name = entry.cFileName;

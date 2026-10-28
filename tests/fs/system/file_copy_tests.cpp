@@ -206,6 +206,7 @@ ZEST_CASE(copy_file_of_a_device_fails) {
 
 #ifdef _WIN32
 ZEST_CASE(copy_file_of_a_named_pipe_fails) {
+    // Of one instance, which status() asking by name (11 24H2 on) takes.
     test::TempDir dir;
     std::string name;
     HANDLE pipe = test::make_pipe(name, dir, PIPE_ACCESS_OUTBOUND, 4096);

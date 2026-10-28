@@ -98,9 +98,6 @@ ZEST_CASE(read_file_takes_a_long_device_path) {
     std::string content;
     ZEXPECT(!read_file(content, R"(\\.\)" + file));
     ZEXPECT(content == "text");
-    // MinGW's std::filesystem, which TempDir removes with, loops on a path
-    // this long.
-    ZEXPECT(remove_all(dir.file("a-directory-name-of-some-length")).has_value());
 }
 
 ZEST_CASE(to_native_of_what_names_nothing_fails) {

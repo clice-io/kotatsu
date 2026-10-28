@@ -708,7 +708,9 @@ ZEST_CASE(remove_of_a_name_win32_trims_away_fails) {
 }
 #endif
 
-ZEST_CASE(remove_of_a_root_fails) {
+ZEST_CASE(remove_or_rename_of_a_root_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
 #ifdef _WIN32
     // A drive no volume has: should the check fail, nothing is there.
     auto drives = ::GetLogicalDrives();
@@ -722,6 +724,7 @@ ZEST_CASE(remove_of_a_root_fails) {
 #endif
     std::vector<std::expected<bool, std::error_code>> removed;
     std::vector<std::expected<std::uint64_t, std::error_code>> removed_all;
+    std::vector<std::error_code> renamed;
     {
 #ifndef _WIN32
         // Should the check fail, no descriptor is left to list the root
@@ -732,6 +735,10 @@ ZEST_CASE(remove_of_a_root_fails) {
         for(const auto& root: roots) {
             removed.push_back(remove(root));
             removed_all.push_back(remove_all(root));
+            renamed.push_back(rename(root, dir.file("moved")));
+            renamed.push_back(rename_noreplace(root, dir.file("moved")));
+            renamed.push_back(rename(dir.file("file.txt"), root));
+            renamed.push_back(rename_noreplace(dir.file("file.txt"), root));
         }
     }
     for(std::size_t i = 0; i < roots.size(); ++i) {
@@ -740,7 +747,11 @@ ZEST_CASE(remove_of_a_root_fails) {
         ZEXPECT(removed[i].error() == std::errc::invalid_argument);
         ZASSERT(!removed_all[i].has_value());
         ZEXPECT(removed_all[i].error() == std::errc::invalid_argument);
+        for(std::size_t j = 0; j < 4; ++j) {
+            ZEXPECT(renamed[i * 4 + j] == std::errc::invalid_argument);
+        }
     }
+    ZEXPECT(is_file(dir.file("file.txt")));
 }
 
 ZEST_CASE(rename_replaces_a_file) {
