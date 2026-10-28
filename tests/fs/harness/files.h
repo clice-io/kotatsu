@@ -2,8 +2,8 @@
 
 // TempDir, a directory of a test's own, write_text() and read_text(),
 // ScopedCurrentDir, ScopedPermissions, make_junction() on Windows,
-// link_directory(), all through std::filesystem, fstreams and cmd rather
-// than kota::fs, which the tests check; linked() for a case that makes
+// link_directory(), all through std::filesystem, fstreams, cmd and Win32
+// rather than kota::fs, which the tests check; linked() for a case that makes
 // a symlink; across_file_systems() on Linux for one that crosses file
 // systems; chowned() and ScopedUser on POSIX for one root runs as other
 // users; text_of() and CountedBuffer for reads of large files.
@@ -20,7 +20,15 @@
 #include <system_error>
 #include <utility>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <cerrno>
 #include <unistd.h>
 #endif
@@ -63,31 +71,50 @@ struct TempDir {
 
 private:
     void remove() const {
-        std::error_code ignored;
 #ifdef _WIN32
         // A case may leave paths longer than MAX_PATH. A volume without a
         // drive letter is spelled verbatim already.
         auto wide = path.wstring();
-        std::filesystem::path verbatim(wide.starts_with(LR"(\\?\)") ? wide : LR"(\\?\)" + wide);
-        // std::filesystem removes no read-only file, MinGW's anywhere and
-        // MSVC's on FAT: what a case left goes writable first. A link is
-        // not followed to what may lie outside.
-        using std::filesystem::recursive_directory_iterator;
-        for(recursive_directory_iterator walk(verbatim, ignored);
-            walk != recursive_directory_iterator();
-            walk.increment(ignored)) {
-            if(walk->symlink_status(ignored).type() == std::filesystem::file_type::regular) {
-                std::filesystem::permissions(walk->path(),
-                                             std::filesystem::perms::owner_write,
-                                             std::filesystem::perm_options::add,
-                                             ignored);
-            }
-        }
-        std::filesystem::remove_all(verbatim, ignored);
+        remove_tree(wide.starts_with(LR"(\\?\)") ? wide : LR"(\\?\)" + wide);
 #else
+        std::error_code ignored;
         std::filesystem::remove_all(path, ignored);
 #endif
     }
+
+#ifdef _WIN32
+    /// Removes `path` and what is in it, a link itself rather than what it
+    /// leads to, and a read-only file too: std::filesystem removes no
+    /// read-only file (MinGW's anywhere, MSVC's on FAT), nor MinGW's a link
+    /// that leads nowhere.
+    static void remove_tree(const std::wstring& path) {
+        auto attributes = ::GetFileAttributesW(path.c_str());
+        if(attributes == INVALID_FILE_ATTRIBUTES) {
+            return;
+        }
+        if(attributes & FILE_ATTRIBUTE_READONLY) {
+            ::SetFileAttributesW(path.c_str(), attributes & ~FILE_ATTRIBUTE_READONLY);
+        }
+        if(!(attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            ::DeleteFileW(path.c_str());
+            return;
+        }
+        WIN32_FIND_DATAW entry;
+        HANDLE find = attributes & FILE_ATTRIBUTE_REPARSE_POINT
+                          ? INVALID_HANDLE_VALUE
+                          : ::FindFirstFileW((path + LR"(\*)").c_str(), &entry);
+        if(find != INVALID_HANDLE_VALUE) {
+            do {
+                std::wstring_view name = entry.cFileName;
+                if(name != L"." && name != L"..") {
+                    remove_tree(path + L'\\' + entry.cFileName);
+                }
+            } while(::FindNextFileW(find, &entry));
+            ::FindClose(find);
+        }
+        ::RemoveDirectoryW(path.c_str());
+    }
+#endif
 
     zest::FatalHook on_fatal{[this] { remove(); }};
 
