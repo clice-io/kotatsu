@@ -6,6 +6,7 @@ add_library(kota_fs STATIC
     path.cpp
     resolve.cpp
     status.cpp
+    temp.cpp
     volume.cpp
     windows.cpp
 )
