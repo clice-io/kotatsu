@@ -206,16 +206,11 @@ ZEST_CASE(copy_file_of_a_device_fails) {
 
 #ifdef _WIN32
 ZEST_CASE(copy_file_of_a_named_pipe_fails) {
-    // status() asks for it by name, where Windows can (11 24H2 on), before
-    // it opens it: each connects to the pipe as a client, which takes an
-    // instance, so the pipe has two.
     test::TempDir dir;
     std::string name;
-    HANDLE first = test::make_pipe(name, dir, PIPE_ACCESS_OUTBOUND, 4096);
-    HANDLE second = test::make_pipe(name, dir, PIPE_ACCESS_OUTBOUND, 4096);
+    HANDLE pipe = test::make_pipe(name, dir, PIPE_ACCESS_OUTBOUND, 4096);
     auto error = copy_file(name, dir.file("copy"));
-    ::CloseHandle(first);
-    ::CloseHandle(second);
+    ::CloseHandle(pipe);
     ZEXPECT(error == std::errc::invalid_argument);
     ZEXPECT(exists(dir.file("copy")) == false);
 }
