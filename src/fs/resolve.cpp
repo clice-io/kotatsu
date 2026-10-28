@@ -61,17 +61,25 @@ void weakly_canonical(buffer_ref out, std::string_view path, path::DotDot dot_do
     while(!rest.empty() && path::is_separator(rest.front())) {
         rest.remove_prefix(1);
     }
-    path::push(real, rest);
-    path::normalize(real, dot_dot);
-    out.assign(real);
+    path::resolve(out, rest, real, dot_dot);
 }
 
 std::error_code follow_symlinks(buffer_ref out, std::string_view path) {
+    // No system takes a null in a name: read_symlink() would refuse it as it
+    // refuses what is no symlink.
+    if(path.find('\0') != std::string_view::npos) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
     // Apart from `out`, which `path` may view.
     small_string<256> followed(path);
     small_string<256> target;
     for(int links = 0;; ++links) {
-        auto error = read_symlink(target, followed);
+        // The last name itself, a separator after it left off, through which
+        // POSIX would follow it.
+        auto name = path::filename(followed);
+        auto error = read_symlink(
+            target,
+            std::string_view(followed).substr(0, name.data() + name.size() - followed.data()));
         // No symlink, or nothing at all: where the links lead.
         if(error == std::errc::invalid_argument || error == std::errc::no_such_file_or_directory ||
            error == std::errc::not_a_directory) {
@@ -83,8 +91,12 @@ std::error_code follow_symlinks(buffer_ref out, std::string_view path) {
         if(links == 40) {
             return std::make_error_code(std::errc::too_many_symbolic_link_levels);
         }
-        followed.resize(path::parent(followed).size());
-        path::push(followed, target);
+        path::set_file_name(followed, target);
+        // Windows resolves a link's `..` by text, and leaves it in a verbatim
+        // path, which then names nothing.
+        if constexpr(path::native_style == path::Style::Windows) {
+            path::normalize(followed);
+        }
     }
     out.assign(followed);
     return {};

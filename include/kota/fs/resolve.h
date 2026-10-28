@@ -28,11 +28,11 @@ std::error_code canonical(buffer_ref out, std::string_view path);
 /// absolute.
 ///
 /// A `..` folded in the part that does not exist can name an existing file
-/// where the OS would fail: `missing/../a` gives `a`. Kept, it stays, and
-/// the name fails as the OS fails it; but on Windows, where Win32 folds `..`
-/// by text before it resolves anything, none is left to keep, but in a
-/// verbatim path (`\\?\`). It never fails: a part the OS cannot resolve, for
-/// any reason, is taken as not existing.
+/// where the OS would fail: `missing/../a` gives `a`. Kept, it stays, so
+/// that the name fails where the OS fails it. On Windows, where Win32 folds
+/// `..` by text before it resolves anything, it stays only in a verbatim
+/// path (`\\?\`). It never fails: a part the OS cannot resolve, for any
+/// reason, is taken as not existing.
 void weakly_canonical(buffer_ref out,
                       std::string_view path,
                       path::DotDot dot_dot = path::DotDot::Fold);
@@ -40,11 +40,13 @@ void weakly_canonical(buffer_ref out,
 /// Writes into `out` where the symlinks at the end of `path` lead: while the
 /// last name is a symlink, its target, which, where relative, lies in the
 /// link's directory and is pushed onto it, `..` and all, since the directory
-/// could be a symlink too. `path` itself where it is no symlink; the last
-/// target need not exist. Symlinks before the last name stay as they are.
-/// More than 40 links in a row, which a loop of them makes, fail with
+/// could be a symlink too; on Windows, which resolves a link's `..` by text,
+/// normalized. `path` itself where it is no symlink; the last target need
+/// not exist. Symlinks before the last name stay as they are. More than 40
+/// links in a row, which a loop of them makes, fail with
 /// std::errc::too_many_symbolic_link_levels; a link whose target the system
-/// cannot read, with the error read_symlink() gives.
+/// cannot read, with the error read_symlink() gives; a path with a null in
+/// it, with invalid_argument.
 std::error_code follow_symlinks(buffer_ref out, std::string_view path);
 
 /// Writes into `out` `path` made absolute against the current directory,
