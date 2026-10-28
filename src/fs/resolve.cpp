@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "kota/support/small_string.h"
+#include "kota/fs/directory.h"
 #include "kota/fs/path.h"
 
 #ifdef _WIN32
@@ -39,11 +40,11 @@ std::error_code canonical(buffer_ref out, std::string_view path) {
 #endif
 }
 
-void weakly_canonical(buffer_ref out, std::string_view path) {
+void weakly_canonical(buffer_ref out, std::string_view path, path::DotDot dot_dot) {
     small_string<256> full;
     if(absolute(full, path)) {
         out.assign(path);
-        path::normalize(out);
+        path::normalize(out, dot_dot);
         return;
     }
     std::string_view existing = full;
@@ -52,7 +53,7 @@ void weakly_canonical(buffer_ref out, std::string_view path) {
         existing = path::parent(existing);
         if(existing.empty()) {
             out.assign(full);
-            path::normalize(out);
+            path::normalize(out, dot_dot);
             return;
         }
     }
@@ -61,8 +62,32 @@ void weakly_canonical(buffer_ref out, std::string_view path) {
         rest.remove_prefix(1);
     }
     path::push(real, rest);
-    path::normalize(real);
+    path::normalize(real, dot_dot);
     out.assign(real);
+}
+
+std::error_code follow_symlinks(buffer_ref out, std::string_view path) {
+    // Apart from `out`, which `path` may view.
+    small_string<256> followed(path);
+    small_string<256> target;
+    for(int links = 0;; ++links) {
+        auto error = read_symlink(target, followed);
+        // No symlink, or nothing at all: where the links lead.
+        if(error == std::errc::invalid_argument || error == std::errc::no_such_file_or_directory ||
+           error == std::errc::not_a_directory) {
+            break;
+        }
+        if(error) {
+            return error;
+        }
+        if(links == 40) {
+            return std::make_error_code(std::errc::too_many_symbolic_link_levels);
+        }
+        followed.resize(path::parent(followed).size());
+        path::push(followed, target);
+    }
+    out.assign(followed);
+    return {};
 }
 
 std::error_code absolute(buffer_ref out, std::string_view path) {

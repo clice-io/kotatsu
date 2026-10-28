@@ -33,6 +33,13 @@ std::string under(std::string_view base, std::string_view p) {
     return joined;
 }
 
+/// `p` with `/` for each separator, as a symlink's target and a path given
+/// to make one may spell them otherwise on Windows.
+std::string slashed(std::string p) {
+    path::to_slash(p);
+    return p;
+}
+
 ZEST_SUITE(fs_resolve) {
 
 ZEST_CASE(canonical_folds_dots) {
@@ -154,6 +161,83 @@ ZEST_CASE(weakly_canonical_takes_the_current_directory) {
     std::string weak;
     weakly_canonical(weak, "missing/./name");
     ZEXPECT(weak == under(real, "missing/name"));
+}
+
+ZEST_CASE(weakly_canonical_keeps_dot_dot_when_asked) {
+    test::TempDir dir;
+    auto root = real_root(dir);
+    std::filesystem::create_directory(dir.path / "a");
+    std::string weak;
+    weakly_canonical(weak, dir.file("a/missing/../new.h"), path::DotDot::Keep);
+#ifdef _WIN32
+    // Win32 folds `..` by text before it resolves anything.
+    ZEXPECT(weak == under(root, "a/new.h"));
+#else
+    // The OS fails the name, as `missing` is not there to climb out of.
+    std::string kept(root);
+    path::push(kept, "a/missing/../new.h");
+    ZEXPECT(weak == kept);
+#endif
+}
+
+ZEST_CASE(follow_symlinks_of_no_link_is_the_path) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
+    std::string followed;
+    ZEXPECT(!follow_symlinks(followed, dir.file("file.txt")));
+    ZEXPECT(followed == dir.file("file.txt"));
+    ZEXPECT(!follow_symlinks(followed, dir.file("missing/file.txt")));
+    ZEXPECT(followed == dir.file("missing/file.txt"));
+}
+
+ZEST_CASE(follow_symlinks_follows_each_link_in_turn) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
+    if(!test::linked(create_symlink("file.txt", dir.file("second"))) ||
+       !test::linked(create_symlink("second", dir.file("first")))) {
+        return;
+    }
+    std::string followed;
+    ZEXPECT(!follow_symlinks(followed, dir.file("first")));
+    ZEXPECT(followed == dir.file("file.txt"));
+}
+
+ZEST_CASE(follow_symlinks_ends_where_a_dangling_link_leads) {
+    // The file to write the links lead to, which need not exist yet.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "a");
+    if(!test::linked(create_symlink(dir.file("build/out.json"), dir.file("a/absolute"))) ||
+       !test::linked(create_symlink("../build/out.json", dir.file("a/relative")))) {
+        return;
+    }
+    std::string followed;
+    ZEXPECT(!follow_symlinks(followed, dir.file("a/absolute")));
+    ZEXPECT(slashed(followed) == slashed(dir.file("build/out.json")));
+    // `..` stays, as `a` could be a link too.
+    ZEXPECT(!follow_symlinks(followed, dir.file("a/relative")));
+    ZEXPECT(slashed(followed) == slashed(dir.file("a/../build/out.json")));
+}
+
+// The path may view the buffer the result goes to.
+ZEST_CASE(follow_symlinks_resolves_in_place) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
+    if(!test::linked(create_symlink("file.txt", dir.file("link")))) {
+        return;
+    }
+    auto p = dir.file("link");
+    ZEXPECT(!follow_symlinks(p, p));
+    ZEXPECT(p == dir.file("file.txt"));
+}
+
+ZEST_CASE(follow_symlinks_of_a_loop_fails) {
+    test::TempDir dir;
+    if(!test::linked(create_symlink("b", dir.file("a"))) ||
+       !test::linked(create_symlink("a", dir.file("b")))) {
+        return;
+    }
+    std::string followed;
+    ZEXPECT(follow_symlinks(followed, dir.file("a")) == std::errc::too_many_symbolic_link_levels);
 }
 
 ZEST_CASE(absolute_takes_the_current_directory) {
