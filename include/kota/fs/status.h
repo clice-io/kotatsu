@@ -80,7 +80,9 @@ struct Status {
 /// asked through its directory's listing instead, which tells no change
 /// time, ID or links; but for one deleted while held open, whose name stays
 /// until the last handle goes and which fails with
-/// std::errc::no_such_file_or_directory.
+/// std::errc::no_such_file_or_directory. A named pipe tells only that it is a
+/// Fifo, and is asked by name or by opening it, each of which takes one of
+/// its instances, as a client does: with none free, it is a Fifo still.
 std::expected<Status, std::error_code> status(std::string_view path);
 
 /// The status of `path` itself: a symlink, or a junction on Windows, is not

@@ -708,7 +708,9 @@ ZEST_CASE(remove_of_a_name_win32_trims_away_fails) {
 }
 #endif
 
-ZEST_CASE(remove_of_a_root_fails) {
+ZEST_CASE(remove_or_rename_of_a_root_fails) {
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
 #ifdef _WIN32
     // A drive no volume has: should the check fail, nothing is there.
     auto drives = ::GetLogicalDrives();
@@ -722,6 +724,7 @@ ZEST_CASE(remove_of_a_root_fails) {
 #endif
     std::vector<std::expected<bool, std::error_code>> removed;
     std::vector<std::expected<std::uint64_t, std::error_code>> removed_all;
+    std::vector<std::error_code> renamed;
     {
 #ifndef _WIN32
         // Should the check fail, no descriptor is left to list the root
@@ -732,6 +735,10 @@ ZEST_CASE(remove_of_a_root_fails) {
         for(const auto& root: roots) {
             removed.push_back(remove(root));
             removed_all.push_back(remove_all(root));
+            renamed.push_back(rename(root, dir.file("moved")));
+            renamed.push_back(rename_noreplace(root, dir.file("moved")));
+            renamed.push_back(rename(dir.file("file.txt"), root));
+            renamed.push_back(rename_noreplace(dir.file("file.txt"), root));
         }
     }
     for(std::size_t i = 0; i < roots.size(); ++i) {
@@ -740,7 +747,11 @@ ZEST_CASE(remove_of_a_root_fails) {
         ZEXPECT(removed[i].error() == std::errc::invalid_argument);
         ZASSERT(!removed_all[i].has_value());
         ZEXPECT(removed_all[i].error() == std::errc::invalid_argument);
+        for(std::size_t j = 0; j < 4; ++j) {
+            ZEXPECT(renamed[i * 4 + j] == std::errc::invalid_argument);
+        }
     }
+    ZEXPECT(is_file(dir.file("file.txt")));
 }
 
 ZEST_CASE(rename_replaces_a_file) {
@@ -875,6 +886,45 @@ ZEST_CASE(create_hard_link_to_a_directory_fails) {
 #endif
     ZEXPECT(exists(dir.file("other")) == false);
 }
+
+ZEST_CASE(rename_of_dots_fails) {
+    // As remove(), which takes the name away too: on Windows, which resolves
+    // the path first, the directory it is in would move.
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "tree" / "empty");
+    std::filesystem::create_directory(dir.path / "other");
+    for(auto name: {"tree/empty/.", "tree/empty/..", "tree/empty/./"}) {
+        ZEST_CONTEXT("{}", name);
+        ZEXPECT(rename(dir.file(name), dir.file("moved")) == std::errc::invalid_argument);
+        ZEXPECT(rename_noreplace(dir.file(name), dir.file("moved")) == std::errc::invalid_argument);
+        ZEXPECT(rename(dir.file("other"), dir.file(name)) == std::errc::invalid_argument);
+        ZEXPECT(rename_noreplace(dir.file("other"), dir.file(name)) == std::errc::invalid_argument);
+    }
+    ZEXPECT(is_directory(dir.file("tree/empty")));
+    ZEXPECT(is_directory(dir.file("other")));
+    ZEXPECT(exists(dir.file("moved")) == false);
+}
+
+#ifdef _WIN32
+ZEST_CASE(rename_of_a_name_win32_trims_away_fails) {
+    // As remove(): the name Win32 would take off leaves the directory it is
+    // in, which would move.
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "tree" / "empty");
+    std::filesystem::create_directory(dir.path / "other");
+    for(auto name: {"...", ". ", " ", ".. ", " ."}) {
+        ZEST_CONTEXT("[{}]", name);
+        auto trimmed = dir.file(std::format("tree/empty/{}", name));
+        ZEXPECT(rename(trimmed, dir.file("moved")) == std::errc::invalid_argument);
+        ZEXPECT(rename_noreplace(trimmed, dir.file("moved")) == std::errc::invalid_argument);
+        ZEXPECT(rename(dir.file("other"), trimmed) == std::errc::invalid_argument);
+        ZEXPECT(rename_noreplace(dir.file("other"), trimmed) == std::errc::invalid_argument);
+    }
+    ZEXPECT(is_directory(dir.file("tree/empty")));
+    ZEXPECT(is_directory(dir.file("other")));
+    ZEXPECT(exists(dir.file("moved")) == false);
+}
+#endif
 
 ZEST_CASE(rename_of_nothing_fails) {
     test::TempDir dir;

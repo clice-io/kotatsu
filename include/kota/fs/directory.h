@@ -198,7 +198,8 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path);
 
 /// Renames `from` to `to`, replacing a file there. On Windows `to` goes even
 /// while another process holds it open, where it shares it for deletion and
-/// the file system allows (NTFS).
+/// the file system allows (NTFS). Either path a root, or ending in a name
+/// remove() refuses, fails with std::errc::invalid_argument, as there.
 std::error_code rename(std::string_view from, std::string_view to);
 
 /// Renames `from` to `to` where nothing is there: anything there, a dangling
@@ -207,7 +208,8 @@ std::error_code rename(std::string_view from, std::string_view to);
 /// both stay as they were, however processes race, so that of two renames
 /// to one name one takes it. `to` on another volume fails with
 /// cross_device_link; `from` deleted while held open fails as a missing
-/// one does, with no_such_file_or_directory.
+/// one does, with no_such_file_or_directory; either path a root, or ending
+/// in a name remove() refuses, with invalid_argument.
 /// MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows,
 /// renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL) on macOS.
 ///

@@ -353,9 +353,29 @@ ZEST_CASE(junctions_are_links) {
     ZEXPECT(followed->id == target->id);
     ZEXPECT(is_file(dir.file("junction/file.txt")));
 }
-#endif
 
-#ifdef _WIN32
+ZEST_CASE(status_of_a_named_pipe_with_no_instance_free_is_a_fifo) {
+    // Asking a pipe takes an instance, as a client does: with none free, it
+    // is a pipe still.
+    test::TempDir dir;
+    std::string name;
+    HANDLE server = test::make_pipe(name, dir, PIPE_ACCESS_INBOUND, 4096);
+    HANDLE client = ::CreateFileW(test::std_path(name).wstring().c_str(),
+                                  GENERIC_WRITE,
+                                  0,
+                                  nullptr,
+                                  OPEN_EXISTING,
+                                  0,
+                                  nullptr);
+    ZASSERT(client != INVALID_HANDLE_VALUE);
+    auto followed = status(name);
+    auto itself = symlink_status(name);
+    ::CloseHandle(client);
+    ::CloseHandle(server);
+    ZEXPECT(followed == Status{.type = FileType::Fifo});
+    ZEXPECT(itself == Status{.type = FileType::Fifo});
+}
+
 ZEST_CASE(status_tells_a_wsl_fifo_or_device) {
     // WSL keeps one as a reparse point of a tag of its own.
     constexpr std::pair<DWORD, FileType> kinds[] = {

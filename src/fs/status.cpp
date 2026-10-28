@@ -182,6 +182,10 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
         return win32::handle_status(handle->get());
     }
     auto error = handle.error();
+    // A named pipe with every instance taken, as the open would take one.
+    if(error == ERROR_PIPE_BUSY) {
+        return Status{.type = FileType::Fifo};
+    }
     if(error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED) {
         auto listed = listed_status(native);
         if(listed && !(follow && listed->type == FileType::Symlink)) {
