@@ -876,6 +876,45 @@ ZEST_CASE(create_hard_link_to_a_directory_fails) {
     ZEXPECT(exists(dir.file("other")) == false);
 }
 
+ZEST_CASE(rename_of_dots_fails) {
+    // As remove(), which takes the name away too: on Windows, which resolves
+    // the path first, the directory it is in would move.
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "tree" / "empty");
+    std::filesystem::create_directory(dir.path / "other");
+    for(auto name: {"tree/empty/.", "tree/empty/..", "tree/empty/./"}) {
+        ZEST_CONTEXT("{}", name);
+        ZEXPECT(rename(dir.file(name), dir.file("moved")) == std::errc::invalid_argument);
+        ZEXPECT(rename_noreplace(dir.file(name), dir.file("moved")) == std::errc::invalid_argument);
+        ZEXPECT(rename(dir.file("other"), dir.file(name)) == std::errc::invalid_argument);
+        ZEXPECT(rename_noreplace(dir.file("other"), dir.file(name)) == std::errc::invalid_argument);
+    }
+    ZEXPECT(is_directory(dir.file("tree/empty")));
+    ZEXPECT(is_directory(dir.file("other")));
+    ZEXPECT(exists(dir.file("moved")) == false);
+}
+
+#ifdef _WIN32
+ZEST_CASE(rename_of_a_name_win32_trims_away_fails) {
+    // As remove(): the name Win32 would take off leaves the directory it is
+    // in, which would move.
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "tree" / "empty");
+    std::filesystem::create_directory(dir.path / "other");
+    for(auto name: {"...", ". ", " ", ".. ", " ."}) {
+        ZEST_CONTEXT("[{}]", name);
+        auto trimmed = dir.file(std::format("tree/empty/{}", name));
+        ZEXPECT(rename(trimmed, dir.file("moved")) == std::errc::invalid_argument);
+        ZEXPECT(rename_noreplace(trimmed, dir.file("moved")) == std::errc::invalid_argument);
+        ZEXPECT(rename(dir.file("other"), trimmed) == std::errc::invalid_argument);
+        ZEXPECT(rename_noreplace(dir.file("other"), trimmed) == std::errc::invalid_argument);
+    }
+    ZEXPECT(is_directory(dir.file("tree/empty")));
+    ZEXPECT(is_directory(dir.file("other")));
+    ZEXPECT(exists(dir.file("moved")) == false);
+}
+#endif
+
 ZEST_CASE(rename_of_nothing_fails) {
     test::TempDir dir;
     ZEXPECT(rename(dir.file("missing"), dir.file("to")) == std::errc::no_such_file_or_directory);

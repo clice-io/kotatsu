@@ -938,6 +938,9 @@ std::expected<std::uint64_t, std::error_code> remove_all(std::string_view path) 
 }
 
 std::error_code rename(std::string_view from, std::string_view to) {
+    if(names_root_or_ancestor(from) || names_root_or_ancestor(to)) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
 #ifdef _WIN32
     win32::WidePath source;
     if(auto error = windows::to_native(source, from)) {
@@ -1011,6 +1014,9 @@ std::error_code rename(std::string_view from, std::string_view to) {
 }
 
 std::error_code rename_noreplace(std::string_view from, std::string_view to) {
+    if(names_root_or_ancestor(from) || names_root_or_ancestor(to)) {
+        return std::make_error_code(std::errc::invalid_argument);
+    }
 #ifdef _WIN32
     win32::WidePath source;
     if(auto error = windows::to_native(source, from)) {
