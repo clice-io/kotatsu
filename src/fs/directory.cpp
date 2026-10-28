@@ -1,5 +1,6 @@
 #include "kota/fs/directory.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -762,6 +763,10 @@ std::error_code Directory::canonical(buffer_ref out) const {
     return detail::handle_canonical(out, native_handle());
 }
 
+std::error_code Directory::sync() {
+    return detail::handle_sync(native_handle());
+}
+
 void Directory::close() {
     directory.reset();
 }
@@ -805,6 +810,76 @@ std::expected<Status, std::error_code> Directory::Entry::status() const {
     }
     return posix::make_status(info);
 #endif
+}
+
+Walk::Entry::Entry() = default;
+
+Walk::Walk(std::string_view root, const Options& options) : options(options) {
+    // The root, which the first step reads, as an entry of depth 0.
+    Entry entry;
+    entry.path = root;
+    entry.type = FileType::Directory;
+    current = std::move(entry);
+}
+
+Walk walk(std::string_view root, const Walk::Options& options) {
+    return Walk(root, options);
+}
+
+Walk::Iterator Walk::begin() {
+    if(!started) {
+        started = true;
+        advance();
+    }
+    return Iterator(this);
+}
+
+void Walk::advance() {
+    if(current && current->type == FileType::Directory && !skipped &&
+       current->depth < options.max_depth) {
+        auto start = listed.size();
+        auto directory = Directory::open(current->path);
+        std::error_code error = directory ? std::error_code() : directory.error();
+        if(directory) {
+            for(auto& entry: *directory) {
+                if(!entry) {
+                    error = entry.error();
+                    break;
+                }
+                listed.push_back({.name = std::move(entry->name), .type = entry->type});
+            }
+        }
+        if(error) {
+            listed.resize(start);
+            current = std::unexpected(Error{.path = std::move(current->path), .code = error});
+            return;
+        }
+        // Reached from the back, in the order listed.
+        std::ranges::reverse(listed.begin() + static_cast<std::ptrdiff_t>(start), listed.end());
+        levels.push_back({.path = std::move(current->path),
+                          .depth = current->depth + 1,
+                          .listed = start,
+                          .relative_start = current->relative_start});
+    }
+    skipped = false;
+    while(!levels.empty() && listed.size() == levels.back().listed) {
+        levels.pop_back();
+    }
+    if(levels.empty()) {
+        done = true;
+        return;
+    }
+    auto& level = levels.back();
+    auto next = std::move(listed.back());
+    listed.pop_back();
+    Entry entry;
+    entry.path = level.path;
+    path::push(entry.path, next.name);
+    entry.depth = level.depth;
+    entry.type = next.type;
+    entry.name_start = entry.path.size() - next.name.size();
+    entry.relative_start = level.depth == 1 ? entry.name_start : level.relative_start;
+    current = std::move(entry);
 }
 
 std::expected<bool, std::error_code> create_directory(std::string_view path) {

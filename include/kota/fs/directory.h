@@ -4,12 +4,14 @@
 #include <cstdint>
 #include <expected>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include "kota/support/buffer_ref.h"
 #include "kota/fs/file.h"
@@ -138,6 +140,16 @@ public:
     /// File::canonical() does a file's.
     std::error_code canonical(buffer_ref out) const;
 
+    /// Waits until the system has written the directory to the disk, where a
+    /// crash of the system does not lose it: the files created, removed and
+    /// renamed in it, as File::sync() waits for a file's bytes. fsync, on
+    /// macOS F_FULLFSYNC. On Windows FlushFileBuffers, through the directory
+    /// reopened to write, which a directory the caller may not write fails
+    /// with std::errc::permission_denied; whether that reaches a rename,
+    /// which Windows offers no way to write through on its own, Windows does
+    /// not say.
+    std::error_code sync();
+
     /// Lets go of the directory, which closes once no entry it gave holds
     /// it, the one the range stands on among them. Going on, the range then
     /// gives std::errc::bad_file_descriptor and ends, and what asks the open
@@ -164,6 +176,163 @@ private:
 
     bool done = false;
 };
+
+/// A walk of the tree under a directory, which walk() starts: each entry
+/// below it, a directory before what it holds, those of one directory in the
+/// order the system lists them. A symlink, or on Windows a junction, is an
+/// entry of its own, never walked into. Each directory is read whole and
+/// closed before the walk goes on, so that it holds none open between
+/// entries, however deep the tree.
+///
+/// It is a range to go through once of the entries, each reached when the
+/// range goes on to it, and of the error of each directory it could not
+/// read, which it leaves out to go on past it: a root it cannot read gives
+/// its error and nothing else.
+class Walk {
+public:
+    struct Options {
+        /// How deep to go: the entries of the root are at depth 1, those of
+        /// a directory one deeper than it.
+        std::size_t max_depth = std::numeric_limits<std::size_t>::max();
+    };
+
+    struct Entry {
+        /// Defaulted in directory.cpp, for the reason Directory::Entry's is.
+        Entry();
+
+        /// The root with the names down to the entry pushed onto it.
+        std::string path;
+
+        /// 1 for an entry of the root.
+        std::size_t depth = 0;
+
+        /// Its type, a link not followed.
+        FileType type = FileType::Unknown;
+
+        /// Its own name, the last of `path`.
+        std::string_view name() const {
+            return std::string_view(path).substr(name_start);
+        }
+
+        /// The names after the root, as `path` spells them.
+        std::string_view relative() const {
+            return std::string_view(path).substr(relative_start);
+        }
+
+    private:
+        friend class Walk;
+
+        /// Where the names after the root, and the entry's own name, start
+        /// in `path`.
+        std::size_t relative_start = 0;
+
+        std::size_t name_start = 0;
+    };
+
+    /// A directory the walk could not read.
+    struct Error {
+        std::string path;
+
+        std::error_code code;
+    };
+
+    class Iterator {
+    public:
+        using value_type = std::expected<Entry, Error>;
+        using difference_type = std::ptrdiff_t;
+        using iterator_concept = std::input_iterator_tag;
+
+        value_type& operator*() const {
+            return range->current;
+        }
+
+        Iterator& operator++() {
+            range->advance();
+            return *this;
+        }
+
+        void operator++(int) {
+            ++*this;
+        }
+
+        bool operator==(std::default_sentinel_t) const {
+            return range->done;
+        }
+
+    private:
+        friend class Walk;
+
+        explicit Iterator(Walk* range) : range(range) {}
+
+        Walk* range;
+    };
+
+    Walk(Walk&&) noexcept = default;
+
+    Walk& operator=(Walk&&) noexcept = default;
+
+    /// Where the range stands, the root read and its first entry reached
+    /// the first time.
+    Iterator begin();
+
+    std::default_sentinel_t end() const {
+        return {};
+    }
+
+    /// Leaves out what the directory the range stands on holds, which the
+    /// walk then goes past rather than into; at any other entry, or an
+    /// error, it does nothing.
+    void skip() {
+        skipped = true;
+    }
+
+private:
+    friend Walk walk(std::string_view root, const Options& options);
+
+    /// What a directory listed, still to reach.
+    struct Listed {
+        std::string name;
+        FileType type;
+    };
+
+    /// A directory read, whose entries the walk is reaching.
+    struct Level {
+        std::string path;
+
+        /// The depth of its entries.
+        std::size_t depth;
+
+        /// Where its entries start among those listed.
+        std::size_t listed;
+
+        /// Where the names after the root start in its path.
+        std::size_t relative_start;
+    };
+
+    Walk(std::string_view root, const Options& options);
+
+    /// Reads the directory the range stands on, unless skipped or as deep
+    /// as the walk goes, and reaches the next entry, or ends the range.
+    void advance();
+
+    Options options;
+
+    std::vector<Listed> listed;
+
+    std::vector<Level> levels;
+
+    std::expected<Entry, Error> current;
+
+    bool started = false;
+
+    bool skipped = false;
+
+    bool done = false;
+};
+
+/// Walks the tree under the directory `root`, which is followed where it is
+/// a symlink.
+Walk walk(std::string_view root, const Walk::Options& options = {});
 
 /// Creates the directory `path`: true when it made it, false when a
 /// directory was there already.

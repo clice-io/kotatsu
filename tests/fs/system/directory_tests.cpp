@@ -356,6 +356,7 @@ ZEST_CASE(close_lets_go_of_the_directory) {
     auto volume = directory->volume();
     ZASSERT(!volume.has_value());
     ZEXPECT(volume.error() == std::errc::bad_file_descriptor);
+    ZEXPECT(directory->sync() == std::errc::bad_file_descriptor);
     // The entry the range stands on holds the directory still.
     auto listed = entry.status();
     ZASSERT(listed.has_value());
@@ -394,6 +395,15 @@ ZEST_CASE(close_lets_the_directories_above_be_renamed) {
     ZEXPECT(!rename(dir.file("outer"), dir.file("moved")));
 }
 #endif
+
+ZEST_CASE(sync_keeps_what_the_directory_holds) {
+    test::TempDir dir;
+    test::write_text(dir.file("new.txt"), "text");
+    ZASSERT(!rename(dir.file("new.txt"), dir.file("renamed.txt")));
+    auto directory = Directory::open(dir.root());
+    ZASSERT(directory.has_value());
+    ZEXPECT(!directory->sync());
+}
 
 ZEST_CASE(create_directory_says_whether_it_made_one) {
     test::TempDir dir;

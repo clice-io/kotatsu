@@ -474,19 +474,19 @@ std::error_code File::resize(std::uint64_t size) {
     return {};
 }
 
-std::error_code File::sync() {
+std::error_code detail::handle_sync(File::native_handle_type handle) {
     if(::FlushFileBuffers(handle)) {
         return {};
     }
     if(::GetLastError() != ERROR_ACCESS_DENIED) {
         return windows::last_error();
     }
-    // FlushFileBuffers takes a handle that may write: one open to read
-    // flushes through the file reopened to write.
+    // FlushFileBuffers takes a handle that may write: one open to read, a
+    // directory's among them, flushes through the file reopened to write.
     win32::Handle writable(::ReOpenFile(handle,
                                         GENERIC_WRITE,
                                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                        0));
+                                        FILE_FLAG_BACKUP_SEMANTICS));
     if(writable.get() == INVALID_HANDLE_VALUE) {
         return windows::last_error();
     }
@@ -649,7 +649,7 @@ std::error_code File::resize(std::uint64_t size) {
     return {};
 }
 
-std::error_code File::sync() {
+std::error_code detail::handle_sync(File::native_handle_type handle) {
 #ifdef __APPLE__
     // fsync() stands in only where the file takes no F_FULLFSYNC: on a
     // network file system (ENOTSUP), one without the call (ENOTTY), a
@@ -695,6 +695,10 @@ std::error_code File::unlock() {
 }
 
 #endif
+
+std::error_code File::sync() {
+    return detail::handle_sync(handle);
+}
 
 std::error_code File::close() {
     if(!is_open()) {
