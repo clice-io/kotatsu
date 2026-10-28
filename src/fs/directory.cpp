@@ -812,13 +812,8 @@ std::expected<Status, std::error_code> Directory::Entry::status() const {
 
 Walk::Entry::Entry() = default;
 
-Walk::Walk(std::string_view root, const Options& options) : options(options) {
-    // The root, which the first step reads, as an entry of depth 0.
-    Entry entry;
-    entry.path = root;
-    entry.type = FileType::Directory;
-    current = std::move(entry);
-}
+Walk::Walk(std::string_view root, const Options& options) :
+    root(root), options(options), reached(Listed{.name = {}, .type = FileType::Directory}) {}
 
 Walk walk(std::string_view root, const Walk::Options& options) {
     return Walk(root, options);
@@ -827,16 +822,24 @@ Walk walk(std::string_view root, const Walk::Options& options) {
 Walk::Iterator Walk::begin() {
     if(!started) {
         started = true;
+        // The root, which is read first, is no directory to skip.
+        skipped = false;
         advance();
     }
     return Iterator(this);
 }
 
 void Walk::advance() {
-    if(current && current->type == FileType::Directory && !skipped &&
-       current->depth < options.max_depth) {
+    if(reached && reached->type == FileType::Directory && !skipped &&
+       levels.size() < options.max_depth) {
+        // The root, or the directory the range stands on.
+        std::string path = root;
+        if(!levels.empty()) {
+            path = levels.back().path;
+            path::push(path, reached->name);
+        }
         auto start = listed.size();
-        auto directory = Directory::open(current->path);
+        auto directory = Directory::open(path);
         std::error_code error = directory ? std::error_code() : directory.error();
         if(directory) {
             for(auto& entry: *directory) {
@@ -849,15 +852,13 @@ void Walk::advance() {
         }
         if(error) {
             listed.resize(start);
-            current = std::unexpected(Error{.path = std::move(current->path), .code = error});
+            reached.reset();
+            current = std::unexpected(Error{.path = std::move(path), .code = error});
             return;
         }
         // Reached from the back, in the order listed.
         std::ranges::reverse(listed.begin() + static_cast<std::ptrdiff_t>(start), listed.end());
-        levels.push_back({.path = std::move(current->path),
-                          .depth = current->depth + 1,
-                          .listed = start,
-                          .relative_start = current->relative_start});
+        levels.push_back({.path = std::move(path), .listed = start});
     }
     skipped = false;
     while(!levels.empty() && listed.size() == levels.back().listed) {
@@ -867,16 +868,18 @@ void Walk::advance() {
         done = true;
         return;
     }
-    auto& level = levels.back();
-    auto next = std::move(listed.back());
+    reached = std::move(listed.back());
     listed.pop_back();
     Entry entry;
-    entry.path = level.path;
-    path::push(entry.path, next.name);
-    entry.depth = level.depth;
-    entry.type = next.type;
-    entry.name_start = entry.path.size() - next.name.size();
-    entry.relative_start = level.depth == 1 ? entry.name_start : level.relative_start;
+    entry.path = levels.back().path;
+    path::push(entry.path, reached->name);
+    entry.depth = levels.size();
+    entry.type = reached->type;
+    entry.name_start = entry.path.size() - reached->name.size();
+    if(entry.depth == 1) {
+        relative_start = entry.name_start;
+    }
+    entry.relative_start = relative_start;
     current = std::move(entry);
 }
 

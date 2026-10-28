@@ -178,21 +178,23 @@ private:
 };
 
 /// A walk of the tree under a directory, which walk() starts: each entry
-/// below it, a directory before what it holds, those of one directory in the
-/// order the system lists them. A symlink, or on Windows a junction, is an
-/// entry of its own, never walked into. Each directory is read whole and
-/// closed before the walk goes on, so that it holds none open between
-/// entries, however deep the tree.
+/// below it, depth first, a directory and then what it holds, the entries of
+/// one directory in the order the system lists them. An entry listed as a
+/// symlink, or on Windows a junction, is never walked into. Each directory is
+/// read whole and closed before the walk goes on, so that it holds none open
+/// between entries, however deep the tree.
 ///
 /// It is a range to go through once of the entries, each reached when the
-/// range goes on to it, and of the error of each directory it could not
-/// read, which it leaves out to go on past it: a root it cannot read gives
-/// its error and nothing else.
+/// range goes on to it, and of an error for each directory it could not
+/// read, after the entry that names it: what that directory holds is left
+/// out, and the walk goes on past it. A root it cannot read gives its error
+/// and nothing else.
 class Walk {
 public:
     struct Options {
         /// How deep to go: the entries of the root are at depth 1, those of
-        /// a directory one deeper than it.
+        /// a directory one deeper than it; at 0 the walk reads nothing, the
+        /// root included.
         std::size_t max_depth = std::numeric_limits<std::size_t>::max();
     };
 
@@ -222,10 +224,10 @@ public:
     private:
         friend class Walk;
 
-        /// Where the names after the root, and the entry's own name, start
-        /// in `path`.
+        /// Where the names after the root start in `path`.
         std::size_t relative_start = 0;
 
+        /// Where the entry's own name starts in `path`.
         std::size_t name_start = 0;
     };
 
@@ -280,8 +282,8 @@ public:
     }
 
     /// Leaves out what the directory the range stands on holds, which the
-    /// walk then goes past rather than into; at any other entry, or an
-    /// error, it does nothing.
+    /// walk then goes past rather than into; at any other entry, an error, or
+    /// before the range begins, it does nothing.
     void skip() {
         skipped = true;
     }
@@ -289,24 +291,19 @@ public:
 private:
     friend Walk walk(std::string_view root, const Options& options);
 
-    /// What a directory listed, still to reach.
+    /// What a directory listed: the name and the type of an entry.
     struct Listed {
         std::string name;
         FileType type;
     };
 
-    /// A directory read, whose entries the walk is reaching.
+    /// A directory read, whose entries the walk is reaching: one level of
+    /// the tree, the root's first.
     struct Level {
         std::string path;
 
-        /// The depth of its entries.
-        std::size_t depth;
-
         /// Where its entries start among those listed.
         std::size_t listed;
-
-        /// Where the names after the root start in its path.
-        std::size_t relative_start;
     };
 
     Walk(std::string_view root, const Options& options);
@@ -315,11 +312,20 @@ private:
     /// as the walk goes, and reaches the next entry, or ends the range.
     void advance();
 
+    std::string root;
+
     Options options;
 
     std::vector<Listed> listed;
 
     std::vector<Level> levels;
+
+    /// The entry the range stands on, kept apart from the one it gives,
+    /// which the caller may move out of; none at an error.
+    std::optional<Listed> reached;
+
+    /// Where the names after the root start in the path of each entry.
+    std::size_t relative_start = 0;
 
     std::expected<Entry, Error> current;
 

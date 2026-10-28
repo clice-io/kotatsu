@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>
+#include <format>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -11,6 +12,7 @@
 #include <unistd.h>
 #endif
 
+#include "fs/harness/dir.h"
 #include "fs/harness/files.h"
 #include "kota/zest/zest.h"
 #include "kota/fs/directory.h"
@@ -84,6 +86,56 @@ ZEST_CASE(walk_reaches_a_directory_before_what_it_holds) {
     }
 }
 
+ZEST_CASE(walk_reaches_what_a_directory_holds_right_after_it) {
+    // Depth first: nothing else comes between.
+    test::TempDir dir;
+    make_tree(dir);
+    std::filesystem::create_directories(dir.path / "c" / "d");
+    test::write_text(dir.file("c/d/file.txt"), "text");
+    auto entries = walked(walk(dir.root()));
+    for(std::size_t i = 0; i < entries.size(); ++i) {
+        if(entries[i].type != FileType::Directory) {
+            continue;
+        }
+        ZEST_CONTEXT("{}", entries[i].relative);
+        auto prefix = entries[i].relative + "/";
+        auto under = [&](const Reached& entry) {
+            return entry.relative.starts_with(prefix);
+        };
+        auto held = std::ranges::count_if(entries, under);
+        auto next = entries.begin() + static_cast<std::ptrdiff_t>(i) + 1;
+        auto run = std::ranges::find_if_not(next, entries.end(), under) - next;
+        ZEXPECT(run == held);
+    }
+}
+
+ZEST_CASE(walk_reaches_the_entries_of_a_directory_in_the_order_listed) {
+    test::TempDir dir;
+    for(int i = 0; i < 10; ++i) {
+        test::write_text(dir.file(std::format("file{}.txt", i)), "text");
+    }
+    std::vector<std::string> listed;
+    for(const auto& entry: test::entries_of(dir.root())) {
+        listed.push_back(entry.name);
+    }
+    std::vector<std::string> reached;
+    for(const auto& entry: walked(walk(dir.root()))) {
+        reached.push_back(entry.relative);
+    }
+    ZEXPECT(reached == listed);
+}
+
+ZEST_CASE(walk_goes_on_once_an_entry_is_moved_out) {
+    test::TempDir dir;
+    make_tree(dir);
+    std::vector<Walk::Entry> moved;
+    for(auto& entry: walk(dir.root())) {
+        ZASSERT(entry.has_value());
+        moved.push_back(std::move(*entry));
+    }
+    ZEXPECT(moved.size() == 5u);
+}
+
 ZEST_CASE(walk_tells_depths_and_types) {
     test::TempDir dir;
     make_tree(dir);
@@ -104,14 +156,17 @@ ZEST_CASE(walk_tells_depths_and_types) {
 ZEST_CASE(walk_entries_tell_their_paths_and_names) {
     test::TempDir dir;
     make_tree(dir);
+    std::size_t count = 0;
     for(auto& entry: walk(dir.root())) {
         ZASSERT(entry.has_value());
         ZEST_CONTEXT("{}", entry->path);
+        ++count;
         ZEXPECT(entry->name() == path::filename(entry->path));
         std::string under = dir.root();
         path::push(under, entry->relative());
         ZEXPECT(entry->path == under);
     }
+    ZEXPECT(count == 5u);
 }
 
 ZEST_CASE(walk_skips_what_a_skipped_directory_holds) {
@@ -127,6 +182,43 @@ ZEST_CASE(walk_skips_what_a_skipped_directory_holds) {
         }
     }
     ZEXPECT(sorted(entries) == std::vector<std::string>{"a", "top.txt"});
+}
+
+ZEST_CASE(walk_skips_only_the_directory_it_stands_on) {
+    test::TempDir dir;
+    for(auto name: {"x", "y"}) {
+        std::filesystem::create_directory(dir.path / name);
+        test::write_text(dir.file(std::format("{}/f.txt", name)), "text");
+    }
+    // At a file, skip() does nothing, and leaves nothing for the next
+    // directory.
+    auto tree = walk(dir.root());
+    std::vector<Reached> entries;
+    for(auto& entry: tree) {
+        ZASSERT(entry.has_value());
+        entries.push_back(reached(*entry));
+        if(entry->type == FileType::Regular) {
+            tree.skip();
+        }
+    }
+    ZEXPECT(sorted(entries) == std::vector<std::string>{"x", "x/f.txt", "y", "y/f.txt"});
+    // At the first directory, the second is walked into all the same.
+    auto again = walk(dir.root());
+    std::string skipped;
+    entries.clear();
+    for(auto& entry: again) {
+        ZASSERT(entry.has_value());
+        entries.push_back(reached(*entry));
+        if(skipped.empty() && entry->type == FileType::Directory) {
+            skipped = entry->name();
+            again.skip();
+        }
+    }
+    std::vector<std::string> expected{"x",
+                                      "y",
+                                      std::format("{}/f.txt", skipped == "x" ? "y" : "x")};
+    std::ranges::sort(expected);
+    ZEXPECT(sorted(entries) == expected);
 }
 
 ZEST_CASE(walk_goes_no_deeper_than_asked) {
@@ -184,9 +276,35 @@ ZEST_CASE(walk_of_a_file_fails) {
     auto at = tree.begin();
     ZASSERT(at != tree.end());
     ZASSERT(!(*at).has_value());
+    ZEXPECT((*at).error().path == dir.file("file.txt"));
     ZEXPECT((*at).error().code == std::errc::not_a_directory);
     ++at;
     ZEXPECT(at == tree.end());
+}
+
+ZEST_CASE(walk_of_a_directory_gone_since_it_was_listed_fails_and_goes_on) {
+    test::TempDir dir;
+    make_tree(dir);
+    std::vector<std::string> reached;
+    std::vector<std::string> failed;
+    for(auto& entry: walk(dir.root())) {
+        if(!entry) {
+            ZEXPECT(entry.error().code == std::errc::no_such_file_or_directory);
+            failed.push_back(entry.error().path);
+            continue;
+        }
+        std::string relative(entry->relative());
+        path::to_slash(relative);
+        reached.push_back(relative);
+        if(relative == "a/b") {
+            std::filesystem::remove_all(dir.path / "a" / "b");
+        }
+    }
+    std::ranges::sort(reached);
+    ZEXPECT(reached == std::vector<std::string>{"a", "a/b", "a/near.txt", "top.txt"});
+    std::string gone = dir.file("a");
+    path::push(gone, "b");
+    ZEXPECT(failed == std::vector<std::string>{gone});
 }
 
 #ifdef _WIN32
@@ -195,13 +313,16 @@ ZEST_CASE(walk_lets_the_directories_above_be_renamed) {
     // renamed: the walk holds none between entries.
     test::TempDir dir;
     make_tree(dir);
+    bool renamed = false;
     for(auto& entry: walk(dir.file("a"))) {
         ZASSERT(entry.has_value());
         if(entry->name() == "deep.txt") {
             ZEXPECT(!rename(dir.file("a"), dir.file("moved")));
             ZEXPECT(!rename(dir.file("moved"), dir.file("a")));
+            renamed = true;
         }
     }
+    ZEXPECT(renamed);
 }
 #else
 ZEST_CASE(walk_holds_no_descriptor_between_entries) {
@@ -225,7 +346,7 @@ ZEST_CASE(walk_holds_no_descriptor_between_entries) {
     ZEXPECT(deepest == 5);
 }
 
-ZEST_CASE(walk_reports_a_directory_it_cannot_read_and_goes_on) {
+ZEST_CASE(walk_of_a_directory_it_cannot_read_fails_and_goes_on) {
     test::TempDir dir;
     std::filesystem::create_directories(dir.path / "closed" / "hidden");
     std::filesystem::create_directories(dir.path / "open");
