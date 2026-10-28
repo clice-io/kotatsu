@@ -17,8 +17,6 @@
 #endif
 #ifdef __APPLE__
 #include <chrono>
-#include <cstdio>
-#include <cstring>
 #include <thread>
 #endif
 
@@ -113,20 +111,21 @@ struct DiskImage {
     }
 
     void attach(bool read_only) {
-        auto command =
-            std::format("hdiutil attach {} -nobrowse -noverify -noautofsck -mountpoint '{}' '{}'",
-                        read_only ? "-readonly" : "",
-                        mount,
-                        image);
-        // The disk's device, which hdiutil names first, before its volume.
-        FILE* out = ::popen(command.c_str(), "r");
-        ZASSERT(out != nullptr);
-        char line[256] = {};
-        bool named = std::fgets(line, sizeof(line), out) != nullptr;
-        for(char rest[256]; std::fgets(rest, sizeof(rest), out) != nullptr;) {}
-        attached = ::pclose(out) == 0 && named;
+        // The disk's device, which hdiutil names first, before its volume:
+        // through a file, as the helper hdiutil leaves running would keep a
+        // pipe open.
+        auto listed = image + ".attached";
+        attached = std::system(std::format("hdiutil attach {} -nobrowse -noverify -noautofsck "
+                                           "-mountpoint '{}' '{}' > '{}'",
+                                           read_only ? "-readonly" : "",
+                                           mount,
+                                           image,
+                                           listed)
+                                   .c_str()) == 0;
         ZASSERT(attached);
-        device.assign(line, std::strcspn(line, " \t\n"));
+        auto text = test::read_text(listed);
+        device = text.substr(0, text.find_first_of(" \t\n"));
+        ZASSERT(device.starts_with("/dev/"));
     }
 
     /// Detaches it, files open on it or not: false when it stays attached.
