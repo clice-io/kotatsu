@@ -159,7 +159,7 @@ ZEST_CASE(entry_status_of_a_file_deleted_while_held_open_fails) {
         auto status = entries.front().status();
         ZASSERT(!status.has_value());
         ZEXPECT(status.error() == std::errc::no_such_file_or_directory);
-        ZEXPECT(exists(dir.file("file.txt")) == false);
+        ZEXPECT(try_exists(dir.file("file.txt")) == false);
     });
 }
 
@@ -199,7 +199,7 @@ ZEST_CASE(remove_all_removes_a_tree) {
         test::write_text(dir.file("tree/inner/file.txt"), "text");
         test::write_text(dir.file("tree/file.txt"), "text");
         ZEXPECT(remove_all(dir.file("tree")) == 4u);
-        ZEXPECT(exists(dir.file("tree")) == false);
+        ZEXPECT(try_exists(dir.file("tree")) == false);
     });
 }
 
@@ -208,7 +208,7 @@ ZEST_CASE(remove_takes_a_read_only_file) {
         test::write_text(dir.file("file.txt"), "text");
         make_read_only(dir.file("file.txt"));
         ZEXPECT(remove(dir.file("file.txt")) == true);
-        ZEXPECT(exists(dir.file("file.txt")) == false);
+        ZEXPECT(try_exists(dir.file("file.txt")) == false);
     });
 }
 
@@ -218,7 +218,7 @@ ZEST_CASE(remove_all_takes_a_read_only_file) {
         test::write_text(dir.file("tree/inner/file.txt"), "text");
         make_read_only(dir.file("tree/inner/file.txt"));
         ZEXPECT(remove_all(dir.file("tree")) == 3u);
-        ZEXPECT(exists(dir.file("tree")) == false);
+        ZEXPECT(try_exists(dir.file("tree")) == false);
     });
 }
 
@@ -229,7 +229,7 @@ ZEST_CASE(rename_replaces_a_read_only_file) {
         make_read_only(dir.file("old.txt"));
         ZEXPECT(!rename(dir.file("new.txt"), dir.file("old.txt")));
         ZEXPECT(test::read_text(dir.file("old.txt")) == "new");
-        ZEXPECT(exists(dir.file("new.txt")) == false);
+        ZEXPECT(try_exists(dir.file("new.txt")) == false);
     });
 }
 
@@ -283,7 +283,7 @@ ZEST_CASE(rename_noreplace_renames_a_file) {
         test::write_text(dir.file("from.txt"), "text");
         ZEXPECT(!rename_noreplace(dir.file("from.txt"), dir.file("to.txt")));
         ZEXPECT(test::read_text(dir.file("to.txt")) == "text");
-        ZEXPECT(exists(dir.file("from.txt")) == false);
+        ZEXPECT(try_exists(dir.file("from.txt")) == false);
     });
 }
 
@@ -318,7 +318,7 @@ ZEST_CASE(rename_noreplace_to_another_volume_fails) {
         ZEXPECT(rename_noreplace(temp.file("from"), dir.file("to")) ==
                 std::errc::cross_device_link);
         ZEXPECT(is_file(temp.file("from")));
-        ZEXPECT(exists(dir.file("to")) == false);
+        ZEXPECT(try_exists(dir.file("to")) == false);
     });
 }
 

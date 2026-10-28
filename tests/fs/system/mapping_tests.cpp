@@ -72,7 +72,7 @@ ZEST_CASE(remove_takes_a_mapped_file) {
     auto mapping = File::open(dir.file("mapped")).and_then(Mapping::map);
     ZASSERT(mapping.has_value());
     ZEXPECT(remove(dir.file("mapped")) == true);
-    ZEXPECT(exists(dir.file("mapped")) == false);
+    ZEXPECT(try_exists(dir.file("mapped")) == false);
     ZEXPECT(mapping->bytes() == content);
     // The name is free for a new file at once.
     ZEXPECT(!write_file(dir.file("mapped"), "new"));
