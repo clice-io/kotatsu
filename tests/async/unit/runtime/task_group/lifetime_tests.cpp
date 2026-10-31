@@ -502,6 +502,68 @@ ZEST_CASE(cancel_of_the_joining_task_frees_the_group_once_done) {
     ZEXPECT(storage.untouched());
 }
 
+// join() returns once the children are gone, with what their frames held: a
+// child the cancel ended where it waited holds the joining task's mutex.
+ZEST_CASE(join_returns_once_what_the_children_held_is_gone) {
+    event never;
+    auto child = [&](mutex& m) -> task<> {
+        auto guard = co_await m.scoped_lock();
+        co_await never.wait();
+    };
+    auto driver = [&]() -> task<bool> {
+        mutex m;
+        task_group<> group;
+        group.spawn(child(m));
+        group.cancel();
+        co_await group.join();
+        bool unlocked = m.try_lock();
+        if(unlocked) {
+            m.unlock();
+        }
+        co_return unlocked;
+    };
+
+    auto [unlocked] = run(driver());
+    ZASSERT(unlocked.has_value());
+    ZEXPECT(*unlocked);
+}
+
+// So does the cancel of the task joining the group: the task awaiting that
+// one sees the children gone.
+ZEST_CASE(cancelled_join_ends_once_what_the_children_held_is_gone) {
+    event never;
+    mutex m;
+    cancellation_source source;
+    bool cancelled = false;
+    auto child = [&]() -> task<> {
+        auto guard = co_await m.scoped_lock();
+        co_await never.wait();
+    };
+    auto join = [&]() -> task<> {
+        task_group<> group;
+        group.spawn(child());
+        co_await group.join();
+    };
+    auto driver = [&]() -> task<bool> {
+        auto joined = co_await with_token(join(), source.token());
+        cancelled = joined.is_cancelled();
+        bool unlocked = m.try_lock();
+        if(unlocked) {
+            m.unlock();
+        }
+        co_return unlocked;
+    };
+    auto canceller = [&]() -> task<> {
+        source.cancel();
+        co_return;
+    };
+
+    auto [unlocked, cancelling] = run(driver(), canceller());
+    ZASSERT(unlocked.has_value());
+    ZEXPECT(*unlocked);
+    ZEXPECT(cancelled);
+}
+
 };  // ZEST_SUITE(async_runtime_task_group_lifetime)
 
 }  // namespace

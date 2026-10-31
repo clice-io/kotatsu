@@ -8,6 +8,7 @@
 #include <span>
 
 #include "kotatsu/support/config.h"
+#include "kotatsu/support/scope_exit.h"
 
 namespace kotatsu::async {
 
@@ -96,7 +97,14 @@ protected:
     template <typename Step>
     static void resume_and_drain(Step step) {
         const bool outermost = enter_resumption();
+        // A step that throws ends the resumption undrained.
+        ScopeExit unwinding([outermost]() noexcept {
+            if(outermost) {
+                drop_resumption();
+            }
+        });
         step().resume();
+        unwinding.release();
         if(outermost) {
             leave_resumption();
         }
@@ -121,6 +129,9 @@ protected:
 private:
     /// Marks a resumption under way on this thread; true for the outermost.
     static bool enter_resumption() noexcept;
+
+    /// Ends the outermost resumption without draining it.
+    static void drop_resumption() noexcept;
 
     /// Ends the outermost resumption: resumes what sync primitives woke, if
     /// a loop runs, and destroys the frames that ended, until neither leaves
@@ -279,14 +290,18 @@ protected:
     /// ended. Returns the coroutine to resume next.
     std::coroutine_handle<> await_children(task_frame& waiting, std::source_location location);
 
-    /// ~task_group: lets every running child go. Each is cancelled, ends on
-    /// its own, and is freed by the event loop then; what it failed with is
-    /// dropped. A child may end, or run on to its next suspending co_await,
-    /// before this returns; the group refuses to spawn meanwhile.
+    /// ~task_group: destroys the frames of the children that have ended, and
+    /// lets every running child go. Each is cancelled, ends on its own, and
+    /// is freed by the event loop then; what it failed with is dropped. A
+    /// child may end, or run on to its next suspending co_await, before this
+    /// returns; the group refuses to spawn meanwhile.
     void abandon_children();
 
     /// Records the completion of `child` and settles when it was the last.
     std::coroutine_handle<> child_completed(task_frame& child);
+
+    /// task_group: destroys the frames of the children that have ended.
+    void destroy_ended_children();
 
     /// Records `d` as what settles the aggregate; the first decision cancels
     /// the children still running.
@@ -303,7 +318,8 @@ protected:
     State settled_state() const noexcept;
 
     /// Settles when every child has finished and no pin is held, if a task
-    /// awaits the aggregate. Returns the coroutine to resume next.
+    /// awaits the aggregate; a task_group destroys its ended children first.
+    /// Returns the coroutine to resume next.
     std::coroutine_handle<> settle_if_idle();
 
     /// The running children, in the order they started.

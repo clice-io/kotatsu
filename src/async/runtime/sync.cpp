@@ -122,9 +122,10 @@ void wait_node::give_back() {
 }
 
 void wait_node::abandon() noexcept {
-    if(queue != owner) {
+    if(queue != owner && !cancel_requested) {
         // A notified condition variable wait, queued on its mutex again: the
-        // task the notification went to will not resume.
+        // task the notification went to will not resume. One a cancel reached
+        // has handed it on, or was never notified.
         owner->woken -= 1;
     }
     queue->remove(*this);

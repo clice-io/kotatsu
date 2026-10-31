@@ -167,6 +167,26 @@ ZEST_CASE(waits_left_on_primitives_go_off_them_with_the_loop) {
     ZEXPECT(!acquiring.done());
 }
 
+// A loop run inside a task of another frees the roots it owns before run()
+// returns, not once the outer task suspends.
+ZEST_CASE(loop_run_inside_a_task_frees_its_roots_before_it_returns) {
+    auto frame = std::make_shared<int>();
+    std::weak_ptr<int> watch = frame;
+    auto make = [](std::shared_ptr<int>) -> task<> {
+        co_return;
+    };
+    auto outer = [&]() -> task<bool> {
+        event_loop inner;
+        inner.schedule(make(std::move(frame)));
+        inner.run();
+        co_return watch.expired();
+    };
+
+    auto [freed] = run(outer());
+    ZASSERT(freed.has_value());
+    ZEXPECT(*freed);
+}
+
 // A task left waiting by a loop that went still ends at a cancel, and its
 // frame goes with its owner.
 ZEST_CASE(wait_left_by_a_loop_that_went_ends_at_a_cancel) {

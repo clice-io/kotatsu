@@ -138,8 +138,8 @@ private:
     /// Takes the waiter off its queue as its loop goes: it is never granted,
     /// and a condition variable wait notified meanwhile has spent the
     /// notification. A cancel ends it at once, as a cancel of a queued wait
-    /// does, except that a condition variable wait whose mutex is taken
-    /// stays suspended.
+    /// does, except that a condition variable wait stays suspended when its
+    /// mutex is taken, or when a cancel reached it while it waited for that.
     void abandon() noexcept;
 
     /// Resumes the task once the wait was granted, or ends it cancelled when a

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "../libuv.h"
+#include "../runtime/resumption.h"
 #include "kotatsu/support/functional.h"
 #include "kotatsu/sys/detail/signals.h"
 #include "kotatsu/async/runtime/node.h"
@@ -315,6 +316,9 @@ event_loop::event_loop() : self(new Self()) {
 }
 
 event_loop::~event_loop() {
+    // Destroyed inside a resumption of another loop, it ends the resumptions
+    // its close runs, frames and all, itself.
+    detail::LoopRunScope scope;
     self->destroying = true;
 
     {
@@ -372,6 +376,8 @@ uv_loop_t* event_loop::native_handle() noexcept {
 }
 
 int event_loop::run() {
+    // Run inside a resumption of another loop, it ends its own.
+    detail::LoopRunScope scope;
     auto previous = current_loop;
     current_loop = this;
     // What sync primitives woke while the loop did not run: its check handle

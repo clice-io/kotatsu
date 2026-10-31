@@ -29,9 +29,9 @@ concept group_error = std::is_void_v<E> || is_one_of<E, Errors...>;
 /// child starts at once and runs until it first suspends. A child that fails
 /// cancels its siblings, and join() reports the failure; a child that ends
 /// cancelled just ends, and its siblings run on. The group keeps no child that
-/// has ended: its frame, and the arguments it holds, go once whatever runs
-/// has suspended. with_task_group() keeps a group where it cannot go before
-/// its children.
+/// has ended: its frame, and what that holds, goes once whatever runs has
+/// suspended, or before join() returns if that is sooner. with_task_group()
+/// keeps a group where it cannot go before its children.
 template <typename... Errors>
 class task_group : aggregate_op {
 public:
@@ -109,6 +109,7 @@ private:
                 return false;
             }
             group.state = group.settled_state();
+            group.destroy_ended_children();
             return true;
         }
 
