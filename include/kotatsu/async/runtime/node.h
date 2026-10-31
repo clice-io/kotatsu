@@ -28,6 +28,7 @@ namespace detail {
 
 struct task_access;
 class ResumptionScope;
+class LoopRunScope;
 
 }  // namespace detail
 
@@ -350,11 +351,8 @@ protected:
     task_frame* winner = nullptr;
 
     /// task_group: the children that have ended, whose frames have not gone
-    /// yet, linked through next_sibling, and the links of this thread's list
-    /// of the groups with such children.
+    /// yet, linked through next_sibling.
     task_frame* ended = nullptr;
-    aggregate_op* prev_with_ended = nullptr;
-    aggregate_op* next_with_ended = nullptr;
 
     Decision decision = Decision::None;
 
@@ -364,8 +362,21 @@ protected:
 #endif
 
 private:
+    friend class detail::LoopRunScope;
+
     void link(task_frame& child) noexcept;
     void unlink(task_frame& child) noexcept;
+
+    /// task_group: puts the group on the list `head` heads, of the groups
+    /// with children that have ended, or takes it off.
+    void list_with_ended(aggregate_op*& head) noexcept;
+    void unlist_with_ended() noexcept;
+
+    /// The links of that list: the next group, and what points at this one,
+    /// the head or the previous group's link, so that the group leaves the
+    /// list whichever head it is under.
+    aggregate_op* next_with_ended = nullptr;
+    aggregate_op** pprev_with_ended = nullptr;
 };
 
 /// Base of a pending I/O operation, the extension point for awaiting what

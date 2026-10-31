@@ -36,9 +36,26 @@ detail::ResumptionScope::~ResumptionScope() {
     }
 }
 
-detail::LoopRunScope::LoopRunScope() noexcept : outer_resuming(std::exchange(resuming, false)) {}
+detail::LoopRunScope::LoopRunScope() noexcept :
+    outer_resuming(std::exchange(resuming, false)), outer_roots(std::exchange(ended_roots, {})),
+    outer_groups(std::exchange(groups_with_ended, nullptr)) {
+    if(outer_groups != nullptr) {
+        outer_groups->pprev_with_ended = &outer_groups;
+    }
+}
 
 detail::LoopRunScope::~LoopRunScope() {
+    // What a resumption that threw left goes with the outer resumption's.
+    outer_roots.insert(outer_roots.end(), ended_roots.begin(), ended_roots.end());
+    ended_roots = std::move(outer_roots);
+    while(auto* group = groups_with_ended) {
+        group->unlist_with_ended();
+        group->list_with_ended(outer_groups);
+    }
+    groups_with_ended = std::exchange(outer_groups, nullptr);
+    if(groups_with_ended != nullptr) {
+        groups_with_ended->pprev_with_ended = &groups_with_ended;
+    }
     resuming = outer_resuming;
 }
 
@@ -202,14 +219,26 @@ void detail::task_access::drop_root(task_frame& root) {
     }
 }
 
+void aggregate_op::list_with_ended(aggregate_op*& head) noexcept {
+    next_with_ended = std::exchange(head, this);
+    if(next_with_ended != nullptr) {
+        next_with_ended->pprev_with_ended = &next_with_ended;
+    }
+    pprev_with_ended = &head;
+}
+
+void aggregate_op::unlist_with_ended() noexcept {
+    *pprev_with_ended = next_with_ended;
+    if(next_with_ended != nullptr) {
+        next_with_ended->pprev_with_ended = pprev_with_ended;
+    }
+    next_with_ended = nullptr;
+    pprev_with_ended = nullptr;
+}
+
 task_frame* aggregate_op::take_ended() noexcept {
     if(ended != nullptr) {
-        (prev_with_ended ? prev_with_ended->next_with_ended : groups_with_ended) = next_with_ended;
-        if(next_with_ended != nullptr) {
-            next_with_ended->prev_with_ended = prev_with_ended;
-        }
-        prev_with_ended = nullptr;
-        next_with_ended = nullptr;
+        unlist_with_ended();
     }
     return std::exchange(ended, nullptr);
 }
@@ -352,10 +381,7 @@ std::coroutine_handle<> aggregate_op::child_completed(task_frame& child) {
         // A group keeps no child that has ended, but the child may own the
         // group: its frame waits, at the latest until the group settles.
         if(ended == nullptr) {
-            next_with_ended = std::exchange(groups_with_ended, this);
-            if(next_with_ended != nullptr) {
-                next_with_ended->prev_with_ended = this;
-            }
+            list_with_ended(groups_with_ended);
         }
         child.next_sibling = std::exchange(ended, &child);
     }

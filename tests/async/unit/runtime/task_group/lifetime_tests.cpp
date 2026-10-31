@@ -475,6 +475,40 @@ ZEST_CASE(cancel_outside_a_task_frees_the_group_once_done) {
     ZEXPECT(storage.untouched());
 }
 
+// A child the cancel resumes, which runs a loop of its own, while the walk
+// still holds the group: the loop's resumptions leave alone the frame of the
+// child the walk ended, which owns the group.
+ZEST_CASE(loop_run_by_a_child_the_cancel_resumes_leaves_the_walk_alone) {
+    SessionStorage storage;
+    event never;
+    auto waits = [&]() -> task<> {
+        co_await never.wait();
+    };
+    auto nothing = []() -> task<> {
+        co_return;
+    };
+    auto runs_a_loop = [&]() -> task<> {
+        co_await waits().catch_cancel();
+        event_loop inner;
+        inner.schedule(nothing());
+        inner.run();
+    };
+    auto start = [&]() -> task<> {
+        auto session = storage.make();
+        session->group.spawn(waits_on(session));
+        session->group.spawn(runs_a_loop());
+        auto& group = session->group;
+        session.reset();
+        group.cancel();
+        co_return;
+    };
+
+    auto [result] = run(start());
+    ZEXPECT(result.has_value());
+    ZEXPECT(storage.destroyed);
+    ZEXPECT(storage.untouched());
+}
+
 // So is a cancel of the task joining the group, which reaches the group
 // through the join.
 ZEST_CASE(cancel_of_the_joining_task_frees_the_group_once_done) {
