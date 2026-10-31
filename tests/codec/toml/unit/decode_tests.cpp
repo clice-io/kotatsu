@@ -26,6 +26,9 @@ namespace {
 template <typename T>
 concept decodes_by_value = requires(std::string_view text) { toml::from_string<T>(text); };
 
+/// The UTF-8 byte order mark, which toml++ skips before the text.
+constexpr std::string_view bom = "\xEF\xBB\xBF";
+
 ZEST_SUITE(codec_toml_decode) {
 
 ZEST_CASE(value_overload_value_initializes) {
@@ -72,6 +75,51 @@ age = 30
     ZEXPECT(status.error().message.size() > prefix.size());
     ZASSERT(status.error().location);
     ZEXPECT(status.error().location->line == 2U);
+}
+
+ZEST_CASE(bom_before_the_text_is_skipped) {
+    auto point = toml::from_string<test::Point>(std::string(bom) + "x = 1\ny = 2\n");
+    ZASSERT(point);
+    ZEXPECT(point->x == 1);
+    ZEXPECT(point->y == 2);
+}
+
+ZEST_CASE(bom_alone_is_the_empty_document) {
+    std::optional<int> number = 42;
+    ZASSERT(toml::from_string(bom, number));
+    ZEXPECT(!number);
+}
+
+ZEST_CASE(bom_after_the_first_line_fails) {
+    test::Point out{};
+    auto status = toml::from_string("x = 1\n" + std::string(bom) + "y = 2\n", out);
+    ZASSERT(!status);
+    ZEXPECT(zest::starts_with(status.error().message, "TOML parse error: "));
+    ZASSERT(status.error().location);
+    ZEXPECT(status.error().location->line == 2U);
+    ZEXPECT(status.error().location->column == 1U);
+}
+
+ZEST_CASE(second_bom_fails) {
+    test::Point out{};
+    auto status = toml::from_string(std::string(bom) + std::string(bom) + "x = 1\n", out);
+    ZASSERT(!status);
+    ZEXPECT(zest::starts_with(status.error().message, "TOML parse error: "));
+    ZASSERT(status.error().location);
+    ZEXPECT(status.error().location->line == 1U);
+    ZEXPECT(status.error().location->column == 1U);
+}
+
+ZEST_CASE(type_mismatch_after_a_bom_fails_at_its_value) {
+    // toml++ counts the first line's columns from after the mark.
+    test::Person out{};
+    auto status = toml::from_string(std::string(bom) + "age = 'x'\n", out);
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "invalid type: expected integer, got string");
+    ZEXPECT(status.error().format_path() == "age");
+    ZASSERT(status.error().location);
+    ZEXPECT(status.error().location->line == 1U);
+    ZEXPECT(status.error().location->column == 7U);
 }
 
 ZEST_CASE(type_mismatch_fails_at_its_value) {

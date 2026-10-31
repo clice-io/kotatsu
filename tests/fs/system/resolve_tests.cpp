@@ -241,6 +241,18 @@ ZEST_CASE(follow_symlinks_takes_each_target_in_its_own_link_directory) {
 #endif
 }
 
+ZEST_CASE(follow_symlinks_normalizes_each_target) {
+    // `.` goes; the cases before check what becomes of `..`.
+    test::TempDir dir;
+    if(!test::linked(
+           create_symlink("./build/./compile_commands.json", dir.file("compile_commands.json")))) {
+        return;
+    }
+    std::string followed;
+    ZEXPECT(!follow_symlinks(followed, dir.file("compile_commands.json")));
+    ZEXPECT(slashed(followed) == slashed(dir.file("build/compile_commands.json")));
+}
+
 ZEST_CASE(follow_symlinks_leaves_links_before_the_last_name) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "real");
@@ -263,14 +275,36 @@ ZEST_CASE(follow_symlinks_follows_a_link_to_a_directory) {
 
 #ifndef _WIN32
 ZEST_CASE(follow_symlinks_reads_a_link_named_with_a_separator_after_it) {
-    // `link/`, through which POSIX would follow `link`, as a target it is.
+    // `link/`, through which POSIX would follow `link` to a directory, as the
+    // path given and as a target.
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "real");
     std::filesystem::create_directory_symlink("real", dir.path / "second");
     std::filesystem::create_directory_symlink("second/", dir.path / "first");
     std::string followed;
+    ZEXPECT(!follow_symlinks(followed, dir.file("first/")));
+    ZEXPECT(followed == dir.file("real/"));
+}
+
+ZEST_CASE(follow_symlinks_keeps_a_target_that_must_name_a_directory) {
+    // `file/.` and `file/`, which name no regular file, end in a separator,
+    // as does where a link they lead through leads.
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
+    std::filesystem::create_symlink("file.txt/.", dir.path / "dot");
+    std::filesystem::create_symlink("./file.txt/", dir.path / "slash");
+    std::filesystem::create_symlink("file.txt", dir.path / "second");
+    std::filesystem::create_symlink("second/.", dir.path / "first");
+    std::filesystem::create_symlink("/", dir.path / "root");
+    std::string followed;
+    ZEXPECT(!follow_symlinks(followed, dir.file("dot")));
+    ZEXPECT(followed == dir.file("file.txt/"));
+    ZEXPECT(!follow_symlinks(followed, dir.file("slash")));
+    ZEXPECT(followed == dir.file("file.txt/"));
     ZEXPECT(!follow_symlinks(followed, dir.file("first")));
-    ZEXPECT(followed == dir.file("real"));
+    ZEXPECT(followed == dir.file("file.txt/"));
+    ZEXPECT(!follow_symlinks(followed, dir.file("root")));
+    ZEXPECT(followed == "/");
 }
 #endif
 
