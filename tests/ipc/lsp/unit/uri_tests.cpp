@@ -1,7 +1,7 @@
-#include "kota/zest/zest.h"
-#include "kota/ipc/lsp/uri.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/ipc/lsp/uri.h"
 
-namespace kota::ipc::lsp {
+namespace kotatsu::ipc::lsp {
 namespace {
 
 ZEST_SUITE(ipc_lsp_uri) {
@@ -159,4 +159,4 @@ ZEST_CASE(non_file_path_fails) {
 };  // ZEST_SUITE(ipc_lsp_uri)
 
 }  // namespace
-}  // namespace kota::ipc::lsp
+}  // namespace kotatsu::ipc::lsp

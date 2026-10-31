@@ -68,7 +68,7 @@ test(
 );
 
 test("arguments_environment_and_directory_keep_their_characters", async (t) => {
-  const cwd = mkdtempSync(join(tmpdir(), "kota-ünï-測試-"));
+  const cwd = mkdtempSync(join(tmpdir(), "kotatsu-ünï-測試-"));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   const value = "välue 値 ✓";
   const argument = 'ärgüment 引数 "quoted" \\';
@@ -297,7 +297,7 @@ for (const { file, runAs, passed } of BATCH_SCRIPTS) {
     `batch_file_gets_its_arguments_as_given_${file.replace(".", "_")}`,
     { skip: process.platform !== "win32" && "Windows runs batch files" },
     async (t) => {
-      const directory = mkdtempSync(join(tmpdir(), "kota-batch-"));
+      const directory = mkdtempSync(join(tmpdir(), "kotatsu-batch-"));
       t.after(() => rmSync(directory, { recursive: true, force: true }));
       writeFileSync(
         join(directory, file),

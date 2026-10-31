@@ -13,12 +13,12 @@
 #include "codec/harness/fixtures/tagged.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/compare.h"
-#include "kota/codec/dyn/dyn.h"
-#include "kota/codec/json/json.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/compare.h"
+#include "kotatsu/codec/dyn/dyn.h"
+#include "kotatsu/codec/json/json.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -444,4 +444,4 @@ ZEST_CASE(adjacent_duplicate_content_fails) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

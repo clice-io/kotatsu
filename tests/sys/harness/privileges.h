@@ -15,9 +15,9 @@
 #include <initializer_list>
 #include <windows.h>
 
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// The calling thread without privileges `names`, such as L"SeDebugPrivilege",
 /// until this goes.
@@ -54,6 +54,6 @@ struct ScopedNoPrivileges {
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test
 
 #endif

@@ -6,14 +6,14 @@
 #include <system_error>
 
 #include "fs/harness/files.h"
-#include "kota/zest/zest.h"
-#include "kota/support/small_string.h"
-#include "kota/fs/directory.h"
-#include "kota/fs/file.h"
-#include "kota/fs/path.h"
-#include "kota/fs/resolve.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/fs/resolve.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -88,9 +88,9 @@ ZEST_CASE(canonical_spells_the_name_on_disk) {
 
 #ifdef _WIN32
 ZEST_CASE(canonical_names_a_volume_without_a_drive_letter_by_its_guid) {
-    // KOTA_TEST_LETTERLESS_DIR is a volume's `\\?\Volume{...}\` that has
+    // KOTATSU_TEST_LETTERLESS_DIR is a volume's `\\?\Volume{...}\` that has
     // neither a drive letter nor a mount folder.
-    const char* volume = std::getenv("KOTA_TEST_LETTERLESS_DIR");
+    const char* volume = std::getenv("KOTATSU_TEST_LETTERLESS_DIR");
     if(volume == nullptr || *volume == '\0') {
         // Only Windows CI mounts one.
         zest::skip();
@@ -390,4 +390,4 @@ ZEST_CASE(current_dir_is_what_the_os_says) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

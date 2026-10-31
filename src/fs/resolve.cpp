@@ -1,11 +1,11 @@
-#include "kota/fs/resolve.h"
+#include "kotatsu/fs/resolve.h"
 
 #include <cstdlib>
 #include <memory>
 
-#include "kota/support/small_string.h"
-#include "kota/fs/directory.h"
-#include "kota/fs/path.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/path.h"
 
 #ifdef _WIN32
 #include "win32.h"
@@ -16,7 +16,7 @@
 #include "posix.h"
 #endif
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 std::error_code canonical(buffer_ref out, std::string_view path) {
 #ifdef _WIN32
@@ -163,4 +163,4 @@ std::error_code current_dir(buffer_ref out) {
 #endif
 }
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

@@ -7,10 +7,10 @@
 #include <iterator>
 #include <ranges>
 
-#include "kota/support/ranges.h"
-#include "kota/meta/compare.h"
+#include "kotatsu/support/ranges.h"
+#include "kotatsu/meta/compare.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Smart pointers equal by what they point to. meta::eq compares pointers by
 /// address, so fixtures holding them define operator== through this.
@@ -62,6 +62,6 @@ inline auto DisabledRangeIter::operator*() const -> DisabledRange {
 }
 
 static_assert(std::ranges::input_range<DisabledRange>);
-static_assert(kota::format_kind<DisabledRange> == kota::range_format::disabled);
+static_assert(kotatsu::format_kind<DisabledRange> == kotatsu::range_format::disabled);
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

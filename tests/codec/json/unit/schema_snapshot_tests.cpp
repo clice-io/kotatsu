@@ -6,14 +6,14 @@
 
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/tagged.h"
-#include "kota/zest/zest.h"
-#include "kota/codec/json/schema.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/json/schema.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
-namespace json = kota::codec::json;
+namespace json = kotatsu::codec::json;
 
 struct ComboStruct {
     std::string name;
@@ -70,4 +70,4 @@ ZEST_CASE(tagged_field_struct) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

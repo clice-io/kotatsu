@@ -1,14 +1,14 @@
 #include "http/harness/server.h"
-#include "kota/http/http.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
 // The test server plays the proxy: a request through it names the whole url
 // it wants, which curl never looks up itself.
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
@@ -74,4 +74,4 @@ ZEST_CASE(proxy_replaces_a_no_proxy) {
 
 }  // namespace
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

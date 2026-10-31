@@ -7,12 +7,12 @@
 #include <utility>
 
 #include "../libuv.h"
-#include "kota/support/outcome.h"
-#include "kota/async/runtime/node.h"
-#include "kota/async/vocab/error.h"
-#include "kota/async/vocab/owned.h"
+#include "kotatsu/support/outcome.h"
+#include "kotatsu/async/runtime/node.h"
+#include "kotatsu/async/vocab/error.h"
+#include "kotatsu/async/vocab/owned.h"
 
-namespace kota::uv {
+namespace kotatsu::async::uv {
 
 /// Base of every awaiter that waits for libuv. `D` supplies
 ///
@@ -290,4 +290,4 @@ struct owned_handle {
     }
 };
 
-}  // namespace kota::uv
+}  // namespace kotatsu::async::uv

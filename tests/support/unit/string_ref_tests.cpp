@@ -3,10 +3,10 @@
 #include <utility>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/support/string_ref.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/string_ref.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -238,4 +238,4 @@ ZEST_CASE(keeps_the_overloads_of_string_view) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

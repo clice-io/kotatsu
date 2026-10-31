@@ -1,4 +1,4 @@
-#include "kota/ipc/transport.h"
+#include "kotatsu/ipc/transport.h"
 
 #include <cerrno>
 #include <fcntl.h>
@@ -15,45 +15,48 @@
 #include <unistd.h>
 #endif
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
 /// `opened` as a stream, or its error as an ipc error.
 template <typename Handle>
-Result<stream> as_stream(result<Handle> opened) {
+Result<async::stream> as_stream(async::result<Handle> opened) {
     if(!opened) {
         return outcome_error(Error(std::string(opened.error().message())));
     }
-    return stream(std::move(*opened));
+    return async::stream(std::move(*opened));
 }
 
-Result<stream> open_stdio_stream(int fd, bool readable, event_loop& loop) {
-    switch(guess_handle(fd)) {
-        case handle_type::tty:
-            return as_stream(console::open(fd, console::options{readable}, loop));
-        case handle_type::file:
-        case handle_type::unknown:
+Result<async::stream> open_stdio_stream(int fd, bool readable, async::event_loop& loop) {
+    switch(async::guess_handle(fd)) {
+        case async::handle_type::tty:
+            return as_stream(async::console::open(fd, async::console::options{readable}, loop));
+        case async::handle_type::file:
+        case async::handle_type::unknown:
             // The loop cannot wait to read a file, nor every device.
             if(readable) {
                 return outcome_error(Error("stdin is not a pipe, a console or a socket"));
             }
-            return as_stream(pipe::open(fd, pipe::options{}, loop));
-        case handle_type::pipe: return as_stream(pipe::open(fd, pipe::options{}, loop));
-        case handle_type::tcp: return as_stream(tcp::open(fd, loop));
+            return as_stream(async::pipe::open(fd, async::pipe::options{}, loop));
+        case async::handle_type::pipe:
+            return as_stream(async::pipe::open(fd, async::pipe::options{}, loop));
+        case async::handle_type::tcp: return as_stream(async::tcp::open(fd, loop));
         default: return outcome_error(Error("unsupported stdio handle type"));
     }
 }
 
 }  // namespace
 
-StreamTransport::StreamTransport(stream input, stream output, std::size_t max_payload) :
+StreamTransport::StreamTransport(async::stream input,
+                                 async::stream output,
+                                 std::size_t max_payload) :
     read_stream(std::move(input)), write_stream(std::move(output)), parser(max_payload) {}
 
-StreamTransport::StreamTransport(stream stream, std::size_t max_payload) :
+StreamTransport::StreamTransport(async::stream stream, std::size_t max_payload) :
     read_stream(std::move(stream)), shared_stream(true), parser(max_payload) {}
 
-Result<std::unique_ptr<StreamTransport>> StreamTransport::open_stdio(event_loop& loop,
+Result<std::unique_ptr<StreamTransport>> StreamTransport::open_stdio(async::event_loop& loop,
                                                                      std::size_t max_payload) {
     auto input = open_stdio_stream(0, true, loop);
     if(!input) {
@@ -71,21 +74,22 @@ Result<std::unique_ptr<StreamTransport>> StreamTransport::open_stdio(event_loop&
     return transport;
 }
 
-task<std::unique_ptr<StreamTransport>, Error>
+async::task<std::unique_ptr<StreamTransport>, Error>
     StreamTransport::connect_tcp(std::string_view host,
                                  int port,
-                                 event_loop& loop,
+                                 async::event_loop& loop,
                                  std::size_t max_payload) {
-    auto connected = co_await tcp::connect(host, port, loop);
-    co_return std::make_unique<StreamTransport>(co_await or_fail(as_stream(std::move(connected))),
-                                                max_payload);
+    auto connected = co_await async::tcp::connect(host, port, loop);
+    co_return std::make_unique<StreamTransport>(
+        co_await async::or_fail(as_stream(std::move(connected))),
+        max_payload);
 }
 
-task<std::string, ReadError> StreamTransport::read_message() {
+async::task<std::string, ReadError> StreamTransport::read_message() {
     while(true) {
         auto chunk = co_await read_stream.read_chunk();
         if(!chunk) {
-            co_await fail(ReadError{
+            co_await async::fail(ReadError{
                 .kind = ReadError::Kind::Closed,
                 .message = std::string(chunk.error().message()),
             });
@@ -97,29 +101,29 @@ task<std::string, ReadError> StreamTransport::read_message() {
             continue;
         }
         if(!*step.frame) {
-            co_await fail(std::move(*step.frame).error());
+            co_await async::fail(std::move(*step.frame).error());
         }
         co_return std::move(**step.frame);
     }
 }
 
-task<void, Error> Transport::write_messages(std::span<const std::string> payloads) {
+async::task<void, Error> Transport::write_messages(std::span<const std::string> payloads) {
     for(const auto& payload: payloads) {
         co_await write_message(payload).or_fail();
     }
 }
 
-task<void, Error> StreamTransport::write_message(std::string_view payload) {
+async::task<void, Error> StreamTransport::write_message(std::string_view payload) {
     const std::string_view payloads[] = {payload};
     co_await write_frames(payloads).or_fail();
 }
 
-task<void, Error> StreamTransport::write_messages(std::span<const std::string> payloads) {
+async::task<void, Error> StreamTransport::write_messages(std::span<const std::string> payloads) {
     const std::vector<std::string_view> views(payloads.begin(), payloads.end());
     co_await write_frames(views).or_fail();
 }
 
-task<void, Error> StreamTransport::write_frames(std::span<const std::string_view> payloads) {
+async::task<void, Error> StreamTransport::write_frames(std::span<const std::string_view> payloads) {
     std::vector<std::string> headers;
     headers.reserve(payloads.size());
     for(auto payload: payloads) {
@@ -135,7 +139,7 @@ task<void, Error> StreamTransport::write_frames(std::span<const std::string_view
         std::size_t next = first;
         for(; next < payloads.size(); ++next) {
             const auto frame = headers[next].size() + payloads[next].size();
-            if(next > first && size + frame > stream::max_write_size) {
+            if(next > first && size + frame > async::stream::max_write_size) {
                 break;
             }
             pieces.push_back(headers[next]);
@@ -145,28 +149,28 @@ task<void, Error> StreamTransport::write_frames(std::span<const std::string_view
         auto status = co_await stream.write_vectored(pieces);
         if(status.has_error()) {
             // The stream was closed under the write.
-            if(status.error() == error::operation_aborted) {
-                co_await fail("transport closed");
+            if(status.error() == async::error::operation_aborted) {
+                co_await async::fail("transport closed");
             }
-            co_await fail(std::string(status.error().message()));
+            co_await async::fail(std::string(status.error().message()));
         }
         first = next;
     }
 }
 
-task<void, Error> StreamTransport::close_output() {
+async::task<void, Error> StreamTransport::close_output() {
     if(shared_stream) {
         auto shut = co_await read_stream.shutdown();
         if(shut.has_error()) {
-            co_await fail(std::string(shut.error().message()));
+            co_await async::fail(std::string(shut.error().message()));
         }
         co_return;
     }
 
-    write_stream = stream{};
+    write_stream = async::stream{};
     auto released = release_stdout();
     if(!released) {
-        co_await fail(std::move(released).error());
+        co_await async::fail(std::move(released).error());
     }
 }
 
@@ -185,7 +189,7 @@ Result<void> StreamTransport::close() {
         reading.stop();
         return {};
     }
-    write_stream = stream{};
+    write_stream = async::stream{};
     auto released = release_stdout();
     reading.stop();
     return released;
@@ -236,4 +240,4 @@ Result<void> StreamTransport::release_stdout() {
     return {};
 }
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

@@ -1,8 +1,8 @@
-#include "kota/ipc/protocol.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/ipc/protocol.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::ipc::protocol {
+namespace kotatsu::ipc::protocol {
 
 namespace {
 
@@ -18,4 +18,4 @@ ZEST_CASE(error_from_a_null_c_string_has_no_message) {
 
 }  // namespace
 
-}  // namespace kota::ipc::protocol
+}  // namespace kotatsu::ipc::protocol

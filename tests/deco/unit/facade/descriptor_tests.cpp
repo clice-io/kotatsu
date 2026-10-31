@@ -4,10 +4,10 @@
 #include <vector>
 
 #include "deco/harness/argv.h"
-#include "kota/deco/deco.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/deco/deco.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::deco {
+namespace kotatsu::deco {
 
 namespace {
 
@@ -440,4 +440,4 @@ ZEST_CASE(category_shows_what_it_has) {
 
 }  // namespace
 
-}  // namespace kota::deco
+}  // namespace kotatsu::deco

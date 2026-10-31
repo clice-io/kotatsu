@@ -14,12 +14,12 @@
 
 #include "fs/harness/files.h"
 #include "fs/harness/win32.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/directory.h"
-#include "kota/fs/file.h"
-#include "kota/fs/status.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/status.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -350,4 +350,4 @@ ZEST_CASE(copy_file_copies_a_file_that_reports_no_size) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

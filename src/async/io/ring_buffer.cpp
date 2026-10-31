@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cassert>
 
-namespace kota {
+namespace kotatsu::async {
 
 std::span<const char> ring_buffer::readable() const noexcept {
     return {data.data() + head, std::min(size, capacity - head)};
@@ -37,4 +37,4 @@ void ring_buffer::commit(std::size_t n) noexcept {
     size += n;
 }
 
-}  // namespace kota
+}  // namespace kotatsu::async

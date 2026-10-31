@@ -1,9 +1,9 @@
-#include "kota/async/runtime/cancellation.h"
+#include "kotatsu/async/runtime/cancellation.h"
 
 #include "resumption.h"
-#include "kota/async/runtime/sync.h"
+#include "kotatsu/async/runtime/sync.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 namespace detail {
 
@@ -125,4 +125,4 @@ cancellation_token cancellation_source::token() const noexcept {
     return cancellation_token(state);
 }
 
-}  // namespace kota
+}  // namespace kotatsu::async

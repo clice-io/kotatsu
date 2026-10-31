@@ -133,7 +133,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
-          key: cpm-${{ runner.os }}-${{ hashFiles('cmake/kota_dependencies.cmake', 'src/*/CMakeLists.txt') }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('cmake/kotatsu_dependencies.cmake', 'src/*/CMakeLists.txt') }}
           restore-keys: |
             cpm-${{ runner.os }}-
 
@@ -177,8 +177,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $letterless = (Get-Volume -FileSystemLabel letterless).Path
           if (-not $letterless) { exit 1 }
-          "KOTA_TEST_FAT_DIRS=R:\;S:\" >> $env:GITHUB_ENV
-          "KOTA_TEST_LETTERLESS_DIR=$letterless" >> $env:GITHUB_ENV
+          "KOTATSU_TEST_FAT_DIRS=R:\;S:\" >> $env:GITHUB_ENV
+          "KOTATSU_TEST_LETTERLESS_DIR=$letterless" >> $env:GITHUB_ENV
 
       # An entry cannot be overwritten, so each run saves a new one keyed on its
       # commit and restores the newest by prefix. GitHub keeps an entry to the

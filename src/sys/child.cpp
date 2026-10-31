@@ -5,14 +5,14 @@
 #include <utility>
 
 #include "os.h"
-#include "kota/support/string_list_ref.h"
-#include "kota/fs/path.h"
-#include "kota/fs/resolve.h"
-#include "kota/fs/status.h"
-#include "kota/sys/process.h"
-#include "kota/sys/windows.h"
+#include "kotatsu/support/string_list_ref.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/fs/resolve.h"
+#include "kotatsu/fs/status.h"
+#include "kotatsu/sys/process.h"
+#include "kotatsu/sys/windows.h"
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 Child::Child(Child&& other) noexcept {
     swap(other);
@@ -220,4 +220,4 @@ std::expected<std::string, std::error_code>
 #endif
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

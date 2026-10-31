@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "support/harness/glob.h"
-#include "kota/zest/zest.h"
-#include "kota/support/glob_pattern.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/glob_pattern.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -276,4 +276,4 @@ ZEST_CASE(patterns_too_large_to_keep_inline_copy_and_move) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

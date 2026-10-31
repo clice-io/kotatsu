@@ -12,14 +12,14 @@
 #include <unistd.h>
 #endif
 
-#include "kota/deco/deco.h"
-#include "kota/zest/async.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/deco/deco.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/zest.h"
 
 // Tests that misbehave on purpose, for check_runner.cmake: each must fail on
 // its own, and the tests sharing its worker must still run.
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace {
 
@@ -184,8 +184,8 @@ ZEST_SUITE(fixture_loop, LoopFixture) {
 
 ZEST_CASE(outlasts_the_watchdog) {
     watchdog = std::chrono::milliseconds(50);
-    event never;
-    auto waits = [&]() -> task<> {
+    async::event never;
+    auto waits = [&]() -> async::task<> {
         co_await never.wait();
     };
     auto [waited] = run(waits());
@@ -194,8 +194,8 @@ ZEST_CASE(outlasts_the_watchdog) {
 
 // A task stops the loop under run(), then waits for ever.
 ZEST_CASE(stopped_under_run) {
-    event never;
-    auto stops = [&]() -> task<> {
+    async::event never;
+    auto stops = [&]() -> async::task<> {
         loop.stop();
         co_await never.wait();
     };
@@ -209,8 +209,8 @@ ZEST_CASE(stopped_under_run) {
 // take the work: work still queued would be cancelled.
 ZEST_CASE(outlives_its_cancel) {
     watchdog = std::chrono::milliseconds(500);
-    auto stuck = []() -> task<> {
-        co_await queue([] { std::this_thread::sleep_for(std::chrono::seconds(10)); });
+    auto stuck = []() -> async::task<> {
+        co_await async::queue([] { std::this_thread::sleep_for(std::chrono::seconds(10)); });
     };
     run(stuck());
     std::println("printed after the watchdog ended the worker");
@@ -296,7 +296,7 @@ ZEST_CASE(passes_after) {
 ZEST_SUITE(fixture_fatal_loop, LoopFixture) {
 
 ZEST_CASE(in_coroutine) {
-    auto fails = []() -> task<int> {
+    auto fails = []() -> async::task<int> {
         ZASSERT(1 == 2);
         co_return 1;
     };
@@ -394,7 +394,7 @@ struct FixtureOptions {
 
 }  // namespace
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest
 
 // A suite outside an anonymous namespace, which a linker sees as shared with
 // other files. On Windows, tests/zest/CMakeLists.txt links the fixture with
@@ -415,8 +415,8 @@ ZEST_CASE(registered) {
 // Embeds zest's options the way a downstream test program does, so that its
 // own flag has to reach the workers.
 int main(int argc, char** argv) {
-    auto args = kota::deco::util::argvify(argc, argv);
-    auto parsed = kota::deco::cli::parse<kota::zest::FixtureOptions>(args);
+    auto args = kotatsu::deco::util::argvify(argc, argv);
+    auto parsed = kotatsu::deco::cli::parse<kotatsu::zest::FixtureOptions>(args);
     if(!parsed.has_value()) {
         return 1;
     }
@@ -424,5 +424,5 @@ int main(int argc, char** argv) {
     if(*options.fail_worker_start && *options.zest.zest_worker) {
         return 7;
     }
-    return kota::zest::run_tests(std::move(options.zest), argc, argv);
+    return kotatsu::zest::run_tests(std::move(options.zest), argc, argv);
 }

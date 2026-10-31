@@ -11,10 +11,10 @@
 #include <vector>
 
 #include "ipc/harness/peer_fixture.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 template <CodecAdapter A>
 void peer_lifecycle(const PeerKit<A>& kit) {
@@ -23,7 +23,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     using ipc::protocol::ErrorCode;
 
     kit.add("end_of_input_fails_pending_requests", [](Fixture& f) {
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.end_input();
         };
@@ -37,14 +37,14 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     });
 
     kit.add("end_of_input_lets_running_handlers_answer", [](Fixture& f) {
-        event started;
-        event release;
+        async::event started;
+        async::event release;
         f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
             started.set();
             co_await release.wait();
             co_return AddResult{.sum = params.a + params.b};
         });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
             co_await started.wait();
             f.remote.end_input();
@@ -77,7 +77,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     });
 
     kit.add("close_ends_run", [](Fixture& f) {
-        auto closer = [&]() -> task<ipc::Result<void>> {
+        auto closer = [&]() -> async::task<ipc::Result<void>> {
             co_return f.peer.close();
         };
 
@@ -89,7 +89,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     });
 
     kit.add("close_twice_succeeds", [](Fixture& f) {
-        auto closer = [&]() -> task<std::vector<bool>> {
+        auto closer = [&]() -> async::task<std::vector<bool>> {
             auto first = f.peer.close();
             auto second = f.peer.close();
             co_return std::vector{first.has_value(), second.has_value()};
@@ -114,11 +114,11 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     kit.add("peer_destroyed_before_run_fails_its_pending_requests", [](Fixture& f) {
         Remote other_remote;
         auto other = std::make_unique<typename Fixture::Peer>(f.loop, other_remote.transport());
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await other->send_request(AddParams{}).or_fail();
         };
-        auto destroy = [&]() -> task<> {
-            co_await yield();
+        auto destroy = [&]() -> async::task<> {
+            co_await async::yield();
             other.reset();
         };
 
@@ -130,7 +130,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     });
 
     kit.add("close_fails_pending_requests", [](Fixture& f) {
-        auto closer = [&]() -> task<> {
+        auto closer = [&]() -> async::task<> {
             co_await f.next();
             f.peer.close();
         };
@@ -147,8 +147,8 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     kit.add("close_cancels_running_handlers", [](Fixture& f) {
         int started = 0;
         int completed = 0;
-        event both_started;
-        event never;
+        async::event both_started;
+        async::event never;
         f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             started += 1;
             if(started == 2) {
@@ -162,7 +162,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
                           [](Context&, const EmptyParams&) -> ipc::RequestResult<AddParams> {
                               co_return AddResult{};
                           });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(1, "test/ping", EmptyParams{}));
             f.remote.send(request<A>(2, "test/add", AddParams{}));
             f.remote.send(request<A>(3, "test/add", AddParams{}));
@@ -181,7 +181,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     });
 
     kit.add("close_discards_queued_messages", [](Fixture& f) {
-        auto closer = [&]() -> task<ipc::Result<void>> {
+        auto closer = [&]() -> async::task<ipc::Result<void>> {
             auto sent = f.peer.send_notification(NoteParams{.text = "queued"});
             f.peer.close();
             co_return sent;
@@ -247,7 +247,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
 
     kit.add("write_failure_fails_pending_requests_and_closes_the_transport", [](Fixture& f) {
         f.remote.fail_writes();
-        auto ask = [&]() -> task<std::pair<ipc::Error, ipc::Result<void>>> {
+        auto ask = [&]() -> async::task<std::pair<ipc::Error, ipc::Result<void>>> {
             auto asked = co_await f.peer.send_request(AddParams{});
             co_return std::pair{asked.has_error() ? asked.error() : ipc::Error("no error"),
                                 f.peer.send_notification(NoteParams{.text = "after"})};
@@ -284,8 +284,8 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     // The handler's answer could not be written: it is cancelled, and run()
     // ends without waiting for it.
     kit.add("write_failure_cancels_running_handlers", [](Fixture& f) {
-        event started;
-        event never;
+        async::event started;
+        async::event never;
         bool cancelled = false;
         f.peer.on_request([&](Context& context, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
@@ -295,7 +295,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         });
         f.remote.fail_writes();
         f.remote.send(request<A>(1, "test/add", AddParams{}));
-        auto ask = [&]() -> task<> {
+        auto ask = [&]() -> async::task<> {
             co_await started.wait();
             co_await f.peer.send_request(AddParams{});
         };
@@ -339,7 +339,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     // input, so the peer closes the connection.
     kit.add("failed_close_output_fails_pending_requests_and_closes_the_transport", [](Fixture& f) {
         f.remote.fail_close_output();
-        auto closer = [&]() -> task<> {
+        auto closer = [&]() -> async::task<> {
             co_await f.next();
             f.peer.close_output();
         };
@@ -373,14 +373,14 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     // A handler still running when the peer's output closes finishes, but
     // its answer is dropped.
     kit.add("answer_after_close_output_is_dropped", [](Fixture& f) {
-        event started;
-        event release;
+        async::event started;
+        async::event release;
         f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
             co_await release.wait();
             co_return AddResult{};
         });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{}));
             co_await started.wait();
             f.peer.close_output();
@@ -399,9 +399,9 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     // handler runs on and its own request fails at once, since nothing
     // could answer it.
     kit.add("request_after_end_of_input_fails", [](Fixture& f) {
-        event started;
-        event input_ended;
-        event release;
+        async::event started;
+        async::event input_ended;
+        async::event release;
         std::optional<ipc::Error> failure;
         f.peer.on_request([&](Context& context, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
@@ -412,11 +412,11 @@ void peer_lifecycle(const PeerKit<A>& kit) {
             }
             co_return AddResult{};
         });
-        auto probe = [&]() -> task<> {
+        auto probe = [&]() -> async::task<> {
             co_await f.peer.send_request(AddParams{});
             input_ended.set();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{}));
             co_await started.wait();
             f.remote.end_input();
@@ -433,23 +433,23 @@ void peer_lifecycle(const PeerKit<A>& kit) {
 
     kit.add("cancelling_run_cancels_running_handlers_and_fails_pending_requests", [](Fixture& f) {
         bool completed = false;
-        event started;
-        event never;
-        cancellation_source source;
+        async::event started;
+        async::event never;
+        async::cancellation_source source;
         f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
             co_await never.wait();
             completed = true;
             co_return AddResult{};
         });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{}));
             co_await started.wait();
             co_await f.next();
             source.cancel();
         };
 
-        auto [ran, asked, scripted] = f.run(with_token(f.peer.run(), source.token()),
+        auto [ran, asked, scripted] = f.run(async::with_token(f.peer.run(), source.token()),
                                             f.peer.send_request(AddParams{}),
                                             remote());
         ZEXPECT(ran.is_cancelled());
@@ -464,7 +464,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     kit.add("cancelling_run_before_a_task_starts_never_starts_it", [](Fixture& f) {
         bool called = false;
         bool started = false;
-        cancellation_source source;
+        async::cancellation_source source;
         auto answer = [&]() -> ipc::RequestResult<AddParams> {
             started = true;
             co_return AddResult{};
@@ -477,7 +477,7 @@ void peer_lifecycle(const PeerKit<A>& kit) {
         f.remote.send(request<A>(1, "test/add", AddParams{}));
         f.remote.send(notification<A>("test/note", NoteParams{.text = "cancel"}));
 
-        auto [ran] = f.run(with_token(f.peer.run(), source.token()));
+        auto [ran] = f.run(async::with_token(f.peer.run(), source.token()));
         ZEXPECT(ran.is_cancelled());
         ZEXPECT(called);
         ZEXPECT(!started);
@@ -490,13 +490,13 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     // Nothing can use the peer again once run() is cancelled, so its
     // transport closes, and the remote reads the end.
     kit.add("cancelling_run_closes_the_transport", [](Fixture& f) {
-        cancellation_source source;
-        auto canceller = [&]() -> task<> {
+        async::cancellation_source source;
+        auto canceller = [&]() -> async::task<> {
             source.cancel();
             co_return;
         };
 
-        auto [ran, cancelled] = f.run(with_token(f.peer.run(), source.token()), canceller());
+        auto [ran, cancelled] = f.run(async::with_token(f.peer.run(), source.token()), canceller());
         ZEXPECT(ran.is_cancelled());
         ZEXPECT(f.remote.closed());
     });
@@ -529,4 +529,4 @@ void peer_lifecycle(const PeerKit<A>& kit) {
     });
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

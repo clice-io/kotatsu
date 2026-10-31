@@ -2,10 +2,10 @@
 #include <cstdint>
 #include <limits>
 
-#include "kota/zest/zest.h"
-#include "kota/support/numeric.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/numeric.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -106,4 +106,4 @@ ZEST_CASE(compare_exact_past_every_integer) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

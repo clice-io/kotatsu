@@ -1,8 +1,8 @@
-add_library(kota_meta INTERFACE)
-add_library(kota::meta ALIAS kota_meta)
+add_library(kotatsu_meta INTERFACE)
+add_library(kotatsu::meta ALIAS kotatsu_meta)
 
-target_include_directories(kota_meta INTERFACE
+target_include_directories(kotatsu_meta INTERFACE
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-kota_apply_project_options(kota_meta)
+kotatsu_apply_project_options(kotatsu_meta)

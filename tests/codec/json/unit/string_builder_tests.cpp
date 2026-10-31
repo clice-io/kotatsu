@@ -5,10 +5,10 @@
 #include <string>
 #include <string_view>
 
-#include "kota/zest/zest.h"
-#include "kota/codec/json/string_builder.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/json/string_builder.h"
 
-namespace kota::codec::json {
+namespace kotatsu::codec::json {
 
 namespace {
 
@@ -102,4 +102,4 @@ ZEST_CASE(growth_keeps_what_was_written) {
 
 }  // namespace
 
-}  // namespace kota::codec::json
+}  // namespace kotatsu::codec::json

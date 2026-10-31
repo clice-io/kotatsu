@@ -1,19 +1,19 @@
-#include "kota/async/runtime/node.h"
+#include "kotatsu/async/runtime/node.h"
 
 #include <cassert>
 #include <utility>
 #include <vector>
 
 #include "resumption.h"
-#include "kota/async/io/loop.h"
-#include "kota/async/runtime/sync.h"
-#include "kota/async/runtime/task.h"
+#include "kotatsu/async/io/loop.h"
+#include "kotatsu/async/runtime/sync.h"
+#include "kotatsu/async/runtime/task.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 namespace {
 
-#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
 /// MSVC's coroutine codegen under ASan cannot destroy a frame from its own
 /// final suspension: frames wait here until the resumption that ended them
 /// has returned.
@@ -21,7 +21,7 @@ thread_local std::vector<std::coroutine_handle<>> pending_frame_destroys;
 #endif
 
 void destroy_frame(std::coroutine_handle<> frame) {
-#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     pending_frame_destroys.push_back(frame);
 #else
     frame.destroy();
@@ -31,7 +31,7 @@ void destroy_frame(std::coroutine_handle<> frame) {
 /// Destroys the frames that ended in the outermost resumption on this
 /// thread, which has just returned: only now is none of them on the stack.
 void destroy_ended_frames() {
-#if KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
     while(!pending_frame_destroys.empty()) {
         for(auto frame: std::exchange(pending_frame_destroys, {})) {
             frame.destroy();
@@ -268,7 +268,7 @@ std::coroutine_handle<> aggregate_op::child_completed(task_frame& child) {
     switch(child.state) {
         case State::Failed:
             if(child.threw()) {
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
                 if(!exception) {
                     exception = child.exception;
                 }
@@ -382,4 +382,4 @@ void io_op::complete() noexcept {
     resume_and_drain(awaiting->on_child_complete(*this));
 }
 
-}  // namespace kota
+}  // namespace kotatsu::async

@@ -2,10 +2,10 @@
 
 #include "features.h"
 #include "ipc/harness/stderr_logger.h"
-#include "kota/ipc/peer/json.h"
-#include "kota/ipc/lsp/protocol.h"
+#include "kotatsu/ipc/peer/json.h"
+#include "kotatsu/ipc/lsp/protocol.h"
 
-namespace ipc = kota::ipc;
+namespace ipc = kotatsu::ipc;
 namespace proto = ipc::protocol;
 
 namespace {
@@ -39,7 +39,7 @@ auto make_capabilities() -> proto::ServerCapabilities {
 }  // namespace
 
 int main() {
-    kota::event_loop loop;
+    kotatsu::async::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio: {}", transport.error().message);
@@ -47,7 +47,7 @@ int main() {
     }
 
     ipc::JSONPeer peer(loop, std::move(*transport));
-    peer.set_logger(kota::test::stderr_logger(), ipc::LogLevel::trace);
+    peer.set_logger(kotatsu::test::stderr_logger(), ipc::LogLevel::trace);
 
     bool shutdown_requested = false;
 
@@ -74,14 +74,14 @@ int main() {
     // exit: closing the peer ends run(), and with it the loop.
     peer.on_notification([&](const proto::ExitParams&) { peer.close(); });
 
-    kota::test::add_language_features(peer);
+    kotatsu::test::add_language_features(peer);
 
     // textDocument/didOpen → publish diagnostics
     peer.on_notification([&](const proto::DidOpenTextDocumentParams& p) {
         peer.send_notification(proto::PublishDiagnosticsParams{
             .uri = p.text_document.uri,
             .diagnostics = {proto::Diagnostic{
-                .range = kota::test::make_range(0, 0, 5),
+                .range = kotatsu::test::make_range(0, 0, 5),
                 .severity = proto::DiagnosticSeverity::Warning,
                 .message = "stub warning",
             }},

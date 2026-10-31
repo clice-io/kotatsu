@@ -1,8 +1,8 @@
-#include "kota/async/vocab/error.h"
+#include "kotatsu/async/vocab/error.h"
 
 #include "../libuv.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 std::string_view error::message() const {
     if(code == 0) {
@@ -106,4 +106,4 @@ const error error::no_data_available{UV_ENODATA};
 const error error::protocol_driver_not_attached{UV_EUNATCH};
 const error error::exec_format_error{UV_ENOEXEC};
 
-}  // namespace kota
+}  // namespace kotatsu::async

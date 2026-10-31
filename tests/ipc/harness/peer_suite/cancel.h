@@ -6,10 +6,10 @@
 #include <string>
 
 #include "ipc/harness/peer_fixture.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 template <CodecAdapter A>
 void peer_cancel(const PeerKit<A>& kit) {
@@ -20,15 +20,15 @@ void peer_cancel(const PeerKit<A>& kit) {
 
     kit.add("cancel_request_ends_the_running_handler", [](Fixture& f) {
         bool completed = false;
-        event started;
-        event never;
+        async::event started;
+        async::event never;
         f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
             co_await never.wait();
             completed = true;
             co_return AddResult{};
         });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(22, "test/add", AddParams{}));
             co_await started.wait();
             f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 22}));
@@ -79,7 +79,7 @@ void peer_cancel(const PeerKit<A>& kit) {
 
     kit.add("cancel_request_after_the_answer_is_ignored", [](Fixture& f) {
         f.serve_add();
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
             co_await f.next();
             f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 1}));
@@ -104,15 +104,15 @@ void peer_cancel(const PeerKit<A>& kit) {
 
     // Both cancellations arrive while the handler runs.
     kit.add("cancel_request_twice_is_answered_once", [](Fixture& f) {
-        event started;
-        event never;
+        async::event started;
+        async::event never;
         f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
             co_await never.wait();
             co_return AddResult{};
         });
         f.remote.send(request<A>(1, "test/add", AddParams{}));
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await started.wait();
             f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 1}));
             f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 1}));
@@ -130,7 +130,7 @@ void peer_cancel(const PeerKit<A>& kit) {
     // test/ping answers at once, so its answer shows the peer has read the
     // cancellations sent before it; the running request then still answers.
     kit.add("cancel_request_with_params_that_do_not_decode_is_ignored", [](Fixture& f) {
-        event release;
+        async::event release;
         f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
             co_await release.wait();
             co_return AddResult{.sum = params.a + params.b};
@@ -139,7 +139,7 @@ void peer_cancel(const PeerKit<A>& kit) {
                           [](Context&, const EmptyParams&) -> ipc::RequestResult<AddParams> {
                               co_return AddResult{};
                           });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
             f.remote.send(notification<A>("$/cancelRequest", NoteParams{.text = "1"}));
             f.remote.send(A::notification_raw("$/cancelRequest", A::not_a_value));
@@ -185,7 +185,7 @@ void peer_cancel(const PeerKit<A>& kit) {
                                                        {.token = context.cancellation})
                     .or_fail();
             });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(31, "test/add", AddParams{.a = 4, .b = 5}));
             co_await f.next();
             f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 31}));
@@ -216,15 +216,15 @@ void peer_cancel(const PeerKit<A>& kit) {
     // The token's cancel tells the remote and waits for its answer, here
     // RequestCancelled, which is what the request ends with.
     kit.add("send_request_cancelled_by_its_token_sends_cancel_request", [](Fixture& f) {
-        cancellation_source source;
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        async::cancellation_source source;
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer
                 .template send_request<AddResult>("worker/build",
                                                   AddParams{},
                                                   {.token = source.token()})
                 .or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             source.cancel();
             co_await f.next();
@@ -250,9 +250,9 @@ void peer_cancel(const PeerKit<A>& kit) {
     });
 
     kit.add("send_request_with_a_cancelled_token_fails_without_writing", [](Fixture& f) {
-        cancellation_source source;
+        async::cancellation_source source;
         source.cancel();
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             f.remote.end_input();
             co_return co_await f.peer
                 .template send_request<AddResult>("worker/build",
@@ -272,12 +272,12 @@ void peer_cancel(const PeerKit<A>& kit) {
     // A remote may finish a request after it was told of the cancellation:
     // the request ends with that answer.
     kit.add("answer_after_cancel_request_is_returned", [](Fixture& f) {
-        cancellation_source source;
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        async::cancellation_source source;
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{}, {.token = source.token()})
                 .or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             source.cancel();
             co_await f.next();
@@ -295,13 +295,13 @@ void peer_cancel(const PeerKit<A>& kit) {
     // The token fires once the answer is read, before the caller resumes:
     // the request is settled, so the remote is not told.
     kit.add("token_fired_after_the_answer_is_read_sends_no_cancel", [](Fixture& f) {
-        cancellation_source source;
+        async::cancellation_source source;
         f.peer.on_notification([&](const NoteParams&) { source.cancel(); });
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{}, {.token = source.token()})
                 .or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(response<A>(1, AddResult{.sum = 1}));
             f.remote.send(notification<A>("test/note", NoteParams{.text = "cancel"}));
@@ -320,19 +320,19 @@ void peer_cancel(const PeerKit<A>& kit) {
     // remote is told, and the task ends cancelled once the answer is in, not
     // before.
     kit.add("send_request_whose_caller_is_cancelled_waits_for_the_answer", [](Fixture& f) {
-        cancellation_source source;
+        async::cancellation_source source;
         bool caller_ended = false;
         bool ended_before_the_answer = true;
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.template send_request<AddResult>("worker/build", AddParams{})
                 .or_fail();
         };
-        auto caller = [&]() -> task<bool> {
-            auto asked = co_await with_token(ask(), source.token());
+        auto caller = [&]() -> async::task<bool> {
+            auto asked = co_await async::with_token(ask(), source.token());
             caller_ended = true;
             co_return asked.is_cancelled();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             source.cancel();
             co_await f.next();
@@ -358,14 +358,14 @@ void peer_cancel(const PeerKit<A>& kit) {
     // its output is closed, ends at once instead of waiting for an answer
     // the remote has no reason to cut short.
     kit.add("cancel_that_cannot_be_sent_ends_the_request_at_once", [](Fixture& f) {
-        cancellation_source source;
-        event done;
-        auto ask = [&]() -> task<ipc::Error> {
+        async::cancellation_source source;
+        async::event done;
+        auto ask = [&]() -> async::task<ipc::Error> {
             auto asked = co_await f.peer.send_request(AddParams{}, {.token = source.token()});
             done.set();
             co_return asked.has_error() ? asked.error() : ipc::Error("answered");
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.peer.close_output();
             source.cancel();
@@ -383,11 +383,11 @@ void peer_cancel(const PeerKit<A>& kit) {
     // A request the remote never answers still lets a cancelled caller go
     // once the connection closes.
     kit.add("cancelled_caller_ends_when_the_connection_closes", [](Fixture& f) {
-        cancellation_source source;
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        async::cancellation_source source;
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{}).or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             source.cancel();
             co_await f.next();
@@ -395,7 +395,7 @@ void peer_cancel(const PeerKit<A>& kit) {
         };
 
         auto [ran, asked, scripted] =
-            f.run(f.peer.run(), with_token(ask(), source.token()), remote());
+            f.run(f.peer.run(), async::with_token(ask(), source.token()), remote());
         ZEXPECT(ran.has_value());
         ZEXPECT(asked.is_cancelled());
     });
@@ -403,21 +403,21 @@ void peer_cancel(const PeerKit<A>& kit) {
     // Once run() is cancelled, here while a handler runs, nothing more can
     // be sent.
     kit.add("sending_after_run_is_cancelled_fails", [](Fixture& f) {
-        cancellation_source source;
-        event started;
-        event never;
+        async::cancellation_source source;
+        async::event started;
+        async::event never;
         f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
             co_await never.wait();
             co_return AddResult{};
         });
         f.remote.send(request<A>(1, "test/add", AddParams{}));
-        auto stop = [&]() -> task<> {
+        auto stop = [&]() -> async::task<> {
             co_await started.wait();
             source.cancel();
         };
 
-        auto [ran, stopped] = f.run(with_token(f.peer.run(), source.token()), stop());
+        auto [ran, stopped] = f.run(async::with_token(f.peer.run(), source.token()), stop());
         ZEXPECT(ran.is_cancelled());
         ZEXPECT(stopped.has_value());
         auto sent = f.peer.send_notification(NoteParams{.text = "late"});
@@ -433,4 +433,4 @@ void peer_cancel(const PeerKit<A>& kit) {
     });
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

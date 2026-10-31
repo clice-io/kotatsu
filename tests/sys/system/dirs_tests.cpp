@@ -10,22 +10,22 @@
 #endif
 
 #include "sys/harness/env.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/path.h"
-#include "kota/sys/dirs.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/sys/dirs.h"
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
 #ifdef _WIN32
 constexpr const char* home_variable = "USERPROFILE";
-constexpr const char* home = R"(C:\Users\kota)";
+constexpr const char* home = R"(C:\Users\kotatsu)";
 constexpr const char* root = R"(C:\)";
 #else
 constexpr const char* home_variable = "HOME";
-constexpr const char* home = "/home/kota";
+constexpr const char* home = "/home/kotatsu";
 constexpr const char* root = "/";
 #endif
 
@@ -73,7 +73,7 @@ ZEST_CASE(expand_tilde_takes_the_home_directory) {
     ZEXPECT(expanded("~") == home);
     ZEXPECT(expanded("~/a/b") == std::string(home) + "/a/b");
 #ifdef _WIN32
-    ZEXPECT(expanded(R"(~\a)") == R"(C:\Users\kota\a)");
+    ZEXPECT(expanded(R"(~\a)") == R"(C:\Users\kotatsu\a)");
 #endif
 }
 
@@ -95,7 +95,7 @@ ZEST_CASE(expand_tilde_leaves_a_path_without_one) {
 
 #ifdef _WIN32
 ZEST_CASE(expand_tilde_leaves_a_user_name) {
-    ZEXPECT(expanded(R"(~kota\a)") == R"(~kota\a)");
+    ZEXPECT(expanded(R"(~kotatsu\a)") == R"(~kotatsu\a)");
 }
 #else
 // The user's home from the password database, whatever HOME says.
@@ -116,8 +116,8 @@ ZEST_CASE(expand_tilde_takes_a_users_home) {
 }
 
 ZEST_CASE(expand_tilde_leaves_a_user_that_does_not_exist) {
-    ZEXPECT(expanded("~kota-no-such-user/a") == "~kota-no-such-user/a");
-    ZEXPECT(expanded("~kota-no-such-user") == "~kota-no-such-user");
+    ZEXPECT(expanded("~kotatsu-no-such-user/a") == "~kotatsu-no-such-user/a");
+    ZEXPECT(expanded("~kotatsu-no-such-user") == "~kotatsu-no-such-user");
 }
 #endif
 
@@ -149,9 +149,9 @@ ZEST_CASE(temp_dir_without_a_variable_is_tmp) {
 #if defined(__APPLE__)
 ZEST_CASE(user_dirs_are_in_library) {
     test::ScopedEnv variable(home_variable, home);
-    ZEXPECT(dir_of(cache_dir) == "/home/kota/Library/Caches");
-    ZEXPECT(dir_of(config_dir) == "/home/kota/Library/Application Support");
-    ZEXPECT(dir_of(data_dir) == "/home/kota/Library/Application Support");
+    ZEXPECT(dir_of(cache_dir) == "/home/kotatsu/Library/Caches");
+    ZEXPECT(dir_of(config_dir) == "/home/kotatsu/Library/Application Support");
+    ZEXPECT(dir_of(data_dir) == "/home/kotatsu/Library/Application Support");
 }
 #elif !defined(_WIN32)
 ZEST_CASE(user_dirs_default_to_the_home_directory) {
@@ -159,9 +159,9 @@ ZEST_CASE(user_dirs_default_to_the_home_directory) {
     test::ScopedEnv cache("XDG_CACHE_HOME", std::nullopt);
     test::ScopedEnv config("XDG_CONFIG_HOME", std::nullopt);
     test::ScopedEnv data("XDG_DATA_HOME", std::nullopt);
-    ZEXPECT(dir_of(cache_dir) == "/home/kota/.cache");
-    ZEXPECT(dir_of(config_dir) == "/home/kota/.config");
-    ZEXPECT(dir_of(data_dir) == "/home/kota/.local/share");
+    ZEXPECT(dir_of(cache_dir) == "/home/kotatsu/.cache");
+    ZEXPECT(dir_of(config_dir) == "/home/kotatsu/.config");
+    ZEXPECT(dir_of(data_dir) == "/home/kotatsu/.local/share");
 }
 
 ZEST_CASE(user_dirs_take_absolute_xdg_variables) {
@@ -170,7 +170,7 @@ ZEST_CASE(user_dirs_take_absolute_xdg_variables) {
     // A relative one is ignored, as the XDG specification says.
     test::ScopedEnv config("XDG_CONFIG_HOME", "relative");
     ZEXPECT(dir_of(cache_dir) == "/xdg/cache");
-    ZEXPECT(dir_of(config_dir) == "/home/kota/.config");
+    ZEXPECT(dir_of(config_dir) == "/home/kotatsu/.config");
 }
 #else
 ZEST_CASE(user_dirs_are_known_folders) {
@@ -191,4 +191,4 @@ ZEST_CASE(user_dirs_are_known_folders) {
 
 }  // namespace
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

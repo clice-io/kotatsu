@@ -22,10 +22,10 @@
 #include "codec/harness/visit/kit.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 template <Backend B>
 void attrs(const Kit<B>& kit) {
@@ -720,4 +720,4 @@ void attrs(const Kit<B>& kit) {
     }
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

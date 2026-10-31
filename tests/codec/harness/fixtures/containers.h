@@ -22,9 +22,9 @@
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/containers.h"
 #include "fixtures/enums.h"
-#include "kota/meta/compare.h"
+#include "kotatsu/meta/compare.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// A list whose default constructor is explicit, as llvm::DenseMap's is.
 struct ExplicitList : std::vector<int> {
@@ -221,4 +221,4 @@ struct ExplicitElements {
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

@@ -1,8 +1,8 @@
-#include "kota/ipc/lsp/position.h"
+#include "kotatsu/ipc/lsp/position.h"
 
 #include "locate.h"
 
-namespace kota::ipc::lsp {
+namespace kotatsu::ipc::lsp {
 
 protocol::Position detail::position_in(std::string_view content,
                                        Line line,
@@ -31,4 +31,4 @@ detail::Located detail::offset_in(std::string_view content,
     return {.offset = offset, .exact = found.exact || offset == line.end};
 }
 
-}  // namespace kota::ipc::lsp
+}  // namespace kotatsu::ipc::lsp

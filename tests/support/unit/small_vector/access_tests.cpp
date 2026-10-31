@@ -3,11 +3,11 @@
 #include <vector>
 
 #include "support/harness/throws.h"
-#include "kota/zest/zest.h"
-#include "kota/support/config.h"
-#include "kota/support/small_vector.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/config.h"
+#include "kotatsu/support/small_vector.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -36,7 +36,7 @@ ZEST_CASE(front_back_and_data) {
     ZEXPECT(constant.data() == v.data());
 }
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 
 ZEST_CASE(at_past_the_end_fails) {
     small_vector<int, 2> v = {1};
@@ -78,4 +78,4 @@ ZEST_CASE(range_for_visits_each_element) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

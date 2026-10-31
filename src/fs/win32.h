@@ -24,13 +24,13 @@
 #include <winioctl.h>
 #include <winternl.h>
 
-#include "kota/support/buffer_ref.h"
-#include "kota/support/small_string.h"
-#include "kota/fs/status.h"
-#include "kota/fs/volume.h"
-#include "kota/fs/windows.h"
+#include "kotatsu/support/buffer_ref.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/fs/status.h"
+#include "kotatsu/fs/volume.h"
+#include "kotatsu/fs/windows.h"
 
-namespace kota::fs::win32 {
+namespace kotatsu::fs::win32 {
 
 /// The function `name` of ntdll, which every Windows has, looked up once.
 template <typename Function>
@@ -237,6 +237,6 @@ constexpr std::chrono::sys_time<std::chrono::nanoseconds> unix_time(std::int64_t
     return Time(std::chrono::nanoseconds((ticks - unix_epoch_ticks) * 100));
 }
 
-}  // namespace kota::fs::win32
+}  // namespace kotatsu::fs::win32
 
 #endif

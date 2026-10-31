@@ -4,12 +4,12 @@
 #include <string_view>
 #include <system_error>
 
-#include "kota/zest/zest.h"
-#include "kota/support/small_string.h"
-#include "kota/support/small_vector.h"
-#include "kota/support/utf16.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/support/small_vector.h"
+#include "kotatsu/support/utf16.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -106,4 +106,4 @@ ZEST_CASE(utf16_roundtrip_keeps_lone_surrogates) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

@@ -1,4 +1,4 @@
-#include "kota/fs/mapping.h"
+#include "kotatsu/fs/mapping.h"
 
 #include <utility>
 
@@ -10,7 +10,7 @@
 #include "posix.h"
 #endif
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 Mapping::Mapping(Mapping&& other) noexcept :
     data(std::exchange(other.data, nullptr)), size(std::exchange(other.size, 0)) {}
@@ -72,4 +72,4 @@ std::expected<Mapping, std::error_code> Mapping::map(const File& file) {
     return Mapping(static_cast<const char*>(view), size);
 }
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

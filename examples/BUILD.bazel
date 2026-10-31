@@ -1,9 +1,9 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("//bazel:defs.bzl", "kota_binary")
+load("//bazel:defs.bzl", "kotatsu_binary")
 
 package(default_visibility = ["//tests:__pkg__"])
 
-[kota_binary(
+[kotatsu_binary(
     name = name,
     srcs = [src],
     deps = deps,

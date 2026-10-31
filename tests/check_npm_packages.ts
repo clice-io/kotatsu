@@ -1,4 +1,4 @@
-// Loaded before every integration test file (see kota_add_integration_tests
+// Loaded before every integration test file (see kotatsu_add_integration_tests
 // in tests/CMakeLists.txt), so that a checkout whose npm packages are missing
 // or older than package-lock.json fails with the fix instead of a module
 // resolution error.

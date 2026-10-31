@@ -7,12 +7,12 @@
 #include <vector>
 
 #include "ipc/harness/peer_fixture.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
-#include "kota/codec/dyn/dyn.h"
-#include "kota/codec/visit/common.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
+#include "kotatsu/codec/dyn/dyn.h"
+#include "kotatsu/codec/visit/common.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 template <CodecAdapter A>
 void peer_link(const PeerKit<A>& kit) {
@@ -27,8 +27,8 @@ void peer_link(const PeerKit<A>& kit) {
             co_return AddResult{.sum = params.a + params.b};
         });
         f.b.on_notification([&](const NoteParams& params) { notes.push_back(params.text); });
-        auto script = [&]() -> task<AddResult, ipc::Error> {
-            co_await or_fail(f.a.send_notification(NoteParams{.text = "hello"}));
+        auto script = [&]() -> async::task<AddResult, ipc::Error> {
+            co_await async::or_fail(f.a.send_notification(NoteParams{.text = "hello"}));
             auto result = co_await f.a.send_request(AddParams{.a = 2, .b = 3}).or_fail();
             f.a.close();
             f.b.close();
@@ -45,12 +45,12 @@ void peer_link(const PeerKit<A>& kit) {
     // the requester takes it as it is.
     kit.add_case("raw_value_result_crosses_between_peers", [] {
         Peers f;
-        f.b.on_request("test/raw",
-                       [](Context&, const AddParams& params) -> task<codec::RawValue, ipc::Error> {
-                           co_return codec::RawValue{
-                               A::encode(AddResult{.sum = params.a + params.b})};
-                       });
-        auto script = [&]() -> task<codec::RawValue, ipc::Error> {
+        f.b.on_request(
+            "test/raw",
+            [](Context&, const AddParams& params) -> async::task<codec::RawValue, ipc::Error> {
+                co_return codec::RawValue{A::encode(AddResult{.sum = params.a + params.b})};
+            });
+        auto script = [&]() -> async::task<codec::RawValue, ipc::Error> {
             auto result =
                 co_await f.a
                     .template send_request<codec::RawValue>("test/raw", AddParams{.a = 2, .b = 3})
@@ -70,9 +70,9 @@ void peer_link(const PeerKit<A>& kit) {
     kit.add_case("error_crosses_between_peers", [] {
         Peers f;
         f.b.on_request([](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
-            co_await fail(-32001, "remote failed");
+            co_await async::fail(-32001, "remote failed");
         });
-        auto script = [&]() -> task<ipc::Error> {
+        auto script = [&]() -> async::task<ipc::Error> {
             auto result = co_await f.a.send_request(AddParams{});
             f.a.close();
             f.b.close();
@@ -89,9 +89,9 @@ void peer_link(const PeerKit<A>& kit) {
     // $/cancelRequest crossed, and a's request ends with b's answer.
     kit.add_case("cancellation_crosses_between_peers", [] {
         Peers f;
-        event started;
-        event cancelled;
-        event never;
+        async::event started;
+        async::event cancelled;
+        async::event never;
         f.b.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
             auto waited = co_await wait_for(never).catch_cancel();
@@ -100,14 +100,14 @@ void peer_link(const PeerKit<A>& kit) {
             }
             co_return AddResult{};
         });
-        cancellation_source source;
-        auto ask = [&]() -> task<ipc::Error> {
+        async::cancellation_source source;
+        auto ask = [&]() -> async::task<ipc::Error> {
             auto result = co_await f.a.send_request(AddParams{}, {.token = source.token()});
             f.a.close();
             f.b.close();
             co_return result.has_error() ? result.error() : ipc::Error("no error");
         };
-        auto script = [&]() -> task<> {
+        auto script = [&]() -> async::task<> {
             co_await started.wait();
             source.cancel();
         };
@@ -130,9 +130,9 @@ void error_data_crosses_between_peers() {
         {"attempt", -1         },
     };
     f.b.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
-        co_await fail(ipc::protocol::ErrorCode::InvalidParams, "rejected", data);
+        co_await async::fail(ipc::protocol::ErrorCode::InvalidParams, "rejected", data);
     });
-    auto script = [&]() -> task<ipc::Error> {
+    auto script = [&]() -> async::task<ipc::Error> {
         auto result = co_await f.a.send_request(AddParams{});
         f.a.close();
         f.b.close();
@@ -146,4 +146,4 @@ void error_data_crosses_between_peers() {
     ZEXPECT(*failure->data == data);
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

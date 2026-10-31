@@ -26,14 +26,14 @@
 #include "ipc/harness/codec_kit.h"
 #include "ipc/harness/fixtures.h"
 #include "ipc/harness/memory_transport.h"
-#include "kota/ipc/peer.h"
-#include "kota/zest/async.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/ipc/peer.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Waits for `signal`: a task, whose cancellation its awaiter can catch.
-inline task<> wait_for(event& signal) {
+inline async::task<> wait_for(async::event& signal) {
     co_await signal.wait();
 }
 
@@ -54,7 +54,7 @@ struct PeerFixture : zest::LoopFixture {
 
     /// Waits for the next message the peer writes, or for its output to end,
     /// and keeps the message for written().
-    task<> next() {
+    async::task<> next() {
         if(auto payload = co_await remote.receive()) {
             keep(*payload);
         }
@@ -145,4 +145,4 @@ struct LinkedPeers : zest::LoopFixture {
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

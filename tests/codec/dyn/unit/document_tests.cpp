@@ -2,10 +2,10 @@
 #include <string>
 #include <string_view>
 
-#include "kota/zest/zest.h"
-#include "kota/codec/dyn/document.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/dyn/document.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -264,4 +264,4 @@ ZEST_CASE(kind_decides_equality) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

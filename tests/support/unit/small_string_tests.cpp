@@ -4,14 +4,14 @@
 #include <string>
 #include <string_view>
 
-#include "kota/zest/zest.h"
-#include "kota/support/buffer_ref.h"
-#include "kota/support/small_string.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/buffer_ref.h"
+#include "kotatsu/support/small_string.h"
 #if WCHAR_MAX <= 0xFFFF
-#include "kota/support/utf16.h"
+#include "kotatsu/support/utf16.h"
 #endif
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -174,4 +174,4 @@ ZEST_CASE(wide_string_takes_utf16) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// An argv of `words`, e.g. `test::args("-o", "out")`. A parse keeps views into it, so a test
 /// holds it for as long as it reads the result.
@@ -31,4 +31,4 @@ inline std::vector<std::string> split(std::string_view line, char separator = ' 
     }
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

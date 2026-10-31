@@ -1,8 +1,8 @@
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/sys/spawn.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/sys/spawn.h"
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -38,4 +38,4 @@ ZEST_CASE(to_string_names_a_windows_crash) {
 
 }  // namespace
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

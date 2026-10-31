@@ -1,1 +1,1 @@
-kota_add_module_tests(LIBS kota::codec)
+kotatsu_add_module_tests(LIBS kotatsu::codec)

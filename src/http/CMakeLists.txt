@@ -11,12 +11,12 @@ if(DEFINED ENV{CONDA_PREFIX})
 endif()
 
 if(WIN32)
-    set(_kota_curl_ssl_opt CURL_USE_SCHANNEL ON)
+    set(_kotatsu_curl_ssl_opt CURL_USE_SCHANNEL ON)
 else()
-    set(_kota_curl_ssl_opt CURL_USE_OPENSSL ON)
+    set(_kotatsu_curl_ssl_opt CURL_USE_OPENSSL ON)
 endif()
 
-kota_add_git_dependency(
+kotatsu_add_git_dependency(
     curl
     GIT_REPOSITORY https://github.com/curl/curl.git
     GIT_TAG curl-8_17_0
@@ -27,17 +27,20 @@ kota_add_git_dependency(
         CURL_DISABLE_INSTALL ON
         CURL_ENABLE_EXPORT_TARGET ON
         CURL_USE_LIBPSL OFF
+        # HTTP_ONLY leaves SSH out, but curl still finds libssh2, whose
+        # headers on macOS may come from another OpenSSL than the one found.
+        CURL_USE_LIBSSH2 OFF
         CURL_ZLIB OFF
         CURL_ZSTD OFF
         ENABLE_ARES OFF
         HTTP_ONLY ON
-        ${_kota_curl_ssl_opt}
+        ${_kotatsu_curl_ssl_opt}
 )
 
-add_library(kota_http STATIC)
-add_library(kota::http ALIAS kota_http)
+add_library(kotatsu_http STATIC)
+add_library(kotatsu::http ALIAS kotatsu_http)
 
-target_sources(kota_http PRIVATE
+target_sources(kotatsu_http PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/bound_client.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/client.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/manager.cpp"
@@ -47,23 +50,23 @@ target_sources(kota_http PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/util.cpp"
 )
 
-target_include_directories(kota_http PUBLIC
+target_include_directories(kotatsu_http PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
 if(WIN32)
-    target_compile_definitions(kota_http PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_compile_definitions(kotatsu_http PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
-target_link_libraries(kota_http PUBLIC
-    kota::async
+target_link_libraries(kotatsu_http PUBLIC
+    kotatsu::async
     CURL::libcurl
 )
 
-if(KOTA_CODEC_ENABLE_SIMDJSON)
-    target_link_libraries(kota_http PUBLIC
-        kota::codec::json
+if(KOTATSU_CODEC_ENABLE_SIMDJSON)
+    target_link_libraries(kotatsu_http PUBLIC
+        kotatsu::codec::json
     )
 endif()
 
-kota_apply_project_options(kota_http)
+kotatsu_apply_project_options(kotatsu_http)

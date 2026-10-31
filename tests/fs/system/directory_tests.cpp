@@ -24,13 +24,13 @@
 #include "fs/harness/dir.h"
 #include "fs/harness/files.h"
 #include "fs/harness/win32.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/directory.h"
-#include "kota/fs/file.h"
-#include "kota/fs/resolve.h"
-#include "kota/fs/status.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/resolve.h"
+#include "kotatsu/fs/status.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -1106,4 +1106,4 @@ ZEST_CASE(rename_noreplace_across_file_systems_fails) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

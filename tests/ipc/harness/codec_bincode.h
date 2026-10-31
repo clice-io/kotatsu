@@ -12,12 +12,12 @@
 #include <variant>
 
 #include "ipc/harness/codec_kit.h"
-#include "kota/ipc/codec/bincode.h"
-#include "kota/zest/zest.h"
-#include "kota/codec/bincode/bincode.h"
-#include "kota/codec/visit/common.h"
+#include "kotatsu/ipc/codec/bincode.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/bincode/bincode.h"
+#include "kotatsu/codec/visit/common.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 // Mirrors of BincodeCodec's envelopes: an envelope is the index of its
 // alternative, then its fields in order, with an id as an int64 and error
@@ -158,4 +158,4 @@ private:
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

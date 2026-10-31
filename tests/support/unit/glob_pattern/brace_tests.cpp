@@ -1,7 +1,7 @@
 #include "support/harness/glob.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -107,4 +107,4 @@ ZEST_CASE(terms_before_a_globstar_match_their_trees) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

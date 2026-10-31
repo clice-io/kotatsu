@@ -1,4 +1,4 @@
-#include "kota/http/detail/response.h"
+#include "kotatsu/http/detail/response.h"
 
 #include <cstddef>
 #include <span>
@@ -6,9 +6,9 @@
 #include <string_view>
 #include <utility>
 
-#include "kota/http/detail/util.h"
+#include "kotatsu/http/detail/util.h"
 
-namespace kota::http {
+namespace kotatsu::http {
 
 std::string error::message() const {
     return http::message(*this);
@@ -53,4 +53,4 @@ std::optional<std::string_view> response::header_value(std::string_view name) co
     return std::nullopt;
 }
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

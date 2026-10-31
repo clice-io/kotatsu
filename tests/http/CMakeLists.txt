@@ -1,1 +1,1 @@
-kota_add_module_tests(LIBS kota::http kota::zest::async)
+kotatsu_add_module_tests(LIBS kotatsu::http kotatsu::zest::async)

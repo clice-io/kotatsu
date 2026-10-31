@@ -1,13 +1,13 @@
 #include <chrono>
 
 #include "http/harness/server.h"
-#include "kota/http/http.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
@@ -17,7 +17,7 @@ ZEST_SUITE(http_detail_request_settings_timeout, zest::LoopFixture) {
 
 // The subject is curl's timer: the server holds its reply for good.
 ZEST_CASE(request_past_its_timeout_fails) {
-    event never;
+    async::event never;
     test::HttpServer server(loop,
                             [&](const test::Received&) { return test::Reply{.hold = &never}; });
     ZASSERT(server.listening());
@@ -30,7 +30,7 @@ ZEST_CASE(request_past_its_timeout_fails) {
 }
 
 ZEST_CASE(request_timeout_shorter_than_the_clients_fails) {
-    event never;
+    async::event never;
     test::HttpServer server(loop, [&](const test::Received& request) {
         return request.target == "/slow" ? test::Reply{.hold = &never} : test::Reply{};
     });
@@ -46,4 +46,4 @@ ZEST_CASE(request_timeout_shorter_than_the_clients_fails) {
 
 }  // namespace
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

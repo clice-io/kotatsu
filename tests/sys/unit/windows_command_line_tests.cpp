@@ -3,13 +3,13 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/support/small_string.h"
-#include "kota/support/string_list_ref.h"
-#include "kota/sys/windows.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/support/string_list_ref.h"
+#include "kotatsu/sys/windows.h"
 
-namespace kota::sys::windows {
+namespace kotatsu::sys::windows {
 
 namespace {
 
@@ -305,4 +305,4 @@ ZEST_CASE(split_by_llvm_full_reads_a_program_after_a_newline_that_ends_an_argume
 
 }  // namespace
 
-}  // namespace kota::sys::windows
+}  // namespace kotatsu::sys::windows

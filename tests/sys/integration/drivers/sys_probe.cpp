@@ -35,10 +35,10 @@
 //                         as it does
 //   report <argument>     prints {"arguments": <what sys::arguments reads>,
 //                         "cwd": <its working directory>, "value": <the
-//                         value of KOTA_PROBE_VALUE>}
+//                         value of KOTATSU_PROBE_VALUE>}
 //   relay <cwd> <value> <argument> <arg0>
 //                         starts `sys_probe report <argument>` in <cwd>, its
-//                         argv[0] <arg0>, KOTA_PROBE_VALUE set to <value>,
+//                         argv[0] <arg0>, KOTATSU_PROBE_VALUE set to <value>,
 //                         and exits as it does
 //   spawn <program> [<argument>...]
 //                         starts <program> with the arguments, its streams
@@ -53,7 +53,7 @@
 //                         times, prints {"switches": <the times that gave
 //                         the CPU up>} and exits once its stdin ends, the
 //                         thread there till then
-//   hooked                Linux: starts `sys_probe env KOTA_EXECVE_HOOKED`,
+//   hooked                Linux: starts `sys_probe env KOTATSU_EXECVE_HOOKED`,
 //                         which this one's execve, as a hook preloaded into
 //                         it would, sets to 1, and exits as it does
 //   traced                Linux: starts `sys_probe traceme`, waits for it to
@@ -77,9 +77,9 @@
 //   reaping               Linux: SIGCHLD ignored, starts a child from a thread
 //                         a hook holds where spawn sets SIGCHLD's default, and
 //                         meanwhile another, sets a handler once that has
-//                         started, as kota::process sets one, and prints
-//                         {"waited": <whether the second waited for the
-//                         first>, "kept": <whether the handler stayed>}
+//                         started, as kotatsu::async::process sets one, and
+//                         prints {"waited": <whether the second waited for
+//                         the first>, "kept": <whether the handler stayed>}
 //   nested                Windows: joins a job as a CI runner's, starts
 //                         `sys_probe hang` exit_with_parent in a tree of its
 //                         own, and prints whether that is in the runner's
@@ -129,9 +129,9 @@
 #endif
 #include <windows.h>
 
-#include "kota/support/utf16.h"
-#include "kota/fs/windows.h"
-#include "kota/sys/console.h"
+#include "kotatsu/support/utf16.h"
+#include "kotatsu/fs/windows.h"
+#include "kotatsu/sys/console.h"
 #elif defined(__linux__)
 #include <cerrno>
 #include <csignal>
@@ -147,12 +147,12 @@
 #include <fcntl.h>
 #endif
 
-#include "kota/fs/file.h"
-#include "kota/fs/resolve.h"
-#include "kota/sys/env.h"
-#include "kota/sys/info.h"
-#include "kota/sys/process.h"
-#include "kota/sys/spawn.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/resolve.h"
+#include "kotatsu/sys/env.h"
+#include "kotatsu/sys/info.h"
+#include "kotatsu/sys/process.h"
+#include "kotatsu/sys/spawn.h"
 
 #ifdef __linux__
 // For C libraries whose headers are older than it (Linux 5.3).
@@ -200,13 +200,13 @@ struct Gate {
 constinit Gate gate;
 
 // What a hook preloaded into this process sees, as catter's: every execve it
-// makes, which this one marks, setting KOTA_EXECVE_HOOKED=1. The list is a
+// makes, which this one marks, setting KOTATSU_EXECVE_HOOKED=1. The list is a
 // static one: in a child between fork and exec nothing may allocate.
 extern "C" int execve(const char* path, char* const argv[], char* const envp[]) noexcept {
     if(instead_of_exec != nullptr) {
         return instead_of_exec();
     }
-    static char marker[] = "KOTA_EXECVE_HOOKED=1";
+    static char marker[] = "KOTATSU_EXECVE_HOOKED=1";
     static char* marked[4096];
     std::size_t count = 0;
     marked[count++] = marker;
@@ -276,7 +276,7 @@ int write_to_console(std::string_view text) {
     // empty. The CRT's stdout stays the test's pipe.
     ::FreeConsole();
     if(!::AllocConsole()) {
-        return fail("AllocConsole", kota::fs::windows::last_error());
+        return fail("AllocConsole", kotatsu::fs::windows::last_error());
     }
     HANDLE console = ::CreateFileW(L"CONOUT$",
                                    GENERIC_READ | GENERIC_WRITE,
@@ -289,7 +289,7 @@ int write_to_console(std::string_view text) {
     // does past its window's size.
     ::SetConsoleScreenBufferSize(console, COORD{200, 200});
     int fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(console), 0);
-    if(auto error = kota::sys::write_console(fd, std::string(text) + "\xFF!")) {
+    if(auto error = kotatsu::sys::write_console(fd, std::string(text) + "\xFF!")) {
         return fail("write_console", error);
     }
     // Row after row from the top left.
@@ -303,7 +303,7 @@ int write_to_console(std::string_view text) {
     // Blank cells hold a space, or a NUL in a console without a window.
     cells.resize(cells.find_last_not_of(std::wstring_view(L" \0", 2)) + 1);
     std::string shown;
-    kota::from_utf16(shown, cells);
+    kotatsu::from_utf16(shown, cells);
     print_line(json(shown));
     return 0;
 }
@@ -334,14 +334,15 @@ int join_job(bool min_max) {
                                   sizeof(limits)) ||
        !::SetInformationJobObject(job, JobObjectCpuRateControlInformation, &rate, sizeof(rate)) ||
        !::AssignProcessToJobObject(job, ::GetCurrentProcess())) {
-        return fail("a job", kota::fs::windows::last_error());
+        return fail("a job", kotatsu::fs::windows::last_error());
     }
-    auto memory = kota::sys::memory();
+    auto memory = kotatsu::sys::memory();
     if(!memory) {
         return fail("memory", memory.error());
     }
-    print_line(
-        std::format(R"({{"limit":{},"parallelism":{}}})", memory->limit, kota::sys::parallelism()));
+    print_line(std::format(R"({{"limit":{},"parallelism":{}}})",
+                           memory->limit,
+                           kotatsu::sys::parallelism()));
     return 0;
 }
 
@@ -359,9 +360,9 @@ std::string json(const std::vector<std::string>& arguments) {
 
 /// `sys_probe <arguments...>`, its streams this one's: no program, which
 /// spawn fails for, when this one's cannot be found.
-kota::sys::SpawnOptions probe(std::vector<std::string> arguments) {
+kotatsu::sys::SpawnOptions probe(std::vector<std::string> arguments) {
     std::string self;
-    if(kota::sys::self_executable(self)) {
+    if(kotatsu::sys::self_executable(self)) {
         self.clear();
     }
     return {.program = std::move(self), .args = std::move(arguments)};
@@ -369,11 +370,11 @@ kota::sys::SpawnOptions probe(std::vector<std::string> arguments) {
 
 /// `sys_probe hang`, its stdout this one's: the test reads it to its end,
 /// which comes once the child is gone too.
-kota::sys::SpawnOptions hanging(kota::sys::CreationOptions creation) {
+kotatsu::sys::SpawnOptions hanging(kotatsu::sys::CreationOptions creation) {
     auto options = probe({"hang"});
     options.creation = creation;
-    options.streams[0] = kota::sys::Stdio::ignore();
-    options.streams[2] = kota::sys::Stdio::ignore();
+    options.streams[0] = kotatsu::sys::Stdio::ignore();
+    options.streams[2] = kotatsu::sys::Stdio::ignore();
     return options;
 }
 
@@ -390,8 +391,8 @@ bool has_stream(int index) {
 }
 
 /// Runs `options`' child to its exit, and exits with its code.
-int run(const kota::sys::SpawnOptions& options) {
-    auto child = kota::sys::spawn(options);
+int run(const kotatsu::sys::SpawnOptions& options) {
+    auto child = kotatsu::sys::spawn(options);
     if(!child) {
         return fail("spawn", child.error());
     }
@@ -425,10 +426,10 @@ int unblocking() {
         return fail("pipe", std::error_code(errno, std::generic_category()));
     }
     auto options = probe({"parent"});
-    options.streams[1] = kota::sys::Stdio::from_fd(stream[1]);
+    options.streams[1] = kotatsu::sys::Stdio::from_fd(stream[1]);
     std::thread first([&] {
         instead_of_exec = held_then_failed;
-        [[maybe_unused]] auto failed = kota::sys::spawn(options);
+        [[maybe_unused]] auto failed = kotatsu::sys::spawn(options);
     });
     // The first's child has the stream, cleared, and its exec is held.
     gate.wait_entered();
@@ -474,7 +475,7 @@ int reaped() {
         gate.open();
     });
     instead_of_exec = left_a_holder;
-    auto child = kota::sys::spawn(probe({"parent"}));
+    auto child = kotatsu::sys::spawn(probe({"parent"}));
     instead_of_exec = nullptr;
     reaper.join();
     if(!child) {
@@ -483,9 +484,9 @@ int reaped() {
     std::string pid = "null";
     if(child->native_handle() >= 0) {
         std::string info;
-        if(auto error =
-               kota::fs::read_file(info,
-                                   std::format("/proc/self/fdinfo/{}", child->native_handle()))) {
+        if(auto error = kotatsu::fs::read_file(
+               info,
+               std::format("/proc/self/fdinfo/{}", child->native_handle()))) {
             return fail("fdinfo", error);
         }
         constexpr std::string_view field = "Pid:\t";
@@ -508,14 +509,14 @@ int reaping() {
         return fail("setup", std::error_code(errno, std::generic_category()));
     }
     auto options = probe({"parent"});
-    options.streams[1] = kota::sys::Stdio::ignore();
+    options.streams[1] = kotatsu::sys::Stdio::ignore();
     std::thread first([&] {
         hold_sigchld = true;
         run(options);
     });
     // The first found SIGCHLD ignored, and is about to set its default.
     gate.wait_entered();
-    auto second = std::async(std::launch::async, [&] { return kota::sys::spawn(options); });
+    auto second = std::async(std::launch::async, [&] { return kotatsu::sys::spawn(options); });
     const bool waited = second.wait_for(waits) == std::future_status::timeout;
     // The second's spawn returns once the first has set it.
     if(waited) {
@@ -542,7 +543,7 @@ int reaping() {
 }  // namespace
 
 int main() {
-    namespace sys = kota::sys;
+    namespace sys = kotatsu::sys;
     const auto& arguments = sys::arguments();
     std::string_view command = arguments.size() > 1 ? std::string_view(arguments[1]) : "";
 
@@ -627,11 +628,11 @@ int main() {
     }
     if(command == "report" && arguments.size() == 3) {
         std::string cwd;
-        if(auto error = kota::fs::current_dir(cwd)) {
+        if(auto error = kotatsu::fs::current_dir(cwd)) {
             return fail("current_dir", error);
         }
         std::string value;
-        const bool set = sys::get_env(value, "KOTA_PROBE_VALUE");
+        const bool set = sys::get_env(value, "KOTATSU_PROBE_VALUE");
         print_line(std::format(R"({{"arguments":{},"cwd":{},"value":{}}})",
                                json(arguments),
                                json(cwd),
@@ -643,7 +644,7 @@ int main() {
         options.arg0 = arguments[5];
         options.cwd = arguments[2];
         options.env_changes = {
-            {.name = "KOTA_PROBE_VALUE", .value = arguments[3]}
+            {.name = "KOTATSU_PROBE_VALUE", .value = arguments[3]}
         };
         return run(options);
     }
@@ -726,7 +727,7 @@ int main() {
         return 0;
     }
     if(command == "hooked") {
-        return run(probe({"env", "KOTA_EXECVE_HOOKED"}));
+        return run(probe({"env", "KOTATSU_EXECVE_HOOKED"}));
     }
     if(command == "unblocking") {
         return unblocking();
@@ -796,7 +797,7 @@ int main() {
                                       &limits,
                                       sizeof(limits)) ||
            !::AssignProcessToJobObject(job, ::GetCurrentProcess())) {
-            return fail("a job", kota::fs::windows::last_error());
+            return fail("a job", kotatsu::fs::windows::last_error());
         }
         auto child = sys::spawn(hanging({.process_group = true, .exit_with_parent = true}));
         if(!child) {
@@ -812,12 +813,12 @@ int main() {
         SECURITY_ATTRIBUTES inherit{.nLength = sizeof(inherit),
                                     .lpSecurityDescriptor = nullptr,
                                     .bInheritHandle = TRUE};
-        auto name = std::format("Local\\kota-probe-{}", ::GetCurrentProcessId());
+        auto name = std::format("Local\\kotatsu-probe-{}", ::GetCurrentProcessId());
         std::wstring wide_name;
-        kota::to_utf16(wide_name, name);
+        kotatsu::to_utf16(wide_name, name);
         HANDLE event = ::CreateEventW(&inherit, TRUE, TRUE, wide_name.c_str());
         if(event == nullptr) {
-            return fail("CreateEventW", kota::fs::windows::last_error());
+            return fail("CreateEventW", kotatsu::fs::windows::last_error());
         }
         auto options =
             probe({"handle", std::to_string(reinterpret_cast<std::uintptr_t>(event)), name});
@@ -841,7 +842,7 @@ int main() {
         auto compare = reinterpret_cast<Compare>(reinterpret_cast<void*>(
             ::GetProcAddress(::GetModuleHandleW(L"kernelbase.dll"), "CompareObjectHandles")));
         std::wstring wide_name;
-        kota::to_utf16(wide_name, arguments[3]);
+        kotatsu::to_utf16(wide_name, arguments[3]);
         HANDLE named = ::OpenEventW(SYNCHRONIZE, FALSE, wide_name.c_str());
         if(compare == nullptr || named == nullptr) {
             return 0;

@@ -1,0 +1,187 @@
+#pragma once
+
+#include <cassert>
+#include <coroutine>
+#include <exception>
+#include <source_location>
+#include <type_traits>
+#include <vector>
+
+#include "kotatsu/support/config.h"
+#include "kotatsu/support/outcome.h"
+#include "kotatsu/support/type_list.h"
+#include "kotatsu/async/runtime/node.h"
+#include "kotatsu/async/runtime/task.h"
+#include "kotatsu/async/runtime/traits.h"
+
+namespace kotatsu::async {
+
+namespace detail {
+
+/// Whether a task_group<Errors...> takes a child that fails with `E`: one
+/// that cannot fail with an error, or fails with one of `Errors`.
+template <typename E, typename... Errors>
+concept group_error = std::is_void_v<E> || is_one_of<E, Errors...>;
+
+}  // namespace detail
+
+/// Runs a dynamic set of child tasks that all end before join() returns. A
+/// child starts at once and runs until it first suspends. A child that fails
+/// cancels its siblings, and join() reports the failure; a child that ends
+/// cancelled just ends, and its siblings run on. The group keeps no child that
+/// has ended. with_task_group() keeps a group where it cannot go before its
+/// children.
+template <typename... Errors>
+class task_group : aggregate_op {
+public:
+    using error_type = detail::merged_channel_t<Errors...>;
+
+    /// The errors join() gives: those of the children that failed, in the
+    /// order they failed; void when no child can fail with an error.
+    using errors_type =
+        std::conditional_t<std::is_void_v<error_type>, void, std::vector<error_type>>;
+
+    /// What join() gives: nothing when no child can fail with an error, or
+    /// the errors.
+    using result_type =
+        std::conditional_t<std::is_void_v<errors_type>, void, outcome<void, errors_type>>;
+
+    task_group() noexcept : aggregate_op(NodeKind::TaskGroup) {}
+
+    task_group(const task_group&) = delete;
+    task_group& operator=(const task_group&) = delete;
+
+    /// Children still running are let go: each is cancelled and ends on its
+    /// own, and what it failed with is dropped. Until then they may still use
+    /// what they reference; co_await join() to wait for them. A child the
+    /// cancel ends at once, or that catches the cancellation and runs on to
+    /// its next suspending co_await, does so before the destructor returns;
+    /// spawn() refuses meanwhile.
+    ~task_group() {
+        abandon_children();
+    }
+
+    /// Starts `child` and runs it until it first suspends. Refused, returning
+    /// false, once the children are being cancelled (by cancel(), by a child
+    /// that failed, or by a cancel of the task awaiting join()) or join() has
+    /// returned.
+    template <typename T, typename E, typename C>
+        requires detail::group_error<E, Errors...>
+    bool spawn(task<T, E, C>&& child,
+               std::source_location location = std::source_location::current()) {
+        if(decided() || done()) {
+            return false;
+        }
+        auto& frame = detail::task_access::release(child);
+        if constexpr(std::is_void_v<E>) {
+            aggregate_op::spawn(frame, location);
+        } else {
+            aggregate_op::spawn(watch(frame, &take_error<T, E>), location);
+        }
+        return true;
+    }
+
+    /// Cancels every child. join() returns as usual once they have ended.
+    void cancel() {
+        if(decided() || done()) {
+            return;
+        }
+        decision = Decision::Resume;
+        resume_and_drain(cancel_all());
+    }
+
+    /// Waits until every child has ended, then rethrows the first exception a
+    /// child threw, or gives the errors. Awaited by a task that gets
+    /// cancelled, it cancels the children, waits for them all the same, and
+    /// the task ends cancelled unless a child failed. Awaited once.
+    auto join() noexcept {
+        return join_awaiter{*this};
+    }
+
+private:
+    struct join_awaiter {
+        task_group& group;
+
+        bool await_ready() noexcept {
+            assert(group.state == State::Pending && "join() awaited twice");
+            if(group.pending != 0) {
+                return false;
+            }
+            group.state = group.settled_state();
+            return true;
+        }
+
+        template <typename Promise>
+        std::coroutine_handle<> await_suspend(
+            std::coroutine_handle<Promise> waiting,
+            std::source_location location = std::source_location::current()) noexcept {
+            return group.await_children(waiting.promise(), location);
+        }
+
+        result_type await_resume() {
+#if KOTATSU_ENABLE_EXCEPTIONS
+            if(group.exception) {
+                std::rethrow_exception(group.exception);
+            }
+#endif
+            if constexpr(!std::is_void_v<error_type>) {
+                if(!group.errors.empty()) {
+                    return result_type(outcome_error(std::move(group.errors)));
+                }
+                return result_type();
+            }
+        }
+    };
+
+    template <typename T, typename E>
+    static void take_error(task_frame& child, async_node& group) {
+        static_cast<task_group&>(group).errors.emplace_back(
+            static_cast<typename task<T, E>::promise_type&>(child).take_error());
+    }
+
+    std::conditional_t<std::is_void_v<errors_type>, std::type_identity<void>, errors_type> errors;
+};
+
+namespace detail {
+
+/// What a with_task_group() body may return: a task without a value that a
+/// task_group<Errors...> takes.
+template <typename Task, typename... Errors>
+constexpr inline bool is_group_body_v = false;
+
+template <typename E, typename... Errors>
+constexpr inline bool is_group_body_v<task<void, E>, Errors...> = group_error<E, Errors...>;
+
+}  // namespace detail
+
+/// Runs `body` as the first child of a task_group of its own, and ends once
+/// every child has ended, `body` and what it spawned alike. Awaited, it gives
+/// what join() gives. The group and `body` live in this task's frame, so both
+/// outlive every child: a child may use what `body` captures, but not the
+/// locals of the coroutine `body` runs, which go when it ends, possibly before
+/// the children it spawned. `body` is a child like the others: a sibling that
+/// fails cancels it, and if it ends cancelled it just ends. A cancel of the
+/// task awaiting this one cancels every child, as through join().
+///
+///   co_await with_task_group([&](task_group<>& group) -> task<> {
+///       for(auto& request: requests) {
+///           group.spawn(answer(request));
+///       }
+///       co_return;
+///   });
+///
+template <typename... Errors, typename Body>
+    requires detail::is_group_body_v<std::invoke_result_t<Body&, task_group<Errors...>&>, Errors...>
+task<void, typename task_group<Errors...>::errors_type>
+    with_task_group(Body body, std::source_location location = std::source_location::current()) {
+    task_group<Errors...> group;
+    // A group that has just been made takes any child.
+    group.spawn(body(group), location);
+    if constexpr(std::is_void_v<typename task_group<Errors...>::errors_type>) {
+        co_await group.join();
+    } else {
+        co_await or_fail(co_await group.join());
+    }
+}
+
+}  // namespace kotatsu::async

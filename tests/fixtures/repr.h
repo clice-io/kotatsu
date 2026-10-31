@@ -12,11 +12,11 @@
 #include <type_traits>
 #include <variant>
 
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
-#include "kota/meta/repr.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/repr.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// A repr whose declared type is itself annotated: the annotation's behavior
 /// attr decides the final repr, a double.
@@ -125,9 +125,9 @@ struct StampTwin {
 
 using TaggedStampTwinOrNote = meta::annotate<StampTag>::type<std::variant<StampTwin, std::string>>;
 
-}  // namespace kota::test
+}  // namespace kotatsu::test
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 template <>
 struct repr<test::StampOrNote> {
@@ -212,4 +212,4 @@ struct repr<test::Journal, Format> {
     }
 };
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

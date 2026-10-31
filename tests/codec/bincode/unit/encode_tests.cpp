@@ -7,10 +7,10 @@
 
 #include "codec/bincode/harness/backend.h"
 #include "codec/harness/fixtures/everything.h"
-#include "kota/zest/zest.h"
-#include "kota/codec/bincode/bincode.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/bincode/bincode.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -109,4 +109,4 @@ ZEST_CASE(write_length_takes_each_width_reader_reads) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

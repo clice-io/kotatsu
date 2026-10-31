@@ -8,11 +8,11 @@
 #include <vector>
 
 #include "ipc/harness/frames.h"
-#include "kota/ipc/framing.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/ipc/framing.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -230,4 +230,4 @@ ZEST_CASE(payload_at_the_limit_is_read) {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

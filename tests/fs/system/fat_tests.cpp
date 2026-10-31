@@ -14,26 +14,26 @@
 #include "fs/harness/dir.h"
 #include "fs/harness/files.h"
 #include "fs/harness/win32.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/directory.h"
-#include "kota/fs/file.h"
-#include "kota/fs/status.h"
-#include "kota/fs/temp.h"
-#include "kota/fs/volume.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/status.h"
+#include "kotatsu/fs/temp.h"
+#include "kotatsu/fs/volume.h"
 
 // What NTFS does not show: the calls FAT32 and exFAT refuse, POSIX deletes
 // and renames, 128-bit IDs and listings with IDs among them, and the ways
 // around them; and, from the system temp directory, another volume.
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
-/// The directories on FAT volumes to test in, KOTA_TEST_FAT_DIRS with `;`
+/// The directories on FAT volumes to test in, KOTATSU_TEST_FAT_DIRS with `;`
 /// between them; Windows CI mounts a FAT32 and an exFAT image there.
 std::vector<std::filesystem::path> fat_dirs() {
     wchar_t buffer[1024];
-    auto size = ::GetEnvironmentVariableW(L"KOTA_TEST_FAT_DIRS", buffer, 1024);
+    auto size = ::GetEnvironmentVariableW(L"KOTATSU_TEST_FAT_DIRS", buffer, 1024);
     std::wstring_view list(buffer, size < 1024 ? size : 0);
     std::vector<std::filesystem::path> dirs;
     for(auto part: std::views::split(list, L';')) {
@@ -375,6 +375,6 @@ ZEST_CASE(read_symlink_of_a_file_fails) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs
 
 #endif

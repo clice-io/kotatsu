@@ -10,12 +10,12 @@
 #include <variant>
 
 #include "ipc/harness/codec_kit.h"
-#include "kota/ipc/codec/json.h"
-#include "kota/zest/zest.h"
-#include "kota/codec/dyn/dyn.h"
-#include "kota/codec/json/json.h"
+#include "kotatsu/ipc/codec/json.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/dyn/dyn.h"
+#include "kotatsu/codec/json/json.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// JSONCodec for the ipc kits. The remote's messages are JSON-RPC text
 /// written by hand; what the codec writes is read through a dyn::Value, so a
@@ -157,4 +157,4 @@ private:
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

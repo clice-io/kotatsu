@@ -5,11 +5,12 @@
 #include <utility>
 #include <vector>
 
-#include "kota/ipc/peer/json.h"
-#include "kota/sys/process.h"
-#include "kota/async/async.h"
+#include "kotatsu/ipc/peer/json.h"
+#include "kotatsu/sys/process.h"
+#include "kotatsu/async/async.h"
 
-namespace ipc = kota::ipc;
+namespace async = kotatsu::async;
+namespace ipc = kotatsu::ipc;
 
 namespace {
 
@@ -31,8 +32,8 @@ struct WorkerLog {
     std::string text;
 };
 
-kota::task<BuildResult, ipc::Error> handle_build_request(ipc::JSONPeer::RequestContext& context,
-                                                         const BuildParams& params) {
+async::task<BuildResult, ipc::Error> handle_build_request(ipc::JSONPeer::RequestContext& context,
+                                                          const BuildParams& params) {
     auto log_status =
         context->send_notification("worker/log",
                                    WorkerLog{
@@ -40,7 +41,7 @@ kota::task<BuildResult, ipc::Error> handle_build_request(ipc::JSONPeer::RequestC
                                        .text = "preparing compile command for " + params.source,
                                    });
     if(!log_status) {
-        co_return kota::outcome_error(log_status.error());
+        co_return kotatsu::outcome_error(log_status.error());
     }
 
     co_return BuildResult{
@@ -63,10 +64,10 @@ struct WorkerOutcome {
     std::string error;
 };
 
-kota::task<void> run_parent_session(ipc::JSONPeer& peer,
-                                    kota::process child,
-                                    WorkerPlan plan,
-                                    WorkerOutcome& outcome) {
+async::task<void> run_parent_session(ipc::JSONPeer& peer,
+                                     async::process child,
+                                     WorkerPlan plan,
+                                     WorkerOutcome& outcome) {
     outcome.worker_name = plan.worker_name;
 
     auto build_result =
@@ -110,7 +111,7 @@ kota::task<void> run_parent_session(ipc::JSONPeer& peer,
 }
 
 int run_worker() {
-    kota::event_loop loop;
+    async::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio transport: {}", transport.error().message);
@@ -126,7 +127,7 @@ int run_worker() {
 }
 
 int run_parent(std::string self_path) {
-    kota::event_loop loop;
+    async::event_loop loop;
 
     const std::vector<WorkerPlan> plans = {
         {
@@ -154,16 +155,16 @@ int run_parent(std::string self_path) {
     peers.reserve(plans.size());
 
     for(std::size_t index = 0; index < plans.size(); ++index) {
-        kota::process::options opts;
+        async::process::options opts;
         opts.program = self_path;
         opts.args = {"--worker"};
         opts.streams = {
-            kota::process::stdio::pipe(),
-            kota::process::stdio::pipe(),
-            kota::process::stdio::inherit(),
+            async::process::stdio::pipe(),
+            async::process::stdio::pipe(),
+            async::process::stdio::inherit(),
         };
 
-        auto spawned = kota::process::spawn(opts, loop);
+        auto spawned = async::process::spawn(opts, loop);
         if(!spawned) {
             std::println(stderr,
                          "failed to spawn {}: {}",
@@ -212,7 +213,7 @@ int main(int argc, char** argv) {
     }
 
     std::string self_path;
-    if(auto error = kota::sys::self_executable(self_path)) {
+    if(auto error = kotatsu::sys::self_executable(self_path)) {
         std::println(stderr, "cannot find this program: {}", error.message());
         return 1;
     }

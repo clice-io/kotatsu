@@ -6,10 +6,10 @@
 #include <vector>
 
 #include "support/harness/tracked.h"
-#include "kota/zest/zest.h"
-#include "kota/support/small_vector.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_vector.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -210,4 +210,4 @@ ZEST_CASE(insert_keeps_every_element_alive_once) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

@@ -1,7 +1,7 @@
 # kotatsu
 
 A C++20/23 coroutine wrapper for libuv. Library modules live under
-`include/kota/<module>/` (`async`, `codec`, `deco`, `fs`, `http`, `ipc`,
+`include/kotatsu/<module>/` (`async`, `codec`, `deco`, `fs`, `http`, `ipc`,
 `meta`, `support`, `sys`, `zest`).
 
 ## Build systems

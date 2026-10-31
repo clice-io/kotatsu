@@ -1,11 +1,11 @@
-#include "kota/fs/temp.h"
+#include "kotatsu/fs/temp.h"
 
 #include <utility>
 
-#include "kota/fs/directory.h"
-#include "kota/fs/resolve.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/resolve.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 std::expected<TempDirectory, std::error_code> TempDirectory::create(std::string_view directory,
                                                                     std::string_view prefix) {
@@ -110,4 +110,4 @@ std::string TempFile::keep() && {
     return std::exchange(location, {});
 }
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

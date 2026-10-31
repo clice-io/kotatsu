@@ -7,9 +7,9 @@
 #include <string>
 #include <vector>
 
-#include "kota/async/async.h"
+#include "kotatsu/async/async.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 struct CompileUnit {
     std::string name;
@@ -119,4 +119,4 @@ private:
     delay_fn compile_delay_;
 };
 
-}  // namespace kota
+}  // namespace kotatsu::async

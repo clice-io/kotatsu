@@ -1,4 +1,4 @@
-#include "kota/fs/status.h"
+#include "kotatsu/fs/status.h"
 
 #include <cassert>
 #include <string>
@@ -15,7 +15,7 @@
 #include "posix.h"
 #endif
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 #ifdef _WIN32
 
@@ -407,4 +407,4 @@ std::expected<bool, std::error_code> equivalent(std::string_view a, std::string_
     return first->id == second->id;
 }
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

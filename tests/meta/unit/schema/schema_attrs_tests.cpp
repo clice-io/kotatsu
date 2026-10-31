@@ -1,15 +1,15 @@
 #include "fixtures/attrs.h"
 #include "fixtures/structs.h"
 #include "fixtures/tagged.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/attrs.h"
-#include "kota/meta/schema.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/schema.h"
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 namespace {
 
-namespace fx = ::kota::test;
+namespace fx = ::kotatsu::test;
 
 struct DefaultedPolicy {
     constexpr static bool defaulted_fields = true;
@@ -210,4 +210,4 @@ ZEST_CASE(tagged_field_type_info) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

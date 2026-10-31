@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "support/harness/tracked.h"
-#include "kota/zest/zest.h"
-#include "kota/support/small_vector.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_vector.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -218,4 +218,4 @@ ZEST_CASE(assign_initializer_list_replaces_the_elements) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

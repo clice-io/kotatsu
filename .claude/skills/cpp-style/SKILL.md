@@ -32,7 +32,7 @@ defending against ghosts.
 ## Files & Organization
 
 - Headers are `.h` with `#pragma once` — never include guards. Public
-  headers live under `include/kota/<module>/`.
+  headers live under `include/kotatsu/<module>/`.
 - Source extensions are mixed across modules (`.cpp` in some, `.cc` in
   others) — match the module you are editing.
 - File names are `snake_case`.
@@ -49,8 +49,8 @@ defending against ghosts.
   transitive cost.
 - This rule covers only those dedicated macro sheets. Configuration and
   implementation macros that ordinary headers legitimately define —
-  e.g. `KOTA_THROW` and the platform feature macros in
-  `kota/support/config.h` — stay where they are.
+  e.g. `KOTATSU_THROW` and the platform feature macros in
+  `kotatsu/support/config.h` — stay where they are.
 
 ## Data & Types
 
@@ -65,9 +65,9 @@ defending against ghosts.
 ## Errors, Exceptions & Defense
 
 - kotatsu is a library that builds both with and without exceptions
-  (`KOTA_ENABLE_EXCEPTIONS`). Library code never writes bare
-  `throw`/`try`/`catch` — use the `KOTA_THROW` / `KOTA_TRY` /
-  `KOTA_CATCH_ALL` / `KOTA_RETHROW` macros from `kota/support/config.h`,
+  (`KOTATSU_ENABLE_EXCEPTIONS`). Library code never writes bare
+  `throw`/`try`/`catch` — use the `KOTATSU_THROW` / `KOTATSU_TRY` /
+  `KOTATSU_CATCH_ALL` / `KOTATSU_RETHROW` macros from `kotatsu/support/config.h`,
   which degrade to `std::abort()` in the no-exceptions build.
 - Fallible synchronous operations return `std::expected<T, E>`; async
   code uses kotatsu's outcome types.
@@ -119,7 +119,7 @@ process(result.value());
 
 ## Concurrency & Async
 
-- Async code is coroutine-style (`kota::task`, `co_await`) — an
+- Async code is coroutine-style (`kotatsu::async::task`, `co_await`) — an
   operation that produces a single asynchronous result returns an
   awaitable, never takes a completion callback; completion callbacks
   appear only at the libuv boundary inside the implementation.
@@ -196,7 +196,7 @@ process(result.value());
 - Use C++20/23 APIs whenever possible.
 - Library code does not print — it returns. Do NOT use `<iostream>` facilities (`std::cout`, `std::cin`, `std::cerr`, etc.) or C-style I/O (`printf`, `fprintf`, etc.) in library components. Exempt are components whose purpose is producing output: CLI presentation (e.g. `deco` usage printing), test reporting in `zest`, and fatal-diagnostic paths that must emit before aborting.
 - Prefer `std::format` for string building.
-- A cleanup a scope owes on its way out, or undoes unless the scope succeeds, is a `kota::ScopeExit` (`support/scope_exit.h`), released once nothing is left to undo, not a local struct with a destructor; a type with state of its own beyond that stays a named type. What must happen even when a failed `ZASSERT` ends a test's process is a `zest::FatalHook`.
+- A cleanup a scope owes on its way out, or undoes unless the scope succeeds, is a `kotatsu::ScopeExit` (`support/scope_exit.h`), released once nothing is left to undo, not a local struct with a destructor; a type with state of its own beyond that stays a named type. What must happen even when a failed `ZASSERT` ends a test's process is a `zest::FatalHook`.
 - Prefer `std::ranges` / `std::views` APIs over raw loops and traditional `<algorithm>` calls.
 
 ## Parameter Passing Preferences

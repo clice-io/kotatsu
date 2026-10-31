@@ -1,4 +1,4 @@
-#include "kota/zest/assert/trace.h"
+#include "kotatsu/zest/assert/trace.h"
 
 #include <algorithm>
 #include <format>
@@ -14,10 +14,10 @@
 #endif
 #endif
 
-#include "kota/support/functional.h"
+#include "kotatsu/support/functional.h"
 #include <cpptrace/cpptrace.hpp>
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace {
 
@@ -79,7 +79,7 @@ bool trace_exception(function<void()> cb) {
 }
 
 // Plain try and catch, as in predicates.h: built only with exceptions, and
-// catching by type has no KOTA_ macro.
+// catching by type has no KOTATSU_ macro.
 std::string describe_exception(std::exception_ptr exception) {
     try {
         std::rethrow_exception(exception);
@@ -92,4 +92,4 @@ std::string describe_exception(std::exception_ptr exception) {
 
 #endif
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest

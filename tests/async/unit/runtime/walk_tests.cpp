@@ -4,13 +4,13 @@
 #include <utility>
 #include <vector>
 
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
-#include "kota/async/runtime/walk.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
+#include "kotatsu/async/runtime/walk.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 namespace {
 
@@ -202,4 +202,4 @@ ZEST_CASE(waiter_links_its_task_and_its_resource) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu::async

@@ -7,9 +7,9 @@
 #include <string_view>
 
 #include "fs/harness/files.h"
-#include "kota/fs/path.h"
+#include "kotatsu/fs/path.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Creates file `name` in directory `directory` of `dir`, executable on POSIX
 /// unless `executable` says otherwise, and gives its path as find_program
@@ -30,4 +30,4 @@ inline std::string make_program(const TempDir& dir,
     return path;
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

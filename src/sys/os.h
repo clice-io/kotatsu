@@ -21,8 +21,8 @@
 #endif
 #include <windows.h>
 
-#include "kota/support/buffer_ref.h"
-#include "kota/fs/windows.h"
+#include "kotatsu/support/buffer_ref.h"
+#include "kotatsu/fs/windows.h"
 
 // Declared by the driver kit only; ntdll has it from Windows 2000 on.
 extern "C" LONG NTAPI RtlGetVersion(OSVERSIONINFOW* version);
@@ -30,7 +30,7 @@ extern "C" LONG NTAPI RtlGetVersion(OSVERSIONINFOW* version);
 #include <unistd.h>
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 #ifdef _WIN32
 /// A handle, closed when this goes.
@@ -126,4 +126,4 @@ inline std::string default_path() {
 }
 #endif
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

@@ -7,12 +7,12 @@
 #include "fixtures/attrs.h"
 #include "fixtures/structs.h"
 #include "fixtures/tagged.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/attrs.h"
-#include "kota/meta/repr.h"
-#include "kota/meta/schema.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/repr.h"
+#include "kotatsu/meta/schema.h"
 
-namespace kota_slots_repr_test {
+namespace kotatsu_slots_repr_test {
 
 struct RepId {
     std::uint32_t v = 0;
@@ -26,30 +26,30 @@ struct ReprStruct {
     int plain = 0;
 };
 
-}  // namespace kota_slots_repr_test
+}  // namespace kotatsu_slots_repr_test
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 template <>
-struct repr<kota_slots_repr_test::RepId> {
+struct repr<kotatsu_slots_repr_test::RepId> {
     using type = std::uint32_t;
 };
 
 template <>
-struct repr<kota_slots_repr_test::DynBlob> {
+struct repr<kotatsu_slots_repr_test::DynBlob> {
     using type = dynamic;
 };
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
-using kota::type_list_size_v;
-using kota::type_list_element_t;
+using kotatsu::type_list_size_v;
+using kotatsu::type_list_element_t;
 
 namespace {
 
-namespace fx = ::kota::test;
+namespace fx = ::kotatsu::test;
 
 ZEST_SUITE(meta_schema_slots) {
 
@@ -110,7 +110,7 @@ ZEST_CASE(behavior_slot_attrs) {
 }
 
 ZEST_CASE(repr_field_type_info) {
-    namespace ns = ::kota_slots_repr_test;
+    namespace ns = ::kotatsu_slots_repr_test;
     using slots = virtual_schema<ns::ReprStruct>::slots;
 
     // The slot keeps the raw field type; repr substitution shows up in the
@@ -138,4 +138,4 @@ ZEST_CASE(tagged_variant_slot) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

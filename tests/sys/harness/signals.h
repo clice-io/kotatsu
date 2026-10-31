@@ -7,9 +7,9 @@
 
 #include <csignal>
 
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// The action for signal `signum` set to `handler` with `flags` until this
 /// goes, which puts back what it was.
@@ -56,6 +56,6 @@ struct ScopedSignalMask {
 /// the default.
 inline void do_nothing(int) {}
 
-}  // namespace kota::test
+}  // namespace kotatsu::test
 
 #endif

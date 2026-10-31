@@ -6,12 +6,12 @@
 #include <vector>
 
 #include "async/harness/pending_op.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 namespace {
 
@@ -376,4 +376,4 @@ ZEST_CASE(checkpoint_starts_no_child) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu::async

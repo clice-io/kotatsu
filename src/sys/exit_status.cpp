@@ -4,11 +4,11 @@
 #include <string>
 #include <string_view>
 
-#include "kota/sys/process.h"
-#include "kota/sys/spawn.h"
-#include "kota/sys/windows.h"
+#include "kotatsu/sys/process.h"
+#include "kotatsu/sys/spawn.h"
+#include "kotatsu/sys/windows.h"
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 std::string ExitStatus::to_string() const {
     if(term_signal != 0) {
@@ -122,4 +122,4 @@ std::string_view windows::ntstatus_name(std::uint32_t status) {
     }
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

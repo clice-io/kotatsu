@@ -1,14 +1,14 @@
-#include "kota/fs/path.h"
+#include "kotatsu/fs/path.h"
 
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
 
-#include "kota/support/small_string.h"
-#include "kota/support/small_vector.h"
-#include "kota/support/string_ref.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/support/small_vector.h"
+#include "kotatsu/support/string_ref.h"
 
-namespace kota::fs::path {
+namespace kotatsu::fs::path {
 
 namespace {
 
@@ -470,4 +470,4 @@ void to_backslash(buffer_ref path) {
     }
 }
 
-}  // namespace kota::fs::path
+}  // namespace kotatsu::fs::path

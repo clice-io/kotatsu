@@ -22,10 +22,10 @@
 #include <vector>
 
 #include "async/harness/socket.h"
-#include "kota/http/http.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Whether `left` and `right` are equal but for the case of ASCII letters.
 inline bool same_name(std::string_view left, std::string_view right) {
@@ -94,7 +94,7 @@ struct Reply {
     std::optional<std::string> raw = std::nullopt;
     /// The server answers once this is set: until then the request stays in
     /// flight.
-    event* hold = nullptr;
+    async::event* hold = nullptr;
 };
 
 class HttpServer {
@@ -103,8 +103,9 @@ public:
 
     /// Listens on a loopback port of its own and answers each request with
     /// what `handler` returns for it, 200 with no body by default.
-    explicit HttpServer(event_loop& loop, Handler handler = {}) : handler(std::move(handler)) {
-        auto listener = tcp::listen("127.0.0.1", 0, loop);
+    explicit HttpServer(async::event_loop& loop, Handler handler = {}) :
+        handler(std::move(handler)) {
+        auto listener = async::tcp::listen("127.0.0.1", 0, loop);
         if(!listener) {
             return;
         }
@@ -141,7 +142,7 @@ public:
     }
 
 private:
-    task<> serve() {
+    async::task<> serve() {
         while(true) {
             auto connection = co_await acceptor.accept();
             if(!connection) {
@@ -151,7 +152,7 @@ private:
         }
     }
 
-    task<> answer(tcp connection) {
+    async::task<> answer(async::tcp connection) {
         auto request = co_await read_request(connection);
         if(!request) {
             co_return;
@@ -169,10 +170,10 @@ private:
 
     /// The next request on `connection`, or nothing when the connection
     /// ends before one has come whole.
-    static task<std::optional<Received>> read_request(tcp& connection) {
+    static async::task<std::optional<Received>> read_request(async::tcp& connection) {
         std::string buffer;
         // Reads until `enough` holds; false if the connection ends first.
-        auto fill = [&](auto enough) -> task<bool> {
+        auto fill = [&](auto enough) -> async::task<bool> {
             while(!enough()) {
                 auto more = co_await connection.read();
                 if(!more) {
@@ -287,14 +288,14 @@ private:
     }
 
     Handler handler;
-    tcp::acceptor acceptor;
+    async::tcp::acceptor acceptor;
     int bound_port = 0;
     std::vector<Received> seen;
     /// Let go when the server goes: each is cancelled, and ends there
     /// unless a write of its own is still on its way.
-    task_group<> connections;
+    async::task_group<> connections;
     /// Goes first, ending the wait for the next connection.
-    task<> accepting;
+    async::task<> accepting;
 };
 
 /// A handler that sets `cookie` in its reply to /seed, and answers every
@@ -329,4 +330,4 @@ inline std::string refusing_url() {
     return port == 0 ? std::string() : std::format("http://127.0.0.1:{}/", port);
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

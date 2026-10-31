@@ -91,9 +91,14 @@ test(
 
 test("env_values_come_back_as_set", async (t) => {
   const value = "café 中 \u{1F600}";
-  const driver = await Driver.spawn(t, "sys_probe", ["env", "KOTA_SYS_PROBE"], {
-    env: { ...process.env, KOTA_SYS_PROBE: value },
-  });
+  const driver = await Driver.spawn(
+    t,
+    "sys_probe",
+    ["env", "KOTATSU_SYS_PROBE"],
+    {
+      env: { ...process.env, KOTATSU_SYS_PROBE: value },
+    },
+  );
   const output = await printed(driver);
   await driver.expectExit(0);
   assert.equal(output, value);
@@ -101,10 +106,15 @@ test("env_values_come_back_as_set", async (t) => {
 
 test("env_of_an_unset_variable_is_null", async (t) => {
   const env = { ...process.env };
-  delete env["KOTA_SYS_PROBE"];
-  const driver = await Driver.spawn(t, "sys_probe", ["env", "KOTA_SYS_PROBE"], {
-    env,
-  });
+  delete env["KOTATSU_SYS_PROBE"];
+  const driver = await Driver.spawn(
+    t,
+    "sys_probe",
+    ["env", "KOTATSU_SYS_PROBE"],
+    {
+      env,
+    },
+  );
   const output = await printed(driver);
   await driver.expectExit(0);
   assert.equal(output, null);
@@ -126,7 +136,7 @@ const exe = process.platform === "win32" ? ".exe" : "";
 async function movable(
   t: TestContext,
 ): Promise<{ driver: Driver; path: string }> {
-  const dir = mkdtempSync(join(tmpdir(), "kota-moved-"));
+  const dir = mkdtempSync(join(tmpdir(), "kotatsu-moved-"));
   // A scanner may hold a program that just ran a moment.
   t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }));
   const path = join(dir, `first${exe}`);
@@ -212,7 +222,7 @@ async function startedThrough(
   t: TestContext,
   link: (target: string, path: string) => void,
 ): Promise<{ output: Started; path: string; target: string } | null> {
-  const dir = mkdtempSync(join(tmpdir(), "kota-started-"));
+  const dir = mkdtempSync(join(tmpdir(), "kotatsu-started-"));
   t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }));
   const target = join(dir, `sys_probe${exe}`);
   copyFileSync(driverPath("sys_probe"), target);
@@ -307,7 +317,7 @@ test(
   "title_is_what_ps_shows",
   { skip: process.platform === "win32" && "Windows has no process title" },
   async (t) => {
-    const title = "kota-title-test-long";
+    const title = "kotatsu-title-test-long";
     const driver = await Driver.spawn(t, "sys_probe", ["title", title, "1"]);
     // The arguments read after the title went over them are those given.
     const read = (await driver.jsonLines().receive()) as string[];
@@ -359,11 +369,11 @@ test(
       process.platform !== "linux" && "only Linux tells the arguments' bytes",
   },
   async (t) => {
-    const args = ["title", "kota", "1000"];
+    const args = ["title", "kotatsu", "1000"];
     const driver = await Driver.spawn(t, "sys_probe", args);
     await driver.jsonLines().receive();
     // The arguments' strings, each with its NUL, the program's path first.
-    const program = process.env["KOTA_SYS_PROBE"] ?? "";
+    const program = process.env["KOTATSU_SYS_PROBE"] ?? "";
     const area = [program, ...args].reduce(
       (size, arg) => size + Buffer.byteLength(arg) + 1,
       0,
@@ -372,7 +382,7 @@ test(
     assert.equal(cmdline.length, area);
     assert.equal(
       cmdline.replace(/\0+$/, ""),
-      "kota".repeat(1000).slice(0, area - 1),
+      "kotatsu".repeat(1000).slice(0, area - 1),
     );
     driver.stdin.end();
     await driver.expectExit(0);

@@ -6,7 +6,7 @@
 
 #include <vector>
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// SSE loads of it need 16-byte alignment.
 struct alignas(16) Vec4 {
@@ -41,4 +41,4 @@ struct WideMesh {
     std::vector<Vec8> points;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

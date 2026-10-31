@@ -7,11 +7,11 @@
 #include "codec/harness/fixtures/structs.h"
 #include "codec/json/harness/schema.h"
 #include "fixtures/repr.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/attrs.h"
-#include "kota/codec/json/schema.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/json/schema.h"
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 namespace {
 
@@ -20,7 +20,7 @@ using test::with_enum;
 using test::casing_child;
 using test::root_external_variant;
 
-namespace json = kota::codec::json;
+namespace json = kotatsu::codec::json;
 
 ZEST_SUITE(codec_json_schema_encoder) {
 
@@ -269,4 +269,4 @@ ZEST_CASE(schema_follows_json_scoped_repr) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

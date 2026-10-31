@@ -1,4 +1,4 @@
-#include "kota/sys/console.h"
+#include "kotatsu/sys/console.h"
 
 #include "os.h"
 
@@ -6,12 +6,12 @@
 #include <algorithm>
 #include <iterator>
 
-#include "kota/support/utf8.h"
+#include "kotatsu/support/utf8.h"
 #else
 #include <sys/stat.h>
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 #ifdef _WIN32
 
@@ -114,4 +114,4 @@ bool is_pipe(int fd) noexcept {
 #endif
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

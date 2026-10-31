@@ -5,9 +5,9 @@
 #include <thread>
 #include <vector>
 
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace {
 
@@ -173,4 +173,4 @@ ZEST_CASE(other_thread_takes_snapshots) {
 
 }  // namespace
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest

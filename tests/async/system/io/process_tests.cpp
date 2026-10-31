@@ -46,15 +46,15 @@
 #include "async/harness/os.h"
 #include "sys/harness/signals.h"
 #include "sys/harness/streams.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/support/scope_exit.h"
-#include "kota/fs/file.h"
-#include "kota/sys/spawn.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/scope_exit.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/sys/spawn.h"
+#include "kotatsu/async/async.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 namespace {
 
@@ -282,8 +282,8 @@ ZEST_CASE(stdout_goes_to_a_given_descriptor) {
 
 ZEST_CASE(stdout_goes_to_an_open_file) {
     test::TempDir dir;
-    auto file =
-        fs::File::open(dir.file("stdout.txt"), {.write = true, .truncate = true, .create = true});
+    auto file = kotatsu::fs::File::open(dir.file("stdout.txt"),
+                                        {.write = true, .truncate = true, .create = true});
     ZASSERT(file.has_value());
     // The child writes from where the file stands.
     ZEXPECT(!file->write("head-"));
@@ -303,10 +303,10 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
     test::TempDir dir;
     // cmd reads a digit before > as the handle to redirect, so the
     // redirection goes first.
-    auto opts = shell(by_platform(R"(printf "$KOTA_TEST_VALUE" > marker.txt)",
-                                  ">marker.txt echo %KOTA_TEST_VALUE%"));
+    auto opts = shell(by_platform(R"(printf "$KOTATSU_TEST_VALUE" > marker.txt)",
+                                  ">marker.txt echo %KOTATSU_TEST_VALUE%"));
     opts.env = std::vector<process::env_var>{
-        {.name = "KOTA_TEST_VALUE", .value = "42"}
+        {.name = "KOTATSU_TEST_VALUE", .value = "42"}
     };
     opts.cwd = dir.root();
     auto spawned = process::spawn(opts, loop);
@@ -321,10 +321,10 @@ ZEST_CASE(environment_and_directory_reach_the_child) {
 // this process has.
 ZEST_CASE(env_changes_go_over_the_inherited_environment) {
     test::TempDir dir;
-    test::ScopedEnv inherited("KOTA_TEST_INHERITED", "inherited");
-    auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_INHERITED");
+    test::ScopedEnv inherited("KOTATSU_TEST_INHERITED", "inherited");
+    auto opts = print_two("KOTATSU_TEST_SET", "KOTATSU_TEST_INHERITED");
     opts.env_changes = {
-        {.name = "KOTA_TEST_SET", .value = "set"}
+        {.name = "KOTATSU_TEST_SET", .value = "set"}
     };
 
     auto [written] = run(marker_of(opts, dir, loop));
@@ -334,70 +334,70 @@ ZEST_CASE(env_changes_go_over_the_inherited_environment) {
 
 ZEST_CASE(env_changes_go_over_a_given_environment) {
     test::TempDir dir;
-    test::ScopedEnv inherited("KOTA_TEST_INHERITED", "inherited");
-    auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
+    test::ScopedEnv inherited("KOTATSU_TEST_INHERITED", "inherited");
+    auto opts = print_two("KOTATSU_TEST_GIVEN", "KOTATSU_TEST_INHERITED");
     opts.env = std::vector<process::env_var>{
-        {.name = "KOTA_TEST_GIVEN", .value = "given"}
+        {.name = "KOTATSU_TEST_GIVEN", .value = "given"}
     };
     opts.env_changes = {
-        {.name = "KOTA_TEST_SET", .value = "set"}
+        {.name = "KOTATSU_TEST_SET", .value = "set"}
     };
 
     auto [written] = run(marker_of(opts, dir, loop));
     ZASSERT(written.has_value());
-    ZEXPECT(*written == "given|" + unset("KOTA_TEST_INHERITED"));
+    ZEXPECT(*written == "given|" + unset("KOTATSU_TEST_INHERITED"));
 }
 
 ZEST_CASE(last_env_change_of_a_name_counts) {
     test::TempDir dir;
-    auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_REMOVED");
+    auto opts = print_two("KOTATSU_TEST_SET", "KOTATSU_TEST_REMOVED");
     opts.env = std::vector<process::env_var>{
-        {.name = "KOTA_TEST_REMOVED", .value = "given"}
+        {.name = "KOTATSU_TEST_REMOVED", .value = "given"}
     };
     opts.env_changes = {
-        {.name = "KOTA_TEST_SET",     .value = "first"     },
-        {.name = "KOTA_TEST_REMOVED", .value = std::nullopt},
-        {.name = "KOTA_TEST_SET",     .value = "last"      },
+        {.name = "KOTATSU_TEST_SET",     .value = "first"     },
+        {.name = "KOTATSU_TEST_REMOVED", .value = std::nullopt},
+        {.name = "KOTATSU_TEST_SET",     .value = "last"      },
     };
 
     auto [written] = run(marker_of(opts, dir, loop));
     ZASSERT(written.has_value());
-    ZEXPECT(*written == "last|" + unset("KOTA_TEST_REMOVED"));
+    ZEXPECT(*written == "last|" + unset("KOTATSU_TEST_REMOVED"));
 }
 
 // Changes that remove every variable leave the child an empty environment,
 // not the inherited one.
 ZEST_CASE(env_changes_removing_every_variable_inherit_nothing) {
     test::TempDir dir;
-    test::ScopedEnv inherited("KOTA_TEST_INHERITED", "inherited");
-    auto opts = print_two("KOTA_TEST_GIVEN", "KOTA_TEST_INHERITED");
+    test::ScopedEnv inherited("KOTATSU_TEST_INHERITED", "inherited");
+    auto opts = print_two("KOTATSU_TEST_GIVEN", "KOTATSU_TEST_INHERITED");
     opts.env = std::vector<process::env_var>{
-        {.name = "KOTA_TEST_GIVEN", .value = "given"}
+        {.name = "KOTATSU_TEST_GIVEN", .value = "given"}
     };
     opts.env_changes = {
-        {.name = "KOTA_TEST_GIVEN", .value = std::nullopt}
+        {.name = "KOTATSU_TEST_GIVEN", .value = std::nullopt}
     };
 
     auto [written] = run(marker_of(opts, dir, loop));
     ZASSERT(written.has_value());
-    ZEXPECT(*written == unset("KOTA_TEST_GIVEN") + "|" + unset("KOTA_TEST_INHERITED"));
+    ZEXPECT(*written == unset("KOTATSU_TEST_GIVEN") + "|" + unset("KOTATSU_TEST_INHERITED"));
 }
 
 #ifdef _WIN32
 ZEST_CASE(env_changes_match_names_without_regard_to_case) {
     test::TempDir dir;
-    auto opts = print_two("KOTA_TEST_SET", "KOTA_TEST_GIVEN");
+    auto opts = print_two("KOTATSU_TEST_SET", "KOTATSU_TEST_GIVEN");
     opts.env = std::vector<process::env_var>{
-        {.name = "kota_test_given", .value = "given"}
+        {.name = "kotatsu_test_given", .value = "given"}
     };
     opts.env_changes = {
-        {.name = "kota_test_set",   .value = "lower"     },
-        {.name = "KOTA_TEST_SET",   .value = "upper"     },
-        {.name = "KOTA_TEST_GIVEN", .value = std::nullopt},
+        {.name = "kotatsu_test_set",   .value = "lower"     },
+        {.name = "KOTATSU_TEST_SET",   .value = "upper"     },
+        {.name = "KOTATSU_TEST_GIVEN", .value = std::nullopt},
     };
     auto [written] = run(marker_of(opts, dir, loop));
     ZASSERT(written.has_value());
-    ZEXPECT(*written == "upper|" + unset("KOTA_TEST_GIVEN"));
+    ZEXPECT(*written == "upper|" + unset("KOTATSU_TEST_GIVEN"));
 }
 #endif
 
@@ -1131,4 +1131,4 @@ ZEST_CASE(capture_cancelled_after_the_child_exited_kills_the_group) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu::async

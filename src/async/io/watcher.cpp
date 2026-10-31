@@ -1,4 +1,4 @@
-#include "kota/async/io/watcher.h"
+#include "kotatsu/async/io/watcher.h"
 
 #include <algorithm>
 #include <cassert>
@@ -7,7 +7,7 @@
 
 #include "awaiter.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 struct watcher::Self : uv::owned_handle<Self> {
     union {
@@ -176,4 +176,4 @@ task<> detail::expire(std::chrono::milliseconds timeout, event_loop& loop) {
     co_await cancel();
 }
 
-}  // namespace kota
+}  // namespace kotatsu::async

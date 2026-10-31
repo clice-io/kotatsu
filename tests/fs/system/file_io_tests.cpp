@@ -15,11 +15,11 @@
 
 #include "fs/harness/files.h"
 #include "fs/harness/win32.h"
-#include "kota/zest/zest.h"
-#include "kota/support/small_string.h"
-#include "kota/fs/file.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/fs/file.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -243,4 +243,4 @@ ZEST_CASE(write_some_of_a_closed_file_fails) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

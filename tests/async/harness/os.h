@@ -1,6 +1,6 @@
 #pragma once
 
-// What system tests take from the operating system without kota::async:
+// What system tests take from the operating system without kotatsu::async:
 // TempDir, read_text() and write_text() from fs's harness, ScopedEnv from
 // sys's harness, stdin_reader() for a child that runs until its stdin
 // closes and exit_code_of() for how it ended, open_fd(), create_pipe(),
@@ -32,21 +32,23 @@ using ssize_t = SSIZE_T;
 
 #include "fs/harness/files.h"
 #include "sys/harness/env.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// A child that reads its stdin pipe, so it runs until the pipe closes or it
 /// is killed: cat, or more.com on Windows.
-inline process::options stdin_reader() {
-    process::options opts;
+inline async::process::options stdin_reader() {
+    async::process::options opts;
 #ifdef _WIN32
     opts.program = "more.com";
 #else
     opts.program = "/bin/cat";
 #endif
-    opts.streams = {process::stdio::pipe(), process::stdio::ignore(), process::stdio::ignore()};
+    opts.streams = {async::process::stdio::pipe(),
+                    async::process::stdio::ignore(),
+                    async::process::stdio::ignore()};
     return opts;
 }
 
@@ -106,13 +108,13 @@ class BusyPool {
 public:
     /// Takes every pool thread and sets `busy` once all are taken; ends once
     /// release() has let them go. Cancelling it releases them too.
-    task<> hold(event& busy) {
+    async::task<> hold(async::event& busy) {
         const int threads = threadpool_size();
         std::atomic<int> taken = 0;
-        auto notify = event_loop::current().create_relay();
-        std::vector<task<>> works;
+        auto notify = async::event_loop::current().create_relay();
+        std::vector<async::task<>> works;
         for(int i = 0; i < threads; ++i) {
-            works.push_back(queue(
+            works.push_back(async::queue(
                 [&] {
                     if(taken.fetch_add(1) + 1 == threads) {
                         notify.send([&] { busy.set(); });
@@ -121,7 +123,7 @@ public:
                 },
                 [this] { release(); }));
         }
-        co_await when_all(std::move(works));
+        co_await async::when_all(std::move(works));
     }
 
     /// Lets the pool threads go; calls after the first do nothing.
@@ -156,4 +158,4 @@ private:
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

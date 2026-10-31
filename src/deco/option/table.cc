@@ -1,4 +1,4 @@
-#include "kota/deco/option/table.h"
+#include "kotatsu/deco/option/table.h"
 
 #include <algorithm>
 #include <array>
@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-using namespace kota::option;
+using namespace kotatsu::option;
 
 namespace {
 
@@ -631,7 +631,8 @@ std::optional<OptionRef> OptTable::find_option(std::string_view argument, std::u
     return std::nullopt;
 }
 
-void OptTable::render(const ParsedArg& arg, kota::function_ref<void(std::string_view)> cb) const {
+void OptTable::render(const ParsedArg& arg,
+                      kotatsu::function_ref<void(std::string_view)> cb) const {
     auto emit = [&](std::string_view sv) {
         cb(sv);
     };

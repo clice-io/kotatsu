@@ -2,9 +2,9 @@
 #include <string>
 
 #include "compile_graph.h"
-#include "kota/async/async.h"
+#include "kotatsu/async/async.h"
 
-using namespace kota;
+using namespace kotatsu::async;
 using namespace std::chrono_literals;
 
 static CompileGraph build_graph() {

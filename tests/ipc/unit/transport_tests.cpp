@@ -2,13 +2,13 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/ipc/transport.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/ipc/transport.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -19,18 +19,18 @@ struct Collecting final : Transport {
 
     explicit Collecting(std::string_view failing) : failing(failing) {}
 
-    task<std::string, ReadError> read_message() override {
-        co_await fail(ReadError{});
+    async::task<std::string, ReadError> read_message() override {
+        co_await async::fail(ReadError{});
     }
 
-    task<void, Error> write_message(std::string_view payload) override {
+    async::task<void, Error> write_message(std::string_view payload) override {
         if(payload == failing) {
-            co_await fail(Error("write failed"));
+            co_await async::fail(Error("write failed"));
         }
         written.emplace_back(payload);
     }
 
-    task<void, Error> close_output() override {
+    async::task<void, Error> close_output() override {
         co_return;
     }
 
@@ -66,4 +66,4 @@ ZEST_CASE(write_messages_stops_at_the_first_write_that_fails) {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

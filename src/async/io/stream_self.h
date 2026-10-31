@@ -2,9 +2,9 @@
 
 #include "awaiter.h"
 #include "ring_buffer.h"
-#include "kota/async/io/stream.h"
+#include "kotatsu/async/io/stream.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 struct stream::Self : uv::owned_handle<Self> {
     union {
@@ -38,4 +38,4 @@ struct stream::Self : uv::owned_handle<Self> {
     static void on_read(uv_stream_t* handle, ssize_t nread, const uv_buf_t*);
 };
 
-}  // namespace kota
+}  // namespace kotatsu::async

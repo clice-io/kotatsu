@@ -20,11 +20,11 @@
 #include <winioctl.h>
 
 #include "fs/harness/files.h"
-#include "kota/zest/zest.h"
-#include "kota/support/utf16.h"
-#include "kota/fs/path.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/utf16.h"
+#include "kotatsu/fs/path.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// The attributes of the file at the UTF-8 `path`.
 inline DWORD attributes_of(std::string_view path) {
@@ -123,5 +123,5 @@ private:
     zest::FatalHook on_fatal{[this] { ::CloseHandle(handle); }};
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test
 #endif

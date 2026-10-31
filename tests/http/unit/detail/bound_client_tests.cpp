@@ -1,17 +1,17 @@
-#include "kota/http/http.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
 ZEST_SUITE(http_detail_bound_client, zest::LoopFixture) {
 
 ZEST_CASE(loop_is_the_one_it_was_bound_to) {
-    event_loop other;
+    async::event_loop other;
     http::client client;
     ZEXPECT((&client.on(loop).loop() == &loop));
     ZEXPECT((&client.on(other).loop() == &other));
@@ -19,7 +19,7 @@ ZEST_CASE(loop_is_the_one_it_was_bound_to) {
 
 ZEST_CASE(on_binds_the_running_loop_by_default) {
     http::client client;
-    auto bind = [&]() -> task<event_loop*> {
+    auto bind = [&]() -> async::task<async::event_loop*> {
         co_return &client.on().loop();
     };
 
@@ -32,4 +32,4 @@ ZEST_CASE(on_binds_the_running_loop_by_default) {
 
 }  // namespace
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

@@ -4,14 +4,14 @@
 
 #include "fixtures/attrs.h"
 #include "fixtures/repr.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/schema.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/schema.h"
 
 // How type_info follows meta::repr: through chains, annotations and tagging
 // nested in declared representations, and format scopes. The codec follows
 // the same resolution when it encodes, which the codec kit's repr area checks.
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 namespace {
 
@@ -150,4 +150,4 @@ ZEST_CASE(rename_all_on_untagged_variant_is_inert) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

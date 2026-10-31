@@ -2,7 +2,7 @@
 # objects it calls into, and on Windows imports only their DLLs. catter's hook
 # library, which runs in every process a build starts, takes the environment
 # and program lookup without the rest.
-add_library(kota_sys STATIC
+add_library(kotatsu_sys STATIC
     cgroup.cpp
     capture.cpp
     child.cpp
@@ -24,25 +24,25 @@ add_library(kota_sys STATIC
     temp_dir.cpp
     title.cpp
 )
-add_library(kota::sys ALIAS kota_sys)
+add_library(kotatsu::sys ALIAS kotatsu_sys)
 
-target_include_directories(kota_sys PUBLIC
+target_include_directories(kotatsu_sys PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
 # pthread_sigmask around spawn's fork, in libc itself only from glibc 2.34.
 find_package(Threads REQUIRED)
 
-target_link_libraries(kota_sys PUBLIC
-    kota::fs
-    kota::support
+target_link_libraries(kotatsu_sys PUBLIC
+    kotatsu::fs
+    kotatsu::support
     Threads::Threads
 )
 
 # ntdll: parent_pid, parallelism, cpu_cores, os; advapi32: the registry of
 # cpu_cores; shell32 and ole32: the known folders of dirs.
 if(WIN32)
-    target_link_libraries(kota_sys PUBLIC advapi32 ntdll ole32 shell32)
+    target_link_libraries(kotatsu_sys PUBLIC advapi32 ntdll ole32 shell32)
 endif()
 
-kota_apply_project_options(kota_sys)
+kotatsu_apply_project_options(kotatsu_sys)

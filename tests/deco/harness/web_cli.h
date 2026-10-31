@@ -5,9 +5,9 @@
 #include <string>
 #include <string_view>
 
-#include "kota/deco/deco.h"
+#include "kotatsu/deco/deco.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// GET or POST, and nothing else.
 struct WebMethod {
@@ -95,4 +95,4 @@ struct WebCli {
     Help help;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

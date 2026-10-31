@@ -5,10 +5,10 @@
 #include <utility>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/codec/blob/blob.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/blob/blob.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 enum class Shade : std::uint8_t {
     Red,
@@ -143,4 +143,4 @@ std::vector<std::byte> blob_of(const T& value) {
     return std::move(*bytes);
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

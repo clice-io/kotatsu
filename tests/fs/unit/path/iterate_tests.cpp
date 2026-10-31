@@ -4,10 +4,10 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/fs/path.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/path.h"
 
-namespace kota::fs::path {
+namespace kotatsu::fs::path {
 
 namespace {
 
@@ -94,4 +94,4 @@ ZEST_CASE(ancestors_find_the_nearest_match) {
 
 }  // namespace
 
-}  // namespace kota::fs::path
+}  // namespace kotatsu::fs::path

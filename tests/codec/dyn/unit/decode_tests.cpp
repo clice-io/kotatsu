@@ -10,11 +10,11 @@
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/compare.h"
-#include "kota/codec/dyn/dyn.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/compare.h"
+#include "kotatsu/codec/dyn/dyn.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -227,4 +227,4 @@ ZEST_CASE(char_from_other_text_fails) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

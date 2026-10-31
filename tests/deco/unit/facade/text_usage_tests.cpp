@@ -1,10 +1,10 @@
 #include <string>
 
 #include "deco/harness/text.h"
-#include "kota/deco/deco.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/deco/deco.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::deco::cli::text {
+namespace kotatsu::deco::cli::text {
 
 namespace {
 
@@ -112,4 +112,4 @@ ZEST_CASE(repeatable_entry_says_so) {
 
 }  // namespace
 
-}  // namespace kota::deco::cli::text
+}  // namespace kotatsu::deco::cli::text

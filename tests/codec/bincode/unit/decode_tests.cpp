@@ -12,14 +12,14 @@
 #include <vector>
 
 #include "codec/harness/fixtures/containers.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
-#include "kota/meta/compare.h"
-#include "kota/meta/repr.h"
-#include "kota/codec/bincode/bincode.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/compare.h"
+#include "kotatsu/meta/repr.h"
+#include "kotatsu/codec/bincode/bincode.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -67,9 +67,9 @@ std::vector<std::byte> bytes(std::initializer_list<unsigned> values) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 template <>
 struct repr<codec::Page> {
@@ -102,9 +102,9 @@ struct repr<codec::Framed> {
     }
 };
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -279,4 +279,4 @@ ZEST_CASE(optional_of_null_pointer_keeps_its_presence) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

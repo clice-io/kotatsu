@@ -1,4 +1,4 @@
-#include "kota/zest/assert/check.h"
+#include "kotatsu/zest/assert/check.h"
 
 #include <atomic>
 #include <chrono>
@@ -12,10 +12,10 @@
 #include <vector>
 
 #include "execution.h"
-#include "kota/zest/assert/trace.h"
-#include "kota/zest/runner/registry.h"
+#include "kotatsu/zest/assert/trace.h"
+#include "kotatsu/zest/runner/registry.h"
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace {
 
@@ -210,4 +210,4 @@ void fail_fatally(function_ref<void()> report) {
 
 }  // namespace detail
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest

@@ -6,10 +6,10 @@
 #include <string>
 #include <string_view>
 
-#include "kota/zest/zest.h"
-#include "kota/support/glob_pattern.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/glob_pattern.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// `text` `times` times over.
 inline std::string repeat(std::string_view text, int times) {
@@ -54,4 +54,4 @@ inline void expect_glob_error(std::string_view pattern,
     ZEXPECT(!error.message.empty());
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

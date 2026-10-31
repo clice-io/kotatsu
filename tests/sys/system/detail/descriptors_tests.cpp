@@ -7,12 +7,12 @@
 #include <unistd.h>
 
 #include "sys/harness/streams.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/support/scope_exit.h"
-#include "kota/sys/detail/descriptors.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/scope_exit.h"
+#include "kotatsu/sys/detail/descriptors.h"
 
-namespace kota::sys::detail {
+namespace kotatsu::sys::detail {
 
 namespace {
 
@@ -79,6 +79,6 @@ ZEST_CASE(move_past_the_descriptor_limit_fails) {
 
 }  // namespace
 
-}  // namespace kota::sys::detail
+}  // namespace kotatsu::sys::detail
 
 #endif

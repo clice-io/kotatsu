@@ -11,17 +11,17 @@
 #include <string>
 #include <string_view>
 
-#include "kota/support/string_ref.h"
+#include "kotatsu/support/string_ref.h"
 
 #ifdef __linux__
 #include <system_error>
 
-#include "kota/support/buffer_ref.h"
-#include "kota/support/small_string.h"
-#include "kota/fs/file.h"
+#include "kotatsu/support/buffer_ref.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/fs/file.h"
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 #ifdef __linux__
 /// Writes into `out` the path of `file` in the /proc directory of process
@@ -107,4 +107,4 @@ inline std::string_view stat_field(std::string_view stat, std::size_t number) {
     return word(stat.substr(stat.rfind(')') + 1), number - 3);
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

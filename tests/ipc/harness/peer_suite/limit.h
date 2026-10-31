@@ -8,10 +8,10 @@
 #include <string>
 
 #include "ipc/harness/peer_fixture.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 template <CodecAdapter A>
 void peer_limit(const PeerKit<A>& kit) {
@@ -25,10 +25,10 @@ void peer_limit(const PeerKit<A>& kit) {
 
     kit.add("request_over_the_limit_fails_unsent", [=](Fixture& f) {
         f.remote.limit_payload(limit);
-        auto ask = [&]() -> task<NoteParams, ipc::Error> {
+        auto ask = [&]() -> async::task<NoteParams, ipc::Error> {
             auto asked = co_await f.peer.template send_request<NoteParams>("test/echo", long_note);
             f.remote.end_input();
-            co_return co_await or_fail(std::move(asked));
+            co_return co_await async::or_fail(std::move(asked));
         };
 
         auto [ran, asked] = f.run(f.peer.run(), ask());
@@ -56,10 +56,11 @@ void peer_limit(const PeerKit<A>& kit) {
 
     kit.add("answer_over_the_limit_is_message_too_large", [=](Fixture& f) {
         f.remote.limit_payload(limit);
-        f.peer.on_request("test/echo",
-                          [](Context&, const NoteParams& note) -> task<NoteParams, ipc::Error> {
-                              co_return note;
-                          });
+        f.peer.on_request(
+            "test/echo",
+            [](Context&, const NoteParams& note) -> async::task<NoteParams, ipc::Error> {
+                co_return note;
+            });
         f.remote.send(request<A>(3, "test/echo", long_note));
         f.remote.end_input();
 
@@ -75,7 +76,7 @@ void peer_limit(const PeerKit<A>& kit) {
     kit.add("error_answer_over_the_limit_is_message_too_large", [=](Fixture& f) {
         f.remote.limit_payload(limit);
         f.peer.on_request([=](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
-            co_await fail(-32001, std::string(limit, 'x'));
+            co_await async::fail(-32001, std::string(limit, 'x'));
         });
         f.remote.send(request<A>(3, "test/add", AddParams{}));
         f.remote.end_input();
@@ -92,11 +93,12 @@ void peer_limit(const PeerKit<A>& kit) {
     kit.add("answer_without_room_for_its_error_is_dropped", [=](Fixture& f) {
         f.remote.limit_payload(16);
         bool handled = false;
-        f.peer.on_request("test/echo",
-                          [&](Context&, const NoteParams& note) -> task<NoteParams, ipc::Error> {
-                              handled = true;
-                              co_return note;
-                          });
+        f.peer.on_request(
+            "test/echo",
+            [&](Context&, const NoteParams& note) -> async::task<NoteParams, ipc::Error> {
+                handled = true;
+                co_return note;
+            });
         f.remote.send(request<A>(3, "test/echo", long_note));
         f.remote.end_input();
 
@@ -109,14 +111,14 @@ void peer_limit(const PeerKit<A>& kit) {
     // The limit drops below the $/cancelRequest once the request is out:
     // the remote cannot be told, so the request ends at once.
     kit.add("cancel_request_over_the_limit_ends_the_request_at_once", [](Fixture& f) {
-        cancellation_source source;
-        event done;
-        auto ask = [&]() -> task<ipc::Error> {
+        async::cancellation_source source;
+        async::event done;
+        auto ask = [&]() -> async::task<ipc::Error> {
             auto asked = co_await f.peer.send_request(AddParams{}, {.token = source.token()});
             done.set();
             co_return asked.has_error() ? asked.error() : ipc::Error("answered");
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.limit_payload(1);
             source.cancel();
@@ -132,4 +134,4 @@ void peer_limit(const PeerKit<A>& kit) {
     });
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

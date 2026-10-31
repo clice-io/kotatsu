@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// One field of every scalar kind.
 struct Scalars {
@@ -154,4 +154,4 @@ struct Bytes {
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

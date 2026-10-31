@@ -16,10 +16,10 @@
 
 #include "fs/harness/files.h"
 #include "fs/harness/win32.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/file.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/file.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -239,4 +239,4 @@ ZEST_CASE(unlock_without_a_lock_does_nothing) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

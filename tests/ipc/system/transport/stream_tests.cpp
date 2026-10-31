@@ -12,31 +12,31 @@
 
 #include "async/harness/os.h"
 #include "ipc/harness/frames.h"
-#include "kota/ipc/transport.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/ipc/transport.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
-/// Both ends of an anonymous pipe, opened as kota pipes.
+/// Both ends of an anonymous pipe, opened as async::pipe.
 struct Ends {
-    pipe reader;
-    pipe writer;
+    async::pipe reader;
+    async::pipe writer;
 };
 
-result<Ends> pipe_ends(event_loop& loop) {
+async::result<Ends> pipe_ends(async::event_loop& loop) {
     int fds[2] = {-1, -1};
     if(test::create_pipe(fds) != 0) {
-        return outcome_error(error::io_error);
+        return outcome_error(async::error::io_error);
     }
-    auto reader = pipe::open(fds[0], {}, loop);
-    auto writer = pipe::open(fds[1], {}, loop);
+    auto reader = async::pipe::open(fds[0], {}, loop);
+    auto writer = async::pipe::open(fds[1], {}, loop);
     if(!reader || !writer) {
-        return outcome_error(error::io_error);
+        return outcome_error(async::error::io_error);
     }
     return Ends{.reader = std::move(*reader), .writer = std::move(*writer)};
 }
@@ -48,18 +48,19 @@ struct Feed {
     int writer = -1;
 };
 
-std::optional<Feed> feed(event_loop& loop, std::size_t max_payload = default_max_payload) {
+std::optional<Feed> feed(async::event_loop& loop, std::size_t max_payload = default_max_payload) {
     int fds[2] = {-1, -1};
     if(test::create_pipe(fds) != 0) {
         return std::nullopt;
     }
-    auto reader = pipe::open(fds[0], {}, loop);
+    auto reader = async::pipe::open(fds[0], {}, loop);
     if(!reader) {
         test::close_fd(fds[1]);
         return std::nullopt;
     }
     return Feed{
-        .transport = std::make_unique<StreamTransport>(stream(std::move(*reader)), max_payload),
+        .transport =
+            std::make_unique<StreamTransport>(async::stream(std::move(*reader)), max_payload),
         .writer = fds[1],
     };
 }
@@ -98,7 +99,7 @@ ZEST_CASE(messages_in_one_write_read_in_order) {
     ZASSERT(test::write_fd(input->writer, frames.data(), frames.size()) ==
             static_cast<ssize_t>(frames.size()));
     ZASSERT(test::close_fd(input->writer) == 0);
-    auto read_all = [&]() -> task<std::vector<std::string>> {
+    auto read_all = [&]() -> async::task<std::vector<std::string>> {
         std::vector<std::string> messages;
         while(auto message = co_await input->transport->read_message()) {
             messages.push_back(std::move(*message));
@@ -116,16 +117,16 @@ ZEST_CASE(messages_in_one_write_read_in_order) {
 ZEST_CASE(messages_split_across_writes_read_whole) {
     auto ends = pipe_ends(loop);
     ZASSERT(ends.has_value());
-    StreamTransport transport(stream(std::move(ends->reader)));
+    StreamTransport transport(async::stream(std::move(ends->reader)));
     const std::vector<std::string> sent{"first", R"({"second":2})"};
     const auto frames = test::framed(sent[0]) + test::framed(sent[1]);
-    auto write_in_pieces = [&]() -> task<void, error> {
+    auto write_in_pieces = [&]() -> async::task<void, async::error> {
         for(std::size_t at = 0; at < frames.size(); at += 3) {
             co_await ends->writer.write(std::string_view(frames).substr(at, 3)).or_fail();
         }
-        ends->writer = pipe();
+        ends->writer = async::pipe();
     };
-    auto read_all = [&]() -> task<std::vector<std::string>> {
+    auto read_all = [&]() -> async::task<std::vector<std::string>> {
         std::vector<std::string> messages;
         while(auto message = co_await transport.read_message()) {
             messages.push_back(std::move(*message));
@@ -190,7 +191,7 @@ ZEST_CASE(oversized_message_is_skipped_and_reading_goes_on) {
             static_cast<ssize_t>(data.size()));
     ZASSERT(test::close_fd(input->writer) == 0);
 
-    auto read_twice = [&]() -> task<std::pair<ReadError, std::string>, ReadError> {
+    auto read_twice = [&]() -> async::task<std::pair<ReadError, std::string>, ReadError> {
         auto skipped = co_await input->transport->read_message();
         auto next = co_await input->transport->read_message().or_fail();
         co_return std::pair{skipped.has_error() ? std::move(skipped).error() : ReadError{},
@@ -221,8 +222,9 @@ ZEST_CASE(remote_max_payload_is_unlimited_until_set) {
 ZEST_CASE(close_wakes_a_pending_read) {
     auto ends = pipe_ends(loop);
     ZASSERT(ends.has_value());
-    StreamTransport transport(stream(std::move(ends->reader)), stream(std::move(ends->writer)));
-    auto closer = [&]() -> task<bool> {
+    StreamTransport transport(async::stream(std::move(ends->reader)),
+                              async::stream(std::move(ends->writer)));
+    auto closer = [&]() -> async::task<bool> {
         co_return transport.close().has_value();
     };
 
@@ -236,12 +238,12 @@ ZEST_CASE(close_wakes_a_pending_read) {
 ZEST_CASE(write_frames_the_payload) {
     auto ends = pipe_ends(loop);
     ZASSERT(ends.has_value());
-    StreamTransport transport(stream(std::move(ends->writer)));
-    auto send = [&]() -> task<void, Error> {
+    StreamTransport transport(async::stream(std::move(ends->writer)));
+    auto send = [&]() -> async::task<void, Error> {
         co_await transport.write_message("hello").or_fail();
         transport.close();
     };
-    auto read_all = [&]() -> task<std::string> {
+    auto read_all = [&]() -> async::task<std::string> {
         std::string text;
         while(auto chunk = co_await ends->reader.read()) {
             text += *chunk;
@@ -258,9 +260,9 @@ ZEST_CASE(write_frames_the_payload) {
 ZEST_CASE(write_messages_frames_each_in_order) {
     auto ends = pipe_ends(loop);
     ZASSERT(ends.has_value());
-    StreamTransport transport(stream(std::move(ends->writer)));
+    StreamTransport transport(async::stream(std::move(ends->writer)));
     const std::vector<std::string> payloads = {"first", "", std::string(100'000, 'x'), "last"};
-    auto send = [&]() -> task<void, Error> {
+    auto send = [&]() -> async::task<void, Error> {
         co_await transport.write_messages(payloads).or_fail();
         transport.close();
     };
@@ -276,30 +278,31 @@ ZEST_CASE(write_messages_frames_each_in_order) {
 ZEST_CASE(write_to_the_read_end_fails) {
     auto ends = pipe_ends(loop);
     ZASSERT(ends.has_value());
-    StreamTransport transport(stream(std::move(ends->writer)), stream(std::move(ends->reader)));
+    StreamTransport transport(async::stream(std::move(ends->writer)),
+                              async::stream(std::move(ends->reader)));
 
     auto [written] = run(transport.write_message("hello"));
     ZASSERT(written.has_error());
-    ZEXPECT(written.error().message == error::broken_pipe.message());
+    ZEXPECT(written.error().message == async::error::broken_pipe.message());
 }
 
 ZEST_CASE(connect_tcp_exchanges_messages) {
-    auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
+    auto listener = async::tcp::listen("127.0.0.1", 0, {}, loop);
     ZASSERT(listener.has_value());
     auto name = listener->getsockname();
     ZASSERT(name.has_value());
     const int port = name->port;
-    auto serve = [&]() -> task<std::optional<std::string>> {
+    auto serve = [&]() -> async::task<std::optional<std::string>> {
         auto connection = co_await listener->accept();
         if(!connection) {
             co_return std::nullopt;
         }
-        StreamTransport server(stream(std::move(*connection)));
+        StreamTransport server(async::stream(std::move(*connection)));
         auto request = co_await server.read_message();
         co_await server.write_message("pong");
         co_return request ? std::optional(std::move(*request)) : std::nullopt;
     };
-    auto ask = [&]() -> task<std::optional<std::string>, Error> {
+    auto ask = [&]() -> async::task<std::optional<std::string>, Error> {
         auto client = co_await StreamTransport::connect_tcp("127.0.0.1", port, loop).or_fail();
         co_await client->write_message("ping").or_fail();
         auto answer = co_await client->read_message();
@@ -317,7 +320,7 @@ ZEST_CASE(connect_tcp_exchanges_messages) {
 // was written has gone out. The remote reads it, then the end of its input,
 // and can still send; the transport reads what it sends.
 ZEST_CASE(close_output_on_a_shared_socket_ends_the_remote_input_and_keeps_reading) {
-    auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
+    auto listener = async::tcp::listen("127.0.0.1", 0, {}, loop);
     ZASSERT(listener.has_value());
     auto name = listener->getsockname();
     ZASSERT(name.has_value());
@@ -326,18 +329,18 @@ ZEST_CASE(close_output_on_a_shared_socket_ends_the_remote_input_and_keeps_readin
     ZASSERT(accepted.has_value());
     ZASSERT(connected.has_value());
     auto& transport = **connected;
-    auto remote = [&]() -> task<std::string, error> {
+    auto remote = [&]() -> async::task<std::string, async::error> {
         auto received = co_await accepted->read_to_end().or_fail();
         auto answer = test::framed("after");
         co_await accepted->write(std::span<const char>(answer.data(), answer.size())).or_fail();
         co_return received;
     };
-    auto local = [&]() -> task<std::string, Error> {
+    auto local = [&]() -> async::task<std::string, Error> {
         co_await transport.write_message("before").or_fail();
         co_await transport.close_output().or_fail();
         auto read = co_await transport.read_message();
         if(!read) {
-            co_await fail(Error(read.error().message));
+            co_await async::fail(Error(read.error().message));
         }
         co_return std::move(*read);
     };
@@ -352,11 +355,11 @@ ZEST_CASE(close_output_on_a_shared_socket_ends_the_remote_input_and_keeps_readin
 ZEST_CASE(connect_tcp_to_a_bad_address_fails) {
     auto [connected] = run(StreamTransport::connect_tcp("not-an-address", 80, loop));
     ZASSERT(connected.has_error());
-    ZEXPECT(connected.error().message == error::invalid_argument.message());
+    ZEXPECT(connected.error().message == async::error::invalid_argument.message());
 }
 
 };  // ZEST_SUITE(ipc_transport_stream)
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

@@ -1,12 +1,12 @@
-#include "kota/deco/facade/text.h"
+#include "kotatsu/deco/facade/text.h"
 
 #include <algorithm>
 #include <format>
 #include <utility>
 
-#include "kota/deco/facade/config.h"
+#include "kotatsu/deco/facade/config.h"
 
-namespace kota::deco::cli::text {
+namespace kotatsu::deco::cli::text {
 namespace {
 
 constexpr std::string_view ansi_reset = "\033[0m";
@@ -662,9 +662,9 @@ auto render_diagnostic(const Diagnostic& diagnostic, const Renderer* renderer) -
     return CompatibleRendererImpl::render_diagnostic_document(diagnostic, active_renderer.style);
 }
 
-}  // namespace kota::deco::cli::text
+}  // namespace kotatsu::deco::cli::text
 
-namespace kota::deco::config {
+namespace kotatsu::deco::config {
 
 auto get() -> const Config& {
     return cli::text::global_config();
@@ -687,4 +687,4 @@ void set_enum_meta_var(EnumMetaVarConfig config) {
     set(std::move(updated));
 }
 
-}  // namespace kota::deco::config
+}  // namespace kotatsu::deco::config

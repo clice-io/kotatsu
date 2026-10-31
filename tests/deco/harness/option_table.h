@@ -7,9 +7,9 @@
 #include <vector>
 
 #include "deco/harness/argv.h"
-#include "kota/deco/option.h"
+#include "kotatsu/deco/option.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// What parsing an argv with an option table yields: each argument, and each error with how
 /// many arguments came before it. The arguments view `argv`, which the parse owns; move it,
@@ -153,4 +153,4 @@ inline TableParse parse_table(const option::OptTable& table,
     return parse_table(table, split(line), options);
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

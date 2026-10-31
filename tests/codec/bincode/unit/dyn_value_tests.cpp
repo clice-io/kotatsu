@@ -6,13 +6,13 @@
 #include <string>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/codec/bincode/bincode.h"
-#include "kota/codec/dyn/document.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/bincode/bincode.h"
+#include "kotatsu/codec/dyn/document.h"
 
 // dyn::Value in bincode: a kind byte, then what the value holds.
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -182,4 +182,4 @@ ZEST_CASE(missing_kind_fails) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

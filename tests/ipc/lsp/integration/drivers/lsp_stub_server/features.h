@@ -4,10 +4,10 @@
 // features. The codec instantiations of their requests are a translation unit
 // of their own, which compiles beside main's.
 
-#include "kota/ipc/peer/json.h"
-#include "kota/ipc/lsp/protocol.h"
+#include "kotatsu/ipc/peer/json.h"
+#include "kotatsu/ipc/lsp/protocol.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 inline auto make_range(ipc::protocol::uinteger line,
                        ipc::protocol::uinteger col,
@@ -22,4 +22,4 @@ inline auto make_range(ipc::protocol::uinteger line,
 /// to workspace/symbol, with fixed results.
 void add_language_features(ipc::JSONPeer& peer);
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

@@ -1,11 +1,11 @@
 #include <cstdint>
 #include <string_view>
 
-#include "kota/ipc/codec/json.h"
-#include "kota/zest/zest.h"
-#include "kota/ipc/lsp/protocol.h"
+#include "kotatsu/ipc/codec/json.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/ipc/lsp/protocol.h"
 
-namespace kota::ipc::lsp {
+namespace kotatsu::ipc::lsp {
 namespace {
 
 using codec::json::from_string;
@@ -121,4 +121,4 @@ ZEST_CASE(initialize_unknown_enum_values) {
 };  // ZEST_SUITE(ipc_lsp_protocol_enum)
 
 }  // namespace
-}  // namespace kota::ipc::lsp
+}  // namespace kotatsu::ipc::lsp

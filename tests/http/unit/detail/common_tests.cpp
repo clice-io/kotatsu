@@ -3,11 +3,11 @@
 #include <utility>
 #include <vector>
 
-#include "kota/http/detail/common.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/http/detail/common.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
@@ -81,4 +81,4 @@ ZEST_CASE(redirect_policy_limited_follows_up_to_its_count) {
 
 }  // namespace
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

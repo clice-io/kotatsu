@@ -10,11 +10,11 @@
 #include <vector>
 
 #include "ipc/harness/peer_fixture.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
-#include "kota/codec/visit/common.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
+#include "kotatsu/codec/visit/common.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 template <CodecAdapter A>
 void peer_dispatch(const PeerKit<A>& kit) {
@@ -168,7 +168,7 @@ void peer_dispatch(const PeerKit<A>& kit) {
     // The handler wrote its result itself; the requester gets it as it is.
     kit.add("raw_value_result_is_sent_as_it_is", [](Fixture& f) {
         f.peer.on_request(
-            [](Context&, const AddParams& params) -> task<codec::RawValue, ipc::Error> {
+            [](Context&, const AddParams& params) -> async::task<codec::RawValue, ipc::Error> {
                 co_return codec::RawValue{A::encode(AddResult{.sum = params.a + params.b})};
             });
         f.remote.send(request<A>(1, "test/add", AddParams{.a = 10, .b = 20}));
@@ -247,13 +247,13 @@ void peer_dispatch(const PeerKit<A>& kit) {
     // request with that id meanwhile is refused, and the first still answers.
     kit.add("request_reusing_a_running_id_is_answered_with_invalid_request", [](Fixture& f) {
         int calls = 0;
-        event release;
+        async::event release;
         f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
             calls += 1;
             co_await release.wait();
             co_return AddResult{.sum = params.a + params.b};
         });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
             f.remote.send(request<A>(1, "test/add", AddParams{.a = 3, .b = 4}));
             co_await f.next();
@@ -327,7 +327,7 @@ void peer_dispatch(const PeerKit<A>& kit) {
 
     kit.add("handler_error_is_answered_with_its_code_and_message", [](Fixture& f) {
         f.peer.on_request([](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
-            co_await fail(ErrorCode::InvalidParams, "forced invalid params");
+            co_await async::fail(ErrorCode::InvalidParams, "forced invalid params");
         });
         f.remote.send(request<A>(10, "test/add", AddParams{}));
         f.remote.end_input();
@@ -344,7 +344,7 @@ void peer_dispatch(const PeerKit<A>& kit) {
 
     kit.add("result_that_does_not_encode_is_answered_with_internal_error", [](Fixture& f) {
         f.peer.on_request("test/unwritable",
-                          [](Context&, const EmptyParams&) -> task<Unwritable, ipc::Error> {
+                          [](Context&, const EmptyParams&) -> async::task<Unwritable, ipc::Error> {
                               co_return Unwritable{};
                           });
         f.remote.send(request<A>(4, "test/unwritable", EmptyParams{}));
@@ -384,11 +384,11 @@ void peer_dispatch(const PeerKit<A>& kit) {
         ZEXPECT(f.written().empty());
     });
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
     // Request 1's handler throws while request 2's is running; both are
     // answered, and so is request 3, read after the throw.
     kit.add("throwing_request_handler_is_answered_with_internal_error", [](Fixture& f) {
-        event release;
+        async::event release;
         f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
             if(params.a == 1) {
                 throw std::runtime_error("boom");
@@ -398,7 +398,7 @@ void peer_dispatch(const PeerKit<A>& kit) {
             }
             co_return AddResult{.sum = params.a + params.b};
         });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(2, "test/add", AddParams{.a = 2, .b = 0}));
             f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 0}));
             co_await f.next();
@@ -450,15 +450,15 @@ void peer_dispatch(const PeerKit<A>& kit) {
 
     // The notification's handler throws while a request's is running.
     kit.add("throwing_notification_handler_leaves_the_peer_serving", [](Fixture& f) {
-        event started;
-        event release;
+        async::event started;
+        async::event release;
         f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
             started.set();
             co_await release.wait();
             co_return AddResult{.sum = params.a + params.b};
         });
         f.peer.on_notification([](const NoteParams&) { throw std::runtime_error("boom"); });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
             co_await started.wait();
             f.remote.send(notification<A>("test/note", NoteParams{.text = "throw"}));
@@ -480,12 +480,12 @@ void peer_dispatch(const PeerKit<A>& kit) {
     // run(), and the peer's own request is still answered.
     kit.add("throwing_notification_handler_does_not_end_run", [](Fixture& f) {
         f.peer.on_notification([](const NoteParams&) { throw std::runtime_error("boom"); });
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer
                 .template send_request<AddResult>("worker/build", AddParams{.a = 2, .b = 3})
                 .or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(notification<A>("test/note", NoteParams{.text = "throw"}));
             f.remote.send(response<A>(1, AddResult{.sum = 5}));
@@ -501,4 +501,4 @@ void peer_dispatch(const PeerKit<A>& kit) {
 #endif
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

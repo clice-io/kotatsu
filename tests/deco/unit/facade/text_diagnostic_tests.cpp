@@ -3,10 +3,10 @@
 
 #include "deco/harness/argv.h"
 #include "deco/harness/text.h"
-#include "kota/deco/deco.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/deco/deco.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::deco::cli::text {
+namespace kotatsu::deco::cli::text {
 
 namespace {
 
@@ -157,4 +157,4 @@ ZEST_CASE(argv_is_viewed_not_copied) {
 
 }  // namespace
 
-}  // namespace kota::deco::cli::text
+}  // namespace kotatsu::deco::cli::text

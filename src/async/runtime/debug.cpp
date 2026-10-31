@@ -1,13 +1,13 @@
-#include "kota/async/runtime/debug.h"
+#include "kotatsu/async/runtime/debug.h"
 
 #include <format>
 #include <string>
 #include <string_view>
 #include <utility>
 
-#include "kota/async/runtime/walk.h"
+#include "kotatsu/async/runtime/walk.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 static std::string_view async_kind_name(async_node::NodeKind k) {
     switch(k) {
@@ -186,4 +186,4 @@ std::string dump_dot(const async_node& node) {
     return std::move(emitter.out);
 }
 
-}  // namespace kota
+}  // namespace kotatsu::async

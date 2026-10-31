@@ -3,10 +3,10 @@
 #include <string_view>
 
 #include "support/harness/glob.h"
-#include "kota/zest/zest.h"
-#include "kota/support/glob_pattern.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/glob_pattern.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -87,4 +87,4 @@ ZEST_CASE(split_root_rebuilds_a_pattern_matching_alike) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

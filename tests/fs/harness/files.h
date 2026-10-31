@@ -2,11 +2,11 @@
 
 // TempDir, a directory of a test's own, write_text() and read_text(),
 // ScopedCurrentDir, ScopedPermissions, make_junction() on Windows,
-// link_directory(), all through std::filesystem, fstreams, cmd and Win32
-// rather than kota::fs, which the tests check; linked() for a case that makes
-// a symlink; across_file_systems() on Linux for one that crosses file
-// systems; chowned() and ScopedUser on POSIX for one root runs as other
-// users; text_of() and CountedBuffer for reads of large files.
+// link_directory(), all through std::filesystem, fstreams, cmd and Win32 rather
+// than kotatsu::fs, which the tests check; linked() for a case that makes a
+// symlink; across_file_systems() on Linux for one that crosses file systems;
+// chowned() and ScopedUser on POSIX for one root runs as other users; text_of()
+// and CountedBuffer for reads of large files.
 
 #include <cstddef>
 #include <cstdlib>
@@ -36,9 +36,9 @@
 #include <sys/stat.h>
 #endif
 
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// A directory of its own under the system temp directory, removed with
 /// everything in it when this goes, or when a failed ZASSERT ends the process.
@@ -131,7 +131,7 @@ private:
         std::random_device random;
         std::filesystem::path candidate;
         do {
-            candidate = base / std::format("kota-{:08x}{:08x}", random(), random());
+            candidate = base / std::format("kotatsu-{:08x}{:08x}", random(), random());
         } while(!std::filesystem::create_directory(candidate));
         return candidate;
     }
@@ -327,4 +327,4 @@ inline void link_directory(std::string_view target, std::string_view link) {
 #endif
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

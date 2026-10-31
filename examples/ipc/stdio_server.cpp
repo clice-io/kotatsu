@@ -3,9 +3,10 @@
 #include <print>
 #include <string>
 
-#include "kota/ipc/peer/json.h"
+#include "kotatsu/ipc/peer/json.h"
 
-namespace ipc = kota::ipc;
+namespace async = kotatsu::async;
+namespace ipc = kotatsu::ipc;
 
 namespace {
 
@@ -40,7 +41,7 @@ ipc::RequestResult<LengthParams, LengthResult> length_of(std::string text) {
 }  // namespace
 
 int main() {
-    kota::event_loop loop;
+    async::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio transport: {}", transport.error().message);
@@ -72,7 +73,7 @@ int main() {
                     [&document](ipc::JSONPeer::RequestContext&, const LengthParams&)
                         -> ipc::RequestResult<LengthParams, LengthResult> {
                         if(document.empty()) {
-                            return kota::outcome_error(ipc::Error("the document is empty"));
+                            return kotatsu::outcome_error(ipc::Error("the document is empty"));
                         }
                         return length_of(document);
                     });

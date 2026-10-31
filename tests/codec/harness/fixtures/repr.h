@@ -18,13 +18,13 @@
 
 #include "codec/harness/fixtures/containers.h"
 #include "fixtures/repr.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
-#include "kota/meta/repr.h"
-#include "kota/meta/type_kind.h"
-#include "kota/codec/visit/encode.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/repr.h"
+#include "kotatsu/meta/type_kind.h"
+#include "kotatsu/codec/visit/encode.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Travels as a fixed-width integer 100 above the enumerator, overriding
 /// the enum dispatch; the offset shows a repr that was not applied.
@@ -236,9 +236,9 @@ struct LoadOkDocument {
     Value value;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 template <>
 struct repr<test::Relation> {
@@ -422,4 +422,4 @@ struct repr<test::BoxedScalar> {
     }
 };
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

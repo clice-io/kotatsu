@@ -12,12 +12,12 @@
 #include "ipc/harness/peer_suite/requests.h"
 #include "ipc/harness/peer_suite/timeout.h"
 #include "ipc/harness/peer_suite/unreadable.h"
-#include "kota/ipc/peer/json.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/ipc/peer/json.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -115,13 +115,13 @@ ZEST_CASE(request_with_a_null_id_is_answered_with_invalid_request) {
 // cannot be what fails it.
 ZEST_CASE(error_response_with_a_malformed_error_fails_its_request) {
     Fixture f;
-    event answered;
-    auto ask = [&]() -> task<Error> {
+    async::event answered;
+    auto ask = [&]() -> async::task<Error> {
         auto result = co_await f.peer.send_request(AddParams{});
         answered.set();
         co_return result.has_error() ? result.error() : Error("no error");
     };
-    auto remote = [&]() -> task<> {
+    auto remote = [&]() -> async::task<> {
         co_await f.next();
         f.remote.send(R"({"jsonrpc":"2.0","id":1,"error":{"code":"E1","message":"x"}})");
         co_await answered.wait();
@@ -186,7 +186,7 @@ ZEST_CASE(unreadable_request_is_answered_before_it_ends_the_conversation_under_e
 ZEST_CASE(unreadable_response_ends_the_conversation_under_end) {
     Fixture f;
     f.peer.set_violation_policy(ViolationPolicy::End);
-    auto remote = [&]() -> task<> {
+    auto remote = [&]() -> async::task<> {
         co_await f.next();
         co_await f.next();
         f.remote.send(R"({"jsonrpc":"1.0","id":1,"result":0})");
@@ -226,4 +226,4 @@ ZEST_CASE(unreadable_notification_ends_the_conversation_under_end) {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

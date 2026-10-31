@@ -1,9 +1,9 @@
 #include <string>
 
 #include "support/harness/glob.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -186,4 +186,4 @@ ZEST_CASE(more_globstars_than_a_small_stack) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

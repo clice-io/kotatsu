@@ -17,10 +17,10 @@
 #include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/enums.h"
-#include "kota/zest/zest.h"
-#include "kota/codec/debug/encode.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/debug/encode.h"
 
-namespace kota::codec::debug {
+namespace kotatsu::codec::debug {
 
 namespace {
 
@@ -76,10 +76,10 @@ ZEST_CASE(null_char_pointer) {
 }
 
 ZEST_CASE(char_arrays_end_with_the_array) {
-    const char unterminated[4] = {'K', 'O', 'T', 'A'};
-    const char padded[8] = "kota";
-    ZEXPECT(to_string(unterminated) == R"("KOTA")");
-    ZEXPECT(to_string(padded) == R"("kota")");
+    const char unterminated[4] = {'Z', 'E', 'S', 'T'};
+    const char padded[8] = "pad";
+    ZEXPECT(to_string(unterminated) == R"("ZEST")");
+    ZEXPECT(to_string(padded) == R"("pad")");
 }
 
 ZEST_CASE(bool_values) {
@@ -364,4 +364,4 @@ ZEST_CASE(pretty_scalars_unchanged) {
 
 }  // namespace
 
-}  // namespace kota::codec::debug
+}  // namespace kotatsu::codec::debug

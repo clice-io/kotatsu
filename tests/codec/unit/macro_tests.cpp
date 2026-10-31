@@ -7,13 +7,13 @@
 
 #include "codec/harness/fixtures/attrs.h"
 #include "fixtures/structs.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
-#include "kota/meta/schema.h"
-#include "kota/codec/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/macro.h"
 
-// Outside namespace kota, where <cstdio> puts ::rename in scope: the macros
+// Outside namespace kotatsu, where <cstdio> puts ::rename in scope: the macros
 // name their entries through using-declarations, so `rename` is not ambiguous.
 namespace {
 
@@ -30,7 +30,7 @@ struct DownstreamBox {
 
 }  // namespace
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -76,7 +76,7 @@ struct StructEntriesOnFields {
 
 ZEST_SUITE(codec_macro) {
 
-ZEST_CASE(annotate_works_outside_kota) {
+ZEST_CASE(annotate_works_outside_kotatsu) {
     constexpr const auto& spec = meta::field_spec_of<decltype(DownstreamConfig::compile_commands)>;
     ZSTATIC_EXPECT(spec.rename == std::string_view("compileCommands"));
 }
@@ -147,4 +147,4 @@ ZEST_CASE(field_annotation_shares_type_info) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

@@ -1,4 +1,4 @@
-#include "kota/fs/file.h"
+#include "kotatsu/fs/file.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -6,9 +6,9 @@
 #include <utility>
 
 #include "handle.h"
-#include "kota/support/small_string.h"
-#include "kota/fs/directory.h"
-#include "kota/fs/path.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/path.h"
 
 #ifdef _WIN32
 #include <cerrno>
@@ -44,7 +44,7 @@
 #include "posix.h"
 #endif
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -1018,4 +1018,4 @@ std::error_code create_temp_directory(buffer_ref path,
     });
 }
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

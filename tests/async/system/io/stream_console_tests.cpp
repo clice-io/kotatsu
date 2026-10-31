@@ -11,12 +11,12 @@
 #endif
 
 #include "async/harness/os.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 namespace {
 
@@ -163,4 +163,4 @@ ZEST_CASE(read_in_raw_mode_takes_a_key_without_a_newline) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu::async

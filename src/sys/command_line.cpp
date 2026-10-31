@@ -4,9 +4,9 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/sys/windows.h"
+#include "kotatsu/sys/windows.h"
 
-namespace kota::sys::windows {
+namespace kotatsu::sys::windows {
 
 namespace {
 
@@ -135,4 +135,4 @@ split_command_line_view::iterator& split_command_line_view::iterator::operator++
     return *this;
 }
 
-}  // namespace kota::sys::windows
+}  // namespace kotatsu::sys::windows

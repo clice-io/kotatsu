@@ -4,9 +4,9 @@
 #include <sstream>
 #include <string>
 
-#include "kota/support/scope_exit.h"
+#include "kotatsu/support/scope_exit.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// What `body` prints to std::cout while it runs. std::cout is given back its
 /// own buffer however `body` ends.
@@ -19,4 +19,4 @@ std::string printed_by(Body&& body) {
     return out.str();
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

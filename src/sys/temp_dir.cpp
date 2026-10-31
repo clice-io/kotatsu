@@ -1,15 +1,15 @@
 #include "os.h"
-#include "kota/fs/path.h"
-#include "kota/sys/dirs.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/sys/dirs.h"
 
 #ifdef _WIN32
-#include "kota/support/small_string.h"
-#include "kota/support/utf16.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/support/utf16.h"
 #else
-#include "kota/sys/env.h"
+#include "kotatsu/sys/env.h"
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 std::error_code temp_dir(buffer_ref out) {
 #ifdef _WIN32
@@ -48,4 +48,4 @@ std::error_code temp_dir(buffer_ref out) {
 #endif
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

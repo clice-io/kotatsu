@@ -1,9 +1,9 @@
 #include <string>
 
 #include "support/harness/glob.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -76,4 +76,4 @@ ZEST_CASE(nul_bytes_are_ordinary_characters) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

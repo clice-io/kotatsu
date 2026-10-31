@@ -8,10 +8,10 @@
 #include <utility>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/ipc/lsp/position.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/ipc/lsp/position.h"
 
-namespace kota::ipc::lsp {
+namespace kotatsu::ipc::lsp {
 namespace {
 
 constexpr PositionEncoding encodings[] = {
@@ -633,4 +633,4 @@ ZEST_CASE(sized_text_ends_lines_where_told) {
 };  // ZEST_SUITE(ipc_lsp_position)
 
 }  // namespace
-}  // namespace kota::ipc::lsp
+}  // namespace kotatsu::ipc::lsp

@@ -7,10 +7,10 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "KOTA_BUILD_ALL_TESTS": "ON",
-        "KOTA_ENABLE_EXAMPLES": "ON",
-        "KOTA_USE_CPM_FOR_TESTS": "ON",
-        "KOTA_ENABLE_CCACHE": "ON",
+        "KOTATSU_BUILD_ALL_TESTS": "ON",
+        "KOTATSU_ENABLE_EXAMPLES": "ON",
+        "KOTATSU_USE_CPM_FOR_TESTS": "ON",
+        "KOTATSU_ENABLE_CCACHE": "ON",
         "CPM_SOURCE_CACHE": "${sourceDir}/.cache/cpm"
       }
     },
@@ -22,7 +22,7 @@
     {
       "name": "coverage",
       "inherits": "debug",
-      "cacheVariables": { "KOTA_ENABLE_COVERAGE": "ON" }
+      "cacheVariables": { "KOTATSU_ENABLE_COVERAGE": "ON" }
     },
     {
       "name": "relwithdebinfo",
@@ -32,35 +32,35 @@
     {
       "name": "asan",
       "inherits": "relwithdebinfo",
-      "cacheVariables": { "KOTA_SANITIZE_ADDRESS": "ON" }
+      "cacheVariables": { "KOTATSU_SANITIZE_ADDRESS": "ON" }
     },
     {
       "name": "ubsan",
       "inherits": "relwithdebinfo",
-      "cacheVariables": { "KOTA_SANITIZE_UNDEFINED": "ON" }
+      "cacheVariables": { "KOTATSU_SANITIZE_UNDEFINED": "ON" }
     },
     {
       "name": "asan-ubsan",
       "inherits": "relwithdebinfo",
       "cacheVariables": {
-        "KOTA_SANITIZE_ADDRESS": "ON",
-        "KOTA_SANITIZE_UNDEFINED": "ON"
+        "KOTATSU_SANITIZE_ADDRESS": "ON",
+        "KOTATSU_SANITIZE_UNDEFINED": "ON"
       }
     },
     {
       "name": "tsan",
       "inherits": "relwithdebinfo",
-      "cacheVariables": { "KOTA_SANITIZE_THREAD": "ON" }
+      "cacheVariables": { "KOTATSU_SANITIZE_THREAD": "ON" }
     },
     {
       "name": "no-exceptions",
       "inherits": "relwithdebinfo",
-      "cacheVariables": { "KOTA_ENABLE_EXCEPTIONS": "OFF" }
+      "cacheVariables": { "KOTATSU_ENABLE_EXCEPTIONS": "OFF" }
     },
     {
       "name": "no-exceptions-no-rtti",
       "inherits": "no-exceptions",
-      "cacheVariables": { "KOTA_ENABLE_RTTI": "OFF" }
+      "cacheVariables": { "KOTATSU_ENABLE_RTTI": "OFF" }
     }
   ],
   "buildPresets": [

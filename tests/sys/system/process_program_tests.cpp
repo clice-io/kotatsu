@@ -25,16 +25,16 @@
 #include "fs/harness/files.h"
 #include "sys/harness/env.h"
 #include "sys/harness/program.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/path.h"
-#include "kota/sys/process.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/sys/process.h"
 
 #ifdef _WIN32
-#include "kota/fs/cygwin.h"
+#include "kotatsu/fs/cygwin.h"
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -355,4 +355,4 @@ ZEST_CASE(find_program_of_cygwin_symlinks_that_loop_names_the_first) {
 
 }  // namespace
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

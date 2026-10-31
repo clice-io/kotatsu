@@ -2,10 +2,10 @@
 #include <string>
 #include <string_view>
 
-#include "kota/zest/zest.h"
-#include "kota/support/utf8.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/utf8.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -99,4 +99,4 @@ ZEST_CASE(replacement_takes_each_maximal_subpart) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

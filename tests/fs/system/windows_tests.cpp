@@ -8,16 +8,16 @@
 #include "fs/harness/dir.h"
 #include "fs/harness/files.h"
 #include "fs/harness/win32.h"
-#include "kota/zest/zest.h"
-#include "kota/support/utf16.h"
-#include "kota/fs/directory.h"
-#include "kota/fs/file.h"
-#include "kota/fs/path.h"
-#include "kota/fs/resolve.h"
-#include "kota/fs/status.h"
-#include "kota/fs/windows.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/utf16.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/fs/resolve.h"
+#include "kotatsu/fs/status.h"
+#include "kotatsu/fs/windows.h"
 
-namespace kota::fs::windows {
+namespace kotatsu::fs::windows {
 
 namespace {
 
@@ -209,6 +209,6 @@ ZEST_CASE(write_file_keeps_a_hidden_file_hidden) {
 
 }  // namespace
 
-}  // namespace kota::fs::windows
+}  // namespace kotatsu::fs::windows
 
 #endif

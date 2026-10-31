@@ -6,9 +6,9 @@
 #include <vector>
 
 #include "codec/harness/visit/kit.h"
-#include "kota/codec/bincode/bincode.h"
+#include "kotatsu/codec/bincode/bincode.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// The bincode backend for the protocol kit. Its documents are the bytes
 /// to_bytes writes: values in declaration order, with no names, tags or
@@ -48,4 +48,4 @@ struct Bincode {
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

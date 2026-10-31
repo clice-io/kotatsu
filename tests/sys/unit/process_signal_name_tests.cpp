@@ -1,10 +1,10 @@
 #include <csignal>
 
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/sys/process.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/sys/process.h"
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -37,4 +37,4 @@ ZEST_CASE(signal_name_of_no_signal_is_empty) {
 
 }  // namespace
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

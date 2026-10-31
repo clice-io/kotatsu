@@ -6,11 +6,11 @@
 #include <utility>
 
 #include "support/harness/throws.h"
-#include "kota/zest/zest.h"
-#include "kota/support/config.h"
-#include "kota/support/small_vector.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/config.h"
+#include "kotatsu/support/small_vector.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -58,13 +58,13 @@ struct Recording {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu
 
 /// Counts Probe's allocations, and can place the next one; what it places is the test's own
 /// memory, and deallocating it only counts.
 template <>
-struct std::allocator<kota::Probe> {
-    using value_type = kota::Probe;
+struct std::allocator<kotatsu::Probe> {
+    using value_type = kotatsu::Probe;
     using size_type = std::size_t;
     using difference_type = std::ptrdiff_t;
     using propagate_on_container_move_assignment = std::true_type;
@@ -74,15 +74,15 @@ struct std::allocator<kota::Probe> {
     template <typename U>
     constexpr allocator(const allocator<U>&) noexcept {}
 
-    kota::Probe* allocate(std::size_t count) {
-        kota::ledger.allocations += 1;
-        if(kota::ledger.next != nullptr) {
-            return std::exchange(kota::ledger.next, nullptr);
+    kotatsu::Probe* allocate(std::size_t count) {
+        kotatsu::ledger.allocations += 1;
+        if(kotatsu::ledger.next != nullptr) {
+            return std::exchange(kotatsu::ledger.next, nullptr);
         }
-        if(std::exchange(kota::ledger.fail_next, false)) {
-            KOTA_THROW(std::bad_alloc{});
+        if(std::exchange(kotatsu::ledger.fail_next, false)) {
+            KOTATSU_THROW(std::bad_alloc{});
         }
-        return static_cast<kota::Probe*>(::operator new(count * sizeof(kota::Probe)));
+        return static_cast<kotatsu::Probe*>(::operator new(count * sizeof(kotatsu::Probe)));
     }
 
 // The arena's memory reaches deallocate(), which returns before deleting it; GCC sees the
@@ -91,11 +91,11 @@ struct std::allocator<kota::Probe> {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wfree-nonheap-object"
 #endif
-    void deallocate(kota::Probe* data, std::size_t) {
-        kota::ledger.deallocations += 1;
+    void deallocate(kotatsu::Probe* data, std::size_t) {
+        kotatsu::ledger.deallocations += 1;
         const auto* bytes = reinterpret_cast<const std::byte*>(data);
         std::less<const std::byte*> less;
-        if(!less(bytes, kota::ledger.placed_first) && less(bytes, kota::ledger.placed_last)) {
+        if(!less(bytes, kotatsu::ledger.placed_first) && less(bytes, kotatsu::ledger.placed_last)) {
             return;
         }
         ::operator delete(data);
@@ -105,7 +105,7 @@ struct std::allocator<kota::Probe> {
 #endif
 };
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -208,7 +208,7 @@ ZEST_CASE(swap_leaves_an_allocation_where_an_inline_buffer_begins) {
     ZEXPECT(ledger.allocations == ledger.deallocations);
 }
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 
 ZEST_CASE(allocation_traded_is_freed_when_its_replacement_fails) {
     Recording recording;
@@ -284,4 +284,4 @@ ZEST_CASE(every_allocation_is_freed) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

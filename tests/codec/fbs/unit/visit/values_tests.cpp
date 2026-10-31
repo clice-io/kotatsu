@@ -1,7 +1,7 @@
 #include "codec/fbs/harness/backend.h"
 #include "codec/harness/visit/values.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -15,4 +15,4 @@ ZEST_CASE_GROUP(protocol) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

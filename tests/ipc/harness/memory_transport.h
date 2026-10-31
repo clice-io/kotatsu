@@ -24,10 +24,10 @@
 #include <utility>
 #include <vector>
 
-#include "kota/ipc/transport.h"
-#include "kota/async/async.h"
+#include "kotatsu/ipc/transport.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// One direction of an in-memory link: the messages written and not yet
 /// read, in order, and whether the writing side has ended it.
@@ -35,7 +35,7 @@ template <typename Message>
 struct Channel {
     std::deque<Message> messages;
     bool ended = false;
-    event changed;
+    async::event changed;
 
     /// Queues `message`, unless the channel has ended.
     void push(Message message) {
@@ -54,7 +54,7 @@ struct Channel {
 
     /// The next message, or nothing once the channel has ended and every
     /// message was read.
-    task<std::optional<Message>> pop() {
+    async::task<std::optional<Message>> pop() {
         while(messages.empty() && !ended) {
             changed.reset();
             co_await changed.wait();
@@ -92,35 +92,35 @@ class MemoryTransport final : public ipc::Transport {
 public:
     explicit MemoryTransport(std::shared_ptr<Link> link) : link(std::move(link)) {}
 
-    task<std::string, ipc::ReadError> read_message() override {
+    async::task<std::string, ipc::ReadError> read_message() override {
         auto delivery = co_await link->inbound.pop();
         if(!delivery) {
-            co_await fail(
+            co_await async::fail(
                 ipc::ReadError{.kind = ipc::ReadError::Kind::Closed, .message = "input ended"});
         }
         if(!*delivery) {
-            co_await fail(std::move(*delivery).error());
+            co_await async::fail(std::move(*delivery).error());
         }
         co_return std::move(**delivery);
     }
 
     /// Fails once the remote made writes fail, or once the output is closed,
     /// as a write to a closed stream does.
-    task<void, ipc::Error> write_message(std::string_view payload) override {
+    async::task<void, ipc::Error> write_message(std::string_view payload) override {
         if(link->writes_fail) {
-            co_await fail(ipc::Error("write failed"));
+            co_await async::fail(ipc::Error("write failed"));
         }
         if(link->outbound.ended) {
-            co_await fail(ipc::Error("output closed"));
+            co_await async::fail(ipc::Error("output closed"));
         }
         link->outbound.push(std::string(payload));
     }
 
     /// Ends what the remote receives; the input stays open. Fails, and ends
     /// nothing, once the remote made it fail.
-    task<void, ipc::Error> close_output() override {
+    async::task<void, ipc::Error> close_output() override {
         if(link->close_output_fails) {
-            co_await fail(ipc::Error("close_output failed"));
+            co_await async::fail(ipc::Error("close_output failed"));
         }
         link->outbound.end();
     }
@@ -192,7 +192,7 @@ public:
 
     /// The next message the peer wrote, waiting for it; nothing once the
     /// peer closed its output and every message was received.
-    task<std::optional<std::string>> receive() {
+    async::task<std::optional<std::string>> receive() {
         return link->outbound.pop();
     }
 
@@ -222,11 +222,11 @@ private:
 /// Passes every message `from`'s peer writes on to `to`'s peer, then the end
 /// of that output as the end of `to`'s input. Two of these, one each way, link
 /// two peers.
-inline task<> forward(Remote& from, Remote& to) {
+inline async::task<> forward(Remote& from, Remote& to) {
     while(auto message = co_await from.receive()) {
         to.send(std::move(*message));
     }
     to.end_input();
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

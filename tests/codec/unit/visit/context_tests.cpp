@@ -1,10 +1,10 @@
 #include <string>
 #include <utility>
 
-#include "kota/zest/zest.h"
-#include "kota/codec/visit/context.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/visit/context.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -92,4 +92,4 @@ ZEST_CASE(scoped_context_fail_without_a_scope_drops_the_error) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

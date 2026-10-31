@@ -5,16 +5,16 @@
 #include <system_error>
 
 #include "sys/harness/env.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/support/small_string.h"
-#include "kota/sys/env.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/sys/env.h"
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
-constexpr std::string_view name = "KOTA_SYS_TEST_VARIABLE";
+constexpr std::string_view name = "KOTATSU_SYS_TEST_VARIABLE";
 
 /// The value of `variable`, if it has one.
 std::optional<std::string> value_of(std::string_view variable) {
@@ -106,7 +106,7 @@ ZEST_CASE(environment_lists_every_variable) {
 #ifdef _WIN32
 ZEST_CASE(get_env_ignores_case_on_windows) {
     test::ScopedEnv variable(std::string(name), "value");
-    ZEXPECT(value_of("kota_sys_test_variable") == "value");
+    ZEXPECT(value_of("kotatsu_sys_test_variable") == "value");
 }
 
 // What cmd keeps the current directory of each drive in.
@@ -126,4 +126,4 @@ ZEST_CASE(set_env_of_ill_formed_utf8_fails_on_windows) {
 
 }  // namespace
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

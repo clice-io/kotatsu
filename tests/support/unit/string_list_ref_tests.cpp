@@ -9,11 +9,11 @@
 #include <type_traits>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/support/small_string.h"
-#include "kota/support/string_list_ref.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/support/string_list_ref.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -116,4 +116,4 @@ ZEST_CASE(ranges_algorithms_take_it) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

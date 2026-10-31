@@ -3,13 +3,13 @@
 #include <utility>
 
 #include "fs/harness/files.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/directory.h"
-#include "kota/fs/file.h"
-#include "kota/fs/mapping.h"
-#include "kota/fs/status.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/mapping.h"
+#include "kotatsu/fs/status.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -116,4 +116,4 @@ ZEST_CASE(map_of_a_closed_file_fails) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

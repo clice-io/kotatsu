@@ -1,4 +1,4 @@
-#include "kota/fs/volume.h"
+#include "kotatsu/fs/volume.h"
 
 #include <utility>
 
@@ -6,7 +6,7 @@
 #include <atomic>
 
 #include "win32.h"
-#include "kota/support/utf16.h"
+#include "kotatsu/support/utf16.h"
 #else
 #include <algorithm>
 #include <format>
@@ -19,7 +19,7 @@
 #endif
 #endif
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 #if !defined(_WIN32) && !defined(__APPLE__)
 
@@ -193,4 +193,4 @@ std::expected<Volume, std::error_code> volume(std::string_view path) {
 #endif
 }
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

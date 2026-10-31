@@ -1,8 +1,8 @@
 #include "support/harness/glob.h"
-#include "kota/zest/zest.h"
-#include "kota/support/glob_pattern.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/glob_pattern.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -149,4 +149,4 @@ ZEST_CASE(limit_of_zero_reads_braces_literally) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

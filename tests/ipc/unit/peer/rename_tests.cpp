@@ -4,15 +4,15 @@
 
 #include "ipc/harness/codec_json.h"
 #include "ipc/harness/peer_fixture.h"
-#include "kota/ipc/peer/json.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/ipc/peer/json.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
 // JSONCodec writes and reads params and results under lsp_config, which
 // names fields in lowerCamelCase.
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -32,9 +32,9 @@ struct StatusNoteParams {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc
 
-namespace kota::ipc::protocol {
+namespace kotatsu::ipc::protocol {
 
 template <>
 struct RequestTraits<RangeAddParams> {
@@ -47,9 +47,9 @@ struct NotificationTraits<StatusNoteParams> {
     constexpr inline static std::string_view method = "test/statusNote";
 };
 
-}  // namespace kota::ipc::protocol
+}  // namespace kotatsu::ipc::protocol
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -90,11 +90,11 @@ ZEST_CASE(notification_params_are_lower_camel) {
 }
 
 ZEST_CASE(sent_params_and_read_result_are_lower_camel) {
-    auto ask = [&]() -> task<RangeAddResult, Error> {
+    auto ask = [&]() -> async::task<RangeAddResult, Error> {
         co_return co_await peer.send_request(RangeAddParams{.first_value = 40, .second_value = 50})
             .or_fail();
     };
-    auto remote_side = [&]() -> task<std::optional<std::string>> {
+    auto remote_side = [&]() -> async::task<std::optional<std::string>> {
         auto request = co_await remote.receive();
         remote.send(R"({"jsonrpc":"2.0","id":1,"result":{"computedSum":99}})");
         remote.end_input();
@@ -116,4 +116,4 @@ ZEST_CASE(sent_params_and_read_result_are_lower_camel) {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

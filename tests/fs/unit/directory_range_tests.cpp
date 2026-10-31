@@ -4,10 +4,10 @@
 #include <system_error>
 #include <utility>
 
-#include "kota/zest/zest.h"
-#include "kota/fs/directory.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/directory.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -53,4 +53,4 @@ ZEST_CASE(entry_status_of_one_made_rather_than_listed_fails) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

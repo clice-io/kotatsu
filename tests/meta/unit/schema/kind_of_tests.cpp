@@ -10,14 +10,14 @@
 
 #include "fixtures/enums.h"
 #include "fixtures/structs.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/type_kind.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/type_kind.h"
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 namespace {
 
-namespace fx = ::kota::test;
+namespace fx = ::kotatsu::test;
 
 ZEST_SUITE(meta_schema_kind_of) {
 
@@ -61,4 +61,4 @@ ZEST_CASE(compounds) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

@@ -2,7 +2,7 @@
 #include <string>
 
 #include "os.h"
-#include "kota/sys/info.h"
+#include "kotatsu/sys/info.h"
 
 #ifndef _WIN32
 #include <sys/utsname.h>
@@ -12,7 +12,7 @@
 #include <sys/sysctl.h>
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 OS os() {
 #ifdef _WIN32
@@ -53,4 +53,4 @@ OS os() {
 #endif
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

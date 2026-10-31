@@ -4,10 +4,10 @@
 #include <type_traits>
 #include <utility>
 
-#include "kota/zest/zest.h"
-#include "kota/support/functional.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/functional.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -240,4 +240,4 @@ ZEST_CASE(mem_fn_names_the_class_and_signature) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

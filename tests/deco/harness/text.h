@@ -5,9 +5,9 @@
 #include <string>
 #include <string_view>
 
-#include "kota/deco/deco.h"
+#include "kotatsu/deco/deco.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Restores deco's global config, and the renderer it makes, when it goes out of scope.
 struct ScopedDecoConfig {
@@ -73,4 +73,4 @@ inline deco::cli::text::Renderer tagged_renderer() {
     return renderer;
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

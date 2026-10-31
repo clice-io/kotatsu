@@ -3,13 +3,13 @@
 #include <vector>
 
 #include "support/harness/throws.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/support/config.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/config.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace {
 
@@ -18,14 +18,14 @@ using namespace std::literals;
 ZEST_SUITE(zest_async, LoopFixture) {
 
 ZEST_CASE(value_comes_back_as_an_outcome) {
-    auto one = []() -> task<int> {
+    auto one = []() -> async::task<int> {
         co_return 1;
     };
     auto kept = one();
 
     auto [owned, borrowed] = run(one(), kept);
-    ZEXPECT(type_eq<decltype(owned), outcome<int, void, cancellation>>());
-    ZEXPECT(type_eq<decltype(borrowed), outcome<int, void, cancellation>>());
+    ZEXPECT(type_eq<decltype(owned), outcome<int, void, async::cancellation>>());
+    ZEXPECT(type_eq<decltype(borrowed), outcome<int, void, async::cancellation>>());
     ZASSERT(owned.has_value());
     ZEXPECT(*owned == 1);
     ZASSERT(borrowed.has_value());
@@ -33,24 +33,24 @@ ZEST_CASE(value_comes_back_as_an_outcome) {
 }
 
 ZEST_CASE(error_comes_back_as_an_outcome) {
-    auto refused = []() -> task<int, error> {
-        co_await fail(error::connection_refused);
+    auto refused = []() -> async::task<int, async::error> {
+        co_await async::fail(async::error::connection_refused);
     };
-    auto aborted = []() -> task<void, error> {
-        co_await fail(error::operation_aborted);
+    auto aborted = []() -> async::task<void, async::error> {
+        co_await async::fail(async::error::operation_aborted);
     };
     auto kept = aborted();
 
     auto [owned, borrowed] = run(refused(), kept);
     ZASSERT(owned.has_error());
-    ZEXPECT(owned.error() == error::connection_refused);
+    ZEXPECT(owned.error() == async::error::connection_refused);
     ZASSERT(borrowed.has_error());
-    ZEXPECT(borrowed.error() == error::operation_aborted);
+    ZEXPECT(borrowed.error() == async::error::operation_aborted);
 }
 
 ZEST_CASE(cancellation_comes_back_as_an_outcome) {
-    auto quit = []() -> task<int> {
-        co_await cancel();
+    auto quit = []() -> async::task<int> {
+        co_await async::cancel();
         co_return 1;
     };
 
@@ -60,12 +60,12 @@ ZEST_CASE(cancellation_comes_back_as_an_outcome) {
 
 // The gate is never set, so only the test's cancel() can end the kept task.
 ZEST_CASE(kept_task_can_be_cancelled_while_it_runs) {
-    event gate;
-    auto waiter = [&]() -> task<> {
+    async::event gate;
+    auto waiter = [&]() -> async::task<> {
         co_await gate.wait();
     };
     auto kept = waiter();
-    auto canceller = [&]() -> task<> {
+    auto canceller = [&]() -> async::task<> {
         kept.cancel();
         co_return;
     };
@@ -78,7 +78,7 @@ ZEST_CASE(kept_task_can_be_cancelled_while_it_runs) {
 
 ZEST_CASE(tasks_start_in_the_order_given) {
     std::vector<int> started;
-    auto step = [&](int id) -> task<> {
+    auto step = [&](int id) -> async::task<> {
         started.push_back(id);
         co_return;
     };
@@ -91,9 +91,9 @@ ZEST_CASE(tasks_start_in_the_order_given) {
 // The timer is armed for an hour, so only the last task finishing can end
 // run().
 ZEST_CASE(loop_stops_when_the_last_task_finishes_with_a_timer_armed) {
-    auto armed = timer::create(loop);
+    auto armed = async::timer::create(loop);
     ZASSERT(!armed.start(1h));
-    auto quick = []() -> task<int> {
+    auto quick = []() -> async::task<int> {
         co_return 1;
     };
 
@@ -102,17 +102,17 @@ ZEST_CASE(loop_stops_when_the_last_task_finishes_with_a_timer_armed) {
     ZEXPECT(*result == 1);
 }
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 
 // run() lets every other task finish before it fails with what was thrown.
 ZEST_CASE(run_of_a_throwing_task_fails) {
     bool finished = false;
-    auto thrower = []() -> task<> {
+    auto thrower = []() -> async::task<> {
         throw std::runtime_error("boom");
         co_return;
     };
-    auto later = [&]() -> task<> {
-        co_await yield(loop);
+    auto later = [&]() -> async::task<> {
+        co_await async::yield(loop);
         finished = true;
     };
 
@@ -120,10 +120,10 @@ ZEST_CASE(run_of_a_throwing_task_fails) {
     ZEXPECT(finished);
 }
 
-#endif  // KOTA_ENABLE_EXCEPTIONS
+#endif  // KOTATSU_ENABLE_EXCEPTIONS
 
 };  // ZEST_SUITE(zest_async)
 
 }  // namespace
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest

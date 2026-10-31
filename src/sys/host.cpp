@@ -3,11 +3,11 @@
 #include <string>
 
 #include "os.h"
-#include "kota/support/small_string.h"
-#include "kota/sys/info.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/sys/info.h"
 
 #ifdef _WIN32
-#include "kota/support/utf16.h"
+#include "kotatsu/support/utf16.h"
 #else
 #include <ctime>
 #include <sys/resource.h>
@@ -18,7 +18,7 @@
 #include <sys/sysctl.h>
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 std::error_code hostname(buffer_ref out) {
 #ifdef _WIN32
@@ -182,4 +182,4 @@ std::error_code set_thread_priority(Priority priority) {
 #endif
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

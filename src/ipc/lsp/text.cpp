@@ -1,4 +1,4 @@
-#include "kota/ipc/lsp/text.h"
+#include "kotatsu/ipc/lsp/text.h"
 
 #include <algorithm>
 #include <cassert>
@@ -6,7 +6,7 @@
 #include <utility>
 
 #include "locate.h"
-#include "kota/support/utf8.h"
+#include "kotatsu/support/utf8.h"
 
 namespace {
 
@@ -21,7 +21,7 @@ constexpr bool is_continuation(unsigned char byte) {
 std::pair<std::uint32_t, std::uint32_t> next_codepoint_sizes(std::string_view text,
                                                              std::size_t index) {
     assert(index < text.size() && "index out of range");
-    auto sequence = kota::decode_utf8(text.substr(index));
+    auto sequence = kotatsu::decode_utf8(text.substr(index));
     if(!sequence.valid) [[unlikely]] {
         return {1, 1};
     }
@@ -31,7 +31,7 @@ std::pair<std::uint32_t, std::uint32_t> next_codepoint_sizes(std::string_view te
 
 }  // namespace
 
-namespace kota::ipc::lsp {
+namespace kotatsu::ipc::lsp {
 
 detail::Located detail::locate(std::string_view text,
                                std::uint32_t character,
@@ -137,4 +137,4 @@ std::optional<std::uint32_t> encoded_offset(std::string_view text,
     return found.offset;
 }
 
-}  // namespace kota::ipc::lsp
+}  // namespace kotatsu::ipc::lsp

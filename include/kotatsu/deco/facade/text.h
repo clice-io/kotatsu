@@ -1,0 +1,118 @@
+#pragma once
+
+#include <functional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "config.h"
+
+namespace kotatsu::deco::cli::text {
+
+using PositionStyle = ::kotatsu::deco::config::PositionStyle;
+using UsageStyle = ::kotatsu::deco::config::UsageStyle;
+using SubCommandStyle = ::kotatsu::deco::config::SubCommandStyle;
+using TextStyle = ::kotatsu::deco::config::TextStyle;
+using CompatibleRendererConfig = ::kotatsu::deco::config::CompatibleRendererConfig;
+using ModernRendererConfig = ::kotatsu::deco::config::ModernRendererConfig;
+
+struct Diagnostic {
+    std::string message;
+    std::span<const std::string> argv{};
+    unsigned begin = 0;
+    unsigned end = 0;
+    bool positioned = false;
+};
+
+struct UsageEntry {
+    std::string usage;
+    std::string help;
+    /// Whether every occurrence of the option counts, which its help then says.
+    bool repeatable = false;
+};
+
+struct UsageGroup {
+    std::string title;
+    bool exclusive = false;
+    bool is_default = false;
+    std::vector<UsageEntry> entries;
+};
+
+struct UsageDocument {
+    std::string overview;
+    std::vector<UsageGroup> groups;
+};
+
+struct SubCommandEntry {
+    std::string name;
+    std::string description;
+    std::string command;
+};
+
+struct SubCommandDocument {
+    std::string overview;
+    std::string usage_line;
+    bool has_usage_line = false;
+    std::vector<SubCommandEntry> entries;
+};
+
+auto looks_like_rendered_diagnostic(std::string_view text) -> bool;
+
+auto diagnostic_at(std::span<const std::string> argv,
+                   unsigned begin,
+                   unsigned end,
+                   std::string message) -> Diagnostic;
+
+auto diagnostic_message(std::string message) -> Diagnostic;
+
+struct Renderer {
+    using usage_renderer_t =
+        std::function<std::string(const UsageDocument&, bool, const TextStyle&)>;
+    using subcommand_renderer_t =
+        std::function<std::string(const SubCommandDocument&, const TextStyle&)>;
+    using diagnostic_renderer_t = std::function<std::string(const Diagnostic&, const TextStyle&)>;
+
+    TextStyle style{};
+    usage_renderer_t usage;
+    subcommand_renderer_t subcommand;
+    diagnostic_renderer_t diagnostic;
+
+    Renderer();
+};
+
+struct CompatibleRenderer : Renderer {
+    CompatibleRenderer();
+    explicit CompatibleRenderer(CompatibleRendererConfig config);
+};
+
+struct ModernRenderer : Renderer {
+    ModernRenderer();
+    explicit ModernRenderer(ModernRendererConfig config);
+};
+
+auto explicit_default_renderer() -> const Renderer*;
+
+auto default_renderer() -> const Renderer&;
+
+void set_default_renderer(Renderer renderer);
+void clear_default_renderer();
+
+auto resolve_renderer(const Renderer* renderer) -> const Renderer&;
+
+auto render_usage(const UsageDocument& document,
+                  bool include_help = true,
+                  const Renderer* renderer = nullptr) -> std::string;
+
+/// One line of a compatible usage listing: `entry.usage`, then its help (`style.default_help`
+/// when it has none), followed by `style.repeatable_suffix` when `entry.repeatable`, at the
+/// help column, on a line of its own when the usage reaches it.
+auto render_usage_entry(const UsageEntry& entry, const UsageStyle& style) -> std::string;
+
+auto render_subcommands(const SubCommandDocument& document, const Renderer* renderer = nullptr)
+    -> std::string;
+
+auto render_diagnostic(const Diagnostic& diagnostic, const Renderer* renderer = nullptr)
+    -> std::string;
+
+}  // namespace kotatsu::deco::cli::text

@@ -2,13 +2,13 @@
 #include <print>
 #include <string>
 
-#include "kota/http/http.h"
-#include "kota/async/async.h"
-#include "kota/codec/dyn/dyn.h"
-#include "kota/codec/json/json.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/async/async.h"
+#include "kotatsu/codec/dyn/dyn.h"
+#include "kotatsu/codec/json/json.h"
 
 using namespace std::chrono_literals;
-using namespace kota;
+using namespace kotatsu;
 
 namespace {
 
@@ -17,7 +17,7 @@ struct response_request {
     std::string input;
 };
 
-task<void, http::error> request_openai(event_loop& loop) {
+async::task<void, http::error> request_openai(async::event_loop& loop) {
     http::client client;
     client.timeout(60s);
     auto api = client.on(loop);
@@ -41,7 +41,7 @@ task<void, http::error> request_openai(event_loop& loop) {
 }  // namespace
 
 int main() {
-    event_loop loop;
+    async::event_loop loop;
     auto root = request_openai(loop);
     loop.schedule(root);
     loop.run();

@@ -9,14 +9,14 @@
 
 #include "async/harness/os.h"
 #include "ipc/harness/memory_transport.h"
-#include "kota/ipc/recording_transport.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
-#include "kota/codec/json/json.h"
+#include "kotatsu/ipc/recording_transport.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
+#include "kotatsu/codec/json/json.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -65,7 +65,7 @@ ZEST_CASE(read_messages_are_recorded_and_passed_on) {
         remote.send(message);
     }
     remote.end_input();
-    auto read_all = [&]() -> task<std::vector<std::string>> {
+    auto read_all = [&]() -> async::task<std::vector<std::string>> {
         std::vector<std::string> messages;
         while(auto message = co_await transport.read_message()) {
             messages.push_back(std::move(*message));
@@ -143,4 +143,4 @@ ZEST_CASE(write_failure_reaches_the_caller) {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

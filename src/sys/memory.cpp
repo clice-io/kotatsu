@@ -6,9 +6,9 @@
 
 #include "os.h"
 #include "proc.h"
-#include "kota/support/small_string.h"
-#include "kota/sys/detail/memory_model.h"
-#include "kota/sys/info.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/sys/detail/memory_model.h"
+#include "kotatsu/sys/info.h"
 
 #ifdef _WIN32
 // After windows.h, whose types it uses.
@@ -23,10 +23,10 @@
 #include <mach/mach_time.h>
 #include <sys/sysctl.h>
 #elif !defined(_WIN32)
-#include "kota/fs/directory.h"
+#include "kotatsu/fs/directory.h"
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -350,4 +350,4 @@ std::error_code set_oom_score_adjustment([[maybe_unused]] int value, [[maybe_unu
 #endif
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

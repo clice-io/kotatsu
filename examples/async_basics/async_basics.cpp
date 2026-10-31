@@ -7,9 +7,9 @@
 #include <print>
 #include <string>
 
-#include "kota/async/async.h"
+#include "kotatsu/async/async.h"
 
-using namespace kota;
+using namespace kotatsu::async;
 using namespace std::chrono_literals;
 
 // 1. Basic tasks — creation, chaining, and run()

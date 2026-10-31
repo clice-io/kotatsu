@@ -1,10 +1,10 @@
 #include <print>
 #include <string>
 
-#include "kota/http/http.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/async/async.h"
 
-using namespace kota;
+using namespace kotatsu;
 
 namespace {
 
@@ -12,7 +12,7 @@ void print_error(std::string_view label, const http::error& err) {
     std::println("{}: {}", label, http::message(err));
 }
 
-task<> run_demo(event_loop& loop) {
+async::task<> run_demo(async::event_loop& loop) {
     http::client client;
 
     std::println("1) let httpbin set two cookies while automatic recording is enabled");
@@ -69,7 +69,7 @@ task<> run_demo(event_loop& loop) {
 }  // namespace
 
 int main() {
-    event_loop loop;
+    async::event_loop loop;
     auto root = run_demo(loop);
     loop.schedule(root);
     loop.run();

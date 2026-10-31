@@ -3,11 +3,11 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/http/detail/response.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/http/detail/response.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
@@ -82,4 +82,4 @@ ZEST_CASE(header_value_of_a_missing_header_is_empty) {
 
 }  // namespace
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

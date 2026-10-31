@@ -1,5 +1,5 @@
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/zest.h"
 
 int main(int argc, char** argv) {
-    return kota::zest::run_cli(argc, argv);
+    return kotatsu::zest::run_cli(argc, argv);
 }

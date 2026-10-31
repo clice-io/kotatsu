@@ -1,11 +1,11 @@
-#include "kota/http/detail/bound_client.h"
+#include "kotatsu/http/detail/bound_client.h"
 
 #include <string>
 #include <utility>
 
-namespace kota::http {
+namespace kotatsu::http {
 
-bound_client::bound_client(client owner, event_loop& loop) noexcept :
+bound_client::bound_client(client owner, async::event_loop& loop) noexcept :
     owner(std::move(owner)), dispatch_loop(&loop) {}
 
 http::request bound_client::request(std::string method, std::string url) const noexcept {
@@ -36,4 +36,4 @@ http::request bound_client::head(std::string url) const noexcept {
     return request(std::string(http::method::head), std::move(url));
 }
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

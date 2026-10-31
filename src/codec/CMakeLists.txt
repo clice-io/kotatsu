@@ -1,34 +1,34 @@
-add_library(kota_codec INTERFACE)
-add_library(kota::codec ALIAS kota_codec)
+add_library(kotatsu_codec INTERFACE)
+add_library(kotatsu::codec ALIAS kotatsu_codec)
 
-target_link_libraries(kota_codec INTERFACE
-    kota::meta
+target_link_libraries(kotatsu_codec INTERFACE
+    kotatsu::meta
 )
 
-# Declares kota::codec::<backend>: the codec headers plus the backend's
-# third-party dependency (fetched through kota_add_git_dependency, whose
-# OPTIONS pin the dependency's build knobs), and adds it to kota::codec.
-function(kota_add_codec_backend backend)
+# Declares kotatsu::codec::<backend>: the codec headers plus the backend's
+# third-party dependency (fetched through kotatsu_add_git_dependency, whose
+# OPTIONS pin the dependency's build knobs), and adds it to kotatsu::codec.
+function(kotatsu_add_codec_backend backend)
     cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "LINK;DEFINITIONS")
 
-    add_library(kota_codec_${backend} INTERFACE)
-    add_library(kota::codec::${backend} ALIAS kota_codec_${backend})
+    add_library(kotatsu_codec_${backend} INTERFACE)
+    add_library(kotatsu::codec::${backend} ALIAS kotatsu_codec_${backend})
 
-    target_link_libraries(kota_codec_${backend} INTERFACE
-        kota::meta
+    target_link_libraries(kotatsu_codec_${backend} INTERFACE
+        kotatsu::meta
         ${ARG_LINK}
     )
     if(ARG_DEFINITIONS)
-        target_compile_definitions(kota_codec_${backend} INTERFACE ${ARG_DEFINITIONS})
+        target_compile_definitions(kotatsu_codec_${backend} INTERFACE ${ARG_DEFINITIONS})
     endif()
 
-    target_link_libraries(kota_codec INTERFACE
-        kota::codec::${backend}
+    target_link_libraries(kotatsu_codec INTERFACE
+        kotatsu::codec::${backend}
     )
 endfunction()
 
-if(KOTA_CODEC_ENABLE_SIMDJSON)
-    kota_add_git_dependency(
+if(KOTATSU_CODEC_ENABLE_SIMDJSON)
+    kotatsu_add_git_dependency(
         simdjson
         GIT_REPOSITORY https://github.com/simdjson/simdjson.git
         GIT_TAG v4.2.4
@@ -41,7 +41,7 @@ if(KOTA_CODEC_ENABLE_SIMDJSON)
             # Behavior knobs, locked so a parent or toolchain cache cannot
             # change them.
             SIMDJSON_ENABLE_THREADS ON
-            SIMDJSON_EXCEPTIONS ${KOTA_ENABLE_EXCEPTIONS}
+            SIMDJSON_EXCEPTIONS ${KOTATSU_ENABLE_EXCEPTIONS}
             SIMDJSON_DISABLE_DEPRECATED_API OFF
             SIMDJSON_MINUS_ZERO_AS_FLOAT OFF
             # Development and sanitizer toggles.
@@ -55,11 +55,11 @@ if(KOTA_CODEC_ENABLE_SIMDJSON)
             SIMDJSON_VERBOSE_LOGGING OFF
             SIMDJSON_SKIPUTF8VALIDATION OFF
     )
-    kota_add_codec_backend(json LINK simdjson::simdjson)
+    kotatsu_add_codec_backend(json LINK simdjson::simdjson)
 endif()
 
-if(KOTA_CODEC_ENABLE_FLATBUFFERS)
-    kota_add_git_dependency(
+if(KOTATSU_CODEC_ENABLE_FLATBUFFERS)
+    kotatsu_add_git_dependency(
         flatbuffers
         GIT_REPOSITORY https://github.com/google/flatbuffers.git
         GIT_TAG v25.2.10
@@ -74,21 +74,21 @@ if(KOTA_CODEC_ENABLE_FLATBUFFERS)
             FLATBUFFERS_BUILD_LEGACY OFF
             FLATBUFFERS_ENABLE_PCH OFF
     )
-    kota_add_codec_backend(flatbuffers LINK flatbuffers)
+    kotatsu_add_codec_backend(flatbuffers LINK flatbuffers)
 endif()
 
-if(KOTA_CODEC_ENABLE_TOML)
+if(KOTATSU_CODEC_ENABLE_TOML)
     # toml++ v3.4.0 builds nothing but its header-only target when it is not
     # the top-level project, so it takes no options.
-    kota_add_git_dependency(
+    kotatsu_add_git_dependency(
         tomlplusplus
         GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
         GIT_TAG v3.4.0
     )
     # toml++ is pinned to no-exceptions mode unconditionally (independent of
-    # KOTA_ENABLE_EXCEPTIONS); kota/codec/toml/type.h enforces the same pin for
-    # any build system that does not pass this definition. See PR #168.
-    kota_add_codec_backend(toml
+    # KOTATSU_ENABLE_EXCEPTIONS); kotatsu/codec/toml/type.h enforces the same
+    # pin for any build system that does not pass this definition. See PR #168.
+    kotatsu_add_codec_backend(toml
         LINK tomlplusplus::tomlplusplus
         DEFINITIONS TOML_EXCEPTIONS=0
     )

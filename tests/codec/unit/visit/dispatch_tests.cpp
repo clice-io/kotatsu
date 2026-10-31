@@ -2,13 +2,13 @@
 #include <string>
 #include <variant>
 
-#include "kota/zest/zest.h"
-#include "kota/support/naming.h"
-#include "kota/meta/annotation.h"
-#include "kota/codec/visit/config.h"
-#include "kota/codec/visit/dispatch.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/naming.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/codec/visit/config.h"
+#include "kotatsu/codec/visit/dispatch.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -51,4 +51,4 @@ ZEST_CASE(field_named_by_name_alias_or_rename) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

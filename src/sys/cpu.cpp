@@ -5,14 +5,14 @@
 
 #include "os.h"
 #include "proc.h"
-#include "kota/sys/detail/memory_model.h"
-#include "kota/sys/info.h"
+#include "kotatsu/sys/detail/memory_model.h"
+#include "kotatsu/sys/info.h"
 
 #ifdef __linux__
 #include <sched.h>
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 unsigned parallelism() {
 #ifdef _WIN32
@@ -98,4 +98,4 @@ std::size_t page_size() {
 #endif
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

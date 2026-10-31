@@ -1,4 +1,4 @@
-#include "kota/ipc/codec/bincode.h"
+#include "kotatsu/ipc/codec/bincode.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -10,7 +10,7 @@
 #include <utility>
 #include <variant>
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -154,4 +154,4 @@ Result<std::string>
     return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

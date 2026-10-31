@@ -5,10 +5,10 @@
 #include <string_view>
 #include <utility>
 
-#include "kota/deco/option.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/deco/option.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::option {
+namespace kotatsu::option {
 
 namespace {
 
@@ -285,4 +285,4 @@ ZEST_CASE(print_can_end_the_line) {
 
 }  // namespace
 
-}  // namespace kota::option
+}  // namespace kotatsu::option

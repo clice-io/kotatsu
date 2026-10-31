@@ -10,10 +10,10 @@
 #include <system_error>
 #include <vector>
 
-#include "kota/sys/env.h"
-#include "kota/sys/spawn.h"
+#include "kotatsu/sys/env.h"
+#include "kotatsu/sys/spawn.h"
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 #ifdef _WIN32
 /// SIGKILL, which Windows's C runtime does not name: kill and kill_tree take
@@ -44,4 +44,4 @@ std::expected<std::string, std::error_code>
     child_program(const SpawnOptions& options,
                   const std::optional<std::vector<EnvVar>>& environment);
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

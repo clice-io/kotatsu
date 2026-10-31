@@ -1,4 +1,4 @@
-#include "kota/async/io/loop.h"
+#include "kotatsu/async/io/loop.h"
 
 #include <atomic>
 #include <cassert>
@@ -8,13 +8,13 @@
 #include <vector>
 
 #include "../libuv.h"
-#include "kota/support/functional.h"
-#include "kota/sys/detail/signals.h"
-#include "kota/async/runtime/node.h"
-#include "kota/async/runtime/sync.h"
-#include "kota/async/runtime/task.h"
+#include "kotatsu/support/functional.h"
+#include "kotatsu/sys/detail/signals.h"
+#include "kotatsu/async/runtime/node.h"
+#include "kotatsu/async/runtime/sync.h"
+#include "kotatsu/async/runtime/task.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 struct relay::Self {
     uv_async_t async = {};
@@ -353,4 +353,4 @@ void event_loop::stop() {
     ::uv_stop(&self->loop);
 }
 
-}  // namespace kota
+}  // namespace kotatsu::async

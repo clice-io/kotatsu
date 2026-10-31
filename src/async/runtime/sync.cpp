@@ -1,11 +1,11 @@
-#include "kota/async/runtime/sync.h"
+#include "kotatsu/async/runtime/sync.h"
 
 #include <cassert>
 #include <utility>
 
-#include "kota/async/io/loop.h"
+#include "kotatsu/async/io/loop.h"
 
-namespace kota {
+namespace kotatsu::async {
 
 void sync_primitive::insert(wait_node& waiter) noexcept {
     assert(waiter.queue == nullptr && "waiter queued twice");
@@ -129,4 +129,4 @@ void wait_node::resume() {
     resume_and_drain(task.handle());
 }
 
-}  // namespace kota
+}  // namespace kotatsu::async

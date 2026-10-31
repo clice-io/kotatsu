@@ -5,13 +5,13 @@
 #include <utility>
 
 #include "fs/harness/files.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/path.h"
-#include "kota/fs/resolve.h"
-#include "kota/fs/status.h"
-#include "kota/fs/temp.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/fs/resolve.h"
+#include "kotatsu/fs/status.h"
+#include "kotatsu/fs/temp.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -227,4 +227,4 @@ ZEST_CASE(temp_file_kept_lets_go_of_its_file_when_it_takes_another) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

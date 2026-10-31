@@ -8,15 +8,15 @@
 #include <variant>
 #include <vector>
 
-#include "kota/ipc/codec.h"
-#include "kota/ipc/codec/json.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/codec/bincode/bincode.h"
-#include "kota/codec/dyn/dyn.h"
-#include "kota/ipc/lsp/protocol.h"
+#include "kotatsu/ipc/codec.h"
+#include "kotatsu/ipc/codec/json.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/bincode/bincode.h"
+#include "kotatsu/codec/dyn/dyn.h"
+#include "kotatsu/ipc/lsp/protocol.h"
 
-namespace kota::ipc::lsp {
+namespace kotatsu::ipc::lsp {
 namespace {
 
 using codec::json::from_string;
@@ -387,4 +387,4 @@ ZEST_CASE(nullable_members_compare) {
 };  // ZEST_SUITE(ipc_lsp_protocol_model)
 
 }  // namespace
-}  // namespace kota::ipc::lsp
+}  // namespace kotatsu::ipc::lsp

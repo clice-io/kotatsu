@@ -29,9 +29,9 @@
 #include <unistd.h>
 #include <vector>
 
-#include "kota/fs/directory.h"
-#include "kota/fs/file.h"
-#include "kota/fs/status.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/status.h"
 
 // The numbers the library takes where the C library's headers lack them.
 #ifndef SYS_copy_file_range
@@ -102,12 +102,12 @@ bool denied(long result, int expected) {
 
 std::string read(const std::string& path) {
     std::string text;
-    check(!kota::fs::read_file(text, path), std::format("read {}", path));
+    check(!kotatsu::fs::read_file(text, path), std::format("read {}", path));
     return text;
 }
 
 void write(const std::string& path, std::string_view text) {
-    check(!kota::fs::write_file(path, text), std::format("write {}", path));
+    check(!kotatsu::fs::write_file(path, text), std::format("write {}", path));
 }
 
 /// Text of `size` bytes that is no repetition of a short run.
@@ -127,11 +127,11 @@ void copy_reads_and_writes(const std::string& root) {
     auto from = root + "/copied";
     auto to = root + "/copy";
     write(from, text);
-    check(!kota::fs::set_permissions(from, 0640), "set_permissions");
-    check(!kota::fs::set_times(from, {.mtime = past}), "set_times");
-    check(!kota::fs::copy_file(from, to), "copy_file");
+    check(!kotatsu::fs::set_permissions(from, 0640), "set_permissions");
+    check(!kotatsu::fs::set_times(from, {.mtime = past}), "set_times");
+    check(!kotatsu::fs::copy_file(from, to), "copy_file");
     check(read(to) == text, "copy_file copies the bytes");
-    auto copied = kota::fs::status(to);
+    auto copied = kotatsu::fs::status(to);
     if(check(copied.has_value(), "status of the copy")) {
         check(copied->permissions == 0640, "copy_file takes the permissions");
         check(copied->mtime == past, "copy_file takes the mtime");
@@ -152,10 +152,10 @@ void copy_fails_with_a_write(const std::string& root) {
     rlimit lowered = original;
     lowered.rlim_cur = limit;
     check(::setrlimit(RLIMIT_FSIZE, &lowered) == 0, "setrlimit");
-    auto error = kota::fs::copy_file(from, to);
+    auto error = kotatsu::fs::copy_file(from, to);
     check(::setrlimit(RLIMIT_FSIZE, &original) == 0, "setrlimit back");
     check(error == std::errc::file_too_large, "copy_file past the limit fails");
-    auto cut = kota::fs::status(to);
+    auto cut = kotatsu::fs::status(to);
     if(check(cut.has_value(), "status of the cut copy")) {
         check(cut->size == limit, "copy_file leaves what it wrote");
     }
@@ -168,25 +168,26 @@ void rename_links(const std::string& root) {
     auto taken = root + "/taken";
     write(from, "new");
     write(taken, "old");
-    check(!kota::fs::rename_noreplace(from, to), "rename_noreplace of a file");
-    check(kota::fs::try_exists(from) == false, "rename_noreplace takes the old name");
+    check(!kotatsu::fs::rename_noreplace(from, to), "rename_noreplace of a file");
+    check(kotatsu::fs::try_exists(from) == false, "rename_noreplace takes the old name");
     check(read(to) == "new", "rename_noreplace gives the new name");
 
-    check(kota::fs::rename_noreplace(to, taken) == std::errc::file_exists,
+    check(kotatsu::fs::rename_noreplace(to, taken) == std::errc::file_exists,
           "rename_noreplace over a file fails");
     check(read(to) == "new", "rename_noreplace over a file keeps the renamed");
     check(read(taken) == "old", "rename_noreplace over a file keeps what was there");
 
-    check(!kota::fs::create_symlink("to", root + "/link"), "create_symlink");
-    check(!kota::fs::rename_noreplace(root + "/link", root + "/moved"),
+    check(!kotatsu::fs::create_symlink("to", root + "/link"), "create_symlink");
+    check(!kotatsu::fs::rename_noreplace(root + "/link", root + "/moved"),
           "rename_noreplace of a symlink");
-    check(kota::fs::is_symlink(root + "/moved"), "rename_noreplace renames a symlink itself");
+    check(kotatsu::fs::is_symlink(root + "/moved"), "rename_noreplace renames a symlink itself");
 
     auto directory = root + "/directory";
-    check(kota::fs::create_directory(directory) == true, "create_directory");
-    check(kota::fs::rename_noreplace(directory, root + "/elsewhere") == std::errc::invalid_argument,
+    check(kotatsu::fs::create_directory(directory) == true, "create_directory");
+    check(kotatsu::fs::rename_noreplace(directory, root + "/elsewhere") ==
+              std::errc::invalid_argument,
           "rename_noreplace of a directory fails as the system refused it");
-    check(kota::fs::is_directory(directory), "rename_noreplace of a directory keeps it");
+    check(kotatsu::fs::is_directory(directory), "rename_noreplace of a directory keeps it");
 }
 
 /// Runs `rename(i)` on `renamers` threads at once: what each returned.
@@ -219,8 +220,8 @@ void rename_races(const std::string& root) {
         for(std::size_t i = 0; i < renamers; ++i) {
             write(own(i), std::to_string(i));
         }
-        auto to_one =
-            race<renamers>([&](std::size_t i) { return kota::fs::rename_noreplace(own(i), one); });
+        auto to_one = race<renamers>(
+            [&](std::size_t i) { return kotatsu::fs::rename_noreplace(own(i), one); });
         check(std::ranges::count(to_one, std::error_code()) == 1,
               std::format("round {}: one rename to one name succeeds", round));
         check(std::ranges::count(to_one, std::make_error_code(std::errc::file_exists)) ==
@@ -231,15 +232,15 @@ void rename_races(const std::string& root) {
         // its old name goes all succeed.
         auto text = read(one);
         auto to_own = race<renamers>(
-            [&](std::size_t i) { return kota::fs::rename_noreplace(one, own(i) + "-moved"); });
-        check(kota::fs::try_exists(one) == false,
+            [&](std::size_t i) { return kotatsu::fs::rename_noreplace(one, own(i) + "-moved"); });
+        check(kotatsu::fs::try_exists(one) == false,
               std::format("round {}: the one file loses its old name", round));
         for(std::size_t i = 0; i < renamers; ++i) {
             auto what = std::format("round {}, renamer {}", round, i);
             if(to_own[i]) {
                 check(to_own[i] == std::errc::no_such_file_or_directory,
                       std::format("{}: a rename that lost finds the file gone", what));
-                check(kota::fs::try_exists(own(i) + "-moved") == false,
+                check(kotatsu::fs::try_exists(own(i) + "-moved") == false,
                       std::format("{}: a rename that lost names nothing", what));
             } else {
                 check(read(own(i) + "-moved") == text,
@@ -256,17 +257,17 @@ void rename_races(const std::string& root) {
 void rename_without_renameat2(const std::string& root) {
     auto directory = root + "/directory";
     check(deny_renameat2(), "install the second filter");
-    check(kota::fs::rename_noreplace(directory, root + "/elsewhere") ==
+    check(kotatsu::fs::rename_noreplace(directory, root + "/elsewhere") ==
               std::errc::function_not_supported,
           "rename_noreplace of a directory fails as the old kernel refused it");
-    check(kota::fs::is_directory(directory), "rename_noreplace of a directory keeps it");
+    check(kotatsu::fs::is_directory(directory), "rename_noreplace of a directory keeps it");
 }
 
 }  // namespace
 
 int main() {
     const char* temp = std::getenv("TMPDIR");
-    auto root = std::format("{}/kota-XXXXXX", temp != nullptr && *temp != '\0' ? temp : "/tmp");
+    auto root = std::format("{}/kotatsu-XXXXXX", temp != nullptr && *temp != '\0' ? temp : "/tmp");
     if(::mkdtemp(root.data()) == nullptr) {
         std::perror("mkdtemp");
         return 1;
@@ -288,6 +289,6 @@ int main() {
         rename_races(root);
         rename_without_renameat2(root);
     }
-    check(kota::fs::remove_all(root).has_value(), std::format("remove_all {}", root));
+    check(kotatsu::fs::remove_all(root).has_value(), std::format("remove_all {}", root));
     return failures == 0 ? 0 : 1;
 }

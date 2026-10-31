@@ -1,9 +1,9 @@
 #include <string>
 
-#include "kota/zest/zest.h"
-#include "kota/support/naming.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/naming.h"
 
-namespace kota::naming {
+namespace kotatsu::naming {
 
 namespace {
 
@@ -126,4 +126,4 @@ ZEST_CASE(renames_in_constant_evaluation) {
 
 }  // namespace
 
-}  // namespace kota::naming
+}  // namespace kotatsu::naming

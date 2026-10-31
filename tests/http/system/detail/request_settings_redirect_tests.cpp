@@ -2,13 +2,13 @@
 #include <string>
 
 #include "http/harness/server.h"
-#include "kota/http/http.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
@@ -110,4 +110,4 @@ ZEST_CASE(referer_false_leaves_it_out) {
 
 }  // namespace
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

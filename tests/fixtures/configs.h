@@ -3,9 +3,9 @@
 // Config fixtures that meta reads: one field_rename per built-in policy, plus
 // identity.
 
-#include "kota/support/naming.h"
+#include "kotatsu/support/naming.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 struct CamelConfig {
     using field_rename = naming::rename_policy::lower_camel;
@@ -27,4 +27,4 @@ struct IdentityConfig {
     using field_rename = naming::rename_policy::identity;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

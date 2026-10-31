@@ -5,11 +5,11 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/ipc/lsp/text.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/ipc/lsp/text.h"
 
-namespace kota::ipc::lsp {
+namespace kotatsu::ipc::lsp {
 
 namespace {
 
@@ -156,4 +156,4 @@ ZEST_CASE(encoded_offset_past_the_end_fails) {
 
 }  // namespace
 
-}  // namespace kota::ipc::lsp
+}  // namespace kotatsu::ipc::lsp

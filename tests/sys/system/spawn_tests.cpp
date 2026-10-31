@@ -36,16 +36,16 @@
 #include "sys/harness/env.h"
 #include "sys/harness/privileges.h"
 #include "sys/harness/spawn.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/support/scope_exit.h"
-#include "kota/fs/file.h"
-#include "kota/sys/spawn.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/scope_exit.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/sys/spawn.h"
 
 #ifndef _WIN32
 #include "sys/harness/signals.h"
 #include "sys/harness/streams.h"
-#include "kota/sys/detail/signals.h"
+#include "kotatsu/sys/detail/signals.h"
 #endif
 
 #ifdef __linux__
@@ -62,7 +62,7 @@
 #endif
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -350,7 +350,7 @@ std::error_code spawn_error(const SpawnOptions& options) {
 // variables a NUL separates, a variable not given.
 ZEST_CASE(spawn_of_text_with_a_nul_fails) {
     using namespace std::literals;
-    const auto nul = "\0KOTA_INJECTED=1"s;
+    const auto nul = "\0KOTATSU_INJECTED=1"s;
     auto given = test::shell("exit 0");
     auto options = given;
     options.program += nul;
@@ -366,20 +366,20 @@ ZEST_CASE(spawn_of_text_with_a_nul_fails) {
     ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
     options = given;
     options.env = environment();
-    options.env->push_back({.name = "KOTA" + nul, .value = "a"});
+    options.env->push_back({.name = "KOTATSU" + nul, .value = "a"});
     ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
     options = given;
     options.env = environment();
-    options.env->push_back({.name = "KOTA_NUL", .value = "a" + nul});
+    options.env->push_back({.name = "KOTATSU_NUL", .value = "a" + nul});
     ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
     options = given;
     options.env_changes = {
-        {.name = "KOTA" + nul, .value = "a"}
+        {.name = "KOTATSU" + nul, .value = "a"}
     };
     ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
     options = given;
     options.env_changes = {
-        {.name = "KOTA_NUL", .value = "a" + nul}
+        {.name = "KOTATSU_NUL", .value = "a" + nul}
     };
     ZEXPECT(spawn_error(options) == std::errc::invalid_argument);
 #ifdef _WIN32
@@ -410,49 +410,50 @@ ZEST_CASE(stdout_goes_to_a_file) {
 
 // The given environment is the child's, and nothing else of this process's.
 ZEST_CASE(environment_reaches_the_child) {
-    test::ScopedEnv inherited("KOTA_INHERITED", "inherited");
-    auto options = test::shell(test::by_platform("echo \"$KOTA_GIVEN,${KOTA_INHERITED-unset}\"",
-                                                 "echo %KOTA_GIVEN%,%KOTA_INHERITED%"));
+    test::ScopedEnv inherited("KOTATSU_INHERITED", "inherited");
+    auto options =
+        test::shell(test::by_platform("echo \"$KOTATSU_GIVEN,${KOTATSU_INHERITED-unset}\"",
+                                      "echo %KOTATSU_GIVEN%,%KOTATSU_INHERITED%"));
     options.env = std::vector<EnvVar>{
-        {.name = "KOTA_GIVEN", .value = "given"}
+        {.name = "KOTATSU_GIVEN", .value = "given"}
     };
     auto output = output_of(options);
     ZEXPECT(output.status.has_value());
     ZEXPECT(trim_newlines(output.text) ==
-            test::by_platform("given,unset", "given,%KOTA_INHERITED%"));
+            test::by_platform("given,unset", "given,%KOTATSU_INHERITED%"));
 }
 
 ZEST_CASE(env_changes_go_over_the_given_environment) {
-    auto options = test::shell(test::by_platform("echo \"$KOTA_SET,${KOTA_REMOVED-unset}\"",
-                                                 "echo %KOTA_SET%,%KOTA_REMOVED%"));
+    auto options = test::shell(test::by_platform("echo \"$KOTATSU_SET,${KOTATSU_REMOVED-unset}\"",
+                                                 "echo %KOTATSU_SET%,%KOTATSU_REMOVED%"));
     options.env = std::vector<EnvVar>{
-        {.name = "KOTA_REMOVED", .value = "given"}
+        {.name = "KOTATSU_REMOVED", .value = "given"}
     };
     options.env_changes = {
-        {.name = "KOTA_SET",     .value = "set"       },
-        {.name = "KOTA_REMOVED", .value = std::nullopt},
+        {.name = "KOTATSU_SET",     .value = "set"       },
+        {.name = "KOTATSU_REMOVED", .value = std::nullopt},
     };
     auto output = output_of(options);
     ZEXPECT(output.status.has_value());
-    ZEXPECT(trim_newlines(output.text) == test::by_platform("set,unset", "set,%KOTA_REMOVED%"));
+    ZEXPECT(trim_newlines(output.text) == test::by_platform("set,unset", "set,%KOTATSU_REMOVED%"));
 }
 
 // The last change of a name counts.
 ZEST_CASE(env_changes_go_over_this_processs_environment) {
-    test::ScopedEnv kept("KOTA_KEPT", "kept");
-    test::ScopedEnv removed("KOTA_REMOVED", "inherited");
-    auto options =
-        test::shell(test::by_platform("echo \"$KOTA_KEPT,$KOTA_SET,${KOTA_REMOVED-unset}\"",
-                                      "echo %KOTA_KEPT%,%KOTA_SET%,%KOTA_REMOVED%"));
+    test::ScopedEnv kept("KOTATSU_KEPT", "kept");
+    test::ScopedEnv removed("KOTATSU_REMOVED", "inherited");
+    auto options = test::shell(
+        test::by_platform("echo \"$KOTATSU_KEPT,$KOTATSU_SET,${KOTATSU_REMOVED-unset}\"",
+                          "echo %KOTATSU_KEPT%,%KOTATSU_SET%,%KOTATSU_REMOVED%"));
     options.env_changes = {
-        {.name = "KOTA_SET",     .value = "first"     },
-        {.name = "KOTA_REMOVED", .value = std::nullopt},
-        {.name = "KOTA_SET",     .value = "set"       },
+        {.name = "KOTATSU_SET",     .value = "first"     },
+        {.name = "KOTATSU_REMOVED", .value = std::nullopt},
+        {.name = "KOTATSU_SET",     .value = "set"       },
     };
     auto output = output_of(options);
     ZEXPECT(output.status.has_value());
     ZEXPECT(trim_newlines(output.text) ==
-            test::by_platform("kept,set,unset", "kept,set,%KOTA_REMOVED%"));
+            test::by_platform("kept,set,unset", "kept,set,%KOTATSU_REMOVED%"));
 }
 
 // A program named without a path is looked for in the child's PATH, a
@@ -461,17 +462,17 @@ ZEST_CASE(program_is_looked_for_in_the_childs_path) {
 #ifdef _WIN32
     std::filesystem::create_directories(test::std_path(dir.file("bin")));
     std::filesystem::copy_file(test::std_path(test::shell_path()),
-                               test::std_path(dir.file(R"(bin\kotatool.exe)")));
+                               test::std_path(dir.file(R"(bin\kotatsutool.exe)")));
     SpawnOptions options{
-        .program = "kotatool",
+        .program = "kotatsutool",
         .args = {"/c", "exit 5"},
     };
 #else
     std::filesystem::create_directories(test::std_path(dir.file("bin")));
-    test::write_text(dir.file("bin/kotatool"), "#!/bin/sh\nexit 5\n");
-    std::filesystem::permissions(test::std_path(dir.file("bin/kotatool")),
+    test::write_text(dir.file("bin/kotatsutool"), "#!/bin/sh\nexit 5\n");
+    std::filesystem::permissions(test::std_path(dir.file("bin/kotatsutool")),
                                  std::filesystem::perms::owner_all);
-    SpawnOptions options{.program = "kotatool"};
+    SpawnOptions options{.program = "kotatsutool"};
 #endif
     options.cwd = dir.root();
     options.env_changes = {
@@ -734,9 +735,9 @@ ZEST_CASE(relative_directory_is_this_processs) {
     auto relative = std::filesystem::relative(test::std_path(dir.root())).string();
     ZEXPECT(status_of({.program = "./tool", .cwd = relative}).code == 6);
     std::filesystem::create_directories(test::std_path(dir.file("bin")));
-    write_script("bin/kotatool", "#!/bin/sh\nexit 7\n");
+    write_script("bin/kotatsutool", "#!/bin/sh\nexit 7\n");
     ZEXPECT(status_of({
-                          .program = "kotatool",
+                          .program = "kotatsutool",
                           .env_changes = {{.name = "PATH", .value = "bin"}},
                           .cwd = relative,
                       })
@@ -982,7 +983,7 @@ ZEST_CASE(spawn_that_fails_leaves_a_stream_non_blocking) {
     ZEXPECT((::fcntl(fds[1], F_GETFL) & O_NONBLOCK) != 0);
     // One whose interpreter is not there.
     auto script = dir.file("script");
-    test::write_text(script, "#!/kota/missing/interpreter\n");
+    test::write_text(script, "#!/kotatsu/missing/interpreter\n");
     ZASSERT(::chmod(script.c_str(), 0755) == 0);
     options = SpawnOptions{.program = script};
     options.streams[1] = Stdio::from_fd(fds[1]);
@@ -1082,14 +1083,14 @@ ZEST_CASE(batch_file_runs) {
     ZEXPECT(status_of({.program = "sub/tool.bat", .cwd = dir.root()}).code == 6);
 }
 
-// cmd would read a variable named in the script's path: `%KOTA_SCRIPT%.bat`
+// cmd would read a variable named in the script's path: `%KOTATSU_SCRIPT%.bat`
 // would run other.bat.
 ZEST_CASE(batch_file_with_a_percent_in_its_name_runs_it) {
-    test::write_text(dir.file("%KOTA_SCRIPT%.bat"), "@exit /b 4\r\n");
+    test::write_text(dir.file("%KOTATSU_SCRIPT%.bat"), "@exit /b 4\r\n");
     test::write_text(dir.file("other.bat"), "@exit /b 5\r\n");
     ZEXPECT(status_of({
-                          .program = dir.file("%KOTA_SCRIPT%.bat"),
-                          .env_changes = {{.name = "KOTA_SCRIPT", .value = "other"}},
+                          .program = dir.file("%KOTATSU_SCRIPT%.bat"),
+                          .env_changes = {{.name = "KOTATSU_SCRIPT", .value = "other"}},
                       })
                 .code == 4);
 }
@@ -1163,9 +1164,9 @@ ZEST_CASE(batch_file_with_a_command_line_runs_it_as_it_is) {
     ZEXPECT(status_of({
                           .program = dir.file("tool.bat"),
                           .args = {"9"},
-                          .env_changes = {{.name = "KOTA_CODE", .value = "7"}},
+                          .env_changes = {{.name = "KOTATSU_CODE", .value = "7"}},
                           .windows_command_line =
-                              std::format(R"("{}" %KOTA_CODE%)", dir.file("tool.bat")),
+                              std::format(R"("{}" %KOTATSU_CODE%)", dir.file("tool.bat")),
                       })
                 .code == 7);
 }
@@ -1173,9 +1174,9 @@ ZEST_CASE(batch_file_with_a_command_line_runs_it_as_it_is) {
 // CreateProcess would look in the current directory first.
 ZEST_CASE(program_is_not_looked_for_in_the_current_directory) {
     std::filesystem::copy_file(test::std_path(test::shell_path()),
-                               test::std_path(dir.file("kotahere.exe")));
+                               test::std_path(dir.file("kotatsuhere.exe")));
     auto child = spawn({
-        .program = "kotahere",
+        .program = "kotatsuhere",
         .env_changes = {{.name = "PATH"}},
         .cwd = dir.root(),
     });
@@ -1188,24 +1189,24 @@ ZEST_CASE(program_is_not_looked_for_in_the_current_directory) {
 ZEST_CASE(program_path_without_an_extension_takes_exe) {
     std::filesystem::create_directories(test::std_path(dir.file("bin")));
     std::filesystem::copy_file(test::std_path(test::shell_path()),
-                               test::std_path(dir.file(R"(bin\kotatool.exe)")));
+                               test::std_path(dir.file(R"(bin\kotatsutool.exe)")));
     ZEXPECT(status_of({
-                          .program = dir.file(R"(bin\kotatool)"),
+                          .program = dir.file(R"(bin\kotatsutool)"),
                           .args = {"/c", "exit 5"}
     })
                 .code == 5);
     // In the child's directory. cmd would take a `/` in its argv[0] for one
     // of its switches.
     ZEXPECT(status_of({
-                          .program = R"(bin\kotatool)",
+                          .program = R"(bin\kotatsutool)",
                           .args = {"/c", "exit 6"},
                           .cwd = dir.root()
     })
                 .code == 6);
     // Before a file without it, which is no program.
-    test::write_text(dir.file(R"(bin\kotatool)"), "no program");
+    test::write_text(dir.file(R"(bin\kotatsutool)"), "no program");
     ZEXPECT(status_of({
-                          .program = dir.file(R"(bin\kotatool)"),
+                          .program = dir.file(R"(bin\kotatsutool)"),
                           .args = {"/c", "exit 7"}
     })
                 .code == 7);
@@ -1214,9 +1215,9 @@ ZEST_CASE(program_path_without_an_extension_takes_exe) {
 ZEST_CASE(program_path_without_an_extension_runs_as_it_is_without_an_exe) {
     std::filesystem::create_directories(test::std_path(dir.file("bin")));
     std::filesystem::copy_file(test::std_path(test::shell_path()),
-                               test::std_path(dir.file(R"(bin\kotaplain)")));
+                               test::std_path(dir.file(R"(bin\kotatsuplain)")));
     ZEXPECT(status_of({
-                          .program = dir.file(R"(bin\kotaplain)"),
+                          .program = dir.file(R"(bin\kotatsuplain)"),
                           .args = {"/c", "exit 5"}
     })
                 .code == 5);
@@ -1508,4 +1509,4 @@ ZEST_CASE(open_of_a_process_this_one_may_not_end_fails) {
 
 }  // namespace
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

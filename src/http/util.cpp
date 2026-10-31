@@ -1,10 +1,10 @@
-#include "kota/http/detail/util.h"
+#include "kotatsu/http/detail/util.h"
 
 #include <cctype>
 #include <cstdint>
 #include <string>
 
-namespace kota::http::detail {
+namespace kotatsu::http::detail {
 
 bool iequals(std::string_view lhs, std::string_view rhs) noexcept {
     if(lhs.size() != rhs.size()) {
@@ -121,4 +121,4 @@ std::string base64_encode(std::string_view text) {
     return out;
 }
 
-}  // namespace kota::http::detail
+}  // namespace kotatsu::http::detail

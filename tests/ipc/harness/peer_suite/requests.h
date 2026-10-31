@@ -8,11 +8,11 @@
 #include <vector>
 
 #include "ipc/harness/peer_fixture.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
-#include "kota/codec/visit/common.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
+#include "kotatsu/codec/visit/common.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 template <CodecAdapter A>
 void peer_requests(const PeerKit<A>& kit) {
@@ -21,12 +21,12 @@ void peer_requests(const PeerKit<A>& kit) {
     using ipc::protocol::ErrorCode;
 
     kit.add("send_request_returns_the_result", [](Fixture& f) {
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer
                 .template send_request<AddResult>("worker/build", AddParams{.a = 2, .b = 3})
                 .or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(response<A>(1, AddResult{.sum = 9}));
             f.remote.end_input();
@@ -48,10 +48,10 @@ void peer_requests(const PeerKit<A>& kit) {
     });
 
     kit.add("send_request_by_traits_names_the_traits_method", [](Fixture& f) {
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{.a = 1, .b = 1}).or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(response<A>(1, AddResult{.sum = 2}));
             f.remote.end_input();
@@ -67,11 +67,11 @@ void peer_requests(const PeerKit<A>& kit) {
     });
 
     kit.add("send_request_returns_the_error_response", [](Fixture& f) {
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.template send_request<AddResult>("worker/build", AddParams{})
                 .or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(A::error_response(1, ipc::Error(-32001, "remote failed")));
             f.remote.end_input();
@@ -87,10 +87,10 @@ void peer_requests(const PeerKit<A>& kit) {
     // A remote's error made without a code is RequestFailed, which the
     // local ConnectionClosed stays apart from.
     kit.add("send_request_tells_a_remote_error_from_a_closed_connection", [](Fixture& f) {
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{}).or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(A::error_response(1, ipc::Error("remote failed")));
             f.remote.end_input();
@@ -109,12 +109,12 @@ void peer_requests(const PeerKit<A>& kit) {
     kit.add("answer_resumes_its_requester_after_the_messages_read_with_it", [](Fixture& f) {
         std::vector<std::string> order;
         f.peer.on_notification([&](const NoteParams& params) { order.push_back(params.text); });
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             auto result = co_await f.peer.send_request(AddParams{}).or_fail();
             order.emplace_back("answered");
             co_return result;
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(response<A>(1, AddResult{.sum = 1}));
             f.remote.send(notification<A>("test/note", NoteParams{.text = "note"}));
@@ -128,12 +128,12 @@ void peer_requests(const PeerKit<A>& kit) {
     });
 
     kit.add("send_request_ids_count_up_from_one", [](Fixture& f) {
-        auto ask = [&]() -> task<std::pair<AddResult, AddResult>, ipc::Error> {
+        auto ask = [&]() -> async::task<std::pair<AddResult, AddResult>, ipc::Error> {
             auto first = co_await f.peer.send_request(AddParams{.a = 1, .b = 0}).or_fail();
             auto second = co_await f.peer.send_request(AddParams{.a = 2, .b = 0}).or_fail();
             co_return std::pair{first, second};
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(response<A>(1, AddResult{.sum = 1}));
             co_await f.next();
@@ -153,10 +153,10 @@ void peer_requests(const PeerKit<A>& kit) {
     });
 
     kit.add("responses_in_any_order_complete_their_own_requests", [](Fixture& f) {
-        auto ask = [&](std::int64_t a) -> task<AddResult, ipc::Error> {
+        auto ask = [&](std::int64_t a) -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{.a = a, .b = 0}).or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             co_await f.next();
             f.remote.send(response<A>(2, AddResult{.sum = 20}));
@@ -174,12 +174,12 @@ void peer_requests(const PeerKit<A>& kit) {
 
     // A RawValue result is the result as the codec wrote it.
     kit.add("raw_value_result_is_read_as_it_is", [](Fixture& f) {
-        auto ask = [&]() -> task<codec::RawValue, ipc::Error> {
+        auto ask = [&]() -> async::task<codec::RawValue, ipc::Error> {
             co_return co_await f.peer
                 .template send_request<codec::RawValue>("worker/build", AddParams{})
                 .or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(response<A>(1, AddResult{.sum = 9}));
             f.remote.end_input();
@@ -192,10 +192,10 @@ void peer_requests(const PeerKit<A>& kit) {
     });
 
     kit.add("result_that_does_not_decode_fails_the_request", [](Fixture& f) {
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{}).or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(A::response_raw(1, A::not_a_value));
             f.remote.end_input();
@@ -209,7 +209,7 @@ void peer_requests(const PeerKit<A>& kit) {
     });
 
     kit.add("send_request_with_params_that_do_not_encode_fails", [](Fixture& f) {
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             f.remote.end_input();
             co_return co_await f.peer
                 .template send_request<AddResult>("test/unwritable", Unwritable{})
@@ -226,11 +226,11 @@ void peer_requests(const PeerKit<A>& kit) {
     // A method whose traits say it takes no params is sent none.
     kit.add("method_that_takes_no_params_is_sent_none", [](Fixture& f) {
         bool notified = false;
-        auto ask = [&]() -> task<std::nullptr_t, ipc::Error> {
+        auto ask = [&]() -> async::task<std::nullptr_t, ipc::Error> {
             notified = f.peer.send_notification(NoParams{}).has_value();
             co_return co_await f.peer.send_request(NoParams{}).or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             co_await f.next();
             f.remote.send(response<A>(1, nullptr));
@@ -289,9 +289,10 @@ void peer_requests(const PeerKit<A>& kit) {
     kit.add("handler_sends_and_awaits_while_handling", [](Fixture& f) {
         f.peer.on_request([&](Context& context,
                               const AddParams& params) -> ipc::RequestResult<AddParams> {
-            co_await or_fail(
+            co_await async::or_fail(
                 context->send_notification("client/note", NoteParams{.text = "context"}));
-            co_await or_fail(f.peer.send_notification("client/note", NoteParams{.text = "peer"}));
+            co_await async::or_fail(
+                f.peer.send_notification("client/note", NoteParams{.text = "peer"}));
             auto from_context =
                 co_await context->template send_request<AddResult>("client/add", params).or_fail();
             auto from_peer = co_await f.peer
@@ -300,7 +301,7 @@ void peer_requests(const PeerKit<A>& kit) {
                                  .or_fail();
             co_return AddResult{.sum = from_context.sum + from_peer.sum};
         });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(7, "test/add", AddParams{.a = 2, .b = 3}));
             co_await f.next();
             co_await f.next();
@@ -345,7 +346,7 @@ void peer_requests(const PeerKit<A>& kit) {
                 co_return co_await context->template send_request<AddResult>("client/add", params)
                     .or_fail();
             });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(7, "test/add", AddParams{.a = 2, .b = 3}));
             co_await f.next();
             f.remote.send(A::response_raw(1, A::not_a_value));
@@ -363,4 +364,4 @@ void peer_requests(const PeerKit<A>& kit) {
     });
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <limits>
 
-namespace kota::test {
+namespace kotatsu::test {
 
 enum class Color { red, green, blue };
 
@@ -16,4 +16,4 @@ enum class HugeUnsignedEnum : std::uint64_t {
     max = std::numeric_limits<std::uint64_t>::max(),
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

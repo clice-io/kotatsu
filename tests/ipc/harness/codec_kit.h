@@ -31,12 +31,12 @@
 #include <variant>
 
 #include "ipc/harness/fixtures.h"
-#include "kota/ipc/codec.h"
-#include "kota/zest/zest.h"
-#include "kota/codec/dyn/dyn.h"
-#include "kota/codec/visit/common.h"
+#include "kotatsu/ipc/codec.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/dyn/dyn.h"
+#include "kotatsu/codec/visit/common.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 using ipc::protocol::RequestID;
 
@@ -545,4 +545,4 @@ void error_response_roundtrip_keeps_the_data() {
     ZEXPECT(*response->error.data == data);
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

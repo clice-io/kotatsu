@@ -5,10 +5,10 @@
 #include <vector>
 
 #include "codec/blob/harness/fixtures.h"
-#include "kota/zest/zest.h"
-#include "kota/codec/blob/blob.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/blob/blob.h"
 
-namespace kota::codec::blob {
+namespace kotatsu::codec::blob {
 
 namespace {
 
@@ -55,4 +55,4 @@ ZEST_CASE(empty_vec_has_null_data) {
 
 }  // namespace
 
-}  // namespace kota::codec::blob
+}  // namespace kotatsu::codec::blob

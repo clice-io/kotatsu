@@ -1,4 +1,4 @@
-// Decodes and encodes again values of the types in kota/ipc/lsp/protocol.h,
+// Decodes and encodes again values of the types in kotatsu/ipc/lsp/protocol.h,
 // for roundtrip.test.ts. It reads one JSON object a line,
 //
 //   {"type": "<name>", "value": <JSON>}
@@ -24,11 +24,11 @@
 #include <unordered_map>
 #include <utility>
 
-#include "kota/ipc/codec/json.h"
-#include "kota/codec/macro.h"
-#include "kota/ipc/lsp/protocol.h"
+#include "kotatsu/ipc/codec/json.h"
+#include "kotatsu/codec/macro.h"
+#include "kotatsu/ipc/lsp/protocol.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 namespace {
 
 namespace protocol = ipc::protocol;
@@ -60,19 +60,19 @@ Output roundtrip(std::string_view json) {
 }
 
 const std::unordered_map<std::string_view, Output (*)(std::string_view)> types = {
-#define KOTA_LSP_TYPE(name) {#name, &roundtrip<protocol::name>},
-#define KOTA_LSP_RESULT(method, params)                                                            \
+#define KOTATSU_LSP_TYPE(name) {#name, &roundtrip<protocol::name>},
+#define KOTATSU_LSP_RESULT(method, params)                                                         \
     {"result:" method, &roundtrip<protocol::RequestTraits<protocol::params>::Result>},
 #include "ipc/lsp/harness/protocol_types.inc"
-#undef KOTA_LSP_RESULT
-#undef KOTA_LSP_TYPE
+#undef KOTATSU_LSP_RESULT
+#undef KOTATSU_LSP_TYPE
 };
 
 }  // namespace
-}  // namespace kota::test
+}  // namespace kotatsu::test
 
 int main() {
-    using namespace kota;
+    using namespace kotatsu;
     std::string line;
     while(std::getline(std::cin, line)) {
         auto input = codec::json::from_string<test::Input>(line);

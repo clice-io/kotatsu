@@ -105,35 +105,35 @@ IncludeCategories:
     Priority: 30
     SortPriority: 50
 
-  - Regex: '^["<](kota/zest)/'
+  - Regex: '^["<](kotatsu/zest)/'
     Priority: 30
     SortPriority: 40
 
-  - Regex: '^["<](kota/support)/'
+  - Regex: '^["<](kotatsu/support)/'
     Priority: 30
     SortPriority: 41
 
-  - Regex: '^["<](kota/fs)/'
+  - Regex: '^["<](kotatsu/fs)/'
     Priority: 30
     SortPriority: 42
 
-  - Regex: '^["<](kota/sys)/'
+  - Regex: '^["<](kotatsu/sys)/'
     Priority: 30
     SortPriority: 42
 
-  - Regex: '^["<](kota/async)/'
+  - Regex: '^["<](kotatsu/async)/'
     Priority: 30
     SortPriority: 43
 
-  - Regex: '^["<](kota/meta)/'
+  - Regex: '^["<](kotatsu/meta)/'
     Priority: 30
     SortPriority: 44
 
-  - Regex: '^["<](kota/codec)/'
+  - Regex: '^["<](kotatsu/codec)/'
     Priority: 30
     SortPriority: 45
 
-  - Regex: '^["<](kota/ipc/lsp)/'
+  - Regex: '^["<](kotatsu/ipc/lsp)/'
     Priority: 30
     SortPriority: 46
 

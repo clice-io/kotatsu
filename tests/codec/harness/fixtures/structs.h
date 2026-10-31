@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Puts a value in a field position.
 template <typename T>
@@ -85,4 +85,4 @@ struct StrictIdName {
     std::string name;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

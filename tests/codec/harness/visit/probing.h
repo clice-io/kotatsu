@@ -25,7 +25,7 @@
 #include "codec/harness/visit/kit.h"
 #include "fixtures/structs.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 template <Backend B>
     requires (B::caps.self_describing)
@@ -467,4 +467,4 @@ void probing(const Kit<B>& kit) {
         {.message = "missing required field 'radius'", .path = "value"});
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

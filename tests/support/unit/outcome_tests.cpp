@@ -4,16 +4,16 @@
 #include <utility>
 
 #include "support/harness/throws.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/support/config.h"
-#include "kota/support/outcome.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/config.h"
+#include "kotatsu/support/outcome.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
-/// An error that says what went wrong, as kota::error does.
+/// An error that says what went wrong, as kotatsu::async::error does.
 struct Failure {
     int code = 0;
 
@@ -142,7 +142,7 @@ ZEST_CASE(unwrap_gives_the_value_in_its_value_category) {
     ZEXPECT(plain.unwrap() == 3);
 }
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 
 ZEST_CASE(unwrap_of_an_error_fails) {
     outcome<int, Failure> failed = outcome_error(Failure{.code = 1});
@@ -158,10 +158,10 @@ ZEST_CASE(unwrap_of_a_cancellation_fails) {
             "outcome was cancelled");
 }
 
-#endif  // KOTA_ENABLE_EXCEPTIONS
+#endif  // KOTATSU_ENABLE_EXCEPTIONS
 
 };  // ZEST_SUITE(support_outcome)
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

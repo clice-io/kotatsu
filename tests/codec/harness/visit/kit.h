@@ -33,11 +33,11 @@
 #include <vector>
 
 #include "codec/harness/fixtures/structs.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/compare.h"
-#include "kota/codec/visit/context.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/compare.h"
+#include "kotatsu/codec/visit/context.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// What a backend's documents can carry. Declared by the adapter rather than
 /// derived from the library's traits, so the library does not judge itself.
@@ -396,4 +396,4 @@ std::string hex_dump(const Bytes& bytes) {
     return text;
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

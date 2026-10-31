@@ -3,10 +3,10 @@
 #include <type_traits>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/support/tuple_traits.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/tuple_traits.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -46,4 +46,4 @@ ZEST_CASE(only_tuples_are_searched) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

@@ -6,9 +6,9 @@
 #include <vector>
 
 #include "codec/harness/visit/kit.h"
-#include "kota/codec/fbs/fbs.h"
+#include "kotatsu/codec/fbs/fbs.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// The fbs backend for the protocol kit. Its documents are the finished
 /// buffers to_bytes writes, read back through the verifying from_bytes.
@@ -50,4 +50,4 @@ struct Fbs {
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

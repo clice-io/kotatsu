@@ -10,10 +10,10 @@
 #include <string>
 
 #include "fixtures/enums.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 struct RenameToId {
     constexpr static auto spec = meta::make_spec(meta::dsl::rename = "id");
@@ -190,4 +190,4 @@ struct SkipIfWithStruct {
         field;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

@@ -5,11 +5,11 @@
 #include <utility>
 #include <vector>
 
-#include "kota/http/http.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/async/async.h"
 
 using namespace std::chrono_literals;
-using namespace kota;
+using namespace kotatsu;
 
 namespace {
 
@@ -63,7 +63,7 @@ void showcase_request_builders(http::bound_client api) {
     api.head("https://example.com");
 }
 
-task<> run_showcase(event_loop& loop) {
+async::task<> run_showcase(async::event_loop& loop) {
     auto client = build_demo_client();
     auto api = client.on(loop);
     showcase_request_builders(api);
@@ -107,7 +107,7 @@ task<> run_showcase(event_loop& loop) {
 }  // namespace
 
 int main() {
-    event_loop loop;
+    async::event_loop loop;
 
     auto root = run_showcase(loop);
     loop.schedule(root);

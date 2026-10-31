@@ -8,9 +8,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Standard stream `fd` of this process closed until this goes, which puts
 /// it back.
@@ -32,6 +32,6 @@ struct ScopedClosedStream {
     int saved;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test
 
 #endif

@@ -3,9 +3,9 @@
 #include <string_view>
 #include <utility>
 
-#include "kota/deco/option/table.h"
+#include "kotatsu/deco/option/table.h"
 
-namespace kota::option {
+namespace kotatsu::option {
 
 OptionRef::OptionRef(const Option& opt, const OptTable& table) : opt(opt), table(table) {
     assert((!this->alias() || !this->alias()->alias()) && "Multi-level aliases are not supported.");
@@ -163,4 +163,4 @@ bool OptionRef::matches(std::uint32_t opt_id) const {
     return false;
 }
 
-}  // namespace kota::option
+}  // namespace kotatsu::option
