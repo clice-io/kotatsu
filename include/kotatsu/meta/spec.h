@@ -15,6 +15,7 @@
 #include <variant>
 
 #include "kotatsu/support/config.h"
+#include "kotatsu/support/function_traits.h"
 #include "kotatsu/support/naming.h"
 #include "kotatsu/support/numeric.h"
 #include "kotatsu/support/type_list.h"
@@ -184,25 +185,17 @@ enum class aspect : std::uint8_t {
     tag_names,
 };
 
-template <typename MemberPointer>
-struct member_class;
-
-template <typename Class, typename V>
-struct member_class<V Class::*> {
-    using type = Class;
-};
-
 /// Sets one member of a spec. The member pointer decides which spec type the
 /// component applies to: field_spec makes it valid in make_spec, struct_spec in
 /// make_struct_spec, and the spec type of another module, an extension's, puts
 /// it in the annotation beside the field_spec. `A` tells the entries of one
-/// spec type apart, so that none appears twice: an aspect for meta's own, an
-/// enumerator of the extension's for one of its.
+/// spec type apart, so that none appears twice: an aspect for meta's own, the
+/// member pointer itself for an extension's (member_proxy).
 template <auto A, auto Member, typename V>
 struct value_component {
     V value;
 
-    using spec_type = typename member_class<decltype(Member)>::type;
+    using spec_type = class_type_t<decltype(Member)>;
     constexpr static auto kind = A;
 
     constexpr void apply(spec_type& spec) const {
@@ -297,6 +290,13 @@ struct name_list_proxy {
     }
 };
 
+/// An entry of an extension's spec, `Member`, which also tells it apart from
+/// the spec's other entries: `constexpr inline member_proxy<&Spec::names> names{};`.
+template <auto Member, typename V = member_type_t<decltype(Member)>>
+using member_proxy = std::conditional_t<std::same_as<V, name_list>,
+                                        name_list_proxy<Member, Member>,
+                                        value_proxy<Member, Member, V>>;
+
 struct tagged_proxy {
     constexpr auto operator=(bool value) const {
         return tagged_component{value};
@@ -387,7 +387,8 @@ namespace detail {
 /// spec type.
 template <typename A, typename B>
 consteval bool same_entry() {
-    if constexpr(std::same_as<typename A::spec_type, typename B::spec_type>) {
+    if constexpr(std::same_as<typename A::spec_type, typename B::spec_type> &&
+                 std::same_as<decltype(A::kind), decltype(B::kind)>) {
         return A::kind == B::kind;
     } else {
         return false;
@@ -405,10 +406,6 @@ consteval bool component_kinds_unique() {
     // Each component sets its own entry once.
     return pairs == sizeof...(Cs);
 }
-
-/// True for any DSL component, regardless of which spec type it applies to.
-template <typename T>
-concept any_component = dsl::component<T>;
 
 /// The tuple of the distinct spec types `Cs` extend, in the order they first
 /// appear.
@@ -505,7 +502,7 @@ constexpr struct_spec finalize_struct_spec(struct_spec spec) {
 
 template <typename... Cs>
 constexpr auto make_spec(const Cs&... components) {
-    static_assert((detail::any_component<Cs> && ...),
+    static_assert((dsl::component<Cs> && ...),
                   "annotation entries must be assignments, e.g. skip = true");
     static_assert(
         (!dsl::spec_component<Cs, struct_spec> && ...),
@@ -549,7 +546,7 @@ constexpr auto make_spec(const Cs&... components) {
 
 template <typename... Cs>
 constexpr struct_spec make_struct_spec(const Cs&... components) {
-    static_assert((detail::any_component<Cs> && ...),
+    static_assert((dsl::component<Cs> && ...),
                   "annotation entries must be assignments, e.g. deny_unknown_fields = true");
     static_assert((dsl::spec_component<Cs, struct_spec> && ...),
                   "field-level entries are not valid in a struct annotation; use make_spec");

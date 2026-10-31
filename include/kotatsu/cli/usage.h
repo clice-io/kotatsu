@@ -43,17 +43,14 @@ std::string usage(const Command& command, std::string_view usage_line, const Sty
 /// lays out its own help from.
 template <typename T>
 std::vector<UsageEntry> usage_entries() {
-    return detail::usage_entries(
-        detail::command_of(meta::type_info_of<T, detail::decode_config>()));
+    return detail::usage_entries(detail::command_of<T>());
 }
 
 /// The usage of a program taking the options `T` declares: what `T` is (its static
 /// `description`), `usage: <usage_line>`, its options, by group, and its subcommands.
 template <typename T>
 std::string usage(std::string_view usage_line, const Style& style = {}) {
-    return detail::usage(detail::command_of(meta::type_info_of<T, detail::decode_config>()),
-                         usage_line,
-                         style);
+    return detail::usage(detail::command_of<T>(), usage_line, style);
 }
 
 }  // namespace kotatsu::cli

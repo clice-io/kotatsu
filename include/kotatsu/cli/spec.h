@@ -40,20 +40,6 @@ struct ArgNum {
 /// What a field's `cli::` annotation entries say about it on a command line, beside the
 /// `description` its help is. A field without them is an option all the same, named after it.
 struct ArgSpec {
-    enum class Entry : std::uint8_t {
-        names,
-        meta_var,
-        positional,
-        rest,
-        count,
-        required,
-        stop,
-        style,
-        comma,
-        arg_num,
-        forward,
-    };
-
     /// The names it is given by, as written: "-o", "--output", "/out". Without, its declared
     /// name with '_' spelled '-', after "-" when one letter long and "--" otherwise.
     meta::name_list names = {};
@@ -65,7 +51,7 @@ struct ArgSpec {
     bool positional = false;
     /// Whether it takes the arguments after "--".
     bool rest = false;
-    /// Whether a flag counts how often it is given (`-vvv`) rather than whether it is.
+    /// Whether a flag counts how often it is given (`-v -v -v`) rather than whether it is.
     bool count = false;
     /// Whether it must be given. A positional scalar must be, unless it is a std::optional.
     bool required = false;
@@ -77,8 +63,7 @@ struct ArgSpec {
     bool comma = false;
     /// How many arguments a positional list takes, when given.
     ArgNum arg_num = {};
-    /// For an alias, a field of type cli::Alias: what it stands for, the values it is given
-    /// following them (joined to the last by commas for a comma alias).
+    /// For an alias, a field of type cli::Alias: the arguments it stands for.
     meta::name_list forward = {};
 
     constexpr void validate() const {
@@ -92,28 +77,17 @@ struct ArgSpec {
 };
 
 /// The entries of ArgSpec in a KOTATSU_ANNOTATE: `cli::names = {"-o", "--output"}`.
-[[maybe_unused]] constexpr inline meta::dsl::name_list_proxy<ArgSpec::Entry::names, &ArgSpec::names>
-    names{};
-[[maybe_unused]] constexpr inline meta::dsl::
-    value_proxy<ArgSpec::Entry::meta_var, &ArgSpec::meta_var, std::string_view> meta_var{};
-[[maybe_unused]] constexpr inline meta::dsl::
-    value_proxy<ArgSpec::Entry::positional, &ArgSpec::positional, bool> positional{};
-[[maybe_unused]] constexpr inline meta::dsl::value_proxy<ArgSpec::Entry::rest, &ArgSpec::rest, bool>
-    rest{};
-[[maybe_unused]] constexpr inline meta::dsl::
-    value_proxy<ArgSpec::Entry::count, &ArgSpec::count, bool> count{};
-[[maybe_unused]] constexpr inline meta::dsl::
-    value_proxy<ArgSpec::Entry::required, &ArgSpec::required, bool> required{};
-[[maybe_unused]] constexpr inline meta::dsl::value_proxy<ArgSpec::Entry::stop, &ArgSpec::stop, bool>
-    stop{};
-[[maybe_unused]] constexpr inline meta::dsl::
-    value_proxy<ArgSpec::Entry::style, &ArgSpec::style, KVStyle> style{};
-[[maybe_unused]] constexpr inline meta::dsl::
-    value_proxy<ArgSpec::Entry::comma, &ArgSpec::comma, bool> comma{};
-[[maybe_unused]] constexpr inline meta::dsl::
-    value_proxy<ArgSpec::Entry::arg_num, &ArgSpec::arg_num, ArgNum> arg_num{};
-[[maybe_unused]] constexpr inline meta::dsl::name_list_proxy<ArgSpec::Entry::forward,
-                                                             &ArgSpec::forward> forward{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::names> names{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::meta_var> meta_var{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::positional> positional{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::rest> rest{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::count> count{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::required> required{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::stop> stop{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::style> style{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::comma> comma{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::arg_num> arg_num{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::forward> forward{};
 
 /// A field that stands for other arguments: its names, given, are read as `cli::forward`.
 /// It holds nothing.

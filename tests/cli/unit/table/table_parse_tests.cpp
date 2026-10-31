@@ -14,7 +14,7 @@ using test::kinds_table;
 using test::parse_table;
 using strings = std::vector<std::string>;
 
-ZEST_SUITE(cli_table_table_parse) {
+ZEST_SUITE(cli_table_parse) {
 
 ZEST_CASE(flag_takes_no_value) {
     const auto parse = parse_table(kinds_table(), "-f");
@@ -309,7 +309,7 @@ ZEST_CASE(next_index_follows_each_argument) {
     ZEXPECT(parse.args[3].next_index == 7U);
 }
 
-};  // ZEST_SUITE(cli_table_table_parse)
+};  // ZEST_SUITE(cli_table_parse)
 
 }  // namespace
 

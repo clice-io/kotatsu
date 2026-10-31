@@ -32,7 +32,7 @@ strings rendered(std::string_view line, ParseOptions options = {}) {
     return rendered(parse.args[0]);
 }
 
-ZEST_SUITE(cli_table_table_render) {
+ZEST_SUITE(cli_table_render) {
 
 ZEST_CASE(options_render_as_written) {
     const std::vector<std::string_view> lines = {
@@ -99,7 +99,7 @@ ZEST_CASE(joined_without_values_renders_its_name) {
     ZEXPECT(rendered(arg) == strings{"-j"});
 }
 
-};  // ZEST_SUITE(cli_table_table_render)
+};  // ZEST_SUITE(cli_table_render)
 
 }  // namespace
 

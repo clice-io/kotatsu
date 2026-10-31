@@ -11,6 +11,10 @@ target_include_directories(kotatsu_cli_table PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
+target_link_libraries(kotatsu_cli_table PUBLIC
+    kotatsu::support
+)
+
 kotatsu_apply_project_options(kotatsu_cli_table)
 
 add_library(kotatsu_cli STATIC)

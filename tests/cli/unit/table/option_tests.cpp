@@ -93,7 +93,7 @@ std::string printed(const OptionRef& option) {
     return out.str();
 }
 
-ZEST_SUITE(cli_table) {
+ZEST_SUITE(cli_table_option) {
 
 ZEST_CASE(name_drops_the_written_prefix) {
     ZEXPECT(infos[MemberId - 1].name() == "m");
@@ -281,7 +281,7 @@ ZEST_CASE(print_can_end_the_line) {
     ZEXPECT(out.str() == std::string(R"(<OptionKind::Input Name:"<input>">)") + "\n");
 }
 
-};  // ZEST_SUITE(cli_table)
+};  // ZEST_SUITE(cli_table_option)
 
 }  // namespace
 

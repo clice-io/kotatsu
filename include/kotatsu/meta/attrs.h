@@ -82,9 +82,10 @@ constexpr const inline field_spec& field_spec_of = [] -> const field_spec& {
     }
 }();
 
-/// The key an extension's spec type is found by at run time.
+/// The key an extension's spec type is found by at run time: its address. Not const, so that no
+/// linker folds the keys of two spec types into one.
 template <typename Spec>
-constexpr inline char extension_key = 0;
+inline char extension_key = 0;
 
 /// An extension's spec attached to a field: one value of a spec type of
 /// another module, set by its own annotation entries.

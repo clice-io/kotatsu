@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "ansi.h"
+#include "error_at.h"
 
 namespace kotatsu::cli {
 
@@ -22,7 +23,7 @@ struct JoinedArgv {
 JoinedArgv join_argv(const std::vector<std::string>& argv) {
     JoinedArgv joined;
     for(const auto& argument: argv) {
-        if(!joined.line.empty() || !joined.starts.empty()) {
+        if(!joined.starts.empty()) {
             joined.line.push_back(' ');
         }
         joined.starts.push_back(joined.line.size());

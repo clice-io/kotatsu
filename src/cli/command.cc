@@ -5,6 +5,7 @@
 #include <map>
 #include <mutex>
 #include <ranges>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -115,7 +116,15 @@ std::string join(const std::vector<std::string>& parts, std::string_view separat
 }
 
 class Builder {
+    /// The '=' form of a name, and whether it is the only form its argument takes.
+    struct EqualsForm {
+        std::string name;
+        std::uint32_t arg;
+        bool only;
+    };
+
     Command& command;
+    std::vector<EqualsForm> equals_forms;
 
     std::uint32_t add_option(OptionKind kind, std::string_view name, std::uint32_t arg) {
         const auto id = static_cast<std::uint32_t>(command.options.size() + 1);
@@ -141,10 +150,47 @@ class Builder {
         return names;
     }
 
-    /// Whether some option of the command is named `name` itself.
-    bool named(std::string_view name) const {
-        return std::ranges::any_of(command.spellings,
-                                   [&](const auto& spelling) { return spelling == name; });
+    /// The argument the option named `name` reads into, or no_arg when none is named so.
+    std::uint32_t arg_named(std::string_view name) const {
+        const auto found = std::ranges::find(command.spellings, name);
+        // Spelling i names the option of id i + 3, after the unknown and input options.
+        return found == command.spellings.end()
+                   ? no_arg
+                   : command.arg_of[found - command.spellings.begin() + 3];
+    }
+
+    /// Names the '=' forms no field names itself, then checks that no two options share a name.
+    void name_equals_forms() {
+        for(const auto& form: equals_forms) {
+            auto& arg = command.args[form.arg];
+            if(arg_named(form.name) == no_arg) {
+                add_option(OptionKind::Joined, form.name, form.arg);
+            } else if(form.only) {
+                KOTATSU_THROW(
+                    std::invalid_argument(std::format("cli: two options are named {}", form.name)));
+            } else if(arg.form == Form::Equals && arg.write_name + "=" == form.name) {
+                arg.form = Form::Separate;
+            }
+        }
+        // An alias stands for options, not for another alias, which might stand for it.
+        for(const auto& arg: command.args) {
+            if(arg.shape != Shape::Alias) {
+                continue;
+            }
+            for(auto token: arg.spec.forward.names()) {
+                const auto target = arg_named(token);
+                if(target != no_arg && command.args[target].shape == Shape::Alias) {
+                    KOTATSU_THROW(std::invalid_argument(
+                        std::format("cli: alias {} stands for another alias", arg.usage)));
+                }
+            }
+        }
+        std::vector<std::string_view> names(command.spellings.begin(), command.spellings.end());
+        std::ranges::sort(names);
+        if(const auto twice = std::ranges::adjacent_find(names); twice != names.end()) {
+            KOTATSU_THROW(
+                std::invalid_argument(std::format("cli: two options are named {}", *twice)));
+        }
     }
 
     /// Registers named argument `index` under its names, and says how a usage writes it.
@@ -179,6 +225,9 @@ class Builder {
         }
         const auto token = value_token(arg.spec, value_type);
         if(arg.spec.comma) {
+            if(!arg.list) {
+                KOTATSU_THROW(std::invalid_argument("cli: a comma option is a list"));
+            }
             std::vector<std::string> forms;
             for(auto name: names) {
                 if(!name.ends_with(',')) {
@@ -216,13 +265,13 @@ class Builder {
                 add_option(OptionKind::Separate, name, index);
                 separate.push_back(name);
             }
-            // The '=' form a name takes its value after when it may take it joined, unless
-            // another option is named so; a usage leaves it out unless it is the only form.
-            const auto equals = name + "=";
-            if(has_style(style, KVStyle::Joined) && !named(equals)) {
-                add_option(OptionKind::Joined, equals, index);
+            // The '=' form a name takes its value after when it may take it joined; a usage
+            // leaves it out unless it is the only form. It is named once every field has named
+            // its own, so that one naming it so, declared before or after, keeps it.
+            if(has_style(style, KVStyle::Joined)) {
+                equals_forms.push_back(EqualsForm{.name = name + "=", .arg = index, .only = joins});
                 if(joins) {
-                    joined.push_back(equals + token);
+                    joined.push_back(name + "=" + token);
                 }
                 if(first) {
                     arg.form = Form::Equals;
@@ -248,8 +297,8 @@ class Builder {
                                                  : std::format("{}.{}", path, field.declared_name);
             bool optional = false;
             const auto& value_type = unwrap_optional(field.type(), optional);
-            const ArgSpec spec =
-                field.extension<ArgSpec>() ? *field.extension<ArgSpec>() : ArgSpec{};
+            const auto* annotated = field.extension<ArgSpec>();
+            const ArgSpec spec = annotated ? *annotated : ArgSpec{};
 
             if(!spec.forward.names().empty()) {
                 add_arg(Arg{.field = &field,
@@ -290,7 +339,6 @@ class Builder {
                     .spec = spec,
                     .shape = Shape::Value,
                     .optional_type = optional,
-                    .positional = spec.positional,
                     .group = group,
                     .keys = field_keys,
                     .path = field_path,
@@ -305,7 +353,7 @@ class Builder {
                 arg.shape = Shape::Tuple;
                 arg.tuple_size = static_cast<std::uint32_t>(
                     static_cast<const meta::tuple_type_info&>(*element).elements.size());
-            } else if(element->kind == meta::type_kind::boolean && !arg.list) {
+            } else if(element->kind == meta::type_kind::boolean && !arg.list && !spec.positional) {
                 arg.shape = Shape::Flag;
             } else if(spec.count) {
                 arg.shape = Shape::Count;
@@ -327,7 +375,7 @@ class Builder {
             added.usage = std::format("-- {}...", value_token(added.spec, value_type));
             return;
         }
-        if(added.positional) {
+        if(added.spec.positional) {
             command.positionals.push_back(index);
             const auto token = value_token(added.spec, value_type);
             if(!added.list) {
@@ -360,6 +408,10 @@ class Builder {
         if(command.subcommands) {
             KOTATSU_THROW(std::invalid_argument("cli: a command has one field of subcommands"));
         }
+        if(variant.tagging != meta::tag_mode::none && variant.tagging != meta::tag_mode::external) {
+            KOTATSU_THROW(
+                std::invalid_argument("cli: subcommands are named by their tag names alone"));
+        }
         Subcommands subcommands{.keys = keys, .path = path, .optional = optional, .group = group};
         for(std::size_t i = 0; i < variant.alternatives.size(); ++i) {
             const auto& alternative = variant.alternatives[i]();
@@ -385,11 +437,22 @@ public:
         // The unknown option, then the input option, ids 1 and 2.
         command.options.push_back(Option::unknown(1));
         command.options.push_back(Option::input(2));
-        command.arg_of = {no_group, no_group, no_group};
+        // Ids start at 1; the unknown and input options read into no field.
+        command.arg_of = {no_arg, no_arg, no_arg};
         add_struct(type, no_group, {}, "");
-        command.parse_options.dash_dash_parsing = command.rest.has_value();
+        name_equals_forms();
+        // "--" ends the options: what follows is positional, or the rest when a field takes it.
+        command.parse_options.dash_dash_parsing = true;
         command.parse_options.dash_dash_packing = command.rest.has_value();
-        command.table = std::make_unique<OptTable>(command.options);
+        // "-" and "--" mark an option even in a command that names none, so that one it does
+        // not know is not taken for a positional argument.
+        std::set<std::string_view> prefixes = {"-", "--"};
+        for(const auto& option: command.options) {
+            prefixes.insert(option.prefixes.begin(), option.prefixes.end());
+        }
+        command.table = std::make_unique<OptTable>(command.options,
+                                                   false,
+                                                   std::vector(prefixes.begin(), prefixes.end()));
         command.table->search_includes_input = true;
     }
 };
@@ -403,6 +466,36 @@ std::unique_ptr<Command> build_command(const meta::type_info& type) {
     auto command = std::make_unique<Command>();
     Builder(*command).build(static_cast<const meta::struct_type_info&>(type));
     return command;
+}
+
+const Node* find_node(const Node& root, std::span<const std::string_view> keys) {
+    const Node* node = &root;
+    for(auto key: keys) {
+        if(node->kind != Node::Kind::Object) {
+            return nullptr;
+        }
+        const auto found = std::ranges::find(node->keys, key);
+        if(found == node->keys.end()) {
+            return nullptr;
+        }
+        node = &node->items[found - node->keys.begin()];
+    }
+    return node;
+}
+
+Node& make_node(Node& root, std::span<const std::string_view> keys, Node::Kind kind) {
+    Node* node = &root;
+    for(std::size_t i = 0; i < keys.size(); ++i) {
+        const auto found = std::ranges::find(node->keys, keys[i]);
+        if(found != node->keys.end()) {
+            node = &node->items[found - node->keys.begin()];
+            continue;
+        }
+        node->keys.push_back(keys[i]);
+        node = &node->items.emplace_back(
+            Node{.kind = i + 1 == keys.size() ? kind : Node::Kind::Object});
+    }
+    return *node;
 }
 
 const Command& command_of(const meta::type_info& type) {

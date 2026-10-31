@@ -52,6 +52,11 @@ struct Tool {
     std::variant<Serve, Query> command;
 };
 
+struct Run {
+    KOTATSU_ANNOTATE(cli::rest = true, cli::meta_var = "<ARG>")
+    <std::vector<std::string>> command;
+};
+
 ZEST_SUITE(cli_usage) {
 
 ZEST_CASE(usage_lists_options_with_their_help) {
@@ -106,14 +111,24 @@ ZEST_CASE(entries_say_what_each_is) {
     ZEXPECT(entries[1].kind == UsageEntry::Kind::Subcommand);
     ZEXPECT(entries[1].usage == "serve");
     ZEXPECT(entries[1].help == "Start the server");
+}
 
+ZEST_CASE(entries_say_their_group_and_whether_they_repeat) {
     const auto serve = cli::usage_entries<Serve>();
-    ZEXPECT(serve[2].repeatable == false);
-    ZEXPECT(serve[3].repeatable);
     ZASSERT(serve.size() == 8U);
+    ZEXPECT(!serve[2].repeatable);
+    ZEXPECT(serve[3].repeatable);
     ZEXPECT(serve[6].usage == "--host <value>");
     ZEXPECT(serve[6].group == "Remote");
     ZEXPECT(serve[7].kind == UsageEntry::Kind::Positional);
+}
+
+ZEST_CASE(rest_is_positional_and_said_once) {
+    const auto entries = cli::usage_entries<Run>();
+    ZASSERT(entries.size() == 1U);
+    ZEXPECT(entries[0].kind == UsageEntry::Kind::Positional);
+    ZEXPECT(entries[0].usage == "-- <ARG>...");
+    ZEXPECT(!entries[0].repeatable);
 }
 
 };  // ZEST_SUITE(cli_usage)

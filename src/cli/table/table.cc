@@ -17,6 +17,8 @@
 #include <utility>
 #include <vector>
 
+#include "../error_at.h"
+
 using namespace kotatsu;
 using namespace kotatsu::cli;
 

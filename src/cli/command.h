@@ -5,10 +5,12 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "kotatsu/cli/parse.h"
 #include "kotatsu/cli/spec.h"
 #include "kotatsu/cli/table/table.h"
 #include "kotatsu/meta/type_info.h"
@@ -30,6 +32,7 @@ enum class Shape : std::uint8_t {
 };
 
 constexpr std::uint32_t no_group = std::numeric_limits<std::uint32_t>::max();
+constexpr std::uint32_t no_arg = std::numeric_limits<std::uint32_t>::max();
 
 /// How to_argv() writes a value of a named option.
 enum class Form : std::uint8_t {
@@ -50,7 +53,6 @@ struct Arg {
     bool list = false;
     /// Whether it is a std::optional, which a positional one may be left out for.
     bool optional_type = false;
-    bool positional = false;
     std::uint32_t tuple_size = 0;
     /// The innermost group it is in; no_group in the command's own struct.
     std::uint32_t group = no_group;
@@ -67,7 +69,7 @@ struct Arg {
     Form form = Form::Separate;
 
     bool required() const {
-        return spec.required || (positional && !list && !optional_type);
+        return spec.required || (spec.positional && !list && !optional_type);
     }
 };
 
@@ -120,5 +122,12 @@ struct Command {
 
 /// Builds the command `type`, a struct, describes.
 std::unique_ptr<Command> build_command(const meta::type_info& type);
+
+/// The node `keys` reach from `root` through objects, or null.
+const Node* find_node(const Node& root, std::span<const std::string_view> keys);
+
+/// The node `keys` reach from `root`, made of `kind` when there is none, with the objects on
+/// the way.
+Node& make_node(Node& root, std::span<const std::string_view> keys, Node::Kind kind);
 
 }  // namespace kotatsu::cli::detail

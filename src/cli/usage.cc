@@ -51,13 +51,13 @@ std::vector<UsageEntry> usage_entries(const Command& command) {
     std::vector<UsageEntry> entries;
     for(const auto& arg: command.args) {
         entries.push_back(UsageEntry{
-            .kind = arg.positional || command.rest == &arg - command.args.data()
-                        ? UsageEntry::Kind::Positional
-                        : UsageEntry::Kind::Option,
+            .kind = arg.spec.positional || arg.spec.rest ? UsageEntry::Kind::Positional
+                                                         : UsageEntry::Kind::Option,
             .usage = arg.usage,
             .help = std::string(arg.help),
             .group = std::string(heading(command, arg.group)),
-            .repeatable = !arg.positional && (arg.list || arg.shape == Shape::Count),
+            .repeatable =
+                !arg.spec.positional && !arg.spec.rest && (arg.list || arg.shape == Shape::Count),
         });
     }
     if(command.subcommands) {

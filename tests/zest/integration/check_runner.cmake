@@ -339,7 +339,7 @@ expect_output("[   FAILED ] fixture.fails_on_thread (")
 # exit code 2; --help prints the usage and runs no test.
 run_fixture("${CLI}" --nope)
 expect_code(2)
-expect_output("Error parsing options: ")
+expect_output("[argv[0]]")
 expect_output("unknown option '--nope'")
 run_fixture("${CLI}" --help)
 expect_code(0)

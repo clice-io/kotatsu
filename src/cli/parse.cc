@@ -6,18 +6,16 @@
 #include <charconv>
 #include <cstdlib>
 #include <format>
-#include <map>
-#include <memory>
-#include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "command.h"
+#include "error_at.h"
 #include "kotatsu/cli/table/table.h"
-#include "kotatsu/support/naming.h"
 
 namespace kotatsu::cli::detail {
 
@@ -43,42 +41,27 @@ std::string input_args_text(ArgNum num) {
     return std::format("{} to {} input arguments", num.min, num.max);
 }
 
-/// The node of `object` under `key`, made empty of `kind` when it has none.
-Node& child(Node& object, std::string_view key, Node::Kind kind) {
-    for(std::size_t i = 0; i < object.keys.size(); ++i) {
-        if(object.keys[i] == key) {
-            return object.items[i];
-        }
-    }
-    object.keys.push_back(key);
-    return object.items.emplace_back(Node{.kind = kind});
-}
-
-/// The node of `object` under `key`, or null.
-const Node* find_child(const Node& object, std::string_view key) {
-    for(std::size_t i = 0; i < object.keys.size(); ++i) {
-        if(object.keys[i] == key) {
-            return &object.items[i];
-        }
-    }
-    return nullptr;
+/// An error at the elements of `argv` that [begin, end) of `reading.active` come from: the
+/// first's, through the last's, or the end of `argv` past the active ones.
+Error error_from(const Reading& reading,
+                 string_list_ref argv,
+                 Error::Kind kind,
+                 std::string message,
+                 std::uint32_t begin,
+                 std::uint32_t end) {
+    const auto size = static_cast<std::uint32_t>(reading.active.size());
+    const auto argc = static_cast<std::uint32_t>(argv.size());
+    const auto first = begin >= size ? argc : reading.origin[begin];
+    const auto past = end <= begin ? first : end > size ? argc : reading.origin[end - 1] + 1;
+    return error_at(kind, std::move(message), argv, first, std::max(first, past));
 }
 
 /// Reads one argv against a command, and the subcommands it names.
 class ArgvReader {
     Reading& reading;
     string_list_ref argv;
-
-    /// The elements of `argv` [begin, end) of `reading.active` come from.
-    std::pair<std::uint32_t, std::uint32_t> origin(std::uint32_t begin, std::uint32_t end) const {
-        const auto size = static_cast<std::uint32_t>(reading.active.size());
-        const auto user_size = static_cast<std::uint32_t>(argv.size());
-        const auto first = begin >= size ? user_size : reading.origin[begin];
-        const auto last = end == 0 || end <= begin ? first
-                          : end > size             ? user_size
-                                                   : reading.origin[end - 1] + 1;
-        return {first, std::max(first, last)};
-    }
+    /// Whether an argument that ends the parse was read.
+    bool stopped = false;
 
 public:
     ArgvReader(Reading& reading, string_list_ref argv) : reading(reading), argv(argv) {
@@ -91,14 +74,16 @@ public:
 
     Error
         error(Error::Kind kind, std::string message, std::uint32_t begin, std::uint32_t end) const {
-        const auto [first, last] = origin(begin, end);
-        return error_at(kind, std::move(message), argv, first, last);
+        return error_from(reading, argv, kind, std::move(message), begin, end);
     }
 
     /// The state of a command being read.
     struct Level {
         const Command* command;
         Node* root;
+        /// What the paths of its arguments' Given go after: "" for the options struct's own,
+        /// "command." for a subcommand's.
+        std::string prefix;
         /// The occurrences of each argument of the command so far.
         std::vector<std::uint32_t> occurrences;
         /// The positional argument the next input goes to.
@@ -109,64 +94,53 @@ public:
 
     /// The node argument `arg` of `level` stores into: its field's under the objects of the
     /// groups around it, made as needed.
-    Node& node_of(Level& level, const Arg& arg) {
-        Node* node = level.root;
-        for(std::size_t i = 0; i + 1 < arg.keys.size(); ++i) {
-            node = &child(*node, arg.keys[i], Node::Kind::Object);
-        }
+    static Node& node_of(Level& level, const Arg& arg) {
         const auto kind = arg.shape == Shape::Flag                ? Node::Kind::Flag
                           : arg.shape == Shape::Count             ? Node::Kind::Count
                           : arg.list || arg.shape == Shape::Tuple ? Node::Kind::List
                                                                   : Node::Kind::Text;
-        return child(*node, arg.keys.back(), kind);
+        return make_node(*level.root, arg.keys, kind);
     }
 
-    /// Where `value`, one of the values of `parsed`, is in `reading.active`: its own element
-    /// when it is one, else the argument's.
-    std::pair<std::uint32_t, std::uint32_t> value_span(const ParsedArg& parsed,
-                                                       std::string_view value,
-                                                       std::uint32_t base) const {
-        const auto begin = base + parsed.index;
-        const auto end = base + std::max(parsed.next_index, parsed.index + 1);
-        for(auto i = begin; i < end; ++i) {
-            if(reading.active[i].data() == value.data() &&
-               reading.active[i].size() == value.size()) {
-                return {i, i + 1};
-            }
-        }
-        return {begin, begin + 1};
-    }
-
-    /// Stores `parsed` into argument `arg_index` of `level`.
-    void store(Level& level, std::uint32_t arg_index, const ParsedArg& parsed, std::uint32_t base) {
+    /// Stores `values`, read from [begin, end) of `reading.active`, into argument `arg_index`
+    /// of `level`.
+    void store(Level& level,
+               std::uint32_t arg_index,
+               std::span<const std::string_view> values,
+               std::uint32_t begin,
+               std::uint32_t end) {
         const auto& arg = level.command->args[arg_index];
         ++level.occurrences[arg_index];
         Node& node = node_of(level, arg);
-        const auto begin = base + parsed.index;
-        const auto end = base + std::max(parsed.next_index, parsed.index + 1);
+        // A value marks its own element when it is one, else the whole argument: "-Ia" or
+        // "--tags,a,b".
+        auto from = begin;
         auto text = [&](std::string_view value) {
-            const auto [first, last] = value_span(parsed, value, base);
-            return Node{.kind = Node::Kind::Text, .text = value, .begin = first, .end = last};
+            for(auto i = from; i < end; ++i) {
+                if(reading.active[i].data() == value.data() &&
+                   reading.active[i].size() == value.size()) {
+                    from = i + 1;
+                    return Node{.kind = Node::Kind::Text, .text = value, .begin = i, .end = i + 1};
+                }
+            }
+            return Node{.kind = Node::Kind::Text, .text = value, .begin = begin, .end = end};
         };
 
-        Given given{.path = arg.path};
         switch(arg.shape) {
             case Shape::Flag: break;
             case Shape::Count: ++node.count; break;
             case Shape::Value:
-                given.values.assign(parsed.values.begin(), parsed.values.end());
                 if(arg.list) {
-                    for(auto value: parsed.values) {
+                    for(auto value: values) {
                         node.items.push_back(text(value));
                     }
                 } else {
-                    node = text(parsed.values.front());
+                    node = text(values.front());
                 }
                 break;
             case Shape::Tuple: {
-                given.values.assign(parsed.values.begin(), parsed.values.end());
-                Node tuple{.kind = Node::Kind::List};
-                for(auto value: parsed.values) {
+                Node tuple{.kind = Node::Kind::List, .begin = begin, .end = end};
+                for(auto value: values) {
                     tuple.items.push_back(text(value));
                 }
                 if(arg.list) {
@@ -178,38 +152,27 @@ public:
             }
             case Shape::Alias: std::unreachable();
         }
-        node.begin = node.items.empty() && node.kind != Node::Kind::Text ? begin : node.begin;
-        node.end = node.items.empty() && node.kind != Node::Kind::Text ? end : node.end;
         if(node.kind == Node::Kind::List && !node.items.empty()) {
             node.begin = node.items.front().begin;
             node.end = node.items.back().end;
+        } else if(node.kind != Node::Kind::Text) {
+            node.begin = begin;
+            node.end = end;
         }
-        reading.given.push_back(std::move(given));
+        reading.given.push_back(Given{.path = level.prefix + arg.path,
+                                      .values = std::vector(values.begin(), values.end())});
     }
 
-    /// Stores positional argument `spelling`, element `index` of `reading.active`, into `level`.
+    /// Stores element `index` of `reading.active`, a positional argument, into `level`.
     std::optional<Error> store_input(Level& level, std::uint32_t index) {
         const auto& command = *level.command;
-        const auto spelling = reading.active[index];
+        const auto& spelling = reading.active[index];
         while(level.positional < command.positionals.size()) {
             const auto arg_index = command.positionals[level.positional];
             const auto& arg = command.args[arg_index];
-            if(!arg.list) {
-                ++level.positional;
-                ++level.occurrences[arg_index];
-                child_text(level, arg, spelling, index);
-                return std::nullopt;
-            }
-            if(level.occurrences[arg_index] < arg.spec.arg_num.max) {
-                ++level.occurrences[arg_index];
-                Node& node = node_of(level, arg);
-                node.items.push_back(Node{.kind = Node::Kind::Text,
-                                          .text = spelling,
-                                          .begin = index,
-                                          .end = index + 1});
-                node.begin = node.items.front().begin;
-                node.end = index + 1;
-                reading.given.push_back(Given{.path = arg.path, .values = {spelling}});
+            if(!arg.list || level.occurrences[arg_index] < arg.spec.arg_num.max) {
+                level.positional += arg.list ? 0 : 1;
+                store(level, arg_index, std::span(&spelling, 1), index, index + 1);
                 return std::nullopt;
             }
             ++level.positional;
@@ -226,12 +189,6 @@ public:
                                  input_args_text(command.positional_count)),
                      index,
                      index + 1);
-    }
-
-    void child_text(Level& level, const Arg& arg, std::string_view spelling, std::uint32_t index) {
-        Node& node = node_of(level, arg);
-        node = Node{.kind = Node::Kind::Text, .text = spelling, .begin = index, .end = index + 1};
-        reading.given.push_back(Given{.path = arg.path, .values = {spelling}});
     }
 
     /// Replaces the alias at `index` of `reading.active`, which ends before `next`, with what it
@@ -252,11 +209,7 @@ public:
 
     /// Whether the argv names one of `subcommands` at `level`.
     static bool given_subcommand(const Level& level, const Subcommands& subcommands) {
-        const Node* node = level.root;
-        for(auto key: subcommands.keys) {
-            node = node ? find_child(*node, key) : nullptr;
-        }
-        return node != nullptr;
+        return find_node(*level.root, subcommands.keys) != nullptr;
     }
 
     /// Checks what `level` requires once its arguments are read.
@@ -269,11 +222,7 @@ public:
             while(group != no_group) {
                 const auto& g = command.groups[group];
                 if(g.optional) {
-                    const Node* node = level.root;
-                    for(auto key: g.keys) {
-                        node = node ? find_child(*node, key) : nullptr;
-                    }
-                    return node != nullptr;
+                    return find_node(*level.root, g.keys) != nullptr;
                 }
                 group = g.parent;
             }
@@ -282,7 +231,7 @@ public:
         for(std::uint32_t i = 0; i < command.args.size(); ++i) {
             const auto& arg = command.args[i];
             const auto given = level.occurrences[i];
-            if(arg.positional && arg.list && given != 0 && given < arg.spec.arg_num.min) {
+            if(arg.spec.positional && arg.list && given != 0 && given < arg.spec.arg_num.min) {
                 return error(
                     Error::Kind::MissingRequired,
                     std::format("expected {}, got {}", input_args_text(arg.spec.arg_num), given),
@@ -292,7 +241,7 @@ public:
             if(given != 0 || !arg.required() || !present(arg.group)) {
                 continue;
             }
-            if(arg.positional) {
+            if(arg.spec.positional) {
                 return error(Error::Kind::MissingRequired,
                              std::format("expected {}, got 0",
                                          input_args_text(arg.list ? arg.spec.arg_num : ArgNum(1))),
@@ -312,9 +261,11 @@ public:
     }
 
     /// Reads `reading.active` from `start` as `command`, its fields into `root`.
-    std::optional<Error> run(const Command& command, Node& root, std::uint32_t start) {
+    std::optional<Error>
+        run(const Command& command, Node& root, std::uint32_t start, std::string prefix = {}) {
         Level level{.command = &command,
                     .root = &root,
+                    .prefix = std::move(prefix),
                     .occurrences = std::vector<std::uint32_t>(command.args.size()),
                     .cursor = start};
         std::uint32_t base = start;
@@ -338,20 +289,7 @@ public:
                 }
                 if(parsed.id == command.table->input_option_id) {
                     if(parsed.spelling == "--" && command.parse_options.dash_dash_packing) {
-                        const auto& arg = command.args[*command.rest];
-                        ++level.occurrences[*command.rest];
-                        Node& node = node_of(level, arg);
-                        Given given{.path = arg.path};
-                        for(std::uint32_t i = 0; i < parsed.values.size(); ++i) {
-                            node.items.push_back(Node{.kind = Node::Kind::Text,
-                                                      .text = parsed.values[i],
-                                                      .begin = index + 1 + i,
-                                                      .end = index + 2 + i});
-                            given.values.push_back(parsed.values[i]);
-                        }
-                        node.begin = index;
-                        node.end = span_end;
-                        reading.given.push_back(std::move(given));
+                        store(level, *command.rest, parsed.values, index, span_end);
                         level.cursor = span_end;
                         continue;
                     }
@@ -361,27 +299,28 @@ public:
                         if(found != subcommands.names.end()) {
                             const auto alternative =
                                 static_cast<std::uint32_t>(found - subcommands.names.begin());
-                            Node* parent = level.root;
-                            for(std::size_t i = 0; i + 1 < subcommands.keys.size(); ++i) {
-                                parent = &child(*parent, subcommands.keys[i], Node::Kind::Object);
-                            }
                             Node& variant =
-                                child(*parent, subcommands.keys.back(), Node::Kind::Variant);
+                                make_node(*level.root, subcommands.keys, Node::Kind::Variant);
                             variant.count = alternative;
                             variant.begin = index;
                             variant.end = index + 1;
                             variant.items.push_back(Node{.kind = Node::Kind::Object});
-                            level.cursor = next;
-                            if(auto err = check(level)) {
+                            reading.given.push_back(Given{.path = level.prefix + subcommands.path,
+                                                          .values = {reading.active[index]}});
+                            if(auto err = run(*subcommands.commands[alternative],
+                                              variant.items.front(),
+                                              next,
+                                              level.prefix + subcommands.path + ".")) {
                                 return err;
                             }
-                            reading.given.push_back(
-                                Given{.path = subcommands.path, .values = {parsed.spelling}});
-                            return run(*subcommands.commands[alternative],
-                                       variant.items.front(),
-                                       next);
+                            // What the command itself requires is checked at the subcommand's
+                            // word, unless the subcommand ended the parse.
+                            level.cursor = index;
+                            return stopped ? std::nullopt : check(level);
                         }
-                        if(!subcommands.optional && command.positionals.empty()) {
+                        // A word no positional argument takes names a subcommand, even
+                        // where one may be left out.
+                        if(command.positionals.empty()) {
                             return error(Error::Kind::UnknownSubcommand,
                                          std::format("unknown subcommand '{}'", parsed.spelling),
                                          index,
@@ -403,9 +342,10 @@ public:
                     expanded = true;
                     break;
                 }
-                store(level, arg_index, parsed, base);
+                store(level, arg_index, parsed.values, index, span_end);
                 level.cursor = span_end;
                 if(arg.spec.stop) {
+                    stopped = true;
                     return std::nullopt;
                 }
             }
@@ -433,14 +373,18 @@ std::optional<std::string> read_bool(std::string_view text, bool& out) {
     return std::format("invalid boolean value: {}", text);
 }
 
+namespace {
+
 template <typename Integer>
-static std::optional<std::string> read_integer(std::string_view text, Integer& out) {
+std::optional<std::string> read_integer(std::string_view text, Integer& out) {
     const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), out);
     if(ec != std::errc() || end != text.data() + text.size()) {
         return std::format("invalid integer value: {}", text);
     }
     return std::nullopt;
 }
+
+}  // namespace
 
 std::optional<std::string> read_number(std::string_view text, std::int64_t& out) {
     return read_integer(text, out);
@@ -477,19 +421,14 @@ Error decode_error(const Reading& reading,
                    string_list_ref argv,
                    const Node* last,
                    const codec::rich_error& error) {
-    const auto size = static_cast<std::uint32_t>(reading.active.size());
-    std::uint32_t begin = size;
-    std::uint32_t end = size;
-    if(last != nullptr) {
-        begin = last->begin;
-        end = last->end;
-    }
-    const auto user_size = static_cast<std::uint32_t>(argv.size());
-    const auto first = begin >= size ? user_size : reading.origin[begin];
-    const std::uint32_t past = end <= begin ? first
-                               : end > size ? user_size
-                                            : reading.origin[end - 1] + 1;
-    return error_at(Error::Kind::InvalidValue, error.message, argv, first, std::max(first, past));
+    // Past the active elements when the value is the struct's own, left out of the argv.
+    const auto past = static_cast<std::uint32_t>(reading.active.size());
+    return error_from(reading,
+                      argv,
+                      Error::Kind::InvalidValue,
+                      error.message,
+                      last ? last->begin : past,
+                      last ? last->end : past);
 }
 
 }  // namespace kotatsu::cli::detail

@@ -5,8 +5,6 @@
 #include <string>
 #include <vector>
 
-#include "kotatsu/support/string_list_ref.h"
-
 namespace kotatsu::cli {
 
 /// How a usage and an error are laid out.
@@ -31,13 +29,10 @@ struct Error {
         MissingValue,
         /// A value its field cannot take: `--jobs many`, or one a repr refuses.
         InvalidValue,
-        /// An argument nothing takes: a positional one too many, or one after `--` with nothing
-        /// to take the rest.
+        /// A positional argument nothing takes.
         UnexpectedArgument,
-        /// Something required left out: an option, a positional argument, a subcommand.
+        /// A required option or positional argument left out.
         MissingRequired,
-        /// Arguments that cannot be given together.
-        Conflict,
         /// A word where a subcommand goes that names none.
         UnknownSubcommand,
         /// No subcommand where one is required.
@@ -60,19 +55,9 @@ struct Error {
     ///              ^~~~
     ///       invalid integer value: many
     ///
-    /// `message` alone for an empty argv.
+    /// `message` alone for an empty argv. In color, it reads "error [argv[1]]" and draws the
+    /// mark.
     std::string render(const Style& style = {}) const;
 };
-
-namespace detail {
-
-/// The error of `kind` at elements [begin, end) of `argv`, which it copies.
-Error error_at(Error::Kind kind,
-               std::string message,
-               string_list_ref argv,
-               std::uint32_t begin,
-               std::uint32_t end);
-
-}  // namespace detail
 
 }  // namespace kotatsu::cli

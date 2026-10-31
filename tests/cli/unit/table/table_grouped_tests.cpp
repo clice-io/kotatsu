@@ -45,7 +45,7 @@ test::TableParse parse_grouped(std::string_view line) {
     return parse_table(OptTable(infos), line, {.grouped_short_options = true});
 }
 
-ZEST_SUITE(cli_table_table_grouped) {
+ZEST_SUITE(cli_table_grouped) {
 
 ZEST_CASE(group_of_flags_parses_as_each) {
     const auto parse = parse_grouped("-ab c");
@@ -173,7 +173,7 @@ ZEST_CASE(inputs_are_no_groups) {
     ZEXPECT(parse.args[1].id == InputId);
 }
 
-};  // ZEST_SUITE(cli_table_table_grouped)
+};  // ZEST_SUITE(cli_table_grouped)
 
 }  // namespace
 

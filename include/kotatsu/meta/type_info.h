@@ -156,7 +156,7 @@ struct field_info {
 
     /// The name the field is declared with.
     std::string_view declared_name = {};
-    /// The specs of the extensions its annotation carries (see extension_of).
+    /// The specs of the extensions its annotation carries, found with extension().
     std::span<const extension_ref> extensions = {};
 
     /// The spec of type `Spec` an extension attached to the field; null when it

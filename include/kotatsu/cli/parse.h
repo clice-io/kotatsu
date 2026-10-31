@@ -75,6 +75,12 @@ struct Command;
 /// subcommands, and their option table. Built on first use.
 const Command& command_of(const meta::type_info& type);
 
+/// The command of options `T`.
+template <typename T>
+const Command& command_of() {
+    return command_of(meta::type_info_of<T, decode_config>());
+}
+
 /// What an argv gives a command: the tree its decode reads, and where the nodes come from.
 struct Reading {
     Node root;
@@ -256,9 +262,19 @@ struct Reader {
         return visit_seq(std::forward<Callback>(cb));
     }
 
+    /// A subcommand: the alternative the argv names, read from its fields.
+    template <typename Callback>
+    bool visit_variant(Callback&& cb) {
+        if(node.kind != Node::Kind::Variant) {
+            return fail_shape("a subcommand");
+        }
+        Reader fields{node.items.front(), last};
+        return cb(std::size_t{node.count}, fields);
+    }
+
     template <typename Callback>
     bool visit_map(Callback&&) {
-        return fail_shape("no map");
+        return fail("a map is not an option");
     }
 };
 
@@ -285,9 +301,7 @@ template <typename T, typename Visit>
     requires std::invocable<Visit&, T&, const Given&>
 std::expected<T, Error> parse(string_list_ref argv, Visit visit) {
     detail::Reading reading;
-    if(auto err = detail::read(detail::command_of(meta::type_info_of<T, detail::decode_config>()),
-                               argv,
-                               reading)) {
+    if(auto err = detail::read(detail::command_of<T>(), argv, reading)) {
         return std::unexpected(std::move(*err));
     }
     T options{};
@@ -331,7 +345,7 @@ namespace kotatsu::codec {
 
 /// An enum reads from any spelling of its name meta knows: `info`, `Info`, `INFO`.
 template <typename E, typename Config>
-    requires std::is_enum_v<E>
+    requires (std::is_enum_v<E> && !meta::has_repr<E, meta::format_of_t<cli::detail::Reader>>)
 struct deserialize_visit<cli::detail::Reader, E, Config> {
     static bool visit(cli::detail::Reader& reader, E& out) {
         if(reader.node.kind != cli::detail::Node::Kind::Text) {
@@ -343,20 +357,6 @@ struct deserialize_visit<cli::detail::Reader, E, Config> {
         }
         out = *value;
         return true;
-    }
-};
-
-/// A variant of subcommands reads the one the argv names.
-template <typename... Ts, typename Config>
-struct deserialize_visit<cli::detail::Reader, std::variant<Ts...>, Config> {
-    static bool visit(cli::detail::Reader& reader, std::variant<Ts...>& out) {
-        if(reader.node.kind != cli::detail::Node::Kind::Variant) {
-            return reader.fail_shape("a subcommand");
-        }
-        cli::detail::Reader fields{reader.node.items.front(), reader.last};
-        return detail::with_index<sizeof...(Ts)>(reader.node.count, [&](auto index) {
-            return decode_value<Config>(fields, out.template emplace<decltype(index)::value>());
-        });
     }
 };
 

@@ -72,7 +72,7 @@ constexpr auto sorted_infos = std::array{
     Option::unaliased_one(pfx_dash, "-c", CId, OptionKind::Separate, 1),
 };
 
-ZEST_SUITE(cli_table_table) {
+ZEST_SUITE(cli_table) {
 
 ZEST_CASE(construction_finds_input_and_unknown) {
     const auto& table = kinds_table();
@@ -232,7 +232,7 @@ ZEST_CASE(parse_of_nothing_is_empty) {
     ZEXPECT(parse.begin() == parse.end());
 }
 
-};  // ZEST_SUITE(cli_table_table)
+};  // ZEST_SUITE(cli_table)
 
 }  // namespace
 

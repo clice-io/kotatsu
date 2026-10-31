@@ -47,15 +47,28 @@ ZEST_CASE(empty_argument_is_marked_where_it_stands) {
 
 ZEST_CASE(long_line_is_cut_around_the_mark) {
     std::vector<std::string> argv(30, "word");
-    const auto rendered = at(argv, 20, 21).render(Style{.argv_width = 40});
-    ZEXPECT(rendered.starts_with("at argv[20]:\n  ..."));
-    ZEXPECT(rendered.contains("..."));
+    ZEXPECT(at(argv, 20, 21).render(Style{.argv_width = 40}) ==
+            "at argv[20]:\n"
+            "  ... word word word word word word wor...\n" +
+                std::string(21, ' ') + "^~~~\n  bad");
+}
+
+ZEST_CASE(end_of_a_long_line_is_kept) {
+    std::vector<std::string> argv(30, "word");
+    ZEXPECT(at(argv, 30, 30).render(Style{.argv_width = 40}) ==
+            "at end of argv:\n"
+            "  ...rd word word word word word word word\n" +
+                std::string(42, ' ') + "^\n  bad");
 }
 
 ZEST_CASE(zero_width_keeps_the_whole_line) {
     std::vector<std::string> argv(30, "word");
     const auto rendered = at(argv, 20, 21).render(Style{.argv_width = 0});
     ZEXPECT(!rendered.contains("..."));
+}
+
+ZEST_CASE(color_look_names_the_end_of_argv) {
+    ZEXPECT(at({"core"}, 1, 1).render(Style{.color = true}).contains("[argv[end]]"));
 }
 
 ZEST_CASE(color_look_draws_the_mark) {

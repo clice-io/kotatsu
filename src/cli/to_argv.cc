@@ -1,7 +1,9 @@
 #include "kotatsu/cli/to_argv.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -13,29 +15,10 @@ namespace kotatsu::cli::detail {
 namespace {
 
 /// The node `keys` reach from `root`, or null for one the options leave empty.
-const Node* node_at(const Node& root, const std::vector<std::string_view>& keys) {
-    const Node* node = &root;
-    for(auto key: keys) {
-        if(node->kind != Node::Kind::Object) {
-            return nullptr;
-        }
-        const Node* found = nullptr;
-        for(std::size_t i = 0; i < node->keys.size(); ++i) {
-            if(node->keys[i] == key) {
-                found = &node->items[i];
-                break;
-            }
-        }
-        if(found == nullptr) {
-            return nullptr;
-        }
-        node = found;
-    }
-    // A false flag and an empty optional write nothing.
-    if(node->kind == Node::Kind::Flag && node->count == 0) {
-        return nullptr;
-    }
-    return node;
+const Node* node_at(const Node& root, std::span<const std::string_view> keys) {
+    const Node* node = find_node(root, keys);
+    // An empty optional writes nothing.
+    return node && node->kind == Node::Kind::Flag ? nullptr : node;
 }
 
 /// The values of `node`: its items for a list, else itself.
@@ -53,7 +36,7 @@ std::vector<const Node*> values_of(const Node& node) {
 
 void write(const Command& command, const Node& root, std::vector<std::string>& out) {
     for(const auto& arg: command.args) {
-        if(arg.positional || arg.spec.rest) {
+        if(arg.spec.positional || arg.spec.rest) {
             continue;
         }
         const Node* node = node_at(root, arg.keys);
@@ -62,7 +45,11 @@ void write(const Command& command, const Node& root, std::vector<std::string>& o
         }
         switch(arg.shape) {
             case Shape::Alias: break;
-            case Shape::Flag: out.push_back(arg.write_name); break;
+            case Shape::Flag:
+                if(node->text == "true") {
+                    out.push_back(arg.write_name);
+                }
+                break;
             case Shape::Count: {
                 std::uint32_t count = 0;
                 std::from_chars(node->text.data(), node->text.data() + node->text.size(), count);
@@ -112,18 +99,34 @@ void write(const Command& command, const Node& root, std::vector<std::string>& o
             }
         }
     }
+    std::vector<std::string_view> positionals;
     for(const auto index: command.positionals) {
         if(const Node* node = node_at(root, command.args[index].keys)) {
             for(const auto* value: values_of(*node)) {
-                out.emplace_back(value->text);
+                positionals.push_back(value->text);
             }
         }
     }
+    // A positional argument an option might be taken for follows "--", unless "--" starts the
+    // rest.
+    if(!command.rest && std::ranges::any_of(positionals, [](std::string_view value) {
+           return value.starts_with('-');
+       })) {
+        out.emplace_back("--");
+    }
+    out.insert(out.end(), positionals.begin(), positionals.end());
     if(command.subcommands) {
         const auto& subcommands = *command.subcommands;
         if(const Node* node = node_at(root, subcommands.keys)) {
-            out.push_back(subcommands.names[node->count]);
-            write(*subcommands.commands[node->count], node->items.front(), out);
+            // A variant tagged by name writes the name of the alternative, not its index.
+            const auto alternative =
+                node->kind == Node::Kind::Variant
+                    ? node->count
+                    : static_cast<std::uint32_t>(
+                          std::ranges::find(subcommands.names, node->keys.front()) -
+                          subcommands.names.begin());
+            out.push_back(subcommands.names[alternative]);
+            write(*subcommands.commands[alternative], node->items.front(), out);
             // What follows "--" would be the subcommand's.
             return;
         }

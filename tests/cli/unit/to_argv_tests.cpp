@@ -41,6 +41,19 @@ struct Options {
     std::optional<std::variant<Serve>> command;
 };
 
+struct Values {
+    std::vector<bool> seen;
+    KOTATSU_ANNOTATE(cli::positional = true)
+    <bool> on = true;
+    KOTATSU_ANNOTATE(cli::positional = true)
+    <std::optional<std::string>> word;
+};
+
+struct Service {
+    KOTATSU_ANNOTATE(tagged = true, tag_names = {"up"})
+    <std::variant<Serve>> command;
+};
+
 struct Run {
     KOTATSU_ANNOTATE(cli::rest = true)
     <std::vector<std::string>> command;
@@ -106,7 +119,37 @@ ZEST_CASE(rest_writes_after_dash_dash) {
     Run run;
     run.command = std::vector<std::string>{"make", "-j"};
     ZEXPECT(cli::to_argv(run) == (std::vector<std::string>{"--", "make", "-j"}));
+}
+
+ZEST_CASE(empty_rest_writes_nothing) {
     ZEXPECT(cli::to_argv(Run{}).empty());
+}
+
+ZEST_CASE(bool_values_write_their_text) {
+    Values values;
+    values.seen = {true, false};
+    values.on = false;
+    ZEXPECT(cli::to_argv(values) ==
+            (std::vector<std::string>{"--seen=true", "--seen=false", "false"}));
+    auto back = cli::parse<Values>(cli::to_argv(values));
+    ZASSERT(back.has_value());
+    ZEXPECT(back->seen == values.seen);
+    ZEXPECT(!back->on);
+}
+
+ZEST_CASE(positional_taken_for_an_option_follows_dash_dash) {
+    Values values;
+    values.word = "-5";
+    ZEXPECT(cli::to_argv(values) == (std::vector<std::string>{"--", "true", "-5"}));
+    auto back = cli::parse<Values>(cli::to_argv(values));
+    ZASSERT(back.has_value());
+    ZEXPECT(back->word == std::optional<std::string>("-5"));
+}
+
+ZEST_CASE(tagged_subcommand_writes_its_tag_name) {
+    Service service;
+    service.command = Serve{.port = 3};
+    ZEXPECT(cli::to_argv(service) == (std::vector<std::string>{"up", "--port=3"}));
 }
 
 };  // ZEST_SUITE(cli_to_argv)

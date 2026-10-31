@@ -79,16 +79,12 @@ struct extras_tag {
 
 /// The spec of an extension, a module beside meta with entries of its own.
 struct probe_extension {
-    enum class entry : std::uint8_t { label, weight };
-
     std::string_view label;
     int weight = 0;
 };
 
-[[maybe_unused]] constexpr inline dsl::
-    value_proxy<probe_extension::entry::label, &probe_extension::label, std::string_view> label{};
-[[maybe_unused]] constexpr inline dsl::
-    value_proxy<probe_extension::entry::weight, &probe_extension::weight, int> weight{};
+[[maybe_unused]] constexpr inline dsl::member_proxy<&probe_extension::label> label{};
+[[maybe_unused]] constexpr inline dsl::member_proxy<&probe_extension::weight> weight{};
 
 struct extension_tag {
     constexpr static auto spec =
@@ -204,6 +200,13 @@ ZEST_CASE(make_spec_keeps_extension_specs_beside_its_own) {
     ZSTATIC_EXPECT(std::get<probe_extension>(spec.extensions).weight == 3);
     // An annotation without extension entries carries none.
     ZSTATIC_EXPECT(std::tuple_size_v<decltype(full_tag::spec.extensions)> == 0);
+}
+
+ZEST_CASE(extension_entries_are_told_apart_by_their_member) {
+    ZSTATIC_EXPECT(detail::component_kinds_unique<decltype(label = "a"), decltype(weight = 1)>());
+    ZSTATIC_EXPECT(!detail::component_kinds_unique<decltype(label = "a"), decltype(label = "b")>());
+    ZSTATIC_EXPECT(
+        detail::component_kinds_unique<decltype(dsl::rename = "a"), decltype(label = "b")>());
 }
 
 ZEST_CASE(extension_of_finds_a_field_s_extension) {

@@ -5,6 +5,7 @@
 #include <expected>
 #include <optional>
 #include <ranges>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -43,6 +44,43 @@ struct Options {
     KOTATSU_ANNOTATE(cli::required = true)
     <std::string> must = "x";
     std::string x;
+};
+
+/// An option named with '=' beside one whose '=' form it is, declared first.
+struct Spelled {
+    KOTATSU_ANNOTATE(cli::names = {"--x"})
+    <std::string> separate;
+    KOTATSU_ANNOTATE(cli::names = {"--x="})
+    <std::string> joined;
+};
+
+struct Toggles {
+    std::vector<bool> seen;
+};
+
+/// A command that names no option.
+struct Files {
+    KOTATSU_ANNOTATE(cli::positional = true)
+    <std::vector<std::string>> files;
+};
+
+struct Twice {
+    KOTATSU_ANNOTATE(cli::names = {"-o"})
+    <std::string> first;
+    KOTATSU_ANNOTATE(cli::names = {"-o"})
+    <std::string> second;
+};
+
+struct CommaScalar {
+    KOTATSU_ANNOTATE(cli::comma = true)
+    <std::string> t;
+};
+
+struct Loop {
+    KOTATSU_ANNOTATE(cli::names = {"-a"}, cli::forward = {"-b"})
+    <cli::Alias> a;
+    KOTATSU_ANNOTATE(cli::names = {"-b"}, cli::forward = {"-a"})
+    <cli::Alias> b;
 };
 
 template <typename T = Options>
@@ -115,7 +153,7 @@ ZEST_CASE(comma_list_takes_its_values_after_its_comma) {
     ZEXPECT(options.tags == (std::vector<std::string>{"a", "b", "c"}));
 }
 
-ZEST_CASE(comma_list_without_its_comma_is_unknown) {
+ZEST_CASE(comma_list_without_its_comma_fails) {
     auto options = parse_line("--must y --tags=a");
     ZASSERT(!options.has_value());
     ZEXPECT(options.error().kind == Error::Kind::UnknownOption);
@@ -128,25 +166,32 @@ ZEST_CASE(tuple_takes_a_value_for_each_element) {
     ZEXPECT(options.define[1] == (std::pair<std::string, std::string>{"B", "2"}));
 }
 
-ZEST_CASE(explicit_names_replace_the_field_name) {
+ZEST_CASE(explicit_names_are_the_option_s_names) {
     ZEXPECT(std::string(parsed("--must y -o a").out) == "a");
     ZEXPECT(std::string(parsed("--must y --out=b").out) == "b");
-    ZEXPECT(!parse_line("--must y --out-file a").has_value());
+}
+
+ZEST_CASE(field_name_beside_explicit_names_fails) {
+    auto options = parse_line("--must y --out-file a");
+    ZASSERT(!options.has_value());
+    ZEXPECT(options.error().kind == Error::Kind::UnknownOption);
 }
 
 ZEST_CASE(joined_style_takes_its_value_joined) {
     ZEXPECT(std::string(parsed("--must y -Iinclude").dir) == "include");
 }
 
-ZEST_CASE(separate_style_takes_no_value_after_equals) {
+ZEST_CASE(separate_style_takes_its_value_separate) {
     ZEXPECT(std::string(parsed("--must y --sep v").sep) == "v");
+}
+
+ZEST_CASE(separate_style_value_after_equals_fails) {
     auto options = parse_line("--must y --sep=v");
     ZASSERT(!options.has_value());
     ZEXPECT(options.error().kind == Error::Kind::UnknownOption);
 }
 
 ZEST_CASE(empty_value_is_a_value) {
-    ZEXPECT(std::string(parsed("--must y --name ").name).empty());
     auto options = cli::parse<Options>({"--must", "y", "--name", ""});
     ZASSERT(options.has_value());
     ZEXPECT(std::string(options->name).empty());
@@ -206,6 +251,48 @@ ZEST_CASE(other_ranges_of_strings_parse) {
     ZASSERT(options.has_value());
     ZEXPECT(std::string(options->must) == "y");
 }
+
+ZEST_CASE(equals_form_is_left_to_the_option_named_so) {
+    auto spelled = parse_line<Spelled>("--x=a --x b");
+    ZASSERT(spelled.has_value());
+    ZEXPECT(std::string(spelled->joined) == "a");
+    ZEXPECT(std::string(spelled->separate) == "b");
+}
+
+ZEST_CASE(bool_value_reads_its_spellings) {
+    auto toggles = parse_line<Toggles>("--seen true --seen off --seen YES");
+    ZASSERT(toggles.has_value());
+    ZEXPECT(toggles->seen == (std::vector<bool>{true, false, true}));
+}
+
+ZEST_CASE(bool_value_of_another_spelling_fails) {
+    auto toggles = parse_line<Toggles>("--seen maybe");
+    ZASSERT(!toggles.has_value());
+    ZEXPECT(toggles.error().message == "invalid boolean value: maybe");
+    ZEXPECT(toggles.error().begin == 1U);
+}
+
+ZEST_CASE(dash_word_in_a_command_without_options_fails) {
+    auto files = parse_line<Files>("--force a");
+    ZASSERT(!files.has_value());
+    ZEXPECT(files.error().kind == Error::Kind::UnknownOption);
+}
+
+#ifdef __cpp_exceptions
+
+ZEST_CASE(two_options_of_one_name_fail_to_build) {
+    ZEXPECT(zest::throws<std::invalid_argument>([] { (void)parse_line<Twice>("-o a"); }));
+}
+
+ZEST_CASE(comma_scalar_fails_to_build) {
+    ZEXPECT(zest::throws<std::invalid_argument>([] { (void)parse_line<CommaScalar>("--t,a"); }));
+}
+
+ZEST_CASE(alias_of_an_alias_fails_to_build) {
+    ZEXPECT(zest::throws<std::invalid_argument>([] { (void)parse_line<Loop>("-a"); }));
+}
+
+#endif
 
 };  // ZEST_SUITE(cli_parse_options)
 

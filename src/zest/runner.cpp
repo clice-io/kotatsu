@@ -316,7 +316,7 @@ int run_cli(int argc, char** argv, std::string_view command_overview) {
     auto parsed = cli::parse<CliOptions>(
         std::span(argv, static_cast<std::size_t>(argc)).subspan(std::min(argc, 1)));
     if(!parsed) {
-        std::println(stderr, "Error parsing options: {}", parsed.error().render(style));
+        std::println(stderr, "{}", parsed.error().render(style));
         return 2;
     }
     if(parsed->help) {
