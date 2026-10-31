@@ -1,6 +1,7 @@
 # kotatsu
 
-A C++20/23 coroutine wrapper for libuv. Library modules live under
+A C++23 async runtime with reflection-driven serialization, JSON-RPC and LSP,
+and file system and process APIs. Library modules live under
 `include/kotatsu/<module>/` (`async`, `codec`, `deco`, `fs`, `http`, `ipc`,
 `meta`, `support`, `sys`, `zest`).
 
@@ -34,6 +35,16 @@ clice and catter consume.
   `--snapshot-dir=tests/snapshots`, or snapshot tests fail spuriously.
 - Integration tests alone: `pixi run integration-test [preset]`
   (`ctest -L integration`).
+
+## Documentation
+
+`README.md` says what kotatsu is, with a line per module; `docs/README.md`
+indexes the module pages and lists their dependencies; each `docs/<module>.md`
+is a short overview (purpose, targets, one example, a line per header,
+platform notes); `docs/building.md` has the target and option tables. The
+headers' doc comments are the reference, which the pages link rather than
+repeat. A change to a module's targets, options, dependencies, headers or the
+names in its example updates those pages in the same PR.
 
 ## Skills
 
