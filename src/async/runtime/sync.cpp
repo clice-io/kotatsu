@@ -14,6 +14,7 @@ void sync_primitive::insert(wait_node& waiter) noexcept {
     waiter.next = nullptr;
     (tail ? tail->next : head) = &waiter;
     tail = &waiter;
+    waiter.loop->track(waiter);
 }
 
 void sync_primitive::remove(wait_node& waiter) noexcept {
@@ -23,6 +24,7 @@ void sync_primitive::remove(wait_node& waiter) noexcept {
     waiter.prev = nullptr;
     waiter.next = nullptr;
     waiter.queue = nullptr;
+    waiter.loop->untrack(waiter);
 }
 
 bool sync_primitive::wake_one() {
@@ -79,22 +81,26 @@ void wait_node::grant(sync_primitive& from) {
 }
 
 void wait_node::cancel_wait() {
-    if(queue != owner) {
+    if(queue == owner) {
+        owner->remove(*this);
+    } else if(loop != nullptr) {
         // Granted, or a notified condition variable wait queued on its mutex
         // again. Its task learns of the cancel when it is woken.
         give_back();
         return;
     }
 
-    owner->remove(*this);
+    // Queued until now, or abandoned.
     if(relock != nullptr && !relock->try_lock()) {
         // A condition variable wait ends holding its mutex: the cancel waits
-        // for it.
-        relock->insert(*this);
+        // for it, which only a loop can.
+        if(loop != nullptr) {
+            relock->insert(*this);
+        }
         return;
     }
     state = State::Cancelled;
-    resume_and_drain(std::exchange(parent, nullptr)->on_child_complete(*this));
+    resume_and_drain([this] { return std::exchange(parent, nullptr)->on_child_complete(*this); });
 }
 
 void wait_node::give_back() {
@@ -115,18 +121,23 @@ void wait_node::give_back() {
     }
 }
 
+void wait_node::abandon() noexcept {
+    queue->remove(*this);
+    loop = nullptr;
+}
+
 void wait_node::resume() {
     auto& task = static_cast<task_frame&>(*parent);
     task.child = nullptr;
     if(cancel_requested) {
         // cancel_wait() has handed on what the wait was granted.
-        resume_and_drain(task.finish(State::Cancelled));
+        resume_and_drain([&task] { return task.finish(State::Cancelled); });
         return;
     }
     if(owner_kind != sync_primitive::Kind::Event) {
         owner->woken -= 1;
     }
-    resume_and_drain(task.handle());
+    resume_and_drain([&task] { return task.handle(); });
 }
 
 }  // namespace kotatsu::async

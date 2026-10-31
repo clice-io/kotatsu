@@ -21,6 +21,15 @@ struct relay::Self {
     std::mutex mutex;
     std::vector<function<void()>> queue;
     std::atomic<int> count{0};
+
+    /// Lets go of a relay's hold on the loop, and wakes it to see that. Both
+    /// under the mutex, under which alone the loop drops its hold: it cannot
+    /// return from run(), and go, before the wakeup is sent.
+    void release() {
+        std::lock_guard lock(mutex);
+        count.fetch_sub(1, std::memory_order_release);
+        ::uv_async_send(&async);
+    }
 };
 
 struct event_loop::Self : relay::Self {
@@ -31,6 +40,9 @@ struct event_loop::Self : relay::Self {
     /// The waits sync primitives granted, whose tasks resume in this order,
     /// and the io ops complete_deferred() queued among them.
     std::deque<async_node*> deferred;
+    /// The waits of this loop's tasks queued on sync primitives, linked
+    /// through wait_node::loop_next.
+    wait_node* queued_waits = nullptr;
     /// Ops to complete on a later iteration: yields, and waits that stop()
     /// or a destructor aborted. New ops land in `staged`; each() promotes
     /// the staged batch to `ready` and completes the batch promoted by the
@@ -89,10 +101,9 @@ void event_loop::Self::on_relay(uv_async_t* handle) {
     // still empty. A producer may send() and destroy its relay while the
     // batch above is draining; the re-armed async wakeup alone would not
     // keep uv_run alive once the handle is unreffed, and the refilled queue
-    // would be dropped. count == 0 (acquire) pairs with the release
-    // decrement in ~relay: it guarantees every send() on the destroyed
-    // relays is already visible in the queue, so checking both under the
-    // mutex is race-free.
+    // would be dropped. A relay lets go under the mutex too (release()):
+    // count == 0 here means every send() on the destroyed relays is in the
+    // queue, and their last wakeups are sent.
     std::lock_guard lock(self->mutex);
     if(self->count.load(std::memory_order_acquire) == 0 && self->queue.empty()) {
         ::uv_unref(reinterpret_cast<uv_handle_t*>(handle));
@@ -105,10 +116,8 @@ relay::relay(relay&& other) noexcept : self(std::exchange(other.self, nullptr)) 
 
 relay& relay::operator=(relay&& other) noexcept {
     if(this != &other) {
-        auto* old = std::exchange(self, std::exchange(other.self, nullptr));
-        if(old) {
-            old->count.fetch_sub(1, std::memory_order_release);
-            ::uv_async_send(&old->async);
+        if(auto* old = std::exchange(self, std::exchange(other.self, nullptr))) {
+            old->release();
         }
     }
     return *this;
@@ -116,8 +125,7 @@ relay& relay::operator=(relay&& other) noexcept {
 
 relay::~relay() {
     if(self) {
-        self->count.fetch_sub(1, std::memory_order_release);
-        ::uv_async_send(&self->async);
+        self->release();
     }
 }
 
@@ -207,6 +215,24 @@ void event_loop::Self::on_check(uv_check_t* handle) {
 void event_loop::schedule(task_frame& root) {
     self->ensure_idle();
     self->tasks.push_back(&root);
+}
+
+void event_loop::track(wait_node& waiter) noexcept {
+    waiter.loop_prev = nullptr;
+    waiter.loop_next = self->queued_waits;
+    if(self->queued_waits != nullptr) {
+        self->queued_waits->loop_prev = &waiter;
+    }
+    self->queued_waits = &waiter;
+}
+
+void event_loop::untrack(wait_node& waiter) noexcept {
+    (waiter.loop_prev ? waiter.loop_prev->loop_next : self->queued_waits) = waiter.loop_next;
+    if(waiter.loop_next != nullptr) {
+        waiter.loop_next->loop_prev = waiter.loop_prev;
+    }
+    waiter.loop_prev = nullptr;
+    waiter.loop_next = nullptr;
 }
 
 void event_loop::defer_resume(wait_node& waiter) {
@@ -331,6 +357,13 @@ event_loop::~event_loop() {
 
     for(auto& free: self->frees) {
         free();
+    }
+
+    // Tasks still waiting on a sync primitive stay suspended, as every task
+    // left suspended does; a primitive that outlives the loop must not grant
+    // their waits.
+    while(auto* waiter = self->queued_waits) {
+        waiter->abandon();
     }
 }
 

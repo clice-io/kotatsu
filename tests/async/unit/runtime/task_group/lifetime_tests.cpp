@@ -1,4 +1,8 @@
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <memory>
+#include <new>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -19,6 +23,41 @@ struct CustomError {
 
 template <typename Group, typename Task>
 concept spawnable = requires(Group& group, Task task) { group.spawn(std::move(task)); };
+
+/// What owns a group, as a connection's state owns the group of its
+/// requests, kept alive by the children it spawns.
+struct Session {
+    task_group<> group;
+    event never;
+};
+
+/// Storage that outlives the Session made in it: its deleter poisons the
+/// bytes once the Session is destroyed, so that a write to the Session, its
+/// group included, after it went shows as a byte that changed.
+struct SessionStorage {
+    constexpr static std::byte poison{0xA5};
+
+    alignas(Session) std::array<std::byte, sizeof(Session)> bytes{};
+    bool destroyed = false;
+
+    std::shared_ptr<Session> make() {
+        return std::shared_ptr<Session>(new (bytes.data()) Session(), [this](Session* session) {
+            session->~Session();
+            bytes.fill(poison);
+            destroyed = true;
+        });
+    }
+
+    /// Nothing wrote to the Session since it was destroyed.
+    bool untouched() const {
+        return std::ranges::all_of(bytes, [](std::byte b) { return b == poison; });
+    }
+};
+
+/// A child that keeps `session` alive while it waits on it.
+task<> waits_on(std::shared_ptr<Session> session) {
+    co_await session->never.wait();
+}
 
 ZEST_SUITE(async_runtime_task_group_lifetime, zest::LoopFixture) {
 
@@ -223,10 +262,10 @@ ZEST_CASE(destroyed_group_child_is_freed_once_its_cancel_completes) {
     ZEXPECT(frames.use_count() == 1);
 }
 
-// Every child's frame goes as soon as the child ends, a failed one too, whose
-// error the group has taken by then. Each frame holds a copy of `frames`, so
-// its use count tells how many are alive.
-ZEST_CASE(finished_children_are_reclaimed_at_once) {
+// Every child's frame goes once the child has ended and whatever runs has
+// suspended, a failed one too, whose error the group has taken by then. Each
+// frame holds a copy of `frames`, so its use count tells how many are alive.
+ZEST_CASE(finished_children_are_reclaimed_once_their_spawner_suspends) {
     auto frames = std::make_shared<int>();
     auto work = [](std::shared_ptr<int>) -> task<> {
         co_return;
@@ -246,8 +285,10 @@ ZEST_CASE(finished_children_are_reclaimed_at_once) {
         task_group<error> group;
         group.spawn(work(frames));
         group.spawn(work(frames));
+        co_await yield();
         seen.alive_after_two = frames.use_count() - 1;
         group.spawn(failing(frames));
+        co_await yield();
         seen.alive_after_failing = frames.use_count() - 1;
         auto joined = co_await group.join();
         if(joined.has_error()) {
@@ -368,6 +409,68 @@ ZEST_CASE(join_after_an_error_waits_for_pending_children) {
     ZASSERT(joined_before.has_value());
     ZEXPECT(!*joined_before);
     ZEXPECT(frames.use_count() == 1);
+}
+
+// A child may hold the last reference to what owns its group: the group is
+// done with the child before the child's frame, and what that holds, goes.
+ZEST_CASE(child_owning_its_group_frees_it_once_the_group_is_done) {
+    SessionStorage storage;
+    auto child = [](std::shared_ptr<Session>) -> task<> {
+        co_await yield();
+    };
+    auto start = [&]() -> task<> {
+        auto session = storage.make();
+        session->group.spawn(child(session));
+        co_return;
+    };
+
+    auto [result] = run(start());
+    ZEXPECT(result.has_value());
+    ZEXPECT(storage.destroyed);
+    ZEXPECT(storage.untouched());
+}
+
+// cancel() ends the children one after another, the last of which frees the
+// group under it.
+ZEST_CASE(cancel_ending_the_children_owning_the_group_frees_it_once_done) {
+    SessionStorage storage;
+    auto start = [&]() -> task<> {
+        auto session = storage.make();
+        session->group.spawn(waits_on(session));
+        session->group.spawn(waits_on(session));
+        auto& group = session->group;
+        session.reset();
+        group.cancel();
+        co_return;
+    };
+
+    auto [result] = run(start());
+    ZEXPECT(result.has_value());
+    ZEXPECT(storage.destroyed);
+    ZEXPECT(storage.untouched());
+}
+
+// Outside any task, as from a relay's callback, cancel() is a resumption of
+// its own: the children it ends do not free the group before it is done.
+ZEST_CASE(cancel_outside_a_task_frees_the_group_once_done) {
+    SessionStorage storage;
+    task_group<>* group = nullptr;
+    auto start = [&]() -> task<> {
+        auto session = storage.make();
+        session->group.spawn(waits_on(session));
+        session->group.spawn(waits_on(session));
+        group = &session->group;
+        co_return;
+    };
+
+    // Returns with the children waiting: nothing else keeps the loop.
+    loop.schedule(start());
+    ZEXPECT(loop.run() == 0);
+    ZASSERT(group != nullptr);
+    ZEXPECT(!storage.destroyed);
+    group->cancel();
+    ZEXPECT(storage.destroyed);
+    ZEXPECT(storage.untouched());
 }
 
 };  // ZEST_SUITE(async_runtime_task_group_lifetime)

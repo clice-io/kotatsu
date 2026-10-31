@@ -87,9 +87,28 @@ protected:
     /// coroutine to resume next.
     std::coroutine_handle<> on_child_complete(async_node& child);
 
-    /// Resumes `handle`, then, unless it runs inside another resumption, the
-    /// tasks sync primitives woke meanwhile.
-    static void resume_and_drain(std::coroutine_handle<> handle);
+    /// Runs `step`, which returns the coroutine to resume next, and resumes
+    /// that, all as one resumption. Unless it runs inside another, the tasks
+    /// sync primitives woke meanwhile resume after it, and the frames of the
+    /// tasks that ended in it go last: a frame may hold the last reference to
+    /// what the code that ended it still uses, as a task_group child may own
+    /// the group.
+    template <typename Step>
+    static void resume_and_drain(Step step) {
+        const bool outermost = enter_resumption();
+        step().resume();
+        if(outermost) {
+            leave_resumption();
+        }
+    }
+
+    /// Marks a resumption under way on this thread; true for the outermost.
+    static bool enter_resumption() noexcept;
+
+    /// Ends the outermost resumption: resumes what sync primitives woke, if
+    /// a loop runs, and destroys the frames that ended, until neither leaves
+    /// anything to do.
+    static void leave_resumption();
 
     State state = State::Pending;
 

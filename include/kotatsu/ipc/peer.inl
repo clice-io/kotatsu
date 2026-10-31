@@ -218,6 +218,8 @@ struct Peer<CodecT>::Self {
     ViolationPolicy violation_policy = ViolationPolicy::Tolerate;
     /// Why no answer can come any more, once none can: the first reason.
     std::optional<ConversationEnd> ending;
+    /// Set with `ending`.
+    async::event conversation_ended;
     /// run() was called; it is called once.
     bool started = false;
     /// run() is running: the Peer must not go.
@@ -405,6 +407,7 @@ struct Peer<CodecT>::Self {
     void end_conversation(ConversationEnd why) {
         if(!ending) {
             ending = std::move(why);
+            conversation_ended.set();
         }
     }
 
@@ -888,6 +891,12 @@ void Peer<CodecT>::set_violation_policy(ViolationPolicy policy) {
 template <typename CodecT>
 std::optional<ConversationEnd> Peer<CodecT>::ended() const {
     return self->ending;
+}
+
+template <typename CodecT>
+async::task<ConversationEnd> Peer<CodecT>::wait_ended() {
+    co_await self->conversation_ended.wait();
+    co_return *self->ending;
 }
 
 template <typename CodecT>

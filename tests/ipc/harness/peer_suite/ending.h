@@ -1,7 +1,7 @@
 #pragma once
 
-// How a conversation ends: what ended() says of it, and the messages that
-// end it under ViolationPolicy::End, or that it reads past.
+// How a conversation ends: what ended() and wait_ended() say of it, and the
+// messages that end it under ViolationPolicy::End, or that it reads past.
 
 #include <optional>
 #include <stdexcept>
@@ -422,6 +422,87 @@ void peer_ending(const PeerKit<A>& kit) {
                 ZEXPECT(!ended.has_value());
             });
 #endif
+
+    // The handler answers only once the wait has ended: without it, it would
+    // keep run() going for good after the input ended.
+    kit.add("wait_ended_resumes_while_a_handler_keeps_run_going", [](Fixture& f) {
+        async::event release;
+        f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
+            co_await release.wait();
+            co_return AddResult{.sum = params.a + params.b};
+        });
+        auto running = f.peer.run();
+        bool run_was_going = false;
+        auto watch = [&]() -> async::task<ipc::ConversationEnd> {
+            auto end = co_await f.peer.wait_ended();
+            run_was_going = !running.done();
+            release.set();
+            co_return end;
+        };
+        f.remote.send(request<A>(3, "test/add", AddParams{.a = 1, .b = 2}));
+        f.remote.end_input();
+
+        auto [ran, ended] = f.run(running, watch());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(run_was_going);
+        ZASSERT(ended.has_value());
+        ZEXPECT(ended->kind == Kind::InputEnded);
+        ZEXPECT(ended->message == "input ended");
+        const auto& written = f.written();
+        ZASSERT(written.size() == 1U);
+        ZEXPECT(sum_of<A>(written[0]) == 3);
+    });
+
+    kit.add("wait_ended_resumes_at_close_with_shut_down", [](Fixture& f) {
+        auto closer = [&]() -> async::task<> {
+            f.peer.close();
+            co_return;
+        };
+
+        auto [ran, ended, closed] = f.run(f.peer.run(), f.peer.wait_ended(), closer());
+        ZEXPECT(ran.has_value());
+        ZASSERT(ended.has_value());
+        ZEXPECT(ended->kind == Kind::ShutDown);
+        ZEXPECT(ended->message == "peer closed");
+    });
+
+    kit.add("wait_ended_after_the_end_resumes_at_once", [](Fixture& f) {
+        f.remote.end_input();
+        auto [ran] = f.run(f.peer.run());
+        ZEXPECT(ran.has_value());
+
+        auto [ended] = f.run(f.peer.wait_ended());
+        ZASSERT(ended.has_value());
+        ZEXPECT(ended->kind == Kind::InputEnded);
+    });
+
+    // The size limit is this side's: the peer skips the message and reads
+    // on, and the wait goes on with it.
+    kit.add("wait_ended_goes_on_past_an_oversized_message", [](Fixture& f) {
+        f.serve_add();
+        auto waiting = f.peer.wait_ended();
+        bool ended_early = true;
+        auto remote = [&]() -> async::task<> {
+            auto note = notification<A>("test/note", NoteParams{.text = std::string(64, 'x')});
+            f.remote.send_unreadable(ipc::ReadError{
+                .kind = ipc::ReadError::Kind::Oversized,
+                .message = "too large",
+                .size = note.size(),
+                .prefix = note.substr(0, note.size() - 16),
+            });
+            f.remote.send(request<A>(3, "test/add", AddParams{.a = 1, .b = 2}));
+            // Answered: the message before it has been skipped.
+            co_await f.next();
+            ended_early = waiting.done();
+            f.remote.end_input();
+        };
+
+        auto [ran, ended, scripted] = f.run(f.peer.run(), waiting, remote());
+        ZEXPECT(ran.has_value());
+        ZEXPECT(!ended_early);
+        ZASSERT(ended.has_value());
+        ZEXPECT(ended->kind == Kind::InputEnded);
+    });
 
     // What JSON-RPC asks of a server: answer, and read on.
     kit.add("violations_leave_the_conversation_going_by_default", [](Fixture& f) {

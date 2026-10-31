@@ -13,31 +13,24 @@ namespace kotatsu::async {
 
 namespace {
 
-#if KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-/// MSVC's coroutine codegen under ASan cannot destroy a frame from its own
-/// final suspension: frames wait here until the resumption that ended them
-/// has returned.
-thread_local std::vector<std::coroutine_handle<>> pending_frame_destroys;
-#endif
+/// The frames of the tasks that ended in the resumption under way on this
+/// thread, which a loop owns or a task_group kept. They go once the
+/// outermost resumption is over: one may own what the code that ended it
+/// still uses, and none is then at its final suspension, from which MSVC's
+/// coroutine codegen under ASan cannot destroy a frame.
+thread_local std::vector<std::coroutine_handle<>> ended_frames;
 
 void destroy_frame(std::coroutine_handle<> frame) {
-#if KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    pending_frame_destroys.push_back(frame);
-#else
-    frame.destroy();
-#endif
+    ended_frames.push_back(frame);
 }
 
-/// Destroys the frames that ended in the outermost resumption on this
-/// thread, which has just returned: only now is none of them on the stack.
 void destroy_ended_frames() {
-#if KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    while(!pending_frame_destroys.empty()) {
-        for(auto frame: std::exchange(pending_frame_destroys, {})) {
-            frame.destroy();
-        }
+    // Destroying a frame may end more tasks, whose frames join the list.
+    for(std::size_t i = 0; i < ended_frames.size(); ++i) {
+        auto frame = ended_frames[i];
+        frame.destroy();
     }
-#endif
+    ended_frames.clear();
 }
 
 /// A resumption is under way on this thread, or a ResumptionScope stands for
@@ -55,16 +48,21 @@ detail::ResumptionScope::~ResumptionScope() {
     }
 }
 
-void async_node::resume_and_drain(std::coroutine_handle<> handle) {
-    const bool outermost = !std::exchange(draining, true);
-    handle.resume();
-    if(!outermost) {
-        return;
+bool async_node::enter_resumption() noexcept {
+    return !std::exchange(draining, true);
+}
+
+void async_node::leave_resumption() {
+    // What the destroyed frames held may wake more tasks, which may end more.
+    while(true) {
+        if(event_loop::has_current()) {
+            event_loop::current().drain_deferred();
+        }
+        if(ended_frames.empty()) {
+            break;
+        }
+        destroy_ended_frames();
     }
-    if(event_loop::has_current()) {
-        event_loop::current().drain_deferred();
-    }
-    destroy_ended_frames();
     draining = false;
 }
 
@@ -88,7 +86,7 @@ void async_node::cancel() {
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
         case NodeKind::TaskGroup:
-            resume_and_drain(static_cast<aggregate_op*>(this)->cancel_all());
+            resume_and_drain([this] { return static_cast<aggregate_op*>(this)->cancel_all(); });
             break;
 
         case NodeKind::SystemIO: {
@@ -169,7 +167,7 @@ std::coroutine_handle<> task_frame::finish(State end) {
 }
 
 void detail::task_access::run_root(task_frame& root) {
-    task_frame::resume_and_drain(root.start(nullptr));
+    task_frame::resume_and_drain([&root] { return root.start(nullptr); });
 }
 
 void detail::task_access::drop_root(task_frame& root) {
@@ -233,7 +231,7 @@ std::coroutine_handle<> aggregate_op::arm(task_frame& waiting,
         // after it, which then end without running.
         pin held(*this);
         for(auto* child: children) {
-            resume_and_drain(child->start(this));
+            resume_and_drain([this, child] { return child->start(this); });
         }
     }
     return settle_if_idle();
@@ -243,7 +241,7 @@ void aggregate_op::spawn(task_frame& child, std::source_location location) {
     child.location = location;
     link(child);
     pending += 1;
-    resume_and_drain(child.start(this));
+    resume_and_drain([this, &child] { return child.start(this); });
 }
 
 std::coroutine_handle<> aggregate_op::await_children(task_frame& waiting,
@@ -379,7 +377,7 @@ void io_op::complete() noexcept {
     state = cancel_requested() ? State::Cancelled : State::Succeeded;
     auto* awaiting = std::exchange(parent, nullptr);
     assert(awaiting != nullptr && "io_op completed while no task awaits it");
-    resume_and_drain(awaiting->on_child_complete(*this));
+    resume_and_drain([this, awaiting] { return awaiting->on_child_complete(*this); });
 }
 
 }  // namespace kotatsu::async

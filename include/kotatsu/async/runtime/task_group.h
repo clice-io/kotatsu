@@ -87,7 +87,7 @@ public:
             return;
         }
         decision = Decision::Resume;
-        resume_and_drain(cancel_all());
+        resume_and_drain([this] { return cancel_all(); });
     }
 
     /// Waits until every child has ended, then rethrows the first exception a

@@ -28,7 +28,9 @@ class ScopedAwaiter;
 /// variable must not go while tasks wait on it, nor before the tasks it woke
 /// have resumed: one cancelled in between hands what it was granted back to
 /// it. An event may go once it is set. A waiting task resumes on its event
-/// loop, so a primitive must not grant a wait whose loop has gone.
+/// loop; a primitive may outlive the loop, which takes the waits still queued
+/// on it off the queue as it goes: no grant reaches them, and their tasks stay
+/// suspended until a cancel ends them.
 class sync_primitive {
 public:
     enum class Kind : std::uint8_t {
@@ -132,6 +134,11 @@ private:
     /// Hands on what the waiter was granted, for a task that will not use it.
     void give_back();
 
+    /// Takes the waiter off its queue as its loop goes: it is never granted,
+    /// and a cancel ends it at once, as one of a queued wait does, except
+    /// that a condition variable wait whose mutex is taken stays suspended.
+    void abandon() noexcept;
+
     /// Resumes the task once the wait was granted, or ends it cancelled when a
     /// cancel reached the wait since. The event loop calls this.
     void resume();
@@ -143,17 +150,24 @@ private:
     sync_primitive::Kind owner_kind;
 
     /// The loop the task waits on, which resumes it once the wait is granted:
-    /// a primitive may grant it where no loop runs.
+    /// a primitive may grant it where no loop runs. Null once the loop has
+    /// gone (abandon()).
     event_loop* loop = nullptr;
 
     /// The mutex a condition variable wait locks again.
     mutex* relock = nullptr;
 
-    /// Where the waiter is queued; null once it has been granted.
+    /// Where the waiter is queued; null once it has been granted or
+    /// abandoned.
     sync_primitive* queue = nullptr;
 
     wait_node* prev = nullptr;
     wait_node* next = nullptr;
+
+    /// Links in the list of the waits queued on a primitive that `loop`
+    /// keeps, to abandon() them if it goes first.
+    wait_node* loop_prev = nullptr;
+    wait_node* loop_next = nullptr;
 };
 
 namespace detail {
