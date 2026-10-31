@@ -564,6 +564,65 @@ ZEST_CASE(cancelled_join_ends_once_what_the_children_held_is_gone) {
     ZEXPECT(cancelled);
 }
 
+// A cancel the leaf completes later settles the groups inside each other at
+// once: the outer one frees the inner one's task, frame and all, as the inner
+// one settles. The inner group's children go before, while what they hold
+// of that task is there.
+ZEST_CASE(group_frees_its_children_before_the_task_awaiting_it_ends) {
+    struct Alive {
+        bool& alive;
+
+        explicit Alive(bool& alive) : alive(alive) {
+            alive = true;
+        }
+
+        ~Alive() {
+            alive = false;
+        }
+    };
+
+    struct Witness {
+        bool& alive;
+        bool& outlived;
+
+        ~Witness() {
+            if(!alive) {
+                outlived = true;
+            }
+        }
+    };
+
+    test::PendingOp op;
+    bool inner_alive = false;
+    bool outlived = false;
+    auto leaf = [&]() -> task<> {
+        Witness witness{.alive = inner_alive, .outlived = outlived};
+        co_await op;
+    };
+    auto inner = [&]() -> task<> {
+        Alive marker(inner_alive);
+        task_group<> group;
+        group.spawn(leaf());
+        co_await group.join();
+    };
+    auto driver = [&]() -> task<> {
+        task_group<> outer;
+        outer.spawn(inner());
+        outer.cancel();
+        co_await outer.join();
+    };
+    auto finisher = [&]() -> task<> {
+        op.complete();
+        co_return;
+    };
+
+    auto [result, finished] = run(driver(), finisher());
+    ZEXPECT(result.has_value());
+    ZEXPECT(op.cancel_requested());
+    ZEXPECT(!inner_alive);
+    ZEXPECT(!outlived);
+}
+
 };  // ZEST_SUITE(async_runtime_task_group_lifetime)
 
 }  // namespace

@@ -203,6 +203,11 @@ protected:
     /// the coroutine to resume next.
     std::coroutine_handle<> finish(State end);
 
+    /// What this task does once the node it awaits has ended in `end`: it
+    /// resumes, or ends cancelled too unless the await `intercept`s that.
+    /// Returns the coroutine to resume next.
+    std::coroutine_handle<> awaited_ended(State end, bool intercept);
+
     /// The coroutine frame. The promise knows its own handle, but this
     /// type-erased base cannot derive the frame address from `this`.
     void* address = nullptr;
@@ -331,8 +336,8 @@ protected:
     State settled_state() const noexcept;
 
     /// Settles when every child has finished and no pin is held, if a task
-    /// awaits the aggregate; a task_group then destroys its ended children,
-    /// before the coroutine to resume next, which this returns, runs.
+    /// awaits the aggregate; a task_group destroys its ended children first.
+    /// Returns the coroutine to resume next.
     std::coroutine_handle<> settle_if_idle();
 
     /// The running children, in the order they started.

@@ -57,11 +57,13 @@ bool async_node::anything_ended() noexcept {
 void async_node::destroy_ended() {
     // Destroying a frame may end more tasks, whose frames join the lists.
     while(anything_ended()) {
-        for(std::size_t i = 0; i < ended_roots.size(); ++i) {
-            auto root = ended_roots[i];
+        while(!ended_roots.empty()) {
+            // Off the list first: a loop run while it goes ends resumptions
+            // of its own, which destroy what is listed.
+            auto root = ended_roots.back();
+            ended_roots.pop_back();
             root.destroy();
         }
-        ended_roots.clear();
         while(auto* group = groups_with_ended) {
             aggregate_op::destroy_frames(group->take_ended());
         }
@@ -126,20 +128,25 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
     }
 
     auto& self = static_cast<task_frame&>(*this);
-    self.child = nullptr;
-    if(child.state == State::Cancelled && !child.intercept) {
-        return self.finish(State::Cancelled);
-    }
     if(child.state == State::Failed && child.kind == NodeKind::Task) {
         // A child that threw resumes its parent instead, whose co_await
         // rethrows.
         auto& failed = static_cast<task_frame&>(child);
         if(failed.hook && !failed.threw()) {
+            self.child = nullptr;
             failed.hook(failed, self);
             return self.finish(State::Failed);
         }
     }
-    return self.handle();
+    return self.awaited_ended(child.state, child.intercept);
+}
+
+std::coroutine_handle<> task_frame::awaited_ended(State end, bool intercept) {
+    child = nullptr;
+    if(end == State::Cancelled && !intercept) {
+        return finish(State::Cancelled);
+    }
+    return handle();
 }
 
 std::coroutine_handle<> task_frame::start(async_node* parent) {
@@ -403,13 +410,17 @@ std::coroutine_handle<> aggregate_op::settle_if_idle() {
         return std::noop_coroutine();
     }
     state = settled_state();
-    auto* frames = take_ended();
-    auto next = std::exchange(parent, nullptr)->on_child_complete(*this);
-    // After the last use of the group, which a child may own, and before
-    // whatever the task awaiting it goes on to: that sees no child left, nor
-    // what the children held.
-    destroy_frames(frames);
-    return next;
+    if(kind != NodeKind::TaskGroup) {
+        return std::exchange(parent, nullptr)->on_child_complete(*this);
+    }
+    // The children go before the task awaiting the group goes on, or ends,
+    // which may free what they hold; but a child may own the group, so
+    // nothing of it is used after.
+    auto& waiting = static_cast<task_frame&>(*std::exchange(parent, nullptr));
+    const auto end = state;
+    const bool caught = intercept;
+    destroy_frames(take_ended());
+    return waiting.awaited_ended(end, caught);
 }
 
 std::coroutine_handle<> io_op::attach(task_frame& waiting, std::source_location location) noexcept {

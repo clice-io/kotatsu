@@ -187,6 +187,35 @@ ZEST_CASE(loop_run_inside_a_task_frees_its_roots_before_it_returns) {
     ZEXPECT(*freed);
 }
 
+// A root's frame that runs a loop as it goes: the loop's resumptions, outermost
+// of their own, find the frame off the list already.
+ZEST_CASE(root_whose_frame_runs_a_loop_as_it_goes_is_freed_once) {
+    struct RunsLoop {
+        int& ran;
+
+        explicit RunsLoop(int& ran) : ran(ran) {}
+
+        ~RunsLoop() {
+            auto count = [](int& ran) -> task<> {
+                ran += 1;
+                co_return;
+            };
+            event_loop inner;
+            inner.schedule(count(ran));
+            inner.run();
+        }
+    };
+
+    int ran = 0;
+    auto make = [](std::unique_ptr<RunsLoop>) -> task<> {
+        co_return;
+    };
+
+    loop.schedule(make(std::make_unique<RunsLoop>(ran)));
+    ZEXPECT(loop.run() == 0);
+    ZEXPECT(ran == 1);
+}
+
 // A task left waiting by a loop that went still ends at a cancel, and its
 // frame goes with its owner.
 ZEST_CASE(wait_left_by_a_loop_that_went_ends_at_a_cancel) {
