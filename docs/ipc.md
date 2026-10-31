@@ -1,7 +1,9 @@
 # ipc
 
-`kotatsu::ipc` is JSON-RPC 2.0 between processes, with the LSP base
-protocol's `Content-Length` framing, in JSON or bincode, over stdio, TCP or any pair of streams.
+`kotatsu::ipc` carries JSON-RPC 2.0's messages between processes, with the LSP
+base protocol's `Content-Length` framing, over stdio, TCP or any pair of
+streams. They are encoded as JSON, which any JSON-RPC peer reads, or as
+bincode, a binary encoding only a kotatsu peer reads.
 `Peer<Codec>` is one end of a connection on the event loop: it dispatches what
 it reads to handlers and sends requests of its own, with cancellation and
 timeouts. The `lsp/` headers add the LSP 3.18 model, URIs and positions. It is
@@ -10,12 +12,12 @@ not for HTTP ([http](http.md)), nor does it define how values are encoded
 
 ## Targets
 
-|            |                                                                                                                                                                             |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Bazel      | `@kotatsu//:ipc_codec` (framing, codecs, `BlockingClient`; no event loop) and `:ipc_codec_json`; `@kotatsu//:ipc` (transports, peers) and `:ipc_json`; `@kotatsu//:ipc_lsp` |
-| CMake      | `kotatsu::ipc::codec`, always built; `kotatsu::ipc` and `kotatsu::ipc::lsp`, with `KOTATSU_ENABLE_ASYNC`; the JSON parts with `KOTATSU_CODEC_ENABLE_SIMDJSON`               |
-| Headers    | [include/kotatsu/ipc/](../include/kotatsu/ipc/), the LSP part in [lsp/](../include/kotatsu/ipc/lsp/)                                                                        |
-| Depends on | [codec](codec.md), [support](support.md); the peers and the LSP part also [async](async.md)                                                                                 |
+|            |                                                                                                                                                                                                 |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bazel      | `@kotatsu//:ipc_codec` (framing, codecs, `BlockingClient`; no event loop) and `@kotatsu//:ipc_codec_json`; `@kotatsu//:ipc` (transports, peers) and `@kotatsu//:ipc_json`; `@kotatsu//:ipc_lsp` |
+| CMake      | `kotatsu::ipc::codec`, always built; `kotatsu::ipc` and `kotatsu::ipc::lsp`, with `KOTATSU_ENABLE_ASYNC`; the JSON parts with `KOTATSU_CODEC_ENABLE_SIMDJSON`                                   |
+| Headers    | [include/kotatsu/ipc/](../include/kotatsu/ipc/), the LSP part in [lsp/](../include/kotatsu/ipc/lsp/)                                                                                            |
+| Depends on | [codec](codec.md), [support](support.md); the peers and the LSP part also [async](async.md)                                                                                                     |
 
 ## Example
 

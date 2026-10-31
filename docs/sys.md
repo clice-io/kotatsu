@@ -43,7 +43,8 @@ int main() {
 }
 ```
 
-Adapted from `tests/sys/system/spawn_tests.cpp`, which runs `cmd /c` on Windows.
+Adapted from `tests/sys/system/spawn_tests.cpp`. The example runs `sh`, so it is
+POSIX only; on Windows the test runs `cmd /c` instead.
 
 ## Overview
 

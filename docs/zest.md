@@ -3,9 +3,9 @@
 `kotatsu::zest` is the test framework kotatsu's own tests use. Each case
 (`ZEST_CASE`) runs on a fresh instance of its suite (`ZEST_SUITE`).
 `ZEXPECT` and `ZASSERT` print both operands of a failed comparison, comparing
-through [meta](meta.md), so reflectable types need no `operator==`. Cases run
-in worker processes, so a crash, a failed `ZASSERT` or a hang fails only that
-case. It suits projects already on kotatsu, as it brings
+through [meta](meta.md), so reflectable types need no `operator==`. By default
+cases run in worker processes, so a crash, a failed `ZASSERT` or a hang fails
+only that case (`--no-isolation` runs them in-process, for a debugger). It suits projects already on kotatsu, as it brings
 [deco](deco.md), [async](async.md) and cpptrace along.
 
 ## Targets

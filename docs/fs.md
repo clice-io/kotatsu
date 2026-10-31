@@ -5,9 +5,11 @@ strings (WTF-8 on Windows). It depends on [support](support.md) alone and needs
 no event loop. For file I/O inside coroutines, use `kotatsu::async::fs` in
 [async](async.md), which runs file operations on a thread pool.
 
-Functions that return text write it into a buffer the caller gives
-(`kotatsu::buffer_ref`); what can fail returns `std::expected<T, std::error_code>`
-or a `std::error_code`.
+Functions that produce new text write it into a buffer the caller gives
+(`kotatsu::buffer_ref`); lexical queries such as `path::filename` return views
+of their input. What can fail returns `std::expected<T, std::error_code>` or a
+`std::error_code`; `walk` yields a `Walk::Error` for a directory it cannot
+read, and goes on.
 
 ## Targets
 

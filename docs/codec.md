@@ -2,8 +2,9 @@
 
 `kotatsu::codec` reads and writes C++ values from their type alone:
 reflection supplies the fields; attributes, `meta::repr` and a config control
-how they are written. Every backend but blob reads the same attributes, so one
-declaration drives JSON, TOML, bincode and FlatBuffers alike. Encoding and
+how they are written. Every backend but blob reads the same attributes, as far
+as its format allows: the binary ones write no field names, so a rename does
+nothing there, and bincode writes every field, so `skip_if` omits none. Encoding and
 decoding return `std::expected<..., rich_error>`, whose error carries the path
 to the failing value (`a.b[3]`) and, where the backend knows one, its line.
 
@@ -12,12 +13,12 @@ codecs are [ipc](ipc.md)'s.
 
 ## Targets
 
-|            |                                                                                                                                                                   |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Bazel      | `@kotatsu//:codec` (the protocol, dyn, bincode, blob, debug); `:codec_json`, `:codec_toml`, `:codec_flatbuffers`                                                  |
-| CMake      | `kotatsu::codec`, always built, with every enabled backend; `kotatsu::codec::json`, `::toml`, `::flatbuffers`, each with its option (see [building](building.md)) |
-| Headers    | [include/kotatsu/codec/](../include/kotatsu/codec/), header-only                                                                                                  |
-| Depends on | [meta](meta.md), [support](support.md); simdjson, toml++ and FlatBuffers for their backends                                                                       |
+|            |                                                                                                                                                                                               |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bazel      | `@kotatsu//:codec` (the protocol, dyn, bincode, blob, debug); `@kotatsu//:codec_json`, `@kotatsu//:codec_toml`, `@kotatsu//:codec_flatbuffers`                                                |
+| CMake      | `kotatsu::codec`, always built, with every enabled backend; `kotatsu::codec::json`, `kotatsu::codec::toml`, `kotatsu::codec::flatbuffers`, each with its option (see [building](building.md)) |
+| Headers    | [include/kotatsu/codec/](../include/kotatsu/codec/), header-only                                                                                                                              |
+| Depends on | [meta](meta.md), [support](support.md); simdjson, toml++ and FlatBuffers for their backends                                                                                                   |
 
 ## Example
 

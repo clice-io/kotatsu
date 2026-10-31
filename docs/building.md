@@ -4,18 +4,18 @@ kotatsu builds with Bazel and with CMake. Both have a target per module, with fu
 
 ## Targets
 
-| Module  | Bazel (`@kotatsu//...`)                                          | CMake                                                               | Third-party                   |
-| ------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------- |
-| support | `:support`                                                       | `kotatsu::support`                                                  |                               |
-| meta    | `:meta`                                                          | `kotatsu::meta`                                                     |                               |
-| fs      | `:fs`                                                            | `kotatsu::fs`                                                       |                               |
-| sys     | `:sys`                                                           | `kotatsu::sys`                                                      |                               |
-| codec   | `:codec`, `:codec_json`, `:codec_toml`, `:codec_flatbuffers`     | `kotatsu::codec`, `kotatsu::codec::json`, `::toml`, `::flatbuffers` | simdjson, toml++, FlatBuffers |
-| deco    | `:option`, `:deco`                                               | `kotatsu::deco::option`, `kotatsu::deco`                            |                               |
-| async   | `:async`                                                         | `kotatsu::async`                                                    | libuv                         |
-| ipc     | `:ipc_codec`, `:ipc_codec_json`, `:ipc`, `:ipc_json`, `:ipc_lsp` | `kotatsu::ipc::codec`, `kotatsu::ipc`, `kotatsu::ipc::lsp`          |                               |
-| http    | none; HTTP builds with CMake only                                | `kotatsu::http`                                                     | libcurl                       |
-| zest    | `:zest`, `:zest_async`                                           | `kotatsu::zest`, `kotatsu::zest::async`                             | cpptrace                      |
+| Module  | Bazel (`@kotatsu//...`)                                          | CMake                                                                                           | Third-party                   |
+| ------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- |
+| support | `:support`                                                       | `kotatsu::support`                                                                              |                               |
+| meta    | `:meta`                                                          | `kotatsu::meta`                                                                                 |                               |
+| fs      | `:fs`                                                            | `kotatsu::fs`                                                                                   |                               |
+| sys     | `:sys`                                                           | `kotatsu::sys`                                                                                  |                               |
+| codec   | `:codec`, `:codec_json`, `:codec_toml`, `:codec_flatbuffers`     | `kotatsu::codec`, `kotatsu::codec::json`, `kotatsu::codec::toml`, `kotatsu::codec::flatbuffers` | simdjson, toml++, FlatBuffers |
+| deco    | `:option`, `:deco`                                               | `kotatsu::deco::option`, `kotatsu::deco`                                                        |                               |
+| async   | `:async`                                                         | `kotatsu::async`                                                                                | libuv                         |
+| ipc     | `:ipc_codec`, `:ipc_codec_json`, `:ipc`, `:ipc_json`, `:ipc_lsp` | `kotatsu::ipc::codec`, `kotatsu::ipc`, `kotatsu::ipc::lsp`                                      |                               |
+| http    | none; HTTP builds with CMake only                                | `kotatsu::http`                                                                                 | libcurl                       |
+| zest    | `:zest`, `:zest_async`                                           | `kotatsu::zest`, `kotatsu::zest::async`                                                         | cpptrace                      |
 
 Bazel splits the JSON parts of ipc into targets of their own (`:ipc_codec_json`, `:ipc_json`); CMake builds them into `kotatsu::ipc::codec` and `kotatsu::ipc` when simdjson is enabled. The module pages say what each target holds.
 
