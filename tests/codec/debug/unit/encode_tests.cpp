@@ -76,9 +76,9 @@ ZEST_CASE(null_char_pointer) {
 }
 
 ZEST_CASE(char_arrays_end_with_the_array) {
-    const char unterminated[4] = {'K', 'O', 'T', 'A'};
+    const char unterminated[4] = {'Z', 'E', 'S', 'T'};
     const char padded[8] = "pad";
-    ZEXPECT(to_string(unterminated) == R"("KOTA")");
+    ZEXPECT(to_string(unterminated) == R"("ZEST")");
     ZEXPECT(to_string(padded) == R"("pad")");
 }
 

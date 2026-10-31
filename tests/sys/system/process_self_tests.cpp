@@ -226,7 +226,7 @@ ZEST_CASE(set_process_name_names_the_main_thread) {
     std::string arguments;
     ZASSERT(!fs::read_file(arguments, "/proc/self/cmdline"));
     ZEXPECT(!set_process_name("kotatsu-process-name"));
-    ZEXPECT(main_thread_name() == "kotatsu-process-na");
+    ZEXPECT(main_thread_name() == "kotatsu-process");
     std::string after;
     ZASSERT(!fs::read_file(after, "/proc/self/cmdline"));
     ZEXPECT(after == arguments);
@@ -236,10 +236,10 @@ ZEST_CASE(set_process_name_names_the_main_thread) {
 // after 12 it fits.
 ZEST_CASE(set_process_name_cuts_at_a_character) {
     ScopedProcessName restore;
-    ZEXPECT(!set_process_name("kotatsu-process-\xE5\x90\x8D"));
-    ZEXPECT(main_thread_name() == "kotatsu-process-");
-    ZEXPECT(!set_process_name("kotatsu-proces-\xE5\x90\x8D"));
-    ZEXPECT(main_thread_name() == "kotatsu-proces-\xE5\x90\x8D");
+    ZEXPECT(!set_process_name("kotatsu-proc-\xE5\x90\x8D"));
+    ZEXPECT(main_thread_name() == "kotatsu-proc-");
+    ZEXPECT(!set_process_name("kotatsu-pro-\xE5\x90\x8D"));
+    ZEXPECT(main_thread_name() == "kotatsu-pro-\xE5\x90\x8D");
 }
 
 ZEST_CASE(set_process_name_of_nothing_fails) {

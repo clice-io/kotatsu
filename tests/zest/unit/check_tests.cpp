@@ -123,8 +123,8 @@ ZEST_CASE(char_pointers_compare_as_text_against_text) {
     ZEXPECT(pointer == text.c_str());
 
     // An array's text ends with the array, null character or not.
-    const char tag[4] = {'K', 'O', 'T', 'A'};
-    const char* word = "KOTA";
+    const char tag[4] = {'Z', 'E', 'S', 'T'};
+    const char* word = "ZEST";
     ZEXPECT(word == tag);
 }
 
