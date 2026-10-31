@@ -728,7 +728,7 @@ void ParseIter::advance() {
                 out.index = index;
                 for(std::uint32_t i = index + 1; i < args.size(); ++i)
                     out.add_value(args[i]);
-                index = args.size();
+                index = static_cast<std::uint32_t>(args.size());
                 out.next_index = index;
                 current = out;
                 return;
