@@ -65,6 +65,10 @@ struct ArgSpec {
     ArgNum arg_num = {};
     /// For an alias, a field of type cli::Alias: the arguments it stands for.
     meta::name_list forward = {};
+    /// Whether a usage leaves it out: an option or argument for other programs, not people.
+    bool hidden = false;
+    /// For a field of subcommands, the words of those a usage leaves out.
+    meta::name_list hidden_subcommands = {};
 
     constexpr void validate() const {
         if(positional && rest) {
@@ -88,6 +92,9 @@ struct ArgSpec {
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::comma> comma{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::arg_num> arg_num{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::forward> forward{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::hidden> hidden{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::hidden_subcommands>
+    hidden_subcommands{};
 
 /// A field that stands for other arguments: its names, given, are read as `cli::forward`.
 /// It holds nothing.

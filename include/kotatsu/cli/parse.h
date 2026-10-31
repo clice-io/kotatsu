@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "kotatsu/cli/detail/declaration.h"
 #include "kotatsu/cli/error.h"
 #include "kotatsu/cli/spec.h"
 #include "kotatsu/support/numeric.h"
@@ -75,9 +76,10 @@ struct Command;
 /// subcommands, and their option table. Built on first use.
 const Command& command_of(const meta::type_info& type);
 
-/// The command of options `T`.
+/// The command of options `T`, which a mistake in them keeps from compiling.
 template <typename T>
 const Command& command_of() {
+    static_assert(check_declaration(meta::type_info_of<T, decode_config>()));
     return command_of(meta::type_info_of<T, decode_config>());
 }
 
@@ -92,6 +94,8 @@ struct Reading {
     std::deque<std::string> expansions;
     /// The arguments given, in order, for parse()'s visit.
     std::vector<Given> given;
+    /// The elements of `active` that name a subcommand, in order.
+    std::vector<std::uint32_t> subcommand_words;
 };
 
 /// Reads `argv` as `command` takes it into `reading`, or says why it does not parse.

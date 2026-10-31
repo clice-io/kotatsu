@@ -47,6 +47,9 @@ struct Error {
     /// The elements of `argv` at fault, [begin, end); `begin == argv.size()` is its end.
     std::uint32_t begin = 0;
     std::uint32_t end = 0;
+    /// The subcommands the argv names before the elements at fault, outermost first:
+    /// {"index", "stats"}; empty for an error in the options' own arguments.
+    std::vector<std::string> subcommands = {};
 
     /// `message` under the argv, the elements at fault marked, as a program reports it:
     ///

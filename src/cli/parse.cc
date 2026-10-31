@@ -42,7 +42,8 @@ std::string input_args_text(ArgNum num) {
 }
 
 /// An error at the elements of `argv` that [begin, end) of `reading.active` come from: the
-/// first's, through the last's, or the end of `argv` past the active ones.
+/// first's, through the last's, or the end of `argv` past the active ones; in the subcommands
+/// named before them.
 Error error_from(const Reading& reading,
                  string_list_ref argv,
                  Error::Kind kind,
@@ -53,7 +54,13 @@ Error error_from(const Reading& reading,
     const auto argc = static_cast<std::uint32_t>(argv.size());
     const auto first = begin >= size ? argc : reading.origin[begin];
     const auto past = end <= begin ? first : end > size ? argc : reading.origin[end - 1] + 1;
-    return error_at(kind, std::move(message), argv, first, std::max(first, past));
+    auto error = error_at(kind, std::move(message), argv, first, std::max(first, past));
+    for(const auto word: reading.subcommand_words) {
+        if(word < begin) {
+            error.subcommands.emplace_back(reading.active[word]);
+        }
+    }
+    return error;
 }
 
 /// Reads one argv against a command, and the subcommands it names.
@@ -305,6 +312,7 @@ public:
                             variant.begin = index;
                             variant.end = index + 1;
                             variant.items.push_back(Node{.kind = Node::Kind::Object});
+                            reading.subcommand_words.push_back(index);
                             reading.given.push_back(Given{.path = level.prefix + subcommands.path,
                                                           .values = {reading.active[index]}});
                             if(auto err = run(*subcommands.commands[alternative],

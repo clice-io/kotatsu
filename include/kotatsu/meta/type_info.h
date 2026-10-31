@@ -162,7 +162,7 @@ struct field_info {
     /// The spec of type `Spec` an extension attached to the field; null when it
     /// has none.
     template <typename Spec>
-    const Spec* extension() const {
+    constexpr const Spec* extension() const {
         for(const auto& ref: extensions) {
             if(const auto* spec = ref.get<Spec>()) {
                 return spec;

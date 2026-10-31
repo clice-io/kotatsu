@@ -10,26 +10,13 @@
 #include <string_view>
 #include <vector>
 
+#include "kotatsu/cli/detail/declaration.h"
 #include "kotatsu/cli/parse.h"
 #include "kotatsu/cli/spec.h"
 #include "kotatsu/cli/table/table.h"
 #include "kotatsu/meta/type_info.h"
 
 namespace kotatsu::cli::detail {
-
-/// How an argument takes its values.
-enum class Shape : std::uint8_t {
-    /// A bool: given or not.
-    Flag,
-    /// An integer counting how often it is given.
-    Count,
-    /// One value an occurrence.
-    Value,
-    /// A tuple's elements an occurrence, one value each.
-    Tuple,
-    /// A cli::Alias: what it stands for, read in its place.
-    Alias,
-};
 
 constexpr std::uint32_t no_group = std::numeric_limits<std::uint32_t>::max();
 constexpr std::uint32_t no_arg = std::numeric_limits<std::uint32_t>::max();
@@ -44,16 +31,10 @@ enum class Form : std::uint8_t {
     Separate,
 };
 
-/// A field of a command that takes arguments: an option, or a positional argument.
-struct Arg {
-    const meta::field_info* field;
-    ArgSpec spec;
-    Shape shape;
-    /// Whether it collects every occurrence, a list.
-    bool list = false;
-    /// Whether it is a std::optional, which a positional one may be left out for.
-    bool optional_type = false;
-    std::uint32_t tuple_size = 0;
+/// A field of a command that takes arguments: an option, a positional argument, or the
+/// arguments after "--".
+struct Arg : FieldUse {
+    const meta::field_info* field = nullptr;
     /// The innermost group it is in; no_group in the command's own struct.
     std::uint32_t group = no_group;
     /// The serialized names of the fields from the command's struct down to it.
@@ -69,7 +50,7 @@ struct Arg {
     Form form = Form::Separate;
 
     bool required() const {
-        return spec.required || (spec.positional && !list && !optional_type);
+        return spec.required || (spec.positional && !list && !optional);
     }
 };
 
@@ -92,9 +73,11 @@ struct Subcommands {
     std::string path = {};
     bool optional = false;
     std::uint32_t group = no_group;
-    /// The word naming each alternative, and what each is, its struct's description.
+    /// The word naming each alternative, what each is (its struct's description), and
+    /// whether a usage leaves it out.
     std::vector<std::string> names = {};
     std::vector<std::string_view> descriptions = {};
+    std::vector<bool> hidden = {};
     std::vector<std::unique_ptr<Command>> commands = {};
 };
 

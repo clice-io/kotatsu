@@ -182,6 +182,14 @@ ZEST_CASE(command_s_required_option_left_out_fails_at_the_subcommand) {
     ZASSERT(!daemon.has_value());
     ZEXPECT(daemon.error().kind == Error::Kind::MissingRequired);
     ZEXPECT(daemon.error().begin == 0U);
+    ZEXPECT(daemon.error().subcommands.empty());
+}
+
+ZEST_CASE(error_in_a_subcommand_names_it) {
+    auto tool = parse_line<Tool>("--verbose serve --port many");
+    ZASSERT(!tool.has_value());
+    ZEXPECT(tool.error().kind == Error::Kind::InvalidValue);
+    ZEXPECT(tool.error().subcommands == (std::vector<std::string>{"serve"}));
 }
 
 ZEST_CASE(tag_names_name_the_subcommands) {

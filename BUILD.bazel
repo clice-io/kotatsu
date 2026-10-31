@@ -138,6 +138,7 @@ kotatsu_library(
     ],
     hdrs = [
         "include/kotatsu/cli/cli.h",
+        "include/kotatsu/cli/detail/declaration.h",
         "include/kotatsu/cli/parse.h",
         "include/kotatsu/cli/spec.h",
         "include/kotatsu/cli/to_argv.h",

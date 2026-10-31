@@ -50,6 +50,9 @@ std::string help_of(const UsageEntry& entry) {
 std::vector<UsageEntry> usage_entries(const Command& command) {
     std::vector<UsageEntry> entries;
     for(const auto& arg: command.args) {
+        if(arg.spec.hidden) {
+            continue;
+        }
         entries.push_back(UsageEntry{
             .kind = arg.spec.positional || arg.spec.rest ? UsageEntry::Kind::Positional
                                                          : UsageEntry::Kind::Option,
@@ -63,6 +66,9 @@ std::vector<UsageEntry> usage_entries(const Command& command) {
     if(command.subcommands) {
         const auto& subcommands = *command.subcommands;
         for(std::size_t i = 0; i < subcommands.names.size(); ++i) {
+            if(subcommands.hidden[i]) {
+                continue;
+            }
             entries.push_back(UsageEntry{
                 .kind = UsageEntry::Kind::Subcommand,
                 .usage = subcommands.names[i],

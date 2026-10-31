@@ -226,6 +226,13 @@ ZEST_CASE(field_info_carries_extensions_and_declared_names) {
     ZEXPECT(info.fields[1].declared_name == "plain");
 }
 
+ZEST_CASE(field_info_finds_extensions_at_compile_time) {
+    constexpr const auto& info =
+        static_cast<const struct_type_info&>(type_info_of<holds_extension>());
+    ZSTATIC_EXPECT(info.fields[0].extension<probe_extension>()->weight == 3);
+    ZSTATIC_EXPECT(info.fields[1].extension<probe_extension>() == nullptr);
+}
+
 ZEST_CASE(annotate_maps_components_to_behavior_attrs) {
     using annotated = annotate<extras_tag>::type<std::int32_t>;
     ZSTATIC_EXPECT((std::is_same_v<typename annotated::annotated_type, std::int32_t>));

@@ -5,7 +5,6 @@
 #include <expected>
 #include <optional>
 #include <ranges>
-#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -62,25 +61,6 @@ struct Toggles {
 struct Files {
     KOTATSU_ANNOTATE(cli::positional = true)
     <std::vector<std::string>> files;
-};
-
-struct Twice {
-    KOTATSU_ANNOTATE(cli::names = {"-o"})
-    <std::string> first;
-    KOTATSU_ANNOTATE(cli::names = {"-o"})
-    <std::string> second;
-};
-
-struct CommaScalar {
-    KOTATSU_ANNOTATE(cli::comma = true)
-    <std::string> t;
-};
-
-struct Loop {
-    KOTATSU_ANNOTATE(cli::names = {"-a"}, cli::forward = {"-b"})
-    <cli::Alias> a;
-    KOTATSU_ANNOTATE(cli::names = {"-b"}, cli::forward = {"-a"})
-    <cli::Alias> b;
 };
 
 template <typename T = Options>
@@ -277,22 +257,6 @@ ZEST_CASE(dash_word_in_a_command_without_options_fails) {
     ZASSERT(!files.has_value());
     ZEXPECT(files.error().kind == Error::Kind::UnknownOption);
 }
-
-#ifdef __cpp_exceptions
-
-ZEST_CASE(two_options_of_one_name_fail_to_build) {
-    ZEXPECT(zest::throws<std::invalid_argument>([] { (void)parse_line<Twice>("-o a"); }));
-}
-
-ZEST_CASE(comma_scalar_fails_to_build) {
-    ZEXPECT(zest::throws<std::invalid_argument>([] { (void)parse_line<CommaScalar>("--t,a"); }));
-}
-
-ZEST_CASE(alias_of_an_alias_fails_to_build) {
-    ZEXPECT(zest::throws<std::invalid_argument>([] { (void)parse_line<Loop>("-a"); }));
-}
-
-#endif
 
 };  // ZEST_SUITE(cli_parse_options)
 

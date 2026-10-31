@@ -12,56 +12,18 @@
 #include <vector>
 
 #include "kotatsu/cli/parse.h"
-#include "kotatsu/support/config.h"
-#include "kotatsu/support/naming.h"
 
 namespace kotatsu::cli::detail {
 
 namespace {
 
-bool has_style(KVStyle style, KVStyle expected) {
-    return (std::to_underlying(style) & std::to_underlying(expected)) != 0;
-}
-
-/// Whether a named value option of `style` spelled `name` takes its value joined to the name:
-/// always for Joined, never for Separate, and for JoinedOrSeparate when the name ends in '='
-/// or ':' (`--name=`, `/name:`).
-bool joined_name(KVStyle style, std::string_view name) {
-    if(!has_style(style, KVStyle::Joined)) {
-        return false;
-    }
-    return !has_style(style, KVStyle::Separate) || name.ends_with('=') || name.ends_with(':');
-}
-
 /// The prefixes an option named `name` accepts: "--name" takes "--", "-n" takes "-", and
-/// "/name" takes "/" or "-".
+/// "/name" takes "/" or "-". The name is checked when its struct is declared.
 std::span<const std::string_view> prefixes_of(std::string_view name) {
-    if(name.starts_with("--") && name.size() > 2) {
+    if(name.starts_with("--")) {
         return pfx_double;
     }
-    if(name.starts_with("-") && name.size() > 1) {
-        return pfx_dash;
-    }
-    if(name.starts_with("/") && name.size() > 1) {
-        return pfx_slash_dash;
-    }
-    KOTATSU_THROW(std::invalid_argument(
-        std::format("cli: option name '{}' starts with '-', '--' or '/' and goes on", name)));
-}
-
-/// `text` in kebab case: `ServeOptions` is "serve-options", `log_level` "log-level".
-std::string kebab(std::string_view text) {
-    auto name = naming::normalize_to_lower_snake(text);
-    std::ranges::replace(name, '_', '-');
-    return name;
-}
-
-const meta::type_info& unwrap_optional(const meta::type_info& type, bool& optional) {
-    if(type.kind == meta::type_kind::optional) {
-        optional = true;
-        return static_cast<const meta::optional_type_info&>(type).inner();
-    }
-    return type;
+    return name.starts_with('-') ? pfx_dash : pfx_slash_dash;
 }
 
 /// What a usage shows for a value of `type` declared with `spec`: its meta_var, else the names
@@ -115,175 +77,145 @@ std::string join(const std::vector<std::string>& parts, std::string_view separat
     return joined;
 }
 
+/// Builds a command by the rules declaration.h states, which check_declaration() has held its
+/// struct to.
 class Builder {
-    /// The '=' form of a name, and whether it is the only form its argument takes.
-    struct EqualsForm {
-        std::string name;
-        std::uint32_t arg;
-        bool only;
-    };
-
     Command& command;
-    std::vector<EqualsForm> equals_forms;
+    /// The '=' forms of the names, named once every field has named its own.
+    std::vector<std::pair<NameForm, std::uint32_t>> equals_forms;
 
-    std::uint32_t add_option(OptionKind kind, std::string_view name, std::uint32_t arg) {
+    void add_option(const NameForm& form, std::uint32_t arg) {
         const auto id = static_cast<std::uint32_t>(command.options.size() + 1);
-        const auto& spelling = command.spellings.emplace_back(name);
+        const auto& spelling = command.spellings.emplace_back(form.name);
         command.options.push_back(
-            Option::unaliased_one(prefixes_of(spelling), spelling, id, kind, 0, "", ""));
+            Option::unaliased_one(prefixes_of(spelling), spelling, id, form.kind, 0, "", ""));
+        if(form.kind == OptionKind::MultiArg) {
+            command.options.back().num_args =
+                static_cast<unsigned char>(command.args[arg].tuple_size);
+        }
         command.arg_of.push_back(arg);
-        return id;
     }
 
-    /// The names `arg` is given by: its own, else its declared name's.
-    static std::vector<std::string> names_of(const Arg& arg) {
-        std::vector<std::string> names;
-        for(auto name: arg.spec.names.names()) {
-            names.emplace_back(name);
-        }
-        if(names.empty()) {
-            const auto declared = arg.field->declared_name;
-            auto name = std::string(declared.size() == 1 ? "-" : "--") + std::string(declared);
-            std::ranges::replace(name, '_', '-');
-            names.push_back(std::move(name));
-        }
-        return names;
-    }
-
-    /// The argument the option named `name` reads into, or no_arg when none is named so.
-    std::uint32_t arg_named(std::string_view name) const {
-        const auto found = std::ranges::find(command.spellings, name);
-        // Spelling i names the option of id i + 3, after the unknown and input options.
-        return found == command.spellings.end()
-                   ? no_arg
-                   : command.arg_of[found - command.spellings.begin() + 3];
-    }
-
-    /// Names the '=' forms no field names itself, then checks that no two options share a name.
+    /// Names the '=' forms no option is named itself; an argument whose own '=' form yields
+    /// writes its value separate.
     void name_equals_forms() {
-        for(const auto& form: equals_forms) {
-            auto& arg = command.args[form.arg];
-            if(arg_named(form.name) == no_arg) {
-                add_option(OptionKind::Joined, form.name, form.arg);
-            } else if(form.only) {
-                KOTATSU_THROW(
-                    std::invalid_argument(std::format("cli: two options are named {}", form.name)));
-            } else if(arg.form == Form::Equals && arg.write_name + "=" == form.name) {
+        for(const auto& [form, index]: equals_forms) {
+            if(std::ranges::find(command.spellings, form.name) == command.spellings.end()) {
+                add_option(form, index);
+                continue;
+            }
+            auto& arg = command.args[index];
+            if(arg.form == Form::Equals && arg.write_name + "=" == form.name) {
                 arg.form = Form::Separate;
             }
         }
-        // An alias stands for options, not for another alias, which might stand for it.
-        for(const auto& arg: command.args) {
-            if(arg.shape != Shape::Alias) {
-                continue;
-            }
-            for(auto token: arg.spec.forward.names()) {
-                const auto target = arg_named(token);
-                if(target != no_arg && command.args[target].shape == Shape::Alias) {
-                    KOTATSU_THROW(std::invalid_argument(
-                        std::format("cli: alias {} stands for another alias", arg.usage)));
-                }
-            }
-        }
-        std::vector<std::string_view> names(command.spellings.begin(), command.spellings.end());
-        std::ranges::sort(names);
-        if(const auto twice = std::ranges::adjacent_find(names); twice != names.end()) {
-            KOTATSU_THROW(
-                std::invalid_argument(std::format("cli: two options are named {}", *twice)));
-        }
     }
 
-    /// Registers named argument `index` under its names, and says how a usage writes it.
-    void name(std::uint32_t index, const meta::type_info& value_type) {
+    /// Registers named argument `index` under its names, and says how a usage and to_argv()
+    /// write it.
+    void name(std::uint32_t index) {
         auto& arg = command.args[index];
-        const auto names = names_of(arg);
-        const bool generated = arg.spec.names.names().empty();
+        const auto forms = name_forms(arg, arg.field->declared_name);
+        const auto token = value_token(arg.spec, *arg.value_type);
+        std::vector<std::string> own;
+        std::vector<std::string> separate;
+        std::vector<std::string> joined;
+        for(const auto& form: forms) {
+            switch(form.role) {
+                case NameForm::Role::Own:
+                    add_option(form, index);
+                    own.push_back(form.name);
+                    if(form.kind == OptionKind::Separate) {
+                        separate.push_back(form.name);
+                    } else if(form.kind == OptionKind::Joined) {
+                        joined.push_back(form.name + token);
+                    } else if(form.kind == OptionKind::CommaJoined) {
+                        joined.push_back(std::format("{}{}[,{}...]", form.name, token, token));
+                    }
+                    break;
+                case NameForm::Role::OnlyEquals:
+                    joined.push_back(form.name + token);
+                    [[fallthrough]];
+                case NameForm::Role::Equals: equals_forms.emplace_back(form, index); break;
+            }
+        }
+        // The first name writes the option: after '=' when it has an '=' form, which reads
+        // back any value.
+        const auto& first = forms.front();
+        arg.write_name = first.role == NameForm::Role::Own
+                             ? first.name
+                             : first.name.substr(0, first.name.size() - 1);
+        if(first.role != NameForm::Role::Own ||
+           (forms.size() > 1 && forms[1].role != NameForm::Role::Own &&
+            forms[1].name == first.name + "=")) {
+            arg.form = Form::Equals;
+        } else if(first.kind == OptionKind::Joined || first.kind == OptionKind::CommaJoined) {
+            arg.form = Form::Joined;
+        }
+
         switch(arg.shape) {
             case Shape::Flag:
             case Shape::Count:
-            case Shape::Alias: {
-                for(const auto& name: names) {
-                    add_option(OptionKind::Flag, name, index);
-                }
-                arg.usage = join(names, "|");
-                arg.write_name = names.front();
+            case Shape::Alias: arg.usage = join(own, "|"); return;
+            case Shape::Tuple:
+                arg.usage = std::format("{} {}", join(own, "|"), numbered(token, arg.tuple_size));
                 return;
-            }
-            case Shape::Tuple: {
-                for(const auto& name: names) {
-                    add_option(OptionKind::MultiArg, name, index);
-                    command.options.back().num_args = static_cast<unsigned char>(arg.tuple_size);
-                }
-                arg.usage =
-                    std::format("{} {}",
-                                join(names, "|"),
-                                numbered(value_token(arg.spec, value_type), arg.tuple_size));
-                arg.write_name = names.front();
-                return;
-            }
             case Shape::Value: break;
         }
-        const auto token = value_token(arg.spec, value_type);
-        if(arg.spec.comma) {
-            if(!arg.list) {
-                KOTATSU_THROW(std::invalid_argument("cli: a comma option is a list"));
-            }
-            std::vector<std::string> forms;
-            for(auto name: names) {
-                if(!name.ends_with(',')) {
-                    name.push_back(',');
-                }
-                add_option(OptionKind::CommaJoined, name, index);
-                forms.push_back(std::format("{}{}[,{}...]", name, token, token));
-                if(arg.write_name.empty()) {
-                    arg.write_name = name;
-                }
-            }
-            arg.usage = join(forms, "|");
+        std::vector<std::string> usages;
+        if(!separate.empty()) {
+            usages.push_back(std::format("{} {}", join(separate, "|"), token));
+        }
+        usages.insert(usages.end(), joined.begin(), joined.end());
+        arg.usage = join(usages, "|");
+    }
+
+    void add_arg(Arg arg) {
+        const auto index = static_cast<std::uint32_t>(command.args.size());
+        auto& added = command.args.emplace_back(std::move(arg));
+        const auto token = value_token(added.spec, *added.value_type);
+        if(added.spec.rest) {
+            command.rest = index;
+            added.usage = std::format("-- {}...", token);
             return;
         }
-        const auto style = arg.spec.style;
-        std::vector<std::string> separate;
-        std::vector<std::string> joined;
-        for(const auto& name: names) {
-            // A generated name of a Joined option takes its value after '='.
-            const bool joins =
-                generated ? !has_style(style, KVStyle::Separate) : joined_name(style, name);
-            const bool first = arg.write_name.empty();
-            if(first) {
-                arg.write_name = name;
-            }
-            if(joins && !generated) {
-                add_option(OptionKind::Joined, name, index);
-                joined.push_back(name + token);
-                if(first) {
-                    arg.form = Form::Joined;
-                }
-                continue;
-            }
-            if(!joins) {
-                add_option(OptionKind::Separate, name, index);
-                separate.push_back(name);
-            }
-            // The '=' form a name takes its value after when it may take it joined; a usage
-            // leaves it out unless it is the only form. It is named once every field has named
-            // its own, so that one naming it so, declared before or after, keeps it.
-            if(has_style(style, KVStyle::Joined)) {
-                equals_forms.push_back(EqualsForm{.name = name + "=", .arg = index, .only = joins});
-                if(joins) {
-                    joined.push_back(name + "=" + token);
-                }
-                if(first) {
-                    arg.form = Form::Equals;
-                }
-            }
+        if(!added.spec.positional) {
+            name(index);
+            return;
         }
-        std::vector<std::string> forms;
-        if(!separate.empty()) {
-            forms.push_back(std::format("{} {}", join(separate, "|"), token));
+        command.positionals.push_back(index);
+        const auto num = added.list ? added.spec.arg_num : ArgNum(1);
+        added.usage = !added.list          ? token
+                      : num.min == num.max ? numbered(token, num.min)
+                                           : std::format("{}...", token);
+        auto& count = command.positional_count;
+        count.min += num.min;
+        count.max = num.max == ArgNum::unbounded || count.max == ArgNum::unbounded
+                        ? ArgNum::unbounded
+                        : count.max + num.max;
+    }
+
+    void add_subcommands(const FieldUse& use,
+                         std::uint32_t group,
+                         const std::vector<std::string_view>& keys,
+                         const std::string& path) {
+        const auto& variant = static_cast<const meta::variant_type_info&>(*use.type);
+        Subcommands subcommands{.keys = keys,
+                                .path = path,
+                                .optional = use.optional,
+                                .group = group};
+        for(std::size_t i = 0; i < variant.alternatives.size(); ++i) {
+            const auto& alternative = variant.alternatives[i]();
+            auto word = subcommand_name(variant, i);
+            subcommands.hidden.push_back(
+                std::ranges::find(use.spec.hidden_subcommands.names(), word) !=
+                use.spec.hidden_subcommands.names().end());
+            subcommands.names.push_back(std::move(word));
+            subcommands.descriptions.push_back(
+                static_cast<const meta::struct_type_info&>(alternative).description);
+            subcommands.commands.push_back(build_command(alternative));
         }
-        forms.insert(forms.end(), joined.begin(), joined.end());
-        arg.usage = join(forms, "|");
+        command.subcommands = std::move(subcommands);
     }
 
     void add_struct(const meta::struct_type_info& type,
@@ -295,138 +227,35 @@ class Builder {
             field_keys.push_back(field.name);
             const auto field_path = path.empty() ? std::string(field.declared_name)
                                                  : std::format("{}.{}", path, field.declared_name);
-            bool optional = false;
-            const auto& value_type = unwrap_optional(field.type(), optional);
-            const auto* annotated = field.extension<ArgSpec>();
-            const ArgSpec spec = annotated ? *annotated : ArgSpec{};
-
-            if(!spec.forward.names().empty()) {
-                add_arg(Arg{.field = &field,
-                            .spec = spec,
-                            .shape = Shape::Alias,
-                            .group = group,
-                            .keys = field_keys,
-                            .path = field_path,
-                            .help = field.description},
-                        value_type);
-                continue;
-            }
-            switch(value_type.kind) {
-                case meta::type_kind::structure: {
+            const auto use = use_of(field);
+            switch(use.kind) {
+                case FieldUse::Kind::Group: {
                     const auto inner = static_cast<std::uint32_t>(command.groups.size());
                     command.groups.push_back(Group{.parent = group,
-                                                   .optional = optional,
+                                                   .optional = use.optional,
                                                    .keys = field_keys,
                                                    .description = field.description});
-                    add_struct(static_cast<const meta::struct_type_info&>(value_type),
+                    add_struct(static_cast<const meta::struct_type_info&>(*use.type),
                                inner,
                                field_keys,
                                field_path);
-                    continue;
+                    break;
                 }
-                case meta::type_kind::variant: {
-                    add_subcommands(static_cast<const meta::variant_type_info&>(value_type),
-                                    optional,
-                                    group,
-                                    field_keys,
-                                    field_path);
-                    continue;
+                case FieldUse::Kind::Subcommands:
+                    add_subcommands(use, group, field_keys, field_path);
+                    break;
+                case FieldUse::Kind::Arg: {
+                    Arg arg{use};
+                    arg.field = &field;
+                    arg.group = group;
+                    arg.keys = std::move(field_keys);
+                    arg.path = field_path;
+                    arg.help = field.description;
+                    add_arg(std::move(arg));
+                    break;
                 }
-                default: break;
             }
-
-            Arg arg{.field = &field,
-                    .spec = spec,
-                    .shape = Shape::Value,
-                    .optional_type = optional,
-                    .group = group,
-                    .keys = field_keys,
-                    .path = field_path,
-                    .help = field.description};
-            const meta::type_info* element = &value_type;
-            if(value_type.kind == meta::type_kind::array ||
-               value_type.kind == meta::type_kind::set) {
-                arg.list = true;
-                element = &static_cast<const meta::array_type_info&>(value_type).element();
-            }
-            if(element->kind == meta::type_kind::tuple) {
-                arg.shape = Shape::Tuple;
-                arg.tuple_size = static_cast<std::uint32_t>(
-                    static_cast<const meta::tuple_type_info&>(*element).elements.size());
-            } else if(element->kind == meta::type_kind::boolean && !arg.list && !spec.positional) {
-                arg.shape = Shape::Flag;
-            } else if(spec.count) {
-                arg.shape = Shape::Count;
-            }
-            add_arg(std::move(arg), *element);
         }
-    }
-
-    void add_arg(Arg arg, const meta::type_info& value_type) {
-        const auto index = static_cast<std::uint32_t>(command.args.size());
-        command.args.push_back(std::move(arg));
-        auto& added = command.args.back();
-        if(added.spec.rest) {
-            if(command.rest) {
-                KOTATSU_THROW(std::invalid_argument("cli: one field takes the rest"));
-            }
-            command.rest = index;
-            added.list = true;
-            added.usage = std::format("-- {}...", value_token(added.spec, value_type));
-            return;
-        }
-        if(added.spec.positional) {
-            command.positionals.push_back(index);
-            const auto token = value_token(added.spec, value_type);
-            if(!added.list) {
-                added.usage = token;
-                ++command.positional_count.min;
-                command.positional_count.max = command.positional_count.max == ArgNum::unbounded
-                                                   ? ArgNum::unbounded
-                                                   : command.positional_count.max + 1;
-            } else {
-                const auto num = added.spec.arg_num;
-                added.usage =
-                    num.min == num.max ? numbered(token, num.min) : std::format("{}...", token);
-                command.positional_count.min += num.min;
-                command.positional_count.max =
-                    num.max == ArgNum::unbounded ||
-                            command.positional_count.max == ArgNum::unbounded
-                        ? ArgNum::unbounded
-                        : command.positional_count.max + num.max;
-            }
-            return;
-        }
-        name(index, value_type);
-    }
-
-    void add_subcommands(const meta::variant_type_info& variant,
-                         bool optional,
-                         std::uint32_t group,
-                         const std::vector<std::string_view>& keys,
-                         const std::string& path) {
-        if(command.subcommands) {
-            KOTATSU_THROW(std::invalid_argument("cli: a command has one field of subcommands"));
-        }
-        if(variant.tagging != meta::tag_mode::none && variant.tagging != meta::tag_mode::external) {
-            KOTATSU_THROW(
-                std::invalid_argument("cli: subcommands are named by their tag names alone"));
-        }
-        Subcommands subcommands{.keys = keys, .path = path, .optional = optional, .group = group};
-        for(std::size_t i = 0; i < variant.alternatives.size(); ++i) {
-            const auto& alternative = variant.alternatives[i]();
-            if(alternative.kind != meta::type_kind::structure) {
-                KOTATSU_THROW(std::invalid_argument("cli: a subcommand is a struct"));
-            }
-            subcommands.names.push_back(i < variant.alt_names.size() &&
-                                                variant.tagging != meta::tag_mode::none
-                                            ? std::string(variant.alt_names[i])
-                                            : kebab(alternative.type_name));
-            subcommands.descriptions.push_back(
-                static_cast<const meta::struct_type_info&>(alternative).description);
-            subcommands.commands.push_back(build_command(alternative));
-        }
-        command.subcommands = std::move(subcommands);
     }
 
 public:
@@ -460,9 +289,6 @@ public:
 }  // namespace
 
 std::unique_ptr<Command> build_command(const meta::type_info& type) {
-    if(type.kind != meta::type_kind::structure) {
-        KOTATSU_THROW(std::invalid_argument("cli: options are declared in a struct"));
-    }
     auto command = std::make_unique<Command>();
     Builder(*command).build(static_cast<const meta::struct_type_info&>(type));
     return command;

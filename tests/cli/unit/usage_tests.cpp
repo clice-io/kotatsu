@@ -52,6 +52,13 @@ struct Tool {
     std::variant<Serve, Query> command;
 };
 
+struct Internal {
+    KOTATSU_ANNOTATE(cli::hidden = true)
+    <bool> trace = false;
+    KOTATSU_ANNOTATE(cli::hidden_subcommands = {"serve"})
+    <std::variant<Serve, Query>> command;
+};
+
 struct Run {
     KOTATSU_ANNOTATE(cli::rest = true, cli::meta_var = "<ARG>")
     <std::vector<std::string>> command;
@@ -129,6 +136,19 @@ ZEST_CASE(rest_is_positional_and_said_once) {
     ZEXPECT(entries[0].kind == UsageEntry::Kind::Positional);
     ZEXPECT(entries[0].usage == "-- <ARG>...");
     ZEXPECT(!entries[0].repeatable);
+}
+
+ZEST_CASE(hidden_ones_are_left_out) {
+    const auto entries = cli::usage_entries<Internal>();
+    ZASSERT(entries.size() == 1U);
+    ZEXPECT(entries[0].usage == "query");
+}
+
+ZEST_CASE(hidden_ones_still_parse) {
+    auto internal = cli::parse<Internal>(std::vector<std::string>{"--trace", "serve"});
+    ZASSERT(internal.has_value());
+    ZEXPECT(internal->trace);
+    ZEXPECT(internal->command.index() == 0U);
 }
 
 };  // ZEST_SUITE(cli_usage)

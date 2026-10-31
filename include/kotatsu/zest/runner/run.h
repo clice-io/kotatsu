@@ -64,8 +64,9 @@ struct Options {
     <std::string> snapshot_dir;
 
     // run_tests reads this from argv itself; it is declared so that a worker's
-    // command line parses.
-    KOTATSU_ANNOTATE(description = "internal: serve tests to the runner that started this process")
+    // command line parses, and left out of the usage.
+    KOTATSU_ANNOTATE(cli::hidden = true,
+                     description = "serve tests to the runner that started this process")
     <bool> zest_worker = false;
 };
 

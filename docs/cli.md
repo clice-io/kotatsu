@@ -63,14 +63,14 @@ Adapted from `tests/cli/unit/parse/positional_tests.cpp` and `tests/cli/unit/usa
 
 ## Overview
 
-| Header                                        | Contents                                                                                                                          |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| [cli.h](../include/kotatsu/cli/cli.h)         | The headers below but the table, and `KOTATSU_ANNOTATE`                                                                           |
-| [spec.h](../include/kotatsu/cli/spec.h)       | `ArgSpec`, what a field's `cli::` entries say (`names`, `positional`, `rest`, `count`, `required`, `style`, ...), `Help`, `Alias` |
-| [parse.h](../include/kotatsu/cli/parse.h)     | `parse<T>`, from a `string_list_ref` or any range of strings, with a visit of each argument it reads, and `Given`                 |
-| [error.h](../include/kotatsu/cli/error.h)     | `Error`, its `Kind` and the argv span at fault, and `render`, under a `Style`                                                     |
-| [usage.h](../include/kotatsu/cli/usage.h)     | `usage<T>`, the help text, and `usage_entries<T>`, its lines for a program to lay out itself                                      |
-| [to_argv.h](../include/kotatsu/cli/to_argv.h) | `to_argv`: options written back as the argv that parses to them                                                                   |
+| Header                                        | Contents                                                                                                                           |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| [cli.h](../include/kotatsu/cli/cli.h)         | The headers below but the table, and `KOTATSU_ANNOTATE`                                                                            |
+| [spec.h](../include/kotatsu/cli/spec.h)       | `ArgSpec`, what a field's `cli::` entries say (`names`, `positional`, `rest`, `count`, `required`, `hidden`, ...), `Help`, `Alias` |
+| [parse.h](../include/kotatsu/cli/parse.h)     | `parse<T>`, from a `string_list_ref` or any range of strings, with a visit of each argument it reads, and `Given`                  |
+| [error.h](../include/kotatsu/cli/error.h)     | `Error`, its `Kind` and the argv span at fault, and `render`, under a `Style`                                                      |
+| [usage.h](../include/kotatsu/cli/usage.h)     | `usage<T>`, the help text, and `usage_entries<T>`, its lines for a program to lay out itself                                       |
+| [to_argv.h](../include/kotatsu/cli/to_argv.h) | `to_argv`: options written back as the argv that parses to them                                                                    |
 
 ### Option table
 

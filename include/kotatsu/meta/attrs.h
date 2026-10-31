@@ -87,38 +87,56 @@ constexpr const inline field_spec& field_spec_of = [] -> const field_spec& {
 template <typename Spec>
 inline char extension_key = 0;
 
+/// An extension's spec as a field keeps it: beside the key of its type, which
+/// extension_ref compares before it casts down, in a constant expression too.
+struct extension_base {
+    const void* key;
+};
+
+template <typename Spec>
+struct extension_value : extension_base {
+    Spec spec;
+};
+
 /// An extension's spec attached to a field: one value of a spec type of
 /// another module, set by its own annotation entries.
 struct extension_ref {
-    const void* key;
-    const void* value;
+    const extension_base* value;
 
     template <typename Spec>
-    const Spec* get() const {
-        return key == &extension_key<Spec> ? static_cast<const Spec*>(value) : nullptr;
+    constexpr const Spec* get() const {
+        return value->key == &extension_key<Spec>
+                   ? &static_cast<const extension_value<Spec>*>(value)->spec
+                   : nullptr;
     }
 };
 
 namespace detail {
 
+/// The extensions an attrs tuple carries, each beside its key.
 template <typename AttrsTuple>
-constexpr auto extension_refs_of() {
+constexpr inline auto extension_values = [] {
     if constexpr(tuple_any_of_v<AttrsTuple, is_spec_attr>) {
-        constexpr const auto& extensions = tuple_find_t<AttrsTuple, is_spec_attr>::extensions;
         return std::apply(
-            [](const auto&... extension) {
-                return std::array<extension_ref, sizeof...(extension)>{
-                    extension_ref{
-                                  &extension_key<std::remove_cvref_t<decltype(extension)>>,
-                                  &extension,
-                                  }
+            []<typename... Specs>(const Specs&... spec) {
+                return std::tuple<extension_value<Specs>...>{
+                    extension_value<Specs>{{&extension_key<Specs>}, spec}
                     ...
                 };
             },
-            extensions);
+            tuple_find_t<AttrsTuple, is_spec_attr>::extensions);
     } else {
-        return std::array<extension_ref, 0>{};
+        return std::tuple<>{};
     }
+}();
+
+template <typename AttrsTuple>
+constexpr auto extension_refs_of() {
+    return std::apply(
+        [](const auto&... value) {
+            return std::array<extension_ref, sizeof...(value)>{extension_ref{&value}...};
+        },
+        extension_values<AttrsTuple>);
 }
 
 template <typename AttrsTuple>
