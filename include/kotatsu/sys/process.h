@@ -52,8 +52,8 @@ std::error_code self_executable(buffer_ref out);
 
 /// The arguments this program was started with, argv[0] first, read from
 /// the system rather than from main's argv: /proc/self/cmdline on Linux, the
-/// C runtime's own argv on macOS, and on Windows GetCommandLineW() split by
-/// windows::split_command_line, in WTF-8, without the wildcard expansion
+/// C runtime's own argv on macOS, and on Windows GetCommandLineW() split as
+/// cmd::Quoting::Windows says, in WTF-8, without the wildcard expansion
 /// some C runtimes add. Read once; a title set later leaves them as they
 /// were. Empty on Linux when /proc cannot be read.
 const std::vector<std::string>& arguments();

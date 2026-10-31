@@ -12,9 +12,10 @@ namespace kotatsu {
 
 /// A contiguous range of strings of any type, by reference: of anything a
 /// std::string_view converts from, such as std::string, std::string_view,
-/// small_string<N> or llvm::StringRef. What a function that reads a list of
-/// strings takes, so that its caller passes the list it has as it is. It
-/// refers to the range as std::span does, and must not outlive it.
+/// small_string<N> or llvm::StringRef; or a string_list. What a function that
+/// reads a list of strings takes, so that its caller passes the list it has
+/// as it is. It refers to the range as std::span does, and must not outlive
+/// it.
 class string_list_ref {
     using Element = std::string_view (*)(const void* first, std::size_t index);
 
@@ -137,6 +138,11 @@ public:
     }
 
 private:
+    friend class string_list;
+
+    string_list_ref(const void* first, std::size_t count, Element at) noexcept :
+        first(first), count(count), at(at) {}
+
     template <typename String>
     static std::string_view element(const void* first, std::size_t index) {
         return static_cast<const String*>(first)[index];
