@@ -188,12 +188,10 @@ public:
     /// can still come, which close_output() leaves them.
     std::optional<ConversationEnd> ended() const;
 
-    /// Waits until the conversation has ended, and gives why, as ended()
-    /// then tells it; at once when it has. Whatever ends it ends the wait,
-    /// close() and a cancel of run() included, but not a message too large
-    /// to read, which the peer skips. The wait resumes once whatever ended
-    /// the conversation has suspended, without waiting for the handlers
-    /// still running, which run() waits for. The Peer must outlive it.
+    /// Waits until the conversation has ended, at once if it has, and gives
+    /// why, as ended() then does. It resumes once whatever ended the
+    /// conversation has suspended, before the handlers still running finish,
+    /// which run() waits for. The Peer must outlive it.
     async::task<ConversationEnd> wait_ended();
 
     /// Sends the request RequestTraits<Params> names.

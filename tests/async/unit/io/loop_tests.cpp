@@ -130,8 +130,8 @@ ZEST_CASE(roots_that_never_ran_go_with_their_loop) {
 }
 
 // A loop that goes takes the waits of its tasks off the sync primitives that
-// outlive it: no grant reaches it then, and a unit released goes to a waiter
-// of a loop that runs.
+// outlive it: no grant reaches the loop then, and a unit released goes to a
+// waiter of a loop that runs.
 ZEST_CASE(waits_left_on_primitives_go_off_them_with_the_loop) {
     event signal;
     semaphore units;
@@ -145,11 +145,11 @@ ZEST_CASE(waits_left_on_primitives_go_off_them_with_the_loop) {
         units.release();
         co_return;
     };
-    task<> signalled = on_signal();
+    task<> waiting_on_signal = on_signal();
     task<> acquiring = on_units();
     {
         event_loop other;
-        other.schedule(signalled);
+        other.schedule(waiting_on_signal);
         other.schedule(acquiring);
         ZEXPECT(other.run() == 0);
         ZEXPECT(signal.has_waiters());
@@ -162,7 +162,7 @@ ZEST_CASE(waits_left_on_primitives_go_off_them_with_the_loop) {
     auto [acquired, released] = run(on_units(), release());
     ZEXPECT(acquired.has_value());
     ZEXPECT(released.has_value());
-    ZEXPECT(!signalled.done());
+    ZEXPECT(!waiting_on_signal.done());
     ZEXPECT(!acquiring.done());
 }
 

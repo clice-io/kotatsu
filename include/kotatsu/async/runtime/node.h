@@ -102,14 +102,6 @@ protected:
         }
     }
 
-    /// Marks a resumption under way on this thread; true for the outermost.
-    static bool enter_resumption() noexcept;
-
-    /// Ends the outermost resumption: resumes what sync primitives woke, if
-    /// a loop runs, and destroys the frames that ended, until neither leaves
-    /// anything to do.
-    static void leave_resumption();
-
     State state = State::Pending;
 
     /// cancel() has reached this node.
@@ -125,6 +117,15 @@ protected:
 
     /// Where this node was awaited, spawned or scheduled.
     std::source_location location;
+
+private:
+    /// Marks a resumption under way on this thread; true for the outermost.
+    static bool enter_resumption() noexcept;
+
+    /// Ends the outermost resumption: resumes what sync primitives woke, if
+    /// a loop runs, and destroys the frames that ended, until neither leaves
+    /// anything to do.
+    static void leave_resumption();
 };
 
 /// The part of a task's promise that does not depend on its result type: the
@@ -178,7 +179,8 @@ protected:
                                        std::source_location location);
 
     /// Ends this task in `end` and delivers that to its parent; a root the
-    /// event loop owns is destroyed. Returns the coroutine to resume next.
+    /// event loop owns goes once the outermost resumption is over. Returns
+    /// the coroutine to resume next.
     std::coroutine_handle<> finish(State end);
 
     /// The coroutine frame. The promise knows its own handle, but this

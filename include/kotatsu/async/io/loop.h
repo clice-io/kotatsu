@@ -166,9 +166,9 @@ private:
 
     void schedule(task_frame& root);
 
-    /// Keeps `waiter`, a wait of a task of this loop, while it is queued on a
-    /// sync primitive, which may outlive the loop: the destructor abandons
-    /// the waits it keeps then.
+    /// Lists `waiter`, a wait of a task of this loop queued on a sync
+    /// primitive, which may outlive the loop, until untrack(): the
+    /// destructor abandons the waits listed then.
     void track(wait_node& waiter) noexcept;
 
     void untrack(wait_node& waiter) noexcept;

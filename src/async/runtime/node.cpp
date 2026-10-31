@@ -16,13 +16,10 @@ namespace {
 /// The frames of the tasks that ended in the resumption under way on this
 /// thread, which a loop owns or a task_group kept. They go once the
 /// outermost resumption is over: one may own what the code that ended it
-/// still uses, and none is then at its final suspension, from which MSVC's
-/// coroutine codegen under ASan cannot destroy a frame.
+/// still uses, and none is on the stack any more, which MSVC's coroutine
+/// codegen under ASan needs: it cannot destroy a frame from its own final
+/// suspension.
 thread_local std::vector<std::coroutine_handle<>> ended_frames;
-
-void destroy_frame(std::coroutine_handle<> frame) {
-    ended_frames.push_back(frame);
-}
 
 void destroy_ended_frames() {
     // Destroying a frame may end more tasks, whose frames join the list.
@@ -35,21 +32,21 @@ void destroy_ended_frames() {
 
 /// A resumption is under way on this thread, or a ResumptionScope stands for
 /// one.
-thread_local bool draining = false;
+thread_local bool resuming = false;
 
 }  // namespace
 
-detail::ResumptionScope::ResumptionScope() noexcept : outermost(!std::exchange(draining, true)) {}
+detail::ResumptionScope::ResumptionScope() noexcept : outermost(!std::exchange(resuming, true)) {}
 
 detail::ResumptionScope::~ResumptionScope() {
     if(outermost) {
         destroy_ended_frames();
-        draining = false;
+        resuming = false;
     }
 }
 
 bool async_node::enter_resumption() noexcept {
-    return !std::exchange(draining, true);
+    return !std::exchange(resuming, true);
 }
 
 void async_node::leave_resumption() {
@@ -63,7 +60,7 @@ void async_node::leave_resumption() {
         }
         destroy_ended_frames();
     }
-    draining = false;
+    resuming = false;
 }
 
 void async_node::cancel() {
@@ -159,7 +156,7 @@ std::coroutine_handle<> task_frame::finish(State end) {
     state = end;
     if(parent == nullptr) {
         if(owned_by_loop) {
-            destroy_frame(handle());
+            ended_frames.push_back(handle());
         }
         return std::noop_coroutine();
     }
@@ -298,7 +295,7 @@ std::coroutine_handle<> aggregate_op::child_completed(task_frame& child) {
 
     if(kind == NodeKind::TaskGroup) {
         // A group keeps no child that has ended.
-        destroy_frame(child.handle());
+        ended_frames.push_back(child.handle());
     }
     pending -= 1;
     return settle_if_idle();

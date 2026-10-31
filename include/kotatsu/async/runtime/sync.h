@@ -30,7 +30,8 @@ class ScopedAwaiter;
 /// it. An event may go once it is set. A waiting task resumes on its event
 /// loop; a primitive may outlive the loop, which takes the waits still queued
 /// on it off the queue as it goes: no grant reaches them, and their tasks stay
-/// suspended until a cancel ends them.
+/// suspended until a cancel ends them, a condition variable wait only if its
+/// mutex is free then.
 class sync_primitive {
 public:
     enum class Kind : std::uint8_t {
@@ -135,8 +136,10 @@ private:
     void give_back();
 
     /// Takes the waiter off its queue as its loop goes: it is never granted,
-    /// and a cancel ends it at once, as one of a queued wait does, except
-    /// that a condition variable wait whose mutex is taken stays suspended.
+    /// and a condition variable wait notified meanwhile has spent the
+    /// notification. A cancel ends it at once, as a cancel of a queued wait
+    /// does, except that a condition variable wait whose mutex is taken
+    /// stays suspended.
     void abandon() noexcept;
 
     /// Resumes the task once the wait was granted, or ends it cancelled when a
@@ -150,8 +153,8 @@ private:
     sync_primitive::Kind owner_kind;
 
     /// The loop the task waits on, which resumes it once the wait is granted:
-    /// a primitive may grant it where no loop runs. Null once the loop has
-    /// gone (abandon()).
+    /// a primitive may grant it where no loop runs. Null once abandon() has
+    /// run: the loop went while the wait was queued.
     event_loop* loop = nullptr;
 
     /// The mutex a condition variable wait locks again.
@@ -164,8 +167,8 @@ private:
     wait_node* prev = nullptr;
     wait_node* next = nullptr;
 
-    /// Links in the list of the waits queued on a primitive that `loop`
-    /// keeps, to abandon() them if it goes first.
+    /// Links in `loop`'s list of its waits queued on primitives, which it
+    /// abandons if it goes first.
     wait_node* loop_prev = nullptr;
     wait_node* loop_next = nullptr;
 };

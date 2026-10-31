@@ -424,8 +424,9 @@ ZEST_CASE(child_owning_its_group_frees_it_once_the_group_is_done) {
         co_return;
     };
 
-    auto [result] = run(start());
-    ZEXPECT(result.has_value());
+    // By hand: run() would stop the loop once start() ends, before the child.
+    loop.schedule(start());
+    ZEXPECT(loop.run() == 0);
     ZEXPECT(storage.destroyed);
     ZEXPECT(storage.untouched());
 }

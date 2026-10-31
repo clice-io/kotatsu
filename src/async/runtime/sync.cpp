@@ -122,6 +122,11 @@ void wait_node::give_back() {
 }
 
 void wait_node::abandon() noexcept {
+    if(queue != owner) {
+        // A notified condition variable wait, queued on its mutex again: the
+        // task the notification went to will not resume.
+        owner->woken -= 1;
+    }
     queue->remove(*this);
     loop = nullptr;
 }

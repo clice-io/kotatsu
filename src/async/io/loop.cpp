@@ -27,7 +27,7 @@ struct relay::Self {
     /// return from run(), and go, before the wakeup is sent.
     void release() {
         std::lock_guard lock(mutex);
-        count.fetch_sub(1, std::memory_order_release);
+        count.fetch_sub(1, std::memory_order_relaxed);
         ::uv_async_send(&async);
     }
 };
@@ -105,7 +105,7 @@ void event_loop::Self::on_relay(uv_async_t* handle) {
     // count == 0 here means every send() on the destroyed relays is in the
     // queue, and their last wakeups are sent.
     std::lock_guard lock(self->mutex);
-    if(self->count.load(std::memory_order_acquire) == 0 && self->queue.empty()) {
+    if(self->count.load(std::memory_order_relaxed) == 0 && self->queue.empty()) {
         ::uv_unref(reinterpret_cast<uv_handle_t*>(handle));
     }
 }
@@ -315,12 +315,12 @@ event_loop::event_loop() : self(new Self()) {
 }
 
 event_loop::~event_loop() {
-    assert(self->count.load(std::memory_order_acquire) == 0 &&
-           "event_loop destroyed with live relays");
     self->destroying = true;
 
     {
         std::lock_guard lock(self->mutex);
+        assert(self->count.load(std::memory_order_relaxed) == 0 &&
+               "event_loop destroyed with live relays");
         self->queue.clear();
     }
 
