@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <expected>
 #include <format>
+#include <optional>
 #include <print>
 #include <span>
 #include <string>
@@ -14,7 +15,8 @@
 #include <vector>
 
 #include "execution.h"
-#include "kotatsu/deco/deco.h"
+#include "kotatsu/cli/parse.h"
+#include "kotatsu/cli/usage.h"
 #include "kotatsu/zest/assert/trace.h"
 #include "kotatsu/zest/runner/registry.h"
 #include "kotatsu/zest/runner/run.h"
@@ -55,11 +57,12 @@ const Entry* running = nullptr;
 struct CliOptions {
     Options zest;
 
-    kotatsu::deco::decl::HelpOption help;
+    cli::Help help;
 
-    DecoInput(meta_var = "<PATTERN>"; help = "positional fallback for test name filter";
-              required = false)
-    <std::string> test_filter_input;
+    KOTATSU_ANNOTATE(cli::positional = true,
+                     cli::meta_var = "<PATTERN>",
+                     description = "positional fallback for test name filter")
+    <std::optional<std::string>> test_filter_input;
 };
 
 struct FilterPatternSet {
@@ -308,24 +311,27 @@ TestState run_in_process(const Entry& entry) {
 }
 
 int run_cli(int argc, char** argv, std::string_view command_overview) {
-    auto args = kotatsu::deco::util::argvify(argc, argv);
-    auto renderer = kotatsu::deco::cli::text::ModernRenderer();
-    kotatsu::deco::cli::Command<CliOptions> command(command_overview);
-    command.render_with(renderer);
-    command.on_error([](const kotatsu::deco::cli::ParseError& err) {
-        std::println(stderr, "Error parsing options: {}", err.message);
-    });
-    command.match_all([&](CliOptions cli) {
-        if(cli.test_filter_input.has_value() && !cli.zest.test_filter->empty()) {
-            std::println(stderr, "Error: cannot use both positional filter and --test-filter");
-            return 1;
-        }
-        if(cli.test_filter_input.has_value()) {
-            cli.zest.test_filter = std::move(*cli.test_filter_input);
-        }
-        return run_tests(std::move(cli.zest), argc, argv);
-    });
-    return command(args);
+    const cli::Style style{.color = true};
+    // The arguments after the program's name.
+    auto parsed = cli::parse<CliOptions>(
+        std::span(argv, static_cast<std::size_t>(argc)).subspan(std::min(argc, 1)));
+    if(!parsed) {
+        std::println(stderr, "Error parsing options: {}", parsed.error().render(style));
+        return 2;
+    }
+    if(parsed->help) {
+        std::print("{}", cli::usage<CliOptions>(command_overview, style));
+        return 0;
+    }
+    auto& options = *parsed;
+    if(options.test_filter_input.has_value() && !options.zest.test_filter.empty()) {
+        std::println(stderr, "Error: cannot use both positional filter and --test-filter");
+        return 1;
+    }
+    if(options.test_filter_input.has_value()) {
+        options.zest.test_filter = std::move(*options.test_filter_input);
+    }
+    return run_tests(std::move(options.zest), argc, argv);
 }
 
 int run_tests(Options options, int argc, const char* const* argv) {
@@ -343,8 +349,8 @@ void Runner::add_suite(std::string_view name, std::vector<TestCase> (*cases)()) 
 
 int Runner::run_tests(Options options, int argc, const char* const* argv) {
     silence_crash_dialogs();
-    detail::set_update_snapshots(*options.update_snapshots);
-    detail::set_snapshot_dir(*options.snapshot_dir);
+    detail::set_update_snapshots(options.update_snapshots);
+    detail::set_snapshot_dir(options.snapshot_dir);
 
     auto entries = collect_entries(suites);
     // Read from argv rather than `options`, which the embedding program may
@@ -370,7 +376,7 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
         }
     }
 
-    auto patterns = resolve_filter_patterns(*options.test_filter);
+    auto patterns = resolve_filter_patterns(options.test_filter);
     if(!patterns) {
         std::println("{}Error: invalid filter pattern: {}{}", red, patterns.error(), clear);
         return 1;
@@ -383,14 +389,14 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
         }
     }
 
-    if(*options.list_tests) {
+    if(options.list_tests) {
         for(const auto* entry: matched) {
             std::println("{}", entry->name);
         }
         return 0;
     }
 
-    const bool verbose = *options.verbose;
+    const bool verbose = options.verbose;
     const bool focus_mode = std::ranges::any_of(matched, [](const Entry* entry) {
         return entry->test_case.attrs.focus && !entry->test_case.attrs.skip;
     });
@@ -421,7 +427,7 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
     }
 
     auto begin = steady_clock::now();
-    if(*options.no_isolation) {
+    if(options.no_isolation) {
         fatal_notice = [] {
             flush_output();
             std::println("{}[    FATAL ] {} ended the run{}", red, running->name, clear);
@@ -450,8 +456,8 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
     } else {
         PoolOptions pool{
             .args = sys::arguments(),
-            .jobs = *options.jobs,
-            .timeout = std::chrono::seconds(*options.timeout),
+            .jobs = options.jobs,
+            .timeout = std::chrono::seconds(unsigned(options.timeout)),
         };
         auto report = [&](const Entry& entry, const Outcome& outcome) {
             reporter.record(entry, outcome);
@@ -470,7 +476,7 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
     }
     summary.duration = elapsed_since(begin);
 
-    if(*options.cleanup_snapshots) {
+    if(options.cleanup_snapshots) {
         // A test that failed early never checked its snapshots; they only
         // look orphaned.
         if(summary.failed != 0) {

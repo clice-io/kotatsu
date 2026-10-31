@@ -17,6 +17,7 @@
 #include "kotatsu/support/config.h"
 #include "kotatsu/support/naming.h"
 #include "kotatsu/support/numeric.h"
+#include "kotatsu/support/type_list.h"
 
 namespace kotatsu::meta {
 
@@ -183,17 +184,28 @@ enum class aspect : std::uint8_t {
     tag_names,
 };
 
-/// The member pointer decides which spec type a component applies to, and
-/// thereby whether it is valid in make_spec or make_struct_spec.
-template <aspect A, auto Member, typename V>
+template <typename MemberPointer>
+struct member_class;
+
+template <typename Class, typename V>
+struct member_class<V Class::*> {
+    using type = Class;
+};
+
+/// Sets one member of a spec. The member pointer decides which spec type the
+/// component applies to: field_spec makes it valid in make_spec, struct_spec in
+/// make_struct_spec, and the spec type of another module, an extension's, puts
+/// it in the annotation beside the field_spec. `A` tells the entries of one
+/// spec type apart, so that none appears twice: an aspect for meta's own, an
+/// enumerator of the extension's for one of its.
+template <auto A, auto Member, typename V>
 struct value_component {
     V value;
 
-    constexpr static aspect kind = A;
+    using spec_type = typename member_class<decltype(Member)>::type;
+    constexpr static auto kind = A;
 
-    template <typename Spec>
-        requires requires(Spec& spec, const V& value) { spec.*Member = value; }
-    constexpr void apply(Spec& spec) const {
+    constexpr void apply(spec_type& spec) const {
         spec.*Member = value;
     }
 };
@@ -203,6 +215,7 @@ struct value_component {
 struct tagged_component {
     bool value;
 
+    using spec_type = struct_spec;
     constexpr static aspect kind = aspect::tagged;
 
     constexpr void apply(struct_spec& spec) const {
@@ -217,6 +230,7 @@ struct tagged_component {
 /// behavior attr; the spec value is untouched.
 template <aspect A, typename T>
 struct type_component {
+    using spec_type = field_spec;
     constexpr static aspect kind = A;
 
     constexpr void apply(field_spec&) const {}
@@ -228,14 +242,23 @@ constexpr bool is_type_component_v = false;
 template <aspect A, typename T>
 constexpr bool is_type_component_v<type_component<A, T>> = true;
 
-/// A DSL component applicable to the given spec type.
-template <typename T, typename Spec>
-concept spec_component = requires(const T& component, Spec& spec) {
-    { T::kind } -> std::convertible_to<aspect>;
+/// A DSL component: it applies to its spec_type and says which entry it is.
+template <typename T>
+concept component = requires(const T& component, typename T::spec_type& spec) {
+    T::kind;
     component.apply(spec);
 };
 
-template <aspect A, auto Member, typename V>
+/// A DSL component applicable to the given spec type.
+template <typename T, typename Spec>
+concept spec_component = component<T> && std::same_as<typename T::spec_type, Spec>;
+
+/// A component of an extension's spec: a spec type of another module.
+template <typename T>
+concept extension_component =
+    component<T> && !spec_component<T, field_spec> && !spec_component<T, struct_spec>;
+
+template <auto A, auto Member, typename V>
 struct value_proxy {
     constexpr auto operator=(V value) const {
         return value_component<A, Member, V>{value};
@@ -260,7 +283,7 @@ struct number_proxy {
     }
 };
 
-template <aspect A, auto Member>
+template <auto A, auto Member>
 struct name_list_proxy {
     constexpr auto operator=(std::initializer_list<std::string_view> names) const {
         if(names.size() > name_list::capacity) {
@@ -347,33 +370,61 @@ template <typename T>
 
 }  // namespace dsl
 
-/// What KOTATSU_ANNOTATE stores in its tag: the folded value spec, plus the
-/// type components preserved in the result type.
-template <typename... TypeComponents>
+/// What KOTATSU_ANNOTATE stores in its tag: the folded value spec, the specs
+/// of the extensions its entries set, one value of each spec type, and the type
+/// components preserved in the result type.
+template <typename Extras, typename Extensions>
 struct spec_result {
     field_spec value;
+    Extensions extensions;
 
-    using extras = std::tuple<TypeComponents...>;
+    using extras = Extras;
 };
 
 namespace detail {
 
+/// Whether components A and B set the same entry: the same kind of the same
+/// spec type.
+template <typename A, typename B>
+consteval bool same_entry() {
+    if constexpr(std::same_as<typename A::spec_type, typename B::spec_type>) {
+        return A::kind == B::kind;
+    } else {
+        return false;
+    }
+}
+
 template <typename... Cs>
 consteval bool component_kinds_unique() {
-    std::array<dsl::aspect, sizeof...(Cs)> kinds = {Cs::kind...};
-    for(std::size_t i = 0; i < kinds.size(); ++i) {
-        for(std::size_t j = i + 1; j < kinds.size(); ++j) {
-            if(kinds[i] == kinds[j]) {
-                return false;
-            }
-        }
-    }
-    return true;
+    std::size_t pairs = 0;
+    (
+        [&]<typename C>(std::type_identity<C>) {
+            pairs += (std::size_t{same_entry<C, Cs>()} + ...);
+        }(std::type_identity<Cs>{}),
+        ...);
+    // Each component sets its own entry once.
+    return pairs == sizeof...(Cs);
 }
 
 /// True for any DSL component, regardless of which spec type it applies to.
 template <typename T>
-concept any_component = dsl::spec_component<T, field_spec> || dsl::spec_component<T, struct_spec>;
+concept any_component = dsl::component<T>;
+
+/// The tuple of the distinct spec types `Cs` extend, in the order they first
+/// appear.
+template <typename Tuple, typename... Cs>
+struct extension_specs {
+    using type = Tuple;
+};
+
+template <typename... Specs, typename C, typename... Rest>
+struct extension_specs<std::tuple<Specs...>, C, Rest...> {
+    using spec_t = typename C::spec_type;
+    constexpr static bool fresh = dsl::extension_component<C> && !is_one_of<spec_t, Specs...>;
+    using type = typename extension_specs<
+        std::conditional_t<fresh, std::tuple<Specs..., spec_t>, std::tuple<Specs...>>,
+        Rest...>::type;
+};
 
 constexpr void validate_spec(const field_spec& spec) {
     if(spec.skip && spec.flatten) {
@@ -457,22 +508,43 @@ constexpr auto make_spec(const Cs&... components) {
     static_assert((detail::any_component<Cs> && ...),
                   "annotation entries must be assignments, e.g. skip = true");
     static_assert(
-        (dsl::spec_component<Cs, field_spec> && ...),
+        (!dsl::spec_component<Cs, struct_spec> && ...),
         "struct-level entries (rename_all/deny_unknown_fields/defaulted_fields/tagged/...) "
         "cannot be mixed with field-level entries in one annotation");
     static_assert(detail::component_kinds_unique<Cs...>(),
                   "annotation: the same attribute appears twice");
 
-    field_spec spec{};
-    (components.apply(spec), ...);
-    detail::validate_spec(spec);
-
     using extras_t = decltype(std::tuple_cat(
         std::declval<
             std::conditional_t<dsl::is_type_component_v<Cs>, std::tuple<Cs>, std::tuple<>>>()...));
-    return []<typename... Ts>(const field_spec& value, std::type_identity<std::tuple<Ts...>>) {
-        return spec_result<Ts...>{value};
-    }(spec, std::type_identity<extras_t>{});
+    using extensions_t = typename detail::extension_specs<std::tuple<>, Cs...>::type;
+
+    spec_result<extras_t, extensions_t> result{};
+    (
+        [&](const auto& component) {
+            if constexpr(dsl::spec_component<std::remove_cvref_t<decltype(component)>,
+                                             field_spec>) {
+                component.apply(result.value);
+            } else {
+                using spec_t = typename std::remove_cvref_t<decltype(component)>::spec_type;
+                component.apply(std::get<spec_t>(result.extensions));
+            }
+        }(components),
+        ...);
+    detail::validate_spec(result.value);
+    // An extension checks its own spec, with a validate() of its own.
+    std::apply(
+        [](const auto&... extension) {
+            (
+                [&] {
+                    if constexpr(requires { extension.validate(); }) {
+                        extension.validate();
+                    }
+                }(),
+                ...);
+        },
+        result.extensions);
+    return result;
 }
 
 template <typename... Cs>

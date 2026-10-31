@@ -112,125 +112,38 @@ kotatsu_library(
 )
 
 kotatsu_library(
-    name = "option",
-    srcs = glob(["src/deco/option/*.cc"]),
-    hdrs = ["include/kotatsu/deco/option.h"] + glob(["include/kotatsu/deco/option/**"]),
+    name = "cli_table",
+    srcs = [
+        "src/cli/ansi.h",
+        "src/cli/error.cc",
+    ] + glob(["src/cli/table/*.cc"]),
+    hdrs = [
+        "include/kotatsu/cli/error.h",
+        "include/kotatsu/cli/table.h",
+    ] + glob(["include/kotatsu/cli/table/**"]),
     deps = [":support"],
 )
 
 kotatsu_library(
-    name = "deco",
-    srcs = glob(["src/deco/facade/*.cc"]),
-    hdrs = [
-        "include/kotatsu/deco/deco.h",
-        "include/kotatsu/deco/macro.h",
-    ] + glob(["include/kotatsu/deco/facade/**"]),
-    deps = [
-        ":meta",
-        ":option",
-        ":support",
-    ],
-)
-
-kotatsu_library(
-    name = "async",
-    srcs = glob([
-        "src/async/**/*.cpp",
-        "src/async/**/*.h",
-    ]),
-    hdrs = glob(["include/kotatsu/async/**"]),
-    deps = [
-        ":fs",
-        ":support",
-        ":sys",
-        "@libuv",
-    ],
-)
-
-# The LSP base protocol's framing, the protocol model, the bincode codec and
-# the blocking client, without the event loop: a program that only reads and
-# writes messages, such as catter's hook library, which runs in every process a
-# build starts, takes neither libuv nor the DLLs it imports.
-kotatsu_library(
-    name = "ipc_codec",
+    name = "cli",
     srcs = [
-        "src/ipc/blocking_client.cpp",
-        "src/ipc/codec/bincode.cpp",
-        "src/ipc/framing.cpp",
+        "src/cli/ansi.h",
+        "src/cli/command.cc",
+        "src/cli/command.h",
+        "src/cli/parse.cc",
+        "src/cli/to_argv.cc",
+        "src/cli/usage.cc",
     ],
     hdrs = [
-        "include/kotatsu/ipc/blocking_client.h",
-        "include/kotatsu/ipc/codec.h",
-        "include/kotatsu/ipc/codec/bincode.h",
-        "include/kotatsu/ipc/framing.h",
-        "include/kotatsu/ipc/protocol.h",
+        "include/kotatsu/cli/cli.h",
+        "include/kotatsu/cli/parse.h",
+        "include/kotatsu/cli/spec.h",
+        "include/kotatsu/cli/to_argv.h",
+        "include/kotatsu/cli/usage.h",
     ],
     deps = [
+        ":cli_table",
         ":codec",
-        ":support",
-    ],
-)
-
-# The JSON codec, without the event loop: CMake builds it into
-# kotatsu::ipc::codec when simdjson is enabled.
-kotatsu_library(
-    name = "ipc_codec_json",
-    srcs = ["src/ipc/codec/json.cpp"],
-    hdrs = ["include/kotatsu/ipc/codec/json.h"],
-    deps = [
-        ":codec",
-        ":codec_json",
-        ":ipc_codec",
-        ":support",
-    ],
-)
-
-kotatsu_library(
-    name = "ipc",
-    srcs = [
-        "src/ipc/peer/bincode.cpp",
-        "src/ipc/recording_transport.cpp",
-        "src/ipc/transport.cpp",
-    ],
-    hdrs = [
-        "include/kotatsu/ipc/logger.h",
-        "include/kotatsu/ipc/peer.h",
-        "include/kotatsu/ipc/peer.inl",
-        "include/kotatsu/ipc/peer/bincode.h",
-        "include/kotatsu/ipc/recording_transport.h",
-        "include/kotatsu/ipc/transport.h",
-    ],
-    deps = [
-        ":async",
-        ":codec",
-        ":ipc_codec",
-        ":support",
-    ],
-)
-
-# JSON-RPC over ipc, on the JSON codec: CMake builds it into kotatsu::ipc when
-# simdjson is enabled.
-kotatsu_library(
-    name = "ipc_json",
-    srcs = ["src/ipc/peer/json.cpp"],
-    hdrs = ["include/kotatsu/ipc/peer/json.h"],
-    deps = [
-        ":ipc",
-        ":ipc_codec_json",
-    ],
-)
-
-kotatsu_library(
-    name = "ipc_lsp",
-    srcs = glob([
-        "src/ipc/lsp/*.cpp",
-        "src/ipc/lsp/*.h",
-    ]),
-    hdrs = glob(["include/kotatsu/ipc/lsp/**"]),
-    deps = [
-        ":codec",
-        ":ipc",
-        ":ipc_codec",
         ":meta",
         ":support",
     ],
@@ -248,8 +161,8 @@ kotatsu_library(
     ),
     deps = [
         ":async",
+        ":cli",
         ":codec",
-        ":deco",
         ":fs",
         ":meta",
         ":support",

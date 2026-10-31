@@ -4,7 +4,9 @@
 #include <array>
 #include <concepts>
 #include <optional>
+#include <span>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 
 #include "name.h"
@@ -12,6 +14,7 @@
 #include "struct.h"
 #include "kotatsu/support/naming.h"
 #include "kotatsu/support/tuple_traits.h"
+#include "kotatsu/support/type_list.h"
 #include "kotatsu/support/type_traits.h"
 
 namespace kotatsu::meta {
@@ -32,6 +35,7 @@ namespace attrs {
 template <typename Tag>
 struct spec {
     constexpr const static field_spec& value = Tag::spec.value;
+    constexpr const static auto& extensions = Tag::spec.extensions;
 };
 
 // Struct-level
@@ -77,6 +81,81 @@ constexpr const inline field_spec& field_spec_of = [] -> const field_spec& {
         return empty_field_spec;
     }
 }();
+
+/// The key an extension's spec type is found by at run time.
+template <typename Spec>
+constexpr inline char extension_key = 0;
+
+/// An extension's spec attached to a field: one value of a spec type of
+/// another module, set by its own annotation entries.
+struct extension_ref {
+    const void* key;
+    const void* value;
+
+    template <typename Spec>
+    const Spec* get() const {
+        return key == &extension_key<Spec> ? static_cast<const Spec*>(value) : nullptr;
+    }
+};
+
+namespace detail {
+
+template <typename AttrsTuple>
+constexpr auto extension_refs_of() {
+    if constexpr(tuple_any_of_v<AttrsTuple, is_spec_attr>) {
+        constexpr const auto& extensions = tuple_find_t<AttrsTuple, is_spec_attr>::extensions;
+        return std::apply(
+            [](const auto&... extension) {
+                return std::array<extension_ref, sizeof...(extension)>{
+                    extension_ref{
+                                  &extension_key<std::remove_cvref_t<decltype(extension)>>,
+                                  &extension,
+                                  }
+                    ...
+                };
+            },
+            extensions);
+    } else {
+        return std::array<extension_ref, 0>{};
+    }
+}
+
+template <typename AttrsTuple>
+constexpr inline auto extension_refs = extension_refs_of<AttrsTuple>();
+
+}  // namespace detail
+
+/// The specs of the extensions an attrs tuple carries.
+template <typename AttrsTuple>
+constexpr std::span<const extension_ref> extensions_of = detail::extension_refs<AttrsTuple>;
+
+namespace detail {
+
+template <typename Spec, typename... Extensions>
+constexpr const Spec* find_extension(const std::tuple<Extensions...>& extensions) {
+    if constexpr(is_one_of<Spec, Extensions...>) {
+        return &std::get<Spec>(extensions);
+    } else {
+        return nullptr;
+    }
+}
+
+template <typename Spec, typename T>
+constexpr const Spec* extension_of_field() {
+    if constexpr(annotated_type<T>) {
+        if constexpr(tuple_any_of_v<typename T::attrs, is_spec_attr>) {
+            return find_extension<Spec>(tuple_find_t<typename T::attrs, is_spec_attr>::extensions);
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace detail
+
+/// The spec of type `Spec` an extension attached to a (possibly annotated)
+/// field type; null when it has none.
+template <typename Spec, typename T>
+constexpr const Spec* extension_of = detail::extension_of_field<Spec, std::remove_cv_t<T>>();
 
 template <typename T>
 struct is_struct_spec_attr {

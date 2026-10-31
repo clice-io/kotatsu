@@ -1,6 +1,6 @@
 # Building
 
-kotatsu builds with Bazel and with CMake. Both have a target per module, with further targets for the codec backends and for parts of deco, ipc and zest. kotatsu needs a C++23 compiler, and the code that includes its headers is compiled as C++23 too; [the README](../README.md#platforms) lists the toolchains CI tests.
+kotatsu builds with Bazel and with CMake. Both have a target per module, with further targets for the codec backends and for parts of cli, ipc and zest. kotatsu needs a C++23 compiler, and the code that includes its headers is compiled as C++23 too; [the README](../README.md#platforms) lists the toolchains CI tests.
 
 ## Targets
 
@@ -11,7 +11,7 @@ kotatsu builds with Bazel and with CMake. Both have a target per module, with fu
 | fs      | `:fs`                                                            | `kotatsu::fs`                                                                                   |                               |
 | sys     | `:sys`                                                           | `kotatsu::sys`                                                                                  |                               |
 | codec   | `:codec`, `:codec_json`, `:codec_toml`, `:codec_flatbuffers`     | `kotatsu::codec`, `kotatsu::codec::json`, `kotatsu::codec::toml`, `kotatsu::codec::flatbuffers` | simdjson, toml++, FlatBuffers |
-| deco    | `:option`, `:deco`                                               | `kotatsu::deco::option`, `kotatsu::deco`                                                        |                               |
+| cli     | `:cli_table`, `:cli`                                             | `kotatsu::cli::table`, `kotatsu::cli`                                                           |                               |
 | async   | `:async`                                                         | `kotatsu::async`                                                                                | libuv                         |
 | ipc     | `:ipc_codec`, `:ipc_codec_json`, `:ipc`, `:ipc_json`, `:ipc_lsp` | `kotatsu::ipc::codec`, `kotatsu::ipc`, `kotatsu::ipc::lsp`                                      |                               |
 | http    | none; HTTP builds with CMake only                                | `kotatsu::http`                                                                                 | libcurl                       |
@@ -60,12 +60,12 @@ target_link_libraries(app PRIVATE kotatsu::http kotatsu::ipc)
 | Option                             | Default | Effect                                                               |
 | ---------------------------------- | ------- | -------------------------------------------------------------------- |
 | `KOTATSU_ENABLE_ASYNC`             | `ON`    | `kotatsu::async`, `kotatsu::ipc`, `kotatsu::ipc::lsp`; fetches libuv |
-| `KOTATSU_ENABLE_DECO`              | `ON`    | `kotatsu::deco` and `kotatsu::deco::option`                          |
+| `KOTATSU_ENABLE_CLI`               | `ON`    | `kotatsu::cli` and `kotatsu::cli::table`                             |
 | `KOTATSU_CODEC_ENABLE_SIMDJSON`    | `OFF`   | `kotatsu::codec::json`, and the JSON parts of ipc                    |
 | `KOTATSU_CODEC_ENABLE_TOML`        | `OFF`   | `kotatsu::codec::toml`                                               |
 | `KOTATSU_CODEC_ENABLE_FLATBUFFERS` | `OFF`   | `kotatsu::codec::flatbuffers`                                        |
 | `KOTATSU_ENABLE_HTTP`              | `OFF`   | `kotatsu::http`; fetches libcurl, turns on async                     |
-| `KOTATSU_ENABLE_ZEST`              | `OFF`   | `kotatsu::zest`, `kotatsu::zest::async`; turns on deco and async     |
+| `KOTATSU_ENABLE_ZEST`              | `OFF`   | `kotatsu::zest`, `kotatsu::zest::async`; turns on cli and async      |
 | `KOTATSU_ENABLE_EXCEPTIONS`        | `ON`    | builds with exceptions                                               |
 | `KOTATSU_ENABLE_RTTI`              | `ON`    | builds with RTTI                                                     |
 

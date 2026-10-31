@@ -3,72 +3,70 @@
 #include <string>
 #include <string_view>
 
-#include "kotatsu/deco/deco.h"
+#include "kotatsu/cli/spec.h"
+#include "kotatsu/codec/macro.h"
 
 namespace kotatsu::zest {
 
 /// Runtime configuration for the zest test runner.
 ///
-/// Fields use kotatsu::deco macros, so this struct doubles as a CLI option definition.
-/// Downstream projects that need custom flags can embed it and let deco's recursive
-/// parsing handle both sets transparently:
+/// Each field is an option of the command line, so this struct is the runner's
+/// options as kotatsu::cli parses them. Downstream projects that need flags of
+/// their own embed it, and one parse reads both:
 ///
 ///     struct MyTestOptions {
 ///         kotatsu::zest::Options zest;
-///         DecoKV(meta_var = "<DIR>"; help = "corpus directory")
+///         KOTATSU_ANNOTATE(cli::meta_var = "<DIR>", description = "corpus directory")
 ///         <std::string> corpus_dir;
 ///     };
 ///
-///     // deco parses --test-filter, --snapshot-dir, AND --corpus-dir in one pass.
-///     auto parsed = kotatsu::deco::cli::parse<MyTestOptions>(args, renderer);
-///     kotatsu::zest::run_tests(std::move(parsed->options.zest), argc, argv);
+///     // --test-filter, --snapshot-dir and --corpus-dir in one pass.
+///     auto parsed = kotatsu::cli::parse<MyTestOptions>(std::span(argv, argc).subspan(1));
+///     kotatsu::zest::run_tests(std::move(parsed->zest), argc, argv);
 ///
 /// Tests run in worker processes that re-execute the program with the original
 /// arguments, so the embedding `main` sees its own flags there too.
 struct Options {
-    DecoKV(meta_var = "<PATTERN>"; help = "test name filter: SUITE or SUITE.TEST or SUITE.* or *";
-           required = false)
-    <std::string> test_filter = "";
+    KOTATSU_ANNOTATE(cli::meta_var = "<PATTERN>",
+                     description = "test name filter: SUITE or SUITE.TEST or SUITE.* or *")
+    <std::string> test_filter;
 
-    DecoFlag(help = "print all test results, not just failures"; required = false)
-    verbose = false;
+    KOTATSU_ANNOTATE(description = "print all test results, not just failures")
+    <bool> verbose = false;
 
-    DecoFlag(help = "list all registered test cases and exit"; required = false)
-    list_tests = false;
+    KOTATSU_ANNOTATE(description = "list all registered test cases and exit")
+    <bool> list_tests = false;
 
-    DecoKV(meta_var = "<N>";
-           help = "worker processes running tests at once (0 = one per available CPU)";
-           required = false)
+    KOTATSU_ANNOTATE(
+        cli::meta_var = "<N>",
+        description = "worker processes running tests at once (0 = one per available CPU)")
     <unsigned> jobs = 0;
 
-    DecoKV(meta_var = "<SECONDS>";
-           help =
-               "kill a test, or a worker starting or exiting, that takes longer "
-               "than this (0 = no limit)";
-           required = false)
+    KOTATSU_ANNOTATE(cli::meta_var = "<SECONDS>",
+                     description =
+                         "kill a test, or a worker starting or exiting, that takes longer "
+                         "than this (0 = no limit)")
     <unsigned> timeout = 60;
 
-    DecoFlag(help =
-                 "run tests one after another in this process, for debuggers: a crash "
-                 "or a failed ZASSERT ends the run, crash tests are skipped and "
-                 "--timeout does not apply";
-             required = false)
-    no_isolation = false;
+    KOTATSU_ANNOTATE(description =
+                         "run tests one after another in this process, for debuggers: a crash "
+                         "or a failed ZASSERT ends the run, crash tests are skipped and "
+                         "--timeout does not apply")
+    <bool> no_isolation = false;
 
-    DecoFlag(help = "update snapshot files instead of comparing"; required = false)
-    update_snapshots = false;
+    KOTATSU_ANNOTATE(description = "update snapshot files instead of comparing")
+    <bool> update_snapshots = false;
 
-    DecoFlag(help = "remove orphaned snapshot files not used in this run"; required = false)
-    cleanup_snapshots = false;
+    KOTATSU_ANNOTATE(description = "remove orphaned snapshot files not used in this run")
+    <bool> cleanup_snapshots = false;
 
-    DecoKV(meta_var = "<DIR>"; help = "directory for snapshot files"; required = false)
-    <std::string> snapshot_dir = "";
+    KOTATSU_ANNOTATE(cli::meta_var = "<DIR>", description = "directory for snapshot files")
+    <std::string> snapshot_dir;
 
     // run_tests reads this from argv itself; it is declared so that a worker's
     // command line parses.
-    DecoFlag(help = "internal: serve tests to the runner that started this process";
-             required = false)
-    zest_worker = false;
+    KOTATSU_ANNOTATE(description = "internal: serve tests to the runner that started this process")
+    <bool> zest_worker = false;
 };
 
 /// Parse CLI arguments and run all registered tests.
