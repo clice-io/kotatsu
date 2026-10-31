@@ -1,0 +1,1061 @@
+#pragma once
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <cctype>
+#include <cerrno>
+#include <charconv>
+#include <concepts>
+#include <cstdint>
+#include <cstdlib>
+#include <expected>
+#include <limits>
+#include <memory>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
+#include "text.h"
+#include "trait.h"
+#include "kotatsu/deco/option/arg.h"
+#include "kotatsu/support/type_traits.h"
+#include "kotatsu/meta/spelling.h"
+
+namespace kotatsu::deco {
+
+struct ParsedArgOwning {
+    std::uint32_t id = 0;
+    std::uint32_t index = 0;
+    std::string spelling;
+    std::vector<std::string> values;
+
+    static ParsedArgOwning from(const option::ParsedArg& arg) {
+        ParsedArgOwning owning;
+        owning.id = arg.id;
+        owning.index = arg.index;
+        owning.spelling = arg.spelling;
+        for(auto v: arg.values) {
+            owning.values.emplace_back(v);
+        }
+        return owning;
+    }
+
+    std::string_view get_spelling_view() const {
+        return spelling;
+    }
+};
+
+}  // namespace kotatsu::deco
+
+namespace kotatsu::deco::decl {
+
+enum class DecoType {
+    Input,
+
+    // after "--"
+    TrailingInput,
+
+    // -p
+    Flag,
+
+    // -o 1
+    KV,
+
+    // -x,a,b,c
+    CommaJoined,
+
+    // -x 1 2 3, fixed size
+    Multi,
+};
+
+enum KVStyle : char {
+    // -KEYValue
+    Joined = 1 << 0,
+
+    // -o 1
+    Separate = 1 << 1,
+
+    // -o 1 or -o=1, DecoKV's and DecoKVAlias's default
+    JoinedOrSeparate = Joined | Separate
+};
+
+struct Category {
+    // If true, any other categories should not occur if this category occurs  in args.
+    bool exclusive = false;
+    // if true, this category is required in args.
+    bool required = false;
+    std::string_view name;
+    std::string_view description;
+};
+
+constexpr inline Category default_category = {
+    .exclusive = false,
+    .required = false,
+    .name = "default",
+    .description = "the default category for options",
+};
+
+struct CategoryRef {
+    const Category* value = &default_category;
+
+    constexpr CategoryRef() = default;
+
+    constexpr CategoryRef(const Category& category) : value(&category) {}
+
+    constexpr auto operator=(const Category& category) -> CategoryRef& {
+        value = &category;
+        return *this;
+    }
+
+    constexpr auto ptr() const -> const Category* {
+        return value;
+    }
+
+    constexpr auto get() const -> const Category& {
+        return *value;
+    }
+
+    constexpr auto operator*() const -> const Category& {
+        return *value;
+    }
+
+    constexpr auto operator->() const -> const Category* {
+        return value;
+    }
+
+    constexpr operator const Category&() const {
+        return *value;
+    }
+};
+
+struct ParseControl {
+    enum class Action : char {
+        Continue = 0,
+        Stop = 1,
+        Restart = 2,
+    };
+
+    Action action = Action::Continue;
+    std::span<std::string> next_argv{};
+    std::shared_ptr<std::vector<std::string>> owned_next_argv{};
+
+    ParseControl() = default;
+
+    ParseControl(Action action,
+                 std::span<std::string> next_argv = {},
+                 std::shared_ptr<std::vector<std::string>> owned_next_argv = {}) :
+        action(action), next_argv(next_argv), owned_next_argv(std::move(owned_next_argv)) {}
+
+    static auto next() -> ParseControl {
+        return {};
+    }
+
+    static auto stop() -> ParseControl {
+        return ParseControl(Action::Stop);
+    }
+
+    /// Restart parsing with a non-owning argv view.
+    ///
+    /// IMPORTANT: `next_argv` must outlive the parsing session (and any returned Invocation that
+    /// exposes `argv()`).
+    /// For callback-local rewritten argv, use the `std::vector<std::string>` overload.
+    /// The inputs parsed before the restart count toward the DecoInput's `arg_num`.
+    static auto restart(std::span<std::string> next_argv) -> ParseControl {
+        return ParseControl(Action::Restart, next_argv);
+    }
+
+    /// Restart parsing with a new, owned argv snapshot.
+    ///
+    /// This overload is safe to use with callback-local containers, e.g.
+    /// `std::vector<std::string> rewritten; return step.restart(std::move(rewritten));`.
+    static auto restart(std::vector<std::string> next_argv) -> ParseControl {
+        auto owned = std::make_shared<std::vector<std::string>>(std::move(next_argv));
+        auto view = std::span<std::string>(owned->data(), owned->size());
+        return ParseControl(Action::Restart, view, std::move(owned));
+    }
+};
+
+template <typename ResTy>
+struct ParseStep {
+    const ParsedArgOwning* parsed_arg = nullptr;
+    std::uint32_t next_cursor_index = 0;
+    std::span<std::string> argv_span{};
+    const ResTy* parsed_value = nullptr;
+
+    constexpr ParseStep() = default;
+
+    constexpr ParseStep(const ParsedArgOwning& arg,
+                        std::uint32_t next_cursor,
+                        std::span<std::string> argv,
+                        const ResTy& value) :
+        parsed_arg(&arg), next_cursor_index(next_cursor), argv_span(argv), parsed_value(&value) {}
+
+    constexpr auto arg() const -> const ParsedArgOwning& {
+        return *parsed_arg;
+    }
+
+    constexpr auto next_cursor() const -> std::uint32_t {
+        return next_cursor_index;
+    }
+
+    constexpr auto argv() const -> std::span<std::string> {
+        return argv_span;
+    }
+
+    constexpr auto value() const -> const ResTy& {
+        return *parsed_value;
+    }
+
+    auto next() const -> ParseControl {
+        return ParseControl::next();
+    }
+
+    auto stop() const -> ParseControl {
+        return ParseControl::stop();
+    }
+
+    auto restart(std::span<std::string> next_argv) const -> ParseControl {
+        return ParseControl::restart(next_argv);
+    }
+
+    auto restart(std::vector<std::string> next_argv) const -> ParseControl {
+        return ParseControl::restart(std::move(next_argv));
+    }
+};
+
+struct IntoContext {
+    std::span<const std::string> argv_span{};
+    std::uint32_t highlight_begin_index = 0;
+    std::uint32_t highlight_end_index = 0;
+    const cli::text::Renderer* renderer_ptr = nullptr;
+
+    constexpr IntoContext() = default;
+
+    constexpr IntoContext(std::span<const std::string> argv,
+                          std::uint32_t highlight_begin,
+                          std::uint32_t highlight_end,
+                          const cli::text::Renderer* renderer = nullptr) :
+        argv_span(argv), highlight_begin_index(highlight_begin), highlight_end_index(highlight_end),
+        renderer_ptr(renderer) {}
+
+    constexpr auto argv() const -> std::span<const std::string> {
+        return argv_span;
+    }
+
+    constexpr auto highlight_begin() const -> std::uint32_t {
+        return highlight_begin_index;
+    }
+
+    constexpr auto highlight_end() const -> std::uint32_t {
+        return highlight_end_index;
+    }
+
+    constexpr auto renderer() const -> const cli::text::Renderer* {
+        return renderer_ptr;
+    }
+
+    static auto at_cursor(std::span<const std::string> argv,
+                          std::uint32_t index,
+                          const cli::text::Renderer* renderer = nullptr) -> IntoContext {
+        const std::uint32_t clamped =
+            std::min<std::uint32_t>(index, static_cast<std::uint32_t>(argv.size()));
+        return IntoContext(argv, clamped, clamped, renderer);
+    }
+
+    template <typename ArgTy>
+    static auto from_argument(std::span<const std::string> argv,
+                              const ArgTy& arg,
+                              const cli::text::Renderer* renderer = nullptr) -> IntoContext {
+        const std::uint32_t begin =
+            std::min<std::uint32_t>(arg.index, static_cast<std::uint32_t>(argv.size()));
+        if(begin >= argv.size()) {
+            return at_cursor(argv, begin, renderer);
+        }
+
+        std::uint32_t end = begin + 1;
+        std::uint32_t cursor = begin + 1;
+        for(const auto& value: arg.values) {
+            if(cursor >= argv.size() || argv[cursor] != value) {
+                break;
+            }
+            ++cursor;
+            end = cursor;
+        }
+        return IntoContext(argv, begin, end, renderer);
+    }
+
+    template <typename ArgTy>
+    static auto from_value(std::span<const std::string> argv,
+                           const ArgTy& arg,
+                           std::string_view value,
+                           const cli::text::Renderer* renderer = nullptr) -> IntoContext {
+        const std::uint32_t begin =
+            std::min<std::uint32_t>(arg.index, static_cast<std::uint32_t>(argv.size()));
+        if(begin >= argv.size()) {
+            return at_cursor(argv, begin, renderer);
+        }
+
+        if(argv[begin] == value) {
+            return IntoContext(argv, begin, begin + 1, renderer);
+        }
+
+        std::uint32_t cursor = begin + 1;
+        for(const auto& item: arg.values) {
+            if(cursor >= argv.size() || argv[cursor] != item) {
+                break;
+            }
+            if(item == value) {
+                return IntoContext(argv, cursor, cursor + 1, renderer);
+            }
+            ++cursor;
+        }
+        return from_argument(argv, arg, renderer);
+    }
+
+    auto format_error(std::string_view reason) const -> std::string {
+        if(argv_span.empty()) {
+            return cli::text::render_diagnostic(cli::text::diagnostic_message(std::string(reason)),
+                                                renderer_ptr);
+        }
+        return cli::text::render_diagnostic(cli::text::diagnostic_at(argv_span,
+                                                                     highlight_begin_index,
+                                                                     highlight_end_index,
+                                                                     std::string(reason)),
+                                            renderer_ptr);
+    }
+
+    template <typename T>
+    auto format_error(std::optional<T> reason) const -> std::optional<T> {
+        if(reason) {
+            return format_error(reason.value());
+        }
+        return std::nullopt;
+    }
+};
+
+using AliasForwardResult = std::expected<std::vector<std::string>, std::string>;
+using AliasForwardFn = AliasForwardResult (*)(const ParsedArgOwning& arg);
+using AliasForwardFnWithContext = AliasForwardResult (*)(const ParsedArgOwning& arg,
+                                                         const IntoContext& context);
+
+struct AliasForwardField {
+    enum class Kind : char {
+        None = 0,
+        Static = 1,
+        Dynamic = 2,
+        DynamicWithContext = 3,
+    };
+
+    Kind kind = Kind::None;
+    std::vector<std::string_view> static_tokens;
+    AliasForwardFn dynamic = nullptr;
+    AliasForwardFnWithContext dynamic_with_context = nullptr;
+
+    constexpr AliasForwardField() = default;
+
+    constexpr auto operator=(std::initializer_list<std::string_view> tokens) -> AliasForwardField& {
+        kind = Kind::Static;
+        static_tokens.assign(tokens.begin(), tokens.end());
+        dynamic = nullptr;
+        dynamic_with_context = nullptr;
+        return *this;
+    }
+
+    constexpr auto operator=(std::vector<std::string_view> tokens) -> AliasForwardField& {
+        kind = Kind::Static;
+        static_tokens = std::move(tokens);
+        dynamic = nullptr;
+        dynamic_with_context = nullptr;
+        return *this;
+    }
+
+    constexpr auto operator=(AliasForwardFn fn) -> AliasForwardField& {
+        kind = fn ? Kind::Dynamic : Kind::None;
+        static_tokens.clear();
+        dynamic = fn;
+        dynamic_with_context = nullptr;
+        return *this;
+    }
+
+    constexpr auto operator=(AliasForwardFnWithContext fn) -> AliasForwardField& {
+        kind = fn ? Kind::DynamicWithContext : Kind::None;
+        static_tokens.clear();
+        dynamic = nullptr;
+        dynamic_with_context = fn;
+        return *this;
+    }
+
+    constexpr explicit operator bool() const {
+        return kind != Kind::None;
+    }
+};
+
+constexpr inline bool is_alias_placeholder_name(std::string_view member_name) {
+    return member_name.starts_with("__deco_alias_wrapper") ||
+           (!member_name.empty() &&
+            std::all_of(member_name.begin(), member_name.end(), [](char ch) { return ch == '_'; }));
+}
+
+struct DecoFields {
+    // if true, it's required if its category occurs in options.
+    bool required = true;
+    // options in the same category (same Category object address) must be all set or all unset
+    CategoryRef category = default_category;
+
+    constexpr DecoFields() = default;
+};
+
+struct MetaVarField {
+    std::string_view value = "<value>";
+    bool explicit_value = false;
+
+    constexpr MetaVarField() = default;
+
+    constexpr MetaVarField(std::string_view value, bool explicit_value = false) :
+        value(value), explicit_value(explicit_value) {}
+
+    constexpr auto operator=(std::string_view new_value) -> MetaVarField& {
+        value = new_value;
+        explicit_value = true;
+        return *this;
+    }
+
+    constexpr auto empty() const -> bool {
+        return value.empty();
+    }
+
+    constexpr auto is_explicit() const -> bool {
+        return explicit_value;
+    }
+
+    constexpr operator std::string_view() const {
+        return value;
+    }
+};
+
+struct CommonOptionFields : DecoFields {
+    std::string_view help = "not provided";
+    MetaVarField meta_var{};
+
+    constexpr CommonOptionFields() = default;
+};
+
+template <typename ResTy>
+struct OptionCallbackField {
+    using Step = ParseStep<ResTy>;
+    using ParseCallback = ParseControl (*)(const Step& step);
+
+    struct Action {
+        static auto next(const Step&) -> ParseControl {
+            return ParseControl::next();
+        }
+
+        static auto stop(const Step&) -> ParseControl {
+            return ParseControl::stop();
+        }
+    };
+
+    ParseCallback after_parsed = nullptr;
+
+    constexpr OptionCallbackField() = default;
+};
+
+/// What an option is declared with: the fields of its kind, `CfgTy`, and an `after_parsed`
+/// callback over its result, `ResTy`. Every option's `__deco_field_ty`, the deco macros' and
+/// HelpOption's, derives from it and sets the fields in its constructor.
+template <typename CfgTy, typename ResTy>
+struct OptionDeclaration : CfgTy, OptionCallbackField<ResTy> {
+    using _deco_base_t = CfgTy;
+    using _deco_callback_base_t = OptionCallbackField<ResTy>;
+    using result_type = ResTy;
+};
+
+template <typename Ty>
+struct ConfigOverrideField {
+    Ty value{};
+    bool overridden = false;
+
+    constexpr ConfigOverrideField() = default;
+
+    constexpr ConfigOverrideField(const Ty& value) : value(value) {}
+
+    template <typename U>
+        requires std::constructible_from<Ty, U>
+    constexpr ConfigOverrideField(U&& value) : value(Ty(std::forward<U>(value))) {}
+
+    template <typename U>
+        requires std::constructible_from<Ty, U>
+    constexpr auto operator=(U&& value) -> ConfigOverrideField& {
+        this->value = Ty(std::forward<U>(value));
+        this->overridden = true;
+        return *this;
+    }
+
+    constexpr auto is_overridden() const -> bool {
+        return overridden;
+    }
+
+    constexpr auto get() const -> const Ty& {
+        return value;
+    }
+};
+
+// Config fields are override directives, not real option fields.
+struct ConfigFields {
+    ConfigOverrideField<bool> required = true;
+    ConfigOverrideField<CategoryRef> category = default_category;
+    ConfigOverrideField<std::string_view> help = "not provided";
+    ConfigOverrideField<MetaVarField> meta_var = MetaVarField{"<value>", false};
+
+    enum class Type : char {
+        Start = 0,
+        End = 1,
+        Next = 2,  // just make sense to next
+    };
+    Type type;
+
+    constexpr ConfigFields() = default;
+};
+
+struct NamedOptionFields : CommonOptionFields {
+    std::vector<std::string_view> names;
+    constexpr NamedOptionFields() = default;
+};
+
+/// How many positional arguments a DecoInput with a vector result takes when it is given: `min`
+/// to `max`. A number is exactly that many; the default is one or more. Whether the input may be
+/// left out altogether is `required`'s to say. The parse counts every input it reads, those
+/// before a restart or an alias forward too; a hook that resets the DecoInput does not restart
+/// the count.
+struct ArgNum {
+    constexpr static std::uint32_t unbounded = std::numeric_limits<std::uint32_t>::max();
+
+    std::uint32_t min = 1;
+    std::uint32_t max = unbounded;
+
+    constexpr ArgNum() = default;
+
+    constexpr ArgNum(std::uint32_t count) : min{count}, max{count} {}
+
+    constexpr ArgNum(std::uint32_t min, std::uint32_t max) : min{min}, max{max} {}
+
+    constexpr bool operator==(const ArgNum&) const = default;
+};
+
+struct InputFields : CommonOptionFields {
+    constexpr static DecoType deco_field_ty = DecoType::Input;
+    ArgNum arg_num{};
+    constexpr InputFields() = default;
+};
+
+/// How many positional arguments a DecoInput of result `ResTy` declared with `arg_num` takes: a
+/// scalar one, a vector `arg_num`.
+template <typename ResTy>
+constexpr ArgNum input_arg_num(ArgNum arg_num) {
+    if constexpr(trait::ScalarResultType<ResTy>) {
+        return ArgNum(1);
+    } else {
+        return arg_num;
+    }
+}
+
+/// Why a DecoInput of result `ResTy` cannot be declared with `arg_num`, or nothing when it can.
+template <typename ResTy>
+constexpr std::string_view invalid_input_arg_num(ArgNum arg_num) {
+    if(arg_num.min == 0) {
+        return "DecoInput arg_num must be at least 1; required = false lets it be left out";
+    }
+    if(arg_num.min > arg_num.max) {
+        return "DecoInput arg_num min must not exceed its max";
+    }
+    // A count declared must be the one taken, which only a scalar's result overrides.
+    if(arg_num != ArgNum() && arg_num != input_arg_num<ResTy>(arg_num)) {
+        return "DecoInput with a scalar result takes exactly one input argument";
+    }
+    return {};
+}
+
+struct PackFields : CommonOptionFields {
+    constexpr static DecoType deco_field_ty = DecoType::TrailingInput;
+    constexpr PackFields() = default;
+};
+
+struct FlagFields : NamedOptionFields {
+    constexpr static DecoType deco_field_ty = DecoType::Flag;
+    constexpr FlagFields() = default;
+};
+
+struct KVFields : NamedOptionFields {
+    constexpr static DecoType deco_field_ty = DecoType::KV;
+    char style = KVStyle::JoinedOrSeparate;
+    constexpr KVFields() = default;
+};
+
+struct CommaJoinedFields : NamedOptionFields {
+    constexpr static DecoType deco_field_ty = DecoType::CommaJoined;
+    constexpr CommaJoinedFields() = default;
+};
+
+struct MultiFields : NamedOptionFields {
+    constexpr static DecoType deco_field_ty = DecoType::Multi;
+    std::uint32_t arg_num = 1;
+    constexpr MultiFields() = default;
+};
+
+struct AliasFields : NamedOptionFields {
+    AliasForwardField forward;
+    constexpr AliasFields() = default;
+};
+
+struct FlagAliasFields : AliasFields {
+    constexpr static DecoType deco_field_ty = DecoType::Flag;
+    constexpr FlagAliasFields() = default;
+};
+
+struct KVAliasFields : AliasFields {
+    constexpr static DecoType deco_field_ty = DecoType::KV;
+    char style = KVStyle::JoinedOrSeparate;
+    constexpr KVAliasFields() = default;
+};
+
+struct CommaJoinedAliasFields : AliasFields {
+    constexpr static DecoType deco_field_ty = DecoType::CommaJoined;
+    constexpr CommaJoinedAliasFields() = default;
+};
+
+struct MultiAliasFields : AliasFields {
+    constexpr static DecoType deco_field_ty = DecoType::Multi;
+    std::uint32_t arg_num = 1;
+    constexpr MultiAliasFields() = default;
+};
+
+struct DecoOptionBase {
+    constexpr virtual ~DecoOptionBase() = default;
+    virtual std::optional<std::string> into(const ParsedArgOwning& arg) = 0;
+
+    virtual std::optional<std::string> into(const ParsedArgOwning& arg,
+                                            [[maybe_unused]] const IntoContext& context) {
+        return into(arg);
+    }
+};
+
+/// An option's `after_parsed` callback with its result type erased, so that the options of
+/// every type share one table: `invoke` casts `callback` back to its own type and calls it.
+struct ErasedParseCallback {
+    using erased_fn = void (*)();
+    using invoker_fn = ParseControl (*)(erased_fn callback,
+                                        const ParsedArgOwning& arg,
+                                        std::uint32_t next_cursor,
+                                        std::span<std::string> argv,
+                                        const DecoOptionBase& option);
+
+    erased_fn callback = nullptr;
+    invoker_fn invoke = nullptr;
+
+    constexpr explicit operator bool() const {
+        return invoke != nullptr;
+    }
+
+    /// Calls the callback, which there must be.
+    auto operator()(const ParsedArgOwning& arg,
+                    std::uint32_t next_cursor,
+                    std::span<std::string> argv,
+                    const DecoOptionBase& option) const -> ParseControl {
+        assert(invoke != nullptr);
+        return invoke(callback, arg, next_cursor, argv, option);
+    }
+};
+
+template <typename ResTy>
+struct DecoOption : public DecoOptionBase, private std::optional<ResTy> {
+    using result_type = ResTy;
+    using BaseOpt = std::optional<ResTy>;
+
+    using BaseOpt::operator*;
+    using BaseOpt::operator->;
+    using BaseOpt::has_value;
+    using BaseOpt::value;
+    using BaseOpt::value_or;
+    using BaseOpt::reset;
+    using BaseOpt::emplace;
+    using BaseOpt::operator bool;
+
+    constexpr DecoOption() = default;
+    constexpr ~DecoOption() = default;
+
+    constexpr DecoOption(ResTy default_value) : BaseOpt(std::move(default_value)) {}
+
+    template <typename DefaultTy>
+        requires (!std::same_as<std::remove_cvref_t<DefaultTy>, DecoOption<ResTy>> &&
+                  std::constructible_from<ResTy, DefaultTy>)
+    constexpr DecoOption(DefaultTy&& default_value) :
+        BaseOpt(std::forward<DefaultTy>(default_value)) {}
+
+    template <typename DefaultTy>
+        requires (!std::same_as<std::remove_cvref_t<DefaultTy>, DecoOption<ResTy>> &&
+                  std::constructible_from<ResTy, DefaultTy>)
+    constexpr auto operator=(DefaultTy&& default_value) -> DecoOption<ResTy>& {
+        BaseOpt::operator=(std::forward<DefaultTy>(default_value));
+        return *this;
+    }
+
+    const BaseOpt& as_optional() const {
+        return *this;
+    }
+
+    BaseOpt& as_optional() {
+        return *this;
+    }
+
+    virtual std::optional<std::string> into(const ParsedArgOwning& arg) override = 0;
+};
+
+namespace detail {
+
+constexpr bool has_kv_style(char style, KVStyle expected) {
+    return (style & static_cast<char>(expected)) != 0;
+}
+
+/// Whether a KV option of `style` spelled `name` takes its value joined to the name: always
+/// for Joined, never for Separate, and for JoinedOrSeparate when the name ends in '=' or ':'
+/// (`--name=`, `/name:`), so that each name of an option picks its own form.
+constexpr bool is_joined_kv_name(char style, std::string_view name) {
+    if(!has_kv_style(style, KVStyle::Joined)) {
+        return false;
+    }
+    return !has_kv_style(style, KVStyle::Separate) || name.ends_with('=') || name.ends_with(':');
+}
+
+/// Whether KV option name `name` of `style` also takes its value after itself and '='
+/// (`--name=value`): a name that takes it separate does when the style allows it joined too,
+/// and so does a generated name under Joined; a name joined by its end does not, nor does an
+/// explicit name under Joined, which takes the value right after itself (`-Ifoo`).
+constexpr bool takes_value_after_equals(char style, std::string_view name, bool generated) {
+    return has_kv_style(style, KVStyle::Joined) && (generated || !is_joined_kv_name(style, name));
+}
+
+/// The name an option without explicit names answers to: its field's name with '_' spelled
+/// '-', after "-" when it is one letter long and "--" otherwise.
+constexpr std::string generated_option_name(std::string_view field_name) {
+    std::string name(field_name.size() == 1 ? "-" : "--");
+    for(const char ch: field_name) {
+        name.push_back(ch == '_' ? '-' : ch);
+    }
+    return name;
+}
+
+inline bool iequals_ascii(std::string_view lhs, std::string_view rhs) {
+    if(lhs.size() != rhs.size()) {
+        return false;
+    }
+    for(std::size_t i = 0; i < lhs.size(); ++i) {
+        auto l = lhs[i];
+        auto r = rhs[i];
+        if(l >= 'A' && l <= 'Z') {
+            l = static_cast<char>('a' + (l - 'A'));
+        }
+        if(r >= 'A' && r <= 'Z') {
+            r = static_cast<char>('a' + (r - 'A'));
+        }
+        if(l != r) {
+            return false;
+        }
+    }
+    return true;
+}
+
+template <typename EnumTy>
+std::string format_invalid_enum_value(std::string_view text) {
+    std::string message = "invalid enum value: ";
+    message += text;
+
+    const auto& values = kotatsu::meta::enum_strings<EnumTy>();
+    if(values.empty()) {
+        return message;
+    }
+
+    message += " (supported: ";
+    for(std::size_t i = 0; i < values.size(); ++i) {
+        if(i != 0) {
+            message += ", ";
+        }
+        message += values[i];
+    }
+    message += ")";
+    return message;
+}
+
+template <typename ResTy>
+std::optional<std::string> parse_primitive_scalar(ResTy& out, std::string_view text) {
+    if constexpr(std::same_as<ResTy, bool>) {
+        if(text == "1" || iequals_ascii(text, "true") || iequals_ascii(text, "yes") ||
+           iequals_ascii(text, "on")) {
+            out = true;
+            return std::nullopt;
+        }
+        if(text == "0" || iequals_ascii(text, "false") || iequals_ascii(text, "no") ||
+           iequals_ascii(text, "off")) {
+            out = false;
+            return std::nullopt;
+        }
+        return "invalid boolean value: " + std::string(text);
+    } else if constexpr(std::integral<ResTy>) {
+        ResTy parsed{};
+        const auto* begin = text.data();
+        const auto* end = text.data() + text.size();
+        const auto [ptr, ec] = std::from_chars(begin, end, parsed);
+        if(ec != std::errc() || ptr != end) {
+            return "invalid integer value: " + std::string(text);
+        }
+        out = parsed;
+        return std::nullopt;
+    } else if constexpr(std::is_enum_v<ResTy>) {
+        if(auto parsed = kotatsu::meta::map_string_to_enum<ResTy>(text)) {
+            out = *parsed;
+            return std::nullopt;
+        }
+        return format_invalid_enum_value<ResTy>(text);
+    } else if constexpr(std::floating_point<ResTy>) {
+        // strtod would skip leading spaces and read an empty text as 0; an integer takes
+        // neither.
+        if(text.empty() || std::isspace(static_cast<unsigned char>(text.front()))) {
+            return "invalid floating-point value: " + std::string(text);
+        }
+        std::string copy(text);
+        char* parse_end = nullptr;
+        errno = 0;
+        ResTy parsed{};
+        if constexpr(std::same_as<ResTy, float>) {
+            parsed = std::strtof(copy.c_str(), &parse_end);
+        } else {
+            parsed = std::strtod(copy.c_str(), &parse_end);
+        }
+        if(parse_end != copy.c_str() + copy.size()) {
+            return "invalid floating-point value: " + std::string(text);
+        }
+        if(errno == ERANGE) {
+            return "floating-point value out of range: " + std::string(text);
+        }
+        out = parsed;
+        return std::nullopt;
+    } else if constexpr(trait::StringResultType<ResTy>) {
+        static_assert(trait::OwnedStringResultType<ResTy>,
+                      "Default deco string parsing only supports owning result types. "
+                      "Use std::string or provide a custom into(...) overload if you need "
+                      "specialized storage.");
+        out = ResTy(text);
+        return std::nullopt;
+    } else {
+        static_assert(kotatsu::dependent_false<ResTy>, "Unsupported scalar result type.");
+        return "unsupported scalar result type";
+    }
+}
+
+template <typename ResTy>
+std::optional<std::string> assign_scalar(std::optional<ResTy>& target,
+                                         std::string_view text,
+                                         const IntoContext& context = {}) {
+    if constexpr(trait::CustomStringResultTyWithContext<ResTy>) {
+        auto& res = target.emplace();
+        return res.into(text, context);
+    } else if constexpr(trait::CustomStringResultTy<ResTy>) {
+        auto& res = target.emplace();
+        return context.format_error(res.into(text));
+    } else {
+        ResTy parsed{};
+        if(auto err = parse_primitive_scalar(parsed, text)) {
+            return context.format_error(*err);
+        }
+        target = std::move(parsed);
+        return std::nullopt;
+    }
+}
+
+template <typename ResTy>
+std::optional<std::string> assign_vector(std::optional<ResTy>& target,
+                                         std::span<const std::string_view> values,
+                                         const IntoContext& context = {}) {
+    if constexpr(trait::CustomStringVectorResultTyWithContext<ResTy>) {
+        auto& res = target.emplace();
+        std::vector<std::string_view> custom_values(values.begin(), values.end());
+        return res.into(custom_values, context);
+    } else if constexpr(trait::CustomStringVectorResultTy<ResTy>) {
+        auto& res = target.emplace();
+        std::vector<std::string_view> custom_values(values.begin(), values.end());
+        return context.format_error(res.into(custom_values));
+    } else {
+        using item_type = typename ResTy::value_type;
+        ResTy parsed;
+        parsed.clear();
+        for(std::size_t i = 0; i < values.size(); ++i) {
+            item_type item{};
+            if(auto err = parse_primitive_scalar(item, values[i])) {
+                return context.format_error("invalid vector value at index " + std::to_string(i) +
+                                            ": " + *err);
+            }
+            parsed.emplace_back(std::move(item));
+        }
+        target = std::move(parsed);
+        return std::nullopt;
+    }
+}
+
+/// Adds `values`, those of one more occurrence of an option, to `raw_values`, the values of
+/// its occurrences before, and parses them all into `target` as if given at once: the first
+/// occurrence replaces a default, and a custom result type sees every value. Values that fail
+/// are dropped again, so that the next occurrence goes on from those before; a `target` reset
+/// meanwhile (by a hook) starts over from `values`.
+template <typename ResTy>
+std::optional<std::string> append_vector(std::optional<ResTy>& target,
+                                         std::vector<std::string>& raw_values,
+                                         std::span<const std::string> values,
+                                         const IntoContext& context = {}) {
+    if(!target.has_value()) {
+        raw_values.clear();
+    }
+    const auto given_before = raw_values.size();
+    raw_values.insert(raw_values.end(), values.begin(), values.end());
+    std::vector<std::string_view> all_values(raw_values.begin(), raw_values.end());
+    if(auto err = assign_vector(target, all_values, context)) {
+        raw_values.resize(given_before);
+        return err;
+    }
+    return std::nullopt;
+}
+
+}  // namespace detail
+
+template <typename ResTy>
+struct FlagOption : DecoOption<ResTy> {
+    static_assert(trait::FlagResultType<ResTy>, "Flag result type must be bool or uint32_t.");
+    using DecoOption<ResTy>::DecoOption;
+    constexpr ~FlagOption() = default;
+
+    std::optional<std::string> into(const ParsedArgOwning& arg) override {
+        return into(arg, {});
+    }
+
+    std::optional<std::string> into(const ParsedArgOwning& arg,
+                                    const IntoContext& context) override {
+        if(!arg.values.empty()) {
+            return context.format_error("flag option does not accept values");
+        }
+        if constexpr(std::same_as<ResTy, bool>) {
+            this->as_optional() = true;
+        } else {
+            this->as_optional() = this->as_optional().value_or(0) + 1;
+        }
+        return std::nullopt;
+    }
+};
+
+template <typename ResTy>
+struct ScalarOption : DecoOption<ResTy> {
+    static_assert(trait::ScalarResultType<ResTy>, DecoScalarResultErrString);
+    using DecoOption<ResTy>::DecoOption;
+    constexpr ~ScalarOption() = default;
+
+    std::optional<std::string> into(const ParsedArgOwning& arg) override {
+        return into(arg, {});
+    }
+
+    std::optional<std::string> into(const ParsedArgOwning& arg,
+                                    const IntoContext& context) override {
+        if(arg.values.size() != 1) {
+            return context.format_error("expected exactly one value");
+        }
+        const auto value_context =
+            IntoContext::from_value(context.argv(), arg, arg.values.front(), context.renderer());
+        return detail::assign_scalar(this->as_optional(), arg.values.front(), value_context);
+    }
+};
+
+/// What a DecoInput parses into, one positional argument at a time: a scalar takes its spelling,
+/// a vector appends it. The parse counts them against `arg_num`.
+template <typename ResTy>
+struct InputOption : DecoOption<ResTy> {
+    static_assert(trait::ValueResultType<ResTy>, DecoValueResultErrString);
+    using DecoOption<ResTy>::DecoOption;
+    /// The inputs so far, for a vector result.
+    std::vector<std::string> raw_values;
+    constexpr ~InputOption() = default;
+
+    std::optional<std::string> into(const ParsedArgOwning& arg) override {
+        return into(arg, {});
+    }
+
+    std::optional<std::string> into(const ParsedArgOwning& arg,
+                                    const IntoContext& context) override {
+        assert(arg.values.empty());
+        if constexpr(trait::ScalarResultType<ResTy>) {
+            return detail::assign_scalar(this->as_optional(), arg.spelling, context);
+        } else {
+            return detail::append_vector(this->as_optional(),
+                                         this->raw_values,
+                                         {&arg.spelling, 1},
+                                         context);
+        }
+    }
+};
+
+/// An option with a vector result, which collects the values of every occurrence of it. The
+/// value is parsed anew from those each time, so a hook that changes it between occurrences
+/// sees the change replaced at the next one, unless it reset the option, which starts over.
+template <typename ResTy>
+struct VectorOption : DecoOption<ResTy> {
+    static_assert(trait::VectorResultType<ResTy>, DecoVectorResultErrString);
+    using DecoOption<ResTy>::DecoOption;
+    /// The values of the occurrences so far.
+    std::vector<std::string> raw_values;
+    constexpr ~VectorOption() = default;
+
+    std::optional<std::string> into(const ParsedArgOwning& arg) override {
+        return into(arg, {});
+    }
+
+    std::optional<std::string> into(const ParsedArgOwning& arg,
+                                    const IntoContext& context) override {
+        return detail::append_vector(this->as_optional(), raw_values, arg.values, context);
+    }
+};
+
+/// What a DecoKV parses into: a scalar keeps the value of its last occurrence, and a vector
+/// collects one value from each.
+template <typename ResTy>
+using KVOption =
+    std::conditional_t<trait::ScalarResultType<ResTy>, ScalarOption<ResTy>, VectorOption<ResTy>>;
+
+/// The names help is asked for by: HelpOption's, and the first argument
+/// cli::SubCommander::enable_help() answers.
+constexpr inline std::array<std::string_view, 2> help_names = {"-h", "--help"};
+
+/// The standard help option, `-h` and `--help`, for an options struct to hold, at any depth.
+/// Given, it stops parsing where it stands, so that no required option is missed, and
+/// cli::Command's operator() prints the usage to stdout and returns 0 without running a
+/// handler; invoke() and parse() leave that to their caller, which finds it set. Stopping
+/// skips the options' checks, so cli::Command's finalize() handlers do not run either; nor
+/// do the `after<>` hooks of the help option itself.
+struct HelpOption : FlagOption<bool> {
+    // What DecoFlag would declare, written without it: deco's headers leave its macros out.
+    struct __deco_field_ty : OptionDeclaration<FlagFields, bool> {
+        constexpr __deco_field_ty() {
+            names = {help_names.begin(), help_names.end()};
+            help = "display this help and exit";
+            required = false;
+            after_parsed = Action::stop;
+        }
+    };
+};
+
+struct SubCommand {
+    std::string_view name;
+    std::string_view description;
+    // if null, use name as subcommand
+    std::optional<std::string_view> command = std::nullopt;
+};
+
+}  // namespace kotatsu::deco::decl

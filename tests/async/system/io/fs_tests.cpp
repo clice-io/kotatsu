@@ -12,17 +12,17 @@
 #include <utility>
 
 #include "async/harness/os.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
 // Files are set up and read back with test::write_text and test::read_text,
-// not kota::async.
+// not kotatsu::async.
 
 /// Waits, blocking this thread, until `dir` holds an entry; false if none
 /// came within ten seconds. It polls, as nothing signals that a pool thread
@@ -527,4 +527,4 @@ ZEST_CASE(chown_of_a_missing_file_fails) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

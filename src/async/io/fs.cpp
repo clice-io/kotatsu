@@ -1,4 +1,4 @@
-#include "kota/async/io/fs.h"
+#include "kotatsu/async/io/fs.h"
 
 #include <array>
 #include <cstdint>
@@ -7,9 +7,9 @@
 #include <utility>
 
 #include "awaiter.h"
-#include "kota/support/functional.h"
+#include "kotatsu/support/functional.h"
 
-namespace kota::fs::async {
+namespace kotatsu::fs::async {
 
 namespace {
 
@@ -443,4 +443,4 @@ task<void, error> close(int fd, event_loop& loop) {
     return fs_call(loop, ::uv_fs_close, fd);
 }
 
-}  // namespace kota::fs::async
+}  // namespace kotatsu::fs::async

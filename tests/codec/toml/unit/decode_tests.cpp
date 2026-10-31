@@ -14,11 +14,11 @@
 #include "codec/harness/fixtures/tagged.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/compare.h"
-#include "kota/codec/toml/toml.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/compare.h"
+#include "kotatsu/codec/toml/toml.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -345,4 +345,4 @@ ZEST_CASE(table_field_from_a_scalar_fails) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

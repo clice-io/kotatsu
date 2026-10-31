@@ -8,10 +8,10 @@
 #include <string>
 
 #include "ipc/harness/peer_fixture.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// What a request failed with, and what Peer::ended() said once it had.
 struct EndedRequest {
@@ -391,7 +391,7 @@ void peer_ending(const PeerKit<A>& kit) {
         ZEXPECT(!ended.has_value());
     });
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
     // The fault is this side's handler, not the remote.
     kit.add("throwing_notification_handler_leaves_the_conversation_going_under_end",
             [](Fixture& f) {
@@ -455,4 +455,4 @@ void peer_ending(const PeerKit<A>& kit) {
     });
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

@@ -1,10 +1,10 @@
-#include "kota/ipc/recording_transport.h"
+#include "kotatsu/ipc/recording_transport.h"
 
 #include <cassert>
 #include <format>
 #include <utility>
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 RecordingTransport::RecordingTransport(std::unique_ptr<Transport> transport, std::string path) :
     inner(std::move(transport)), file(std::fopen(path.c_str(), "wb")),
@@ -85,4 +85,4 @@ void RecordingTransport::write_record(std::string_view payload) {
     }
 }
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

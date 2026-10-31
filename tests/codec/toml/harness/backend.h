@@ -4,9 +4,9 @@
 #include <string_view>
 
 #include "codec/harness/visit/kit.h"
-#include "kota/codec/toml/toml.h"
+#include "kotatsu/codec/toml/toml.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// The toml backend for the protocol kit. Its documents are the text
 /// to_string writes. A root that is not table-shaped by its declared type
@@ -49,4 +49,4 @@ struct Toml {
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

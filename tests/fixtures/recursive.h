@@ -12,7 +12,7 @@
 
 #include "fixtures/containers.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 struct TreeNode {
     std::string value;
@@ -58,4 +58,4 @@ struct MixedRecursive {
     std::map<std::string, std::vector<MixedRecursive>> grouped;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

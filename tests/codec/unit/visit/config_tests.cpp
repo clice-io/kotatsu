@@ -1,7 +1,7 @@
-#include "kota/zest/zest.h"
-#include "kota/codec/visit/config.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/visit/config.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -43,4 +43,4 @@ ZEST_CASE(human_readable_config_turns_binary_visitors_off_only) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

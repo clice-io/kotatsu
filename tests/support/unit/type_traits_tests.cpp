@@ -3,10 +3,10 @@
 #include <string>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/support/type_traits.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/type_traits.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -52,4 +52,4 @@ ZEST_CASE(dependent_false_is_false) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

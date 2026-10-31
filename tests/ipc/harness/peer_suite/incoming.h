@@ -7,10 +7,10 @@
 #include <vector>
 
 #include "ipc/harness/peer_fixture.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 using Listed = std::vector<ipc::UnansweredRequest>;
 
@@ -340,4 +340,4 @@ void peer_incoming(const PeerKit<A>& kit) {
     });
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

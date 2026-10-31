@@ -15,16 +15,16 @@
 #include <vector>
 
 #include "execution.h"
-#include "kota/fs/file.h"
-#include "kota/sys/info.h"
-#include "kota/sys/process.h"
-#include "kota/async/io/loop.h"
-#include "kota/async/io/process.h"
-#include "kota/async/io/stream.h"
-#include "kota/async/io/watcher.h"
-#include "kota/async/runtime/task.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/sys/info.h"
+#include "kotatsu/sys/process.h"
+#include "kotatsu/async/io/loop.h"
+#include "kotatsu/async/io/process.h"
+#include "kotatsu/async/io/stream.h"
+#include "kotatsu/async/io/watcher.h"
+#include "kotatsu/async/runtime/task.h"
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace {
 
@@ -423,4 +423,4 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
     return std::move(pool.failures);
 }
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest

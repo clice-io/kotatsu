@@ -1,10 +1,10 @@
 #include <string>
 #include <tuple>
 
-#include "kota/zest/zest.h"
-#include "kota/support/function_traits.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/function_traits.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -107,4 +107,4 @@ ZEST_CASE(tuple_push_front_prepends) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

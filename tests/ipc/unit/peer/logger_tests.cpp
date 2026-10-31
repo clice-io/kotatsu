@@ -6,12 +6,12 @@
 
 #include "ipc/harness/codec_json.h"
 #include "ipc/harness/peer_fixture.h"
-#include "kota/ipc/logger.h"
-#include "kota/ipc/peer/json.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/ipc/logger.h"
+#include "kotatsu/ipc/peer/json.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -174,4 +174,4 @@ ZEST_CASE(run_logs_where_its_read_loop_starts_and_ends) {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

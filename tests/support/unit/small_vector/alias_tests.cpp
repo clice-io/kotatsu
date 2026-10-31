@@ -2,10 +2,10 @@
 #include <string>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/support/small_vector.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_vector.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -184,4 +184,4 @@ ZEST_CASE(emplace_from_own_element) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

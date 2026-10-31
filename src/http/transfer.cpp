@@ -9,9 +9,9 @@
 #include <string_view>
 #include <utility>
 
-#include "kota/http/detail/util.h"
+#include "kotatsu/http/detail/util.h"
 
-namespace kota::http::detail {
+namespace kotatsu::http::detail {
 
 namespace {
 
@@ -314,4 +314,4 @@ std::size_t transfer::on_read(char* data, std::size_t size, std::size_t count, v
     return std::fread(data, size, count, static_cast<std::FILE*>(file));
 }
 
-}  // namespace kota::http::detail
+}  // namespace kotatsu::http::detail

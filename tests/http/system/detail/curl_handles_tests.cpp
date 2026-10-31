@@ -1,13 +1,13 @@
 #include <utility>
 
-#include "kota/http/detail/curl.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/http/detail/curl.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
 
 // The owning wrappers of curl's handles, over real handles: a multi handle
 // opens a wakeup socket pair, so these are system tests.
 
-namespace kota::curl {
+namespace kotatsu::curl {
 
 namespace {
 
@@ -52,4 +52,4 @@ ZEST_CASE(share_handle_passes_its_handle_along) {
 
 }  // namespace
 
-}  // namespace kota::curl
+}  // namespace kotatsu::curl

@@ -1,4 +1,4 @@
-#include "kota/ipc/blocking_client.h"
+#include "kotatsu/ipc/blocking_client.h"
 
 #include <array>
 #include <cstddef>
@@ -26,7 +26,7 @@
 #include <unistd.h>
 #endif
 
-namespace kota::ipc::detail {
+namespace kotatsu::ipc::detail {
 
 namespace {
 
@@ -207,4 +207,4 @@ std::string not_the_answer(const IncomingMessage& message) {
         message);
 }
 
-}  // namespace kota::ipc::detail
+}  // namespace kotatsu::ipc::detail

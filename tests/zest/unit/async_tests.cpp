@@ -3,13 +3,13 @@
 #include <vector>
 
 #include "support/harness/throws.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/support/config.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/config.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace {
 
@@ -102,7 +102,7 @@ ZEST_CASE(loop_stops_when_the_last_task_finishes_with_a_timer_armed) {
     ZEXPECT(*result == 1);
 }
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 
 // run() lets every other task finish before it fails with what was thrown.
 ZEST_CASE(run_of_a_throwing_task_fails) {
@@ -120,10 +120,10 @@ ZEST_CASE(run_of_a_throwing_task_fails) {
     ZEXPECT(finished);
 }
 
-#endif  // KOTA_ENABLE_EXCEPTIONS
+#endif  // KOTATSU_ENABLE_EXCEPTIONS
 
 };  // ZEST_SUITE(zest_async)
 
 }  // namespace
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest

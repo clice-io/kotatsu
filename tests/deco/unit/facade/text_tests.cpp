@@ -3,10 +3,10 @@
 
 #include "deco/harness/argv.h"
 #include "deco/harness/text.h"
-#include "kota/deco/deco.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/deco/deco.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::deco::cli::text {
+namespace kotatsu::deco::cli::text {
 
 namespace {
 
@@ -127,4 +127,4 @@ ZEST_CASE(usage_entry_without_help_shows_the_default) {
 
 }  // namespace
 
-}  // namespace kota::deco::cli::text
+}  // namespace kotatsu::deco::cli::text

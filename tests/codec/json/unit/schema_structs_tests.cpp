@@ -7,11 +7,11 @@
 #include <vector>
 
 #include "codec/json/harness/schema.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/schema.h"
-#include "kota/codec/json/schema.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/json/schema.h"
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 namespace {
 
@@ -145,7 +145,7 @@ struct set_of_struct {
     std::string name;
 };
 
-namespace json = kota::codec::json;
+namespace json = kotatsu::codec::json;
 
 ZEST_SUITE(codec_json_schema_structs) {
 
@@ -686,4 +686,4 @@ ZEST_CASE(mutual_recursion) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

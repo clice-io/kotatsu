@@ -13,13 +13,13 @@
 
 #include "codec/harness/fixtures/configs.h"
 #include "codec/json/harness/schema.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/attrs.h"
-#include "kota/meta/schema.h"
-#include "kota/codec/json/schema.h"
-#include "kota/codec/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/json/schema.h"
+#include "kotatsu/codec/macro.h"
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 namespace {
 
@@ -220,7 +220,7 @@ struct vec_variant {
     std::vector<std::variant<std::int32_t, std::string>> items;
 };
 
-namespace json = kota::codec::json;
+namespace json = kotatsu::codec::json;
 
 template <typename T>
 void check_root_integer_schema() {
@@ -1083,4 +1083,4 @@ ZEST_CASE(bytes_field) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

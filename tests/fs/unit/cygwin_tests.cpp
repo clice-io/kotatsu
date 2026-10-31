@@ -4,11 +4,11 @@
 #include <utility>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/support/small_string.h"
-#include "kota/fs/cygwin.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/fs/cygwin.h"
 
-namespace kota::fs::cygwin {
+namespace kotatsu::fs::cygwin {
 
 namespace {
 
@@ -136,4 +136,4 @@ ZEST_CASE(to_windows_reads_msys_drives_at_the_root) {
 
 }  // namespace
 
-}  // namespace kota::fs::cygwin
+}  // namespace kotatsu::fs::cygwin

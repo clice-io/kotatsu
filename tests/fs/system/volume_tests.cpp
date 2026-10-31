@@ -2,11 +2,11 @@
 #include <system_error>
 
 #include "fs/harness/files.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/directory.h"
-#include "kota/fs/volume.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/volume.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -96,4 +96,4 @@ ZEST_CASE(volume_of_nothing_fails) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

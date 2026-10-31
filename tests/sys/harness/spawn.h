@@ -21,15 +21,15 @@
 #include <unistd.h>
 #endif
 
-#include "kota/fs/file.h"
-#include "kota/fs/path.h"
-#include "kota/sys/spawn.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/sys/spawn.h"
 
 #ifdef _WIN32
-#include "kota/fs/windows.h"
+#include "kotatsu/fs/windows.h"
 #endif
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// The shell, by its full path: an environment given need hold no PATH.
 inline std::string shell_path() {
@@ -134,4 +134,4 @@ inline void close_end(fs::File::native_handle_type end) {
 #endif
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

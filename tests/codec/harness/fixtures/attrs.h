@@ -18,10 +18,10 @@
 #include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/attrs.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 struct AnnotatedPlain {
     int id;
@@ -491,4 +491,4 @@ struct IdOnly {
     int id;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

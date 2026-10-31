@@ -12,14 +12,14 @@
 #include <unistd.h>
 #endif
 
-#include "kota/deco/deco.h"
-#include "kota/zest/async.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/deco/deco.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/zest.h"
 
 // Tests that misbehave on purpose, for check_runner.cmake: each must fail on
 // its own, and the tests sharing its worker must still run.
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace {
 
@@ -394,7 +394,7 @@ struct FixtureOptions {
 
 }  // namespace
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest
 
 // A suite outside an anonymous namespace, which a linker sees as shared with
 // other files. On Windows, tests/zest/CMakeLists.txt links the fixture with
@@ -415,8 +415,8 @@ ZEST_CASE(registered) {
 // Embeds zest's options the way a downstream test program does, so that its
 // own flag has to reach the workers.
 int main(int argc, char** argv) {
-    auto args = kota::deco::util::argvify(argc, argv);
-    auto parsed = kota::deco::cli::parse<kota::zest::FixtureOptions>(args);
+    auto args = kotatsu::deco::util::argvify(argc, argv);
+    auto parsed = kotatsu::deco::cli::parse<kotatsu::zest::FixtureOptions>(args);
     if(!parsed.has_value()) {
         return 1;
     }
@@ -424,5 +424,5 @@ int main(int argc, char** argv) {
     if(*options.fail_worker_start && *options.zest.zest_worker) {
         return 7;
     }
-    return kota::zest::run_tests(std::move(options.zest), argc, argv);
+    return kotatsu::zest::run_tests(std::move(options.zest), argc, argv);
 }

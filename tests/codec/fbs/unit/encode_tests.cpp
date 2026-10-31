@@ -25,10 +25,10 @@
 #include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/repr.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
-#include "kota/codec/fbs/fbs.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/fbs/fbs.h"
 
 // What the fbs encoder writes: which structs inline and which become tables,
 // the slot layout of tables, tuples, variants, vectors and maps, and the
@@ -36,7 +36,7 @@
 // read with flatbuffers' own accessors; the zero-copy views are
 // proxy_tests.cpp's.
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -132,9 +132,9 @@ struct CalibrationText {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 template <>
 struct repr<codec::ByteBag> {
@@ -215,9 +215,9 @@ struct repr<codec::ProbeKind, codec::fbs::format> {
     }
 };
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -1126,4 +1126,4 @@ ZEST_CASE(nan_repr_does_not_reach_inline_structs) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

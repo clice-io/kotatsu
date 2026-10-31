@@ -1,9 +1,9 @@
 #include <string_view>
 
-#include "kota/zest/zest.h"
-#include "kota/fs/path.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/path.h"
 
-namespace kota::fs::path {
+namespace kotatsu::fs::path {
 
 namespace {
 
@@ -60,4 +60,4 @@ ZEST_CASE(stem_and_extension_split_at_the_last_dot) {
 
 }  // namespace
 
-}  // namespace kota::fs::path
+}  // namespace kotatsu::fs::path

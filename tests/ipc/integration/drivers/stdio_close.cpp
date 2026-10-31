@@ -20,10 +20,10 @@
 #include <unistd.h>
 #endif
 
-#include "kota/ipc/transport.h"
-#include "kota/async/async.h"
+#include "kotatsu/ipc/transport.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 namespace {
 
 #ifndef _WIN32
@@ -102,8 +102,8 @@ int run() {
 #endif
 
 }  // namespace
-}  // namespace kota::test
+}  // namespace kotatsu::test
 
 int main() {
-    return kota::test::run();
+    return kotatsu::test::run();
 }

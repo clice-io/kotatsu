@@ -2,11 +2,11 @@
 #include <concepts>
 #include <utility>
 
-#include "kota/http/http.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
@@ -29,4 +29,4 @@ ZEST_CASE(setters_return_what_they_were_called_on) {
 
 }  // namespace
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

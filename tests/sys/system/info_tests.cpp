@@ -25,12 +25,12 @@
 #endif
 
 #include "sys/harness/pids.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/sys/info.h"
-#include "kota/sys/process.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/sys/info.h"
+#include "kotatsu/sys/process.h"
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -362,4 +362,4 @@ ZEST_CASE(oom_score_adjustment_off_linux_fails) {
 
 }  // namespace
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

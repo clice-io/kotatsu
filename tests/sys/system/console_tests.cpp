@@ -24,11 +24,11 @@
 #endif
 
 #include "fs/harness/files.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/sys/console.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/sys/console.h"
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -272,4 +272,4 @@ ZEST_CASE(is_console_holds_for_a_terminal) {
 
 }  // namespace
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

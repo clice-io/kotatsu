@@ -18,11 +18,11 @@
 #include "codec/fbs/harness/struct_keys.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/structs.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
-#include "kota/meta/compare.h"
-#include "kota/codec/fbs/fbs.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/compare.h"
+#include "kotatsu/codec/fbs/fbs.h"
 
 // What the fbs decoders do with bytes that did not come from to_bytes. The
 // eager from_bytes verifies every access while it reads; table_view
@@ -32,7 +32,7 @@
 // the inputs. The kit's hostile_everything sweeps the eager decoder; the
 // sweeps here also probe the views.
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -67,9 +67,9 @@ struct HoldsLabeledCount {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 template <>
 struct repr<codec::GreedySeq> {
@@ -138,9 +138,9 @@ struct repr<codec::LabeledCount> {
     }
 };
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -797,4 +797,4 @@ ZEST_CASE(imperative_adapter_reads_a_tuple_table_over_its_own_type) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

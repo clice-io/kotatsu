@@ -15,12 +15,12 @@
 #include "fs/harness/dir.h"
 #include "fs/harness/files.h"
 #include "fs/harness/win32.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/directory.h"
-#include "kota/fs/file.h"
-#include "kota/fs/status.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/status.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -474,4 +474,4 @@ ZEST_CASE(type_checks_are_false_on_failure) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

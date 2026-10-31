@@ -10,10 +10,10 @@
 #include <utility>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/support/ranges.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/ranges.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -179,4 +179,4 @@ ZEST_CASE(insert_map_entry_uses_the_form_available) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

@@ -6,10 +6,10 @@
 #include <string>
 #include <string_view>
 
-#include "kota/zest/zest.h"
-#include "kota/sys/env.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/sys/env.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Variable `name` set to `value`, or removed for none, until this goes,
 /// which puts back what it was.
@@ -37,4 +37,4 @@ struct ScopedEnv {
     std::optional<std::string> previous;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

@@ -1,4 +1,4 @@
-// Every type of kota/ipc/lsp/protocol.h against the metaModel it is generated
+// Every type of kotatsu/ipc/lsp/protocol.h against the metaModel it is generated
 // from, through lsp_roundtrip:
 //
 // - a value drawn from a type's metaModel declaration decodes, and encodes

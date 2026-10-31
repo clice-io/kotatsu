@@ -2,15 +2,15 @@
 
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/attrs.h"
-#include "kota/meta/schema.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/schema.h"
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 namespace {
 
-namespace fx = ::kota::test;
+namespace fx = ::kotatsu::test;
 
 ZEST_SUITE(meta_schema_rename_all) {
 
@@ -95,4 +95,4 @@ ZEST_CASE(alias_unaffected_by_rename_all) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

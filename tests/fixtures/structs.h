@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace kota::test {
+namespace kotatsu::test {
 
 struct Circle {
     double radius;
@@ -30,4 +30,4 @@ struct NestedStruct {
     std::vector<SimpleStruct> items;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

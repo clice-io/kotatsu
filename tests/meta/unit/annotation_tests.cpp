@@ -5,10 +5,10 @@
 #include <type_traits>
 #include <utility>
 
-#include "kota/zest/zest.h"
-#include "kota/meta/annotation.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/annotation.h"
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 namespace {
 
@@ -48,4 +48,4 @@ ZEST_CASE(formats_as_the_annotated_value) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

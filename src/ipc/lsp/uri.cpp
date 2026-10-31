@@ -1,9 +1,9 @@
-#include "kota/ipc/lsp/uri.h"
+#include "kotatsu/ipc/lsp/uri.h"
 
 #include <algorithm>
 #include <ranges>
 
-namespace kota::ipc::lsp {
+namespace kotatsu::ipc::lsp {
 
 namespace {
 
@@ -463,4 +463,4 @@ std::expected<std::string, std::string> URI::file_path() const {
     return *decoded_path;
 }
 
-}  // namespace kota::ipc::lsp
+}  // namespace kotatsu::ipc::lsp

@@ -1,16 +1,16 @@
 #pragma once
 
-// entries_of(), what a kota::fs::Directory lists, for the tests of what made
+// entries_of(), what a kotatsu::fs::Directory lists, for the tests of what made
 // the entries.
 
 #include <string_view>
 #include <utility>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/fs/directory.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/directory.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// The entries of `dir`, each read without an error.
 inline std::vector<fs::Directory::Entry> entries_of(std::string_view dir) {
@@ -25,4 +25,4 @@ inline std::vector<fs::Directory::Entry> entries_of(std::string_view dir) {
     return entries;
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

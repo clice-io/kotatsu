@@ -5,24 +5,24 @@
 #include <vector>
 
 #include "os.h"
-#include "kota/support/small_string.h"
-#include "kota/support/string_list_ref.h"
-#include "kota/support/string_ref.h"
-#include "kota/fs/path.h"
-#include "kota/sys/env.h"
-#include "kota/sys/process.h"
-#include "kota/sys/windows.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/support/string_list_ref.h"
+#include "kotatsu/support/string_ref.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/sys/env.h"
+#include "kotatsu/sys/process.h"
+#include "kotatsu/sys/windows.h"
 
 #ifdef _WIN32
-#include "kota/support/utf16.h"
-#include "kota/fs/cygwin.h"
+#include "kotatsu/support/utf16.h"
+#include "kotatsu/fs/cygwin.h"
 #else
 #include <fcntl.h>
 
-#include "kota/fs/status.h"
+#include "kotatsu/fs/status.h"
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -336,4 +336,4 @@ std::error_code windows::find_create_process_program(buffer_ref out,
 
 #endif
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

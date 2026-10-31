@@ -1,10 +1,10 @@
 #include <cstddef>
 #include <string_view>
 
-#include "kota/zest/zest.h"
-#include "kota/support/comptime.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/comptime.h"
 
-namespace kota::comptime {
+namespace kotatsu::comptime {
 
 namespace {
 
@@ -101,4 +101,4 @@ ZEST_CASE(pools_iterate_and_compare) {
 
 }  // namespace
 
-}  // namespace kota::comptime
+}  // namespace kotatsu::comptime

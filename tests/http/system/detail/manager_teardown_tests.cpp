@@ -4,11 +4,11 @@
 #include <utility>
 
 #include "http/harness/server.h"
-#include "kota/http/detail/manager.h"
-#include "kota/http/http.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/detail/manager.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
 // Each case destroys a loop of its own. The loop's manager goes first, and
 // its requests in flight stay with their tasks, which end once cancelled; a
@@ -17,7 +17,7 @@
 // queued it: two cases hold such work back to act from inside ~event_loop.
 // What those tasks use is declared before the loop, to outlive it.
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
@@ -158,4 +158,4 @@ ZEST_CASE(loop_made_where_one_was_destroyed_gets_a_new_manager) {
 
 }  // namespace
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

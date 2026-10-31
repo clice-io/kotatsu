@@ -26,11 +26,11 @@
 #include <utility>
 
 #include "ipc/harness/stderr_logger.h"
-#include "kota/ipc/peer/json.h"
-#include "kota/async/async.h"
-#include "kota/codec/macro.h"
+#include "kotatsu/ipc/peer/json.h"
+#include "kotatsu/async/async.h"
+#include "kotatsu/codec/macro.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 namespace {
 
 using ipc::protocol::Error;
@@ -116,25 +116,25 @@ void serve(ipc::JSONPeer& peer) {
 }
 
 }  // namespace
-}  // namespace kota::test
+}  // namespace kotatsu::test
 
 int main(int argc, char** argv) {
-    std::size_t max_payload = kota::ipc::default_max_payload;
+    std::size_t max_payload = kotatsu::ipc::default_max_payload;
     constexpr std::string_view option = "--max-payload=";
     if(argc > 1 && std::string_view(argv[1]).starts_with(option)) {
         max_payload = std::stoull(argv[1] + option.size());
     }
 
-    kota::event_loop loop;
-    auto transport = kota::ipc::StreamTransport::open_stdio(loop, max_payload);
+    kotatsu::event_loop loop;
+    auto transport = kotatsu::ipc::StreamTransport::open_stdio(loop, max_payload);
     if(!transport) {
         std::println(stderr, "[error] open_stdio: {}", transport.error().message);
         return 1;
     }
 
-    kota::ipc::JSONPeer peer(loop, std::move(*transport));
-    peer.set_logger(kota::test::stderr_logger(), kota::ipc::LogLevel::trace);
-    kota::test::serve(peer);
+    kotatsu::ipc::JSONPeer peer(loop, std::move(*transport));
+    peer.set_logger(kotatsu::test::stderr_logger(), kotatsu::ipc::LogLevel::trace);
+    kotatsu::test::serve(peer);
     loop.schedule(peer.run());
     loop.run();
     return 0;

@@ -3,9 +3,9 @@
 #include <coroutine>
 #include <source_location>
 
-#include "kota/async/runtime/node.h"
+#include "kotatsu/async/runtime/node.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// An operation that completes only when the test calls complete(). Cancelling
 /// it just marks it cancelled, as I/O whose cancellation the operating system
@@ -34,4 +34,4 @@ struct PendingOp : io_op {
     void await_resume() const noexcept {}
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

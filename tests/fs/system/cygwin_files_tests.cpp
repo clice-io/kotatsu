@@ -4,11 +4,11 @@
 #include <vector>
 
 #include "fs/harness/files.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/cygwin.h"
-#include "kota/fs/path.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/cygwin.h"
+#include "kotatsu/fs/path.h"
 
-namespace kota::fs::cygwin {
+namespace kotatsu::fs::cygwin {
 
 namespace {
 
@@ -87,4 +87,4 @@ ZEST_CASE(runtime_dirs_take_a_bare_program_as_in_the_current_directory) {
 
 }  // namespace
 
-}  // namespace kota::fs::cygwin
+}  // namespace kotatsu::fs::cygwin

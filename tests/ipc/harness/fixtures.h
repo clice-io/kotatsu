@@ -7,11 +7,11 @@
 #include <string>
 #include <string_view>
 
-#include "kota/ipc/protocol.h"
-#include "kota/meta/repr.h"
-#include "kota/codec/visit/context.h"
+#include "kotatsu/ipc/protocol.h"
+#include "kotatsu/meta/repr.h"
+#include "kotatsu/codec/visit/context.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// test/add: answered with the sum.
 struct AddParams {
@@ -39,9 +39,9 @@ struct NoParams {};
 /// A value no codec can write: encoding it fails.
 struct Unwritable {};
 
-}  // namespace kota::test
+}  // namespace kotatsu::test
 
-namespace kota::ipc::protocol {
+namespace kotatsu::ipc::protocol {
 
 template <>
 struct RequestTraits<test::AddParams> {
@@ -67,9 +67,9 @@ struct NotificationTraits<test::NoParams> {
     constexpr inline static bool takes_params = false;
 };
 
-}  // namespace kota::ipc::protocol
+}  // namespace kotatsu::ipc::protocol
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 template <>
 struct repr<test::Unwritable> {
@@ -81,4 +81,4 @@ struct repr<test::Unwritable> {
     }
 };
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

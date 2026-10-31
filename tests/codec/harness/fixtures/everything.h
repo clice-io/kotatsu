@@ -9,7 +9,7 @@
 #include "fixtures/enums.h"
 #include "fixtures/recursive.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 struct Everything {
     Scalars scalars;
@@ -45,4 +45,4 @@ struct Everything {
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

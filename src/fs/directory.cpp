@@ -1,4 +1,4 @@
-#include "kota/fs/directory.h"
+#include "kotatsu/fs/directory.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -10,12 +10,12 @@
 #include <vector>
 
 #include "handle.h"
-#include "kota/support/small_string.h"
-#include "kota/fs/path.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/fs/path.h"
 
 #ifdef _WIN32
 #include "win32.h"
-#include "kota/support/utf16.h"
+#include "kotatsu/support/utf16.h"
 #else
 #include <dirent.h>
 #include <fcntl.h>
@@ -45,7 +45,7 @@
 #endif
 #endif
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -1351,4 +1351,4 @@ std::error_code create_hard_link(std::string_view target, std::string_view link)
 #endif
 }
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

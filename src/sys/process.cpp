@@ -1,18 +1,18 @@
-#include "kota/sys/process.h"
+#include "kotatsu/sys/process.h"
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 
 #include "os.h"
-#include "kota/support/small_string.h"
+#include "kotatsu/support/small_string.h"
 
 #ifdef _WIN32
 // After windows.h, whose types it uses.
 #include <winternl.h>
 
-#include "kota/support/utf16.h"
-#include "kota/sys/windows.h"
+#include "kotatsu/support/utf16.h"
+#include "kotatsu/sys/windows.h"
 #elif defined(__APPLE__)
 #include <crt_externs.h>
 #include <libproc.h>
@@ -25,10 +25,10 @@
 #include <sys/stat.h>
 
 #include "proc.h"
-#include "kota/fs/directory.h"
+#include "kotatsu/fs/directory.h"
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 int pid() noexcept {
 #ifdef _WIN32
@@ -222,4 +222,4 @@ const std::vector<std::string>& arguments() {
     return arguments;
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

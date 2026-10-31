@@ -1,12 +1,12 @@
-#include "kota/http/detail/request.h"
+#include "kotatsu/http/detail/request.h"
 
 #include <format>
 #include <utility>
 
 #include "transfer.h"
-#include "kota/http/detail/util.h"
+#include "kotatsu/http/detail/util.h"
 
-namespace kota::http {
+namespace kotatsu::http {
 
 request::request(const detail::request_settings& settings,
                  std::shared_ptr<const detail::share_key> key,
@@ -65,4 +65,4 @@ void request::remember_error(error err) noexcept {
     }
 }
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

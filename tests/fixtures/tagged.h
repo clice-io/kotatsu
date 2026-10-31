@@ -7,10 +7,10 @@
 #include <variant>
 
 #include "fixtures/structs.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 struct TaggedIntCircle {
     int radius;
@@ -60,4 +60,4 @@ struct TaggedVariantStruct {
     meta::annotate<TaggedTag>::type<std::variant<int, std::string>> tv;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

@@ -1,4 +1,4 @@
-#include "kota/sys/env.h"
+#include "kotatsu/sys/env.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -6,18 +6,18 @@
 #include <string>
 
 #include "os.h"
-#include "kota/support/small_string.h"
-#include "kota/support/string_ref.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/support/string_ref.h"
 
 #ifdef _WIN32
-#include "kota/support/utf16.h"
+#include "kotatsu/support/utf16.h"
 #elif defined(__APPLE__)
 #include <crt_externs.h>
 #else
 extern char** environ;
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -258,4 +258,4 @@ std::error_code join_paths(buffer_ref out, string_list_ref paths, fs::path::Styl
     return {};
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

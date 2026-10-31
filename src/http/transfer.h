@@ -5,13 +5,13 @@
 #include <optional>
 
 #include "../async/io/awaiter.h"
-#include "kota/http/detail/curl.h"
-#include "kota/http/detail/manager.h"
-#include "kota/http/detail/request.h"
-#include "kota/http/detail/response.h"
-#include "kota/async/runtime/task.h"
+#include "kotatsu/http/detail/curl.h"
+#include "kotatsu/http/detail/manager.h"
+#include "kotatsu/http/detail/request.h"
+#include "kotatsu/http/detail/response.h"
+#include "kotatsu/async/runtime/task.h"
 
-namespace kota::http::detail {
+namespace kotatsu::http::detail {
 
 /// A request on its way: the curl easy handle set up from it, what curl
 /// receives for it, and the task awaiting it. It lives in that task's
@@ -63,4 +63,4 @@ private:
     static std::size_t on_read(char* data, std::size_t size, std::size_t count, void* file);
 };
 
-}  // namespace kota::http::detail
+}  // namespace kotatsu::http::detail

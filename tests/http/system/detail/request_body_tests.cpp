@@ -13,13 +13,13 @@
 
 #include "async/harness/os.h"
 #include "http/harness/server.h"
-#include "kota/http/http.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
@@ -255,7 +255,7 @@ ZEST_CASE(json_text_is_sent_as_json) {
     ZEXPECT(server.requests()[0].body == R"({"a":1})");
 }
 
-#if KOTA_HTTP_HAS_CODEC_JSON
+#if KOTATSU_HTTP_HAS_CODEC_JSON
 ZEST_CASE(json_sends_its_value_encoded) {
     test::HttpServer server(loop);
     ZASSERT(server.listening());
@@ -294,4 +294,4 @@ ZEST_CASE(form_is_sent_percent_encoded) {
 
 }  // namespace
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

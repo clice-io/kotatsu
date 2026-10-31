@@ -1,15 +1,15 @@
 #ifdef _WIN32
 
-#include "kota/fs/windows.h"
+#include "kotatsu/fs/windows.h"
 
 #include <algorithm>
 #include <cstring>
 #include <string_view>
 
 #include "win32.h"
-#include "kota/support/utf16.h"
+#include "kotatsu/support/utf16.h"
 
-namespace kota::fs::windows {
+namespace kotatsu::fs::windows {
 
 namespace {
 
@@ -154,9 +154,9 @@ void from_native(buffer_ref out, std::wstring_view path) {
     from_utf16(out, path);
 }
 
-}  // namespace kota::fs::windows
+}  // namespace kotatsu::fs::windows
 
-namespace kota::fs::win32 {
+namespace kotatsu::fs::win32 {
 
 DWORD dos_error(NTSTATUS status) {
     using ToDosErrorFn = ULONG(NTAPI*)(NTSTATUS);
@@ -338,6 +338,6 @@ std::expected<FileID, std::error_code> file_id(HANDLE handle) {
                   .file = (std::uint64_t(info.nFileIndexHigh) << 32) | info.nFileIndexLow};
 }
 
-}  // namespace kota::fs::win32
+}  // namespace kotatsu::fs::win32
 
 #endif

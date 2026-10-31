@@ -18,16 +18,16 @@
 #include "ipc/harness/codec_json.h"
 #include "ipc/harness/codec_kit.h"
 #include "ipc/harness/fixtures.h"
-#include "kota/ipc/blocking_client.h"
-#include "kota/ipc/codec/bincode.h"
-#include "kota/ipc/codec/json.h"
-#include "kota/ipc/framing.h"
-#include "kota/ipc/peer/bincode.h"
-#include "kota/ipc/transport.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/ipc/blocking_client.h"
+#include "kotatsu/ipc/codec/bincode.h"
+#include "kotatsu/ipc/codec/json.h"
+#include "kotatsu/ipc/framing.h"
+#include "kotatsu/ipc/peer/bincode.h"
+#include "kotatsu/ipc/transport.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -43,7 +43,7 @@
 #include <unistd.h>
 #endif
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -194,7 +194,7 @@ private:
     /// a handle to it, as a client opens one.
     void open(DWORD type) {
         std::random_device random;
-        const auto name = std::format(LR"(\\.\pipe\kota-{:08x}{:08x})", random(), random());
+        const auto name = std::format(LR"(\\.\pipe\kotatsu-{:08x}{:08x})", random(), random());
         remote = ::CreateNamedPipeW(name.c_str(),
                                     PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
                                     type | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
@@ -599,4 +599,4 @@ ZEST_CASE(unreadable_response_ends_the_conversation) {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

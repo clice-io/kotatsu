@@ -10,11 +10,11 @@
 #include <vector>
 
 #include "ipc/harness/peer_fixture.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
-#include "kota/codec/visit/common.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
+#include "kotatsu/codec/visit/common.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 template <CodecAdapter A>
 void peer_dispatch(const PeerKit<A>& kit) {
@@ -384,7 +384,7 @@ void peer_dispatch(const PeerKit<A>& kit) {
         ZEXPECT(f.written().empty());
     });
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
     // Request 1's handler throws while request 2's is running; both are
     // answered, and so is request 3, read after the throw.
     kit.add("throwing_request_handler_is_answered_with_internal_error", [](Fixture& f) {
@@ -501,4 +501,4 @@ void peer_dispatch(const PeerKit<A>& kit) {
 #endif
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

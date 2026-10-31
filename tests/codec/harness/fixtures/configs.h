@@ -3,10 +3,10 @@
 // Config fixtures for the codec's own knobs. The field_rename configs meta
 // reads live in tests/fixtures/configs.h.
 
-#include "kota/support/naming.h"
-#include "kota/codec/visit/config.h"
+#include "kotatsu/support/naming.h"
+#include "kotatsu/codec/visit/config.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 struct EnumStringConfig {
     constexpr static auto enum_repr = codec::enum_repr::String;
@@ -53,4 +53,4 @@ struct NotHumanReadableConfig {
     constexpr static bool human_readable = false;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

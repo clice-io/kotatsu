@@ -7,9 +7,9 @@
 #include <string_view>
 
 #include "proc.h"
-#include "kota/sys/detail/memory_model.h"
+#include "kotatsu/sys/detail/memory_model.h"
 
-namespace kota::sys::detail::cgroup {
+namespace kotatsu::sys::detail::cgroup {
 
 namespace {
 
@@ -262,4 +262,4 @@ std::optional<double> cpu_quota(std::string_view mounts, std::string_view member
     return tightest;
 }
 
-}  // namespace kota::sys::detail::cgroup
+}  // namespace kotatsu::sys::detail::cgroup

@@ -7,12 +7,12 @@
 #include <thread>
 
 #include "http/harness/server.h"
-#include "kota/http/http.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
@@ -80,4 +80,4 @@ ZEST_CASE(copies_on_two_threads_keep_a_jar_each) {
 
 }  // namespace
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

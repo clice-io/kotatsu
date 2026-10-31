@@ -2,11 +2,11 @@
 // builds the `coverage` preset and runs this. It runs every ctest stage, its
 // arguments passed on to ctest, and each process writes its profile into
 // build/coverage/profiles (LLVM_PROFILE_FILE in the `coverage` test preset).
-// It then merges the profiles and reports on include/kota and src over every
+// It then merges the profiles and reports on include/kotatsu and src over every
 // program built, into build/coverage/report:
 //
 //   summary.md     lines, functions and regions covered per module, a module
-//                  being include/kota/<module> together with src/<module>
+//                  being include/kotatsu/<module> together with src/<module>
 //   html/          the sources annotated with their counts
 //   coverage.lcov  the same data in lcov's format
 //
@@ -102,13 +102,13 @@ const programs = [BUILD, join(BUILD, "examples")]
   .filter(({ stat }) => stat.isFile() && (stat.mode & 0o111) !== 0)
   .sort((a, b) => b.stat.size - a.stat.size)
   .map(({ path }) => path);
-// Naming include/kota and src as the sources leaves out the tests, the
+// Naming include/kotatsu and src as the sources leaves out the tests, the
 // examples, generated files and every dependency.
 const inputs = [
   `-instr-profile=${PROFDATA}`,
   programs[0],
   ...programs.slice(1).flatMap((program) => ["-object", program]),
-  join(ROOT, "include", "kota"),
+  join(ROOT, "include", "kotatsu"),
   join(ROOT, "src"),
 ];
 
@@ -133,7 +133,7 @@ const exported = JSON.parse(
 const modules = new Map<string, Summary>();
 for (const { filename, summary } of exported.data[0].files) {
   const [top, ...rest] = relative(ROOT, filename).split(sep);
-  // include/kota/<module>/... or src/<module>/...
+  // include/kotatsu/<module>/... or src/<module>/...
   const name = top === "include" ? rest[1] : rest[0];
   const sum = modules.get(name);
   if (sum === undefined) {

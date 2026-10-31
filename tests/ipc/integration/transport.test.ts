@@ -24,7 +24,7 @@ function expectOpenStdioFailed(driver: Driver): Promise<void> {
 }
 
 test("open_stdio_over_a_file_fails", async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "kota-transport-"));
+  const dir = mkdtempSync(join(tmpdir(), "kotatsu-transport-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, "input.txt");
   writeFileSync(path, "");

@@ -24,10 +24,10 @@
 #include <utility>
 #include <vector>
 
-#include "kota/ipc/transport.h"
-#include "kota/async/async.h"
+#include "kotatsu/ipc/transport.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// One direction of an in-memory link: the messages written and not yet
 /// read, in order, and whether the writing side has ended it.
@@ -229,4 +229,4 @@ inline task<> forward(Remote& from, Remote& to) {
     to.end_input();
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

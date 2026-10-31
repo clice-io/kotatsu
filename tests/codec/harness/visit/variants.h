@@ -20,10 +20,10 @@
 #include "fixtures/configs.h"
 #include "fixtures/structs.h"
 #include "fixtures/tagged.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 template <Backend B>
 void variants(const Kit<B>& kit) {
@@ -421,4 +421,4 @@ void variants(const Kit<B>& kit) {
     }
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

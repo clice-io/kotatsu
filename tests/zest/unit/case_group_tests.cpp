@@ -1,8 +1,8 @@
 #include <format>
 
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace {
 
@@ -29,4 +29,4 @@ ZEST_CASE_GROUP(skipped_group, skip = true) {
 
 }  // namespace
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest

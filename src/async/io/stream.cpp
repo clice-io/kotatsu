@@ -7,7 +7,7 @@
 
 #include "stream_self.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -326,4 +326,4 @@ error stream::set_blocking(bool enabled) {
     return error(::uv_stream_set_blocking(&self->stream, enabled ? 1 : 0));
 }
 
-}  // namespace kota
+}  // namespace kotatsu

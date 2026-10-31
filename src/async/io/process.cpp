@@ -1,4 +1,4 @@
-#include "kota/async/io/process.h"
+#include "kotatsu/async/io/process.h"
 
 #include <algorithm>
 #include <array>
@@ -24,11 +24,11 @@
 #endif
 
 #include "awaiter.h"
-#include "kota/support/scope_exit.h"
-#include "kota/sys/detail/descriptors.h"
-#include "kota/async/runtime/when.h"
+#include "kotatsu/support/scope_exit.h"
+#include "kotatsu/sys/detail/descriptors.h"
+#include "kotatsu/async/runtime/when.h"
 
-namespace kota {
+namespace kotatsu {
 
 struct process::Self {
     sys::Child child;
@@ -485,32 +485,32 @@ error error_of(std::error_code code) {
         return error(::uv_translate_sys_error(code.value()));
     }
     switch(code.value()) {
-#define KOTA_ERRNO(name)                                                                           \
+#define KOTATSU_ERRNO(name)                                                                        \
     case name: return error(UV_##name);
-        KOTA_ERRNO(E2BIG)
-        KOTA_ERRNO(EACCES)
-        KOTA_ERRNO(EAGAIN)
-        KOTA_ERRNO(EBADF)
-        KOTA_ERRNO(EBUSY)
-        KOTA_ERRNO(EEXIST)
-        KOTA_ERRNO(EILSEQ)
-        KOTA_ERRNO(EINVAL)
-        KOTA_ERRNO(EIO)
-        KOTA_ERRNO(EISDIR)
-        KOTA_ERRNO(ELOOP)
-        KOTA_ERRNO(EMFILE)
-        KOTA_ERRNO(ENAMETOOLONG)
-        KOTA_ERRNO(ENFILE)
-        KOTA_ERRNO(ENOENT)
-        KOTA_ERRNO(ENOEXEC)
-        KOTA_ERRNO(ENOMEM)
-        KOTA_ERRNO(ENOSPC)
-        KOTA_ERRNO(ENOSYS)
-        KOTA_ERRNO(ENOTDIR)
-        KOTA_ERRNO(ENOTSUP)
-        KOTA_ERRNO(EPERM)
-        KOTA_ERRNO(ESRCH)
-#undef KOTA_ERRNO
+        KOTATSU_ERRNO(E2BIG)
+        KOTATSU_ERRNO(EACCES)
+        KOTATSU_ERRNO(EAGAIN)
+        KOTATSU_ERRNO(EBADF)
+        KOTATSU_ERRNO(EBUSY)
+        KOTATSU_ERRNO(EEXIST)
+        KOTATSU_ERRNO(EILSEQ)
+        KOTATSU_ERRNO(EINVAL)
+        KOTATSU_ERRNO(EIO)
+        KOTATSU_ERRNO(EISDIR)
+        KOTATSU_ERRNO(ELOOP)
+        KOTATSU_ERRNO(EMFILE)
+        KOTATSU_ERRNO(ENAMETOOLONG)
+        KOTATSU_ERRNO(ENFILE)
+        KOTATSU_ERRNO(ENOENT)
+        KOTATSU_ERRNO(ENOEXEC)
+        KOTATSU_ERRNO(ENOMEM)
+        KOTATSU_ERRNO(ENOSPC)
+        KOTATSU_ERRNO(ENOSYS)
+        KOTATSU_ERRNO(ENOTDIR)
+        KOTATSU_ERRNO(ENOTSUP)
+        KOTATSU_ERRNO(EPERM)
+        KOTATSU_ERRNO(ESRCH)
+#undef KOTATSU_ERRNO
         default: return error::unknown_error;
     }
 #else
@@ -812,4 +812,4 @@ error process::kill_tree() {
     return error_of(self->child.kill_tree());
 }
 
-}  // namespace kota
+}  // namespace kotatsu

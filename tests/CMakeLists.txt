@@ -1,4 +1,4 @@
-# Tests are grouped by module, each directory mirroring include/kota/<module>/,
+# Tests are grouped by module, each directory mirroring include/kotatsu/<module>/,
 # and inside a module by level (see the test-style skill):
 #   unit/     touches only the process's memory, event loop and timers
 #             included; built into unit_tests
@@ -12,24 +12,24 @@
 #             target alone, which zest, on the event loop, cannot be part
 #             of, or one that replaces what a test binary shares, such as the
 #             global operator new or the system calls it may make; in
-#             kota_check_programs
+#             kotatsu_check_programs
 # Modules are added in dependency order; examples/ holds the tests of the
 # examples, by module, last. harness/ here holds what every module's
 # integration tests share.
 
-set(kota_test_binaries unit_tests system_tests)
+set(kotatsu_test_binaries unit_tests system_tests)
 
-foreach(binary IN LISTS kota_test_binaries)
+foreach(binary IN LISTS kotatsu_test_binaries)
     add_executable(${binary} main.cpp)
     target_include_directories(${binary} PRIVATE
         "${PROJECT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}"
     )
     target_link_libraries(${binary} PRIVATE
-        kota::zest
+        kotatsu::zest
         cpptrace::cpptrace
     )
-    kota_apply_project_options(${binary})
+    kotatsu_apply_project_options(${binary})
     if(MSVC)
         target_compile_options(${binary} PRIVATE /bigobj)
     endif()
@@ -37,7 +37,7 @@ endforeach()
 
 # Adds the calling module's unit/ and system/ tests to their binaries, linked
 # against the module's libraries.
-function(kota_add_module_tests)
+function(kotatsu_add_module_tests)
     cmake_parse_arguments(PARSE_ARGV 0 arg "" "" "LIBS")
     foreach(level IN ITEMS unit system)
         file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${level}/*.cpp")
@@ -49,31 +49,31 @@ endfunction()
 # The integration tests run on node, which runs TypeScript without a build
 # step from 22.18 on. Without it they are left out, which only a build of all
 # tests refuses.
-find_program(KOTA_NODE node)
-set(kota_node_problem "")
-if(NOT KOTA_NODE)
-    set(kota_node_problem "node was not found")
+find_program(KOTATSU_NODE node)
+set(kotatsu_node_problem "")
+if(NOT KOTATSU_NODE)
+    set(kotatsu_node_problem "node was not found")
 else()
-    execute_process(COMMAND "${KOTA_NODE}" --version
-        RESULT_VARIABLE kota_node_status
-        OUTPUT_VARIABLE kota_node_version
+    execute_process(COMMAND "${KOTATSU_NODE}" --version
+        RESULT_VARIABLE kotatsu_node_status
+        OUTPUT_VARIABLE kotatsu_node_version
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
-    string(REGEX REPLACE "^v" "" kota_node_version "${kota_node_version}")
-    if(NOT kota_node_status EQUAL 0 OR NOT kota_node_version)
-        set(kota_node_problem "${KOTA_NODE} --version failed")
-    elseif(kota_node_version VERSION_LESS 22.18)
-        set(kota_node_problem "${KOTA_NODE} is node ${kota_node_version}, older than 22.18")
+    string(REGEX REPLACE "^v" "" kotatsu_node_version "${kotatsu_node_version}")
+    if(NOT kotatsu_node_status EQUAL 0 OR NOT kotatsu_node_version)
+        set(kotatsu_node_problem "${KOTATSU_NODE} --version failed")
+    elseif(kotatsu_node_version VERSION_LESS 22.18)
+        set(kotatsu_node_problem "${KOTATSU_NODE} is node ${kotatsu_node_version}, older than 22.18")
     endif()
 endif()
-if(kota_node_problem)
-    if(KOTA_BUILD_ALL_TESTS)
+if(kotatsu_node_problem)
+    if(KOTATSU_BUILD_ALL_TESTS)
         message(FATAL_ERROR
-            "The integration tests need node 22.18 or newer, but ${kota_node_problem}; "
+            "The integration tests need node 22.18 or newer, but ${kotatsu_node_problem}; "
             "configure through pixi (pixi run build)."
         )
     endif()
-    message(STATUS "Leaving out the integration tests: ${kota_node_problem}.")
+    message(STATUS "Leaving out the integration tests: ${kotatsu_node_problem}.")
 endif()
 
 # The largest translation units are built only where they build fastest and
@@ -82,15 +82,15 @@ endif()
 # which configure cannot see, so it is never taken for one. MinGW's GCC is left
 # out too: its assembler takes minutes over the object of such a unit, where
 # the ELF one takes seconds.
-get_property(kota_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-string(TOLOWER "${CMAKE_BUILD_TYPE}" kota_build_type)
-if(NOT kota_multi_config
-    AND kota_build_type STREQUAL "debug"
-    AND NOT (KOTA_SANITIZE_ADDRESS OR KOTA_SANITIZE_MEMORY OR KOTA_SANITIZE_THREAD OR KOTA_SANITIZE_UNDEFINED)
+get_property(kotatsu_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+string(TOLOWER "${CMAKE_BUILD_TYPE}" kotatsu_build_type)
+if(NOT kotatsu_multi_config
+    AND kotatsu_build_type STREQUAL "debug"
+    AND NOT (KOTATSU_SANITIZE_ADDRESS OR KOTATSU_SANITIZE_MEMORY OR KOTATSU_SANITIZE_THREAD OR KOTATSU_SANITIZE_UNDEFINED)
     AND NOT (MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))
-    set(kota_build_largest_units ON)
+    set(kotatsu_build_largest_units ON)
 else()
-    set(kota_build_largest_units OFF)
+    set(kotatsu_build_largest_units OFF)
 endif()
 
 # Adds the calling module's integration tests, integration/*.test.ts, as one
@@ -99,13 +99,13 @@ endif()
 # builds the driver <name>, linked against the module's libraries LIBS, and so
 # does a directory integration/drivers/<name>/ of sources, for a driver too
 # heavy for one translation unit; the tests find its path in the environment
-# variable KOTA_<NAME>, and so the path of each program PROGRAMS names, targets
+# variable KOTATSU_<NAME>, and so the path of each program PROGRAMS names, targets
 # built elsewhere. DEBUG_ONLY names files under integration/, tests and
 # drivers, that only the builds above, which take the largest units, build and
 # run; elsewhere such a driver is left out of the default build.
-function(kota_add_integration_tests)
+function(kotatsu_add_integration_tests)
     cmake_parse_arguments(PARSE_ARGV 0 arg "" "" "LIBS;PROGRAMS;DEBUG_ONLY")
-    if(kota_node_problem)
+    if(kotatsu_node_problem)
         return()
     endif()
 
@@ -115,7 +115,7 @@ function(kota_add_integration_tests)
         if(NOT EXISTS "${path}")
             message(FATAL_ERROR "DEBUG_ONLY names ${path}, which does not exist.")
         endif()
-        if(NOT kota_build_largest_units)
+        if(NOT kotatsu_build_largest_units)
             list(APPEND left_out "${path}")
         endif()
     endforeach()
@@ -139,11 +139,11 @@ function(kota_add_integration_tests)
         else()
             add_executable(${driver} ${sources})
             list(APPEND programs ${driver})
-            set_property(GLOBAL APPEND PROPERTY kota_default_drivers ${driver})
+            set_property(GLOBAL APPEND PROPERTY kotatsu_default_drivers ${driver})
         endif()
         target_include_directories(${driver} PRIVATE "${PROJECT_SOURCE_DIR}/tests")
         target_link_libraries(${driver} PRIVATE ${arg_LIBS})
-        kota_apply_project_options(${driver})
+        kotatsu_apply_project_options(${driver})
         if(MSVC)
             target_compile_options(${driver} PRIVATE /bigobj)
         endif()
@@ -152,13 +152,13 @@ function(kota_add_integration_tests)
         if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             target_compile_options(${driver} PRIVATE -g0)
         endif()
-        set_property(GLOBAL APPEND PROPERTY kota_integration_drivers ${driver})
+        set_property(GLOBAL APPEND PROPERTY kotatsu_integration_drivers ${driver})
     endforeach()
-    set_property(GLOBAL APPEND PROPERTY kota_integration_programs ${arg_PROGRAMS})
+    set_property(GLOBAL APPEND PROPERTY kotatsu_integration_programs ${arg_PROGRAMS})
 
     set(environment "")
     foreach(program IN LISTS programs arg_PROGRAMS)
-        string(TOUPPER "KOTA_${program}" variable)
+        string(TOUPPER "KOTATSU_${program}" variable)
         list(APPEND environment "${variable}=$<TARGET_FILE:${program}>")
     endforeach()
 
@@ -178,7 +178,7 @@ function(kota_add_integration_tests)
     # A test that hangs fails at --test-timeout, its drivers killed; TIMEOUT
     # only catches the runner itself hanging.
     add_test(NAME ${name}
-        COMMAND "${KOTA_NODE}"
+        COMMAND "${KOTATSU_NODE}"
             --import ./tests/check_npm_packages.ts
             --test
             --test-reporter=spec
@@ -198,18 +198,18 @@ add_subdirectory(fs)
 add_subdirectory(sys)
 add_subdirectory(meta)
 add_subdirectory(codec)
-if(KOTA_ENABLE_DECO)
+if(KOTATSU_ENABLE_DECO)
     add_subdirectory(deco)
 endif()
 add_subdirectory(async)
-if(KOTA_CODEC_ENABLE_SIMDJSON)
+if(KOTATSU_CODEC_ENABLE_SIMDJSON)
     add_subdirectory(ipc)
 endif()
-if(KOTA_ENABLE_HTTP)
+if(KOTATSU_ENABLE_HTTP)
     add_subdirectory(http)
 endif()
 add_subdirectory(zest)
-if(KOTA_ENABLE_EXAMPLES)
+if(KOTATSU_ENABLE_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
@@ -217,17 +217,17 @@ endif()
 # programs the integration tests run and the checks that are programs of
 # their own sit together in the build root so that they find the same runtime
 # DLLs.
-get_property(kota_integration_drivers GLOBAL PROPERTY kota_integration_drivers)
-get_property(kota_integration_programs GLOBAL PROPERTY kota_integration_programs)
-get_property(kota_check_programs GLOBAL PROPERTY kota_check_programs)
-set(kota_test_programs
-    ${kota_test_binaries}
+get_property(kotatsu_integration_drivers GLOBAL PROPERTY kotatsu_integration_drivers)
+get_property(kotatsu_integration_programs GLOBAL PROPERTY kotatsu_integration_programs)
+get_property(kotatsu_check_programs GLOBAL PROPERTY kotatsu_check_programs)
+set(kotatsu_test_programs
+    ${kotatsu_test_binaries}
     zest_runner_fixture
-    ${kota_integration_drivers}
-    ${kota_integration_programs}
-    ${kota_check_programs}
+    ${kotatsu_integration_drivers}
+    ${kotatsu_integration_programs}
+    ${kotatsu_check_programs}
 )
-set_target_properties(${kota_test_programs} PROPERTIES
+set_target_properties(${kotatsu_test_programs} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}"
@@ -241,62 +241,62 @@ set_target_properties(${kota_test_programs} PROPERTIES
 # translation units of the tests, started last and ran on for minutes after
 # the rest had linked. A step after every driver starts them right after the
 # libraries; it runs a command because ninja does not count phony steps.
-get_property(kota_default_drivers GLOBAL PROPERTY kota_default_drivers)
-if(kota_default_drivers)
-    add_custom_command(OUTPUT kota_integration_drivers.stamp
-        COMMAND "${CMAKE_COMMAND}" -E touch kota_integration_drivers.stamp
-        DEPENDS ${kota_default_drivers}
+get_property(kotatsu_default_drivers GLOBAL PROPERTY kotatsu_default_drivers)
+if(kotatsu_default_drivers)
+    add_custom_command(OUTPUT kotatsu_integration_drivers.stamp
+        COMMAND "${CMAKE_COMMAND}" -E touch kotatsu_integration_drivers.stamp
+        DEPENDS ${kotatsu_default_drivers}
     )
-    add_custom_target(kota_integration_drivers ALL DEPENDS kota_integration_drivers.stamp)
+    add_custom_target(kotatsu_integration_drivers ALL DEPENDS kotatsu_integration_drivers.stamp)
 endif()
 
-if(KOTA_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+if(KOTATSU_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # clang-cl ASan uses a runtime DLL; copy it into the build root before any
     # program the tests run builds, so that each runs without tweaking PATH.
     # The copy is a target of its own because a build event can only be
     # attached in the directory that defines its target, and the drivers and
     # programs are defined elsewhere.
-    add_custom_target(kota_asan_runtime)
-    get_filename_component(kota_clang_compiler_dir "${CMAKE_C_COMPILER}" DIRECTORY)
-    set(kota_asan_runtime_search_paths
-        "${kota_clang_compiler_dir}"
-        "${kota_asan_lib_path}"
+    add_custom_target(kotatsu_asan_runtime)
+    get_filename_component(kotatsu_clang_compiler_dir "${CMAKE_C_COMPILER}" DIRECTORY)
+    set(kotatsu_asan_runtime_search_paths
+        "${kotatsu_clang_compiler_dir}"
+        "${kotatsu_asan_lib_path}"
     )
 
-    foreach(kota_asan_runtime_name IN ITEMS
+    foreach(kotatsu_asan_runtime_name IN ITEMS
         clang_rt.asan_dynamic-x86_64.dll
         clang_rt.asan_dbg_dynamic-x86_64.dll
     )
-        set(kota_asan_runtime_path "")
-        foreach(kota_asan_runtime_dir IN LISTS kota_asan_runtime_search_paths)
-            if(kota_asan_runtime_dir AND EXISTS "${kota_asan_runtime_dir}/${kota_asan_runtime_name}")
-                set(kota_asan_runtime_path "${kota_asan_runtime_dir}/${kota_asan_runtime_name}")
+        set(kotatsu_asan_runtime_path "")
+        foreach(kotatsu_asan_runtime_dir IN LISTS kotatsu_asan_runtime_search_paths)
+            if(kotatsu_asan_runtime_dir AND EXISTS "${kotatsu_asan_runtime_dir}/${kotatsu_asan_runtime_name}")
+                set(kotatsu_asan_runtime_path "${kotatsu_asan_runtime_dir}/${kotatsu_asan_runtime_name}")
                 break()
             endif()
         endforeach()
 
-        if(kota_asan_runtime_path)
-            add_custom_command(TARGET kota_asan_runtime POST_BUILD
+        if(kotatsu_asan_runtime_path)
+            add_custom_command(TARGET kotatsu_asan_runtime POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${kota_asan_runtime_path}"
+                    "${kotatsu_asan_runtime_path}"
                     "${CMAKE_BINARY_DIR}"
                 VERBATIM
             )
         else()
             message(WARNING
-                "KOTA_SANITIZE_ADDRESS=ON, but ${kota_asan_runtime_name} was not found. "
-                "Tried: ${kota_asan_runtime_search_paths}"
+                "KOTATSU_SANITIZE_ADDRESS=ON, but ${kotatsu_asan_runtime_name} was not found. "
+                "Tried: ${kotatsu_asan_runtime_search_paths}"
             )
         endif()
     endforeach()
 
-    foreach(program IN LISTS kota_test_programs)
-        add_dependencies(${program} kota_asan_runtime)
+    foreach(program IN LISTS kotatsu_test_programs)
+        add_dependencies(${program} kotatsu_asan_runtime)
     endforeach()
 endif()
 
-# zest runs tests on worker processes it drives through kota::async, finds
-# with kota::sys and logs with kota::fs, compares with meta, prints with the
+# zest runs tests on worker processes it drives through kotatsu::async, finds
+# with kotatsu::sys and logs with kotatsu::fs, compares with meta, prints with the
 # debug codec, matches filters with support's glob patterns and parses its
 # options with deco, so the checks are staged and a failed stage keeps the
 # later ones from running:
@@ -338,7 +338,7 @@ set_tests_properties(zest_runner PROPERTIES
     LABELS bootstrap
 )
 
-foreach(binary IN LISTS kota_test_binaries)
+foreach(binary IN LISTS kotatsu_test_binaries)
     string(REGEX REPLACE "_tests$" "" level "${binary}")
     add_test(NAME ${binary}
         COMMAND ${binary} "--snapshot-dir=tests/snapshots"

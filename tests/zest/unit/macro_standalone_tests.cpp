@@ -1,18 +1,18 @@
-// "kota/zest/macro.h" is what a downstream consuming kotatsu as a module has to
+// "kotatsu/zest/macro.h" is what a downstream consuming kotatsu as a module has to
 // include: modules cannot export macros, so the test macros must arrive through
 // a textual include that drags in no zest declarations of its own. Including it
 // as the very first header here keeps that contract honest — if it ever grows a
 // dependency on another zest header, this translation unit stops compiling.
-#include "kota/zest/macro.h"
+#include "kotatsu/zest/macro.h"
 
 #if !defined(ZEST_SUITE) || !defined(ZEST_CASE) || !defined(ZEXPECT) || !defined(ZASSERT) ||       \
     !defined(ZSTATIC_EXPECT) || !defined(ZEST_CONTEXT)
-#error "kota/zest/macro.h must define the zest test macros on its own"
+#error "kotatsu/zest/macro.h must define the zest test macros on its own"
 #endif
 
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace {
 
@@ -30,4 +30,4 @@ ZEST_CASE(macros_usable_without_declaration_headers) {
 
 }  // namespace
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest

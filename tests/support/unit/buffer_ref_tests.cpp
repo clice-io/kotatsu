@@ -4,12 +4,12 @@
 #include <type_traits>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/support/buffer_ref.h"
-#include "kota/support/small_string.h"
-#include "kota/support/small_vector.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/buffer_ref.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/support/small_vector.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -129,4 +129,4 @@ ZEST_CASE(buffers_of_other_characters_work_alike) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

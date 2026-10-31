@@ -16,12 +16,12 @@
 #include "codec/harness/fixtures/scalars.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/json/harness/backend.h"
-#include "kota/zest/zest.h"
-#include "kota/codec/dyn/dyn.h"
-#include "kota/codec/json/json.h"
-#include "kota/codec/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/dyn/dyn.h"
+#include "kotatsu/codec/json/json.h"
+#include "kotatsu/codec/macro.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -63,9 +63,9 @@ struct NoteFirst {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 template <>
 struct repr<codec::Folio> {
@@ -93,9 +93,9 @@ struct repr<codec::Folio, codec::json::format> {
     }
 };
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -348,4 +348,4 @@ ZEST_CASE(everything_lowering) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

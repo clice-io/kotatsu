@@ -1,4 +1,4 @@
-#include "kota/zest/snapshot/snapshot.h"
+#include "kotatsu/zest/snapshot/snapshot.h"
 
 #include <algorithm>
 #include <atomic>
@@ -16,9 +16,9 @@
 #include <vector>
 
 #include "execution.h"
-#include "kota/support/glob_pattern.h"
+#include "kotatsu/support/glob_pattern.h"
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace fs = std::filesystem;
 
@@ -441,4 +441,4 @@ void record_snapshot_access(std::string_view path) {
     record_access(fs::path(path));
 }
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest

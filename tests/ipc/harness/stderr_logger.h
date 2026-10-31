@@ -5,9 +5,9 @@
 #include <string_view>
 #include <utility>
 
-#include "kota/ipc/logger.h"
+#include "kotatsu/ipc/logger.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// A Peer logger for integration drivers: one `[<level>] <message>` line on
 /// stderr per message. The TypeScript harness (driver.ts) fails a test on a
@@ -19,4 +19,4 @@ inline ipc::LogCallback stderr_logger() {
     };
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

@@ -5,12 +5,12 @@
 #include <system_error>
 #include <vector>
 
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/support/small_string.h"
-#include "kota/sys/env.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/sys/env.h"
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -165,4 +165,4 @@ ZEST_CASE(env_name_equal_ignores_case_on_windows) {
 
 }  // namespace
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

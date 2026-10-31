@@ -6,15 +6,15 @@
 
 #include "child.h"
 #include "os.h"
-#include "kota/support/scope_exit.h"
-#include "kota/sys/spawn.h"
+#include "kotatsu/support/scope_exit.h"
+#include "kotatsu/sys/spawn.h"
 
 #ifndef _WIN32
 #include <cerrno>
 #include <poll.h>
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -194,4 +194,4 @@ std::expected<ExitStatus, std::error_code> capture(buffer_ref out,
     return child->wait();
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

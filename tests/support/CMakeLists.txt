@@ -1,1 +1,1 @@
-kota_add_module_tests(LIBS kota::support)
+kotatsu_add_module_tests(LIBS kotatsu::support)

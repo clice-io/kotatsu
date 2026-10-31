@@ -15,7 +15,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "kota/fs/directory.h"
+#include "kotatsu/fs/directory.h"
 
 namespace {
 
@@ -81,7 +81,7 @@ void operator delete(void* memory, std::size_t) noexcept {
 
 int main() {
     const char* temp = std::getenv("TMPDIR");
-    auto base = std::format("{}/kota-XXXXXX", temp != nullptr && *temp != '\0' ? temp : "/tmp");
+    auto base = std::format("{}/kotatsu-XXXXXX", temp != nullptr && *temp != '\0' ? temp : "/tmp");
     if(::mkdtemp(base.data()) == nullptr) {
         std::perror("mkdtemp");
         return 1;
@@ -96,7 +96,7 @@ int main() {
         bool finished = false;
         countdown = round;
         try {
-            auto removed = kota::fs::remove_all(root);
+            auto removed = kotatsu::fs::remove_all(root);
             countdown = 0;
             check(removed.has_value(), std::format("remove_all {}", root));
             finished = true;
@@ -111,6 +111,6 @@ int main() {
         }
     }
     check(failed > 0, "remove_all allocates nothing that could fail");
-    check(kota::fs::remove_all(base).has_value(), std::format("remove_all {}", base));
+    check(kotatsu::fs::remove_all(base).has_value(), std::format("remove_all {}", base));
     return failures == 0 ? 0 : 1;
 }

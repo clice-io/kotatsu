@@ -8,12 +8,12 @@
 
 #include "ipc/harness/codec_json.h"
 #include "ipc/harness/codec_kit.h"
-#include "kota/ipc/codec/json.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/codec/dyn/dyn.h"
+#include "kotatsu/ipc/codec/json.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/dyn/dyn.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -596,4 +596,4 @@ ZEST_CASE(malformed_member_past_the_params_fails_where_it_stands) {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

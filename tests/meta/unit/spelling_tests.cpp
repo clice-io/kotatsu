@@ -2,10 +2,10 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/meta/spelling.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/spelling.h"
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 namespace {
 
@@ -94,4 +94,4 @@ ZEST_CASE(string_to_enum_of_an_unknown_name_fails) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

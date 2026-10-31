@@ -8,10 +8,10 @@
 #include "codec/harness/fixtures/everything.h"
 #include "codec/harness/fixtures/scalars.h"
 #include "codec/harness/fixtures/structs.h"
-#include "kota/zest/zest.h"
-#include "kota/codec/dyn/dyn.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/dyn/dyn.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -98,4 +98,4 @@ ZEST_CASE(everything_lowering) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

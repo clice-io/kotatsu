@@ -1,4 +1,4 @@
-#include "kota/ipc/transport.h"
+#include "kotatsu/ipc/transport.h"
 
 #include <cerrno>
 #include <fcntl.h>
@@ -15,7 +15,7 @@
 #include <unistd.h>
 #endif
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -236,4 +236,4 @@ Result<void> StreamTransport::release_stdout() {
     return {};
 }
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

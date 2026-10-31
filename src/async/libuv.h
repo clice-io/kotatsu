@@ -14,12 +14,12 @@
 #define NOMINMAX
 #endif
 #include "uv.h"
-#include "kota/support/functional.h"
-#include "kota/async/io/endpoint.h"
-#include "kota/async/runtime/node.h"
-#include "kota/async/vocab/error.h"
+#include "kotatsu/support/functional.h"
+#include "kotatsu/async/io/endpoint.h"
+#include "kotatsu/async/runtime/node.h"
+#include "kotatsu/async/vocab/error.h"
 
-namespace kota::uv {
+namespace kotatsu::uv {
 
 /// The error a libuv status or byte count carries: none for zero or more.
 /// UV_ECANCELED is how libuv ends the requests of a handle being closed, an
@@ -100,4 +100,4 @@ void free_when_closed(uv_loop_t& loop, function<void()> free);
 /// or register a callback on it any more. Defined in loop.cpp.
 bool destroying(uv_loop_t& loop) noexcept;
 
-}  // namespace kota::uv
+}  // namespace kotatsu::uv

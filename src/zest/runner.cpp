@@ -14,13 +14,13 @@
 #include <vector>
 
 #include "execution.h"
-#include "kota/deco/deco.h"
-#include "kota/zest/assert/trace.h"
-#include "kota/zest/runner/registry.h"
-#include "kota/zest/runner/run.h"
-#include "kota/zest/snapshot/snapshot.h"
-#include "kota/support/glob_pattern.h"
-#include "kota/sys/process.h"
+#include "kotatsu/deco/deco.h"
+#include "kotatsu/zest/assert/trace.h"
+#include "kotatsu/zest/runner/registry.h"
+#include "kotatsu/zest/runner/run.h"
+#include "kotatsu/zest/snapshot/snapshot.h"
+#include "kotatsu/support/glob_pattern.h"
+#include "kotatsu/sys/process.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -36,7 +36,7 @@
 #endif
 #endif
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace {
 
@@ -55,7 +55,7 @@ const Entry* running = nullptr;
 struct CliOptions {
     Options zest;
 
-    kota::deco::decl::HelpOption help;
+    kotatsu::deco::decl::HelpOption help;
 
     DecoInput(meta_var = "<PATTERN>"; help = "positional fallback for test name filter";
               required = false)
@@ -63,8 +63,8 @@ struct CliOptions {
 };
 
 struct FilterPatternSet {
-    kota::GlobPattern suite;
-    kota::GlobPattern display;
+    kotatsu::GlobPattern suite;
+    kotatsu::GlobPattern display;
 };
 
 struct FailedTest {
@@ -104,18 +104,18 @@ auto resolve_filter_patterns(std::string_view filter)
     -> std::expected<FilterPatternSet, std::string> {
     if(filter.empty()) {
         return FilterPatternSet{
-            .suite = *kota::GlobPattern::create("*"),
-            .display = *kota::GlobPattern::create("*"),
+            .suite = *kotatsu::GlobPattern::create("*"),
+            .display = *kotatsu::GlobPattern::create("*"),
         };
     }
 
     auto dot = filter.find('.');
     if(dot == std::string_view::npos) {
-        auto suite_glob = kota::GlobPattern::create(filter);
+        auto suite_glob = kotatsu::GlobPattern::create(filter);
         if(!suite_glob) {
             return std::unexpected(suite_glob.error().message);
         }
-        auto display_glob = kota::GlobPattern::create(std::string(filter) + ".*");
+        auto display_glob = kotatsu::GlobPattern::create(std::string(filter) + ".*");
         if(!display_glob) {
             return std::unexpected(display_glob.error().message);
         }
@@ -131,12 +131,12 @@ auto resolve_filter_patterns(std::string_view filter)
         test_pattern = wildcard_pattern;
     }
 
-    auto suite_glob = kota::GlobPattern::create(suite_pattern);
+    auto suite_glob = kotatsu::GlobPattern::create(suite_pattern);
     if(!suite_glob) {
         return std::unexpected(suite_glob.error().message);
     }
     auto display_str = std::format("{}.{}", suite_pattern, test_pattern);
-    auto display_glob = kota::GlobPattern::create(display_str);
+    auto display_glob = kotatsu::GlobPattern::create(display_str);
     if(!display_glob) {
         return std::unexpected(display_glob.error().message);
     }
@@ -308,11 +308,11 @@ TestState run_in_process(const Entry& entry) {
 }
 
 int run_cli(int argc, char** argv, std::string_view command_overview) {
-    auto args = kota::deco::util::argvify(argc, argv);
-    auto renderer = kota::deco::cli::text::ModernRenderer();
-    kota::deco::cli::Command<CliOptions> command(command_overview);
+    auto args = kotatsu::deco::util::argvify(argc, argv);
+    auto renderer = kotatsu::deco::cli::text::ModernRenderer();
+    kotatsu::deco::cli::Command<CliOptions> command(command_overview);
     command.render_with(renderer);
-    command.on_error([](const kota::deco::cli::ParseError& err) {
+    command.on_error([](const kotatsu::deco::cli::ParseError& err) {
         std::println(stderr, "Error parsing options: {}", err.message);
     });
     command.match_all([&](CliOptions cli) {
@@ -488,4 +488,4 @@ int Runner::run_tests(Options options, int argc, const char* const* argv) {
     return summary.failed != 0 || !summary.worker_failures.empty();
 }
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest

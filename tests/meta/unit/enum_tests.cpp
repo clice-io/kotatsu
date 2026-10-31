@@ -1,9 +1,9 @@
 #include <cstdint>
 
-#include "kota/zest/zest.h"
-#include "kota/meta/enum.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/enum.h"
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 namespace {
 
@@ -141,4 +141,4 @@ ZEST_CASE(unsigned_members_above_127_ascend) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

@@ -2,10 +2,10 @@
 #include <string_view>
 #include <utility>
 
-#include "kota/zest/zest.h"
-#include "kota/support/cow_string.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/cow_string.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -266,4 +266,4 @@ ZEST_CASE(swap_exchanges_modes) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

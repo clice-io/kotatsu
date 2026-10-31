@@ -2,10 +2,10 @@
 #include <string>
 #include <string_view>
 
-#include "kota/http/http.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/async/async.h"
 
-using namespace kota;
+using namespace kotatsu;
 
 namespace {
 

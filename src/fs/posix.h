@@ -10,11 +10,11 @@
 #include <sys/stat.h>
 #include <system_error>
 
-#include "kota/support/small_string.h"
-#include "kota/fs/status.h"
-#include "kota/fs/volume.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/fs/status.h"
+#include "kotatsu/fs/volume.h"
 
-namespace kota::fs::posix {
+namespace kotatsu::fs::posix {
 
 /// errno as an error code.
 inline std::error_code last_error() {
@@ -102,6 +102,6 @@ inline Status make_status(const struct stat& info) {
     };
 }
 
-}  // namespace kota::fs::posix
+}  // namespace kotatsu::fs::posix
 
 #endif

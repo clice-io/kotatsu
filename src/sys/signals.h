@@ -8,7 +8,7 @@
 #include <mutex>
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 /// SIGPIPE was at its default when kotatsu ignored it, noted before it does:
 /// a child started with keep_signals gets the default back.
@@ -36,6 +36,6 @@ extern std::mutex spawning;
 /// its exit status with it, before wait can.
 void stop_auto_reaping() noexcept;
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys
 
 #endif

@@ -1,9 +1,9 @@
 #include <compare>
 
-#include "kota/zest/zest.h"
-#include "kota/support/small_vector.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_vector.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -64,4 +64,4 @@ ZEST_CASE(elements_with_only_less_order_weakly) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

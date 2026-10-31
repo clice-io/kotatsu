@@ -1,9 +1,9 @@
 #include <string_view>
 
-#include "kota/zest/zest.h"
-#include "kota/fs/path.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/path.h"
 
-namespace kota::fs::path {
+namespace kotatsu::fs::path {
 
 namespace {
 
@@ -131,4 +131,4 @@ ZEST_CASE(rooted_paths_take_no_directory_in_front) {
 
 }  // namespace
 
-}  // namespace kota::fs::path
+}  // namespace kotatsu::fs::path

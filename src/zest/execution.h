@@ -11,10 +11,10 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/zest/runner/registry.h"
-#include "kota/support/functional.h"
+#include "kotatsu/zest/runner/registry.h"
+#include "kotatsu/support/functional.h"
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 /// A registered test case together with the suite it belongs to.
 struct Entry {
@@ -141,4 +141,4 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
              const PoolOptions& options,
              function_ref<void(const Entry&, const Outcome&)> report);
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest

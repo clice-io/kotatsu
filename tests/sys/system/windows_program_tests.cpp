@@ -7,13 +7,13 @@
 
 #include "fs/harness/files.h"
 #include "sys/harness/program.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/path.h"
-#include "kota/sys/process.h"
-#include "kota/sys/windows.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/sys/process.h"
+#include "kotatsu/sys/windows.h"
 
-namespace kota::sys::windows {
+namespace kotatsu::sys::windows {
 
 namespace {
 
@@ -86,4 +86,4 @@ ZEST_CASE(find_create_process_program_takes_a_cygwin_symlink_as_it_is) {
 
 }  // namespace
 
-}  // namespace kota::sys::windows
+}  // namespace kotatsu::sys::windows

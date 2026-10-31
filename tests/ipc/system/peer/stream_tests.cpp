@@ -11,16 +11,16 @@
 #include "async/harness/os.h"
 #include "ipc/harness/fixtures.h"
 #include "ipc/harness/frames.h"
-#include "kota/ipc/framing.h"
-#include "kota/ipc/peer/bincode.h"
-#include "kota/ipc/peer/json.h"
-#include "kota/ipc/transport.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/ipc/framing.h"
+#include "kotatsu/ipc/peer/bincode.h"
+#include "kotatsu/ipc/peer/json.h"
+#include "kotatsu/ipc/transport.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -272,4 +272,4 @@ ZEST_CASE(close_output_on_a_shared_stream_keeps_reading) {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

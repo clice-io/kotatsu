@@ -7,11 +7,11 @@
 #include <vector>
 
 #include "support/harness/tracked.h"
-#include "kota/zest/zest.h"
-#include "kota/support/config.h"
-#include "kota/support/memory.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/config.h"
+#include "kotatsu/support/memory.h"
 
-namespace kota::mem {
+namespace kotatsu::mem {
 
 namespace {
 
@@ -166,7 +166,7 @@ ZEST_CASE(default_construct_in_constant_evaluation_initializes) {
     ZSTATIC_EXPECT(value == 0);
 }
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 
 ZEST_CASE(uninitialized_copy_of_a_throwing_copy_fails) {
     test::Census census;
@@ -186,10 +186,10 @@ ZEST_CASE(uninitialized_fill_of_a_throwing_copy_fails) {
     ZEXPECT(census.live == 1);
 }
 
-#endif  // KOTA_ENABLE_EXCEPTIONS
+#endif  // KOTATSU_ENABLE_EXCEPTIONS
 
 };  // ZEST_SUITE(support_memory)
 
 }  // namespace
 
-}  // namespace kota::mem
+}  // namespace kotatsu::mem

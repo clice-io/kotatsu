@@ -1,5 +1,5 @@
-// Drivers are the programs integration tests spawn. kota_add_integration_tests
-// (tests/CMakeLists.txt) builds each one and passes its path in KOTA_<NAME>. A
+// Drivers are the programs integration tests spawn. kotatsu_add_integration_tests
+// (tests/CMakeLists.txt) builds each one and passes its path in KOTATSU_<NAME>. A
 // test talks to a driver over its stdio, in the driver's protocol (ipc's
 // harness has JSON-RPC's) or in JSON lines, and ends by checking how the
 // driver exited.
@@ -26,9 +26,9 @@ const PROBLEM = /^\[(?:warn|error)\] .*$/gm;
 /** Warn or error lines a test lets the driver log. */
 type Allowance = { pattern: RegExp; left: number };
 
-/** The path of the driver `name`, which ctest passes in KOTA_<NAME>. */
+/** The path of the driver `name`, which ctest passes in KOTATSU_<NAME>. */
 export function driverPath(name: string): string {
-  const variable = `KOTA_${name.toUpperCase()}`;
+  const variable = `KOTATSU_${name.toUpperCase()}`;
   const path = process.env[variable];
   if (path === undefined) {
     throw new Error(

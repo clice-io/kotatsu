@@ -6,13 +6,13 @@
 #include <vector>
 
 #include "support/harness/throws.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/support/config.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/config.h"
+#include "kotatsu/async/async.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -74,7 +74,7 @@ ZEST_CASE(task_scheduled_while_running_runs_on_a_later_turn) {
 
 // MSVC's coroutine codegen under ASan cannot destroy a frame from its final
 // suspension, which is how the loop frees a root it owns.
-#if !KOTA_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+#if !KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
 ZEST_CASE(scheduled_temporary_is_destroyed_by_the_loop) {
     auto frame_alive = std::make_shared<int>();
     std::weak_ptr<int> watch = frame_alive;
@@ -268,7 +268,7 @@ ZEST_CASE(cancelled_roots_report_through_value_and_result) {
     ZEXPECT(with_channel.result().is_cancelled());
 }
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 ZEST_CASE(failed_root_rethrows_through_result) {
     auto thrower = []() -> task<int> {
         throw std::runtime_error("root");
@@ -349,7 +349,7 @@ ZEST_CASE(relay_callbacks_left_when_the_loop_goes_never_run) {
     ZEXPECT(!called);
 }
 
-ZEST_CASE(kota_run_returns_every_value) {
+ZEST_CASE(kotatsu_run_returns_every_value) {
     auto one = []() -> task<int> {
         co_return 1;
     };
@@ -357,21 +357,21 @@ ZEST_CASE(kota_run_returns_every_value) {
         co_await fail(error::io_error);
     };
 
-    auto [value, failed] = kota::run(one(), failing());
+    auto [value, failed] = kotatsu::run(one(), failing());
     ZASSERT(value.has_value());
     ZEXPECT(*value == 1);
     ZASSERT(failed.has_error());
     ZEXPECT(failed.error() == error::io_error);
 }
 
-#if KOTA_ENABLE_EXCEPTIONS
-ZEST_CASE(kota_run_rethrows_what_a_task_throws) {
+#if KOTATSU_ENABLE_EXCEPTIONS
+ZEST_CASE(kotatsu_run_rethrows_what_a_task_throws) {
     auto thrower = []() -> task<int> {
         throw std::runtime_error("from run");
         co_return 0;
     };
 
-    ZEXPECT(test::thrown([&] { kota::run(thrower()); }) == "from run");
+    ZEXPECT(test::thrown([&] { kotatsu::run(thrower()); }) == "from run");
 }
 #endif
 
@@ -507,4 +507,4 @@ ZEST_CASE(relay_move_assignment_keeps_the_old_callbacks) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

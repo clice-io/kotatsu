@@ -16,14 +16,14 @@
 #include <vector>
 
 #include "fixtures/recursive.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/schema.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/schema.h"
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 namespace {
 
-namespace fx = ::kota::test;
+namespace fx = ::kotatsu::test;
 
 ZEST_SUITE(meta_schema_recursive_fields) {
 
@@ -85,4 +85,4 @@ ZEST_CASE(variant_branch_mutual_recursion_without_prior_type_info) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

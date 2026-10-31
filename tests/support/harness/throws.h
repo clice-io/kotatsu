@@ -5,11 +5,11 @@
 #include <string>
 #include <utility>
 
-#include "kota/support/config.h"
+#include "kotatsu/support/config.h"
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Whether calling `action` throws an Exception, as opposed to nothing or something else.
 template <typename Exception, typename Action>
@@ -36,6 +36,6 @@ std::optional<std::string> thrown(Fn&& fn) {
     return std::nullopt;
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test
 
-#endif  // KOTA_ENABLE_EXCEPTIONS
+#endif  // KOTATSU_ENABLE_EXCEPTIONS

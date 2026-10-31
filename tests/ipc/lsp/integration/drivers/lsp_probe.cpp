@@ -1,4 +1,4 @@
-// Answers questions about kota::ipc::lsp's URIs and positions, for uri.test.ts
+// Answers questions about kotatsu::ipc::lsp's URIs and positions, for uri.test.ts
 // and position.test.ts to put the same questions to VS Code's libraries. It
 // reads one JSON object a line and answers each with one:
 //
@@ -21,12 +21,12 @@
 #include <string>
 #include <utility>
 
-#include "kota/ipc/codec/json.h"
-#include "kota/codec/macro.h"
-#include "kota/ipc/lsp/position.h"
-#include "kota/ipc/lsp/uri.h"
+#include "kotatsu/ipc/codec/json.h"
+#include "kotatsu/codec/macro.h"
+#include "kotatsu/ipc/lsp/position.h"
+#include "kotatsu/ipc/lsp/uri.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 namespace {
 
 namespace lsp = ipc::lsp;
@@ -99,10 +99,10 @@ Answer answer(const Question& question) {
 }
 
 }  // namespace
-}  // namespace kota::test
+}  // namespace kotatsu::test
 
 int main() {
-    using namespace kota;
+    using namespace kotatsu;
     std::string line;
     while(std::getline(std::cin, line)) {
         auto question = codec::json::from_string<test::Question, ipc::lsp_config>(line);

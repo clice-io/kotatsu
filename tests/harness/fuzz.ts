@@ -1,15 +1,15 @@
 // Randomized integration tests run on fast-check with a fixed seed, which a
-// failure reports with its shrunk counterexample. KOTA_FUZZ_SEED and
-// KOTA_FUZZ_RUNS override the seed and the number of runs, for long runs by
+// failure reports with its shrunk counterexample. KOTATSU_FUZZ_SEED and
+// KOTATSU_FUZZ_RUNS override the seed and the number of runs, for long runs by
 // hand; CI runs the defaults.
 
 import fc from "fast-check";
 
-const SEED = Number(process.env.KOTA_FUZZ_SEED ?? 20260927);
-/** A long run by hand: KOTA_FUZZ_RUNS is set. */
-const BY_HAND = process.env.KOTA_FUZZ_RUNS !== undefined;
+const SEED = Number(process.env.KOTATSU_FUZZ_SEED ?? 20260927);
+/** A long run by hand: KOTATSU_FUZZ_RUNS is set. */
+const BY_HAND = process.env.KOTATSU_FUZZ_RUNS !== undefined;
 /** The runs of a property, 100 unless overridden. */
-export const RUNS = Number(process.env.KOTA_FUZZ_RUNS ?? 100);
+export const RUNS = Number(process.env.KOTATSU_FUZZ_RUNS ?? 100);
 
 /**
  * A fuzz test's timeout, which leaves room for the default runs; a long run

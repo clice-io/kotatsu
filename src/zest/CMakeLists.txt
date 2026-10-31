@@ -1,4 +1,4 @@
-set(kota_cpptrace_options
+set(kotatsu_cpptrace_options
     CPPTRACE_DISABLE_CXX_20_MODULES ON
     CPPTRACE_BUILD_TESTING OFF
     CPPTRACE_BUILD_BENCHMARKING OFF
@@ -6,7 +6,7 @@ set(kota_cpptrace_options
 )
 
 if(WIN32)
-    list(APPEND kota_cpptrace_options
+    list(APPEND kotatsu_cpptrace_options
         CPPTRACE_GET_SYMBOLS_WITH_DBGHELP ON
         CPPTRACE_GET_SYMBOLS_WITH_LIBDWARF OFF
         CPPTRACE_GET_SYMBOLS_WITH_ADDR2LINE OFF
@@ -15,7 +15,7 @@ if(WIN32)
         CPPTRACE_GET_SYMBOLS_WITH_NOTHING OFF
     )
 elseif(APPLE)
-    list(APPEND kota_cpptrace_options
+    list(APPEND kotatsu_cpptrace_options
         CPPTRACE_GET_SYMBOLS_WITH_LIBDWARF ON
         CPPTRACE_GET_SYMBOLS_WITH_ADDR2LINE OFF
         CPPTRACE_GET_SYMBOLS_WITH_LIBBACKTRACE OFF
@@ -24,7 +24,7 @@ elseif(APPLE)
         CPPTRACE_GET_SYMBOLS_WITH_NOTHING OFF
     )
 else()
-    list(APPEND kota_cpptrace_options
+    list(APPEND kotatsu_cpptrace_options
         CPPTRACE_GET_SYMBOLS_WITH_LIBDWARF ON
         CPPTRACE_GET_SYMBOLS_WITH_ADDR2LINE OFF
         CPPTRACE_GET_SYMBOLS_WITH_LIBBACKTRACE OFF
@@ -34,18 +34,18 @@ else()
     )
 endif()
 
-kota_add_git_dependency(
+kotatsu_add_git_dependency(
     cpptrace
     GIT_REPOSITORY https://github.com/jeremy-rifkin/cpptrace.git
     GIT_TAG v1.0.4
     OPTIONS
-        ${kota_cpptrace_options}
+        ${kotatsu_cpptrace_options}
 )
 
-add_library(kota_zest STATIC)
-add_library(kota::zest ALIAS kota_zest)
+add_library(kotatsu_zest STATIC)
+add_library(kotatsu::zest ALIAS kotatsu_zest)
 
-target_sources(kota_zest PRIVATE
+target_sources(kotatsu_zest PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/trace.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/runner.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/pool.cpp"
@@ -54,33 +54,33 @@ target_sources(kota_zest PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/snapshot.cpp"
 )
 
-target_include_directories(kota_zest PUBLIC
+target_include_directories(kotatsu_zest PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-target_link_libraries(kota_zest PUBLIC
+target_link_libraries(kotatsu_zest PUBLIC
     cpptrace::cpptrace
-    kota::deco
-    kota::support
+    kotatsu::deco
+    kotatsu::support
 )
 
-# Worker processes are started and driven through kota::async, with the
-# arguments and the executable kota::sys finds, their logs written through
-# kota::fs.
-target_link_libraries(kota_zest PRIVATE
-    kota::async
-    kota::fs
-    kota::sys
+# Worker processes are started and driven through kotatsu::async, with the
+# arguments and the executable kotatsu::sys finds, their logs written through
+# kotatsu::fs.
+target_link_libraries(kotatsu_zest PRIVATE
+    kotatsu::async
+    kotatsu::fs
+    kotatsu::sys
 )
 
-kota_apply_project_options(kota_zest)
+kotatsu_apply_project_options(kotatsu_zest)
 
-# zest's support for tests of kota::async code (kota/zest/async.h): a target of
-# its own, so that kota::zest does not bring kota::async to its users.
-add_library(kota_zest_async INTERFACE)
-add_library(kota::zest::async ALIAS kota_zest_async)
+# zest's support for tests of kotatsu::async code (kotatsu/zest/async.h): a target of
+# its own, so that kotatsu::zest does not bring kotatsu::async to its users.
+add_library(kotatsu_zest_async INTERFACE)
+add_library(kotatsu::zest::async ALIAS kotatsu_zest_async)
 
-target_link_libraries(kota_zest_async INTERFACE
-    kota::zest
-    kota::async
+target_link_libraries(kotatsu_zest_async INTERFACE
+    kotatsu::zest
+    kotatsu::async
 )

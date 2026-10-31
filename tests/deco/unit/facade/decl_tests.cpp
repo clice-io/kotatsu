@@ -7,10 +7,10 @@
 
 #include "deco/harness/argv.h"
 #include "deco/harness/text.h"
-#include "kota/deco/deco.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/deco/deco.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::deco {
+namespace kotatsu::deco {
 
 namespace {
 
@@ -333,4 +333,4 @@ ZEST_CASE(scalar_input_of_another_count_fails) {
 
 }  // namespace
 
-}  // namespace kota::deco
+}  // namespace kotatsu::deco

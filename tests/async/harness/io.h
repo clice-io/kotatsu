@@ -6,9 +6,9 @@
 #include <cstddef>
 #include <utility>
 
-#include "kota/async/async.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// A task that finishes at once: when_any cancels what it races as soon as
 /// that has started.
@@ -29,4 +29,4 @@ task<std::size_t, error> winner(First first, Second second) {
     }
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

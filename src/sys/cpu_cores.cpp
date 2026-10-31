@@ -8,11 +8,11 @@
 
 #include "os.h"
 #include "proc.h"
-#include "kota/support/small_string.h"
-#include "kota/sys/info.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/sys/info.h"
 
 #ifdef _WIN32
-#include "kota/support/utf16.h"
+#include "kotatsu/support/utf16.h"
 #elif defined(__APPLE__)
 #include <mach/mach.h>
 #include <sys/sysctl.h>
@@ -28,7 +28,7 @@ extern "C" LONG NTAPI NtQuerySystemInformationEx(int information_class,
                                                  ULONG* returned_size);
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 #if defined(_WIN32) || defined(__linux__)
 
@@ -193,4 +193,4 @@ std::expected<std::vector<CPUCore>, std::error_code> cpu_cores() {
     return cores;
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

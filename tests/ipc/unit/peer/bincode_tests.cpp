@@ -10,11 +10,11 @@
 #include "ipc/harness/peer_suite/requests.h"
 #include "ipc/harness/peer_suite/timeout.h"
 #include "ipc/harness/peer_suite/unreadable.h"
-#include "kota/ipc/peer/bincode.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/ipc/peer/bincode.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -70,4 +70,4 @@ ZEST_CASE(error_data_crosses_between_peers) {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

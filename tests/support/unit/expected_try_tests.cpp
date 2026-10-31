@@ -2,10 +2,10 @@
 #include <memory>
 #include <string>
 
-#include "kota/zest/zest.h"
-#include "kota/support/expected_try.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/expected_try.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -24,22 +24,22 @@ std::expected<std::unique_ptr<int>, std::string> make(int value) {
 }
 
 std::expected<int, std::string> checked_twice(bool first, bool second, int& reached) {
-    KOTA_EXPECTED_TRY(check(first));
+    KOTATSU_EXPECTED_TRY(check(first));
     reached = 1;
-    KOTA_EXPECTED_TRY(check(second));
+    KOTATSU_EXPECTED_TRY(check(second));
     reached = 2;
     return 2;
 }
 
 std::expected<int, std::string> sum(int a, int b) {
-    KOTA_EXPECTED_TRY_V(auto first, make(a));
-    KOTA_EXPECTED_TRY_V(auto second, make(b));
+    KOTATSU_EXPECTED_TRY_V(auto first, make(a));
+    KOTATSU_EXPECTED_TRY_V(auto second, make(b));
     return *first + *second;
 }
 
 std::expected<int, std::string> into_existing(int value) {
     std::unique_ptr<int> owner;
-    KOTA_EXPECTED_TRY_V(owner, make(value));
+    KOTATSU_EXPECTED_TRY_V(owner, make(value));
     return *owner;
 }
 
@@ -90,4 +90,4 @@ ZEST_CASE(try_v_assigns_an_existing_variable) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

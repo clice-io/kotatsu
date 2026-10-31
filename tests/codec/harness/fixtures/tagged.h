@@ -11,10 +11,10 @@
 
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/structs.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 // One variant in each tagging, each with a monostate, a number, a text and a
 // struct alternative (struct alternatives only, for internal tagging),
@@ -158,4 +158,4 @@ struct NestedTag {
 
 using NestedTagged = meta::annotate<NestedTag>::type<std::variant<int, TaggedWrapper>>;
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

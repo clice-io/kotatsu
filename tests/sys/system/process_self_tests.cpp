@@ -21,18 +21,18 @@
 #include "sys/harness/pids.h"
 #include "sys/harness/privileges.h"
 #include "sys/harness/spawn.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/file.h"
-#include "kota/fs/path.h"
-#include "kota/sys/process.h"
-#include "kota/sys/spawn.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/sys/process.h"
+#include "kotatsu/sys/spawn.h"
 
 #ifdef _WIN32
-#include "kota/support/utf16.h"
+#include "kotatsu/support/utf16.h"
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -225,8 +225,8 @@ ZEST_CASE(set_process_name_names_the_main_thread) {
     ScopedProcessName restore;
     std::string arguments;
     ZASSERT(!fs::read_file(arguments, "/proc/self/cmdline"));
-    ZEXPECT(!set_process_name("kota-process-name"));
-    ZEXPECT(main_thread_name() == "kota-process-na");
+    ZEXPECT(!set_process_name("kotatsu-process-name"));
+    ZEXPECT(main_thread_name() == "kotatsu-process-na");
     std::string after;
     ZASSERT(!fs::read_file(after, "/proc/self/cmdline"));
     ZEXPECT(after == arguments);
@@ -236,10 +236,10 @@ ZEST_CASE(set_process_name_names_the_main_thread) {
 // after 12 it fits.
 ZEST_CASE(set_process_name_cuts_at_a_character) {
     ScopedProcessName restore;
-    ZEXPECT(!set_process_name("kota-process-\xE5\x90\x8D"));
-    ZEXPECT(main_thread_name() == "kota-process-");
-    ZEXPECT(!set_process_name("kota-proces-\xE5\x90\x8D"));
-    ZEXPECT(main_thread_name() == "kota-proces-\xE5\x90\x8D");
+    ZEXPECT(!set_process_name("kotatsu-process-\xE5\x90\x8D"));
+    ZEXPECT(main_thread_name() == "kotatsu-process-");
+    ZEXPECT(!set_process_name("kotatsu-proces-\xE5\x90\x8D"));
+    ZEXPECT(main_thread_name() == "kotatsu-proces-\xE5\x90\x8D");
 }
 
 ZEST_CASE(set_process_name_of_nothing_fails) {
@@ -271,7 +271,7 @@ ZEST_CASE(set_process_title_with_nothing_for_the_name_leaves_it) {
 }
 #else
 ZEST_CASE(set_process_name_off_linux_fails) {
-    ZEXPECT(set_process_name("kota") == std::errc::not_supported);
+    ZEXPECT(set_process_name("kotatsu") == std::errc::not_supported);
 }
 #endif
 
@@ -279,4 +279,4 @@ ZEST_CASE(set_process_name_off_linux_fails) {
 
 }  // namespace
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

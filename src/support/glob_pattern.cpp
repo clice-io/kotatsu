@@ -1,4 +1,4 @@
-#include "kota/support/glob_pattern.h"
+#include "kotatsu/support/glob_pattern.h"
 
 #include <algorithm>
 #include <array>
@@ -9,10 +9,10 @@
 #include <span>
 #include <utility>
 
-#include "kota/support/expected_try.h"
-#include "kota/support/utf8.h"
+#include "kotatsu/support/expected_try.h"
+#include "kotatsu/support/utf8.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -201,7 +201,7 @@ std::expected<small_vector<Brace, 0>, GlobError> parse_braces(std::string_view p
     std::uint32_t term_begin = 0;
     for(std::uint32_t i = from, e = static_cast<std::uint32_t>(pattern.size()); i != e; ++i) {
         if(pattern[i] == '[') {
-            KOTA_EXPECTED_TRY_V(i, scan_bracket(pattern, i));
+            KOTATSU_EXPECTED_TRY_V(i, scan_bracket(pattern, i));
         } else if(pattern[i] == '{') {
             if(open) [[unlikely]] {
                 return std::unexpected{
@@ -387,7 +387,7 @@ std::expected<GlobPattern, GlobError> GlobPattern::create(std::string_view s, si
     small_vector<Brace, 0> braces;
     size_t arm_count = 1;
     if(max_arms != 0 && s.substr(from).contains('{')) {
-        KOTA_EXPECTED_TRY_V(braces, parse_braces(s, from));
+        KOTATSU_EXPECTED_TRY_V(braces, parse_braces(s, from));
         for(const auto& brace: braces) {
             if(arm_count > std::numeric_limits<size_t>::max() / brace.terms.size()) {
                 arm_count = std::numeric_limits<size_t>::max();
@@ -507,7 +507,7 @@ std::expected<void, GlobError> GlobPattern::compile_arm(std::string_view s, bool
         while(i != e && s[i] != '/') {
             switch(s[i]) {
                 case '[': {
-                    KOTA_EXPECTED_TRY_V(auto close, scan_bracket(s, i));
+                    KOTATSU_EXPECTED_TRY_V(auto close, scan_bracket(s, i));
                     auto body = s.substr(i + 1, close - i - 1);
                     const bool negated = body[0] == '!' || body[0] == '^';
                     auto ranges = parse_bracket_charset(negated ? body.substr(1) : body);
@@ -994,4 +994,4 @@ bool GlobPattern::match_tokens(const Segment& segment, std::string_view input) c
     }
 }
 
-}  // namespace kota
+}  // namespace kotatsu

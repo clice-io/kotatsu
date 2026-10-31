@@ -7,12 +7,12 @@
 #include <vector>
 
 #include "ipc/harness/peer_fixture.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
-#include "kota/codec/dyn/dyn.h"
-#include "kota/codec/visit/common.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
+#include "kotatsu/codec/dyn/dyn.h"
+#include "kotatsu/codec/visit/common.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 template <CodecAdapter A>
 void peer_link(const PeerKit<A>& kit) {
@@ -146,4 +146,4 @@ void error_data_crosses_between_peers() {
     ZEXPECT(*failure->data == data);
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

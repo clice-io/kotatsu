@@ -1,4 +1,4 @@
-add_library(kota_fs STATIC
+add_library(kotatsu_fs STATIC
     cygwin.cpp
     directory.cpp
     file.cpp
@@ -10,14 +10,14 @@ add_library(kota_fs STATIC
     volume.cpp
     windows.cpp
 )
-add_library(kota::fs ALIAS kota_fs)
+add_library(kotatsu::fs ALIAS kotatsu_fs)
 
-target_include_directories(kota_fs PUBLIC
+target_include_directories(kotatsu_fs PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-target_link_libraries(kota_fs PUBLIC
-    kota::support
+target_link_libraries(kotatsu_fs PUBLIC
+    kotatsu::support
 )
 
-kota_apply_project_options(kota_fs)
+kotatsu_apply_project_options(kotatsu_fs)

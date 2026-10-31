@@ -1,4 +1,4 @@
-#include "kota/codec/json/json.h"
+#include "kotatsu/codec/json/json.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -10,12 +10,12 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/ipc/codec/json.h"
-#include "kota/ipc/framing.h"
-#include "kota/support/swar.h"
-#include "kota/codec/macro.h"
+#include "kotatsu/ipc/codec/json.h"
+#include "kotatsu/ipc/framing.h"
+#include "kotatsu/support/swar.h"
+#include "kotatsu/codec/macro.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -643,4 +643,4 @@ Result<std::string> JSONCodec::encode_error_response(const std::optional<protoco
                   protocol::ErrorCode::InternalError);
 }
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

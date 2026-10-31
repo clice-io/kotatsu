@@ -1,13 +1,13 @@
 #pragma once
 
-// Raw loopback sockets, for what kota::async cannot do to a connection:
+// Raw loopback sockets, for what kotatsu::async cannot do to a connection:
 // bind without listening, connect blocking, close with a reset. The loop has
 // already started Winsock by the time a test makes one.
 
 #include <cstdint>
 
 #ifdef _WIN32
-// Without kota_http, which defines these for whatever links it, nothing else
+// Without kotatsu_http, which defines these for whatever links it, nothing else
 // keeps windows.h's min and max macros out of the code that follows.
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -24,7 +24,7 @@
 #include <unistd.h>
 #endif
 
-namespace kota::test {
+namespace kotatsu::test {
 
 #ifdef _WIN32
 using socket_t = SOCKET;
@@ -101,4 +101,4 @@ inline int reset_socket(socket_t sock) {
     return set != 0 ? set : close_socket(sock);
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

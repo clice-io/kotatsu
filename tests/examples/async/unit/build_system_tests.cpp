@@ -3,11 +3,11 @@
 #include <utility>
 
 #include "compile_graph.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -127,4 +127,4 @@ ZEST_CASE(shared_dependency_compiled_once) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

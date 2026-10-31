@@ -5,9 +5,9 @@
 #include <stdexcept>
 #include <vector>
 
-#include "kota/support/config.h"
+#include "kotatsu/support/config.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Counts what happens to the Tracked values of its thread while it is alive; the innermost
 /// census counts. A copy or move can be armed to throw, to see what an operation leaves
@@ -41,7 +41,7 @@ struct Census {
     void construct_or_throw() {
         if(throw_after == 0) {
             throw_after = -1;
-            KOTA_THROW(std::runtime_error("tracked construction failed"));
+            KOTATSU_THROW(std::runtime_error("tracked construction failed"));
         }
         if(throw_after > 0) {
             throw_after -= 1;
@@ -127,4 +127,4 @@ std::vector<int> values(const Range& elements) {
     return result;
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

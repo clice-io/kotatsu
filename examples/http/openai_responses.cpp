@@ -2,13 +2,13 @@
 #include <print>
 #include <string>
 
-#include "kota/http/http.h"
-#include "kota/async/async.h"
-#include "kota/codec/dyn/dyn.h"
-#include "kota/codec/json/json.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/async/async.h"
+#include "kotatsu/codec/dyn/dyn.h"
+#include "kotatsu/codec/json/json.h"
 
 using namespace std::chrono_literals;
-using namespace kota;
+using namespace kotatsu;
 
 namespace {
 

@@ -15,10 +15,10 @@
 #include "codec/toml/harness/backend.h"
 #include "fixtures/repr.h"
 #include "fixtures/structs.h"
-#include "kota/zest/zest.h"
-#include "kota/codec/toml/toml.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/toml/toml.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -46,9 +46,9 @@ struct Label {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 template <>
 struct repr<codec::Page> {
@@ -76,9 +76,9 @@ struct repr<codec::Page, codec::toml::format> {
     }
 };
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -309,4 +309,4 @@ ZEST_CASE(everything_lowering) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

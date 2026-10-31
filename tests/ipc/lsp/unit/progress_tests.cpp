@@ -6,14 +6,14 @@
 #include "ipc/harness/codec_bincode.h"
 #include "ipc/harness/codec_json.h"
 #include "ipc/harness/peer_fixture.h"
-#include "kota/ipc/peer/bincode.h"
-#include "kota/ipc/peer/json.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
-#include "kota/ipc/lsp/progress.h"
+#include "kotatsu/ipc/peer/bincode.h"
+#include "kotatsu/ipc/peer/json.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
+#include "kotatsu/ipc/lsp/progress.h"
 
-namespace kota::ipc::lsp {
+namespace kotatsu::ipc::lsp {
 
 namespace {
 
@@ -149,4 +149,4 @@ ZEST_CASE(progress_reads_as_progress_params) {
 
 }  // namespace
 
-}  // namespace kota::ipc::lsp
+}  // namespace kotatsu::ipc::lsp

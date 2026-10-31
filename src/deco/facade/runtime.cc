@@ -5,9 +5,9 @@
 #include <string_view>
 #include <utility>
 
-#include "kota/deco/deco.h"
+#include "kotatsu/deco/deco.h"
 
-namespace kota::deco::util {
+namespace kotatsu::deco::util {
 
 std::vector<std::string> argvify(int argc, const char* const* argv, unsigned skip_num) {
     std::vector<std::string> res;
@@ -20,9 +20,9 @@ std::vector<std::string> argvify(int argc, const char* const* argv, unsigned ski
     return res;
 }
 
-}  // namespace kota::deco::util
+}  // namespace kotatsu::deco::util
 
-namespace kota::deco::cli {
+namespace kotatsu::deco::cli {
 
 auto detail::input_args_text(decl::ArgNum arg_num) -> std::string {
     const std::string_view noun = arg_num.min == 1 ? "input argument" : "input arguments";
@@ -187,4 +187,4 @@ auto SubCommander::operator()(std::span<std::string> argv) -> int {
     return parse(argv);
 }
 
-}  // namespace kota::deco::cli
+}  // namespace kotatsu::deco::cli

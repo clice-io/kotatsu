@@ -22,10 +22,10 @@
 #include <vector>
 
 #include "async/harness/socket.h"
-#include "kota/http/http.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Whether `left` and `right` are equal but for the case of ASCII letters.
 inline bool same_name(std::string_view left, std::string_view right) {
@@ -329,4 +329,4 @@ inline std::string refusing_url() {
     return port == 0 ? std::string() : std::format("http://127.0.0.1:{}/", port);
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

@@ -6,15 +6,15 @@
 
 #include "support/harness/throws.h"
 #include "support/harness/tracked.h"
-#include "kota/zest/zest.h"
-#include "kota/support/config.h"
-#include "kota/support/small_vector.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/config.h"
+#include "kotatsu/support/small_vector.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 
 // An element's constructor throws partway through an operation. Whatever the vector then
 // holds, every element it constructed is either among its elements or destroyed: the census
@@ -209,8 +209,8 @@ ZEST_CASE(growing_past_max_size_fails) {
 
 };  // ZEST_SUITE(support_small_vector_exceptions)
 
-#endif  // KOTA_ENABLE_EXCEPTIONS
+#endif  // KOTATSU_ENABLE_EXCEPTIONS
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

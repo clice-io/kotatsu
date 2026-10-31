@@ -1,13 +1,13 @@
 #include <string>
 
 #include "support/harness/throws.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/support/config.h"
-#include "kota/support/outcome.h"
-#include "kota/async/vocab/error.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/config.h"
+#include "kotatsu/support/outcome.h"
+#include "kotatsu/async/vocab/error.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -46,7 +46,7 @@ ZEST_CASE(result_is_an_outcome_of_an_error) {
     ZEXPECT(zest::type_eq<result<int>, outcome<int, error, void>>());
 }
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 
 ZEST_CASE(unwrap_of_a_result_fails_with_the_errors_message) {
     result<int> failed = outcome_error(error::connection_refused);
@@ -54,10 +54,10 @@ ZEST_CASE(unwrap_of_a_result_fails_with_the_errors_message) {
             std::string(error::connection_refused.message()));
 }
 
-#endif  // KOTA_ENABLE_EXCEPTIONS
+#endif  // KOTATSU_ENABLE_EXCEPTIONS
 
 };  // ZEST_SUITE(async_vocab_error)
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

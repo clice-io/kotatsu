@@ -1,11 +1,11 @@
 #include <string>
 #include <string_view>
 
-#include "kota/zest/zest.h"
-#include "kota/support/small_string.h"
-#include "kota/fs/path.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/fs/path.h"
 
-namespace kota::fs::path {
+namespace kotatsu::fs::path {
 
 namespace {
 
@@ -91,4 +91,4 @@ ZEST_CASE(windows_paths_keep_their_first_separator) {
 
 }  // namespace
 
-}  // namespace kota::fs::path
+}  // namespace kotatsu::fs::path

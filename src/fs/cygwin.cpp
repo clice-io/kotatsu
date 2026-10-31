@@ -1,17 +1,17 @@
-#include "kota/fs/cygwin.h"
+#include "kotatsu/fs/cygwin.h"
 
 #include <algorithm>
 #include <cstddef>
 #include <ranges>
 
-#include "kota/support/small_string.h"
-#include "kota/support/small_vector.h"
-#include "kota/support/string_ref.h"
-#include "kota/support/utf16.h"
-#include "kota/fs/file.h"
-#include "kota/fs/status.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/support/small_vector.h"
+#include "kotatsu/support/string_ref.h"
+#include "kotatsu/support/utf16.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/status.h"
 
-namespace kota::fs::cygwin {
+namespace kotatsu::fs::cygwin {
 
 bool is_posix_path(std::string_view path, path::Style style) {
     return path.starts_with('/') && !path::is_absolute(path, style);
@@ -140,4 +140,4 @@ bool read_symlink(buffer_ref out, std::string_view path) {
     return true;
 }
 
-}  // namespace kota::fs::cygwin
+}  // namespace kotatsu::fs::cygwin

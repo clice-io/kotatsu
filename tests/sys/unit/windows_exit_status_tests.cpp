@@ -1,8 +1,8 @@
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/sys/windows.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/sys/windows.h"
 
-namespace kota::sys::windows {
+namespace kotatsu::sys::windows {
 
 namespace {
 
@@ -25,4 +25,4 @@ ZEST_CASE(ntstatus_name_of_another_status_is_empty) {
 
 }  // namespace
 
-}  // namespace kota::sys::windows
+}  // namespace kotatsu::sys::windows

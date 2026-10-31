@@ -2,11 +2,11 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/http/detail/util.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/http/detail/util.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::http::detail {
+namespace kotatsu::http::detail {
 
 namespace {
 
@@ -122,4 +122,4 @@ ZEST_CASE(base64_encode_takes_any_byte) {
 
 }  // namespace
 
-}  // namespace kota::http::detail
+}  // namespace kotatsu::http::detail

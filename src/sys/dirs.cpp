@@ -1,12 +1,12 @@
-#include "kota/sys/dirs.h"
+#include "kotatsu/sys/dirs.h"
 
 #include <algorithm>
 #include <string>
 #include <string_view>
 
 #include "os.h"
-#include "kota/fs/path.h"
-#include "kota/sys/env.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/sys/env.h"
 
 #ifdef _WIN32
 // The known folders' GUIDs, defined here rather than taken from uuid.lib.
@@ -14,12 +14,12 @@
 #include <knownfolders.h>
 #include <shlobj.h>
 
-#include "kota/support/utf16.h"
+#include "kotatsu/support/utf16.h"
 #else
 #include <pwd.h>
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -177,4 +177,4 @@ std::error_code data_dir(buffer_ref out) {
 #endif
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

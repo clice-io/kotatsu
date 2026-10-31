@@ -14,10 +14,10 @@
 #include <utility>
 #include <variant>
 
-#include "kota/ipc/blocking_client.h"
-#include "kota/ipc/codec/bincode.h"
-#include "kota/ipc/codec/json.h"
-#include "kota/ipc/framing.h"
+#include "kotatsu/ipc/blocking_client.h"
+#include "kotatsu/ipc/codec/bincode.h"
+#include "kotatsu/ipc/codec/json.h"
+#include "kotatsu/ipc/framing.h"
 
 #ifdef _WIN32
 #include <algorithm>
@@ -52,7 +52,7 @@ bool check(bool passed, std::string_view what) {
 /// params.
 template <typename Codec>
 void exchange(std::string_view name) {
-    using namespace kota::ipc;
+    using namespace kotatsu::ipc;
     Codec codec;
     auto request = codec.encode_request(1, "catter/check", Params{.text = "hook"});
     if(!check(request.has_value(), std::format("{}: encode_request", name))) {
@@ -75,14 +75,14 @@ void exchange(std::string_view name) {
 /// Both ends of a connection: a pair of sockets, on Windows a named pipe and
 /// a handle opened to it.
 struct Ends {
-    kota::ipc::BlockingClient<kota::ipc::BincodeCodec>::native_handle_type client;
-    kota::ipc::BlockingClient<kota::ipc::BincodeCodec>::native_handle_type remote;
+    kotatsu::ipc::BlockingClient<kotatsu::ipc::BincodeCodec>::native_handle_type client;
+    kotatsu::ipc::BlockingClient<kotatsu::ipc::BincodeCodec>::native_handle_type remote;
 };
 
 bool connect(Ends& ends) {
 #ifdef _WIN32
     std::random_device random;
-    const auto name = std::format(LR"(\\.\pipe\kota-{:08x}{:08x})", random(), random());
+    const auto name = std::format(LR"(\\.\pipe\kotatsu-{:08x}{:08x})", random(), random());
     ends.remote = ::CreateNamedPipeW(name.c_str(),
                                      PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
                                      PIPE_TYPE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
@@ -138,7 +138,7 @@ void close_remote(const Ends& ends) {
 
 /// Asks with a BlockingClient, whose answer the remote's end holds already.
 void ask() {
-    using namespace kota::ipc;
+    using namespace kotatsu::ipc;
     Ends ends;
     if(!check(connect(ends), "BlockingClient: connect")) {
         return;
@@ -157,7 +157,7 @@ void ask() {
 /// Asks a remote that has closed its end, before the client took its own or
 /// after: macOS tells the socket not to raise SIGPIPE only in the second.
 void ask_the_gone(bool closed_first) {
-    using namespace kota::ipc;
+    using namespace kotatsu::ipc;
     const auto what =
         std::format("BlockingClient to a remote closed {}", closed_first ? "first" : "after");
     Ends ends;
@@ -205,8 +205,8 @@ bool imports(std::string_view dll) {
 }  // namespace
 
 int main() {
-    exchange<kota::ipc::BincodeCodec>("BincodeCodec");
-    exchange<kota::ipc::JSONCodec>("JSONCodec");
+    exchange<kotatsu::ipc::BincodeCodec>("BincodeCodec");
+    exchange<kotatsu::ipc::JSONCodec>("JSONCodec");
     ask();
     ask_the_gone(true);
     ask_the_gone(false);

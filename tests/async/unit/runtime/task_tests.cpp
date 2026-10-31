@@ -9,13 +9,13 @@
 
 #include "async/harness/pending_op.h"
 #include "support/harness/throws.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/support/config.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/config.h"
+#include "kotatsu/async/async.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -520,7 +520,7 @@ ZEST_CASE(cancel_of_a_task_that_has_not_started_only_marks_it) {
     ZEXPECT(!pending.is_cancelled());
 }
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 
 ZEST_CASE(exception_propagates_through_await) {
     auto thrower = []() -> task<int> {
@@ -579,7 +579,7 @@ ZEST_CASE(exception_after_cancel_still_fails_the_task) {
     ZEXPECT(test::thrown([&] { run(target); }) == "after cancel");
 }
 
-#endif  // KOTA_ENABLE_EXCEPTIONS
+#endif  // KOTATSU_ENABLE_EXCEPTIONS
 
 // The lambda is a temporary gone before the task starts: co_invoke keeps it
 // for as long as the task runs.
@@ -654,4 +654,4 @@ ZEST_CASE(co_invoke_ends_cancelled_with_the_task) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

@@ -12,17 +12,17 @@
 
 #include "async/harness/os.h"
 #include "ipc/harness/frames.h"
-#include "kota/ipc/transport.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/ipc/transport.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
-/// Both ends of an anonymous pipe, opened as kota pipes.
+/// Both ends of an anonymous pipe, opened as kotatsu pipes.
 struct Ends {
     pipe reader;
     pipe writer;
@@ -359,4 +359,4 @@ ZEST_CASE(connect_tcp_to_a_bad_address_fails) {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

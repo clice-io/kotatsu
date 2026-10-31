@@ -27,7 +27,7 @@
 #include "codec/harness/visit/kit.h"
 #include "fixtures/recursive.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 template <Backend B>
 void values(const Kit<B>& kit) {
@@ -311,4 +311,4 @@ void values(const Kit<B>& kit) {
     }
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

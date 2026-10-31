@@ -1,14 +1,14 @@
-kota_add_module_tests(LIBS kota::fs)
+kotatsu_add_module_tests(LIBS kotatsu::fs)
 
 # remove_all() with each allocation it makes failing in turn: see
 # remove_all_bad_alloc/main.cpp. Built where its walk holds descriptors
 # (POSIX) and an allocation can throw, but for TSan and MSan, whose runtimes
 # define the operator new it replaces.
-if(NOT WIN32 AND KOTA_ENABLE_EXCEPTIONS AND NOT (KOTA_SANITIZE_THREAD OR KOTA_SANITIZE_MEMORY))
+if(NOT WIN32 AND KOTATSU_ENABLE_EXCEPTIONS AND NOT (KOTATSU_SANITIZE_THREAD OR KOTATSU_SANITIZE_MEMORY))
     add_executable(fs_remove_all_bad_alloc remove_all_bad_alloc/main.cpp)
-    target_link_libraries(fs_remove_all_bad_alloc PRIVATE kota::fs)
-    kota_apply_project_options(fs_remove_all_bad_alloc)
-    set_property(GLOBAL APPEND PROPERTY kota_check_programs fs_remove_all_bad_alloc)
+    target_link_libraries(fs_remove_all_bad_alloc PRIVATE kotatsu::fs)
+    kotatsu_apply_project_options(fs_remove_all_bad_alloc)
+    set_property(GLOBAL APPEND PROPERTY kotatsu_check_programs fs_remove_all_bad_alloc)
     add_test(NAME fs_remove_all_bad_alloc COMMAND fs_remove_all_bad_alloc)
     set_tests_properties(fs_remove_all_bad_alloc PROPERTIES LABELS system)
 endif()
@@ -18,9 +18,9 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(Threads REQUIRED)
     add_executable(fs_syscall_fallbacks syscall_fallbacks/main.cpp)
-    target_link_libraries(fs_syscall_fallbacks PRIVATE kota::fs Threads::Threads)
-    kota_apply_project_options(fs_syscall_fallbacks)
-    set_property(GLOBAL APPEND PROPERTY kota_check_programs fs_syscall_fallbacks)
+    target_link_libraries(fs_syscall_fallbacks PRIVATE kotatsu::fs Threads::Threads)
+    kotatsu_apply_project_options(fs_syscall_fallbacks)
+    set_property(GLOBAL APPEND PROPERTY kotatsu_check_programs fs_syscall_fallbacks)
     add_test(NAME fs_syscall_fallbacks COMMAND fs_syscall_fallbacks)
     set_tests_properties(fs_syscall_fallbacks PROPERTIES LABELS system)
 endif()

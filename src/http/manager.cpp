@@ -1,4 +1,4 @@
-#include "kota/http/detail/manager.h"
+#include "kotatsu/http/detail/manager.h"
 
 #include <algorithm>
 #include <cassert>
@@ -16,7 +16,7 @@
 #include "transfer.h"
 #include "../async/libuv.h"
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
@@ -329,4 +329,4 @@ int manager::on_timeout(CURLM*, long timeout_ms, void* self) noexcept {
     return 0;
 }
 
-}  // namespace kota::http
+}  // namespace kotatsu::http

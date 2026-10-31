@@ -2,10 +2,10 @@
 #include <cstdint>
 #include <string>
 
-#include "kota/zest/zest.h"
-#include "kota/support/swar.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/swar.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -89,4 +89,4 @@ ZEST_CASE(any_word_fills_a_short_text_with_the_filler) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

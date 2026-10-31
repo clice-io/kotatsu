@@ -11,12 +11,12 @@
 #include <variant>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
-#include "kota/meta/compare.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/compare.h"
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
 namespace {
 
@@ -657,7 +657,7 @@ struct v_rect {
     int height;
 };
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 struct throwing_alt {
     throwing_alt() = default;
 
@@ -708,7 +708,7 @@ ZEST_CASE(variant_lt_same_alternative) {
     ZEXPECT(!lt(big, small));
 }
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 ZEST_CASE(variant_valueless_compares_less) {
     using shape_t = std::variant<throwing_alt, v_circle>;
     shape_t valued = v_circle{.radius = 1};
@@ -775,4 +775,4 @@ ZEST_CASE(functor_sort) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

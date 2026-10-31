@@ -13,22 +13,22 @@
 
 #include "child.h"
 #include "os.h"
-#include "kota/support/scope_exit.h"
-#include "kota/support/small_string.h"
-#include "kota/support/string_list_ref.h"
-#include "kota/support/string_ref.h"
-#include "kota/support/utf16.h"
-#include "kota/fs/path.h"
-#include "kota/fs/resolve.h"
-#include "kota/sys/spawn.h"
-#include "kota/sys/windows.h"
+#include "kotatsu/support/scope_exit.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/support/string_list_ref.h"
+#include "kotatsu/support/string_ref.h"
+#include "kotatsu/support/utf16.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/fs/resolve.h"
+#include "kotatsu/sys/spawn.h"
+#include "kotatsu/sys/windows.h"
 
 // Windows 10's, which MinGW's headers declare only for _WIN32_WINNT 0x0A00.
 #ifndef PROC_THREAD_ATTRIBUTE_JOB_LIST
 #define PROC_THREAD_ATTRIBUTE_JOB_LIST ProcThreadAttributeValue(13, FALSE, TRUE, FALSE)
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -81,7 +81,7 @@ std::expected<Handle, std::error_code> duplicate_descriptor(int fd) {
 std::expected<std::pair<Handle, Handle>, std::error_code> create_pipe(bool child_reads,
                                                                       bool child_writes) {
     static std::atomic<unsigned> serial = 0;
-    auto name = std::format(LR"(\\.\pipe\kota-{}-{})", ::GetCurrentProcessId(), serial++);
+    auto name = std::format(LR"(\\.\pipe\kotatsu-{}-{})", ::GetCurrentProcessId(), serial++);
     // Ours reads too when the child only reads, as libuv's does: a shutdown
     // asks how much of what it wrote is left, which takes read access.
     DWORD open_mode = FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE | WRITE_DAC;
@@ -659,6 +659,6 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     return child;
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys
 
 #endif

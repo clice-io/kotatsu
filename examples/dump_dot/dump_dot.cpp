@@ -17,9 +17,9 @@
 #include <chrono>
 #include <print>
 
-#include "kota/async/async.h"
+#include "kotatsu/async/async.h"
 
-using namespace kota;
+using namespace kotatsu;
 using namespace std::chrono_literals;
 
 // Shared state — sync primitives whose waiter queues we want visible in graph.

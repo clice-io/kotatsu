@@ -1,4 +1,4 @@
-// kota::ipc::lsp::URI's file URIs against VS Code's (vscode-uri), through
+// kotatsu::ipc::lsp::URI's file URIs against VS Code's (vscode-uri), through
 // lsp_probe, for the absolute paths of the platform: POSIX paths, or drive
 // paths on Windows, and UNC paths on both:
 //

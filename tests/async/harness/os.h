@@ -1,6 +1,6 @@
 #pragma once
 
-// What system tests take from the operating system without kota::async:
+// What system tests take from the operating system without kotatsu::async:
 // TempDir, read_text() and write_text() from fs's harness, ScopedEnv from
 // sys's harness, stdin_reader() for a child that runs until its stdin
 // closes and exit_code_of() for how it ended, open_fd(), create_pipe(),
@@ -32,10 +32,10 @@ using ssize_t = SSIZE_T;
 
 #include "fs/harness/files.h"
 #include "sys/harness/env.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// A child that reads its stdin pipe, so it runs until the pipe closes or it
 /// is killed: cat, or more.com on Windows.
@@ -156,4 +156,4 @@ private:
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

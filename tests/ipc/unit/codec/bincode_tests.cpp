@@ -4,11 +4,11 @@
 
 #include "ipc/harness/codec_bincode.h"
 #include "ipc/harness/codec_kit.h"
-#include "kota/ipc/codec/bincode.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/ipc/codec/bincode.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -102,4 +102,4 @@ ZEST_CASE(error_with_trailing_bytes_fails) {
 
 }  // namespace
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

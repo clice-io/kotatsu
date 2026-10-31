@@ -1,11 +1,11 @@
 #include <string_view>
 #include <utility>
 
-#include "kota/http/detail/curl.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/http/detail/curl.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::curl {
+namespace kotatsu::curl {
 
 namespace {
 
@@ -75,4 +75,4 @@ ZEST_CASE(slist_moves_its_lines) {
 
 }  // namespace
 
-}  // namespace kota::curl
+}  // namespace kotatsu::curl

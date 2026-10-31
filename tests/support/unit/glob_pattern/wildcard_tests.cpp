@@ -1,9 +1,9 @@
 #include <string>
 
 #include "support/harness/glob.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -77,4 +77,4 @@ ZEST_CASE(long_segments_are_matched_through) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

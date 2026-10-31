@@ -4,10 +4,10 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/deco/option/arg.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/deco/option/arg.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::option {
+namespace kotatsu::option {
 
 namespace {
 
@@ -73,4 +73,4 @@ ZEST_CASE(prefixes_start_with_the_one_written) {
 
 }  // namespace
 
-}  // namespace kota::option
+}  // namespace kotatsu::option

@@ -5,13 +5,13 @@
 
 #include "os.h"
 #include "proc.h"
-#include "kota/sys/process.h"
+#include "kotatsu/sys/process.h"
 
 #ifdef __APPLE__
 #include <crt_externs.h>
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 #ifndef _WIN32
 
@@ -130,4 +130,4 @@ std::error_code set_process_name([[maybe_unused]] std::string_view name) {
 #endif
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys

@@ -5,9 +5,9 @@
 #include <csignal>
 #include <mutex>
 
-#include "kota/sys/detail/signals.h"
+#include "kotatsu/sys/detail/signals.h"
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 constinit std::atomic<bool> sigpipe_was_default = false;
 
@@ -20,7 +20,7 @@ constinit std::mutex spawning;
 void stop_auto_reaping() noexcept {
     // Two spawns that both found SIGCHLD ignored would both set its default,
     // one over a handler set meanwhile for the other's child, as
-    // kota::process sets one where it has no pidfd. A child forked
+    // kotatsu::process sets one where it has no pidfd. A child forked
     // meanwhile, which may find it held, never takes it.
     constinit static std::mutex reaping;
     std::lock_guard lock(reaping);
@@ -58,6 +58,6 @@ void ignore_sigpipe() noexcept {
 
 }  // namespace detail
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys
 
 #endif

@@ -25,7 +25,7 @@
 #include <unistd.h>
 #endif
 
-namespace kota::zest {
+namespace kotatsu::zest {
 
 namespace {
 
@@ -185,4 +185,4 @@ void serve(std::span<const Entry> entries) {
     snapshot_notice = nullptr;
 }
 
-}  // namespace kota::zest
+}  // namespace kotatsu::zest

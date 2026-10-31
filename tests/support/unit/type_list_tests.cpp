@@ -2,10 +2,10 @@
 #include <type_traits>
 #include <variant>
 
-#include "kota/zest/zest.h"
-#include "kota/support/type_list.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/type_list.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -63,4 +63,4 @@ ZEST_CASE(to_union_depends_on_the_count) {
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

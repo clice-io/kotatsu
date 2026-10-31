@@ -6,11 +6,11 @@
 #include <string>
 #include <variant>
 
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
-#include "kota/codec/macro.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/macro.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 enum class color_i8 : std::int8_t { red = 0, green = 1, blue = 2 };
 
@@ -36,4 +36,4 @@ KOTATSU_ANNOTATION(root_external_annotation, tagged = true, tag_names = {"intege
 using root_external_variant =
     meta::annotate<root_external_annotation>::type<std::variant<std::int32_t, std::string>>;
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

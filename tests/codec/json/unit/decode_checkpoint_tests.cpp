@@ -6,10 +6,10 @@
 #include <variant>
 #include <vector>
 
-#include "kota/zest/zest.h"
-#include "kota/codec/json/json.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/codec/json/json.h"
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -243,4 +243,4 @@ ZEST_CASE(value_level_variant) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

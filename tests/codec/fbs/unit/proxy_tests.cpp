@@ -26,16 +26,16 @@
 #include "codec/harness/fixtures/repr.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/repr.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/annotation.h"
-#include "kota/meta/attrs.h"
-#include "kota/codec/fbs/fbs.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/annotation.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/fbs/fbs.h"
 
 // The zero-copy views over a verified buffer: table_view, its bound_view,
 // and the array, map, tuple and variant views they hand out, their lookups,
 // and how they follow reprs, behavior attrs and nullable wrappers.
 
-namespace kota::codec {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -908,4 +908,4 @@ ZEST_CASE(from_verified_bytes_wraps_without_verifying) {
 
 }  // namespace
 
-}  // namespace kota::codec
+}  // namespace kotatsu::codec

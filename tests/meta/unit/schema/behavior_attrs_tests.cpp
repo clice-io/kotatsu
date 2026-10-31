@@ -6,17 +6,17 @@
 
 #include "fixtures/attrs.h"
 #include "fixtures/tagged.h"
-#include "kota/zest/zest.h"
-#include "kota/meta/attrs.h"
-#include "kota/meta/schema.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/schema.h"
 
-namespace kota::meta {
+namespace kotatsu::meta {
 
-using kota::type_list_element_t;
+using kotatsu::type_list_element_t;
 
 namespace {
 
-namespace fx = ::kota::test;
+namespace fx = ::kotatsu::test;
 
 ZEST_SUITE(meta_schema_behavior_attrs) {
 
@@ -136,4 +136,4 @@ ZEST_CASE(skip_if_combined_with_behavior) {
 
 }  // namespace
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta

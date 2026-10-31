@@ -14,11 +14,11 @@
 
 #include "fs/harness/dir.h"
 #include "fs/harness/files.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/directory.h"
-#include "kota/fs/path.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/path.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -377,4 +377,4 @@ ZEST_CASE(walk_of_a_directory_it_cannot_read_fails_and_goes_on) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

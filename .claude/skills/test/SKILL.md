@@ -7,8 +7,8 @@ context: fork
 Run the requested suites (default: all).
 
 - Everything: `pixi run test [preset]` — builds the preset and installs the npm packages, then runs ctest: zest's bootstrap stages, its runner check, then `unit_tests` and `system_tests`, each from the repo root with `--snapshot-dir=tests/snapshots` (both are required for snapshot tests; ctest handles them for you), and beside them the integration tests, one ctest test per module (`ipc_lsp_integration`) that runs the module's `integration/*.test.ts` on node's test runner. `ctest --preset <preset> -L unit` (or `system`, `bootstrap`, `integration`) runs one label.
-- Integration tests alone: `pixi run integration-test [preset]` (`ctest -L integration`). ctest passes each driver's path in `KOTA_<DRIVER>` (e.g. `KOTA_LSP_STUB_SERVER`); a test whose driver is unset or missing fails, it is never skipped.
-- Coverage (Linux and macOS): `pixi run coverage` builds the `coverage` preset (clang source-based coverage), runs every stage with each process writing its profile into `build/coverage/profiles/`, and reports on `include/kota` and `src` in `build/coverage/report/`: `summary.md` (lines, functions and regions per module), `html/index.html` and `coverage.lcov`. Its arguments go to ctest (`pixi run coverage -L unit`). CI's `linux | clang | coverage` leg puts the table in the job summary and uploads the report as the `coverage-report` artifact. zest runs on async, deco and support, so part of their coverage is the runner's own; code only the compiler evaluates (constexpr) never runs and counts as not covered.
+- Integration tests alone: `pixi run integration-test [preset]` (`ctest -L integration`). ctest passes each driver's path in `KOTATSU_<DRIVER>` (e.g. `KOTATSU_LSP_STUB_SERVER`); a test whose driver is unset or missing fails, it is never skipped.
+- Coverage (Linux and macOS): `pixi run coverage` builds the `coverage` preset (clang source-based coverage), runs every stage with each process writing its profile into `build/coverage/profiles/`, and reports on `include/kotatsu` and `src` in `build/coverage/report/`: `summary.md` (lines, functions and regions per module), `html/index.html` and `coverage.lcov`. Its arguments go to ctest (`pixi run coverage -L unit`). CI's `linux | clang | coverage` leg puts the table in the job summary and uploads the report as the `coverage-report` artifact. zest runs on async, deco and support, so part of their coverage is the runner's own; code only the compiler evaluates (constexpr) never runs and counts as not covered.
 
 Filtering tests means invoking a binary directly — replicate what ctest does (repo root, snapshot dir) and add the filter:
 
@@ -20,7 +20,7 @@ Filtering tests means invoking a binary directly — replicate what ctest does (
 (`Suite.*` and bare positional patterns also work.) Rerun integration tests by running node the way ctest does (`ctest --preset <preset> -N -V -L integration` prints its command and environment) — from the repo root, through pixi (the host node is not the project's), with the driver's path set (`.exe` on Windows) — and add a name pattern:
 
 ```bash
-KOTA_LSP_STUB_SERVER=build/<preset>/lsp_stub_server pixi run node --import ./tests/check_npm_packages.ts --test --test-timeout=20000 --test-name-pattern='^hover_' tests/ipc/lsp/integration/requests.test.ts
+KOTATSU_LSP_STUB_SERVER=build/<preset>/lsp_stub_server pixi run node --import ./tests/check_npm_packages.ts --test --test-timeout=20000 --test-name-pattern='^hover_' tests/ipc/lsp/integration/requests.test.ts
 ```
 
 Rules:

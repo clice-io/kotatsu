@@ -1,16 +1,16 @@
-// "kota/deco/macro.h" is what a downstream consuming kotatsu as a module has to
+// "kotatsu/deco/macro.h" is what a downstream consuming kotatsu as a module has to
 // include: modules cannot export macros, so the Deco* macros must arrive through
 // a textual include that drags in no deco declarations of its own. Including it
 // as the very first header here keeps that contract honest: if it ever grows a
 // dependency on a facade header, this translation unit stops compiling.
-#include "kota/deco/macro.h"
+#include "kotatsu/deco/macro.h"
 
 #if !defined(DECO_CFG) || !defined(DECO_CFG_START) || !defined(DECO_CFG_END) ||                    \
     !defined(DecoFlag) || !defined(DecoFlagN) || !defined(DecoInput) || !defined(DecoPack) ||      \
     !defined(DecoKV) || !defined(DecoKVStyled) || !defined(DecoComma) || !defined(DecoMulti) ||    \
     !defined(DecoFlagAlias) || !defined(DecoKVAlias) || !defined(DecoKVAliasStyled) ||             \
     !defined(DecoCommaAlias) || !defined(DecoMultiAlias)
-#error "kota/deco/macro.h must define the deco declaration macros on its own"
+#error "kotatsu/deco/macro.h must define the deco declaration macros on its own"
 #endif
 
 #include <cstdint>
@@ -20,10 +20,10 @@
 #include <type_traits>
 #include <vector>
 
-#include "kota/deco/deco.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/deco/deco.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::deco {
+namespace kotatsu::deco {
 
 namespace {
 
@@ -251,4 +251,4 @@ ZEST_CASE(config_macros_declare_scoped_overrides) {
 
 }  // namespace
 
-}  // namespace kota::deco
+}  // namespace kotatsu::deco

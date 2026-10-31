@@ -1,4 +1,4 @@
-#include "kota/ipc/framing.h"
+#include "kotatsu/ipc/framing.h"
 
 #include <algorithm>
 #include <charconv>
@@ -6,9 +6,9 @@
 #include <system_error>
 #include <utility>
 
-#include "kota/support/naming.h"
+#include "kotatsu/support/naming.h"
 
-namespace kota::ipc {
+namespace kotatsu::ipc {
 
 namespace {
 
@@ -174,4 +174,4 @@ FrameParser::Step FrameParser::feed(std::string_view input) {
     }
 }
 
-}  // namespace kota::ipc
+}  // namespace kotatsu::ipc

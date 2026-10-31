@@ -5,10 +5,10 @@
 #include <string_view>
 
 #include "codec/harness/visit/kit.h"
-#include "kota/codec/debug/debug.h"
-#include "kota/codec/dyn/dyn.h"
+#include "kotatsu/codec/debug/debug.h"
+#include "kotatsu/codec/dyn/dyn.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// The dyn backend for the protocol kit. Its document is the tree itself.
 struct Dyn {
@@ -48,4 +48,4 @@ struct Dyn {
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

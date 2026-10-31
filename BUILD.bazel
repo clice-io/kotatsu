@@ -1,4 +1,4 @@
-load("//bazel:defs.bzl", "kota_library")
+load("//bazel:defs.bzl", "kotatsu_library")
 
 # For the tests: the npm packages the integration tests import, and the LSP
 # metamodel the LSP ones read.
@@ -10,15 +10,15 @@ exports_files([
     "scripts/lsp/metamodel.ts",
 ])
 
-# One target per module of include/kota (and per codec backend, each with its
-# third-party library), as CMake's kota::<module> targets. Each owns its
+# One target per module of include/kotatsu (and per codec backend, each with its
+# third-party library), as CMake's kotatsu::<module> targets. Each owns its
 # headers alone, so that a module can become a C++20 module as it stands.
 # HTTP (libcurl) is CMake's only, for now.
 
-kota_library(
+kotatsu_library(
     name = "support",
     srcs = ["src/support/glob_pattern.cpp"],
-    hdrs = glob(["include/kota/support/**"]),
+    hdrs = glob(["include/kotatsu/support/**"]),
 )
 
 # One object per area: a program links only those it calls into, and on
@@ -26,13 +26,13 @@ kota_library(
 # process a build starts, takes the environment and program lookup without the
 # rest). ntdll for parent_pid, parallelism, cpu_cores and os; advapi32 for
 # the registry of cpu_cores; shell32 and ole32 for the known folders of dirs.
-kota_library(
+kotatsu_library(
     name = "sys",
     srcs = glob([
         "src/sys/*.cpp",
         "src/sys/*.h",
     ]),
-    hdrs = glob(["include/kota/sys/**"]),
+    hdrs = glob(["include/kotatsu/sys/**"]),
     # pthread_sigmask around spawn's fork, in libc itself only from glibc 2.34.
     linkopts = select({
         "@platforms//os:windows": [
@@ -50,30 +50,30 @@ kota_library(
     ],
 )
 
-kota_library(
+kotatsu_library(
     name = "fs",
     srcs = glob([
         "src/fs/*.cpp",
         "src/fs/*.h",
     ]),
-    hdrs = glob(["include/kota/fs/**"]),
+    hdrs = glob(["include/kotatsu/fs/**"]),
     deps = [":support"],
 )
 
-kota_library(
+kotatsu_library(
     name = "meta",
-    hdrs = glob(["include/kota/meta/**"]),
+    hdrs = glob(["include/kotatsu/meta/**"]),
     deps = [":support"],
 )
 
-kota_library(
+kotatsu_library(
     name = "codec",
-    hdrs = ["include/kota/codec/macro.h"] + glob([
-        "include/kota/codec/bincode/**",
-        "include/kota/codec/blob/**",
-        "include/kota/codec/debug/**",
-        "include/kota/codec/dyn/**",
-        "include/kota/codec/visit/**",
+    hdrs = ["include/kotatsu/codec/macro.h"] + glob([
+        "include/kotatsu/codec/bincode/**",
+        "include/kotatsu/codec/blob/**",
+        "include/kotatsu/codec/debug/**",
+        "include/kotatsu/codec/dyn/**",
+        "include/kotatsu/codec/visit/**",
     ]),
     deps = [
         ":meta",
@@ -81,19 +81,19 @@ kota_library(
     ],
 )
 
-kota_library(
+kotatsu_library(
     name = "codec_json",
-    hdrs = glob(["include/kota/codec/json/**"]),
+    hdrs = glob(["include/kotatsu/codec/json/**"]),
     deps = [
         ":codec",
         "@simdjson",
     ],
 )
 
-kota_library(
+kotatsu_library(
     name = "codec_toml",
-    hdrs = glob(["include/kota/codec/toml/**"]),
-    # kota/codec/toml/type.h requires toml++ without exceptions, whatever
+    hdrs = glob(["include/kotatsu/codec/toml/**"]),
+    # kotatsu/codec/toml/type.h requires toml++ without exceptions, whatever
     # kotatsu's own setting.
     defines = ["TOML_EXCEPTIONS=0"],
     deps = [
@@ -102,29 +102,29 @@ kota_library(
     ],
 )
 
-kota_library(
+kotatsu_library(
     name = "codec_flatbuffers",
-    hdrs = glob(["include/kota/codec/fbs/**"]),
+    hdrs = glob(["include/kotatsu/codec/fbs/**"]),
     deps = [
         ":codec",
         "@flatbuffers",
     ],
 )
 
-kota_library(
+kotatsu_library(
     name = "option",
     srcs = glob(["src/deco/option/*.cc"]),
-    hdrs = ["include/kota/deco/option.h"] + glob(["include/kota/deco/option/**"]),
+    hdrs = ["include/kotatsu/deco/option.h"] + glob(["include/kotatsu/deco/option/**"]),
     deps = [":support"],
 )
 
-kota_library(
+kotatsu_library(
     name = "deco",
     srcs = glob(["src/deco/facade/*.cc"]),
     hdrs = [
-        "include/kota/deco/deco.h",
-        "include/kota/deco/macro.h",
-    ] + glob(["include/kota/deco/facade/**"]),
+        "include/kotatsu/deco/deco.h",
+        "include/kotatsu/deco/macro.h",
+    ] + glob(["include/kotatsu/deco/facade/**"]),
     deps = [
         ":meta",
         ":option",
@@ -132,13 +132,13 @@ kota_library(
     ],
 )
 
-kota_library(
+kotatsu_library(
     name = "async",
     srcs = glob([
         "src/async/**/*.cpp",
         "src/async/**/*.h",
     ]),
-    hdrs = glob(["include/kota/async/**"]),
+    hdrs = glob(["include/kotatsu/async/**"]),
     deps = [
         ":fs",
         ":support",
@@ -151,7 +151,7 @@ kota_library(
 # the blocking client, without the event loop: a program that only reads and
 # writes messages, such as catter's hook library, which runs in every process a
 # build starts, takes neither libuv nor the DLLs it imports.
-kota_library(
+kotatsu_library(
     name = "ipc_codec",
     srcs = [
         "src/ipc/blocking_client.cpp",
@@ -159,11 +159,11 @@ kota_library(
         "src/ipc/framing.cpp",
     ],
     hdrs = [
-        "include/kota/ipc/blocking_client.h",
-        "include/kota/ipc/codec.h",
-        "include/kota/ipc/codec/bincode.h",
-        "include/kota/ipc/framing.h",
-        "include/kota/ipc/protocol.h",
+        "include/kotatsu/ipc/blocking_client.h",
+        "include/kotatsu/ipc/codec.h",
+        "include/kotatsu/ipc/codec/bincode.h",
+        "include/kotatsu/ipc/framing.h",
+        "include/kotatsu/ipc/protocol.h",
     ],
     deps = [
         ":codec",
@@ -172,11 +172,11 @@ kota_library(
 )
 
 # The JSON codec, without the event loop: CMake builds it into
-# kota::ipc::codec when simdjson is enabled.
-kota_library(
+# kotatsu::ipc::codec when simdjson is enabled.
+kotatsu_library(
     name = "ipc_codec_json",
     srcs = ["src/ipc/codec/json.cpp"],
-    hdrs = ["include/kota/ipc/codec/json.h"],
+    hdrs = ["include/kotatsu/ipc/codec/json.h"],
     deps = [
         ":codec",
         ":codec_json",
@@ -185,7 +185,7 @@ kota_library(
     ],
 )
 
-kota_library(
+kotatsu_library(
     name = "ipc",
     srcs = [
         "src/ipc/peer/bincode.cpp",
@@ -193,12 +193,12 @@ kota_library(
         "src/ipc/transport.cpp",
     ],
     hdrs = [
-        "include/kota/ipc/logger.h",
-        "include/kota/ipc/peer.h",
-        "include/kota/ipc/peer.inl",
-        "include/kota/ipc/peer/bincode.h",
-        "include/kota/ipc/recording_transport.h",
-        "include/kota/ipc/transport.h",
+        "include/kotatsu/ipc/logger.h",
+        "include/kotatsu/ipc/peer.h",
+        "include/kotatsu/ipc/peer.inl",
+        "include/kotatsu/ipc/peer/bincode.h",
+        "include/kotatsu/ipc/recording_transport.h",
+        "include/kotatsu/ipc/transport.h",
     ],
     deps = [
         ":async",
@@ -208,25 +208,25 @@ kota_library(
     ],
 )
 
-# JSON-RPC over ipc, on the JSON codec: CMake builds it into kota::ipc when
+# JSON-RPC over ipc, on the JSON codec: CMake builds it into kotatsu::ipc when
 # simdjson is enabled.
-kota_library(
+kotatsu_library(
     name = "ipc_json",
     srcs = ["src/ipc/peer/json.cpp"],
-    hdrs = ["include/kota/ipc/peer/json.h"],
+    hdrs = ["include/kotatsu/ipc/peer/json.h"],
     deps = [
         ":ipc",
         ":ipc_codec_json",
     ],
 )
 
-kota_library(
+kotatsu_library(
     name = "ipc_lsp",
     srcs = glob([
         "src/ipc/lsp/*.cpp",
         "src/ipc/lsp/*.h",
     ]),
-    hdrs = glob(["include/kota/ipc/lsp/**"]),
+    hdrs = glob(["include/kotatsu/ipc/lsp/**"]),
     deps = [
         ":codec",
         ":ipc",
@@ -236,15 +236,15 @@ kota_library(
     ],
 )
 
-kota_library(
+kotatsu_library(
     name = "zest",
     srcs = glob([
         "src/zest/*.cpp",
         "src/zest/*.h",
     ]),
     hdrs = glob(
-        ["include/kota/zest/**"],
-        exclude = ["include/kota/zest/async.h"],
+        ["include/kotatsu/zest/**"],
+        exclude = ["include/kotatsu/zest/async.h"],
     ),
     deps = [
         ":async",
@@ -258,10 +258,10 @@ kota_library(
     ],
 )
 
-# zest's support for tests of kota::async code, as CMake's kota::zest::async.
-kota_library(
+# zest's support for tests of kotatsu::async code, as CMake's kotatsu::zest::async.
+kotatsu_library(
     name = "zest_async",
-    hdrs = ["include/kota/zest/async.h"],
+    hdrs = ["include/kotatsu/zest/async.h"],
     deps = [
         ":async",
         ":zest",

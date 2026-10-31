@@ -1,10 +1,10 @@
-#include "kota/async/io/request.h"
+#include "kotatsu/async/io/request.h"
 
 #include <utility>
 
 #include "awaiter.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -44,4 +44,4 @@ task<> detail::run_on_pool(function<void()> work, function<void()> on_cancel, ev
     co_await work_op(loop.native_handle(), std::move(work), std::move(on_cancel));
 }
 
-}  // namespace kota
+}  // namespace kotatsu

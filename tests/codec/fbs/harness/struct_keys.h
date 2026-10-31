@@ -8,7 +8,7 @@
 #include <map>
 #include <tuple>
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// Sentinel defaults break std::is_trivial but not trivial copyability.
 struct SentinelRange {
@@ -42,4 +42,4 @@ struct StructKeyed {
     friend bool operator==(const StructKeyed&, const StructKeyed&) = default;
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

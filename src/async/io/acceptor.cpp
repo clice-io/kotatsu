@@ -13,9 +13,9 @@
 #endif
 
 #include "stream_self.h"
-#include "kota/support/functional.h"
+#include "kotatsu/support/functional.h"
 
-namespace kota {
+namespace kotatsu {
 
 template <typename Stream>
 struct acceptor<Stream>::Self : uv::owned_handle<Self> {
@@ -40,7 +40,7 @@ struct acceptor<Stream>::Self : uv::owned_handle<Self> {
 
     result<Stream> accept_one() {
         auto client = stream::Self::make();
-        if constexpr(std::same_as<Stream, kota::pipe>) {
+        if constexpr(std::same_as<Stream, kotatsu::pipe>) {
             ::uv_pipe_init(stream.loop, &client->pipe, pipe.ipc);
         } else {
             ::uv_tcp_init(stream.loop, &client->tcp);
@@ -324,4 +324,4 @@ result<tcp::acceptor> tcp::listen(std::string_view host, int port, options opts,
     return acceptor(std::move(self));
 }
 
-}  // namespace kota
+}  // namespace kotatsu

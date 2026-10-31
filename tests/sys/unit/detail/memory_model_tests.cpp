@@ -6,11 +6,11 @@
 #include <string_view>
 #include <vector>
 
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/sys/detail/memory_model.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/sys/detail/memory_model.h"
 
-namespace kota::sys::detail {
+namespace kotatsu::sys::detail {
 
 namespace {
 
@@ -373,4 +373,4 @@ ZEST_CASE(mac_available_without_a_compression_ratio_takes_none) {
 
 }  // namespace
 
-}  // namespace kota::sys::detail
+}  // namespace kotatsu::sys::detail

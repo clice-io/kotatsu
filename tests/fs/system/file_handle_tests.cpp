@@ -22,14 +22,14 @@
 
 #include "fs/harness/files.h"
 #include "fs/harness/win32.h"
-#include "kota/zest/zest.h"
-#include "kota/fs/directory.h"
-#include "kota/fs/file.h"
-#include "kota/fs/path.h"
-#include "kota/fs/resolve.h"
-#include "kota/fs/status.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/fs/directory.h"
+#include "kotatsu/fs/file.h"
+#include "kotatsu/fs/path.h"
+#include "kotatsu/fs/resolve.h"
+#include "kotatsu/fs/status.h"
 
-namespace kota::fs {
+namespace kotatsu::fs {
 
 namespace {
 
@@ -94,7 +94,7 @@ struct DiskImage {
     explicit DiskImage(const test::TempDir& dir) :
         image(dir.file("image.dmg")), mount(dir.file("volume")) {
         std::filesystem::create_directory(test::std_path(mount));
-        ZASSERT(hdiutil(std::format("create -size 1m -fs HFS+ -volname kota '{}'", image)));
+        ZASSERT(hdiutil(std::format("create -size 1m -fs HFS+ -volname kotatsu '{}'", image)));
         attach(false);
     }
 
@@ -840,4 +840,4 @@ ZEST_CASE(into_descriptor_of_a_closed_file_fails) {
 
 }  // namespace
 
-}  // namespace kota::fs
+}  // namespace kotatsu::fs

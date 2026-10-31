@@ -5,11 +5,11 @@
 #include <utility>
 #include <vector>
 
-#include "kota/http/http.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/async/async.h"
 
 using namespace std::chrono_literals;
-using namespace kota;
+using namespace kotatsu;
 
 namespace {
 

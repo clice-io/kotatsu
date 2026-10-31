@@ -4,9 +4,9 @@
 #include <string_view>
 
 #include "codec/harness/visit/kit.h"
-#include "kota/codec/json/json.h"
+#include "kotatsu/codec/json/json.h"
 
-namespace kota::test {
+namespace kotatsu::test {
 
 /// The json backend for the protocol kit.
 struct Json {
@@ -42,4 +42,4 @@ struct Json {
     }
 };
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

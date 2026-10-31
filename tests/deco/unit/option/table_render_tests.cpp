@@ -3,10 +3,10 @@
 #include <vector>
 
 #include "deco/harness/option_table.h"
-#include "kota/deco/option.h"
-#include "kota/zest/zest.h"
+#include "kotatsu/deco/option.h"
+#include "kotatsu/zest/zest.h"
 
-namespace kota::option {
+namespace kotatsu::option {
 
 namespace {
 
@@ -103,4 +103,4 @@ ZEST_CASE(joined_without_values_renders_its_name) {
 
 }  // namespace
 
-}  // namespace kota::option
+}  // namespace kotatsu::option

@@ -1,6 +1,6 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//bazel:command_test.bzl", "command_test")
-load("//bazel:defs.bzl", "kota_binary", "kota_test")
+load("//bazel:defs.bzl", "kotatsu_binary", "kotatsu_test")
 
 # The tests of each module, as tests/CMakeLists.txt lays them out, but a test
 # binary per module and level rather than one per level: a change to a module
@@ -75,7 +75,7 @@ cc_library(
 
 # <module>_unit_tests and <module>_system_tests, run from the repository root
 # of the runfiles as ctest runs them, with the module's snapshots.
-[kota_test(
+[kotatsu_test(
     name = "%s_%s_tests" % (module.replace("/", "_"), level),
     size = "medium",
     srcs = ["main.cpp"] + glob(["%s/%s/**/*.cpp" % (module, level)]),
@@ -137,7 +137,7 @@ cc_library(
 # The ipc codecs and the blocking client built into a program alone, without
 # the event loop: see ipc/codec_alone/main.cpp. Its client talks over a pipe or
 # a socket.
-kota_test(
+kotatsu_test(
     name = "ipc_codec_alone",
     size = "small",
     srcs = ["ipc/codec_alone/main.cpp"],
@@ -152,7 +152,7 @@ kota_test(
 # fs/remove_all_bad_alloc/main.cpp. Built where its walk holds descriptors
 # (POSIX) and an allocation can throw, but for TSan, whose runtime defines the
 # operator new it replaces.
-kota_test(
+kotatsu_test(
     name = "fs_remove_all_bad_alloc",
     size = "small",
     srcs = ["fs/remove_all_bad_alloc/main.cpp"],
@@ -172,7 +172,7 @@ kota_test(
 
 # copy_file() and rename_noreplace() where the system calls they start with
 # fail: see fs/syscall_fallbacks/main.cpp. A filter of system calls is Linux's.
-kota_test(
+kotatsu_test(
     name = "fs_syscall_fallbacks",
     size = "small",
     srcs = ["fs/syscall_fallbacks/main.cpp"],
@@ -186,7 +186,7 @@ kota_test(
 # The integration tests' drivers: integration/drivers/<name>.cpp of a module,
 # or the sources in integration/drivers/<name>/ for a driver too heavy for one
 # translation unit.
-[kota_binary(
+[kotatsu_binary(
     name = driver,
     srcs = glob(
         [
@@ -222,7 +222,7 @@ kota_test(
 ] for driver in drivers]
 
 # zest's own runner, checked end to end by zest/integration/check_runner.cmake.
-kota_binary(
+kotatsu_binary(
     name = "zest_runner_fixture",
     srcs = ["zest/integration/runner_fixture.cpp"],
     # On Windows it links with garbage collection, as tests/zest/CMakeLists.txt
@@ -270,7 +270,7 @@ command_test(
 
 # A module's integration/*.test.ts, which node runs from the source tree as
 # ctest does (`pixi run npm-ci` installs their npm packages there), each
-# program named in KOTA_<NAME>, with the files they read beyond tests/.
+# program named in KOTATSU_<NAME>, with the files they read beyond tests/.
 [command_test(
     name = module.replace("/", "_") + "_integration",
     size = "large",
@@ -296,7 +296,7 @@ command_test(
         "//:package.json",
     ] + files,
     env = {
-        "KOTA_" + program.split(":")[-1].upper(): "$(rootpath %s)" % program
+        "KOTATSU_" + program.split(":")[-1].upper(): "$(rootpath %s)" % program
         for program in programs
     },
     source_tree = True,

@@ -21,9 +21,9 @@
 #include "child.h"
 #include "os.h"
 #include "signals.h"
-#include "kota/support/scope_exit.h"
-#include "kota/sys/detail/descriptors.h"
-#include "kota/sys/spawn.h"
+#include "kotatsu/support/scope_exit.h"
+#include "kotatsu/sys/detail/descriptors.h"
+#include "kotatsu/sys/spawn.h"
 
 #ifdef __APPLE__
 #include <spawn.h>
@@ -45,7 +45,7 @@
 #endif
 #endif
 
-namespace kota::sys {
+namespace kotatsu::sys {
 
 namespace {
 
@@ -807,6 +807,6 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     return child;
 }
 
-}  // namespace kota::sys
+}  // namespace kotatsu::sys
 
 #endif

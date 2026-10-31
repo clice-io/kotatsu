@@ -3,11 +3,11 @@
 #include <type_traits>
 #include <utility>
 
-#include "kota/zest/zest.h"
-#include "kota/support/config.h"
-#include "kota/support/scope_exit.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/support/config.h"
+#include "kotatsu/support/scope_exit.h"
 
-namespace kota {
+namespace kotatsu {
 
 namespace {
 
@@ -91,7 +91,7 @@ ZEST_CASE(takes_an_action_moved_without_throwing) {
     ZSTATIC_EXPECT(!accepts<ThrowingMove>);
 }
 
-#if KOTA_ENABLE_EXCEPTIONS
+#if KOTATSU_ENABLE_EXCEPTIONS
 
 ZEST_CASE(runs_when_a_throw_leaves_its_scope) {
     int calls = 0;
@@ -102,10 +102,10 @@ ZEST_CASE(runs_when_a_throw_leaves_its_scope) {
     ZEXPECT(calls == 1);
 }
 
-#endif  // KOTA_ENABLE_EXCEPTIONS
+#endif  // KOTATSU_ENABLE_EXCEPTIONS
 
 };  // ZEST_SUITE(support_scope_exit)
 
 }  // namespace
 
-}  // namespace kota
+}  // namespace kotatsu

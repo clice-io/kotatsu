@@ -5,14 +5,14 @@
 #include <tuple>
 #include <vector>
 
-#include "kota/ipc/peer/json.h"
-#include "kota/ipc/lsp/progress.h"
-#include "kota/ipc/lsp/protocol.h"
+#include "kotatsu/ipc/peer/json.h"
+#include "kotatsu/ipc/lsp/progress.h"
+#include "kotatsu/ipc/lsp/protocol.h"
 
-namespace lsp = kota::ipc::lsp;
-namespace proto = kota::ipc::protocol;
+namespace lsp = kotatsu::ipc::lsp;
+namespace proto = kotatsu::ipc::protocol;
 
-namespace kota::test {
+namespace kotatsu::test {
 
 void add_language_features(ipc::JSONPeer& peer) {
     // textDocument/hover
@@ -20,7 +20,7 @@ void add_language_features(ipc::JSONPeer& peer) {
                        const proto::HoverParams& p) -> ipc::RequestResult<proto::HoverParams> {
         auto uri = p.text_document.uri;
         if(uri == "file:///error") {
-            co_return kota::outcome_error(
+            co_return kotatsu::outcome_error(
                 proto::Error(static_cast<proto::integer>(proto::LSPErrorCodes::RequestFailed),
                              "hover error triggered"));
         }
@@ -43,7 +43,7 @@ void add_language_features(ipc::JSONPeer& peer) {
                                                proto::ProgressToken(std::string("test-progress")));
                 auto create_result = co_await reporter.create();
                 if(create_result.has_error()) {
-                    co_return kota::outcome_error(create_result.error());
+                    co_return kotatsu::outcome_error(create_result.error());
                 }
                 reporter.begin("Indexing", "starting...", 0);
                 reporter.report("halfway...", 50);
@@ -280,4 +280,4 @@ void add_language_features(ipc::JSONPeer& peer) {
     });
 }
 
-}  // namespace kota::test
+}  // namespace kotatsu::test

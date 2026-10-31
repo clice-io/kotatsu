@@ -153,7 +153,7 @@ prettier = "*"
 clang-format = "==21.1.8"
 
 [feature.format.tasks]
-format-cpp = "fd -H -e cpp -e h -e cc -e hpp -E include/kota/ipc/lsp/protocol.h -E include/kota/ipc/lsp/range.h -x clang-format -i"
+format-cpp = "fd -H -e cpp -e h -e cc -e hpp -E include/kotatsu/ipc/lsp/protocol.h -E include/kotatsu/ipc/lsp/range.h -x clang-format -i"
 format-python = "ruff format ."
 format-web = "fd -H -e js -e ts -e css -x prettier --write"
 format-markdown = "fd -H -e md -x prettier --write"
@@ -182,7 +182,7 @@ fd -H -e yaml -e yml -E pnpm-lock.yaml -E '*.snap.yml' -x prettier.bat --write &
 fd -H "^\\.clang-(format|tidy)$" -x prettier.bat --write --parser yaml
 """
 
-# Regenerate include/kota/ipc/lsp/protocol.h, its range.h and the tests'
+# Regenerate include/kotatsu/ipc/lsp/protocol.h, its range.h and the tests'
 # table of its types; `--check` only verifies them.
 [tasks.lsp-codegen]
 cmd = "node scripts/lsp/codegen.ts"
@@ -219,7 +219,7 @@ cmd = "ctest --preset {{ preset }} -L integration"
 depends-on = [{ task = "build", args = ["{{ preset }}"] }, "npm-ci"]
 
 # Runs every test stage on the `coverage` preset's build and reports how much
-# of include/kota and src they reach, per module (scripts/coverage.ts); any
+# of include/kotatsu and src they reach, per module (scripts/coverage.ts); any
 # arguments go to ctest.
 [tasks.coverage]
 cmd = "node scripts/coverage.ts"

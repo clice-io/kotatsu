@@ -6,16 +6,16 @@
 #include <utility>
 #include <vector>
 
-#include "kota/http/http.h"
-#include "kota/zest/async.h"
-#include "kota/zest/macro.h"
-#include "kota/zest/zest.h"
-#include "kota/async/async.h"
+#include "kotatsu/http/http.h"
+#include "kotatsu/zest/async.h"
+#include "kotatsu/zest/macro.h"
+#include "kotatsu/zest/zest.h"
+#include "kotatsu/async/async.h"
 
 // Requests that fail before curl sees them: send() touches neither curl nor
 // the network for them, so the url they name is never reached.
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
@@ -25,17 +25,17 @@ using namespace std::chrono_literals;
 /// nothing serves.
 constexpr std::string_view nowhere = "http://127.0.0.1:1/";
 
-#if KOTA_HTTP_HAS_CODEC_JSON
+#if KOTATSU_HTTP_HAS_CODEC_JSON
 /// A value the JSON codec refuses to encode.
 struct Unencodable {};
 #endif
 
 }  // namespace
 
-}  // namespace kota::http
+}  // namespace kotatsu::http
 
-#if KOTA_HTTP_HAS_CODEC_JSON
-namespace kota::meta {
+#if KOTATSU_HTTP_HAS_CODEC_JSON
+namespace kotatsu::meta {
 
 template <>
 struct repr<http::Unencodable> {
@@ -47,10 +47,10 @@ struct repr<http::Unencodable> {
     }
 };
 
-}  // namespace kota::meta
+}  // namespace kotatsu::meta
 #endif
 
-namespace kota::http {
+namespace kotatsu::http {
 
 namespace {
 
@@ -170,7 +170,7 @@ ZEST_CASE(timeout_beyond_a_long_fails, skip = sizeof(long) > 4) {
     ZEXPECT(failed->message() == "timeout exceeds libcurl timeout range");
 }
 
-#if KOTA_HTTP_HAS_CODEC_JSON
+#if KOTATSU_HTTP_HAS_CODEC_JSON
 ZEST_CASE(json_that_cannot_be_encoded_fails) {
     auto failed = failure_of(client.on(loop).post(std::string(nowhere)).json(Unencodable{}));
     ZASSERT(failed.has_value());
@@ -195,4 +195,4 @@ ZEST_CASE(request_sent_by_reference_can_be_sent_again) {
 
 }  // namespace
 
-}  // namespace kota::http
+}  // namespace kotatsu::http
