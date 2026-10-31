@@ -9,6 +9,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <format>
 #include <mutex>
 #include <semaphore>
 #include <string>
@@ -38,6 +39,9 @@ bool check(bool passed, std::string_view what) {
     return passed;
 }
 
+/// How the relay is let go in the case that runs.
+std::string_view letting_go;
+
 /// The relay's thread holds its next uv_async_send.
 thread_local bool hold_next_send = false;
 
@@ -57,13 +61,17 @@ constexpr auto grace = std::chrono::milliseconds(500);
 /// the relay's last wakeup is under way, and the loop, then seeing no relay,
 /// winds down.
 template <typename LetGo>
-void let_go_while_the_loop_winds_down(LetGo let_go) {
+void let_go_while_the_loop_winds_down(std::string_view how, LetGo let_go) {
+    letting_go = how;
     loop_gone = false;
     std::thread worker;
     {
         event_loop loop;
         worker = std::thread([held = loop.create_relay(), let_go]() mutable {
-            held.send([] { holding.acquire(); });
+            held.send([] {
+                check(holding.try_acquire_for(std::chrono::seconds(10)),
+                      "uv_async_send is not wrapped");
+            });
             hold_next_send = true;
             let_go(held);
         });
@@ -86,8 +94,9 @@ extern "C" int __wrap_uv_async_send(uv_async_s* handle) {
     holding.release();
     std::unique_lock lock(mutex);
     // A wait to show that something does not happen: the loop does not go.
-    if(!check(!changed.wait_for(lock, grace, [] { return loop_gone; }),
-              "the loop went before the relay's last wakeup")) {
+    if(!check(
+           !changed.wait_for(lock, grace, [] { return loop_gone; }),
+           std::format("the loop went before the relay's last wakeup, let go by {}", letting_go))) {
         // The handle went with the loop.
         return 0;
     }
@@ -95,7 +104,8 @@ extern "C" int __wrap_uv_async_send(uv_async_s* handle) {
 }
 
 int main() {
-    let_go_while_the_loop_winds_down([](relay& held) { relay gone = std::move(held); });
-    let_go_while_the_loop_winds_down([](relay& held) { held = relay(); });
+    let_go_while_the_loop_winds_down("its destructor",
+                                     [](relay& held) { relay gone = std::move(held); });
+    let_go_while_the_loop_winds_down("assignment", [](relay& held) { held = relay(); });
     return failures == 0 ? 0 : 1;
 }

@@ -70,6 +70,7 @@ ZEST_CASE(source_outliving_a_stopped_loop_cancels_none_of_its_tasks) {
         ZEXPECT(other.run() != 0);
     }
 
+    // ASan builds catch a grant to the loop that went.
     source.cancel();
     ZEXPECT(!request->done());
 }

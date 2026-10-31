@@ -468,8 +468,36 @@ ZEST_CASE(cancel_outside_a_task_frees_the_group_once_done) {
     loop.schedule(start());
     ZEXPECT(loop.run() == 0);
     ZASSERT(group != nullptr);
-    ZEXPECT(!storage.destroyed);
+    ZASSERT(!storage.destroyed);
     group->cancel();
+    ZEXPECT(storage.destroyed);
+    ZEXPECT(storage.untouched());
+}
+
+// So is a cancel of the task joining the group, which reaches the group
+// through the join.
+ZEST_CASE(cancel_of_the_joining_task_frees_the_group_once_done) {
+    SessionStorage storage;
+    auto join = [](task_group<>& group) -> task<> {
+        co_await group.join();
+    };
+    std::optional<task<>> joining;
+    auto start = [&]() -> task<> {
+        auto session = storage.make();
+        session->group.spawn(waits_on(session));
+        session->group.spawn(waits_on(session));
+        joining.emplace(join(session->group));
+        loop.schedule(*joining);
+        co_return;
+    };
+
+    // Returns with the children and the join waiting.
+    loop.schedule(start());
+    ZEXPECT(loop.run() == 0);
+    ZASSERT(joining.has_value());
+    ZASSERT(!storage.destroyed);
+    joining->cancel();
+    ZEXPECT(joining->is_cancelled());
     ZEXPECT(storage.destroyed);
     ZEXPECT(storage.untouched());
 }

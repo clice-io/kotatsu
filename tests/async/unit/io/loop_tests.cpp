@@ -86,8 +86,8 @@ ZEST_CASE(scheduled_temporary_is_destroyed_by_the_loop) {
 }
 
 // A child that ends cancelled ends a root the loop owns at its co_await: the
-// child's end destroys the root's frame, and the child with it, before the
-// await returns. ASan builds catch a read of the freed child there.
+// loop frees the root's frame, and the child with it, once the resumption
+// that ended them is over.
 ZEST_CASE(scheduled_temporary_ended_by_a_cancelled_child_is_destroyed) {
     auto frame_alive = std::make_shared<int>();
     std::weak_ptr<int> watch = frame_alive;
@@ -157,6 +157,7 @@ ZEST_CASE(waits_left_on_primitives_go_off_them_with_the_loop) {
     }
     ZEXPECT(!signal.has_waiters());
     ZEXPECT(!units.has_waiters());
+    // ASan builds catch a grant to the loop that went.
     signal.set();
 
     auto [acquired, released] = run(on_units(), release());

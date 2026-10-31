@@ -298,7 +298,8 @@ ZEST_CASE(waiter_cancelled_while_it_waits_for_the_mutex_passes_the_notification_
 
 // A wait notified and queued on its mutex again when its loop goes is taken
 // off the mutex and has spent the notification, so that the condition
-// variable may go; a cancel ends it once the mutex is free.
+// variable may go, which its destructor asserts in builds with asserts; a
+// cancel ends the wait once the mutex is free.
 ZEST_CASE(wait_notified_when_its_loop_goes_spends_the_notification) {
     mutex m;
     condition_variable cv;
