@@ -284,7 +284,10 @@ ZEST_CASE(prettify_indents) {
 ZEST_CASE(prettify_skips_a_bom) {
     auto pretty = json::prettify("\xEF\xBB\xBF[1]");
     ZASSERT(pretty);
-    ZEXPECT(*pretty == "[\n    1\n]\n");
+    ZEXPECT(*pretty == R"([
+    1
+]
+)");
 }
 
 ZEST_CASE(prettify_invalid_text_fails) {

@@ -66,8 +66,8 @@ template struct steal<val_iter_tag, val_iter_ptr, &simdjson::ondemand::value::it
 
 /// Sets the line and column, from 1, of each location, which holds its byte
 /// offset into text, in one pass over the text for all of them. A column
-/// counts the bytes from the start of its line, the first line's starting
-/// after a byte order mark, which simdjson skips, as an editor shows the text.
+/// counts the bytes from the start of its line, the first line's from after
+/// a byte order mark, which simdjson skips and an editor does not show.
 inline void count_lines(std::string_view text, std::span<rich_error::source_location*> locations) {
     std::ranges::sort(locations, {}, [](const auto* location) { return location->byte_offset; });
     std::size_t line = 1;

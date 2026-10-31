@@ -242,23 +242,15 @@ ZEST_CASE(follow_symlinks_takes_each_target_in_its_own_link_directory) {
 }
 
 ZEST_CASE(follow_symlinks_normalizes_each_target) {
-    // `.` goes; `..` stays, but on Windows.
+    // `.` goes; `..` stays as the cases before keep it.
     test::TempDir dir;
-    std::filesystem::create_directory(dir.path / "a");
     if(!test::linked(
-           create_symlink("./build/compile_commands.json", dir.file("compile_commands.json"))) ||
-       !test::linked(create_symlink("./../b/./file.txt", dir.file("a/up")))) {
+           create_symlink("./build/./compile_commands.json", dir.file("compile_commands.json")))) {
         return;
     }
     std::string followed;
     ZEXPECT(!follow_symlinks(followed, dir.file("compile_commands.json")));
     ZEXPECT(slashed(followed) == slashed(dir.file("build/compile_commands.json")));
-    ZEXPECT(!follow_symlinks(followed, dir.file("a/up")));
-#ifdef _WIN32
-    ZEXPECT(slashed(followed) == slashed(dir.file("b/file.txt")));
-#else
-    ZEXPECT(slashed(followed) == slashed(dir.file("a/../b/file.txt")));
-#endif
 }
 
 ZEST_CASE(follow_symlinks_leaves_links_before_the_last_name) {
@@ -283,13 +275,14 @@ ZEST_CASE(follow_symlinks_follows_a_link_to_a_directory) {
 
 #ifndef _WIN32
 ZEST_CASE(follow_symlinks_reads_a_link_named_with_a_separator_after_it) {
-    // `link/`, through which POSIX would follow `link`, as a target it is.
+    // `link/`, through which POSIX would follow `link`, as the path given and
+    // as a target.
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "real");
     std::filesystem::create_directory_symlink("real", dir.path / "second");
     std::filesystem::create_directory_symlink("second/", dir.path / "first");
     std::string followed;
-    ZEXPECT(!follow_symlinks(followed, dir.file("first")));
+    ZEXPECT(!follow_symlinks(followed, dir.file("first/")));
     ZEXPECT(followed == dir.file("real"));
 }
 #endif

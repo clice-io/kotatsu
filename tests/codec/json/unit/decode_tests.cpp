@@ -144,7 +144,8 @@ ZEST_CASE(bom_before_the_text_is_skipped) {
     ZEXPECT(point->y == 2);
 }
 
-ZEST_CASE(bom_alone_fails_as_empty_text_does) {
+ZEST_CASE(bom_alone_fails) {
+    // As empty text does.
     std::vector<int> out;
     auto status = json::from_string(bom, out);
     ZASSERT(!status);
@@ -169,13 +170,30 @@ ZEST_CASE(second_bom_fails) {
     ZASSERT(!status);
     ZEXPECT(status.error().message ==
             simdjson::error_message(simdjson::error_code::TRAILING_CONTENT));
+    ZEXPECT(!status.error().location);
 }
 
-ZEST_CASE(failure_after_a_bom_is_located_past_it) {
-    // At its byte in the text as given, and at its column as an editor shows the line.
+ZEST_CASE(located_type_mismatch_after_a_bom_fails) {
+    // At its byte in the text as given; only the first line's columns start
+    // past the mark.
+    test::Person out{};
+    auto status = json::from_string(std::string(bom) + "{
+ \"age\": \"x\"}", out);
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == incorrect_type);
+    ZEXPECT(status.error().format_path() == "age");
+    ZASSERT(status.error().location);
+    ZEXPECT(status.error().location->line == 2U);
+    ZEXPECT(status.error().location->column == 9U);
+    ZEXPECT(status.error().location->byte_offset == 13U);
+}
+
+ZEST_CASE(located_type_mismatch_on_the_line_of_a_bom_fails) {
+    // At its column as an editor shows the line, which hides the mark.
     test::Person out{};
     auto status = json::from_string(std::string(bom) + R"({"age": "x"})", out);
     ZASSERT(!status);
+    ZEXPECT(status.error().message == incorrect_type);
     ZASSERT(status.error().location);
     ZEXPECT(status.error().location->line == 1U);
     ZEXPECT(status.error().location->column == 9U);

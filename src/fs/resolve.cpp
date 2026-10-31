@@ -93,9 +93,8 @@ std::error_code follow_symlinks(buffer_ref out, std::string_view path) {
         }
         path::set_file_name(followed, target);
         // Windows resolves a link's `..` by text, and leaves it in a verbatim
-        // path, which then names nothing; POSIX climbs out of the directory
-        // the link's directory leads to, not its parent by text where it is a
-        // symlink.
+        // path, which then names nothing; on POSIX it stays, climbing out of
+        // wherever the link's directory leads.
         path::normalize(followed,
                         path::native_style == path::Style::Windows ? path::DotDot::Fold
                                                                    : path::DotDot::Keep);

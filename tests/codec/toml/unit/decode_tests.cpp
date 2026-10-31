@@ -84,11 +84,10 @@ ZEST_CASE(bom_before_the_text_is_skipped) {
     ZEXPECT(point->y == 2);
 }
 
-ZEST_CASE(bom_alone_reads_as_empty_text_does) {
-    // A Table has no debug form for a failed check to print.
-    auto table = toml::parse_table(bom);
-    ZASSERT(table.has_value());
-    ZEXPECT(table->empty());
+ZEST_CASE(bom_alone_is_the_empty_document) {
+    std::optional<int> number = 42;
+    ZASSERT(toml::from_string(bom, number));
+    ZEXPECT(!number);
 }
 
 ZEST_CASE(bom_after_the_first_line_fails) {
@@ -111,11 +110,14 @@ ZEST_CASE(second_bom_fails) {
     ZEXPECT(status.error().location->column == 1U);
 }
 
-ZEST_CASE(failure_after_a_bom_is_located_past_it) {
-    // toml++ counts the columns of the first line from after the mark.
+ZEST_CASE(type_mismatch_after_a_bom_fails_at_its_value) {
+    // toml++ counts the first line's columns from after the mark.
     test::Person out{};
-    auto status = toml::from_string(std::string(bom) + "age = 'x'\n", out);
+    auto status = toml::from_string(std::string(bom) + "age = 'x'
+", out);
     ZASSERT(!status);
+    ZEXPECT(status.error().message == "invalid type: expected integer, got string");
+    ZEXPECT(status.error().format_path() == "age");
     ZASSERT(status.error().location);
     ZEXPECT(status.error().location->line == 1U);
     ZEXPECT(status.error().location->column == 7U);
