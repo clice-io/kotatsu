@@ -40,7 +40,7 @@ ipc::RequestResult<LengthParams, LengthResult> length_of(std::string text) {
 }  // namespace
 
 int main() {
-    kotatsu::event_loop loop;
+    kotatsu::async::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio transport: {}", transport.error().message);

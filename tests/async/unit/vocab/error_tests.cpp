@@ -7,7 +7,7 @@
 #include "kotatsu/support/outcome.h"
 #include "kotatsu/async/vocab/error.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -60,4 +60,4 @@ ZEST_CASE(unwrap_of_a_result_fails_with_the_errors_message) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

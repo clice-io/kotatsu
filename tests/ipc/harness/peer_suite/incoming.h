@@ -59,9 +59,9 @@ void peer_incoming(const PeerKit<A>& kit) {
     // Each handler waits for its release; the remote reads the list before
     // and between the answers.
     kit.add("each_request_is_listed_until_it_is_answered", [](Fixture& f) {
-        event both_started;
-        event release_add;
-        event release_custom;
+        async::event both_started;
+        async::event release_add;
+        async::event release_custom;
         int started = 0;
         auto start = [&] {
             started += 1;
@@ -82,7 +82,7 @@ void peer_incoming(const PeerKit<A>& kit) {
                           });
         Listed both;
         Listed after_one;
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
             f.remote.send(request<A>(2, "custom/add", AddParams{.a = 3, .b = 4}));
             co_await both_started.wait();
@@ -118,19 +118,19 @@ void peer_incoming(const PeerKit<A>& kit) {
     // the peer to go quiet would, then has the peer send a notification: the
     // answer comes first.
     kit.add("request_off_the_list_is_answered_ahead_of_what_is_sent_after", [](Fixture& f) {
-        event started;
-        event release;
+        async::event started;
+        async::event release;
         f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
             started.set();
             co_await release.wait();
             co_return AddResult{.sum = params.a + params.b};
         });
-        auto remote = [&]() -> task<ipc::Result<void>> {
+        auto remote = [&]() -> async::task<ipc::Result<void>> {
             f.remote.send(request<A>(1, "test/add", AddParams{.a = 1, .b = 2}));
             co_await started.wait();
             release.set();
             while(!f.peer.incoming_requests().empty()) {
-                co_await yield(f.loop);
+                co_await async::yield(f.loop);
             }
             auto sent = f.peer.send_notification(NoteParams{.text = "after"});
             co_await f.next();
@@ -152,7 +152,7 @@ void peer_incoming(const PeerKit<A>& kit) {
     // The handler leaves a callback registered on its request's token, which
     // runs as the request's cancellation source goes, once it is answered.
     kit.add("callback_left_on_the_token_runs_after_the_answer_is_queued", [](Fixture& f) {
-        cancellation_callback left;
+        async::cancellation_callback left;
         bool listed_in_callback = true;
         bool sent = false;
         f.peer.on_request(
@@ -200,8 +200,8 @@ void peer_incoming(const PeerKit<A>& kit) {
     // The duplicate of request 1 names another method, so that it would show
     // if it took the first one's place in the list.
     kit.add("request_answered_at_once_with_an_error_is_never_listed", [](Fixture& f) {
-        event started;
-        event never;
+        async::event started;
+        async::event never;
         f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
             co_await never.wait();
@@ -212,7 +212,7 @@ void peer_incoming(const PeerKit<A>& kit) {
                               co_return AddResult{};
                           });
         Listed after_errors;
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{}));
             co_await started.wait();
             f.remote.send(request<A>(1, "test/ping", EmptyParams{}));
@@ -251,7 +251,7 @@ void peer_incoming(const PeerKit<A>& kit) {
                     .or_fail();
             });
         Listed after_cancel;
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(31, "test/add", AddParams{.a = 4, .b = 5}));
             co_await f.next();
             f.remote.send(notification<A>("$/cancelRequest", CancelRequestParams{.id = 31}));
@@ -280,8 +280,8 @@ void peer_incoming(const PeerKit<A>& kit) {
     });
 
     kit.add("close_empties_incoming_requests", [](Fixture& f) {
-        event started;
-        event never;
+        async::event started;
+        async::event never;
         f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
             co_await never.wait();
@@ -289,7 +289,7 @@ void peer_incoming(const PeerKit<A>& kit) {
         });
         Listed before_close;
         bool empty_after_close = false;
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(1, "test/add", AddParams{}));
             co_await started.wait();
             before_close = listed_by(f.peer);
@@ -311,8 +311,8 @@ void peer_incoming(const PeerKit<A>& kit) {
     // The peer's own request fails to be written, which fails the output; the
     // asker resumes once the peer is done with the failure.
     kit.add("write_failure_empties_incoming_requests", [](Fixture& f) {
-        event started;
-        event never;
+        async::event started;
+        async::event never;
         f.peer.on_request([&](Context&, const AddParams&) -> ipc::RequestResult<AddParams> {
             started.set();
             co_await never.wait();
@@ -322,7 +322,7 @@ void peer_incoming(const PeerKit<A>& kit) {
         f.remote.send(request<A>(1, "test/add", AddParams{}));
         Listed before_failure;
         bool empty_after_failure = false;
-        auto ask = [&]() -> task<> {
+        auto ask = [&]() -> async::task<> {
             co_await started.wait();
             before_failure = listed_by(f.peer);
             co_await f.peer.send_request(AddParams{});

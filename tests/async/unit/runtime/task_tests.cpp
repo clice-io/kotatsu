@@ -15,7 +15,7 @@
 #include "kotatsu/support/config.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -654,4 +654,4 @@ ZEST_CASE(co_invoke_ends_cancelled_with_the_task) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

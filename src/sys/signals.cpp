@@ -20,7 +20,7 @@ constinit std::mutex spawning;
 void stop_auto_reaping() noexcept {
     // Two spawns that both found SIGCHLD ignored would both set its default,
     // one over a handler set meanwhile for the other's child, as
-    // kotatsu::process sets one where it has no pidfd. A child forked
+    // kotatsu::async::process sets one where it has no pidfd. A child forked
     // meanwhile, which may find it held, never takes it.
     constinit static std::mutex reaping;
     std::lock_guard lock(reaping);

@@ -4,7 +4,7 @@
 #include <span>
 #include <vector>
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 /// The bytes a stream has read and its reader has not consumed yet, in a
 /// fixed ring allocated by the first read.
@@ -41,4 +41,4 @@ private:
     std::size_t size = 0;
 };
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

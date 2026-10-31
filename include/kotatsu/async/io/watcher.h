@@ -8,7 +8,7 @@
 #include "kotatsu/async/vocab/error.h"
 #include "kotatsu/async/vocab/owned.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 /// What timer, signal, idle, prepare and check share: a libuv watcher that
 /// fires once started, and the one task waiting for it.
@@ -152,4 +152,4 @@ task<T, E, cancellation> with_timeout(task<T, E, C> inner_task,
     return detail::run_until(std::move(inner_task), detail::expire(timeout, loop));
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

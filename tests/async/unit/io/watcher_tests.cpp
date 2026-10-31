@@ -10,7 +10,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -453,4 +453,4 @@ ZEST_CASE(inert_watcher_fails) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

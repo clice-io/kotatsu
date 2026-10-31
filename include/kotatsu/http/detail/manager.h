@@ -41,20 +41,21 @@ public:
     /// The manager of `loop`, made by the first call. Fails with
     /// error_kind::aborted once the loop is being destroyed, and with a curl
     /// error when curl cannot be set up.
-    static std::expected<std::reference_wrapper<manager>, error> try_for_loop(event_loop& loop);
+    static std::expected<std::reference_wrapper<manager>, error>
+        try_for_loop(async::event_loop& loop);
 
     /// try_for_loop(), which must succeed: a failure aborts the process.
-    static manager& for_loop(event_loop& loop);
+    static manager& for_loop(async::event_loop& loop);
 
     /// Destroys the manager of `loop`, if it has one: its requests in flight
     /// end with error_kind::aborted on a later turn of the loop, and the next
     /// request makes a new manager, with new curl shares.
-    static void unregister_loop(event_loop& loop);
+    static void unregister_loop(async::event_loop& loop);
 
     /// The requests curl is driving.
     std::size_t pending_requests() const noexcept;
 
-    event_loop& loop() const noexcept {
+    async::event_loop& loop() const noexcept {
         return *bound_loop;
     }
 
@@ -69,7 +70,7 @@ private:
     struct timer_watch;
     struct socket_watch;
 
-    manager(event_loop& loop, curl::multi_handle multi) noexcept;
+    manager(async::event_loop& loop, curl::multi_handle multi) noexcept;
 
     /// The curl share of the requests of `key` on this loop, made by the
     /// first call.
@@ -100,7 +101,7 @@ private:
 
     static int on_timeout(CURLM* multi, long timeout_ms, void* self) noexcept;
 
-    event_loop* bound_loop;
+    async::event_loop* bound_loop;
     /// The curl share of each client that sent requests here, found by its
     /// key's control block. Declared before the multi handle, so that the
     /// shares its transfers used outlive it.
@@ -109,8 +110,8 @@ private:
              std::owner_less<>>
         jars;
     curl::multi_handle multi;
-    kotatsu::detail::unique_handle<timer_watch> timer;
-    std::unordered_map<curl_socket_t, kotatsu::detail::unique_handle<socket_watch>> sockets;
+    kotatsu::async::detail::unique_handle<timer_watch> timer;
+    std::unordered_map<curl_socket_t, kotatsu::async::detail::unique_handle<socket_watch>> sockets;
     /// The transfers it tracks, linked through transfer::prev and next.
     detail::transfer* transfers = nullptr;
 };

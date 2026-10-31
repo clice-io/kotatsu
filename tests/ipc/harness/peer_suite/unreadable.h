@@ -49,7 +49,7 @@ void peer_unreadable(const PeerKit<A>& kit) {
     });
 
     kit.add("oversized_response_fails_only_its_request", [](Fixture& f) {
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             co_await f.next();
             f.remote.send_unreadable(too_large(response<A>(1, long_note())));
@@ -71,7 +71,7 @@ void peer_unreadable(const PeerKit<A>& kit) {
     // An error response whose id is null answers none of the peer's
     // requests, as one read whole would not.
     kit.add("oversized_error_response_without_an_id_fails_no_request", [](Fixture& f) {
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send_unreadable(too_large(
                 A::error_response(std::nullopt, ipc::Error(ErrorCode::ParseError, "unreadable"))));
@@ -87,7 +87,7 @@ void peer_unreadable(const PeerKit<A>& kit) {
     });
 
     kit.add("oversized_notification_is_dropped", [](Fixture& f) {
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send_unreadable(too_large(notification<A>("test/note", long_note())));
             f.remote.send(response<A>(1, AddResult{.sum = 1}));
@@ -106,7 +106,7 @@ void peer_unreadable(const PeerKit<A>& kit) {
     kit.add("oversized_message_without_an_id_fails_every_pending_request", [](Fixture& f) {
         std::vector<std::string> notes;
         f.peer.on_notification([&](const NoteParams& params) { notes.push_back(params.text); });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             co_await f.next();
             f.remote.send_unreadable(ipc::ReadError{
@@ -134,7 +134,7 @@ void peer_unreadable(const PeerKit<A>& kit) {
     // A connection whose frames cannot be followed is as good as gone:
     // pending requests fail with ConnectionClosed, as when it closes.
     kit.add("malformed_frame_ends_the_input", [](Fixture& f) {
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send_unreadable(ipc::ReadError{
                 .kind = ipc::ReadError::Kind::Malformed,

@@ -40,8 +40,8 @@ public:
     client& operator=(client&&) noexcept;
 
     /// A copy of this client bound to `loop`, whose requests run there.
-    bound_client on(event_loop& loop = event_loop::current()) & noexcept;
-    bound_client on(event_loop& loop = event_loop::current()) && noexcept;
+    bound_client on(async::event_loop& loop = async::event_loop::current()) & noexcept;
+    bound_client on(async::event_loop& loop = async::event_loop::current()) && noexcept;
 
 private:
     friend class bound_client;

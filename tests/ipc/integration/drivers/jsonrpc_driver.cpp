@@ -69,50 +69,52 @@ struct CallOutcome {
 struct CloseOutputParams {};
 
 void serve(ipc::JSONPeer& peer) {
-    peer.on_request("test/echo",
-                    [](Context&, const Value& params) -> task<Value, Error> { co_return params; });
+    peer.on_request("test/echo", [](Context&, const Value& params) -> async::task<Value, Error> {
+        co_return params;
+    });
 
     peer.on_request("test/sleep",
-                    [](Context&, const SleepParams& params) -> task<std::nullptr_t, Error> {
-                        co_await sleep(std::chrono::milliseconds(params.ms));
+                    [](Context&, const SleepParams& params) -> async::task<std::nullptr_t, Error> {
+                        co_await async::sleep(std::chrono::milliseconds(params.ms));
                         co_return nullptr;
                     });
 
     peer.on_request("test/fail",
-                    [](Context&, const FailParams& params) -> task<std::nullptr_t, Error> {
+                    [](Context&, const FailParams& params) -> async::task<std::nullptr_t, Error> {
                         co_return outcome_error(Error(params.code, params.message));
                     });
 
     peer.on_request(
         "test/notify",
-        [](Context& context, const NotifyParams& params) -> task<std::nullptr_t, Error> {
+        [](Context& context, const NotifyParams& params) -> async::task<std::nullptr_t, Error> {
             for(std::uint32_t i = 0; i < params.count; ++i) {
-                co_await or_fail(context->send_notification(params.method, params.params));
+                co_await async::or_fail(context->send_notification(params.method, params.params));
             }
             co_return nullptr;
         });
 
-    peer.on_request("test/call",
-                    [](Context& context, const CallParams& params) -> task<CallOutcome, Error> {
-                        ipc::request_options options;
-                        if(params.timeout_ms) {
-                            options.timeout = std::chrono::milliseconds(*params.timeout_ms);
-                        }
-                        auto result = co_await context->send_request<Value>(params.method,
-                                                                            params.params,
-                                                                            std::move(options));
-                        if(result.has_error()) {
-                            co_return CallOutcome{.result = std::nullopt,
-                                                  .error = std::move(result).error()};
-                        }
-                        co_return CallOutcome{.result = std::move(*result), .error = std::nullopt};
-                    });
+    peer.on_request(
+        "test/call",
+        [](Context& context, const CallParams& params) -> async::task<CallOutcome, Error> {
+            ipc::request_options options;
+            if(params.timeout_ms) {
+                options.timeout = std::chrono::milliseconds(*params.timeout_ms);
+            }
+            auto result = co_await context->send_request<Value>(params.method,
+                                                                params.params,
+                                                                std::move(options));
+            if(result.has_error()) {
+                co_return CallOutcome{.result = std::nullopt, .error = std::move(result).error()};
+            }
+            co_return CallOutcome{.result = std::move(*result), .error = std::nullopt};
+        });
 
-    peer.on_request("test/closeOutput",
-                    [](Context& context, const CloseOutputParams&) -> task<std::nullptr_t, Error> {
-                        context->close_output();
-                        co_return nullptr;
-                    });
+    peer.on_request(
+        "test/closeOutput",
+        [](Context& context, const CloseOutputParams&) -> async::task<std::nullptr_t, Error> {
+            context->close_output();
+            co_return nullptr;
+        });
 }
 
 }  // namespace
@@ -125,7 +127,7 @@ int main(int argc, char** argv) {
         max_payload = std::stoull(argv[1] + option.size());
     }
 
-    kotatsu::event_loop loop;
+    kotatsu::async::event_loop loop;
     auto transport = kotatsu::ipc::StreamTransport::open_stdio(loop, max_payload);
     if(!transport) {
         std::println(stderr, "[error] open_stdio: {}", transport.error().message);

@@ -19,21 +19,21 @@ RecordingTransport::~RecordingTransport() {
     }
 }
 
-task<std::string, ReadError> RecordingTransport::read_message() {
+async::task<std::string, ReadError> RecordingTransport::read_message() {
     auto message = co_await inner->read_message().or_fail();
     write_record(message);
     co_return message;
 }
 
-task<void, Error> RecordingTransport::write_message(std::string_view payload) {
+async::task<void, Error> RecordingTransport::write_message(std::string_view payload) {
     co_await inner->write_message(payload).or_fail();
 }
 
-task<void, Error> RecordingTransport::write_messages(std::span<const std::string> payloads) {
+async::task<void, Error> RecordingTransport::write_messages(std::span<const std::string> payloads) {
     co_await inner->write_messages(payloads).or_fail();
 }
 
-task<void, Error> RecordingTransport::close_output() {
+async::task<void, Error> RecordingTransport::close_output() {
     co_await inner->close_output().or_fail();
 }
 

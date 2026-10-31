@@ -4,7 +4,7 @@
 
 #include "awaiter.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -44,4 +44,4 @@ task<> detail::run_on_pool(function<void()> work, function<void()> on_cancel, ev
     co_await work_op(loop.native_handle(), std::move(work), std::move(on_cancel));
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

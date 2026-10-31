@@ -7,7 +7,7 @@
 
 #include "kotatsu/async/runtime/walk.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 static std::string_view async_kind_name(async_node::NodeKind k) {
     switch(k) {
@@ -186,4 +186,4 @@ std::string dump_dot(const async_node& node) {
     return std::move(emitter.out);
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

@@ -4,7 +4,7 @@
 #include "compile_graph.h"
 #include "kotatsu/async/async.h"
 
-using namespace kotatsu;
+using namespace kotatsu::async;
 using namespace std::chrono_literals;
 
 static CompileGraph build_graph() {

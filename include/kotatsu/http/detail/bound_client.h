@@ -16,7 +16,7 @@ namespace kotatsu::http {
 /// used from one thread at a time.
 class bound_client {
 public:
-    bound_client(client owner, event_loop& loop) noexcept;
+    bound_client(client owner, async::event_loop& loop) noexcept;
 
     /// A request with `method` sent as written, except that GET, HEAD and
     /// POST match in any case and are sent in upper case.
@@ -28,13 +28,13 @@ public:
     http::request del(std::string url) const noexcept;
     http::request head(std::string url) const noexcept;
 
-    event_loop& loop() const noexcept {
+    async::event_loop& loop() const noexcept {
         return *dispatch_loop;
     }
 
 private:
     client owner;
-    event_loop* dispatch_loop;
+    async::event_loop* dispatch_loop;
 };
 
 }  // namespace kotatsu::http

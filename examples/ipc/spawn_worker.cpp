@@ -31,8 +31,8 @@ struct WorkerLog {
     std::string text;
 };
 
-kotatsu::task<BuildResult, ipc::Error> handle_build_request(ipc::JSONPeer::RequestContext& context,
-                                                            const BuildParams& params) {
+kotatsu::async::task<BuildResult, ipc::Error>
+    handle_build_request(ipc::JSONPeer::RequestContext& context, const BuildParams& params) {
     auto log_status =
         context->send_notification("worker/log",
                                    WorkerLog{
@@ -63,10 +63,10 @@ struct WorkerOutcome {
     std::string error;
 };
 
-kotatsu::task<void> run_parent_session(ipc::JSONPeer& peer,
-                                       kotatsu::process child,
-                                       WorkerPlan plan,
-                                       WorkerOutcome& outcome) {
+kotatsu::async::task<void> run_parent_session(ipc::JSONPeer& peer,
+                                              kotatsu::async::process child,
+                                              WorkerPlan plan,
+                                              WorkerOutcome& outcome) {
     outcome.worker_name = plan.worker_name;
 
     auto build_result =
@@ -110,7 +110,7 @@ kotatsu::task<void> run_parent_session(ipc::JSONPeer& peer,
 }
 
 int run_worker() {
-    kotatsu::event_loop loop;
+    kotatsu::async::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio transport: {}", transport.error().message);
@@ -126,7 +126,7 @@ int run_worker() {
 }
 
 int run_parent(std::string self_path) {
-    kotatsu::event_loop loop;
+    kotatsu::async::event_loop loop;
 
     const std::vector<WorkerPlan> plans = {
         {
@@ -154,16 +154,16 @@ int run_parent(std::string self_path) {
     peers.reserve(plans.size());
 
     for(std::size_t index = 0; index < plans.size(); ++index) {
-        kotatsu::process::options opts;
+        kotatsu::async::process::options opts;
         opts.program = self_path;
         opts.args = {"--worker"};
         opts.streams = {
-            kotatsu::process::stdio::pipe(),
-            kotatsu::process::stdio::pipe(),
-            kotatsu::process::stdio::inherit(),
+            kotatsu::async::process::stdio::pipe(),
+            kotatsu::async::process::stdio::pipe(),
+            kotatsu::async::process::stdio::inherit(),
         };
 
-        auto spawned = kotatsu::process::spawn(opts, loop);
+        auto spawned = kotatsu::async::process::spawn(opts, loop);
         if(!spawned) {
             std::println(stderr,
                          "failed to spawn {}: {}",

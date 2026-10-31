@@ -184,8 +184,8 @@ ZEST_SUITE(fixture_loop, LoopFixture) {
 
 ZEST_CASE(outlasts_the_watchdog) {
     watchdog = std::chrono::milliseconds(50);
-    event never;
-    auto waits = [&]() -> task<> {
+    async::event never;
+    auto waits = [&]() -> async::task<> {
         co_await never.wait();
     };
     auto [waited] = run(waits());
@@ -194,8 +194,8 @@ ZEST_CASE(outlasts_the_watchdog) {
 
 // A task stops the loop under run(), then waits for ever.
 ZEST_CASE(stopped_under_run) {
-    event never;
-    auto stops = [&]() -> task<> {
+    async::event never;
+    auto stops = [&]() -> async::task<> {
         loop.stop();
         co_await never.wait();
     };
@@ -209,8 +209,8 @@ ZEST_CASE(stopped_under_run) {
 // take the work: work still queued would be cancelled.
 ZEST_CASE(outlives_its_cancel) {
     watchdog = std::chrono::milliseconds(500);
-    auto stuck = []() -> task<> {
-        co_await queue([] { std::this_thread::sleep_for(std::chrono::seconds(10)); });
+    auto stuck = []() -> async::task<> {
+        co_await async::queue([] { std::this_thread::sleep_for(std::chrono::seconds(10)); });
     };
     run(stuck());
     std::println("printed after the watchdog ended the worker");
@@ -296,7 +296,7 @@ ZEST_CASE(passes_after) {
 ZEST_SUITE(fixture_fatal_loop, LoopFixture) {
 
 ZEST_CASE(in_coroutine) {
-    auto fails = []() -> task<int> {
+    auto fails = []() -> async::task<int> {
         ZASSERT(1 == 2);
         co_return 1;
     };

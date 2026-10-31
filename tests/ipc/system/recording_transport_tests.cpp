@@ -65,7 +65,7 @@ ZEST_CASE(read_messages_are_recorded_and_passed_on) {
         remote.send(message);
     }
     remote.end_input();
-    auto read_all = [&]() -> task<std::vector<std::string>> {
+    auto read_all = [&]() -> async::task<std::vector<std::string>> {
         std::vector<std::string> messages;
         while(auto message = co_await transport.read_message()) {
             messages.push_back(std::move(*message));

@@ -5,7 +5,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -249,4 +249,4 @@ ZEST_CASE(scoped_lock_guard_unlocks_when_its_task_is_cancelled) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

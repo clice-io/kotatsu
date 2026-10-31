@@ -10,7 +10,7 @@ using namespace kotatsu;
 
 namespace {
 
-task<void, http::error> download_avatar(event_loop& loop) {
+kotatsu::async::task<void, http::error> download_avatar(kotatsu::async::event_loop& loop) {
     http::client client;
 
     auto response = co_await client.on(loop)
@@ -33,7 +33,7 @@ task<void, http::error> download_avatar(event_loop& loop) {
 }  // namespace
 
 int main() {
-    event_loop loop;
+    kotatsu::async::event_loop loop;
     auto root = download_avatar(loop);
     loop.schedule(root);
     loop.run();

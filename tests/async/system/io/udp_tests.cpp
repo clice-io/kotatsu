@@ -19,7 +19,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -672,4 +672,4 @@ ZEST_CASE(open_wraps_a_bound_socket) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

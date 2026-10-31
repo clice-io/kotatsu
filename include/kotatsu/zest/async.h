@@ -20,11 +20,12 @@ namespace kotatsu::zest {
 
 /// What run() reports for a task: its value or error, or that it was cancelled.
 template <typename Task>
-using run_result_t = outcome<typename Task::value_type, typename Task::error_type, cancellation>;
+using run_result_t =
+    outcome<typename Task::value_type, typename Task::error_type, async::cancellation>;
 
 /// Owns the event loop a test runs its tasks on.
 struct LoopFixture {
-    event_loop loop;
+    async::event_loop loop;
 
     /// How long run() waits for its tasks. Past it the test fails and the
     /// tasks still running are cancelled, so a hang ends the test, not the
@@ -53,11 +54,11 @@ struct LoopFixture {
             std::apply([](auto&... frame) { (frame.cancel(), ...); }, frames);
         };
         auto trackers = [&]<std::size_t... I>(std::index_sequence<I...>) {
-            return std::array<task<>, sizeof...(Tasks)>{
+            return std::array<async::task<>, sizeof...(Tasks)>{
                 track(std::get<I>(frames), std::get<I>(results), remaining)...};
         }(std::index_sequence_for<Tasks...>{});
-        auto watch = [&]() -> task<> {
-            co_await sleep(watchdog, loop);
+        auto watch = [&]() -> async::task<> {
+            co_await async::sleep(watchdog, loop);
             // The loop may fire the timer in the turn the last task finished.
             if(remaining == 0) {
                 co_return;
@@ -66,7 +67,7 @@ struct LoopFixture {
             cancel_running();
             // Still running a period later: a cancellation that cannot
             // complete, such as work stuck on a pool thread, ends the process.
-            co_await sleep(watchdog, loop);
+            co_await async::sleep(watchdog, loop);
             ZEST_CONTEXT("tasks still running {} after the watchdog cancelled them", watchdog);
             ZASSERT(remaining == 0U);
         };
@@ -110,32 +111,33 @@ struct LoopFixture {
 private:
     /// The task run() awaits for `Task`: one that catches its cancellation.
     template <typename Task>
-    using caught_t = task<typename Task::value_type, typename Task::error_type, cancellation>;
+    using caught_t =
+        async::task<typename Task::value_type, typename Task::error_type, async::cancellation>;
 
     template <typename T, typename E, typename C>
-    static caught_t<task<T, E, C>> catching(task<T, E, C>&& owned) {
+    static caught_t<async::task<T, E, C>> catching(async::task<T, E, C>&& owned) {
         return std::move(owned).catch_cancel();
     }
 
     /// A task the test keeps is awaited through one that ends as it does.
     template <typename T, typename E>
-    static caught_t<task<T, E>> catching(task<T, E>& kept) {
+    static caught_t<async::task<T, E>> catching(async::task<T, E>& kept) {
         return await_kept(kept).catch_cancel();
     }
 
     template <typename T, typename E>
-    static task<T, E> await_kept(task<T, E>& kept) {
+    static async::task<T, E> await_kept(async::task<T, E>& kept) {
         if constexpr(!std::is_void_v<T>) {
             co_return co_await kept;
         } else if constexpr(!std::is_void_v<E>) {
-            co_await or_fail(co_await kept);
+            co_await async::or_fail(co_await kept);
         } else {
             co_await kept;
         }
     }
 
     template <typename Frame, typename Result>
-    task<> track(Frame& frame, std::optional<Result>& result, std::size_t& remaining) {
+    async::task<> track(Frame& frame, std::optional<Result>& result, std::size_t& remaining) {
         // Counts the task off on every way out, a throw included, and stops
         // the loop after the last one.
         ScopeExit countdown([this, &remaining] {

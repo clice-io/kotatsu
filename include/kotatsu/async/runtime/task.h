@@ -16,7 +16,7 @@
 #include "kotatsu/async/runtime/node.h"
 #include "kotatsu/async/vocab/error.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 template <typename T = void, typename E = void, typename C = void>
 class task;
@@ -576,4 +576,4 @@ detail::call_result_t<Fn&, Args&...> co_invoke(Fn fn, Args... args) {
     }
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

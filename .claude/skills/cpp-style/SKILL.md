@@ -119,7 +119,7 @@ process(result.value());
 
 ## Concurrency & Async
 
-- Async code is coroutine-style (`kotatsu::task`, `co_await`) — an
+- Async code is coroutine-style (`kotatsu::async::task`, `co_await`) — an
   operation that produces a single asynchronous result returns an
   awaitable, never takes a completion callback; completion callbacks
   appear only at the libuv boundary inside the implementation.

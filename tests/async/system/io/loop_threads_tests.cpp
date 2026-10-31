@@ -10,7 +10,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -168,4 +168,4 @@ ZEST_CASE(callback_sent_while_the_relay_goes_is_delivered) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

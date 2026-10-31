@@ -34,7 +34,7 @@ void watch_failing(PeerFixture<A>& f, std::optional<ipc::ConversationEnd>& seen)
 
 /// Sends test/add, which is to fail, and reports how.
 template <CodecAdapter A>
-task<EndedRequest> failing_request(PeerFixture<A>& f) {
+async::task<EndedRequest> failing_request(PeerFixture<A>& f) {
     auto asked = co_await f.peer.send_request(AddParams{});
     co_return EndedRequest{
         .error = asked.has_error() ? asked.error() : ipc::Error("answered"),
@@ -52,7 +52,7 @@ void peer_ending(const PeerKit<A>& kit) {
     kit.add("ended_is_none_until_the_conversation_ends", [](Fixture& f) {
         ZEXPECT(!f.peer.ended().has_value());
         std::optional<ipc::ConversationEnd> during;
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             during = f.peer.ended();
             f.remote.end_input();
@@ -69,7 +69,7 @@ void peer_ending(const PeerKit<A>& kit) {
     kit.add("end_of_input_is_reported_with_what_the_transport_said", [](Fixture& f) {
         std::optional<ipc::ConversationEnd> seen;
         watch_failing(f, seen);
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.end_input();
         };
@@ -87,7 +87,7 @@ void peer_ending(const PeerKit<A>& kit) {
     });
 
     kit.add("malformed_frame_is_reported_malformed", [](Fixture& f) {
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send_unreadable(ipc::ReadError{
                 .kind = ipc::ReadError::Kind::Malformed,
@@ -127,7 +127,7 @@ void peer_ending(const PeerKit<A>& kit) {
 
     kit.add("failed_close_output_is_reported_write_failed", [](Fixture& f) {
         f.remote.fail_close_output();
-        auto closer = [&]() -> task<> {
+        auto closer = [&]() -> async::task<> {
             co_await f.next();
             f.peer.close_output();
         };
@@ -143,7 +143,7 @@ void peer_ending(const PeerKit<A>& kit) {
     // Its own half-close leaves the answers to come.
     kit.add("close_output_leaves_the_conversation_going", [](Fixture& f) {
         std::optional<ipc::ConversationEnd> after;
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.peer.close_output();
             // Nothing more: the output has ended.
@@ -165,7 +165,7 @@ void peer_ending(const PeerKit<A>& kit) {
     kit.add("close_is_reported_shut_down", [](Fixture& f) {
         std::optional<ipc::ConversationEnd> seen;
         watch_failing(f, seen);
-        auto closer = [&]() -> task<> {
+        auto closer = [&]() -> async::task<> {
             co_await f.next();
             f.peer.close();
         };
@@ -184,14 +184,14 @@ void peer_ending(const PeerKit<A>& kit) {
     });
 
     kit.add("cancelled_run_is_reported_shut_down", [](Fixture& f) {
-        cancellation_source source;
-        auto remote = [&]() -> task<> {
+        async::cancellation_source source;
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             source.cancel();
         };
 
         auto [ran, failed, scripted] =
-            f.run(with_token(f.peer.run(), source.token()), failing_request(f), remote());
+            f.run(async::with_token(f.peer.run(), source.token()), failing_request(f), remote());
         ZEXPECT(ran.is_cancelled());
         ZASSERT(failed.has_value());
         ZEXPECT(code_of(failed->error) == ErrorCode::ConnectionClosed);
@@ -216,7 +216,7 @@ void peer_ending(const PeerKit<A>& kit) {
     // answers the message with still goes out.
     kit.add("garbage_ends_the_conversation_under_end", [](Fixture& f) {
         f.peer.set_violation_policy(ipc::ViolationPolicy::End);
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(std::string(A::garbage));
             f.remote.send(response<A>(1, AddResult{.sum = 1}));
@@ -242,7 +242,7 @@ void peer_ending(const PeerKit<A>& kit) {
 
     kit.add("error_response_without_an_id_ends_the_conversation_under_end", [](Fixture& f) {
         f.peer.set_violation_policy(ipc::ViolationPolicy::End);
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(
                 A::error_response(std::nullopt, ipc::Error(ErrorCode::ParseError, "unreadable")));
@@ -259,7 +259,7 @@ void peer_ending(const PeerKit<A>& kit) {
 
     kit.add("unhandled_notification_ends_the_conversation_under_end", [](Fixture& f) {
         f.peer.set_violation_policy(ipc::ViolationPolicy::End);
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(notification<A>("test/note", NoteParams{.text = "hello"}));
         };
@@ -277,7 +277,7 @@ void peer_ending(const PeerKit<A>& kit) {
                 f.peer.set_violation_policy(ipc::ViolationPolicy::End);
                 bool called = false;
                 f.peer.on_notification([&](const NoteParams&) { called = true; });
-                auto remote = [&]() -> task<> {
+                auto remote = [&]() -> async::task<> {
                     co_await f.next();
                     f.remote.send(A::notification_raw("test/note", A::not_a_value));
                 };
@@ -297,12 +297,12 @@ void peer_ending(const PeerKit<A>& kit) {
     // answers, and run() returns once it has.
     kit.add("handler_running_at_a_violation_still_answers_under_end", [](Fixture& f) {
         f.peer.set_violation_policy(ipc::ViolationPolicy::End);
-        event release;
+        async::event release;
         f.peer.on_request([&](Context&, const AddParams& params) -> ipc::RequestResult<AddParams> {
             co_await release.wait();
             co_return AddResult{.sum = params.a + params.b};
         });
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             f.remote.send(request<A>(3, "test/add", AddParams{.a = 1, .b = 2}));
             f.remote.send(std::string(A::garbage));
             co_await f.next();
@@ -326,15 +326,15 @@ void peer_ending(const PeerKit<A>& kit) {
     kit.add("answered_and_late_messages_leave_the_conversation_going_under_end", [](Fixture& f) {
         f.peer.set_violation_policy(ipc::ViolationPolicy::End);
         f.serve_add();
-        event answered;
+        async::event answered;
         std::optional<ipc::ConversationEnd> ended;
-        auto ask = [&]() -> task<ipc::Result<AddResult>> {
+        auto ask = [&]() -> async::task<ipc::Result<AddResult>> {
             auto asked = co_await f.peer.send_request(AddParams{});
             ended = f.peer.ended();
             answered.set();
             co_return asked;
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(request<A>(5, "test/unknown", AddParams{}));
             f.remote.send(A::request_raw(6, "test/add", A::not_a_value));
@@ -361,15 +361,15 @@ void peer_ending(const PeerKit<A>& kit) {
     // The size limit is this side's, which the remote did not break.
     kit.add("oversized_notification_leaves_the_conversation_going_under_end", [](Fixture& f) {
         f.peer.set_violation_policy(ipc::ViolationPolicy::End);
-        event answered;
+        async::event answered;
         std::optional<ipc::ConversationEnd> ended;
-        auto ask = [&]() -> task<ipc::Result<AddResult>> {
+        auto ask = [&]() -> async::task<ipc::Result<AddResult>> {
             auto asked = co_await f.peer.send_request(AddParams{});
             ended = f.peer.ended();
             answered.set();
             co_return asked;
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             auto note = notification<A>("test/note", NoteParams{.text = std::string(64, 'x')});
             f.remote.send_unreadable(ipc::ReadError{
@@ -398,15 +398,15 @@ void peer_ending(const PeerKit<A>& kit) {
                 f.peer.set_violation_policy(ipc::ViolationPolicy::End);
                 f.peer.on_notification(
                     [](const NoteParams&) { throw std::runtime_error("handler failed"); });
-                event answered;
+                async::event answered;
                 std::optional<ipc::ConversationEnd> ended;
-                auto ask = [&]() -> task<ipc::Result<AddResult>> {
+                auto ask = [&]() -> async::task<ipc::Result<AddResult>> {
                     auto asked = co_await f.peer.send_request(AddParams{});
                     ended = f.peer.ended();
                     answered.set();
                     co_return asked;
                 };
-                auto remote = [&]() -> task<> {
+                auto remote = [&]() -> async::task<> {
                     co_await f.next();
                     f.remote.send(notification<A>("test/note", NoteParams{}));
                     f.remote.send(response<A>(1, AddResult{.sum = 3}));
@@ -425,15 +425,15 @@ void peer_ending(const PeerKit<A>& kit) {
 
     // What JSON-RPC asks of a server: answer, and read on.
     kit.add("violations_leave_the_conversation_going_by_default", [](Fixture& f) {
-        event answered;
+        async::event answered;
         std::optional<ipc::ConversationEnd> ended;
-        auto ask = [&]() -> task<ipc::Result<AddResult>> {
+        auto ask = [&]() -> async::task<ipc::Result<AddResult>> {
             auto asked = co_await f.peer.send_request(AddParams{});
             ended = f.peer.ended();
             answered.set();
             co_return asked;
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(std::string(A::garbage));
             f.remote.send(A::error_response(std::nullopt, ipc::Error("unreadable")));

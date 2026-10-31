@@ -9,7 +9,7 @@
 
 #include "kotatsu/async/runtime/node.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 class event_loop;
 class mutex;
@@ -414,4 +414,4 @@ public:
     }
 };
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

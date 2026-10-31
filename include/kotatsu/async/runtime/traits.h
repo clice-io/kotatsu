@@ -11,7 +11,7 @@
 #include "kotatsu/async/runtime/awaitable.h"
 #include "kotatsu/async/runtime/task.h"
 
-namespace kotatsu::detail {
+namespace kotatsu::async::detail {
 
 template <typename T>
 constexpr inline bool is_task_v = is_specialization_of<task, T>;
@@ -87,4 +87,4 @@ concept async_range =
 template <typename Range>
 using normalized_range_task_t = normalized_task_t<std::ranges::range_value_t<Range>>;
 
-}  // namespace kotatsu::detail
+}  // namespace kotatsu::async::detail

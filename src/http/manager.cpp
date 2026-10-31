@@ -22,7 +22,7 @@ namespace {
 
 /// The manager of each loop that has sent a request. A loop keeps its
 /// entry until it is destroyed; unregister_loop() empties it.
-using manager_table = std::unordered_map<event_loop*, std::unique_ptr<manager>>;
+using manager_table = std::unordered_map<async::event_loop*, std::unique_ptr<manager>>;
 
 std::mutex& table_mutex() {
     static std::mutex lock;
@@ -54,7 +54,7 @@ curl::easy_error curl_runtime() noexcept {
 
 }  // namespace
 
-struct manager::timer_watch : uv::owned_handle<timer_watch> {
+struct manager::timer_watch : async::uv::owned_handle<timer_watch> {
     union {
         uv_handle_t handle;
         uv_timer_t timer;
@@ -74,7 +74,7 @@ struct manager::timer_watch : uv::owned_handle<timer_watch> {
     }
 };
 
-struct manager::socket_watch : uv::owned_handle<socket_watch> {
+struct manager::socket_watch : async::uv::owned_handle<socket_watch> {
     union {
         uv_handle_t handle;
         uv_poll_t poll;
@@ -99,7 +99,7 @@ struct manager::socket_watch : uv::owned_handle<socket_watch> {
     }
 };
 
-manager::manager(event_loop& loop, curl::multi_handle multi) noexcept :
+manager::manager(async::event_loop& loop, curl::multi_handle multi) noexcept :
     bound_loop(&loop), multi(std::move(multi)), timer(timer_watch::make()) {
     ::uv_timer_init(loop.native_handle(), &timer->timer);
     timer->owner = this;
@@ -124,7 +124,7 @@ manager::~manager() {
     timer.reset();
 
     auto& loop = *bound_loop->native_handle();
-    const bool dying = uv::destroying(loop);
+    const bool dying = async::uv::destroying(loop);
     while(transfers != nullptr) {
         auto& job = *transfers;
         const bool driven = !job.queued;
@@ -136,15 +136,16 @@ manager::~manager() {
         } else if(driven) {
             job.failure = error::aborted("the event loop's http manager was destroyed");
             job.queued = true;
-            uv::complete_later(loop, job);
+            async::uv::complete_later(loop, job);
         }
     }
 }
 
-std::expected<std::reference_wrapper<manager>, error> manager::try_for_loop(event_loop& loop) {
+std::expected<std::reference_wrapper<manager>, error>
+    manager::try_for_loop(async::event_loop& loop) {
     // A manager made now would outlive the loop, which would never close its
     // timer.
-    if(uv::destroying(*loop.native_handle())) {
+    if(async::uv::destroying(*loop.native_handle())) {
         return std::unexpected(error::aborted("the event loop is being destroyed"));
     }
     if(auto code = curl_runtime(); !curl::ok(code)) {
@@ -173,7 +174,7 @@ std::expected<std::reference_wrapper<manager>, error> manager::try_for_loop(even
     return *entry->second;
 }
 
-manager& manager::for_loop(event_loop& loop) {
+manager& manager::for_loop(async::event_loop& loop) {
     auto found = try_for_loop(loop);
     if(!found) {
         std::fprintf(stderr, "fatal: %s\n", found.error().message().c_str());
@@ -182,7 +183,7 @@ manager& manager::for_loop(event_loop& loop) {
     return *found;
 }
 
-void manager::unregister_loop(event_loop& loop) {
+void manager::unregister_loop(async::event_loop& loop) {
     std::unique_ptr<manager> gone;
     std::scoped_lock lock(table_mutex());
     if(auto entry = managers().find(&loop); entry != managers().end()) {
@@ -268,7 +269,7 @@ void manager::drive(curl_socket_t socket, int events) noexcept {
         }
         curl::multi_remove_handle(multi.get(), job.easy.get());
         job.queued = true;
-        uv::complete_later(*bound_loop->native_handle(), job);
+        async::uv::complete_later(*bound_loop->native_handle(), job);
     }
 }
 

@@ -7,7 +7,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -125,4 +125,4 @@ ZEST_CASE(under_a_cancelled_task_ends_it) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

@@ -90,11 +90,11 @@ ZEST_CASE(notification_params_are_lower_camel) {
 }
 
 ZEST_CASE(sent_params_and_read_result_are_lower_camel) {
-    auto ask = [&]() -> task<RangeAddResult, Error> {
+    auto ask = [&]() -> async::task<RangeAddResult, Error> {
         co_return co_await peer.send_request(RangeAddParams{.first_value = 40, .second_value = 50})
             .or_fail();
     };
-    auto remote_side = [&]() -> task<std::optional<std::string>> {
+    auto remote_side = [&]() -> async::task<std::optional<std::string>> {
         auto request = co_await remote.receive();
         remote.send(R"({"jsonrpc":"2.0","id":1,"result":{"computedSum":99}})");
         remote.end_input();

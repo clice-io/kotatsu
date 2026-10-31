@@ -9,7 +9,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -223,4 +223,4 @@ ZEST_CASE(with_task_group_rethrows_what_a_child_threw) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

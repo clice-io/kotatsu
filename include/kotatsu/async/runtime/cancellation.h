@@ -8,7 +8,7 @@
 #include "kotatsu/async/runtime/task.h"
 #include "kotatsu/async/runtime/when.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace detail {
 
@@ -114,4 +114,4 @@ task<T, E, cancellation> with_token(task<T, E, C> inner_task, Tokens... tokens) 
     return detail::run_until(std::move(inner_task), tokens.wait()...);
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

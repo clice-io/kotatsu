@@ -11,7 +11,7 @@ namespace kotatsu::test {
 /// it just marks it cancelled, as I/O whose cancellation the operating system
 /// still has to confirm: tests use it to see what waits for a cancellation to
 /// complete. Await it by reference; it must outlive the await.
-struct PendingOp : io_op {
+struct PendingOp : async::io_op {
     PendingOp() {
         action = [](io_op*) {
         };

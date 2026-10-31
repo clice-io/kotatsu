@@ -117,8 +117,8 @@ ZEST_CASE(bound_client_keeps_the_jar_of_a_client_gone) {
 }
 
 ZEST_CASE(request_in_flight_outlives_its_client) {
-    event arrived;
-    event release;
+    async::event arrived;
+    async::event release;
     test::HttpServer server(loop, [&](const test::Received& request) {
         if(request.target == "/seed") {
             return test::Reply{.headers = {{"Set-Cookie", "session=flight; Path=/"}}};
@@ -132,7 +132,7 @@ ZEST_CASE(request_in_flight_outlives_its_client) {
     ZEXPECT(seed.has_value());
 
     auto sent = client->on(loop).get(server.url("/slow")).send();
-    auto drop_client = [&]() -> task<> {
+    auto drop_client = [&]() -> async::task<> {
         co_await arrived.wait();
         client.reset();
         release.set();

@@ -5,7 +5,7 @@
 
 #include "kotatsu/async/io/loop.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 void sync_primitive::insert(wait_node& waiter) noexcept {
     assert(waiter.queue == nullptr && "waiter queued twice");
@@ -129,4 +129,4 @@ void wait_node::resume() {
     resume_and_drain(task.handle());
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

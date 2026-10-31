@@ -8,7 +8,7 @@
 
 #include "awaiter.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 struct udp::Self : uv::owned_handle<Self> {
     /// Datagrams nobody waited for that the socket keeps.
@@ -361,4 +361,4 @@ std::size_t udp::send_queue_count() const {
     return self ? ::uv_udp_get_send_queue_count(&self->udp) : 0;
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

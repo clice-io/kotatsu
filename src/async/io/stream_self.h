@@ -4,7 +4,7 @@
 #include "ring_buffer.h"
 #include "kotatsu/async/io/stream.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 struct stream::Self : uv::owned_handle<Self> {
     union {
@@ -38,4 +38,4 @@ struct stream::Self : uv::owned_handle<Self> {
     static void on_read(uv_stream_t* handle, ssize_t nread, const uv_buf_t*);
 };
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

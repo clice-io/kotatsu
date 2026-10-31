@@ -11,7 +11,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -262,4 +262,4 @@ ZEST_CASE(range_of_awaiters_that_are_not_tasks) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

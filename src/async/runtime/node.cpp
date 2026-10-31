@@ -9,7 +9,7 @@
 #include "kotatsu/async/runtime/sync.h"
 #include "kotatsu/async/runtime/task.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -382,4 +382,4 @@ void io_op::complete() noexcept {
     resume_and_drain(awaiting->on_child_complete(*this));
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

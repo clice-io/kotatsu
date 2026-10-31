@@ -22,10 +22,10 @@ public:
     RecordingTransport(std::unique_ptr<Transport> transport, std::string path);
     ~RecordingTransport();
 
-    task<std::string, ReadError> read_message() override;
-    task<void, Error> write_message(std::string_view payload) override;
-    task<void, Error> write_messages(std::span<const std::string> payloads) override;
-    task<void, Error> close_output() override;
+    async::task<std::string, ReadError> read_message() override;
+    async::task<void, Error> write_message(std::string_view payload) override;
+    async::task<void, Error> write_messages(std::span<const std::string> payloads) override;
+    async::task<void, Error> close_output() override;
     Result<void> close() override;
     std::size_t remote_max_payload() const noexcept override;
 

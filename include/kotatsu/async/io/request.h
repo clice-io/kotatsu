@@ -7,7 +7,7 @@
 #include "kotatsu/async/io/loop.h"
 #include "kotatsu/async/runtime/task.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace detail {
 
@@ -48,4 +48,4 @@ task<std::invoke_result_t<Fn&>> queue(Fn fn, event_loop& loop) {
     return queue(std::move(fn), [] {}, loop);
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

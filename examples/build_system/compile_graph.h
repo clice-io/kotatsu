@@ -9,7 +9,7 @@
 
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 struct CompileUnit {
     std::string name;
@@ -119,4 +119,4 @@ private:
     delay_fn compile_delay_;
 };
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

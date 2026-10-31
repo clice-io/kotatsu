@@ -39,7 +39,7 @@ auto make_capabilities() -> proto::ServerCapabilities {
 }  // namespace
 
 int main() {
-    kotatsu::event_loop loop;
+    kotatsu::async::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio: {}", transport.error().message);

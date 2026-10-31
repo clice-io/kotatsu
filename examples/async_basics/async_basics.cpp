@@ -9,7 +9,7 @@
 
 #include "kotatsu/async/async.h"
 
-using namespace kotatsu;
+using namespace kotatsu::async;
 using namespace std::chrono_literals;
 
 // 1. Basic tasks — creation, chaining, and run()

@@ -7,7 +7,7 @@
 #include "kotatsu/zest/macro.h"
 #include "kotatsu/zest/zest.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -127,4 +127,4 @@ ZEST_CASE(shared_dependency_compiled_once) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

@@ -27,12 +27,12 @@ struct basic_request_context {
     protocol::RequestID id;
     PeerT& peer;
     /// Fires when the remote cancels the request or the peer closes.
-    cancellation_token cancellation;
+    async::cancellation_token cancellation;
 
     basic_request_context(PeerT& peer,
                           std::string_view method,
                           const protocol::RequestID& id,
-                          cancellation_token token) :
+                          async::cancellation_token token) :
         method(method), id(id), peer(peer), cancellation(std::move(token)) {}
 
     bool cancelled() const noexcept {
@@ -105,7 +105,7 @@ struct ConversationEnd {
 };
 
 template <typename Params, typename ResultT = typename protocol::RequestTraits<Params>::Result>
-using RequestResult = task<ResultT, Error>;
+using RequestResult = async::task<ResultT, Error>;
 
 struct request_options {
     /// Once it fires, the remote is sent $/cancelRequest, and the request
@@ -116,7 +116,7 @@ struct request_options {
     /// closes or the timeout passes; one that cannot be told, the
     /// $/cancelRequest failing to be sent, ends it with RequestCancelled at
     /// once.
-    cancellation_token token = {};
+    async::cancellation_token token = {};
     /// Ends the request with RequestCancelled once it has waited this long,
     /// a cancel or not, and sends the remote $/cancelRequest; it counts from
     /// the send, and ends a request while run() runs.
@@ -149,7 +149,7 @@ public:
     using RequestContext = basic_request_context<Peer>;
 
     /// `transport` must not be null.
-    Peer(event_loop& loop, std::unique_ptr<Transport> transport, Codec codec = {});
+    Peer(async::event_loop& loop, std::unique_ptr<Transport> transport, Codec codec = {});
 
     Peer(const Peer&) = delete;
     Peer& operator=(const Peer&) = delete;
@@ -164,7 +164,7 @@ public:
     /// outlive it: destroying the Peer before run() has ended is undefined,
     /// and a debug build asserts. A request still pending when the Peer goes
     /// fails with ConnectionClosed.
-    task<> run();
+    async::task<> run();
 
     /// Shuts the peer down: fails pending requests, cancels the running
     /// handlers, discards queued messages and closes the transport, so that
@@ -193,9 +193,9 @@ public:
     RequestResult<Params> send_request(const Params& params, request_options opts = {});
 
     template <typename ResultT, typename Params>
-    task<ResultT, Error> send_request(std::string_view method,
-                                      const Params& params,
-                                      request_options opts = {});
+    async::task<ResultT, Error> send_request(std::string_view method,
+                                             const Params& params,
+                                             request_options opts = {});
 
     /// Sends the notification NotificationTraits<Params> names.
     template <typename Params>
@@ -239,9 +239,9 @@ public:
 
 private:
     /// Sends `request`, the encoded request `id`, and waits for its result.
-    task<PayloadSlice, Error> send_request_impl(protocol::RequestID id,
-                                                std::string request,
-                                                request_options opts);
+    async::task<PayloadSlice, Error> send_request_impl(protocol::RequestID id,
+                                                       std::string request,
+                                                       request_options opts);
 
     /// Register a callback whose signature the caller has checked.
     template <typename Callback>

@@ -8,7 +8,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -318,4 +318,4 @@ ZEST_CASE(child_firing_the_shared_token_cancels_all) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

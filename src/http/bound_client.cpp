@@ -5,7 +5,7 @@
 
 namespace kotatsu::http {
 
-bound_client::bound_client(client owner, event_loop& loop) noexcept :
+bound_client::bound_client(client owner, async::event_loop& loop) noexcept :
     owner(std::move(owner)), dispatch_loop(&loop) {}
 
 http::request bound_client::request(std::string method, std::string url) const noexcept {

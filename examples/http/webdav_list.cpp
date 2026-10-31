@@ -23,7 +23,7 @@ constexpr std::string_view propfind_body =
 </d:propfind>
 )";
 
-task<void, http::error> list_webdav_directory(event_loop& loop) {
+kotatsu::async::task<void, http::error> list_webdav_directory(kotatsu::async::event_loop& loop) {
     http::client client;
 
     auto response = co_await client.on(loop)
@@ -45,7 +45,7 @@ task<void, http::error> list_webdav_directory(event_loop& loop) {
 }  // namespace
 
 int main() {
-    event_loop loop;
+    kotatsu::async::event_loop loop;
     auto root = list_webdav_directory(loop);
     loop.schedule(root);
     loop.run();

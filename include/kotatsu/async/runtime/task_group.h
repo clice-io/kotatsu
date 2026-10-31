@@ -14,7 +14,7 @@
 #include "kotatsu/async/runtime/task.h"
 #include "kotatsu/async/runtime/traits.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace detail {
 
@@ -184,4 +184,4 @@ task<void, typename task_group<Errors...>::errors_type>
     }
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

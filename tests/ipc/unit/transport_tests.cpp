@@ -19,18 +19,18 @@ struct Collecting final : Transport {
 
     explicit Collecting(std::string_view failing) : failing(failing) {}
 
-    task<std::string, ReadError> read_message() override {
-        co_await fail(ReadError{});
+    async::task<std::string, ReadError> read_message() override {
+        co_await async::fail(ReadError{});
     }
 
-    task<void, Error> write_message(std::string_view payload) override {
+    async::task<void, Error> write_message(std::string_view payload) override {
         if(payload == failing) {
-            co_await fail(Error("write failed"));
+            co_await async::fail(Error("write failed"));
         }
         written.emplace_back(payload);
     }
 
-    task<void, Error> close_output() override {
+    async::task<void, Error> close_output() override {
         co_return;
     }
 

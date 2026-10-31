@@ -12,7 +12,7 @@
 #include "kotatsu/support/config.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -194,4 +194,4 @@ ZEST_CASE(empty_range_fails) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

@@ -41,11 +41,11 @@ std::string utf8(const stdfs::path& path) {
 /// Awaits `work` for at most `timeout`, zero meaning no limit; nothing if it
 /// ran out of time.
 template <typename T>
-task<std::optional<T>> within(task<T> work, milliseconds timeout) {
+async::task<std::optional<T>> within(async::task<T> work, milliseconds timeout) {
     if(timeout.count() == 0) {
         co_return co_await std::move(work);
     }
-    auto timed = co_await with_timeout(std::move(work), timeout);
+    auto timed = co_await async::with_timeout(std::move(work), timeout);
     if(timed.is_cancelled()) {
         co_return std::nullopt;
     }
@@ -61,16 +61,16 @@ struct Reply {
 
 /// A running worker process.
 struct Worker {
-    process proc;
+    async::process proc;
     /// The worker's stdin, which carries the protocol both ways.
-    pipe channel;
+    async::pipe channel;
     /// The worker's stdout and stderr, its own file for its whole life.
     stdfs::path log;
     /// Log bytes already handed out.
     std::uintmax_t offset = 0;
 
     /// The next line from the worker, or nothing once its end closes.
-    task<std::optional<std::string>> read_line() {
+    async::task<std::optional<std::string>> read_line() {
         auto line = co_await channel.read_line();
         if(!line) {
             co_return std::nullopt;
@@ -80,7 +80,7 @@ struct Worker {
 
     /// The reply for the running test, counting the snapshots it checks as
     /// checked here; nothing if the worker goes before replying.
-    task<std::optional<Reply>> read_reply() {
+    async::task<std::optional<Reply>> read_reply() {
         while(auto line = co_await read_line()) {
             std::string_view text = *line;
             if(text.starts_with(protocol::snapshot)) {
@@ -117,7 +117,7 @@ struct Worker {
         return {std::istreambuf_iterator<char>(file), {}};
     }
 
-    task<process::exit_status> wait() {
+    async::task<async::process::exit_status> wait() {
         // wait() fails only without a process or with a second waiter.
         auto status = co_await proc.wait();
         assert(status.has_value());
@@ -125,7 +125,7 @@ struct Worker {
     }
 
     /// Ends the worker whatever state it is in.
-    task<process::exit_status> kill() {
+    async::task<async::process::exit_status> kill() {
         [[maybe_unused]] auto error = proc.kill();
         co_return co_await wait();
     }
@@ -142,7 +142,7 @@ struct Pool {
     std::optional<WorkerFailure> broken = {};
     std::vector<WorkerFailure> failures = {};
 
-    task<std::expected<Worker, WorkerFailure>> start() {
+    async::task<std::expected<Worker, WorkerFailure>> start() {
         // Each worker gets a fresh log: a killed worker's leftover children may
         // still be writing to the old one.
         auto log = directory / std::format("{}.log", started++);
@@ -155,7 +155,7 @@ struct Pool {
             });
         }
 
-        process::options spawn;
+        async::process::options spawn;
         spawn.program = executable;
         // This program's argv[0], and the flag right after it, ahead of
         // anything the program passes through untouched after `--`.
@@ -167,16 +167,16 @@ struct Pool {
         spawn.args = {std::string(protocol::worker_flag)};
         spawn.args.insert(spawn.args.end(), argv.begin(), argv.end());
         spawn.streams = {
-            process::stdio::duplex_pipe(),
-            process::stdio::from_file(*file),
-            process::stdio::from_file(*file),
+            async::process::stdio::duplex_pipe(),
+            async::process::stdio::from_file(*file),
+            async::process::stdio::from_file(*file),
         };
 #ifndef __APPLE__
         // A runner killed takes its workers with it; macOS has no way, and
         // its workers end when their stdin does.
         spawn.creation.exit_with_parent = true;
 #endif
-        auto spawned = process::spawn(spawn);
+        auto spawned = async::process::spawn(spawn);
         [[maybe_unused]] auto closed = file->close();
         if(!spawned) {
             co_return std::unexpected(WorkerFailure{
@@ -206,7 +206,7 @@ struct Pool {
 
     /// Runs `entry` on `worker`, which is gone afterwards if the test took it
     /// down.
-    task<Outcome> run(std::optional<Worker>& worker, const Entry& entry) {
+    async::task<Outcome> run(std::optional<Worker>& worker, const Entry& entry) {
         const bool crashes = entry.test_case.attrs.crashes;
         auto begin = steady_clock::now();
         // A worker gone before the command arrives fails the write, and the
@@ -242,7 +242,7 @@ struct Pool {
         // Whatever broke the channel, the worker must be gone before its
         // status says how it ended. Hung up on, a worker still serving exits;
         // one that does not is killed, and its status is then the runner's.
-        worker->channel = pipe{};
+        worker->channel = async::pipe{};
         auto exited = co_await within(worker->wait(), options.timeout);
         if(!exited) {
             co_await worker->kill();
@@ -276,7 +276,7 @@ struct Pool {
 
     /// The outcome of a test a failed ZASSERT ended: the worker runs its fatal
     /// hooks after the reply, and what they print is the test's too.
-    task<Outcome> after_fatal(std::optional<Worker>& worker, milliseconds duration) {
+    async::task<Outcome> after_fatal(std::optional<Worker>& worker, milliseconds duration) {
         Outcome outcome{.verdict = Verdict::Failed, .duration = duration};
         auto status = co_await within(worker->wait(), options.timeout);
         if(!status) {
@@ -294,8 +294,8 @@ struct Pool {
     /// Hangs up on `worker`, which then exits. If it ends badly, all it
     /// printed is shown: a sanitizer reports during the test it catches, which
     /// may well have passed.
-    task<> finish(Worker& worker) {
-        worker.channel = pipe{};
+    async::task<> finish(Worker& worker) {
+        worker.channel = async::pipe{};
         auto status = co_await within(worker.wait(), options.timeout);
         if(!status) {
             // Giving up on the wait leaves the worker running.
@@ -315,7 +315,7 @@ struct Pool {
 
     /// Runs `tests` one after another on one worker at a time, starting a new
     /// one whenever a test takes the current one down.
-    task<> drive(std::span<const Entry* const> tests, std::size_t& next) {
+    async::task<> drive(std::span<const Entry* const> tests, std::size_t& next) {
         std::optional<Worker> worker;
         while(!broken && next < tests.size()) {
             const auto& entry = *tests[next++];
@@ -397,21 +397,21 @@ std::expected<std::vector<WorkerFailure>, WorkerFailure>
         .directory = directory,
     };
 
-    auto run_all = [&]() -> task<> {
+    auto run_all = [&]() -> async::task<> {
         std::size_t next = 0;
-        std::vector<task<>> workers;
+        std::vector<async::task<>> workers;
         auto jobs = options.jobs != 0 ? options.jobs : sys::parallelism();
         auto count = std::min<std::size_t>(jobs, concurrent.size());
         for(std::size_t slot = 0; slot < count; ++slot) {
             workers.push_back(pool.drive(concurrent, next));
         }
-        co_await when_all(std::move(workers));
+        co_await async::when_all(std::move(workers));
 
         // Serial tests run on one worker once nothing else is running.
         std::size_t next_serial = 0;
         co_await pool.drive(serial, next_serial);
     };
-    event_loop loop;
+    async::event_loop loop;
     auto all = run_all();
     loop.schedule(all);
     loop.run();

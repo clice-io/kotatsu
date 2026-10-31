@@ -6,7 +6,7 @@
 
 #include "kotatsu/async/runtime/node.h"
 
-namespace kotatsu::detail {
+namespace kotatsu::async::detail {
 
 template <typename T>
 decltype(auto) get_awaiter(T&& value) {
@@ -41,4 +41,4 @@ concept awaitable =
 template <typename T>
 using await_result_t = decltype(std::declval<awaiter_t<T>>().await_resume());
 
-}  // namespace kotatsu::detail
+}  // namespace kotatsu::async::detail

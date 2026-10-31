@@ -9,7 +9,7 @@
 
 #include "kotatsu/support/config.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 class task_frame;
 class aggregate_op;
@@ -345,4 +345,4 @@ protected:
     on_cancel action = nullptr;
 };
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

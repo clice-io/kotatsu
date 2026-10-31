@@ -20,10 +20,10 @@ void peer_timeout(const PeerKit<A>& kit) {
     using namespace std::chrono_literals;
 
     kit.add("send_request_times_out_and_sends_cancel_request", [](Fixture& f) {
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{}, {.timeout = 10ms}).or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             co_await f.next();
             f.remote.end_input();
@@ -44,7 +44,7 @@ void peer_timeout(const PeerKit<A>& kit) {
     });
 
     kit.add("zero_timeout_fails_without_writing", [](Fixture& f) {
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             f.remote.end_input();
             co_return co_await f.peer.send_request(AddParams{}, {.timeout = 0ms}).or_fail();
         };
@@ -59,11 +59,11 @@ void peer_timeout(const PeerKit<A>& kit) {
 
     // The timer stops with the request: a leaked one shows under ASan.
     kit.add("answer_before_the_timeout_wins", [](Fixture& f) {
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{.a = 2, .b = 3}, {.timeout = 1min})
                 .or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(response<A>(1, AddResult{.sum = 5}));
             f.remote.end_input();
@@ -78,14 +78,14 @@ void peer_timeout(const PeerKit<A>& kit) {
     // Deadlines expire in order, not as requests were sent: the later one
     // with the shorter timeout expires while the first still waits.
     kit.add("shorter_timeout_sent_later_expires_first", [](Fixture& f) {
-        auto first = [&]() -> task<AddResult, ipc::Error> {
+        auto first = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{.a = 2, .b = 3}, {.timeout = 1min})
                 .or_fail();
         };
-        auto second = [&]() -> task<AddResult, ipc::Error> {
+        auto second = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{}, {.timeout = 10ms}).or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             co_await f.next();
             co_await f.next();
@@ -109,13 +109,13 @@ void peer_timeout(const PeerKit<A>& kit) {
 
     // A deadline past what the clock counts is never reached.
     kit.add("timeout_past_the_clocks_range_never_passes", [](Fixture& f) {
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer
                 .send_request(AddParams{.a = 2, .b = 3},
                               {.timeout = std::chrono::milliseconds::max()})
                 .or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             f.remote.send(response<A>(1, AddResult{.sum = 5}));
             f.remote.end_input();
@@ -130,15 +130,15 @@ void peer_timeout(const PeerKit<A>& kit) {
     // A cancelled request goes on waiting for its answer, but no longer than
     // its timeout: the remote is told once.
     kit.add("timeout_ends_a_cancelled_request_the_remote_never_answers", [](Fixture& f) {
-        cancellation_source source;
-        event done;
-        auto ask = [&]() -> task<ipc::Error> {
+        async::cancellation_source source;
+        async::event done;
+        auto ask = [&]() -> async::task<ipc::Error> {
             auto asked = co_await f.peer.send_request(AddParams{},
                                                       {.token = source.token(), .timeout = 20ms});
             done.set();
             co_return asked.has_error() ? asked.error() : ipc::Error("answered");
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             source.cancel();
             co_await f.next();
@@ -158,17 +158,17 @@ void peer_timeout(const PeerKit<A>& kit) {
 
     // The timeout caps the wait of a cancelled caller too.
     kit.add("timeout_ends_the_wait_of_a_cancelled_caller", [](Fixture& f) {
-        cancellation_source source;
-        event done;
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        async::cancellation_source source;
+        async::event done;
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer.send_request(AddParams{}, {.timeout = 20ms}).or_fail();
         };
-        auto caller = [&]() -> task<bool> {
-            auto asked = co_await with_token(ask(), source.token());
+        auto caller = [&]() -> async::task<bool> {
+            auto asked = co_await async::with_token(ask(), source.token());
             done.set();
             co_return asked.is_cancelled();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             source.cancel();
             co_await f.next();
@@ -184,13 +184,13 @@ void peer_timeout(const PeerKit<A>& kit) {
     });
 
     kit.add("timeout_before_the_token_reports_timed_out", [](Fixture& f) {
-        cancellation_source source;
-        auto ask = [&]() -> task<AddResult, ipc::Error> {
+        async::cancellation_source source;
+        auto ask = [&]() -> async::task<AddResult, ipc::Error> {
             co_return co_await f.peer
                 .send_request(AddParams{}, {.token = source.token(), .timeout = 10ms})
                 .or_fail();
         };
-        auto remote = [&]() -> task<> {
+        auto remote = [&]() -> async::task<> {
             co_await f.next();
             co_await f.next();
             f.remote.end_input();

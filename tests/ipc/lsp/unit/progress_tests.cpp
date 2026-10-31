@@ -23,7 +23,7 @@ ZEST_SUITE(ipc_lsp_progress, Fixture) {
 
 /// Answers the create request with `reply`, then receives `count` more
 /// messages and ends the input; returns every message it received.
-task<std::vector<std::string>> answer_create(std::string reply, std::size_t count) {
+async::task<std::vector<std::string>> answer_create(std::string reply, std::size_t count) {
     std::vector<std::string> received;
     while(auto message = co_await remote.receive()) {
         received.push_back(std::move(*message));
@@ -74,7 +74,7 @@ ZEST_CASE(create_failure_is_the_remote_error) {
 ZEST_CASE(begin_report_end_send_progress) {
     ProgressReporter reporter(peer, protocol::ProgressToken(42));
     std::vector<bool> sent;
-    auto report = [&]() -> task<void, Error> {
+    auto report = [&]() -> async::task<void, Error> {
         co_await reporter.create().or_fail();
         sent.push_back(
             reporter.begin("Indexing", "Starting...", protocol::uinteger(0)).has_value());
@@ -102,9 +102,9 @@ ZEST_CASE(begin_report_end_send_progress) {
 
 ZEST_CASE(string_token_is_sent_as_a_string) {
     ProgressReporter reporter(peer, protocol::ProgressToken(std::string("my-token")));
-    auto report = [&]() -> task<void, Error> {
+    auto report = [&]() -> async::task<void, Error> {
         co_await reporter.create().or_fail();
-        co_await or_fail(reporter.begin("Building"));
+        co_await async::or_fail(reporter.begin("Building"));
     };
 
     auto [ran, reported, received] =
@@ -125,7 +125,7 @@ ZEST_SUITE(ipc_lsp_progress_bincode, test::PeerFixture<test::BincodeAdapter>) {
 
 ZEST_CASE(progress_reads_as_progress_params) {
     ProgressReporter reporter(peer, protocol::ProgressToken(7));
-    auto report = [&]() -> task<> {
+    auto report = [&]() -> async::task<> {
         ZEXPECT(reporter.begin("Indexing", {}, protocol::uinteger(10)).has_value());
         remote.end_input();
         co_return;

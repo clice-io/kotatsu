@@ -16,7 +16,7 @@
 #include "kotatsu/sys/env.h"
 
 // Starting a child process and waiting for it, without an event loop:
-// kotatsu::process wraps this to wait for the child on one.
+// kotatsu::async::process wraps this to wait for the child on one.
 
 namespace kotatsu::sys {
 

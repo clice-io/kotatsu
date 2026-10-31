@@ -6,7 +6,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -113,4 +113,4 @@ ZEST_CASE(dump_dot_labels_aggregates_and_io) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

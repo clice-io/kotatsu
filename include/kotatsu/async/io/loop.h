@@ -13,7 +13,7 @@
 struct uv_loop_s;
 using uv_loop_t = uv_loop_s;
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace detail {
 
@@ -224,4 +224,4 @@ auto run(Tasks... tasks) {
     return std::tuple(std::move(tasks).catch_cancel().result()...);
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

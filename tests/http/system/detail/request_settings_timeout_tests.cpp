@@ -17,7 +17,7 @@ ZEST_SUITE(http_detail_request_settings_timeout, zest::LoopFixture) {
 
 // The subject is curl's timer: the server holds its reply for good.
 ZEST_CASE(request_past_its_timeout_fails) {
-    event never;
+    async::event never;
     test::HttpServer server(loop,
                             [&](const test::Received&) { return test::Reply{.hold = &never}; });
     ZASSERT(server.listening());
@@ -30,7 +30,7 @@ ZEST_CASE(request_past_its_timeout_fails) {
 }
 
 ZEST_CASE(request_timeout_shorter_than_the_clients_fails) {
-    event never;
+    async::event never;
     test::HttpServer server(loop, [&](const test::Received& request) {
         return request.target == "/slow" ? test::Reply{.hold = &never} : test::Reply{};
     });

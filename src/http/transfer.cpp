@@ -95,22 +95,22 @@ std::optional<error> transfer::check(const http::request& request) {
     return std::nullopt;
 }
 
-task<response, error> transfer::send(http::request request) {
+async::task<response, error> transfer::send(http::request request) {
     if(request.staged_error) {
-        co_await fail(std::move(*request.staged_error));
+        co_await async::fail(std::move(*request.staged_error));
     }
     if(auto invalid = check(request)) {
-        co_await fail(std::move(*invalid));
+        co_await async::fail(std::move(*invalid));
     }
     auto target = manager::try_for_loop(*request.dispatch_loop);
     if(!target) {
-        co_await fail(std::move(target).error());
+        co_await async::fail(std::move(target).error());
     }
 
     transfer job(std::move(request), target->get());
     auto result = co_await job;
     if(result.has_error()) {
-        co_await fail(std::move(result).error());
+        co_await async::fail(std::move(result).error());
     }
     co_return std::move(*result);
 }

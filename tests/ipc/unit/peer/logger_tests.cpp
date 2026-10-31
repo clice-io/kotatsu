@@ -145,7 +145,7 @@ ZEST_CASE(close_tells_the_remote_nothing_of_a_handlers_request) {
             .or_fail();
     });
     remote.send(test::request<test::JSONAdapter>(1, "test/add", AddParams{}));
-    auto closer = [&]() -> task<> {
+    auto closer = [&]() -> async::task<> {
         co_await next();
         peer.close();
     };

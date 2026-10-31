@@ -8,7 +8,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -299,4 +299,4 @@ ZEST_CASE(waiter_cancelled_while_it_waits_for_the_mutex_passes_the_notification_
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

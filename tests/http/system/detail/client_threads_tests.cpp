@@ -26,7 +26,7 @@ struct Seen {
 /// Sends `rounds` pairs of requests with `client` on a loop of its own: one
 /// that sets cookie t`index`, one that shows what the jar sends.
 void exchange(http::client client, int index, int rounds, Seen& seen) {
-    event_loop loop;
+    async::event_loop loop;
     test::HttpServer server(loop, [index](const test::Received& request) {
         if(request.target == "/seed") {
             return test::Reply{.headers = {{"Set-Cookie", std::format("t{}=v; Path=/", index)}}};
@@ -37,7 +37,7 @@ void exchange(http::client client, int index, int rounds, Seen& seen) {
         return;
     }
     auto api = client.on(loop);
-    auto requests = [&]() -> task<> {
+    auto requests = [&]() -> async::task<> {
         for(int i = 0; i < rounds; ++i) {
             for(auto path: {"/seed", "/show"}) {
                 if(co_await api.get(server.url(path)).send()) {

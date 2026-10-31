@@ -52,7 +52,7 @@ int run() {
         return 2;
     }
 
-    event_loop loop;
+    async::event_loop loop;
     auto opened = ipc::StreamTransport::open_stdio(loop);
     if(!opened) {
         std::fprintf(stderr, "open_stdio failed: %s\n", opened.error().message.c_str());
@@ -61,13 +61,13 @@ int run() {
     auto transport = std::move(*opened);
     double idle_cpu = -1;
 
-    auto writer = [&]() -> task<> {
+    auto writer = [&]() -> async::task<> {
         auto written = co_await transport->write_message(std::string(1 << 20, 'x')).catch_cancel();
         static_cast<void>(written);
     };
-    auto closer = [&]() -> task<> {
+    auto closer = [&]() -> async::task<> {
         // The write is pending by then.
-        co_await sleep(50, loop);
+        co_await async::sleep(50, loop);
         auto closed = transport->close();
         if(!closed) {
             std::fprintf(stderr, "close failed: %s\n", closed.error().message.c_str());
@@ -77,9 +77,9 @@ int run() {
         if(::read(output[0], drained.data(), drained.size()) <= 0) {
             std::perror("read");
         }
-        co_await sleep(20, loop);
+        co_await async::sleep(20, loop);
         const auto before = cpu_ms();
-        co_await sleep(300, loop);
+        co_await async::sleep(300, loop);
         idle_cpu = cpu_ms() - before;
         loop.stop();
     };

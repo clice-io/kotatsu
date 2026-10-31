@@ -15,11 +15,11 @@ client::client(client&&) noexcept = default;
 
 client& client::operator=(client&&) noexcept = default;
 
-bound_client client::on(event_loop& loop) & noexcept {
+bound_client client::on(async::event_loop& loop) & noexcept {
     return bound_client(*this, loop);
 }
 
-bound_client client::on(event_loop& loop) && noexcept {
+bound_client client::on(async::event_loop& loop) && noexcept {
     return bound_client(std::move(*this), loop);
 }
 

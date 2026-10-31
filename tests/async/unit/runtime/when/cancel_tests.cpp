@@ -11,7 +11,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -376,4 +376,4 @@ ZEST_CASE(checkpoint_starts_no_child) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

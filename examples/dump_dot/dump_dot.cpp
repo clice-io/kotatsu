@@ -19,7 +19,7 @@
 
 #include "kotatsu/async/async.h"
 
-using namespace kotatsu;
+using namespace kotatsu::async;
 using namespace std::chrono_literals;
 
 // Shared state — sync primitives whose waiter queues we want visible in graph.

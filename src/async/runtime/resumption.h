@@ -1,6 +1,6 @@
 #pragma once
 
-namespace kotatsu::detail {
+namespace kotatsu::async::detail {
 
 /// Runs the code it scopes as part of the resumption under way, or as one of
 /// its own: a task resumed meanwhile, by a cancel say, leaves what sync
@@ -20,4 +20,4 @@ private:
     bool outermost;
 };
 
-}  // namespace kotatsu::detail
+}  // namespace kotatsu::async::detail

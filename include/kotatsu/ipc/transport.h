@@ -20,17 +20,17 @@ public:
 
     /// The next message. A message too large to read is an Oversized error,
     /// after which reading goes on; Closed and Malformed end the input.
-    virtual task<std::string, ReadError> read_message() = 0;
+    virtual async::task<std::string, ReadError> read_message() = 0;
 
-    virtual task<void, Error> write_message(std::string_view payload) = 0;
+    virtual async::task<void, Error> write_message(std::string_view payload) = 0;
 
     /// Writes `payloads` in order, as write_message() writes each, until one
     /// fails; a transport that can sends them in one write.
-    virtual task<void, Error> write_messages(std::span<const std::string> payloads);
+    virtual async::task<void, Error> write_messages(std::span<const std::string> payloads);
 
     /// Ends the output once what was written has gone out; the remote reads
     /// the end of its input, and the input stays open.
-    virtual task<void, Error> close_output() = 0;
+    virtual async::task<void, Error> close_output() = 0;
 
     /// Closes both input and output, ending any pending read.
     virtual Result<void> close() = 0;
@@ -48,29 +48,31 @@ public:
 /// remote reads.
 class StreamTransport : public Transport {
 public:
-    StreamTransport(stream input, stream output, std::size_t max_payload = default_max_payload);
+    StreamTransport(async::stream input,
+                    async::stream output,
+                    std::size_t max_payload = default_max_payload);
 
-    explicit StreamTransport(stream stream, std::size_t max_payload = default_max_payload);
+    explicit StreamTransport(async::stream stream, std::size_t max_payload = default_max_payload);
 
     /// Over the process's stdin and stdout. stdin must be a pipe, a console
     /// or a socket: a file, a device or anything else fails. stdout may be a
     /// file or a device too, except on Windows, which opens a pipe's handle
     /// only.
     static Result<std::unique_ptr<StreamTransport>>
-        open_stdio(event_loop& loop, std::size_t max_payload = default_max_payload);
+        open_stdio(async::event_loop& loop, std::size_t max_payload = default_max_payload);
 
-    static task<std::unique_ptr<StreamTransport>, Error>
+    static async::task<std::unique_ptr<StreamTransport>, Error>
         connect_tcp(std::string_view host,
                     int port,
-                    event_loop& loop,
+                    async::event_loop& loop,
                     std::size_t max_payload = default_max_payload);
 
-    task<std::string, ReadError> read_message() override;
+    async::task<std::string, ReadError> read_message() override;
 
-    task<void, Error> write_message(std::string_view payload) override;
+    async::task<void, Error> write_message(std::string_view payload) override;
 
     /// Frames the payloads as one write, or as few as the stream takes.
-    task<void, Error> write_messages(std::span<const std::string> payloads) override;
+    async::task<void, Error> write_messages(std::span<const std::string> payloads) override;
 
     /// The remote reads the end of its input. A transport over one stream
     /// (connect_tcp) shuts its write side down, and goes on reading. Over
@@ -78,7 +80,7 @@ public:
     /// device, as closing a stream over it leaves it open; the remote reads
     /// the end once nothing else holds it, such as a child that inherited it,
     /// a stderr sharing it, or stdin when both are one socket.
-    task<void, Error> close_output() override;
+    async::task<void, Error> close_output() override;
 
     Result<void> close() override;
 
@@ -93,13 +95,13 @@ public:
 private:
     /// Writes each payload after its header, in as few writes as the stream
     /// takes, the payloads as they are.
-    task<void, Error> write_frames(std::span<const std::string_view> payloads);
+    async::task<void, Error> write_frames(std::span<const std::string_view> payloads);
 
     /// Points stdout at the null device, once, if the output is stdout.
     Result<void> release_stdout();
 
-    stream read_stream;
-    stream write_stream;
+    async::stream read_stream;
+    async::stream write_stream;
     bool shared_stream = false;
     /// The output is the process's stdout (open_stdio).
     bool over_stdout = false;

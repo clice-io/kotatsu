@@ -6,7 +6,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -185,4 +185,4 @@ ZEST_CASE(many_children_are_all_joined) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

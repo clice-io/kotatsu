@@ -15,7 +15,7 @@
 #include "kotatsu/async/vocab/error.h"
 #include "kotatsu/async/vocab/owned.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 template <typename Stream>
 class acceptor;
@@ -197,7 +197,7 @@ class pipe : public stream {
 public:
     pipe() noexcept = default;
 
-    using acceptor = kotatsu::acceptor<pipe>;
+    using acceptor = kotatsu::async::acceptor<pipe>;
 
     struct options {
         /// Enable IPC handle passing.
@@ -240,7 +240,7 @@ public:
                                    event_loop& loop = event_loop::current());
 
 private:
-    friend class kotatsu::acceptor<pipe>;
+    friend class kotatsu::async::acceptor<pipe>;
     friend class process;
 
     explicit pipe(detail::unique_handle<Self> self) noexcept;
@@ -254,7 +254,7 @@ class tcp : public stream {
 public:
     tcp() noexcept = default;
 
-    using acceptor = kotatsu::acceptor<tcp>;
+    using acceptor = kotatsu::async::acceptor<tcp>;
 
     struct options {
         /// Restrict socket to IPv6 only (ignore IPv4-mapped addresses).
@@ -286,7 +286,7 @@ public:
                                    event_loop& loop = event_loop::current());
 
 private:
-    friend class kotatsu::acceptor<tcp>;
+    friend class kotatsu::async::acceptor<tcp>;
 
     explicit tcp(detail::unique_handle<Self> self) noexcept;
 
@@ -339,4 +339,4 @@ private:
     explicit console(detail::unique_handle<Self> self) noexcept;
 };
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

@@ -9,7 +9,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -374,4 +374,4 @@ ZEST_CASE(join_after_an_error_waits_for_pending_children) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

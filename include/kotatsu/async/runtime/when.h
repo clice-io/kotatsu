@@ -18,7 +18,7 @@
 #include "kotatsu/async/runtime/traits.h"
 #include "kotatsu/async/vocab/error.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace detail {
 
@@ -321,4 +321,4 @@ task<T, E, cancellation> run_until(task<T, E, C> inner_task, Stops... stops) {
 
 }  // namespace detail
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

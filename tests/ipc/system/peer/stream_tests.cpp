@@ -30,21 +30,22 @@ using test::NoteParams;
 
 /// Both ends of an anonymous pipe, opened as streams.
 struct Ends {
-    stream reader;
-    stream writer;
+    async::stream reader;
+    async::stream writer;
 };
 
-std::optional<Ends> pipe_ends(event_loop& loop) {
+std::optional<Ends> pipe_ends(async::event_loop& loop) {
     int fds[2] = {-1, -1};
     if(test::create_pipe(fds) != 0) {
         return std::nullopt;
     }
-    auto reader = pipe::open(fds[0], {}, loop);
-    auto writer = pipe::open(fds[1], {}, loop);
+    auto reader = async::pipe::open(fds[0], {}, loop);
+    auto writer = async::pipe::open(fds[1], {}, loop);
     if(!reader || !writer) {
         return std::nullopt;
     }
-    return Ends{.reader = stream(std::move(*reader)), .writer = stream(std::move(*writer))};
+    return Ends{.reader = async::stream(std::move(*reader)),
+                .writer = async::stream(std::move(*writer))};
 }
 
 /// Two peers of one codec, each reading the pipe the other writes. b sums
@@ -68,8 +69,8 @@ void talk_over_pipes(zest::LoopFixture& fixture) {
         co_return AddResult{.sum = params.a + params.b};
     });
     b.on_notification([&](const NoteParams& params) { notes.push_back(params.text); });
-    auto ask = [&]() -> task<AddResult, Error> {
-        co_await or_fail(a.send_notification(NoteParams{.text = "hello"}));
+    auto ask = [&]() -> async::task<AddResult, Error> {
+        co_await async::or_fail(a.send_notification(NoteParams{.text = "hello"}));
         auto result = co_await a.send_request(AddParams{.a = 2, .b = 3}).or_fail();
         a.close();
         b.close();
@@ -104,7 +105,7 @@ ZEST_CASE(queued_messages_go_out_framed_in_order) {
     JSONPeer peer(
         loop,
         std::make_unique<StreamTransport>(std::move(input->reader), std::move(output->writer)));
-    input->writer = stream{};
+    input->writer = async::stream{};
     const std::string large(256 * 1024, 'x');
     for(const auto& text: {std::string("first"), large, std::string("last")}) {
         ZEST_CONTEXT("a note of {} bytes", text.size());
@@ -131,19 +132,19 @@ ZEST_CASE(queued_messages_go_out_framed_in_order) {
 ZEST_CASE(close_during_a_write_ends_run) {
     auto input = pipe_ends(loop);
     ZASSERT(input.has_value());
-    auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
+    auto listener = async::tcp::listen("127.0.0.1", 0, {}, loop);
     ZASSERT(listener.has_value());
     auto name = listener->getsockname();
     ZASSERT(name.has_value());
     auto [accepted, connected] =
-        run(listener->accept(), tcp::connect("127.0.0.1", name->port, loop));
+        run(listener->accept(), async::tcp::connect("127.0.0.1", name->port, loop));
     ZASSERT(accepted.has_value());
     ZASSERT(connected.has_value());
-    JSONPeer peer(
-        loop,
-        std::make_unique<StreamTransport>(std::move(input->reader), stream(std::move(*connected))));
+    JSONPeer peer(loop,
+                  std::make_unique<StreamTransport>(std::move(input->reader),
+                                                    async::stream(std::move(*connected))));
     constexpr std::size_t size = 16 << 20;
-    auto closer = [&]() -> task<bool> {
+    auto closer = [&]() -> async::task<bool> {
         auto sent = peer.send_notification(NoteParams{.text = std::string(size, 'x')});
         // The first bytes arriving show the write has started; read_some
         // reads no more than asked, so the connection stays full.
@@ -180,13 +181,13 @@ ZEST_CASE(peer_destroyed_as_close_ends_run) {
     auto peer = std::make_unique<JSONPeer>(
         loop,
         std::make_unique<StreamTransport>(std::move(input->reader), std::move(output->writer)));
-    auto owner = [&]() -> task<> {
+    auto owner = [&]() -> async::task<> {
         co_await peer->run();
         peer.reset();
     };
     // The owner's run() is reading by the time the closer starts: tasks run
     // in order until they first suspend.
-    auto closer = [&]() -> task<> {
+    auto closer = [&]() -> async::task<> {
         auto closed = peer->close();
         ZEXPECT(closed.has_value());
         co_return;
@@ -219,7 +220,7 @@ ZEST_CASE(task_starts_after_the_messages_read_with_its_request) {
         return answer();
     });
     peer.on_notification([&](const NoteParams& params) { order.push_back(params.text); });
-    auto remote = [&]() -> task<void, error> {
+    auto remote = [&]() -> async::task<void, async::error> {
         auto messages =
             test::framed(R"({"jsonrpc":"2.0","id":1,"method":"test/add","params":{"a":2,"b":3}})") +
             test::framed(R"({"jsonrpc":"2.0","method":"test/note","params":{"text":"note"}})");
@@ -237,7 +238,7 @@ ZEST_CASE(task_starts_after_the_messages_read_with_its_request) {
 // remote reads the end of its input and can still send; run() ends with the
 // remote's own end.
 ZEST_CASE(close_output_on_a_shared_stream_keeps_reading) {
-    auto listener = tcp::listen("127.0.0.1", 0, {}, loop);
+    auto listener = async::tcp::listen("127.0.0.1", 0, {}, loop);
     ZASSERT(listener.has_value());
     auto name = listener->getsockname();
     ZASSERT(name.has_value());
@@ -249,7 +250,7 @@ ZEST_CASE(close_output_on_a_shared_stream_keeps_reading) {
     JSONPeer peer(loop, std::move(*connected));
     std::vector<std::string> notes;
     peer.on_notification([&](const NoteParams& params) { notes.push_back(params.text); });
-    auto remote = [&]() -> task<void, error> {
+    auto remote = [&]() -> async::task<void, async::error> {
         auto received = co_await accepted->read_to_end().or_fail();
         static_cast<void>(received);
         auto note =
@@ -257,7 +258,7 @@ ZEST_CASE(close_output_on_a_shared_stream_keeps_reading) {
         co_await accepted->write(std::span<const char>(note.data(), note.size())).or_fail();
         co_await accepted->shutdown().or_fail();
     };
-    auto closer = [&]() -> task<> {
+    auto closer = [&]() -> async::task<> {
         peer.close_output();
         co_return;
     };

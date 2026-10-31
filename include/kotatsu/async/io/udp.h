@@ -12,7 +12,7 @@
 #include "kotatsu/async/vocab/error.h"
 #include "kotatsu/async/vocab/owned.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 /// A UDP socket.
 ///
@@ -180,4 +180,4 @@ private:
     detail::unique_handle<Self> self;
 };
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

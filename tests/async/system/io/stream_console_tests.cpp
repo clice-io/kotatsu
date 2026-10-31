@@ -16,7 +16,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -163,4 +163,4 @@ ZEST_CASE(read_in_raw_mode_takes_a_key_without_a_newline) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

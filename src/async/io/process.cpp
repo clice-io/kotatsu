@@ -28,7 +28,7 @@
 #include "kotatsu/sys/detail/descriptors.h"
 #include "kotatsu/async/runtime/when.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 struct process::Self {
     sys::Child child;
@@ -519,7 +519,7 @@ error error_of(std::error_code code) {
 }
 
 /// The parent's end of a pipe of the child's, on `loop`.
-result<pipe> open_pipe(fs::File::native_handle_type end, event_loop& loop) {
+result<pipe> open_pipe(kotatsu::fs::File::native_handle_type end, event_loop& loop) {
 #ifdef _WIN32
     // libuv takes a C runtime descriptor, which owns the handle it wraps.
     int fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(end), 0);
@@ -812,4 +812,4 @@ error process::kill_tree() {
     return error_of(self->child.kill_tree());
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

@@ -8,7 +8,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -493,4 +493,4 @@ ZEST_CASE(on_cancel_outside_a_task_runs_every_callback_before_the_waits) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

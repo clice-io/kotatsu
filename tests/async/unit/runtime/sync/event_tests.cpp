@@ -7,7 +7,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -254,4 +254,4 @@ ZEST_CASE(waiters_woken_outside_a_task_resume_in_the_order_they_were_woken) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

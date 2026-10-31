@@ -61,11 +61,11 @@ public:
 
     /// Sends a copy of the request once the task starts. Await the task on
     /// the loop the request's bound_client names.
-    task<response, error> send() &;
+    async::task<response, error> send() &;
 
     /// Sends the request once the task starts. Await the task on the loop
     /// the request's bound_client names.
-    task<response, error> send() &&;
+    async::task<response, error> send() &&;
 
 #if KOTATSU_HTTP_HAS_CODEC_JSON
     /// `value` encoded as JSON, as json_text() sends it; send() fails with
@@ -89,7 +89,7 @@ private:
 
     request(const detail::request_settings& settings,
             std::shared_ptr<const detail::share_key> key,
-            event_loop& loop,
+            async::event_loop& loop,
             std::string method,
             std::string url) noexcept;
 
@@ -97,7 +97,7 @@ private:
     void remember_error(error err) noexcept;
 
     std::shared_ptr<const detail::share_key> key;
-    event_loop* dispatch_loop;
+    async::event_loop* dispatch_loop;
     std::string method_name;
     std::string url_string;
     std::vector<query_param> query_params;

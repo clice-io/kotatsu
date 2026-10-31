@@ -7,7 +7,7 @@
 #include "kotatsu/async/runtime/sync.h"
 #include "kotatsu/async/runtime/task.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 /// Walks the task tree below a node, down to the sync primitives its waiters
 /// wait on and the other waiters queued there. `Derived` gets a visit_* call
@@ -131,4 +131,4 @@ private:
     std::set<const void*> visited;
 };
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

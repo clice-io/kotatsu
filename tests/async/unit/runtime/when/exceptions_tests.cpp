@@ -9,7 +9,7 @@
 #include "kotatsu/support/config.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -190,4 +190,4 @@ ZEST_CASE(exception_outranks_an_external_cancel) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

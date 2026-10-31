@@ -10,7 +10,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -123,4 +123,4 @@ ZEST_CASE(cancel_while_running_calls_the_hook) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

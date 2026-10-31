@@ -33,7 +33,7 @@
 namespace kotatsu::test {
 
 /// Waits for `signal`: a task, whose cancellation its awaiter can catch.
-inline task<> wait_for(event& signal) {
+inline async::task<> wait_for(async::event& signal) {
     co_await signal.wait();
 }
 
@@ -54,7 +54,7 @@ struct PeerFixture : zest::LoopFixture {
 
     /// Waits for the next message the peer writes, or for its output to end,
     /// and keeps the message for written().
-    task<> next() {
+    async::task<> next() {
         if(auto payload = co_await remote.receive()) {
             keep(*payload);
         }

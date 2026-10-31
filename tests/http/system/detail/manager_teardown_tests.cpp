@@ -22,13 +22,13 @@ namespace kotatsu::http {
 namespace {
 
 /// Stops `loop` once the tasks scheduled before it have started.
-task<> stop(event_loop& loop) {
+async::task<> stop(async::event_loop& loop) {
     loop.stop();
     co_return;
 }
 
 /// Stops `loop` once `signal` is set.
-task<> stop_when(event& signal, event_loop& loop) {
+async::task<> stop_when(async::event& signal, async::event_loop& loop) {
     co_await signal.wait();
     loop.stop();
 }
@@ -37,11 +37,11 @@ task<> stop_when(event& signal, event_loop& loop) {
 /// holds its reply for good, and once it has arrived the server goes while
 /// the loop lives, before curl sees the connection close.
 struct InFlight {
-    event arrived;
-    event never;
+    async::event arrived;
+    async::event never;
 
     template <typename Send>
-    void leave(event_loop& loop, Send send) {
+    void leave(async::event_loop& loop, Send send) {
         test::HttpServer server(loop, [&](const test::Received&) {
             arrived.set();
             return test::Reply{.hold = &never};
@@ -61,8 +61,8 @@ ZEST_SUITE(http_detail_manager_teardown) {
 ZEST_CASE(request_that_outlives_its_loop_ends_when_cancelled) {
     auto client = test::loopback_client();
     InFlight flight;
-    std::optional<task<response, error>> kept;
-    std::optional<event_loop> dying(std::in_place);
+    std::optional<async::task<response, error>> kept;
+    std::optional<async::event_loop> dying(std::in_place);
     flight.leave(*dying, [&](std::string url) {
         kept.emplace(client.on(*dying).get(std::move(url)).send());
         dying->schedule(*kept);
@@ -81,16 +81,17 @@ ZEST_CASE(request_cancelled_while_its_loop_is_destroyed_ends) {
     std::latch gate(1);
     auto client = test::loopback_client();
     InFlight flight;
-    std::optional<task<void, error>> kept;
-    std::optional<event_loop> dying(std::in_place);
+    std::optional<async::task<void, error>> kept;
+    std::optional<async::event_loop> dying(std::in_place);
     auto api = client.on(*dying);
     // Fails from inside ~event_loop, and when_all cancels the request.
-    auto held_back = [&]() -> task<void, error> {
-        co_await queue([&] { gate.wait(); }, *dying);
-        co_await fail(error::aborted("held back"));
+    auto held_back = [&]() -> async::task<void, error> {
+        co_await async::queue([&] { gate.wait(); }, *dying);
+        co_await async::fail(error::aborted("held back"));
     };
-    auto both = [&](std::string url) -> task<void, error> {
-        co_await or_fail(co_await when_all(held_back(), api.get(std::move(url)).send()));
+    auto both = [&](std::string url) -> async::task<void, error> {
+        co_await async::or_fail(
+            co_await async::when_all(held_back(), api.get(std::move(url)).send()));
     };
     flight.leave(*dying, [&](std::string url) {
         kept.emplace(both(std::move(url)));
@@ -111,10 +112,10 @@ ZEST_CASE(request_sent_while_its_loop_is_destroyed_fails) {
     std::latch gate(1);
     std::optional<outcome<response, error>> sent;
     auto client = test::loopback_client();
-    std::optional<event_loop> dying(std::in_place);
+    std::optional<async::event_loop> dying(std::in_place);
     auto api = client.on(*dying);
-    auto late = [&]() -> task<> {
-        co_await queue([&] { gate.wait(); }, *dying);
+    auto late = [&]() -> async::task<> {
+        co_await async::queue([&] { gate.wait(); }, *dying);
         sent.emplace(co_await api.get("http://127.0.0.1:1/").send());
     };
     dying->schedule(late());
@@ -133,14 +134,14 @@ ZEST_CASE(request_sent_while_its_loop_is_destroyed_fails) {
 // the new loop must get a manager of its own.
 ZEST_CASE(loop_made_where_one_was_destroyed_gets_a_new_manager) {
     auto client = test::loopback_client();
-    std::optional<event_loop> loop(std::in_place);
+    std::optional<async::event_loop> loop(std::in_place);
     for(int round = 0; round < 2; ++round) {
         ZEST_CONTEXT("round {}", round);
         bool answered = false;
         {
             test::HttpServer server(*loop);
             ZASSERT(server.listening());
-            auto send = [&]() -> task<> {
+            auto send = [&]() -> async::task<> {
                 auto reply = co_await client.on(*loop).get(server.url("/")).send();
                 answered = reply.has_value();
                 loop->stop();

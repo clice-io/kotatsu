@@ -13,7 +13,7 @@ namespace kotatsu {
 
 namespace {
 
-/// An error that says what went wrong, as kotatsu::error does.
+/// An error that says what went wrong, as kotatsu::async::error does.
 struct Failure {
     int code = 0;
 

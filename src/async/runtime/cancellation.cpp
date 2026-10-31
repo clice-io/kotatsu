@@ -3,7 +3,7 @@
 #include "resumption.h"
 #include "kotatsu/async/runtime/sync.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace detail {
 
@@ -125,4 +125,4 @@ cancellation_token cancellation_source::token() const noexcept {
     return cancellation_token(state);
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

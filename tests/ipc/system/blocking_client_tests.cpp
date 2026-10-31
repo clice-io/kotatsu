@@ -536,12 +536,13 @@ ZEST_CASE(moved_client_keeps_the_connection) {
 ZEST_CASE(requests_reach_a_peer_over_a_pipe) {
     test::TempDir dir;
     const auto name = pipe_name(dir);
-    auto listener = pipe::listen(name, loop);
+    auto listener = async::pipe::listen(name, loop);
     ZASSERT(listener.has_value());
-    auto serve = [&]() -> task<> {
+    auto serve = [&]() -> async::task<> {
         auto accepted = co_await listener->accept();
         ZASSERT(accepted.has_value());
-        BincodePeer peer(loop, std::make_unique<StreamTransport>(stream(std::move(*accepted))));
+        BincodePeer peer(loop,
+                         std::make_unique<StreamTransport>(async::stream(std::move(*accepted))));
         peer.on_request(
             "test/add",
             [](BincodePeer::RequestContext&, const AddParams& params) -> RequestResult<AddParams> {

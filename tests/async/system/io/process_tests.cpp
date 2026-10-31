@@ -54,7 +54,7 @@
 #include "kotatsu/sys/spawn.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -282,8 +282,8 @@ ZEST_CASE(stdout_goes_to_a_given_descriptor) {
 
 ZEST_CASE(stdout_goes_to_an_open_file) {
     test::TempDir dir;
-    auto file =
-        fs::File::open(dir.file("stdout.txt"), {.write = true, .truncate = true, .create = true});
+    auto file = kotatsu::fs::File::open(dir.file("stdout.txt"),
+                                        {.write = true, .truncate = true, .create = true});
     ZASSERT(file.has_value());
     // The child writes from where the file stands.
     ZEXPECT(!file->write("head-"));
@@ -1131,4 +1131,4 @@ ZEST_CASE(capture_cancelled_after_the_child_exited_kills_the_group) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

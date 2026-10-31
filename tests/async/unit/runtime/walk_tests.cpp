@@ -10,7 +10,7 @@
 #include "kotatsu/async/async.h"
 #include "kotatsu/async/runtime/walk.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -202,4 +202,4 @@ ZEST_CASE(waiter_links_its_task_and_its_resource) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

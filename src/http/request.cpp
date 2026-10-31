@@ -10,7 +10,7 @@ namespace kotatsu::http {
 
 request::request(const detail::request_settings& settings,
                  std::shared_ptr<const detail::share_key> key,
-                 event_loop& loop,
+                 async::event_loop& loop,
                  std::string method,
                  std::string url) noexcept :
     detail::request_settings(settings), key(std::move(key)), dispatch_loop(&loop),
@@ -51,11 +51,11 @@ request& request::body(std::string body) {
     return *this;
 }
 
-task<response, error> request::send() & {
+async::task<response, error> request::send() & {
     return detail::transfer::send(*this);
 }
 
-task<response, error> request::send() && {
+async::task<response, error> request::send() && {
     return detail::transfer::send(std::move(*this));
 }
 

@@ -39,14 +39,16 @@ namespace kotatsu::test {
 
 /// A child that reads its stdin pipe, so it runs until the pipe closes or it
 /// is killed: cat, or more.com on Windows.
-inline process::options stdin_reader() {
-    process::options opts;
+inline async::process::options stdin_reader() {
+    async::process::options opts;
 #ifdef _WIN32
     opts.program = "more.com";
 #else
     opts.program = "/bin/cat";
 #endif
-    opts.streams = {process::stdio::pipe(), process::stdio::ignore(), process::stdio::ignore()};
+    opts.streams = {async::process::stdio::pipe(),
+                    async::process::stdio::ignore(),
+                    async::process::stdio::ignore()};
     return opts;
 }
 
@@ -106,13 +108,13 @@ class BusyPool {
 public:
     /// Takes every pool thread and sets `busy` once all are taken; ends once
     /// release() has let them go. Cancelling it releases them too.
-    task<> hold(event& busy) {
+    async::task<> hold(async::event& busy) {
         const int threads = threadpool_size();
         std::atomic<int> taken = 0;
-        auto notify = event_loop::current().create_relay();
-        std::vector<task<>> works;
+        auto notify = async::event_loop::current().create_relay();
+        std::vector<async::task<>> works;
         for(int i = 0; i < threads; ++i) {
-            works.push_back(queue(
+            works.push_back(async::queue(
                 [&] {
                     if(taken.fetch_add(1) + 1 == threads) {
                         notify.send([&] { busy.set(); });
@@ -121,7 +123,7 @@ public:
                 },
                 [this] { release(); }));
         }
-        co_await when_all(std::move(works));
+        co_await async::when_all(std::move(works));
     }
 
     /// Lets the pool threads go; calls after the first do nothing.

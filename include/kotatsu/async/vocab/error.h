@@ -4,7 +4,7 @@
 
 #include "kotatsu/support/outcome.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 class error {
 public:
@@ -135,4 +135,4 @@ struct cancellation {};
 template <typename T>
 using result = outcome<T, error, void>;
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

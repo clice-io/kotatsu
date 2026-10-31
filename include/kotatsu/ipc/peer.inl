@@ -104,7 +104,7 @@ struct Peer<CodecT>::Self {
     /// encoded; a notification's, what breaks the protocol in it, if
     /// anything: params that do not decode.
     using RequestCallback = std::function<
-        task<std::string, Error>(const protocol::RequestID&, PayloadSlice&, cancellation_token)>;
+        async::task<std::string, Error>(const protocol::RequestID&, PayloadSlice&, async::cancellation_token)>;
     using NotificationCallback = std::function<std::optional<std::string>(PayloadSlice&)>;
 
     using Clock = std::chrono::steady_clock;
@@ -117,7 +117,7 @@ struct Peer<CodecT>::Self {
     /// A request sent and not settled yet, which its sender awaits. A cancel
     /// of the sender tells the remote and goes on waiting: the answer, a
     /// failure of the connection or the deadline settles it.
-    struct PendingRequest : io_op {
+    struct PendingRequest : async::io_op {
         Self& peer;
         protocol::RequestID id;
         /// What settled it. Once set, nothing touches the Peer again, which
@@ -173,7 +173,7 @@ struct Peer<CodecT>::Self {
         }
     };
 
-    event_loop& loop;
+    async::event_loop& loop;
     std::unique_ptr<Transport> transport;
     CodecT codec;
 
@@ -186,7 +186,7 @@ struct Peer<CodecT>::Self {
     std::unordered_map<protocol::RequestID, PendingRequest*> pending_requests;
     Deadlines deadlines;
     /// A deadline earlier than the others was filed, or the input ended.
-    event deadline_changed;
+    async::event deadline_changed;
 
     /// A request whose handler answers it, from its dispatch to its answer.
     struct RunningRequest {
@@ -195,7 +195,7 @@ struct Peer<CodecT>::Self {
         std::string_view method;
         /// Shared, so that it outlives the entry: its cancel() may end the
         /// handler, which erases the entry.
-        std::shared_ptr<cancellation_source> source;
+        std::shared_ptr<async::cancellation_source> source;
     };
 
     std::unordered_map<protocol::RequestID, RunningRequest> incoming_requests;
@@ -220,12 +220,12 @@ struct Peer<CodecT>::Self {
     bool started = false;
     /// run() is running: the Peer must not go.
     bool running = false;
-    event write_event;
+    async::event write_event;
 
     LogCallback logger;
     LogLevel min_level = LogLevel::info;
 
-    Self(event_loop& loop, std::unique_ptr<Transport> transport, CodecT codec) :
+    Self(async::event_loop& loop, std::unique_ptr<Transport> transport, CodecT codec) :
         loop(loop), transport(std::move(transport)), codec(std::move(codec)) {}
 
     /// Formats and hands `format` to the logger when `level` passes its
@@ -304,7 +304,7 @@ struct Peer<CodecT>::Self {
     /// empty, it half-closes the transport when close_output() asked for it,
     /// or when nothing more will be written: the input has ended and every
     /// answer is out, and the remote reads the end of its input.
-    task<> write_loop() {
+    async::task<> write_loop() {
         // run() was cancelled from outside: nothing will use the transport
         // again, so it closes, and the remote reads the end.
         bool cancelled = false;
@@ -353,7 +353,7 @@ struct Peer<CodecT>::Self {
     /// Half-closes the transport once the queue is written. A half-close
     /// that fails leaves the remote waiting for the end of its input, so it
     /// fails the output as a write does.
-    task<> finish_output() {
+    async::task<> finish_output() {
         closing_output = false;
         output_open = false;
         // Cancelled with run(): the half-close still happens.
@@ -391,7 +391,7 @@ struct Peer<CodecT>::Self {
         // their entries.
         auto values =
             incoming_requests | std::views::values | std::views::transform(&RunningRequest::source);
-        std::vector<std::shared_ptr<cancellation_source>> sources(values.begin(), values.end());
+        std::vector<std::shared_ptr<async::cancellation_source>> sources(values.begin(), values.end());
         for(auto& source: sources) {
             source->cancel();
         }
@@ -416,15 +416,15 @@ struct Peer<CodecT>::Self {
     }
 
     /// Runs the read, write and deadline loops until all three have ended.
-    task<> serve() {
-        task_group<> handlers;
+    async::task<> serve() {
+        async::task_group<> handlers;
 
         // Pending requests fail as soon as the input ends, before the
         // handlers still running finish and before run() returns. A
         // connection that went away and a frame or a message the protocol
         // does not allow all fail them with ConnectionClosed, and what the
         // transport or the codec said.
-        auto reading = [&]() -> task<> {
+        auto reading = [&]() -> async::task<> {
             auto ended = co_await read_loop(handlers).catch_cancel();
             if(ended.is_cancelled()) {
                 end_input({.kind = ConversationEnd::Kind::ShutDown, .message = "run() cancelled"});
@@ -437,13 +437,13 @@ struct Peer<CodecT>::Self {
             write_event.set();
         };
 
-        co_await when_all(reading(), write_loop(), deadline_loop());
+        co_await async::when_all(reading(), write_loop(), deadline_loop());
     }
 
     /// Reads and dispatches until the input ends, and returns why it ended:
     /// InputEnded, or Malformed, as a frame that cannot be read ends it, and
     /// under ViolationPolicy::End a message that breaks the protocol.
-    task<ConversationEnd> read_loop(task_group<>& handlers) {
+    async::task<ConversationEnd> read_loop(async::task_group<>& handlers) {
         log(LogLevel::info, "read loop started");
         while(true) {
             auto message = co_await transport->read_message();
@@ -560,7 +560,7 @@ struct Peer<CodecT>::Self {
     }
 
     /// Waits for `signal`: a task, whose cancellation its awaiter can catch.
-    static task<> wait_for(event& signal) {
+    static async::task<> wait_for(async::event& signal) {
         co_await signal.wait();
     }
 
@@ -613,7 +613,7 @@ struct Peer<CodecT>::Self {
 
     /// Ends each request whose timeout has passed, until the input ends: no
     /// request is left to time out then.
-    task<> deadline_loop() {
+    async::task<> deadline_loop() {
         while(input_open) {
             expire_due();
             deadline_changed.reset();
@@ -623,7 +623,7 @@ struct Peer<CodecT>::Self {
             }
             auto left = std::chrono::ceil<std::chrono::milliseconds>(deadlines.begin()->first -
                                                                      Clock::now());
-            co_await when_any(sleep(std::max(left, std::chrono::milliseconds::zero()), loop),
+            co_await async::when_any(async::sleep(std::max(left, std::chrono::milliseconds::zero()), loop),
                               wait_for(deadline_changed));
         }
     }
@@ -707,7 +707,7 @@ struct Peer<CodecT>::Self {
     void dispatch_request(const std::string& method,
                           const protocol::RequestID& id,
                           PayloadSlice params,
-                          task_group<>& handlers) {
+                          async::task_group<>& handlers) {
         log(LogLevel::debug, "request: {} id={}", method, detail::LoggedID{id});
 
         if(incoming_requests.contains(id)) {
@@ -723,7 +723,7 @@ struct Peer<CodecT>::Self {
         }
 
         auto callback = it->second;
-        auto source = std::make_shared<cancellation_source>();
+        auto source = std::make_shared<async::cancellation_source>();
         incoming_requests.emplace(id, RunningRequest{.method = it->first, .source = source});
         if(!handlers.spawn(run_request(id,
                                        std::move(callback),
@@ -735,15 +735,15 @@ struct Peer<CodecT>::Self {
         }
     }
 
-    task<> run_request(protocol::RequestID id,
+    async::task<> run_request(protocol::RequestID id,
                        RequestCallback callback,
                        PayloadSlice params,
-                       cancellation_token token) {
-        outcome<std::string, Error, cancellation> guarded_result = outcome_error(Error());
+                       async::cancellation_token token) {
+        outcome<std::string, Error, async::cancellation> guarded_result = outcome_error(Error());
         // A handler that throws is answered InternalError; the exception
         // does not reach the other handlers, nor run().
         KOTATSU_TRY {
-            guarded_result = co_await with_token(callback(id, params, token), token);
+            guarded_result = co_await async::with_token(callback(id, params, token), token);
         }
         KOTATSU_CATCH_ALL() {
             guarded_result =
@@ -765,7 +765,7 @@ struct Peer<CodecT>::Self {
     /// Dispatches the message `payload` holds; what breaks the protocol in
     /// it, if anything, logged.
     std::optional<std::string> dispatch_incoming_message(std::string payload,
-                                                         task_group<>& handlers) {
+                                                         async::task_group<>& handlers) {
         log(LogLevel::trace, "recv: {}", payload);
         auto msg = codec.parse_message(std::move(payload));
         return std::visit(
@@ -807,7 +807,7 @@ struct Peer<CodecT>::Self {
 };
 
 template <typename CodecT>
-Peer<CodecT>::Peer(event_loop& loop, std::unique_ptr<Transport> transport, CodecT codec) :
+Peer<CodecT>::Peer(async::event_loop& loop, std::unique_ptr<Transport> transport, CodecT codec) :
     self(std::make_unique<Self>(loop, std::move(transport), std::move(codec))) {
     assert(self->transport && "Peer requires a transport");
 }
@@ -820,12 +820,12 @@ Peer<CodecT>::~Peer() {
 }
 
 template <typename CodecT>
-task<> Peer<CodecT>::run() {
+async::task<> Peer<CodecT>::run() {
     assert(!self->started && "Peer::run() is called once");
     self->started = true;
     self->running = true;
     // However serve() ends, run() is done with the Peer once it has.
-    outcome<void, void, cancellation> served;
+    outcome<void, void, async::cancellation> served;
     KOTATSU_TRY {
         served = co_await self->serve().catch_cancel();
     }
@@ -835,7 +835,7 @@ task<> Peer<CodecT>::run() {
     }
     self->running = false;
     if(served.is_cancelled()) {
-        co_await cancel();
+        co_await async::cancel();
     }
 }
 
@@ -895,11 +895,11 @@ std::vector<UnansweredRequest> Peer<CodecT>::incoming_requests() const {
 }
 
 template <typename CodecT>
-task<PayloadSlice, Error> Peer<CodecT>::send_request_impl(protocol::RequestID id,
+async::task<PayloadSlice, Error> Peer<CodecT>::send_request_impl(protocol::RequestID id,
                                                           std::string request,
                                                           request_options opts) {
     if(!self->fits(request)) {
-        co_await fail(self->too_large("request", request.size()));
+        co_await async::fail(self->too_large("request", request.size()));
     }
 
     typename Self::PendingRequest pending(*self, std::move(id));
@@ -914,7 +914,7 @@ task<PayloadSlice, Error> Peer<CodecT>::send_request_impl(protocol::RequestID id
     // A cancel of this task does the same, and ends it once the request is
     // settled.
     co_await pending;
-    co_return co_await or_fail(std::move(*pending.response));
+    co_return co_await async::or_fail(std::move(*pending.response));
 }
 
 // The typed members: they encode params and decode results for the ones above.
@@ -930,17 +930,17 @@ RequestResult<Params> Peer<CodecT>::send_request(const Params& params, request_o
 
 template <typename CodecT>
 template <typename ResultT, typename Params>
-task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
+async::task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
                                                 const Params& params,
                                                 request_options opts) {
     if(auto refused = self->refuse_request(opts)) {
-        co_await fail(std::move(*refused));
+        co_await async::fail(std::move(*refused));
     }
     protocol::RequestID id{self->next_request_id++};
-    auto request = co_await or_fail(self->encode_request(id, method, params));
+    auto request = co_await async::or_fail(self->encode_request(id, method, params));
     auto raw_result =
         co_await send_request_impl(std::move(id), std::move(request), std::move(opts)).or_fail();
-    co_return co_await or_fail(self->codec.template deserialize_value<ResultT>(raw_result));
+    co_return co_await async::or_fail(self->codec.template deserialize_value<ResultT>(raw_result));
 }
 
 template <typename CodecT>
@@ -969,7 +969,7 @@ void Peer<CodecT>::on_request(Callback&& callback) {
     using Ret = detail::callback_return_t<Callback>;
     static_assert(
         std::is_same_v<Ret, RequestResult<Params>> ||
-            std::is_same_v<Ret, task<codec::RawValue, Error>>,
+            std::is_same_v<Ret, async::task<codec::RawValue, Error>>,
         "request callback return type should be RequestResult<Params> " "or task<codec::RawValue, Error>");
 
     on_request_impl(protocol::RequestTraits<Params>::method, std::forward<Callback>(callback));
@@ -990,7 +990,7 @@ void Peer<CodecT>::on_request_impl(std::string_view method, Callback&& callback)
                     method_name = std::string(method),
                     peer = this](const protocol::RequestID& request_id,
                                  PayloadSlice& params_raw,
-                                 cancellation_token token) -> task<std::string, Error> {
+                                 async::cancellation_token token) -> async::task<std::string, Error> {
         auto& state = *peer->self;
         auto parsed_params =
             state.codec.template deserialize_value<Params>(params_raw,
@@ -999,7 +999,7 @@ void Peer<CodecT>::on_request_impl(std::string_view method, Callback&& callback)
             state.log(LogLevel::warn,
                       "{}",
                       Self::params_failure("request", method_name, parsed_params.error()));
-            co_await fail(parsed_params.error());
+            co_await async::fail(parsed_params.error());
         }
 
         RequestContext context(*peer, method_name, request_id, std::move(token));
@@ -1009,11 +1009,11 @@ void Peer<CodecT>::on_request_impl(std::string_view method, Callback&& callback)
         // or close(), ends this coroutine at the yield, and the task never
         // starts.
         auto answering = std::invoke(cb, context, *parsed_params);
-        co_await yield(state.loop);
+        co_await async::yield(state.loop);
         auto result = co_await std::move(answering).or_fail();
         // A RawValue result is already in the codec's encoding, and goes as
         // it is; deserialize_value takes it back so.
-        co_return co_await or_fail(state.codec.encode_success_response(request_id, result));
+        co_return co_await async::or_fail(state.codec.encode_success_response(request_id, result));
     };
 
     self->request_callbacks.insert_or_assign(std::string(method), std::move(wrapped));

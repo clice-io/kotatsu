@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 /// An IP address, in its numeric text form, and a port.
 struct endpoint {
@@ -10,4 +10,4 @@ struct endpoint {
     int port = 0;
 };
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

@@ -15,7 +15,7 @@
 
 /// File operations on libuv's thread pool, as tasks; kotatsu::fs does them
 /// synchronously.
-namespace kotatsu::fs::async {
+namespace kotatsu::async::fs {
 
 using file_time = std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
 
@@ -299,4 +299,4 @@ task<std::size_t, error> write(int fd,
 /// Close a file descriptor asynchronously.
 task<void, error> close(int fd, event_loop& loop = event_loop::current());
 
-}  // namespace kotatsu::fs::async
+}  // namespace kotatsu::async::fs

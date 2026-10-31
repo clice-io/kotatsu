@@ -2,7 +2,7 @@
 
 #include "stream_self.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 console::console(detail::unique_handle<Self> self) noexcept : stream(std::move(self)) {}
 
@@ -63,4 +63,4 @@ result<console::vterm_state> console::get_vterm_state() {
     return state == UV_TTY_SUPPORTED ? vterm_state::supported : vterm_state::unsupported;
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

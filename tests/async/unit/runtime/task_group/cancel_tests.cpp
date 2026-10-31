@@ -3,7 +3,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -205,4 +205,4 @@ ZEST_CASE(checkpoint_join_cancels_the_group) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

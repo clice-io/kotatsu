@@ -23,11 +23,11 @@ namespace kotatsu::http::detail {
 /// inside the manager. A manager that goes while its loop is being
 /// destroyed leaves its transfers to their tasks' cancellation, since that
 /// loop runs nothing queued any more.
-struct transfer : uv::uv_op<transfer> {
+struct transfer : async::uv::uv_op<transfer> {
     transfer(http::request request, manager& target) noexcept;
 
     /// Sends `request` and waits for its response.
-    static task<response, error> send(http::request request);
+    static async::task<response, error> send(http::request request);
 
     bool start() noexcept;
 

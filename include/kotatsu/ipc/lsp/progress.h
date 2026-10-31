@@ -18,10 +18,10 @@ public:
         peer(peer), token(std::move(token)) {}
 
     /// Send window/workDoneProgress/create request to register the token.
-    task<void, Error> create(request_options opts = {}) {
+    async::task<void, Error> create(request_options opts = {}) {
         auto result = co_await peer.send_request(protocol::WorkDoneProgressCreateParams{token},
                                                  std::move(opts));
-        co_await or_fail(result);
+        co_await async::or_fail(result);
     }
 
     /// Send $/progress with kind=begin.

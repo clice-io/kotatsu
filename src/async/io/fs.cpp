@@ -9,7 +9,7 @@
 #include "awaiter.h"
 #include "kotatsu/support/functional.h"
 
-namespace kotatsu::fs::async {
+namespace kotatsu::async::fs {
 
 namespace {
 
@@ -443,4 +443,4 @@ task<void, error> close(int fd, event_loop& loop) {
     return fs_call(loop, ::uv_fs_close, fd);
 }
 
-}  // namespace kotatsu::fs::async
+}  // namespace kotatsu::async::fs

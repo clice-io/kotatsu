@@ -10,7 +10,7 @@
 #include "kotatsu/async/vocab/error.h"
 #include "kotatsu/async/vocab/owned.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 /// A child process, started by sys::spawn, or on Windows a process open()
 /// opened by its ID, whose exit an event loop waits for: on Linux through a
@@ -152,4 +152,4 @@ struct process::capture_result {
     std::string stderr_data;
 };
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

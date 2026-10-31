@@ -17,7 +17,7 @@ struct response_request {
     std::string input;
 };
 
-task<void, http::error> request_openai(event_loop& loop) {
+kotatsu::async::task<void, http::error> request_openai(kotatsu::async::event_loop& loop) {
     http::client client;
     client.timeout(60s);
     auto api = client.on(loop);
@@ -41,7 +41,7 @@ task<void, http::error> request_openai(event_loop& loop) {
 }  // namespace
 
 int main() {
-    event_loop loop;
+    kotatsu::async::event_loop loop;
     auto root = request_openai(loop);
     loop.schedule(root);
     loop.run();

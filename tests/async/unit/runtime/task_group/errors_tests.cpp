@@ -10,7 +10,7 @@
 #include "kotatsu/support/config.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -261,4 +261,4 @@ ZEST_CASE(join_rethrows_the_first_exception_thrown) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

@@ -12,7 +12,7 @@
 #include "kotatsu/support/config.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -349,7 +349,7 @@ ZEST_CASE(relay_callbacks_left_when_the_loop_goes_never_run) {
     ZEXPECT(!called);
 }
 
-ZEST_CASE(kotatsu_run_returns_every_value) {
+ZEST_CASE(async_run_returns_every_value) {
     auto one = []() -> task<int> {
         co_return 1;
     };
@@ -357,7 +357,7 @@ ZEST_CASE(kotatsu_run_returns_every_value) {
         co_await fail(error::io_error);
     };
 
-    auto [value, failed] = kotatsu::run(one(), failing());
+    auto [value, failed] = async::run(one(), failing());
     ZASSERT(value.has_value());
     ZEXPECT(*value == 1);
     ZASSERT(failed.has_error());
@@ -365,13 +365,13 @@ ZEST_CASE(kotatsu_run_returns_every_value) {
 }
 
 #if KOTATSU_ENABLE_EXCEPTIONS
-ZEST_CASE(kotatsu_run_rethrows_what_a_task_throws) {
+ZEST_CASE(async_run_rethrows_what_a_task_throws) {
     auto thrower = []() -> task<int> {
         throw std::runtime_error("from run");
         co_return 0;
     };
 
-    ZEXPECT(test::thrown([&] { kotatsu::run(thrower()); }) == "from run");
+    ZEXPECT(test::thrown([&] { async::run(thrower()); }) == "from run");
 }
 #endif
 
@@ -507,4 +507,4 @@ ZEST_CASE(relay_move_assignment_keeps_the_old_callbacks) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

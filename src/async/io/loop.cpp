@@ -14,7 +14,7 @@
 #include "kotatsu/async/runtime/sync.h"
 #include "kotatsu/async/runtime/task.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 struct relay::Self {
     uv_async_t async = {};
@@ -353,4 +353,4 @@ void event_loop::stop() {
     ::uv_stop(&self->loop);
 }
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

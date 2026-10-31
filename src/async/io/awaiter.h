@@ -12,7 +12,7 @@
 #include "kotatsu/async/vocab/error.h"
 #include "kotatsu/async/vocab/owned.h"
 
-namespace kotatsu::uv {
+namespace kotatsu::async::uv {
 
 /// Base of every awaiter that waits for libuv. `D` supplies
 ///
@@ -290,4 +290,4 @@ struct owned_handle {
     }
 };
 
-}  // namespace kotatsu::uv
+}  // namespace kotatsu::async::uv

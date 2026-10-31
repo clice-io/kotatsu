@@ -2,7 +2,7 @@
 
 #include <memory>
 
-namespace kotatsu::detail {
+namespace kotatsu::async::detail {
 
 /// Frees the state behind a resource through `T::destroy`.
 template <typename T>
@@ -16,4 +16,4 @@ struct destroy_handle {
 template <typename T>
 using unique_handle = std::unique_ptr<T, destroy_handle<T>>;
 
-}  // namespace kotatsu::detail
+}  // namespace kotatsu::async::detail

@@ -27,7 +27,7 @@ test::Reply echo_target(const test::Received& request) {
 }
 
 /// Waits for `signal`: a task, so that its cancellation can be caught.
-task<> wait_for(event& signal) {
+async::task<> wait_for(async::event& signal) {
     co_await signal.wait();
 }
 
@@ -51,15 +51,15 @@ ZEST_CASE(requests_on_a_loop_share_its_manager) {
 }
 
 ZEST_CASE(pending_requests_counts_the_requests_in_flight) {
-    event arrived;
-    event release;
+    async::event arrived;
+    async::event release;
     test::HttpServer server(loop, [&](const test::Received&) {
         arrived.set();
         return test::Reply{.hold = &release};
     });
     ZASSERT(server.listening());
     auto client = test::loopback_client();
-    auto count = [&]() -> task<std::size_t> {
+    auto count = [&]() -> async::task<std::size_t> {
         co_await arrived.wait();
         auto pending = manager::for_loop(loop).pending_requests();
         release.set();
@@ -79,12 +79,12 @@ ZEST_CASE(many_requests_at_once_all_complete) {
     ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
-    auto all = [&]() -> task<std::vector<response>, error> {
-        std::vector<task<response, error>> sends;
+    auto all = [&]() -> async::task<std::vector<response>, error> {
+        std::vector<async::task<response, error>> sends;
         for(int i = 0; i < count; ++i) {
             sends.push_back(api.get(server.url(std::format("/{}", i))).send());
         }
-        auto replies = co_await or_fail(co_await when_all(std::move(sends)));
+        auto replies = co_await async::or_fail(co_await async::when_all(std::move(sends)));
         co_return std::vector<response>(std::make_move_iterator(replies.begin()),
                                         std::make_move_iterator(replies.end()));
     };
@@ -108,13 +108,13 @@ ZEST_CASE(request_sent_after_a_wait_on_another_task_completes) {
     ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
-    event first_done;
-    auto first = [&]() -> task<std::string, error> {
+    async::event first_done;
+    auto first = [&]() -> async::task<std::string, error> {
         auto reply = co_await api.get(server.url("/first")).send().or_fail();
         first_done.set();
         co_return reply.text_copy();
     };
-    auto second = [&]() -> task<std::string, error> {
+    auto second = [&]() -> async::task<std::string, error> {
         co_await first_done.wait();
         auto reply = co_await api.get(server.url("/second")).send().or_fail();
         co_return reply.text_copy();
@@ -128,8 +128,8 @@ ZEST_CASE(request_sent_after_a_wait_on_another_task_completes) {
 }
 
 ZEST_CASE(cancelled_request_leaves_the_manager_working) {
-    event arrived;
-    event never;
+    async::event arrived;
+    async::event never;
     test::HttpServer server(loop, [&](const test::Received& request) {
         if(request.target == "/held") {
             arrived.set();
@@ -140,10 +140,10 @@ ZEST_CASE(cancelled_request_leaves_the_manager_working) {
     ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
-    auto race = [&]() -> task<std::size_t, error> {
-        auto won = co_await when_any(api.get(server.url("/held")).send(), wait_for(arrived));
+    auto race = [&]() -> async::task<std::size_t, error> {
+        auto won = co_await async::when_any(api.get(server.url("/held")).send(), wait_for(arrived));
         if(won.has_error()) {
-            co_await fail(std::move(won).error());
+            co_await async::fail(std::move(won).error());
         }
         co_return won->index();
     };
@@ -159,8 +159,8 @@ ZEST_CASE(cancelled_request_leaves_the_manager_working) {
 }
 
 ZEST_CASE(dropping_a_task_in_flight_cancels_its_request) {
-    event arrived;
-    event never;
+    async::event arrived;
+    async::event never;
     test::HttpServer server(loop, [&](const test::Received& request) {
         if(request.target == "/held") {
             arrived.set();
@@ -171,9 +171,9 @@ ZEST_CASE(dropping_a_task_in_flight_cancels_its_request) {
     ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
-    std::optional<task<response, error>> held(api.get(server.url("/held")).send());
+    std::optional<async::task<response, error>> held(api.get(server.url("/held")).send());
     loop.schedule(*held);
-    auto drop = [&]() -> task<std::size_t> {
+    auto drop = [&]() -> async::task<std::size_t> {
         co_await arrived.wait();
         held.reset();
         co_return manager::for_loop(loop).pending_requests();
@@ -191,8 +191,8 @@ ZEST_CASE(dropping_a_task_in_flight_cancels_its_request) {
 // A request whose task is cancelled after the manager aborted it ends
 // cancelled once the abort's queued completion runs.
 ZEST_CASE(request_cancelled_after_unregister_loop_ends_cancelled) {
-    event arrived;
-    event never;
+    async::event arrived;
+    async::event never;
     test::HttpServer server(loop, [&](const test::Received& request) {
         if(request.target == "/held") {
             arrived.set();
@@ -204,7 +204,7 @@ ZEST_CASE(request_cancelled_after_unregister_loop_ends_cancelled) {
     auto client = test::loopback_client();
     auto api = client.on(loop);
     auto sent = api.get(server.url("/held")).send();
-    auto unregister_and_cancel = [&]() -> task<> {
+    auto unregister_and_cancel = [&]() -> async::task<> {
         co_await arrived.wait();
         manager::unregister_loop(loop);
         sent.cancel();
@@ -222,8 +222,8 @@ ZEST_CASE(request_cancelled_after_unregister_loop_ends_cancelled) {
 // Both replies come on one turn, and the first one's task drops the
 // other's, whose completion curl has queued already or is about to.
 ZEST_CASE(dropping_a_task_whose_reply_came_leaves_the_manager_working) {
-    event both_arrived;
-    event release;
+    async::event both_arrived;
+    async::event release;
     int arrived = 0;
     test::HttpServer server(loop, [&](const test::Received& request) {
         auto reply = echo_target(request);
@@ -238,14 +238,14 @@ ZEST_CASE(dropping_a_task_whose_reply_came_leaves_the_manager_working) {
     ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
-    std::optional<task<response, error>> second(api.get(server.url("/second")).send());
+    std::optional<async::task<response, error>> second(api.get(server.url("/second")).send());
     loop.schedule(*second);
-    auto first = [&]() -> task<std::string, error> {
+    auto first = [&]() -> async::task<std::string, error> {
         auto reply = co_await api.get(server.url("/first")).send().or_fail();
         second.reset();
         co_return reply.text_copy();
     };
-    auto release_both = [&]() -> task<> {
+    auto release_both = [&]() -> async::task<> {
         co_await both_arrived.wait();
         release.set();
     };
@@ -262,15 +262,15 @@ ZEST_CASE(dropping_a_task_whose_reply_came_leaves_the_manager_working) {
 }
 
 ZEST_CASE(request_in_flight_at_unregister_loop_fails) {
-    event arrived;
-    event never;
+    async::event arrived;
+    async::event never;
     test::HttpServer server(loop, [&](const test::Received&) {
         arrived.set();
         return test::Reply{.hold = &never};
     });
     ZASSERT(server.listening());
     auto client = test::loopback_client();
-    auto unregister = [&]() -> task<> {
+    auto unregister = [&]() -> async::task<> {
         co_await arrived.wait();
         manager::unregister_loop(loop);
     };
@@ -293,7 +293,7 @@ ZEST_CASE(unregister_loop_starts_the_loop_afresh) {
     ZASSERT(server.listening());
     auto client = test::loopback_client();
     auto api = client.on(loop);
-    auto flow = [&]() -> task<std::string, error> {
+    auto flow = [&]() -> async::task<std::string, error> {
         co_await api.get(server.url("/seed")).send().or_fail();
         manager::unregister_loop(loop);
         auto reply = co_await api.get(server.url("/next")).send().or_fail();

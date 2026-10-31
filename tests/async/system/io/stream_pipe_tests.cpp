@@ -16,7 +16,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-namespace kotatsu {
+namespace kotatsu::async {
 
 namespace {
 
@@ -1042,4 +1042,4 @@ ZEST_CASE(accept_cancelled_after_its_acceptor_is_destroyed_ends) {
 
 }  // namespace
 
-}  // namespace kotatsu
+}  // namespace kotatsu::async

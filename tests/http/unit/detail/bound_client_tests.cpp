@@ -11,7 +11,7 @@ namespace {
 ZEST_SUITE(http_detail_bound_client, zest::LoopFixture) {
 
 ZEST_CASE(loop_is_the_one_it_was_bound_to) {
-    event_loop other;
+    async::event_loop other;
     http::client client;
     ZEXPECT((&client.on(loop).loop() == &loop));
     ZEXPECT((&client.on(other).loop() == &other));
@@ -19,7 +19,7 @@ ZEST_CASE(loop_is_the_one_it_was_bound_to) {
 
 ZEST_CASE(on_binds_the_running_loop_by_default) {
     http::client client;
-    auto bind = [&]() -> task<event_loop*> {
+    auto bind = [&]() -> async::task<async::event_loop*> {
         co_return &client.on().loop();
     };
 
