@@ -241,6 +241,26 @@ ZEST_CASE(follow_symlinks_takes_each_target_in_its_own_link_directory) {
 #endif
 }
 
+ZEST_CASE(follow_symlinks_normalizes_each_target) {
+    // `.` goes; `..` stays, but on Windows.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "a");
+    if(!test::linked(
+           create_symlink("./build/compile_commands.json", dir.file("compile_commands.json"))) ||
+       !test::linked(create_symlink("./../b/./file.txt", dir.file("a/up")))) {
+        return;
+    }
+    std::string followed;
+    ZEXPECT(!follow_symlinks(followed, dir.file("compile_commands.json")));
+    ZEXPECT(slashed(followed) == slashed(dir.file("build/compile_commands.json")));
+    ZEXPECT(!follow_symlinks(followed, dir.file("a/up")));
+#ifdef _WIN32
+    ZEXPECT(slashed(followed) == slashed(dir.file("b/file.txt")));
+#else
+    ZEXPECT(slashed(followed) == slashed(dir.file("a/../b/file.txt")));
+#endif
+}
+
 ZEST_CASE(follow_symlinks_leaves_links_before_the_last_name) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "real");
