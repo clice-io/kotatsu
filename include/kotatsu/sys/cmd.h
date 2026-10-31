@@ -38,8 +38,6 @@ enum class Quoting : std::uint8_t {
     POSIX,
 };
 
-class expand_view;
-
 /// The arguments of a command line, as split() reads them: a view that
 /// reads the line as it goes.
 class split_view : public std::ranges::view_interface<split_view> {
@@ -133,15 +131,15 @@ inline split_view split(std::string_view line, Quoting quoting) {
 }
 
 /// Writes into `out` the command line of `arguments`, quoted for split() to
-/// read them back. Windows: the program as it is, in quotes when it is empty
-/// or holds a space or tab (it holds no quote, as no Windows file name
-/// does); each argument after it as it is when it is not empty and holds no
-/// blank, newline or quote, else in quotes, each quote escaped and the
-/// backslashes before a quote or the closing one doubled. POSIX: a
-/// backslash before each ASCII character that is not a letter, a digit or
-/// one of `@%+=:,./_-`, a newline in single quotes instead, which sh would
-/// take for a line continuation, and an empty argument as `''`; sh reads it
-/// back alike.
+/// read them back. Windows: the program, which must hold no quote, as no
+/// Windows file name does, as it is, in quotes when it is empty or holds a
+/// space or tab; each argument after it as it is when it is not empty and
+/// holds no space, tab, newline, vertical tab or quote, else in quotes, each
+/// quote escaped and the backslashes before a quote or the closing one
+/// doubled. POSIX: a backslash before each ASCII character that is not a
+/// letter, a digit or one of `@%+=:,./_-`, a newline in single quotes
+/// instead, which sh would take for a line continuation, and an empty
+/// argument as `''`; sh reads it back alike.
 void join(buffer_ref out, string_list_ref arguments, Quoting quoting);
 
 /// The arguments of a command with its response files read, as expand()
@@ -252,7 +250,7 @@ private:
 /// them too. UTF-16 of an odd number of bytes leaves `@name` as written. An
 /// `@name` in a file is expanded alike, up to 8 files deep, past which it
 /// stays as written. Each argument holds until the iterator moves on;
-/// `arguments` and `read` must outlive the view.
+/// `arguments` and `read` must outlive the iteration.
 inline expand_view
     expand(string_list_ref arguments,
            Quoting quoting,

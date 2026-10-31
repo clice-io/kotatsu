@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <cstring>
 #include <ranges>
 #include <string>
@@ -59,7 +60,7 @@ ZEST_CASE(is_a_random_access_range_of_views) {
 ZEST_CASE(holds_the_strings_of_a_range) {
     std::vector<std::string_view> views{"a", "", "bc"};
     string_list list(views);
-    ZEXPECT(list.size() == 3u);
+    ZASSERT(list.size() == 3u);
     ZEXPECT(!list.empty());
     ZEXPECT(list[0] == "a");
     ZEXPECT(list[1] == "");
@@ -76,7 +77,7 @@ ZEST_CASE(takes_a_lazy_view) {
 ZEST_CASE(points_to_each_string_followed_by_a_nul) {
     string_list list(Strings{"-c", "a b.c", ""});
     ZEXPECT(pointed(list) == Strings{"-c", "a b.c", ""});
-    ZEXPECT((list.c_strs()[1] == list[1].data()));
+    ZEXPECT(list.c_strs()[1] == list[1].data());
 }
 
 ZEST_CASE(an_empty_one_points_to_a_null) {
@@ -101,13 +102,13 @@ ZEST_CASE(push_back_keeps_the_pointers_on_the_strings) {
 
 ZEST_CASE(push_back_takes_a_string_of_its_own) {
     string_list list(Strings{"first", "second"});
-    for(int i = 0; i < 50; ++i) {
-        list.push_back(list[i % 2]);
+    Strings strings{"first", "second"};
+    for(std::size_t i = 0; i < 50; ++i) {
+        list.push_back(list[i]);
+        strings.push_back(strings[i]);
     }
-    ZEXPECT(list.size() == 52u);
-    ZEXPECT(list[50] == "first");
-    ZEXPECT(list[51] == "second");
-    ZEXPECT(pointed(list).back() == "second");
+    ZEXPECT(walked(list) == strings);
+    ZEXPECT(pointed(list) == strings);
 }
 
 // A view keeps what follows a NUL; the C string ends there.
@@ -122,7 +123,7 @@ ZEST_CASE(copies_and_moves_point_to_their_own_strings) {
     string_list list(Strings{"a", "b"});
     string_list copy(list);
     ZEXPECT(pointed(copy) == Strings{"a", "b"});
-    ZEXPECT((copy.c_strs()[0] != list.c_strs()[0]));
+    ZEXPECT(copy.c_strs()[0] != list.c_strs()[0]);
     string_list moved(std::move(copy));
     ZEXPECT(pointed(moved) == Strings{"a", "b"});
     string_list assigned;

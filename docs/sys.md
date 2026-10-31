@@ -1,8 +1,8 @@
 # sys
 
 `kotatsu::sys` gives synchronous access to the current process and the
-system: environment, program lookup, child processes, user directories,
-console output, memory and CPU. It needs no event loop, and a program links
+system: environment, program lookup, child processes, command lines, user
+directories, console output, memory and CPU. It needs no event loop, and a program links
 only the parts it calls.
 
 It is not for managing processes on an event loop: `kotatsu::async::process`
@@ -66,10 +66,10 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
 
 - What portable code calls is declared on every host and fails with
   `not_supported` where it cannot work (the process title on Windows, the OOM
-  score off Linux). Command lines of either quoting are read on every host.
-  What only Windows has lives in `sys::windows`, or is
-  declared on Windows alone (`Child::open`); `windows_*` options are ignored
-  elsewhere.
+  score off Linux). Command lines of either quoting are split, joined and
+  expanded on every host. What only Windows has lives in `sys::windows`, or
+  is declared on Windows alone (`Child::open`); `windows_*` options are
+  ignored elsewhere.
 - `spawn` uses `fork` and `execve` on Linux, `posix_spawn` on macOS, and
   `CreateProcessW` on Windows, the child in a job object of its own and given
   only the standard handles unless `windows_inherit_handles`.

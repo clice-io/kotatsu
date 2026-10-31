@@ -1,10 +1,13 @@
+#include <format>
 #include <functional>
+#include <iterator>
 #include <ranges>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include "sys/harness/cmd.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/sys/cmd.h"
 
@@ -19,14 +22,7 @@ using Arguments = std::vector<std::string>;
 constexpr auto windows = Quoting::Windows;
 constexpr auto posix = Quoting::POSIX;
 
-/// The arguments split() reads in `line`.
-Arguments split_all(std::string_view line, Quoting quoting) {
-    Arguments arguments;
-    for(auto argument: cmd::split(line, quoting)) {
-        arguments.emplace_back(argument);
-    }
-    return arguments;
-}
+using test::split_all;
 
 /// Whether `argument` is a view of `line` itself.
 bool views(std::string_view line, std::string_view argument) {
@@ -51,8 +47,10 @@ ZEST_CASE(views_an_argument_with_nothing_to_unquote) {
         auto it = view.begin();
         ZEXPECT(views(line, *it));
         ++it;
+        ZASSERT(it != std::default_sentinel);
         ZEXPECT(views(line, *it));
         ++it;
+        ZASSERT(it != std::default_sentinel);
         ZEXPECT(*it == "c d");
         ZEXPECT(!views(line, *it));
     }
@@ -66,9 +64,26 @@ ZEST_CASE(copies_of_an_iterator_keep_their_argument) {
     ++it;
     auto copy = it;
     ++it;
+    ZASSERT(it != std::default_sentinel);
     ZEXPECT(*program == "p");
     ZEXPECT(*copy == "a b");
     ZEXPECT(*it == "c");
+}
+
+// Longer than the iterator holds in itself.
+ZEST_CASE(unquotes_a_long_argument) {
+    auto long_argument = std::string(300, 'x') + " y";
+    for(auto quoting: {windows, posix}) {
+        auto line = std::format(R"(p "{}" z)", long_argument);
+        auto view = cmd::split(line, quoting);
+        auto it = view.begin();
+        ++it;
+        ZASSERT(it != std::default_sentinel);
+        auto copy = it;
+        ++it;
+        ZEXPECT(*copy == long_argument);
+        ZEXPECT(split_all(line, quoting) == Arguments{"p", long_argument, "z"});
+    }
 }
 
 ZEST_CASE(an_empty_line_has_no_arguments) {
@@ -83,7 +98,18 @@ ZEST_CASE(windows_reads_the_program_by_its_own_rule) {
     ZEXPECT(split_all(R"(C:\a" "b\c.exe arg)", windows) == Arguments{R"(C:\a b\c.exe)", "arg"});
     ZEXPECT(split_all(R"("" a)", windows) == Arguments{"", "a"});
     ZEXPECT(split_all(R"("a""b" c)", windows) == Arguments{"ab", "c"});
-    ZEXPECT(split_all(R"(\\server\x.exe a\\"b")", windows) == Arguments{R"(\\server\x.exe)", R"(a\b)"});
+    ZEXPECT(split_all(R"(\\server\x.exe a\\"b")", windows) ==
+            Arguments{R"(\\server\x.exe)", R"(a\b)"});
+}
+
+// LLVM's cases of cl::TokenizeWindowsCommandLineFull, from
+// llvm/unittests/Support/CommandLineTest.cpp, but for the one after a line
+// end, where LLVM reads a program again and the C runtime does not.
+ZEST_CASE(windows_reads_llvms_cases_of_a_program) {
+    ZEXPECT(split_all(R"("C:\Program Files\Whatever\"clang.exe z.c -DY=\"x\")", windows) ==
+            Arguments{R"(C:\Program Files\Whatever\clang.exe)", "z.c", R"(-DY="x")"});
+    ZEXPECT(split_all(R"(\\server\share\subdir\clang.exe)", windows) ==
+            Arguments{R"(\\server\share\subdir\clang.exe)"});
 }
 
 ZEST_CASE(windows_reads_an_empty_program_before_a_blank) {
@@ -136,14 +162,14 @@ ZEST_CASE(windows_expands_no_wildcard) {
 // case reads otherwise.
 ZEST_CASE(posix_reads_llvms_gnu_cases) {
     ZEXPECT(split_all(R"(foo\ bar "foo bar" 'foo bar' -DFOO=bar\(\) )"
-                  R"(foo"bar"baz C:\\src\\foo.cpp "C:\src\foo.cpp")",
-                  posix) == Arguments{"foo bar",
-                                      "foo bar",
-                                      "foo bar",
-                                      "-DFOO=bar()",
-                                      "foobarbaz",
-                                      R"(C:\src\foo.cpp)",
-                                      "C:srcfoo.cpp"});
+                      R"(foo"bar"baz C:\\src\\foo.cpp "C:\src\foo.cpp")",
+                      posix) == Arguments{"foo bar",
+                                          "foo bar",
+                                          "foo bar",
+                                          "-DFOO=bar()",
+                                          "foobarbaz",
+                                          R"(C:\src\foo.cpp)",
+                                          "C:srcfoo.cpp"});
     ZEXPECT(split_all(R"(a b c "" d)", posix) == Arguments{"a", "b", "c", "", "d"});
     ZEXPECT(split_all(R"(a b c '' d)", posix) == Arguments{"a", "b", "c", "", "d"});
     ZEXPECT(split_all(R"('' a b c d "")", posix) == Arguments{"", "a", "b", "c", "d", ""});

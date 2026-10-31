@@ -4,6 +4,7 @@
 #include <string_view>
 #include <vector>
 
+#include "sys/harness/cmd.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/support/small_string.h"
 #include "kotatsu/support/string_list_ref.h"
@@ -27,14 +28,7 @@ std::string joined(string_list_ref arguments, Quoting quoting) {
     return out;
 }
 
-/// The arguments split() reads in `line`.
-Arguments split_all(std::string_view line, Quoting quoting) {
-    Arguments arguments;
-    for(auto argument: cmd::split(line, quoting)) {
-        arguments.emplace_back(argument);
-    }
-    return arguments;
-}
+using test::split_all;
 
 ZEST_SUITE(sys_cmd_join) {
 
@@ -124,13 +118,14 @@ ZEST_CASE(split_reads_back_what_join_writes) {
 }
 
 // Arguments of every character that either quoting reads specially, drawn
-// at random; a Windows program holds no quote.
+// at random, alike with every standard library; a Windows program holds no
+// quote.
 ZEST_CASE(split_reads_back_what_join_writes_of_any_arguments) {
     constexpr std::uint32_t seed = 20261031;
     constexpr auto alphabet = "ab \t\r\n\v\"'\\@$\0\xC3\xA9"sv;
     std::mt19937 random(seed);
     auto draw = [&](std::size_t most) {
-        return std::uniform_int_distribution<std::size_t>(0, most)(random);
+        return random() % (most + 1);
     };
     for(int run = 0; run < 2000; ++run) {
         Arguments arguments(draw(4) + 1);

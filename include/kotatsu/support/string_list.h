@@ -16,9 +16,9 @@
 namespace kotatsu {
 
 /// Strings owned in one buffer, each followed by a NUL, with the pointers to
-/// them that a C function takes for argv. As a vector's push_back moves its
-/// elements, a push may move every string: a view or pointer into the list
-/// holds until the next push.
+/// them, as `const char*`, that a C function takes for argv. As a vector's
+/// push_back moves its elements, a push may move every string: a view or
+/// pointer into the list holds until the next push.
 class string_list {
 public:
     using iterator = string_list_ref::iterator;
@@ -61,9 +61,14 @@ public:
     }
 
     void push_back(std::string_view string) {
-        // Room first, so that a failed allocation leaves the list as it was.
-        starts.reserve(starts.size() + 1);
-        pointers.reserve(starts.size() + 2);
+        // Room first, so that a failed allocation leaves the list as it was;
+        // twice what it holds, as a vector grows.
+        if(starts.size() == starts.capacity()) {
+            starts.reserve(starts.size() * 2 + 1);
+        }
+        if(starts.size() + 2 > pointers.capacity()) {
+            pointers.reserve(starts.size() * 2 + 2);
+        }
         auto start = buffer.size();
         auto capacity = buffer.capacity();
         // Into the string, which takes `string` even if it views the list.
