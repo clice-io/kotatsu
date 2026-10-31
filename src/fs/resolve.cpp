@@ -92,12 +92,21 @@ std::error_code follow_symlinks(buffer_ref out, std::string_view path) {
             return std::make_error_code(std::errc::too_many_symbolic_link_levels);
         }
         path::set_file_name(followed, target);
-        // Windows resolves a link's `..` by text, and leaves it in a verbatim
-        // path, which then names nothing; on POSIX it stays, climbing out of
-        // wherever the link's directory leads.
-        path::normalize(followed,
-                        path::native_style == path::Style::Windows ? path::DotDot::Fold
-                                                                   : path::DotDot::Keep);
+        if constexpr(path::native_style == path::Style::Windows) {
+            // Windows resolves a link's `..` by text, and leaves it in a
+            // verbatim path, which then names nothing.
+            path::normalize(followed);
+        } else {
+            // POSIX climbs a link's `..` out of wherever its directory leads,
+            // and takes a target that ends in a separator or `.` for a
+            // directory, which a separator then still says.
+            const bool directory =
+                std::string_view(target).ends_with('/') || path::filename(target) == ".";
+            path::normalize(followed, path::DotDot::Keep);
+            if(directory && !std::string_view(followed).ends_with('/')) {
+                followed.push_back('/');
+            }
+        }
     }
     out.assign(followed);
     return {};

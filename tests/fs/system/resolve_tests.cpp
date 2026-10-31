@@ -285,6 +285,22 @@ ZEST_CASE(follow_symlinks_reads_a_link_named_with_a_separator_after_it) {
     ZEXPECT(!follow_symlinks(followed, dir.file("first/")));
     ZEXPECT(followed == dir.file("real"));
 }
+
+ZEST_CASE(follow_symlinks_keeps_a_target_that_must_name_a_directory) {
+    // `file/.` and `file/`, which name no regular file, end in a separator.
+    test::TempDir dir;
+    test::write_text(dir.file("file.txt"), "text");
+    std::filesystem::create_symlink("file.txt/.", dir.path / "dot");
+    std::filesystem::create_symlink("./file.txt/", dir.path / "slash");
+    std::filesystem::create_symlink("/", dir.path / "root");
+    std::string followed;
+    ZEXPECT(!follow_symlinks(followed, dir.file("dot")));
+    ZEXPECT(followed == dir.file("file.txt/"));
+    ZEXPECT(!follow_symlinks(followed, dir.file("slash")));
+    ZEXPECT(followed == dir.file("file.txt/"));
+    ZEXPECT(!follow_symlinks(followed, dir.file("root")));
+    ZEXPECT(followed == "/");
+}
 #endif
 
 // The path may view the buffer the result goes to.
