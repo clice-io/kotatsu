@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include "kotatsu/zest/zest.h"
@@ -26,6 +27,9 @@ constexpr auto posix = Quoting::POSIX;
 /// Response files in memory, by name, which records the names it is asked
 /// to read.
 struct Files {
+    explicit Files(std::map<std::string, std::string, std::less<>> texts = {}) :
+        texts(std::move(texts)) {}
+
     std::map<std::string, std::string, std::less<>> texts;
 
     std::vector<std::string> asked;
@@ -52,7 +56,7 @@ Arguments expanded(string_list_ref arguments, Files& files, Quoting quoting = po
 
 /// The arguments expand() reads in a response file of `text`.
 Arguments read(std::string_view text, Quoting quoting) {
-    Files files{.texts = {{"file", std::string(text)}}};
+    Files files({{"file", std::string(text)}});
     return expanded({"@file"}, files, quoting);
 }
 
@@ -83,16 +87,14 @@ ZEST_CASE(views_the_commands_own_arguments) {
 }
 
 ZEST_CASE(replaces_a_response_file_with_its_arguments) {
-    Files files{.texts = {{"args", "-DA=1 'b c'\n-O2\n"}}};
+    Files files({{"args", "-DA=1 'b c'\n-O2\n"}});
     ZEXPECT(expanded({"clang", "@args", "x.c"}, files) ==
             Arguments{"clang", "-DA=1", "b c", "-O2", "x.c"});
     ZEXPECT(files.asked == Arguments{"args"});
 }
 
 ZEST_CASE(reads_response_files_in_response_files) {
-    Files files{
-        .texts = {{"a", "1 @b 4 @c"}, {"b", "2 @c 3"}, {"c", "c"}}
-    };
+    Files files({{"a", "1 @b 4 @c"}, {"b", "2 @c 3"}, {"c", "c"}});
     ZEXPECT(expanded({"@a", "5"}, files) == Arguments{"1", "2", "c", "3", "4", "c", "5"});
     ZEXPECT(files.asked == Arguments{"a", "b", "c", "c"});
 }
@@ -104,15 +106,13 @@ ZEST_CASE(leaves_an_unreadable_response_file_as_written) {
 }
 
 ZEST_CASE(reads_no_arguments_in_an_empty_response_file) {
-    Files files{
-        .texts = {{"empty", ""}, {"blank", " \n\t\r\n"}}
-    };
+    Files files({{"empty", ""}, {"blank", " \n\t\r\n"}});
     ZEXPECT(expanded({"a", "@empty", "@blank", "b"}, files) == Arguments{"a", "b"});
     ZEXPECT(expanded({"@empty"}, files).empty());
 }
 
 ZEST_CASE(reads_eight_files_deep) {
-    Files files{.texts = {{"loop", "x @loop"}}};
+    Files files({{"loop", "x @loop"}});
     Arguments arguments(8, "x");
     arguments.emplace_back("@loop");
     ZEXPECT(expanded({"@loop"}, files) == arguments);
@@ -121,7 +121,7 @@ ZEST_CASE(reads_eight_files_deep) {
 
 // What follows `@`, unquoted when a file holds it.
 ZEST_CASE(asks_for_a_file_by_the_name_the_argument_gives) {
-    Files files{.texts = {{"list", R"(@"a b" @)"}}};
+    Files files({{"list", R"(@"a b" @)"}});
     ZEXPECT(expanded({"@list"}, files) == Arguments{"@a b", "@"});
     ZEXPECT(files.asked == Arguments{"list", "a b", ""});
 }
@@ -137,7 +137,7 @@ ZEST_CASE(converts_utf16_with_a_byte_order_mark) {
 }
 
 ZEST_CASE(leaves_utf16_of_an_odd_number_of_bytes_as_written) {
-    Files files{.texts = {{"odd", "\xFF\xFE-\0a"s}}};
+    Files files({{"odd", "\xFF\xFE-\0a"s}});
     ZEXPECT(expanded({"@odd"}, files) == Arguments{"@odd"});
 }
 
