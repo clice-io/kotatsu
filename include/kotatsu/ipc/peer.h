@@ -80,8 +80,9 @@ enum class ViolationPolicy : std::uint8_t {
 };
 
 /// Why a peer's conversation with its remote ended, as Peer::ended() and
-/// Peer::wait_ended() tell it: no answer can come any more, so the requests pending have failed
-/// with ConnectionClosed and `message`, and a new one fails at once with ConnectionClosed.
+/// Peer::wait_ended() tell it: no answer can come any more, so the requests
+/// pending have failed with ConnectionClosed and `message`, and a new one
+/// fails at once with ConnectionClosed.
 struct ConversationEnd {
     enum class Kind : std::uint8_t {
         /// The input ended: the remote closed its output, or the connection
