@@ -209,9 +209,9 @@ public:
     /// called and its task started in the two steps the class comment
     /// describes. The task may refer to the context and the params, which
     /// outlive it, but not to the callback's locals: a capturing lambda
-    /// coroutine made in the callback is returned as `co_invoke(lambda)`, not
-    /// `lambda()`. A callback that is no coroutine fails with
-    /// `return outcome_error(...)`.
+    /// coroutine made in the callback is returned as
+    /// `async::co_invoke(lambda)`, not `lambda()`. A callback that is no
+    /// coroutine fails with `return outcome_error(...)`.
     template <typename Callback>
     void on_request(Callback&& callback);
 
