@@ -28,7 +28,7 @@ std::string joined(string_list_ref arguments, Quoting quoting) {
 }
 
 /// The arguments split() reads in `line`.
-Arguments split(std::string_view line, Quoting quoting) {
+Arguments split_all(std::string_view line, Quoting quoting) {
     Arguments arguments;
     for(auto argument: cmd::split(line, quoting)) {
         arguments.emplace_back(argument);
@@ -119,8 +119,8 @@ ZEST_CASE(split_reads_back_what_join_writes) {
         "caf\xC3\xA9 \xF0\x9F\x98\x80",
         "*",
     };
-    ZEXPECT(split(joined(arguments, windows), windows) == arguments);
-    ZEXPECT(split(joined(arguments, posix), posix) == arguments);
+    ZEXPECT(split_all(joined(arguments, windows), windows) == arguments);
+    ZEXPECT(split_all(joined(arguments, posix), posix) == arguments);
 }
 
 // Arguments of every character that either quoting reads specially, drawn
@@ -140,9 +140,9 @@ ZEST_CASE(split_reads_back_what_join_writes_of_any_arguments) {
             }
         }
         ZEST_CONTEXT("seed {}, run {}", seed, run);
-        ZASSERT(split(joined(arguments, posix), posix) == arguments);
+        ZASSERT(split_all(joined(arguments, posix), posix) == arguments);
         std::erase(arguments[0], '"');
-        ZASSERT(split(joined(arguments, windows), windows) == arguments);
+        ZASSERT(split_all(joined(arguments, windows), windows) == arguments);
     }
 }
 

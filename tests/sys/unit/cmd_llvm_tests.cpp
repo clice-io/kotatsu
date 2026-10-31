@@ -26,7 +26,7 @@ using namespace std::literals;
 using Arguments = std::vector<std::string>;
 
 /// The arguments split() reads in `line`.
-Arguments split(std::string_view line, Quoting quoting) {
+Arguments split_all(std::string_view line, Quoting quoting) {
     Arguments arguments;
     for(auto argument: cmd::split(line, quoting)) {
         arguments.emplace_back(argument);
@@ -112,7 +112,7 @@ ZEST_SUITE(sys_cmd_llvm) {
 ZEST_CASE(posix_reads_as_llvms_gnu_tokenizer) {
     compare(
         "ab \t\r\n\0\"\\"sv,
-        [](std::string_view line) { return split(line, Quoting::POSIX); },
+        [](std::string_view line) { return split_all(line, Quoting::POSIX); },
         test::tokenize_gnu_command_line);
 }
 
@@ -122,7 +122,7 @@ ZEST_CASE(posix_reads_as_llvms_gnu_tokenizer) {
 ZEST_CASE(posix_reads_as_clangs_database) {
     compare(
         "ab \0\"'\\"sv,
-        [](std::string_view line) { return split(line, Quoting::POSIX); },
+        [](std::string_view line) { return split_all(line, Quoting::POSIX); },
         test::unescape_json_command_line,
         [](std::string_view line) { return !line.ends_with('\\'); });
 }
@@ -132,7 +132,7 @@ ZEST_CASE(posix_reads_as_clangs_database) {
 ZEST_CASE(windows_reads_arguments_as_llvms_windows_tokenizer) {
     compare(
         "ab \t\"\\"sv,
-        [](std::string_view line) { return split("p "s.append(line), Quoting::Windows); },
+        [](std::string_view line) { return split_all("p "s.append(line), Quoting::Windows); },
         [](std::string_view line) {
             return test::tokenize_windows_command_line("p "s.append(line));
         });
@@ -149,7 +149,7 @@ ZEST_CASE(a_posix_file_reads_as_a_posix_line) {
     compare(
         "ab \t\r\n\0\"'\\"sv,
         [](std::string_view text) { return read_file(text, Quoting::POSIX); },
-        [](std::string_view line) { return split(line, Quoting::POSIX); });
+        [](std::string_view line) { return split_all(line, Quoting::POSIX); });
 }
 
 };  // ZEST_SUITE(sys_cmd_llvm)

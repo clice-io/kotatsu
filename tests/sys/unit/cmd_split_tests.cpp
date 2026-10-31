@@ -20,7 +20,7 @@ constexpr auto windows = Quoting::Windows;
 constexpr auto posix = Quoting::POSIX;
 
 /// The arguments split() reads in `line`.
-Arguments split(std::string_view line, Quoting quoting) {
+Arguments split_all(std::string_view line, Quoting quoting) {
     Arguments arguments;
     for(auto argument: cmd::split(line, quoting)) {
         arguments.emplace_back(argument);
@@ -72,70 +72,70 @@ ZEST_CASE(copies_of_an_iterator_keep_their_argument) {
 }
 
 ZEST_CASE(an_empty_line_has_no_arguments) {
-    ZEXPECT(split("", windows).empty());
-    ZEXPECT(split("", posix).empty());
-    ZEXPECT(split(" \t\r\n ", posix).empty());
+    ZEXPECT(split_all("", windows).empty());
+    ZEXPECT(split_all("", posix).empty());
+    ZEXPECT(split_all(" \t\r\n ", posix).empty());
 }
 
 ZEST_CASE(windows_reads_the_program_by_its_own_rule) {
     // Backslashes are literal in it, and every quote toggles.
-    ZEXPECT(split(R"("C:\dir\"x y)", windows) == Arguments{R"(C:\dir\x)", "y"});
-    ZEXPECT(split(R"(C:\a" "b\c.exe arg)", windows) == Arguments{R"(C:\a b\c.exe)", "arg"});
-    ZEXPECT(split(R"("" a)", windows) == Arguments{"", "a"});
-    ZEXPECT(split(R"("a""b" c)", windows) == Arguments{"ab", "c"});
-    ZEXPECT(split(R"(\\server\x.exe a\\"b")", windows) == Arguments{R"(\\server\x.exe)", R"(a\b)"});
+    ZEXPECT(split_all(R"("C:\dir\"x y)", windows) == Arguments{R"(C:\dir\x)", "y"});
+    ZEXPECT(split_all(R"(C:\a" "b\c.exe arg)", windows) == Arguments{R"(C:\a b\c.exe)", "arg"});
+    ZEXPECT(split_all(R"("" a)", windows) == Arguments{"", "a"});
+    ZEXPECT(split_all(R"("a""b" c)", windows) == Arguments{"ab", "c"});
+    ZEXPECT(split_all(R"(\\server\x.exe a\\"b")", windows) == Arguments{R"(\\server\x.exe)", R"(a\b)"});
 }
 
 ZEST_CASE(windows_reads_an_empty_program_before_a_blank) {
-    ZEXPECT(split(" p", windows) == Arguments{"", "p"});
-    ZEXPECT(split("   ", windows) == Arguments{""});
+    ZEXPECT(split_all(" p", windows) == Arguments{"", "p"});
+    ZEXPECT(split_all("   ", windows) == Arguments{""});
     // Quotes still open run to the end.
-    ZEXPECT(split(R"("C:\a b)", windows) == Arguments{R"(C:\a b)"});
+    ZEXPECT(split_all(R"("C:\a b)", windows) == Arguments{R"(C:\a b)"});
 }
 
 ZEST_CASE(windows_separates_on_blanks_outside_quotes) {
-    ZEXPECT(split("p  a\t b ", windows) == Arguments{"p", "a", "b"});
-    ZEXPECT(split(R"(p "a b" c)", windows) == Arguments{"p", "a b", "c"});
-    ZEXPECT(split(R"(p a"b c"d)", windows) == Arguments{"p", "ab cd"});
+    ZEXPECT(split_all("p  a\t b ", windows) == Arguments{"p", "a", "b"});
+    ZEXPECT(split_all(R"(p "a b" c)", windows) == Arguments{"p", "a b", "c"});
+    ZEXPECT(split_all(R"(p a"b c"d)", windows) == Arguments{"p", "ab cd"});
 }
 
 ZEST_CASE(windows_keeps_empty_quoted_arguments) {
-    ZEXPECT(split(R"(p "" "")", windows) == Arguments{"p", "", ""});
+    ZEXPECT(split_all(R"(p "" "")", windows) == Arguments{"p", "", ""});
     // Quotes still open at the end.
-    ZEXPECT(split(R"(p ")", windows) == Arguments{"p", ""});
-    ZEXPECT(split(R"(p "abc)", windows) == Arguments{"p", "abc"});
+    ZEXPECT(split_all(R"(p ")", windows) == Arguments{"p", ""});
+    ZEXPECT(split_all(R"(p "abc)", windows) == Arguments{"p", "abc"});
 }
 
 ZEST_CASE(windows_halves_backslashes_before_a_quote) {
-    ZEXPECT(split(R"(p a\\"b c")", windows) == Arguments{"p", R"(a\b c)"});
-    ZEXPECT(split(R"(p a\\\"b)", windows) == Arguments{"p", R"(a\"b)"});
-    ZEXPECT(split(R"(p a\\b)", windows) == Arguments{"p", R"(a\\b)"});
-    ZEXPECT(split(R"(p "C:\dir\\")", windows) == Arguments{"p", R"(C:\dir\)"});
-    ZEXPECT(split(R"(p a\\)", windows) == Arguments{"p", R"(a\\)"});
+    ZEXPECT(split_all(R"(p a\\"b c")", windows) == Arguments{"p", R"(a\b c)"});
+    ZEXPECT(split_all(R"(p a\\\"b)", windows) == Arguments{"p", R"(a\"b)"});
+    ZEXPECT(split_all(R"(p a\\b)", windows) == Arguments{"p", R"(a\\b)"});
+    ZEXPECT(split_all(R"(p "C:\dir\\")", windows) == Arguments{"p", R"(C:\dir\)"});
+    ZEXPECT(split_all(R"(p a\\)", windows) == Arguments{"p", R"(a\\)"});
 }
 
 // The rule of the C runtime since 2008, which an older one read as `a"b` and
 // ` c`.
 ZEST_CASE(windows_reads_two_quotes_in_quotes_as_one_and_stays_in_them) {
-    ZEXPECT(split(R"(p "a""b")", windows) == Arguments{"p", R"(a"b)"});
-    ZEXPECT(split(R"(p "a""")", windows) == Arguments{"p", R"(a")"});
-    ZEXPECT(split(R"(p "a""b c")", windows) == Arguments{"p", R"(a"b c)"});
+    ZEXPECT(split_all(R"(p "a""b")", windows) == Arguments{"p", R"(a"b)"});
+    ZEXPECT(split_all(R"(p "a""")", windows) == Arguments{"p", R"(a")"});
+    ZEXPECT(split_all(R"(p "a""b c")", windows) == Arguments{"p", R"(a"b c)"});
 }
 
 ZEST_CASE(windows_keeps_line_ends_and_nuls) {
-    ZEXPECT(split("p a\nb\r\n", windows) == Arguments{"p", "a\nb\r\n"});
-    ZEXPECT(split("p\0q a\0b"sv, windows) == (Arguments{"p\0q"s, "a\0b"s}));
+    ZEXPECT(split_all("p a\nb\r\n", windows) == Arguments{"p", "a\nb\r\n"});
+    ZEXPECT(split_all("p\0q a\0b"sv, windows) == (Arguments{"p\0q"s, "a\0b"s}));
 }
 
 ZEST_CASE(windows_expands_no_wildcard) {
-    ZEXPECT(split("p *.cpp 'foo*' ?", windows) == Arguments{"p", "*.cpp", "'foo*'", "?"});
+    ZEXPECT(split_all("p *.cpp 'foo*' ?", windows) == Arguments{"p", "*.cpp", "'foo*'", "?"});
 }
 
 // LLVM's cases of cl::TokenizeGNUCommandLine, from
 // llvm/unittests/Support/CommandLineTest.cpp, but for the one that the next
 // case reads otherwise.
 ZEST_CASE(posix_reads_llvms_gnu_cases) {
-    ZEXPECT(split(R"(foo\ bar "foo bar" 'foo bar' -DFOO=bar\(\) )"
+    ZEXPECT(split_all(R"(foo\ bar "foo bar" 'foo bar' -DFOO=bar\(\) )"
                   R"(foo"bar"baz C:\\src\\foo.cpp "C:\src\foo.cpp")",
                   posix) == Arguments{"foo bar",
                                       "foo bar",
@@ -144,71 +144,71 @@ ZEST_CASE(posix_reads_llvms_gnu_cases) {
                                       "foobarbaz",
                                       R"(C:\src\foo.cpp)",
                                       "C:srcfoo.cpp"});
-    ZEXPECT(split(R"(a b c "" d)", posix) == Arguments{"a", "b", "c", "", "d"});
-    ZEXPECT(split(R"(a b c '' d)", posix) == Arguments{"a", "b", "c", "", "d"});
-    ZEXPECT(split(R"('' a b c d "")", posix) == Arguments{"", "a", "b", "c", "d", ""});
-    ZEXPECT(split(R"("" '')", posix) == Arguments{"", ""});
-    ZEXPECT(split(R"('''' """" ''"")", posix) == Arguments{"", "", ""});
-    ZEXPECT(split(R"(  a b c '' d  )", posix) == Arguments{"a", "b", "c", "", "d"});
-    ZEXPECT(split(R"(a""a ""b c"" d''d ''e f'')", posix) ==
+    ZEXPECT(split_all(R"(a b c "" d)", posix) == Arguments{"a", "b", "c", "", "d"});
+    ZEXPECT(split_all(R"(a b c '' d)", posix) == Arguments{"a", "b", "c", "", "d"});
+    ZEXPECT(split_all(R"('' a b c d "")", posix) == Arguments{"", "a", "b", "c", "d", ""});
+    ZEXPECT(split_all(R"("" '')", posix) == Arguments{"", ""});
+    ZEXPECT(split_all(R"('''' """" ''"")", posix) == Arguments{"", "", ""});
+    ZEXPECT(split_all(R"(  a b c '' d  )", posix) == Arguments{"a", "b", "c", "", "d"});
+    ZEXPECT(split_all(R"(a""a ""b c"" d''d ''e f'')", posix) ==
             Arguments{"aa", "b", "c", "dd", "e", "f"});
-    ZEXPECT(split(R"("'a'"'"b"')", posix) == Arguments{R"('a'"b")"});
-    ZEXPECT(split(R"(a b ')", posix) == Arguments{"a", "b", ""});
-    ZEXPECT(split(R"(a b 'c d)", posix) == Arguments{"a", "b", "c d"});
-    ZEXPECT(split("a 'b\nc' d", posix) == Arguments{"a", "b\nc", "d"});
-    ZEXPECT(split("clang -Xclang foo\n\nfoo\"bar\"baz\n x.cpp\n", posix) ==
+    ZEXPECT(split_all(R"("'a'"'"b"')", posix) == Arguments{R"('a'"b")"});
+    ZEXPECT(split_all(R"(a b ')", posix) == Arguments{"a", "b", ""});
+    ZEXPECT(split_all(R"(a b 'c d)", posix) == Arguments{"a", "b", "c d"});
+    ZEXPECT(split_all("a 'b\nc' d", posix) == Arguments{"a", "b\nc", "d"});
+    ZEXPECT(split_all("clang -Xclang foo\n\nfoo\"bar\"baz\n x.cpp\n", posix) ==
             Arguments{"clang", "-Xclang", "foo", "foobarbaz", "x.cpp"});
 }
 
 // As sh and clang's compilation database read them, where LLVM's GNU
 // tokenizer reads `'foo\\bar'` as `foo\bar`.
 ZEST_CASE(posix_keeps_backslashes_in_single_quotes) {
-    ZEXPECT(split(R"('foo\\bar')", posix) == Arguments{R"(foo\\bar)"});
-    ZEXPECT(split(R"('a\' b)", posix) == Arguments{R"(a\)", "b"});
+    ZEXPECT(split_all(R"('foo\\bar')", posix) == Arguments{R"(foo\\bar)"});
+    ZEXPECT(split_all(R"('a\' b)", posix) == Arguments{R"(a\)", "b"});
 }
 
 // A backslash escapes any character, inside double quotes too: as LLVM and
 // clang read them, where sh keeps it before all but `$`, a backquote, `"`,
 // `\` and a newline. A generator escapes those alone, which both read alike.
 ZEST_CASE(posix_escapes_any_character_with_a_backslash) {
-    ZEXPECT(split(R"(a\ b \' \" "a\"b" "a\b")", posix) ==
+    ZEXPECT(split_all(R"(a\ b \' \" "a\"b" "a\b")", posix) ==
             Arguments{"a b", "'", R"(")", R"(a"b)", "ab"});
     // A newline, which sh would read as a line continuation, too.
-    ZEXPECT(split("a\\\nb", posix) == Arguments{"a\nb"});
+    ZEXPECT(split_all("a\\\nb", posix) == Arguments{"a\nb"});
 }
 
 ZEST_CASE(posix_keeps_a_backslash_at_the_end) {
-    ZEXPECT(split(R"(a\)", posix) == Arguments{R"(a\)"});
-    ZEXPECT(split(R"("a\)", posix) == Arguments{R"(a\)"});
+    ZEXPECT(split_all(R"(a\)", posix) == Arguments{R"(a\)"});
+    ZEXPECT(split_all(R"("a\)", posix) == Arguments{R"(a\)"});
 }
 
 ZEST_CASE(posix_separates_at_tabs_and_line_ends) {
-    ZEXPECT(split("a\tb\r\nc\nd", posix) == Arguments{"a", "b", "c", "d"});
+    ZEXPECT(split_all("a\tb\r\nc\nd", posix) == Arguments{"a", "b", "c", "d"});
 }
 
 ZEST_CASE(posix_keeps_nuls) {
-    ZEXPECT(split("a\0b c"sv, posix) == (Arguments{"a\0b"s, "c"}));
+    ZEXPECT(split_all("a\0b c"sv, posix) == (Arguments{"a\0b"s, "c"}));
 }
 
 // clang's cases of its compilation database's commands, from
 // clang/unittests/Tooling/CompilationDatabaseTest.cpp, unescaped from the
 // JSON they are written in.
 ZEST_CASE(posix_reads_clangs_database_cases) {
-    ZEXPECT(split("a b c", posix) == Arguments{"a", "b", "c"});
-    ZEXPECT(split("   a   b   ", posix) == Arguments{"a", "b"});
-    ZEXPECT(split(R"(a\\)", posix) == Arguments{R"(a\)"});
-    ZEXPECT(split(R"(a\")", posix) == Arguments{R"(a")"});
-    ZEXPECT(split(R"("  a  b  ")", posix) == Arguments{"  a  b  "});
-    ZEXPECT(split(R"(  " a "  " b "  )", posix) == Arguments{" a ", " b "});
-    ZEXPECT(split(R"("""")", posix) == Arguments{""});
-    ZEXPECT(split(R"("\"")", posix) == Arguments{R"(")"});
-    ZEXPECT(split(R"(  \"  "a \" b "     "and\\c"   \")", posix) ==
+    ZEXPECT(split_all("a b c", posix) == Arguments{"a", "b", "c"});
+    ZEXPECT(split_all("   a   b   ", posix) == Arguments{"a", "b"});
+    ZEXPECT(split_all(R"(a\\)", posix) == Arguments{R"(a\)"});
+    ZEXPECT(split_all(R"(a\")", posix) == Arguments{R"(a")"});
+    ZEXPECT(split_all(R"("  a  b  ")", posix) == Arguments{"  a  b  "});
+    ZEXPECT(split_all(R"(  " a "  " b "  )", posix) == Arguments{" a ", " b "});
+    ZEXPECT(split_all(R"("""")", posix) == Arguments{""});
+    ZEXPECT(split_all(R"("\"")", posix) == Arguments{R"(")"});
+    ZEXPECT(split_all(R"(  \"  "a \" b "     "and\\c"   \")", posix) ==
             Arguments{R"(")", R"(a " b )", R"(and\c)", R"(")"});
-    ZEXPECT(split(R"("a""b")", posix) == Arguments{"ab"});
-    ZEXPECT(split(R"("a"bcd"ef""""g")", posix) == Arguments{"abcdefg"});
-    ZEXPECT(split(R"("abc)", posix) == Arguments{"abc"});
-    ZEXPECT(split(R"(")", posix) == Arguments{""});
-    ZEXPECT(split(R"(a'\b "c"')", posix) == Arguments{R"(a\b "c")"});
+    ZEXPECT(split_all(R"("a""b")", posix) == Arguments{"ab"});
+    ZEXPECT(split_all(R"("a"bcd"ef""""g")", posix) == Arguments{"abcdefg"});
+    ZEXPECT(split_all(R"("abc)", posix) == Arguments{"abc"});
+    ZEXPECT(split_all(R"(")", posix) == Arguments{""});
+    ZEXPECT(split_all(R"(a'\b "c"')", posix) == Arguments{R"(a\b "c")"});
 }
 
 };  // ZEST_SUITE(sys_cmd_split)
