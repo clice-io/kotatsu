@@ -1,5 +1,6 @@
-# Tests are grouped by module, each directory mirroring include/kotatsu/<module>/,
-# and inside a module by level (see the test-style skill):
+# Tests are grouped by module, each directory mirroring
+# include/kotatsu/<module>/, and inside a module by level (see the test-style
+# skill):
 #   unit/     touches only the process's memory, event loop and timers
 #             included; built into unit_tests
 #   system/   touches the operating system: files, processes, sockets, pipes,
@@ -99,8 +100,8 @@ endif()
 # builds the driver <name>, linked against the module's libraries LIBS, and so
 # does a directory integration/drivers/<name>/ of sources, for a driver too
 # heavy for one translation unit; the tests find its path in the environment
-# variable KOTATSU_<NAME>, and so the path of each program PROGRAMS names, targets
-# built elsewhere. DEBUG_ONLY names files under integration/, tests and
+# variable KOTATSU_<NAME>, and so the path of each program PROGRAMS names,
+# targets built elsewhere. DEBUG_ONLY names files under integration/, tests and
 # drivers, that only the builds above, which take the largest units, build and
 # run; elsewhere such a driver is left out of the default build.
 function(kotatsu_add_integration_tests)
@@ -296,8 +297,8 @@ if(KOTATSU_SANITIZE_ADDRESS AND MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # zest runs tests on worker processes it drives through kotatsu::async, finds
-# with kotatsu::sys and logs with kotatsu::fs, compares with meta, prints with the
-# debug codec, matches filters with support's glob patterns and parses its
+# with kotatsu::sys and logs with kotatsu::fs, compares with meta, prints with
+# the debug codec, matches filters with support's glob patterns and parses its
 # options with deco, so the checks are staged and a failed stage keeps the
 # later ones from running:
 #   1. zest_bootstrap_*: the tests of what zest itself relies on run in this

@@ -86,8 +86,8 @@ if(KOTATSU_CODEC_ENABLE_TOML)
         GIT_TAG v3.4.0
     )
     # toml++ is pinned to no-exceptions mode unconditionally (independent of
-    # KOTATSU_ENABLE_EXCEPTIONS); kotatsu/codec/toml/type.h enforces the same pin for
-    # any build system that does not pass this definition. See PR #168.
+    # KOTATSU_ENABLE_EXCEPTIONS); kotatsu/codec/toml/type.h enforces the same
+    # pin for any build system that does not pass this definition. See PR #168.
     kotatsu_add_codec_backend(toml
         LINK tomlplusplus::tomlplusplus
         DEFINITIONS TOML_EXCEPTIONS=0

@@ -3,8 +3,8 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 exports_files(["command_test.ts"])
 
-# CMake's KOTATSU_ENABLE_EXCEPTIONS and KOTATSU_ENABLE_RTTI: a build without them
-# sets --@kotatsu//bazel:exceptions=false or --@kotatsu//bazel:rtti=false.
+# CMake's KOTATSU_ENABLE_EXCEPTIONS and KOTATSU_ENABLE_RTTI: a build without
+# them sets --@kotatsu//bazel:exceptions=false or --@kotatsu//bazel:rtti=false.
 # They reach the defines kotatsu's headers read and kotatsu's own compiles;
 # simdjson has a flag of its own (.bazelrc's no-exceptions sets both).
 bool_flag(

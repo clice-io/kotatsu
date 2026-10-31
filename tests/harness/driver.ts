@@ -1,8 +1,8 @@
-// Drivers are the programs integration tests spawn. kotatsu_add_integration_tests
-// (tests/CMakeLists.txt) builds each one and passes its path in KOTATSU_<NAME>. A
-// test talks to a driver over its stdio, in the driver's protocol (ipc's
-// harness has JSON-RPC's) or in JSON lines, and ends by checking how the
-// driver exited.
+// Drivers are the programs integration tests spawn.
+// kotatsu_add_integration_tests (tests/CMakeLists.txt) builds each one and
+// passes its path in KOTATSU_<NAME>. A test talks to a driver over its stdio,
+// in the driver's protocol (ipc's harness has JSON-RPC's) or in JSON lines, and
+// ends by checking how the driver exited.
 
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";

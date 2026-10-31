@@ -75,8 +75,9 @@ target_link_libraries(kotatsu_zest PRIVATE
 
 kotatsu_apply_project_options(kotatsu_zest)
 
-# zest's support for tests of kotatsu::async code (kotatsu/zest/async.h): a target of
-# its own, so that kotatsu::zest does not bring kotatsu::async to its users.
+# zest's support for tests of kotatsu::async code (kotatsu/zest/async.h): a
+# target of its own, so that kotatsu::zest does not bring kotatsu::async to its
+# users.
 add_library(kotatsu_zest_async INTERFACE)
 add_library(kotatsu::zest::async ALIAS kotatsu_zest_async)
 

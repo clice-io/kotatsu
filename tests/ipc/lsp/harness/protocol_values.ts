@@ -1,6 +1,6 @@
-// Values of the LSP protocol's types, drawn from the pinned metaModel: fast-check
-// arbitraries for each type, and whether kotatsu/ipc/lsp/protocol.h reads a value
-// as a type. Both follow the spec, bent where known_deviations.ts says
+// Values of the LSP protocol's types, drawn from the pinned metaModel:
+// fast-check arbitraries for each type, and whether kotatsu/ipc/lsp/protocol.h
+// reads a value as a type. Both follow the spec, bent where known_deviations.ts says
 // protocol.h reads otherwise.
 
 import fc from "fast-check";

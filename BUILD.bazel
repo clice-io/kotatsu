@@ -258,7 +258,8 @@ kotatsu_library(
     ],
 )
 
-# zest's support for tests of kotatsu::async code, as CMake's kotatsu::zest::async.
+# zest's support for tests of kotatsu::async code, as CMake's
+# kotatsu::zest::async.
 kotatsu_library(
     name = "zest_async",
     hdrs = ["include/kotatsu/zest/async.h"],

@@ -63,7 +63,8 @@ const TABLE = "tests/ipc/lsp/harness/protocol_types.inc";
 const RANGE_STRUCTURES = new Set(["Position", "Range"]);
 const RANGE_BASE_TYPES = new Map([["uinteger", "std::uint32_t"]]);
 
-// Named after the metaModel; the aliases live in kotatsu/ipc/protocol.h and ts.h.
+// Named after the metaModel; the aliases live in kotatsu/ipc/protocol.h and
+// ts.h.
 const BASE_TYPES = new Set<BaseTypes>([
   "boolean",
   "integer",
