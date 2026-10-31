@@ -207,9 +207,8 @@ class Builder {
         for(std::size_t i = 0; i < variant.alternatives.size(); ++i) {
             const auto& alternative = variant.alternatives[i]();
             auto word = subcommand_name(variant, i);
-            subcommands.hidden.push_back(
-                std::ranges::find(use.spec.hidden_subcommands.names(), word) !=
-                use.spec.hidden_subcommands.names().end());
+            subcommands.hidden.push_back(std::ranges::find(use.spec.hidden_sub.names(), word) !=
+                                         use.spec.hidden_sub.names().end());
             subcommands.names.push_back(std::move(word));
             subcommands.descriptions.push_back(
                 static_cast<const meta::struct_type_info&>(alternative).description);

@@ -82,15 +82,15 @@ constexpr const inline field_spec& field_spec_of = [] -> const field_spec& {
     }
 }();
 
-/// The key an extension's spec type is found by at run time: its address. Not const, so that no
-/// linker folds the keys of two spec types into one.
+/// The key an extension's spec type is found by: its qualified name, which compares in a
+/// constant expression too, where the address of a variable may not.
 template <typename Spec>
-inline char extension_key = 0;
+constexpr inline std::string_view extension_key = type_name<Spec>(true);
 
 /// An extension's spec as a field keeps it: beside the key of its type, which
 /// extension_ref compares before it casts down, in a constant expression too.
 struct extension_base {
-    const void* key;
+    std::string_view key;
 };
 
 template <typename Spec>
@@ -104,10 +104,14 @@ struct extension_ref {
     const extension_base* value;
 
     template <typename Spec>
-    constexpr const Spec* get() const {
-        return value->key == &extension_key<Spec>
-                   ? &static_cast<const extension_value<Spec>*>(value)->spec
-                   : nullptr;
+    constexpr bool holds() const {
+        return value->key == extension_key<Spec>;
+    }
+
+    /// The spec it holds, which must be a `Spec`.
+    template <typename Spec>
+    constexpr const Spec& get() const {
+        return static_cast<const extension_value<Spec>*>(value)->spec;
     }
 };
 
@@ -120,7 +124,7 @@ constexpr inline auto extension_values = [] {
         return std::apply(
             []<typename... Specs>(const Specs&... spec) {
                 return std::tuple<extension_value<Specs>...>{
-                    extension_value<Specs>{{&extension_key<Specs>}, spec}
+                    extension_value<Specs>{{extension_key<Specs>}, spec}
                     ...
                 };
             },

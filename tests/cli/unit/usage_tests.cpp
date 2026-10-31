@@ -55,7 +55,7 @@ struct Tool {
 struct Internal {
     KOTATSU_ANNOTATE(cli::hidden = true)
     <bool> trace = false;
-    KOTATSU_ANNOTATE(cli::hidden_subcommands = {"serve"})
+    KOTATSU_ANNOTATE(cli::hidden_sub = {"serve"})
     <std::variant<Serve, Query>> command;
 };
 

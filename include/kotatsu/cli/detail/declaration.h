@@ -80,8 +80,8 @@ struct FieldUse {
 
 constexpr FieldUse use_of(const meta::field_info& field) {
     FieldUse use;
-    if(const auto* spec = field.extension<ArgSpec>()) {
-        use.spec = *spec;
+    if(field.has_extension<ArgSpec>()) {
+        use.spec = *field.extension<ArgSpec>();
     }
     use.type = &field.type();
     if(use.type->kind == meta::type_kind::optional) {
@@ -241,7 +241,7 @@ class DeclarationCheck {
             DeclarationCheck inner;
             inner.check(static_cast<const meta::struct_type_info&>(alternative));
         }
-        for(auto hidden: use.spec.hidden_subcommands.names()) {
+        for(auto hidden: use.spec.hidden_sub.names()) {
             if(std::ranges::find(words, hidden) == words.end()) {
                 KOTATSU_THROW("cli: a hidden subcommand is one of the field's");
             }

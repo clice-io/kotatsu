@@ -229,8 +229,9 @@ ZEST_CASE(field_info_carries_extensions_and_declared_names) {
 ZEST_CASE(field_info_finds_extensions_at_compile_time) {
     constexpr const auto& info =
         static_cast<const struct_type_info&>(type_info_of<holds_extension>());
+    ZSTATIC_EXPECT(info.fields[0].has_extension<probe_extension>());
     ZSTATIC_EXPECT(info.fields[0].extension<probe_extension>()->weight == 3);
-    ZSTATIC_EXPECT(info.fields[1].extension<probe_extension>() == nullptr);
+    ZSTATIC_EXPECT(!info.fields[1].has_extension<probe_extension>());
 }
 
 ZEST_CASE(annotate_maps_components_to_behavior_attrs) {

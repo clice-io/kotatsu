@@ -68,7 +68,7 @@ struct ArgSpec {
     /// Whether a usage leaves it out: an option or argument for other programs, not people.
     bool hidden = false;
     /// For a field of subcommands, the words of those a usage leaves out.
-    meta::name_list hidden_subcommands = {};
+    meta::name_list hidden_sub = {};
 
     constexpr void validate() const {
         if(positional && rest) {
@@ -93,8 +93,7 @@ struct ArgSpec {
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::arg_num> arg_num{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::forward> forward{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::hidden> hidden{};
-[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::hidden_subcommands>
-    hidden_subcommands{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::hidden_sub> hidden_sub{};
 
 /// A field that stands for other arguments: its names, given, are read as `cli::forward`.
 /// It holds nothing.

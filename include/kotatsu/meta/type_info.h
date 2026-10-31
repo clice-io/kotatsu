@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -159,13 +160,21 @@ struct field_info {
     /// The specs of the extensions its annotation carries, found with extension().
     std::span<const extension_ref> extensions = {};
 
-    /// The spec of type `Spec` an extension attached to the field; null when it
-    /// has none.
+    /// Whether an extension attached a spec of type `Spec` to the field.
+    template <typename Spec>
+    constexpr bool has_extension() const {
+        return std::ranges::any_of(extensions,
+                                   [](const extension_ref& ref) { return ref.holds<Spec>(); });
+    }
+
+    /// The spec of type `Spec` an extension attached to the field; null when it has none.
+    /// A constant expression asks has_extension() first: GCC compares no address of an
+    /// inline variable with null there.
     template <typename Spec>
     constexpr const Spec* extension() const {
         for(const auto& ref: extensions) {
-            if(const auto* spec = ref.get<Spec>()) {
-                return spec;
+            if(ref.holds<Spec>()) {
+                return &ref.get<Spec>();
             }
         }
         return nullptr;

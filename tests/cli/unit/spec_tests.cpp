@@ -21,7 +21,6 @@ ZEST_SUITE(cli_spec) {
 
 ZEST_CASE(entries_fold_into_the_spec) {
     constexpr const auto* spec = meta::extension_of<ArgSpec, meta::field_type<Fields, 0>>;
-    ZSTATIC_EXPECT(spec != nullptr);
     ZSTATIC_EXPECT(spec->names.names().size() == 2U);
     ZSTATIC_EXPECT(spec->names.names()[1] == "--out");
     ZSTATIC_EXPECT(spec->meta_var == "<FILE>");

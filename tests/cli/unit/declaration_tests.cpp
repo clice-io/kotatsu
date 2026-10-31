@@ -111,7 +111,7 @@ struct SameWords {
 };
 
 struct HiddenUnknown {
-    KOTATSU_ANNOTATE(cli::hidden_subcommands = {"worker"})
+    KOTATSU_ANNOTATE(cli::hidden_sub = {"worker"})
     <std::variant<Serve>> command;
 };
 
