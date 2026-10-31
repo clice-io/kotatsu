@@ -242,7 +242,7 @@ ZEST_CASE(follow_symlinks_takes_each_target_in_its_own_link_directory) {
 }
 
 ZEST_CASE(follow_symlinks_normalizes_each_target) {
-    // `.` goes; `..` stays as the cases before keep it.
+    // `.` goes; the cases before check what becomes of `..`.
     test::TempDir dir;
     if(!test::linked(
            create_symlink("./build/./compile_commands.json", dir.file("compile_commands.json")))) {
