@@ -51,21 +51,23 @@ POSIX only; on Windows the test runs `cmd /c` instead.
 Failures are `std::expected<T, std::error_code>` (or a bare `std::error_code`);
 text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
 
-| Header                                        | Contents                                                                           |
-| --------------------------------------------- | ---------------------------------------------------------------------------------- |
-| [env.h](../include/kotatsu/sys/env.h)         | Environment variables, and PATH-like lists split and joined                        |
-| [process.h](../include/kotatsu/sys/process.h) | This process: IDs, executable path, arguments, `find_program`, title, signal names |
-| [spawn.h](../include/kotatsu/sys/spawn.h)     | `spawn` and `Child` (wait, kill, process groups), `Stdio`, `ExitStatus`, `capture` |
-| [windows.h](../include/kotatsu/sys/windows.h) | Windows command lines, NTSTATUS names, CreateProcess's program search              |
-| [dirs.h](../include/kotatsu/sys/dirs.h)       | Home, temporary, cache, config and data directories, `~` expansion                 |
-| [console.h](../include/kotatsu/sys/console.h) | `write_console`, `is_console`, `is_pipe`                                           |
-| [info.h](../include/kotatsu/sys/info.h)       | Process and system memory, CPU time, `parallelism`, OS, priorities                 |
+| Header                                        | Contents                                                                            |
+| --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [env.h](../include/kotatsu/sys/env.h)         | Environment variables, and PATH-like lists split and joined                         |
+| [process.h](../include/kotatsu/sys/process.h) | This process: IDs, executable path, arguments, `find_program`, title, signal names  |
+| [spawn.h](../include/kotatsu/sys/spawn.h)     | `spawn` and `Child` (wait, kill, process groups), `Stdio`, `ExitStatus`, `capture`  |
+| [cmd.h](../include/kotatsu/sys/cmd.h)         | Command lines of Windows or POSIX quoting split and joined, response files expanded |
+| [windows.h](../include/kotatsu/sys/windows.h) | NTSTATUS names, CreateProcess's program search                                      |
+| [dirs.h](../include/kotatsu/sys/dirs.h)       | Home, temporary, cache, config and data directories, `~` expansion                  |
+| [console.h](../include/kotatsu/sys/console.h) | `write_console`, `is_console`, `is_pipe`                                            |
+| [info.h](../include/kotatsu/sys/info.h)       | Process and system memory, CPU time, `parallelism`, OS, priorities                  |
 
 ## Platform notes
 
 - What portable code calls is declared on every host and fails with
   `not_supported` where it cannot work (the process title on Windows, the OOM
-  score off Linux). What only Windows has lives in `sys::windows`, or is
+  score off Linux). Command lines of either quoting are read on every host.
+  What only Windows has lives in `sys::windows`, or is
   declared on Windows alone (`Child::open`); `windows_*` options are ignored
   elsewhere.
 - `spawn` uses `fork` and `execve` on Linux, `posix_spawn` on macOS, and

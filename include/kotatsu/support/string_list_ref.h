@@ -137,6 +137,11 @@ public:
     }
 
 private:
+    friend class string_list;
+
+    string_list_ref(const void* first, std::size_t count, Element at) noexcept :
+        first(first), count(count), at(at) {}
+
     template <typename String>
     static std::string_view element(const void* first, std::size_t index) {
         return static_cast<const String*>(first)[index];
