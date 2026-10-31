@@ -13,29 +13,13 @@ namespace kotatsu::async {
 
 namespace {
 
-/// The frames of the tasks that ended in the resumption under way on this
-/// thread. They go once the outermost resumption is over, as one may own
-/// what the code that ended it still uses, a group's before its join()
-/// returns, if that is sooner. One destroyed already is null.
-thread_local std::vector<detail::EndedFrame> ended_frames;
-
-/// Destroys the frames listed that `pick` takes. Destroying one may end more
-/// tasks, whose frames join the list.
-template <typename Pick>
-void destroy_ended(Pick pick) {
-    for(std::size_t i = 0; i < ended_frames.size(); ++i) {
-        if(pick(ended_frames[i])) {
-            if(auto frame = std::exchange(ended_frames[i].frame, nullptr)) {
-                frame.destroy();
-            }
-        }
-    }
-}
-
-void destroy_ended_frames() {
-    destroy_ended([](const detail::EndedFrame&) { return true; });
-    ended_frames.clear();
-}
+/// The frames of the roots a loop owns that ended in the resumption under way
+/// on this thread, and the task_groups with children that did: they go once
+/// the outermost resumption is over, as a frame may own what the code that
+/// ended it still uses. A group's children go before its join() returns, if
+/// that is sooner.
+thread_local std::vector<std::coroutine_handle<>> ended_roots;
+thread_local aggregate_op* groups_with_ended = nullptr;
 
 /// A resumption is under way on this thread, or a ResumptionScope stands for
 /// one.
@@ -47,18 +31,14 @@ detail::ResumptionScope::ResumptionScope() noexcept : outermost(!std::exchange(r
 
 detail::ResumptionScope::~ResumptionScope() {
     if(outermost) {
-        destroy_ended_frames();
+        async_node::destroy_ended();
         resuming = false;
     }
 }
 
-detail::LoopRunScope::LoopRunScope() noexcept :
-    outer_resuming(std::exchange(resuming, false)), outer_frames(std::exchange(ended_frames, {})) {}
+detail::LoopRunScope::LoopRunScope() noexcept : outer_resuming(std::exchange(resuming, false)) {}
 
 detail::LoopRunScope::~LoopRunScope() {
-    // A resumption that threw left its frames to the next outermost one.
-    outer_frames.insert(outer_frames.end(), ended_frames.begin(), ended_frames.end());
-    ended_frames = std::move(outer_frames);
     resuming = outer_resuming;
 }
 
@@ -70,16 +50,34 @@ void async_node::drop_resumption() noexcept {
     resuming = false;
 }
 
+bool async_node::anything_ended() noexcept {
+    return !ended_roots.empty() || groups_with_ended != nullptr;
+}
+
+void async_node::destroy_ended() {
+    // Destroying a frame may end more tasks, whose frames join the lists.
+    while(anything_ended()) {
+        for(std::size_t i = 0; i < ended_roots.size(); ++i) {
+            auto root = ended_roots[i];
+            root.destroy();
+        }
+        ended_roots.clear();
+        while(auto* group = groups_with_ended) {
+            aggregate_op::destroy_frames(group->take_ended());
+        }
+    }
+}
+
 void async_node::leave_resumption() {
     // What the destroyed frames held may wake more tasks, which may end more.
     while(true) {
         if(event_loop::has_current()) {
             event_loop::current().drain_deferred();
         }
-        if(ended_frames.empty()) {
+        if(!anything_ended()) {
             break;
         }
-        destroy_ended_frames();
+        destroy_ended();
     }
     resuming = false;
 }
@@ -177,7 +175,7 @@ std::coroutine_handle<> task_frame::finish(State end) {
     state = end;
     if(parent == nullptr) {
         if(owned_by_loop) {
-            ended_frames.push_back({.frame = handle(), .group = nullptr});
+            ended_roots.push_back(handle());
         }
         return std::noop_coroutine();
     }
@@ -197,12 +195,31 @@ void detail::task_access::drop_root(task_frame& root) {
     }
 }
 
-void aggregate_op::destroy_ended_children(const aggregate_op* group) {
-    destroy_ended([group](const detail::EndedFrame& ended) { return ended.group == group; });
+task_frame* aggregate_op::take_ended() noexcept {
+    if(ended != nullptr) {
+        (prev_with_ended ? prev_with_ended->next_with_ended : groups_with_ended) = next_with_ended;
+        if(next_with_ended != nullptr) {
+            next_with_ended->prev_with_ended = prev_with_ended;
+        }
+        prev_with_ended = nullptr;
+        next_with_ended = nullptr;
+    }
+    return std::exchange(ended, nullptr);
+}
+
+void aggregate_op::destroy_frames(task_frame* frames) {
+    while(frames != nullptr) {
+        auto* next = frames->next_sibling;
+        frames->handle().destroy();
+        frames = next;
+    }
 }
 
 void aggregate_op::abandon_children() {
-    destroy_ended_children(this);
+    // What the frames held may end more children.
+    while(auto* frames = take_ended()) {
+        destroy_frames(frames);
+    }
     // A child the cancel ends at once, or resumes when it catches that, may
     // run on here; it must not add to the group.
     cancel_requested = true;
@@ -321,8 +338,14 @@ std::coroutine_handle<> aggregate_op::child_completed(task_frame& child) {
 
     if(kind == NodeKind::TaskGroup) {
         // A group keeps no child that has ended, but the child may own the
-        // group: its frame waits, for the latest until the group settles.
-        ended_frames.push_back({.frame = child.handle(), .group = this});
+        // group: its frame waits, at the latest until the group settles.
+        if(ended == nullptr) {
+            next_with_ended = std::exchange(groups_with_ended, this);
+            if(next_with_ended != nullptr) {
+                next_with_ended->prev_with_ended = this;
+            }
+        }
+        child.next_sibling = std::exchange(ended, &child);
     }
     pending -= 1;
     return settle_if_idle();
@@ -380,14 +403,12 @@ std::coroutine_handle<> aggregate_op::settle_if_idle() {
         return std::noop_coroutine();
     }
     state = settled_state();
-    const bool group = kind == NodeKind::TaskGroup;
+    auto* frames = take_ended();
     auto next = std::exchange(parent, nullptr)->on_child_complete(*this);
-    if(group) {
-        // After the last use of the group, which a child may own, and before
-        // whatever the task awaiting it goes on to: that sees no child left,
-        // nor what the children held.
-        destroy_ended_children(this);
-    }
+    // After the last use of the group, which a child may own, and before
+    // whatever the task awaiting it goes on to: that sees no child left, nor
+    // what the children held.
+    destroy_frames(frames);
     return next;
 }
 

@@ -1,22 +1,6 @@
 #pragma once
 
-#include <coroutine>
-#include <vector>
-
-namespace kotatsu::async {
-
-class aggregate_op;
-
-}  // namespace kotatsu::async
-
 namespace kotatsu::async::detail {
-
-/// A frame of a task that ended, which a loop owns or a task_group kept, and
-/// the group, or null for a root.
-struct EndedFrame {
-    std::coroutine_handle<> frame;
-    const aggregate_op* group;
-};
 
 /// Runs the code it scopes as part of the resumption under way, or as one of
 /// its own: a task resumed meanwhile, by a cancel say, leaves what sync
@@ -38,7 +22,8 @@ private:
 
 /// Sets aside the resumption under way on this thread, if any, while an
 /// event loop runs inside it or is destroyed there: the loop's resumptions are
-/// outermost, so the frames that end in them go before the loop does.
+/// outermost, so the frames that end in them go before the loop does, with
+/// those that ended before.
 class LoopRunScope {
 public:
     LoopRunScope() noexcept;
@@ -50,7 +35,6 @@ public:
 
 private:
     bool outer_resuming;
-    std::vector<EndedFrame> outer_frames;
 };
 
 }  // namespace kotatsu::async::detail

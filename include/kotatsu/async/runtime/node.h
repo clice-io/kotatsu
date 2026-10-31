@@ -27,8 +27,9 @@ class async_visitor;
 namespace detail {
 
 struct task_access;
+class ResumptionScope;
 
-}
+}  // namespace detail
 
 /// Base of the nodes of the task tree: tasks, the aggregates when_all,
 /// when_any and task_group, waits on sync primitives, and pending I/O. Every
@@ -66,6 +67,7 @@ protected:
     friend class aggregate_op;
     friend class wait_node;
     friend class io_op;
+    friend class detail::ResumptionScope;
     template <typename Derived>
     friend class async_visitor;
 
@@ -137,6 +139,13 @@ private:
     /// a loop runs, and destroys the frames that ended, until neither leaves
     /// anything to do.
     static void leave_resumption();
+
+    /// Whether the frames of tasks that ended wait to go.
+    static bool anything_ended() noexcept;
+
+    /// Destroys the frames of the tasks that ended, and of those that end
+    /// meanwhile.
+    static void destroy_ended();
 };
 
 /// The part of a task's promise that does not depend on its result type: the
@@ -300,9 +309,12 @@ protected:
     /// Records the completion of `child` and settles when it was the last.
     std::coroutine_handle<> child_completed(task_frame& child);
 
-    /// task_group: destroys the frames of the children of `group` that have
-    /// ended. `group` is only compared: it may be gone.
-    static void destroy_ended_children(const aggregate_op* group);
+    /// task_group: takes the children that have ended, whose frames have not
+    /// gone yet, off the group; the caller destroys them (destroy_frames()).
+    task_frame* take_ended() noexcept;
+
+    /// Destroys the frames take_ended() gave.
+    static void destroy_frames(task_frame* frames);
 
     /// Records `d` as what settles the aggregate; the first decision cancels
     /// the children still running.
@@ -331,6 +343,13 @@ protected:
 
     /// when_any: the child that finished first.
     task_frame* winner = nullptr;
+
+    /// task_group: the children that have ended, whose frames have not gone
+    /// yet, linked through next_sibling, and the links of this thread's list
+    /// of the groups with such children.
+    task_frame* ended = nullptr;
+    aggregate_op* prev_with_ended = nullptr;
+    aggregate_op* next_with_ended = nullptr;
 
     Decision decision = Decision::None;
 
