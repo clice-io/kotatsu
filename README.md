@@ -4,7 +4,7 @@
 [![GitHub license](https://img.shields.io/github/license/clice-io/kotatsu)](https://github.com/clice-io/kotatsu/blob/main/LICENSE)
 [![Actions status](https://github.com/clice-io/kotatsu/actions/workflows/main.yml/badge.svg)](https://github.com/clice-io/kotatsu/actions/workflows/main.yml)
 
-kotatsu is a modern C++23 foundation library. It covers coroutine tasks with structured cancellation, sockets, pipes, child processes and timers; compile-time reflection and the serialization built on it (JSON, TOML, bincode, FlatBuffers); JSON-RPC and the LSP protocol model; file system and process APIs; an HTTP client; a command-line parser; and a test framework.
+kotatsu is a C++23 async runtime with reflection-driven serialization, JSON-RPC and LSP, and cross-platform file system and process APIs. The runtime runs coroutine tasks with structured cancellation over sockets, pipes, child processes and timers. Around it are compile-time reflection and the codecs built on it (JSON, TOML, bincode, FlatBuffers), an HTTP client, a command-line parser and a test framework.
 
 ## Modules
 
