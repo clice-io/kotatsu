@@ -87,14 +87,12 @@ void compare(
 /// `line` with each carriage return, newline and NUL as a byte LLVM's Windows
 /// tokenizer reads as any other, or back.
 std::string swap_line_ends(std::string_view line) {
+    // Each byte and the one it swaps with, three apart.
+    constexpr std::string_view pairs("\r\n\0\x01\x02\x03", 6);
     std::string out(line);
     for(auto& c: out) {
-        constexpr std::string_view ends("\r\n\0", 3);
-        constexpr std::string_view others("\x01\x02\x03", 3);
-        if(auto at = ends.find(c); at != std::string_view::npos) {
-            c = others[at];
-        } else if(auto at = others.find(c); at != std::string_view::npos) {
-            c = ends[at];
+        if(auto at = pairs.find(c); at != std::string_view::npos) {
+            c = pairs[(at + 3) % 6];
         }
     }
     return out;
