@@ -4,8 +4,8 @@
 (`ZEST_CASE`) runs on a fresh instance of its suite (`ZEST_SUITE`).
 `ZEXPECT` and `ZASSERT` print both operands of a failed comparison, comparing
 through [meta](meta.md), so reflectable types need no `operator==`. Cases run
-spread over worker processes: a crash, a failed `ZASSERT` or a hang fails that
-case alone. It suits projects already on kotatsu, as it brings
+in worker processes, so a crash, a failed `ZASSERT` or a hang fails only that
+case. It suits projects already on kotatsu, as it brings
 [deco](deco.md), [async](async.md) and cpptrace along.
 
 ## Targets
@@ -13,7 +13,7 @@ case alone. It suits projects already on kotatsu, as it brings
 |            |                                                                                                                                                                                                          |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Bazel      | `@kotatsu//:zest`; `@kotatsu//:zest_async` for `zest/async.h`                                                                                                                                            |
-| CMake      | `kotatsu::zest` (option `KOTATSU_ENABLE_ZEST`, off by default, turned on by `KOTATSU_ENABLE_TEST`); `kotatsu::zest::async` for `zest/async.h`                                                            |
+| CMake      | `kotatsu::zest`, with `KOTATSU_ENABLE_ZEST` (off by default); `kotatsu::zest::async` for `zest/async.h`                                                                                                  |
 | Headers    | [include/kotatsu/zest/](../include/kotatsu/zest/)                                                                                                                                                        |
 | Depends on | [deco](deco.md), [meta](meta.md), [codec](codec.md)'s debug codec, [support](support.md); privately [async](async.md), [fs](fs.md), [sys](sys.md); [cpptrace](https://github.com/jeremy-rifkin/cpptrace) |
 
@@ -24,6 +24,8 @@ case alone. It suits projects already on kotatsu, as it brings
 #include <string>
 
 #include "kotatsu/zest/zest.h"
+
+namespace zest = kotatsu::zest;
 
 std::expected<int, std::string> parse(std::string text) {
     if(text == "42") {
@@ -38,7 +40,7 @@ ZEST_CASE(reads_the_answer) {
     ZASSERT(ok);  // on failure prints the error, and ends this test
     ZEXPECT(*ok == 42);
     ZEXPECT(!parse("x"));
-    ZEXPECT(kotatsu::zest::contains(std::string("haystack"), "st"));
+    ZEXPECT(zest::contains(std::string("haystack"), "st"));
 }
 };
 ```
@@ -48,7 +50,7 @@ Adapted from `tests/zest/unit/check_tests.cpp`; `main` is
 
 ## Overview
 
-| Header                                                             | What it holds                                                                                                                              |
+| Header                                                             | Contents                                                                                                                                   |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | [zest.h](../include/kotatsu/zest/zest.h)                           | Everything below but `async.h`, in one include                                                                                             |
 | [macro.h](../include/kotatsu/zest/macro.h)                         | The macros alone: `ZEST_SUITE`, `ZEST_SUITE_ATTRS`, `ZEST_CASE`, `ZEST_CASE_GROUP`, `ZEXPECT`, `ZASSERT`, `ZSTATIC_EXPECT`, `ZEST_CONTEXT` |
@@ -61,20 +63,14 @@ Adapted from `tests/zest/unit/check_tests.cpp`; `main` is
 | [runner/run.h](../include/kotatsu/zest/runner/run.h)               | `run_cli`, `run_tests`, and `Options`, the runner's flags as a deco struct                                                                 |
 | [async.h](../include/kotatsu/zest/async.h)                         | `LoopFixture`: an event loop and `run(tasks...)` with a watchdog, for tests of async code                                                  |
 
-Runner flags: `--test-filter=SUITE[.TEST]` (globs, or a positional pattern),
-`--jobs`, `--timeout` (seconds), `--no-isolation` (in-process, for debuggers),
-`--verbose`, `--list-tests`, `--snapshot-dir` (snapshot checks fail without
-it), `--update-snapshots`, `--cleanup-snapshots`.
+A test binary lists the runner's flags with `--help`; snapshot checks need
+`--snapshot-dir`.
 
 ## Platform notes
 
-- Registration survives `/OPT:REF`, `--gc-sections` and LTO; only clang's
-  `-fvirtual-function-elimination` drops cases.
-- Workers end with a killed runner on Linux and Windows; on macOS, once their
-  stdin closes.
 - Without exceptions, `throws`, `trace_exception` and `describe_exception`
   are not declared.
 
 ## See also
 
-[deco](deco.md) · [meta](meta.md) · [async](async.md) · `tests/zest/` for more
+[deco](deco.md), [meta](meta.md), [async](async.md), [tests/zest](../tests/zest/).

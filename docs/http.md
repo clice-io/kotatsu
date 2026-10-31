@@ -1,25 +1,22 @@
 # http
 
-`kotatsu::http` is an HTTP client on [libcurl](https://curl.se/libcurl/) and
-the [async](async.md) runtime. An `http::client` holds the settings every
-request copies; `client.on(loop)` binds a copy to an event loop as a
-`bound_client`, whose `get`, `post`, `put`, `patch`, `del`, `head` and
-`request` build an `http::request`; `co_await request.send()` gives an
-`outcome<http::response, http::error>`. A `bound_client` belongs to its loop:
-await its requests in tasks on that loop, where one `http::manager` drives
-them all. Cancelling a task cancels its request.
+`kotatsu::http` is an HTTP client on [libcurl](https://curl.se/libcurl/)
+whose requests are awaited in [async](async.md) tasks; cancelling a task
+cancels its request. An `http::client` holds settings its requests share, and
+`client.on(loop)` makes requests on that event loop;
+`co_await request.send()` gives an `outcome<http::response, http::error>`.
 
 It is a client only: there is no HTTP server. For JSON-RPC and LSP over pipes
 or sockets, use [ipc](ipc.md).
 
 ## Targets
 
-|            |                                                                                                                                                                                            |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Bazel      | none: HTTP builds with CMake only                                                                                                                                                          |
-| CMake      | `kotatsu::http`, with `KOTATSU_ENABLE_HTTP=ON` (default `OFF`), which turns on `KOTATSU_ENABLE_ASYNC`                                                                                      |
-| Headers    | [include/kotatsu/http/](../include/kotatsu/http/); [http.h](../include/kotatsu/http/http.h) includes the client, request and response                                                      |
-| Depends on | [async](async.md); libcurl, which CMake fetches and builds as a static, HTTP-only library; [codec](codec.md)'s JSON backend for `request::json` when `KOTATSU_CODEC_ENABLE_SIMDJSON` is on |
+|            |                                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Bazel      | none; HTTP builds with CMake only                                                                                                     |
+| CMake      | `kotatsu::http`, with `KOTATSU_ENABLE_HTTP` (off by default), which turns on async                                                    |
+| Headers    | [include/kotatsu/http/](../include/kotatsu/http/); [http.h](../include/kotatsu/http/http.h) includes the client, request and response |
+| Depends on | [async](async.md); libcurl; [codec](codec.md)'s JSON backend for `request::json` when it is enabled                                   |
 
 ## Example
 
@@ -54,24 +51,23 @@ Adapted from `examples/http/github_avatar_download.cpp`.
 
 ## Overview
 
-| Header                                                                  | Contents                                                                                                                                    |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| [client.h](../include/kotatsu/http/detail/client.h)                     | `client`: settings shared by its requests, and per loop one cookie jar, DNS cache and TLS session cache; `on(loop)`                         |
-| [bound_client.h](../include/kotatsu/http/detail/bound_client.h)         | `bound_client`: `get`, `post`, `put`, `patch`, `del`, `head`, `request(method, url)`                                                        |
-| [request_settings.h](../include/kotatsu/http/detail/request_settings.h) | What a client sets and a request may override: headers, cookies, user agent, proxy, timeout, redirects, TLS, raw `curl_option`              |
-| [request.h](../include/kotatsu/http/detail/request.h)                   | `request`: `query`, `bearer_auth`, `basic_auth`, `body`, `json_text`, `form`, `json(value)`, `send()`                                       |
-| [response.h](../include/kotatsu/http/detail/response.h)                 | `response`: status, effective url, headers, body as bytes or text, `header_value`                                                           |
-| [common.h](../include/kotatsu/http/detail/common.h)                     | `error` and `error_kind` (`curl`, `invalid_request`, `json_encode`, `aborted`), `method::` names, `proxy`, `redirect_policy`, `tls_options` |
-| [manager.h](../include/kotatsu/http/detail/manager.h)                   | `manager`: one per event loop, made by its first request, gone with the loop; `unregister_loop` (not included by `http.h`)                  |
-| [curl.h](../include/kotatsu/http/detail/curl.h)                         | `kotatsu::curl`: thin wrappers over libcurl's easy, multi and share handles                                                                 |
+| Header                                                                         | Contents                                                                                                                                    |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| [detail/client.h](../include/kotatsu/http/detail/client.h)                     | `client`: settings shared by its requests, and per loop one cookie jar, DNS cache and TLS session cache; `on(loop)`                         |
+| [detail/bound_client.h](../include/kotatsu/http/detail/bound_client.h)         | `bound_client`: `get`, `post`, `put`, `patch`, `del`, `head`, `request(method, url)`                                                        |
+| [detail/request_settings.h](../include/kotatsu/http/detail/request_settings.h) | What a client sets and a request may override: headers, cookies, user agent, proxy, timeout, redirects, TLS, raw `curl_option`              |
+| [detail/request.h](../include/kotatsu/http/detail/request.h)                   | `request`: `query`, `bearer_auth`, `basic_auth`, `body`, `json_text`, `form`, `json(value)`, `send()`                                       |
+| [detail/response.h](../include/kotatsu/http/detail/response.h)                 | `response`: status, effective url, headers, body as bytes or text, `header_value`                                                           |
+| [detail/common.h](../include/kotatsu/http/detail/common.h)                     | `error` and `error_kind` (`curl`, `invalid_request`, `json_encode`, `aborted`), `method::` names, `proxy`, `redirect_policy`, `tls_options` |
 
 ## Platform notes
 
-- libcurl uses Schannel for TLS on Windows and OpenSSL elsewhere, which CMake
-  must find.
+- libcurl uses Schannel for TLS on Windows, and OpenSSL elsewhere, whose
+  development files must be installed.
 - On Windows `kotatsu::http` defines `NOMINMAX` and `WIN32_LEAN_AND_MEAN` for
   its dependents too.
 
 ## See also
 
-[async](async.md), [codec](codec.md), [ipc](ipc.md), [building](building.md), `examples/http/`, `tests/http/system/detail/`.
+[async](async.md), [codec](codec.md), [ipc](ipc.md), [building](building.md),
+[examples/http](../examples/http/), [tests/http](../tests/http/).

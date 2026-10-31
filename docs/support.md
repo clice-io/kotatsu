@@ -4,18 +4,18 @@
 containers and strings, the convention for passing strings in and out, UTF-8
 and UTF-16 text, and the traits and helpers the rest of kotatsu is built from.
 Its names sit in the root namespace (`kotatsu::outcome`,
-`kotatsu::small_vector`), but for `kotatsu::naming`, `kotatsu::mem` and
-`kotatsu::comptime`. It does no I/O: files and paths are [fs](fs.md),
+`kotatsu::small_vector`), except those in `kotatsu::naming`, `kotatsu::mem`
+and `kotatsu::comptime`. It does no I/O: files and paths are [fs](fs.md),
 processes and the environment [sys](sys.md).
 
 ## Targets
 
-|            |                                                             |
-| ---------- | ----------------------------------------------------------- |
-| Bazel      | `@kotatsu//:support`                                        |
-| CMake      | `kotatsu::support`, always built (no option)                |
-| Headers    | [include/kotatsu/support/](../include/kotatsu/support/)     |
-| Depends on | the standard library only; every other module depends on it |
+|            |                                                         |
+| ---------- | ------------------------------------------------------- |
+| Bazel      | `@kotatsu//:support`                                    |
+| CMake      | `kotatsu::support`, always built                        |
+| Headers    | [include/kotatsu/support/](../include/kotatsu/support/) |
+| Depends on | the standard library alone                              |
 
 ## Example
 
@@ -68,7 +68,6 @@ Adapted from `tests/support/unit/buffer_ref_tests.cpp` and
 | [functional.h](../include/kotatsu/support/functional.h)                                                                                                                                                                                                                                                                                              | `function_ref` (borrowed) and `function` (owned, move-only) callables, `bind`, `bind_ref`                                                           |
 | [config.h](../include/kotatsu/support/config.h), [expected_try.h](../include/kotatsu/support/expected_try.h)                                                                                                                                                                                                                                         | `KOTATSU_ENABLE_EXCEPTIONS`, `KOTATSU_THROW` and kin; `KOTATSU_EXPECTED_TRY` / `_V` to return a `std::expected`'s error                             |
 | [function_traits.h](../include/kotatsu/support/function_traits.h), [type_list.h](../include/kotatsu/support/type_list.h), [tuple_traits.h](../include/kotatsu/support/tuple_traits.h), [type_traits.h](../include/kotatsu/support/type_traits.h), [ranges.h](../include/kotatsu/support/ranges.h), [numeric.h](../include/kotatsu/support/numeric.h) | Type-level helpers: function and callable traits, type lists, tuple queries, `is_specialization_of`, range kinds (sequence, set, map), `narrow_int` |
-| [memory.h](../include/kotatsu/support/memory.h), [comptime.h](../include/kotatsu/support/comptime.h), [swar.h](../include/kotatsu/support/swar.h)                                                                                                                                                                                                    | Internals the other headers, codec and deco build on: `kotatsu::mem`, constant-evaluation memory, byte-parallel scans                               |
 
 ## Platform notes
 
@@ -80,4 +79,5 @@ Adapted from `tests/support/unit/buffer_ref_tests.cpp` and
 
 ## See also
 
-[fs](fs.md), [sys](sys.md), [async](async.md), [meta](meta.md), [building](building.md), `tests/support/unit/`.
+[fs](fs.md), [sys](sys.md), [async](async.md), [meta](meta.md),
+[building](building.md), [tests/support](../tests/support/).

@@ -1,10 +1,9 @@
 # sys
 
-`kotatsu::sys` is the process and the system it runs on, with no event
-loop: environment, program lookup, child processes, user directories,
-console output, memory and CPU. One object per area in a static library, so a
-program links only what it calls and on Windows imports only those objects'
-DLLs, as a library injected into other processes needs.
+`kotatsu::sys` gives synchronous access to the current process and the
+system: environment, program lookup, child processes, user directories,
+console output, memory and CPU. It needs no event loop, and a program links
+only the parts it calls.
 
 It is not for managing processes on an event loop: `kotatsu::async::process`
 builds on `sys::spawn` for that (see [async](async.md)).
@@ -14,7 +13,7 @@ builds on `sys::spawn` for that (see [async](async.md)).
 |            |                                                                                         |
 | ---------- | --------------------------------------------------------------------------------------- |
 | Bazel      | `@kotatsu//:sys`                                                                        |
-| CMake      | `kotatsu::sys`, always built (no option)                                                |
+| CMake      | `kotatsu::sys`, always built                                                            |
 | Headers    | [include/kotatsu/sys/](../include/kotatsu/sys/) (`detail/` is private)                  |
 | Depends on | [fs](fs.md), [support](support.md); threads; on Windows advapi32, ntdll, ole32, shell32 |
 
@@ -26,10 +25,12 @@ builds on `sys::spawn` for that (see [async](async.md)).
 
 #include "kotatsu/sys/spawn.h"
 
+namespace sys = kotatsu::sys;
+
 int main() {
     std::string out;
     std::string err;
-    auto status = kotatsu::sys::capture(out, err, {
+    auto status = sys::capture(out, err, {
         .program = "sh",
         .args = {"-c", "printf out; printf err >&2; exit 3"},
     });
@@ -69,11 +70,7 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
 - `spawn` uses `fork` and `execve` on Linux, `posix_spawn` on macOS, and
   `CreateProcessW` on Windows, the child in a job object of its own and given
   only the standard handles unless `windows_inherit_handles`.
-- On POSIX `spawn` sets an ignored SIGCHLD back to its default for the whole
-  process, so that no exit status is lost.
-- On Windows, linking the known-folder functions of `dirs.h` imports shell32
-  and ole32 (`temp_dir` does not).
 
 ## See also
 
-[async](async.md), [fs](fs.md), [support](support.md), `tests/sys/system/spawn_tests.cpp`.
+[async](async.md), [fs](fs.md), [support](support.md), [tests/sys](../tests/sys/).

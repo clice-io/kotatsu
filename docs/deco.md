@@ -12,12 +12,12 @@ usable alone. deco reads argv only; config files are [codec](codec.md)'s.
 
 ## Targets
 
-|            |                                                                                                                                                  |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Bazel      | `@kotatsu//:deco`; the option layer alone `@kotatsu//:option`                                                                                    |
-| CMake      | `kotatsu::deco`; the option layer `kotatsu::deco::option`, also named `kotatsu::option`; both under option `KOTATSU_ENABLE_DECO` (on by default) |
-| Headers    | [include/kotatsu/deco/](../include/kotatsu/deco/)                                                                                                |
-| Depends on | [meta](meta.md), [support](support.md); no third-party library                                                                                   |
+|            |                                                                                                                                          |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Bazel      | `@kotatsu//:deco`; the option layer alone `@kotatsu//:option`                                                                            |
+| CMake      | `kotatsu::deco`, and the option layer `kotatsu::deco::option` (also named `kotatsu::option`), with `KOTATSU_ENABLE_DECO` (on by default) |
+| Headers    | [include/kotatsu/deco/](../include/kotatsu/deco/)                                                                                        |
+| Depends on | [meta](meta.md), [support](support.md)                                                                                                   |
 
 ## Example
 
@@ -51,7 +51,7 @@ Adapted from `tests/deco/unit/facade/runtime_git_tests.cpp`.
 
 ## Overview
 
-| Header                                                           | What it holds                                                                                                                           |
+| Header                                                           | Contents                                                                                                                                |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | [deco.h](../include/kotatsu/deco/deco.h)                         | The whole facade and the macros, in one include                                                                                         |
 | [macro.h](../include/kotatsu/deco/macro.h)                       | The declaration macros alone (`DECO_CFG*`, `DecoFlag`, `DecoKV`, `DecoInput`, `DecoPack`, `DecoComma`, `DecoMulti`, the `*Alias` forms) |
@@ -67,14 +67,18 @@ Adapted from `tests/deco/unit/facade/runtime_git_tests.cpp`.
 LLVM's kinds (flag, joined, separate, comma-joined, multi-arg, remaining
 args, ...), with aliases, grouped short options (`-abc`) and visibility masks.
 
-| Header                                                     | What it holds                                                              |
+| Header                                                     | Contents                                                                   |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------- |
 | [option.h](../include/kotatsu/deco/option.h)               | The three headers below                                                    |
 | [option/arg.h](../include/kotatsu/deco/option/arg.h)       | `Kind`, `RenderStyle`, `ParsedArg`, `ParseError`, the prefix sets `pfx_*`  |
 | [option/option.h](../include/kotatsu/deco/option/option.h) | `Option`, a constexpr table entry, and `OptionRef`                         |
 | [option/table.h](../include/kotatsu/deco/option/table.h)   | `OptTable` (`parse`, `find_option`, `render`), `ParseOptions`, `ParseIter` |
 
+## Platform notes
+
+None: deco parses the same on every platform.
+
 ## See also
 
-[meta](meta.md) · [support](support.md) · [zest](zest.md) (its runner's flags
-are a deco struct) · `tests/deco/` for every option kind and the rendered help.
+[meta](meta.md), [support](support.md), [zest](zest.md) (its runner's flags are
+a deco struct), [tests/deco](../tests/deco/).

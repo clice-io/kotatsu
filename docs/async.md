@@ -1,7 +1,8 @@
 # async
 
-`kotatsu::async` is a coroutine runtime: tasks with value, error and cancel
-channels (`task<T, E, C>`, awaited as an `outcome`), ways to combine and cancel
+`kotatsu::async` is a coroutine runtime: tasks that end with a value, an error
+or a cancellation (`task<T, E, C>`; awaiting one gives its value, or an
+`outcome` when it has an error or cancel type), ways to combine and cancel
 them, sync primitives, and I/O as tasks: streams, UDP, child processes, file
 operations, timers and signals.
 
@@ -17,9 +18,9 @@ the `mtime` and `size` it reports.
 |            |                                                                                                                                    |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Bazel      | `@kotatsu//:async`                                                                                                                 |
-| CMake      | `kotatsu::async`, built when `KOTATSU_ENABLE_ASYNC` is on (the default)                                                            |
+| CMake      | `kotatsu::async`, with `KOTATSU_ENABLE_ASYNC` (on by default)                                                                      |
 | Headers    | [include/kotatsu/async/](../include/kotatsu/async/); [async.h](../include/kotatsu/async/async.h) includes all but `runtime/walk.h` |
-| Depends on | [sys](sys.md), [fs](fs.md), [support](support.md); libuv, which CMake fetches from GitHub and Bazel takes from the clice registry  |
+| Depends on | [sys](sys.md), [fs](fs.md), [support](support.md); libuv                                                                           |
 
 ## Example
 
@@ -54,7 +55,7 @@ Adapted from `examples/async_basics/async_basics.cpp`.
 
 ## Overview
 
-| Header                                                                                                                 | What it has                                                                |
+| Header                                                                                                                 | Contents                                                                   |
 | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | [runtime/task.h](../include/kotatsu/async/runtime/task.h)                                                              | `task`, `cancel()`, `fail()`, `or_fail()`, `catch_cancel()`, `co_invoke()` |
 | [runtime/when.h](../include/kotatsu/async/runtime/when.h)                                                              | `when_all` and `when_any`, over tasks or a range of them                   |
@@ -81,7 +82,7 @@ Adapted from `examples/async_basics/async_basics.cpp`.
 
 ## See also
 
-[sys](sys.md) (`sys::spawn` starts the children of `process`) · [fs](fs.md) ·
-[ipc](ipc.md) · [http](http.md) · [zest](zest.md) (`zest::LoopFixture` in
-`kotatsu/zest/async.h` tests async code) · [support](support.md) (`outcome`) ·
-`examples/async_basics`, `examples/dump_dot`, `tests/async/`
+[sys](sys.md) (`sys::spawn` starts the children of `process`), [fs](fs.md),
+[ipc](ipc.md), [http](http.md), [zest](zest.md) (`zest::LoopFixture` tests
+async code), [support](support.md) (`outcome`),
+[examples/async_basics](../examples/async_basics/), [tests/async](../tests/async/).

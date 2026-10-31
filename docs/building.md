@@ -1,6 +1,6 @@
 # Building
 
-kotatsu builds with Bazel and with CMake. Both have one target per module, and each codec backend is a target of its own with its third-party library. kotatsu needs a C++23 compiler; [the README](../README.md#platforms) lists the toolchains CI tests.
+kotatsu builds with Bazel and with CMake. Both have a target per module, with further targets for the codec backends and for parts of deco, ipc and zest. kotatsu needs a C++23 compiler, and the code that includes its headers is compiled as C++23 too; [the README](../README.md#platforms) lists the toolchains CI tests.
 
 ## Targets
 
@@ -14,14 +14,14 @@ kotatsu builds with Bazel and with CMake. Both have one target per module, and e
 | deco    | `:option`, `:deco`                                               | `kotatsu::deco::option`, `kotatsu::deco`                            |                               |
 | async   | `:async`                                                         | `kotatsu::async`                                                    | libuv                         |
 | ipc     | `:ipc_codec`, `:ipc_codec_json`, `:ipc`, `:ipc_json`, `:ipc_lsp` | `kotatsu::ipc::codec`, `kotatsu::ipc`, `kotatsu::ipc::lsp`          |                               |
-| http    | none yet                                                         | `kotatsu::http`                                                     | libcurl                       |
+| http    | none; HTTP builds with CMake only                                | `kotatsu::http`                                                     | libcurl                       |
 | zest    | `:zest`, `:zest_async`                                           | `kotatsu::zest`, `kotatsu::zest::async`                             | cpptrace                      |
 
 Bazel splits the JSON parts of ipc into targets of their own (`:ipc_codec_json`, `:ipc_json`); CMake builds them into `kotatsu::ipc::codec` and `kotatsu::ipc` when simdjson is enabled. The module pages say what each target holds.
 
 ## Bazel
 
-Every commit of `main` that passes the Bazel build is published to the [clice Bazel registry](https://bazel.clice.io) as version `0.1.0.<n>`, with the third-party libraries kotatsu uses; [metadata.json](https://bazel.clice.io/modules/kotatsu/metadata.json) lists the versions. The depending build lists the registry before the Bazel Central Registry:
+Every commit of `main` that passes the Bazel build is published to the [clice Bazel registry](https://bazel.clice.io) as version `0.1.0.<n>`, with the third-party libraries kotatsu uses; [metadata.json](https://bazel.clice.io/modules/kotatsu/metadata.json) lists the versions. Your build lists the registry before the Bazel Central Registry:
 
 ```
 common --registry=https://bazel.clice.io/
@@ -32,7 +32,7 @@ common --registry=https://bcr.bazel.build/
 bazel_dep(name = "kotatsu", version = "0.1.0.<n>")
 ```
 
-The depending build brings the C++ toolchain and `--cxxopt=-std=c++23`. A build without exceptions or RTTI sets:
+Your build brings the C++ toolchain, `--cxxopt=-std=c++23`, and on macOS `--macos_minimum_os=15.0`, below which the SDK hides libc++ features kotatsu uses. A build without exceptions or RTTI sets the flags below; the simdjson one resolves when your `MODULE.bazel` depends on simdjson too (`bazel_dep(name = "simdjson", version = "4.2.4.clice.1")`).
 
 | Flag                                                                | Effect                            |
 | ------------------------------------------------------------------- | --------------------------------- |
@@ -41,9 +41,11 @@ The depending build brings the C++ toolchain and `--cxxopt=-std=c++23`. A build 
 
 ## CMake
 
-kotatsu is consumed from source, with `FetchContent` or `add_subdirectory`; it fetches its third-party libraries the same way, at pinned versions.
+kotatsu is consumed from source, with `FetchContent` or `add_subdirectory`; it fetches its third-party libraries the same way, at pinned versions. libcurl's TLS is the system's: Schannel on Windows, and OpenSSL elsewhere, whose development files must be installed.
 
 ```cmake
+set(CMAKE_CXX_STANDARD 23)
+
 include(FetchContent)
 FetchContent_Declare(kotatsu
     GIT_REPOSITORY https://github.com/clice-io/kotatsu.git
@@ -85,7 +87,7 @@ pixi run -e bazel bazel test //...   # the Bazel build and its tests
 
 The Bazel build takes the configurations of `.bazelrc`: `--config=no-exceptions`, `--config=no-rtti`, `--config=asan`, `--config=ubsan` and `--config=tsan`.
 
-The C++ tests build into two binaries, `unit_tests` and `system_tests`. One run by hand, to pass `--test-filter`, runs from the repository root with `--snapshot-dir=tests/snapshots`:
+The zest tests build into two binaries, `unit_tests` and `system_tests`. To run one by hand, for example with `--test-filter`, run it from the repository root with `--snapshot-dir=tests/snapshots`:
 
 ```shell
 ./build/debug/unit_tests --test-filter='fs_*' --snapshot-dir=tests/snapshots

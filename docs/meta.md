@@ -7,17 +7,18 @@ also sorts types into a `type_kind`, compares values deeply (`meta::eq`), and
 defines the attributes, `repr` and type descriptors the codec module consumes.
 
 meta encodes nothing. Attributes and reprs take effect when a [codec](codec.md)
-backend reads or writes the type; codec.md shows what they do to the output.
+backend reads or writes the type; `spec.h` documents each attribute, and the
+codec page shows one in use. The macros that attach them to a field,
+`KOTATSU_ANNOTATE` and `KOTATSU_ANNOTATION`, are in `kotatsu/codec/macro.h`.
 
 ## Targets
 
-|                   |                                                                                              |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| Bazel             | `@kotatsu//:meta`                                                                            |
-| CMake             | `kotatsu::meta`, an interface library, always defined (no option)                            |
-| Headers           | [include/kotatsu/meta/](../include/kotatsu/meta/), header-only                               |
-| Depends on        | `support`; no third-party libraries                                                          |
-| Annotation macros | `KOTATSU_ANNOTATE`, `KOTATSU_ANNOTATION` are in `kotatsu/codec/macro.h`, in the codec target |
+|            |                                                                |
+| ---------- | -------------------------------------------------------------- |
+| Bazel      | `@kotatsu//:meta`                                              |
+| CMake      | `kotatsu::meta`, always built                                  |
+| Headers    | [include/kotatsu/meta/](../include/kotatsu/meta/), header-only |
+| Depends on | [support](support.md)                                          |
 
 ## Example
 
@@ -54,7 +55,7 @@ Adapted from `tests/meta/unit/struct_tests.cpp` and `tests/meta/unit/enum_tests.
 
 ## Overview
 
-| Header                                                                                                                                     | What it holds                                                                                                                                                      |
+| Header                                                                                                                                     | Contents                                                                                                                                                           |
 | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [struct.h](../include/kotatsu/meta/struct.h)                                                                                               | Aggregate reflection: `field_count`, `field_names`, `field_refs`, `field_offset`, `for_each`, the `reflectable_class` concept                                      |
 | [enum.h](../include/kotatsu/meta/enum.h)                                                                                                   | Enum reflection: `enum_name(value)`, `enum_value<E>(name)`, the members in `reflection<E>`                                                                         |
@@ -77,4 +78,5 @@ Adapted from `tests/meta/unit/struct_tests.cpp` and `tests/meta/unit/enum_tests.
 
 ## See also
 
-[codec](codec.md), [support](support.md), [deco](deco.md), [zest](zest.md) (its checks compare through `meta::eq`), [tests/meta/](../tests/meta/).
+[codec](codec.md), [support](support.md), [deco](deco.md), [zest](zest.md)
+(its checks compare through `meta::eq`), [tests/meta](../tests/meta/).

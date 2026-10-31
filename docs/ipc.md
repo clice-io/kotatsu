@@ -1,7 +1,7 @@
 # ipc
 
-`kotatsu::ipc` is JSON-RPC 2.0 between processes, framed as the LSP base
-protocol frames it, in JSON or bincode, over stdio, TCP or any pair of streams.
+`kotatsu::ipc` is JSON-RPC 2.0 between processes, with the LSP base
+protocol's `Content-Length` framing, in JSON or bincode, over stdio, TCP or any pair of streams.
 `Peer<Codec>` is one end of a connection on the event loop: it dispatches what
 it reads to handlers and sends requests of its own, with cancellation and
 timeouts. The `lsp/` headers add the LSP 3.18 model, URIs and positions. It is
@@ -10,13 +10,12 @@ not for HTTP ([http](http.md)), nor does it define how values are encoded
 
 ## Targets
 
-Headers: `include/kotatsu/ipc/`, the LSP part in `include/kotatsu/ipc/lsp/`.
-
-| Part                                             | Bazel                                                          | CMake (option)                                                                                 | Depends on                        |
-| ------------------------------------------------ | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------- |
-| Framing, codecs, `BlockingClient`; no event loop | `@kotatsu//:ipc_codec`, JSON codec `@kotatsu//:ipc_codec_json` | `kotatsu::ipc::codec`; its JSON codec with `KOTATSU_CODEC_ENABLE_SIMDJSON`                     | codec, support; simdjson for JSON |
-| Transports, `Peer`, `BincodePeer`                | `@kotatsu//:ipc`, `JSONPeer` `@kotatsu//:ipc_json`             | `kotatsu::ipc` (`KOTATSU_ENABLE_ASYNC`); `JSONPeer` also needs `KOTATSU_CODEC_ENABLE_SIMDJSON` | ipc codec target, async (libuv)   |
-| LSP model, URI, positions, progress              | `@kotatsu//:ipc_lsp`                                           | `kotatsu::ipc::lsp` (`KOTATSU_ENABLE_ASYNC`)                                                   | ipc, codec, meta                  |
+|            |                                                                                                                                                                             |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bazel      | `@kotatsu//:ipc_codec` (framing, codecs, `BlockingClient`; no event loop) and `:ipc_codec_json`; `@kotatsu//:ipc` (transports, peers) and `:ipc_json`; `@kotatsu//:ipc_lsp` |
+| CMake      | `kotatsu::ipc::codec`, always built; `kotatsu::ipc` and `kotatsu::ipc::lsp`, with `KOTATSU_ENABLE_ASYNC`; the JSON parts with `KOTATSU_CODEC_ENABLE_SIMDJSON`               |
+| Headers    | [include/kotatsu/ipc/](../include/kotatsu/ipc/), the LSP part in [lsp/](../include/kotatsu/ipc/lsp/)                                                                        |
+| Depends on | [codec](codec.md), [support](support.md); the peers and the LSP part also [async](async.md)                                                                                 |
 
 ## Example
 
@@ -26,13 +25,14 @@ Headers: `include/kotatsu/ipc/`, the LSP part in `include/kotatsu/ipc/lsp/`.
 
 #include "kotatsu/ipc/peer/json.h"
 
+namespace async = kotatsu::async;
 namespace ipc = kotatsu::ipc;
 
 struct AddParams { std::int64_t a = 0, b = 0; };
 struct AddResult { std::int64_t sum = 0; };
 
 int main() {
-    kotatsu::async::event_loop loop;
+    async::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         return 1;
@@ -52,7 +52,7 @@ Adapted from `examples/ipc/stdio_server.cpp`.
 
 ## Overview
 
-| Header                                                                                                                                                    | What it holds                                                                                                                                            |
+| Header                                                                                                                                                    | Contents                                                                                                                                                 |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [protocol.h](../include/kotatsu/ipc/protocol.h)                                                                                                           | The JSON-RPC model: `RequestTraits`, `NotificationTraits`, `RequestID`, `ErrorCode`, `Error`                                                             |
 | [framing.h](../include/kotatsu/ipc/framing.h)                                                                                                             | The base protocol's framing: `frame_header()`, `FrameParser`, the payload size limit                                                                     |
@@ -66,10 +66,6 @@ Adapted from `examples/ipc/stdio_server.cpp`.
 | [lsp/position.h](../include/kotatsu/ipc/lsp/position.h), [lsp/text.h](../include/kotatsu/ipc/lsp/text.h)                                                  | Byte offsets to and from `Position` and `Range`, in UTF-8, UTF-16 or UTF-32                                                                              |
 | [lsp/progress.h](../include/kotatsu/ipc/lsp/progress.h)                                                                                                   | `ProgressReporter`, for `$/progress` work-done reports                                                                                                   |
 
-The framing, the codecs and `BlockingClient` build without the event loop
-(`kotatsu::ipc::codec`), so a program such as a hook library loaded into other
-processes links neither libuv nor, on Windows, the DLLs libuv imports.
-
 ## Platform notes
 
 - `BlockingClient` takes a pipe `HANDLE` (no `FILE_FLAG_OVERLAPPED`) on Windows, a connected stream socket (no `O_NONBLOCK`) elsewhere.
@@ -77,4 +73,5 @@ processes links neither libuv nor, on Windows, the DLLs libuv imports.
 
 ## See also
 
-[async](async.md), [codec](codec.md), [meta](meta.md), [support](support.md); [examples/ipc](../examples/ipc/), [tests/ipc](../tests/ipc/).
+[async](async.md), [codec](codec.md), [meta](meta.md), [support](support.md),
+[examples/ipc](../examples/ipc/), [tests/ipc](../tests/ipc/).
