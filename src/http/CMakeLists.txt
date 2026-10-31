@@ -27,6 +27,9 @@ kotatsu_add_git_dependency(
         CURL_DISABLE_INSTALL ON
         CURL_ENABLE_EXPORT_TARGET ON
         CURL_USE_LIBPSL OFF
+        # HTTP_ONLY leaves SSH out, but curl still finds libssh2, whose
+        # headers on macOS may come from another OpenSSL than the one found.
+        CURL_USE_LIBSSH2 OFF
         CURL_ZLIB OFF
         CURL_ZSTD OFF
         ENABLE_ARES OFF
