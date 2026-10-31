@@ -73,7 +73,10 @@ public:
         auto capacity = buffer.capacity();
         // Into the string, which takes `string` even if it views the list.
         buffer.append(string);
-        ScopeExit undo([&] { buffer.resize(start); });
+        ScopeExit undo([&] {
+            buffer.resize(start);
+            rebase();
+        });
         buffer.push_back('\0');
         undo.release();
         starts.push_back(start);

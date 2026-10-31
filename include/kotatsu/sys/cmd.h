@@ -27,8 +27,8 @@ enum class Quoting : std::uint8_t {
     /// them and backslashes literal; after it, spaces and tabs outside quotes
     /// separate arguments, 2n backslashes before a quote make n and the quote
     /// toggles, 2n+1 make n and a literal quote, two quotes inside quotes
-    /// make one, and other backslashes are literal. A line that starts with
-    /// a blank has an empty program.
+    /// make one, and other backslashes are literal. An empty line has no
+    /// arguments, and one that starts with a blank an empty program.
     Windows,
     /// A POSIX shell's, without its expansions: spaces, tabs, carriage
     /// returns and newlines outside quotes separate arguments; single quotes
@@ -139,7 +139,8 @@ inline split_view split(std::string_view line, Quoting quoting) {
 /// doubled. POSIX: a backslash before each ASCII character that is not a
 /// letter, a digit or one of `@%+=:,./_-`, a newline in single quotes
 /// instead, which sh would take for a line continuation, and an empty
-/// argument as `''`; sh reads it back alike.
+/// argument as `''`; sh reads it back alike, but for a program named like
+/// one of its reserved words or an assignment.
 void join(buffer_ref out, string_list_ref arguments, Quoting quoting);
 
 /// The arguments of a command with its response files read, as expand()
