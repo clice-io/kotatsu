@@ -18,8 +18,19 @@
 #define KOTATSU_NOINLINE [[gnu::noinline]]
 #endif
 
-// [[msvc::no_unique_address]] corrupts coroutine frame layout under MSVC ASAN,
-// before the VS 2026 toolset (_MSC_VER 1950) at least.
+// Visual Studio issue:
+// https://developercommunity.visualstudio.com/t/Unable-to-destroy-C20-coroutine-in-fin/10657377
+//
+// Reported fixed in VS 2026 toolset v145, still reproducible in v143.
+// We treat _MSC_VER < 1950 as affected.
+#if KOTATSU_COMPILER_MSVC && (KOTATSU_COMPILER_MSVC_VERSION < 1950) &&                             \
+    (defined(_CRT_USE_ADDRESS_SANITIZER) || defined(__SANITIZE_ADDRESS__))
+#define KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF 1
+#else
+#define KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF 0
+#endif
+
+// [[msvc::no_unique_address]] corrupts coroutine frame layout under MSVC ASAN.
 // Even without ASAN, MSVC miscompiles the layout of classes that use this
 // attribute when those classes are stored inside a coroutine frame (local
 // variables, not just promise types). Only safe on types that never live in
@@ -27,9 +38,7 @@
 // See: https://developercommunity.visualstudio.com/t/msvc::no_unique_address-nonconforman/10504173
 //      https://developercommunity.visualstudio.com/t/c20-coroutine-memory-corruption/1683791
 #if defined(__has_cpp_attribute)
-#if __has_cpp_attribute(msvc::no_unique_address) &&                                                \
-    !(KOTATSU_COMPILER_MSVC && KOTATSU_COMPILER_MSVC_VERSION < 1950 &&                             \
-      (defined(_CRT_USE_ADDRESS_SANITIZER) || defined(__SANITIZE_ADDRESS__)))
+#if __has_cpp_attribute(msvc::no_unique_address) && !KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
 #define KOTATSU_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
 #elif __has_cpp_attribute(no_unique_address)
 #define KOTATSU_NO_UNIQUE_ADDRESS [[no_unique_address]]

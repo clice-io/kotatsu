@@ -11,6 +11,7 @@
 #include "kotatsu/zest/async.h"
 #include "kotatsu/zest/macro.h"
 #include "kotatsu/zest/zest.h"
+#include "kotatsu/support/config.h"
 #include "kotatsu/async/async.h"
 
 namespace kotatsu::async {
@@ -528,6 +529,9 @@ ZEST_CASE(join_returns_once_what_the_children_held_is_gone) {
     ZEXPECT(*unlocked);
 }
 
+// MSVC's coroutine codegen under ASan cannot destroy the frame of the child
+// that settles a group, which waits for the end of the resumption there.
+#if !KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
 // So does the cancel of the task joining the group: the task awaiting that
 // one sees the children gone.
 ZEST_CASE(cancelled_join_ends_once_what_the_children_held_is_gone) {
@@ -621,6 +625,43 @@ ZEST_CASE(group_frees_its_children_before_the_task_awaiting_it_ends) {
     ZEXPECT(op.cancel_requested());
     ZEXPECT(!inner_alive);
     ZEXPECT(!outlived);
+}
+
+#endif
+
+// A frame that goes with the group may not start new children in it.
+ZEST_CASE(frame_going_with_the_group_cannot_spawn) {
+    struct SpawnsAsItGoes {
+        task_group<>& group;
+        std::optional<bool>& spawned;
+
+        SpawnsAsItGoes(task_group<>& group, std::optional<bool>& spawned) :
+            group(group), spawned(spawned) {}
+
+        ~SpawnsAsItGoes() {
+            spawned = group.spawn(nothing());
+        }
+
+        static task<> nothing() {
+            co_return;
+        }
+    };
+
+    std::optional<bool> spawned;
+    auto child = [](std::unique_ptr<SpawnsAsItGoes>) -> task<> {
+        co_return;
+    };
+    auto driver = [&]() -> task<> {
+        // The child ends as it is spawned, and goes with the group.
+        task_group<> group;
+        group.spawn(child(std::make_unique<SpawnsAsItGoes>(group, spawned)));
+        co_return;
+    };
+
+    auto [result] = run(driver());
+    ZEXPECT(result.has_value());
+    ZASSERT(spawned.has_value());
+    ZEXPECT(!*spawned);
 }
 
 };  // ZEST_SUITE(async_runtime_task_group_lifetime)

@@ -223,14 +223,19 @@ void aggregate_op::destroy_frames(task_frame* frames) {
 }
 
 void aggregate_op::abandon_children() {
-    // What the frames held may end more children.
-    while(auto* frames = take_ended()) {
-        destroy_frames(frames);
-    }
-    // A child the cancel ends at once, or resumes when it catches that, may
-    // run on here; it must not add to the group.
+    // What runs from here, a frame that goes or a child a cancel resumes,
+    // must not add to the group, and may end children still in it: those
+    // join the ended ones.
     cancel_requested = true;
-    while(auto* child = head) {
+    while(true) {
+        if(auto* frames = take_ended()) {
+            destroy_frames(frames);
+            continue;
+        }
+        auto* child = head;
+        if(child == nullptr) {
+            break;
+        }
         unlink(*child);
         child->parent = nullptr;
         child->hook = nullptr;
@@ -413,6 +418,12 @@ std::coroutine_handle<> aggregate_op::settle_if_idle() {
     if(kind != NodeKind::TaskGroup) {
         return std::exchange(parent, nullptr)->on_child_complete(*this);
     }
+#if KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    // MSVC's coroutine codegen under ASan cannot destroy the frame of the
+    // child that settles the group, at its final suspension: the children go
+    // once the outermost resumption is over.
+    return std::exchange(parent, nullptr)->on_child_complete(*this);
+#else
     // The children go before the task awaiting the group goes on, or ends,
     // which may free what they hold; but a child may own the group, so
     // nothing of it is used after.
@@ -421,6 +432,7 @@ std::coroutine_handle<> aggregate_op::settle_if_idle() {
     const bool caught = intercept;
     destroy_frames(take_ended());
     return waiting.awaited_ended(end, caught);
+#endif
 }
 
 std::coroutine_handle<> io_op::attach(task_frame& waiting, std::source_location location) noexcept {
