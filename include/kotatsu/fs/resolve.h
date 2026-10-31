@@ -41,11 +41,11 @@ void weakly_canonical(buffer_ref out,
 /// last name is a symlink, its target, which, where relative, lies in the
 /// link's directory and is pushed onto it, the path then normalized: on POSIX
 /// with its `..` kept, since the directory could be a symlink too, and with a
-/// separator at the end after a target that ends in one or in `.`, which must
-/// name a directory; on Windows, which resolves a link's `..` by text, folded.
-/// `path` itself where it is no symlink; the last target need not exist.
-/// Symlinks before the last name stay as they are. More than 40 links in a row,
-/// which a loop of them makes, fail with
+/// separator at the end once `path` or a target on the way ends in one or in
+/// `.`, which must then name a directory; on Windows, which resolves a link's
+/// `..` by text, folded. `path` itself where it is no symlink; the last target
+/// need not exist. Symlinks before the last name stay as they are. More than 40
+/// links in a row, which a loop of them makes, fail with
 /// std::errc::too_many_symbolic_link_levels; a link whose target the system
 /// cannot read, with the error read_symlink() gives; a path with a null in it,
 /// with invalid_argument.
