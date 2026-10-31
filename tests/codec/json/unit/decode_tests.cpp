@@ -177,8 +177,9 @@ ZEST_CASE(located_type_mismatch_after_a_bom_fails) {
     // At its byte in the text as given; only the first line's columns start
     // past the mark.
     test::Person out{};
-    auto status = json::from_string(std::string(bom) + "{
- \"age\": \"x\"}", out);
+    auto status = json::from_string(std::string(bom) + R"({
+ "age": "x"})",
+                                    out);
     ZASSERT(!status);
     ZEXPECT(status.error().message == incorrect_type);
     ZEXPECT(status.error().format_path() == "age");

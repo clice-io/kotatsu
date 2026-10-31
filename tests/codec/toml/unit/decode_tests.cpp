@@ -113,8 +113,7 @@ ZEST_CASE(second_bom_fails) {
 ZEST_CASE(type_mismatch_after_a_bom_fails_at_its_value) {
     // toml++ counts the first line's columns from after the mark.
     test::Person out{};
-    auto status = toml::from_string(std::string(bom) + "age = 'x'
-", out);
+    auto status = toml::from_string(std::string(bom) + "age = 'x'\n", out);
     ZASSERT(!status);
     ZEXPECT(status.error().message == "invalid type: expected integer, got string");
     ZEXPECT(status.error().format_path() == "age");
