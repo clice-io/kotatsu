@@ -20,8 +20,8 @@
 #include "kotatsu/support/utf16.h"
 #include "kotatsu/fs/path.h"
 #include "kotatsu/fs/resolve.h"
+#include "kotatsu/sys/cmd.h"
 #include "kotatsu/sys/spawn.h"
-#include "kotatsu/sys/windows.h"
 
 // Windows 10's, which MinGW's headers declare only for _WIN32_WINNT 0x0A00.
 #ifndef PROC_THREAD_ATTRIBUTE_JOB_LIST
@@ -421,7 +421,7 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
             if(arguments[0].find('"') != std::string::npos) {
                 return std::unexpected(std::make_error_code(std::errc::invalid_argument));
             }
-            windows::join_command_line(written, arguments);
+            cmd::join(written, arguments, cmd::Quoting::Windows);
         }
         command_line = written;
     }

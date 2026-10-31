@@ -6,7 +6,7 @@ add_library(kotatsu_sys STATIC
     cgroup.cpp
     capture.cpp
     child.cpp
-    command_line.cpp
+    cmd.cpp
     console.cpp
     cpu.cpp
     cpu_cores.cpp

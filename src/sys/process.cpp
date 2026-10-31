@@ -12,7 +12,7 @@
 #include <winternl.h>
 
 #include "kotatsu/support/utf16.h"
-#include "kotatsu/sys/windows.h"
+#include "kotatsu/sys/cmd.h"
 #elif defined(__APPLE__)
 #include <crt_externs.h>
 #include <libproc.h>
@@ -185,7 +185,7 @@ const std::vector<std::string>& arguments() {
         std::string text;
         from_utf16(text, std::wstring_view(::GetCommandLineW()));
         std::vector<std::string> line;
-        for(auto argument: windows::split_command_line(text)) {
+        for(auto argument: cmd::split(text, cmd::Quoting::Windows)) {
             line.emplace_back(argument);
         }
         // A program started with an empty command line has not even its name
