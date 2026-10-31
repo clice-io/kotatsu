@@ -49,7 +49,7 @@ struct empty_config_base {};
 }  // namespace detail
 
 // clang-format off
-#define KOTATSU_CFG_FIELD_(name, default_val)                                                         \
+#define KOTATSU_CFG_FIELD_(name, default_val)                                                      \
     constexpr static auto name = [] {                                                              \
         if constexpr(std::is_void_v<UserConfig>)                                                   \
             return (default_val);                                                                   \

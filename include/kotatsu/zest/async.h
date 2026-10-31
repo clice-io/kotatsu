@@ -1,8 +1,8 @@
 #pragma once
 
 // zest's support for tests of kotatsu::async code. It comes with the
-// kotatsu::zest::async target, not with kotatsu::zest, so that plain zest does not
-// bring kotatsu::async to its users.
+// kotatsu::zest::async target, not with kotatsu::zest, so that plain zest does
+// not bring kotatsu::async to its users.
 
 #include <array>
 #include <chrono>

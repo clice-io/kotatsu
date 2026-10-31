@@ -22,7 +22,7 @@ namespace kotatsu::ipc {
 
 namespace {
 
-/// Both ends of an anonymous pipe, opened as kotatsu pipes.
+/// Both ends of an anonymous pipe, opened as async::pipe.
 struct Ends {
     async::pipe reader;
     async::pipe writer;

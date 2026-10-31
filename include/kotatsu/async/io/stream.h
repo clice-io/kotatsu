@@ -197,7 +197,7 @@ class pipe : public stream {
 public:
     pipe() noexcept = default;
 
-    using acceptor = kotatsu::async::acceptor<pipe>;
+    using acceptor = async::acceptor<pipe>;
 
     struct options {
         /// Enable IPC handle passing.
@@ -240,7 +240,7 @@ public:
                                    event_loop& loop = event_loop::current());
 
 private:
-    friend class kotatsu::async::acceptor<pipe>;
+    friend class async::acceptor<pipe>;
     friend class process;
 
     explicit pipe(detail::unique_handle<Self> self) noexcept;
@@ -254,7 +254,7 @@ class tcp : public stream {
 public:
     tcp() noexcept = default;
 
-    using acceptor = kotatsu::async::acceptor<tcp>;
+    using acceptor = async::acceptor<tcp>;
 
     struct options {
         /// Restrict socket to IPv6 only (ignore IPv4-mapped addresses).
@@ -286,7 +286,7 @@ public:
                                    event_loop& loop = event_loop::current());
 
 private:
-    friend class kotatsu::async::acceptor<tcp>;
+    friend class async::acceptor<tcp>;
 
     explicit tcp(detail::unique_handle<Self> self) noexcept;
 

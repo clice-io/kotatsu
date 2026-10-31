@@ -77,9 +77,9 @@
 //   reaping               Linux: SIGCHLD ignored, starts a child from a thread
 //                         a hook holds where spawn sets SIGCHLD's default, and
 //                         meanwhile another, sets a handler once that has
-//                         started, as kotatsu::async::process sets one, and prints
-//                         {"waited": <whether the second waited for the
-//                         first>, "kept": <whether the handler stayed>}
+//                         started, as kotatsu::async::process sets one, and
+//                         prints {"waited": <whether the second waited for
+//                         the first>, "kept": <whether the handler stayed>}
 //   nested                Windows: joins a job as a CI runner's, starts
 //                         `sys_probe hang` exit_with_parent in a tree of its
 //                         own, and prints whether that is in the runner's

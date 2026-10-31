@@ -110,8 +110,8 @@ private:
              std::owner_less<>>
         jars;
     curl::multi_handle multi;
-    kotatsu::async::detail::unique_handle<timer_watch> timer;
-    std::unordered_map<curl_socket_t, kotatsu::async::detail::unique_handle<socket_watch>> sockets;
+    async::detail::unique_handle<timer_watch> timer;
+    std::unordered_map<curl_socket_t, async::detail::unique_handle<socket_watch>> sockets;
     /// The transfers it tracks, linked through transfer::prev and next.
     detail::transfer* transfers = nullptr;
 };

@@ -9,6 +9,7 @@
 #include "kotatsu/sys/process.h"
 #include "kotatsu/async/async.h"
 
+namespace async = kotatsu::async;
 namespace ipc = kotatsu::ipc;
 
 namespace {
@@ -31,8 +32,8 @@ struct WorkerLog {
     std::string text;
 };
 
-kotatsu::async::task<BuildResult, ipc::Error>
-    handle_build_request(ipc::JSONPeer::RequestContext& context, const BuildParams& params) {
+async::task<BuildResult, ipc::Error> handle_build_request(ipc::JSONPeer::RequestContext& context,
+                                                          const BuildParams& params) {
     auto log_status =
         context->send_notification("worker/log",
                                    WorkerLog{
@@ -63,10 +64,10 @@ struct WorkerOutcome {
     std::string error;
 };
 
-kotatsu::async::task<void> run_parent_session(ipc::JSONPeer& peer,
-                                              kotatsu::async::process child,
-                                              WorkerPlan plan,
-                                              WorkerOutcome& outcome) {
+async::task<void> run_parent_session(ipc::JSONPeer& peer,
+                                     async::process child,
+                                     WorkerPlan plan,
+                                     WorkerOutcome& outcome) {
     outcome.worker_name = plan.worker_name;
 
     auto build_result =
@@ -110,7 +111,7 @@ kotatsu::async::task<void> run_parent_session(ipc::JSONPeer& peer,
 }
 
 int run_worker() {
-    kotatsu::async::event_loop loop;
+    async::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio transport: {}", transport.error().message);
@@ -126,7 +127,7 @@ int run_worker() {
 }
 
 int run_parent(std::string self_path) {
-    kotatsu::async::event_loop loop;
+    async::event_loop loop;
 
     const std::vector<WorkerPlan> plans = {
         {
@@ -154,16 +155,16 @@ int run_parent(std::string self_path) {
     peers.reserve(plans.size());
 
     for(std::size_t index = 0; index < plans.size(); ++index) {
-        kotatsu::async::process::options opts;
+        async::process::options opts;
         opts.program = self_path;
         opts.args = {"--worker"};
         opts.streams = {
-            kotatsu::async::process::stdio::pipe(),
-            kotatsu::async::process::stdio::pipe(),
-            kotatsu::async::process::stdio::inherit(),
+            async::process::stdio::pipe(),
+            async::process::stdio::pipe(),
+            async::process::stdio::inherit(),
         };
 
-        auto spawned = kotatsu::async::process::spawn(opts, loop);
+        auto spawned = async::process::spawn(opts, loop);
         if(!spawned) {
             std::println(stderr,
                          "failed to spawn {}: {}",

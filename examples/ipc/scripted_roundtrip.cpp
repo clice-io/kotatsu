@@ -11,6 +11,7 @@
 #include "kotatsu/ipc/peer/json.h"
 #include "kotatsu/async/async.h"
 
+namespace async = kotatsu::async;
 namespace ipc = kotatsu::ipc;
 
 namespace {
@@ -44,10 +45,10 @@ public:
         }
     }
 
-    kotatsu::async::task<std::string, ipc::ReadError> read_message() override {
+    async::task<std::string, ipc::ReadError> read_message() override {
         while(read_index >= incoming_messages.size()) {
             if(closed) {
-                co_await kotatsu::async::fail(ipc::ReadError{.kind = ipc::ReadError::Kind::Closed});
+                co_await async::fail(ipc::ReadError{.kind = ipc::ReadError::Kind::Closed});
             }
 
             co_await readable.wait();
@@ -57,7 +58,7 @@ public:
         co_return incoming_messages[read_index++];
     }
 
-    kotatsu::async::task<void, ipc::Error> write_message(std::string_view payload) override {
+    async::task<void, ipc::Error> write_message(std::string_view payload) override {
         outgoing_messages.emplace_back(payload);
         if(write_hook) {
             write_hook(payload, *this);
@@ -70,7 +71,7 @@ public:
         readable.set();
     }
 
-    kotatsu::async::task<void, ipc::Error> close_output() override {
+    async::task<void, ipc::Error> close_output() override {
         co_return;
     }
 
@@ -89,14 +90,14 @@ private:
     std::vector<std::string> outgoing_messages;
     std::size_t read_index = 0;
     WriteHook write_hook;
-    kotatsu::async::event readable;
+    async::event readable;
     bool closed = false;
 };
 
 }  // namespace
 
 int main() {
-    kotatsu::async::event_loop loop;
+    async::event_loop loop;
     auto transport = std::make_unique<ScriptedTransport>(
         std::vector<std::string>{
             R"({"jsonrpc":"2.0","id":7,"method":"example/add","params":{"a":2,"b":3}})",

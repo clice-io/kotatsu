@@ -40,7 +40,7 @@ struct acceptor<Stream>::Self : uv::owned_handle<Self> {
 
     result<Stream> accept_one() {
         auto client = stream::Self::make();
-        if constexpr(std::same_as<Stream, kotatsu::async::pipe>) {
+        if constexpr(std::same_as<Stream, async::pipe>) {
             ::uv_pipe_init(stream.loop, &client->pipe, pipe.ipc);
         } else {
             ::uv_tcp_init(stream.loop, &client->tcp);

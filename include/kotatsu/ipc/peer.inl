@@ -103,8 +103,10 @@ struct Peer<CodecT>::Self {
     /// decodes them from in place. A request's callback returns its answer,
     /// encoded; a notification's, what breaks the protocol in it, if
     /// anything: params that do not decode.
-    using RequestCallback = std::function<
-        async::task<std::string, Error>(const protocol::RequestID&, PayloadSlice&, async::cancellation_token)>;
+    using RequestCallback =
+        std::function<async::task<std::string, Error>(const protocol::RequestID&,
+                                                      PayloadSlice&,
+                                                      async::cancellation_token)>;
     using NotificationCallback = std::function<std::optional<std::string>(PayloadSlice&)>;
 
     using Clock = std::chrono::steady_clock;
@@ -391,7 +393,8 @@ struct Peer<CodecT>::Self {
         // their entries.
         auto values =
             incoming_requests | std::views::values | std::views::transform(&RunningRequest::source);
-        std::vector<std::shared_ptr<async::cancellation_source>> sources(values.begin(), values.end());
+        std::vector<std::shared_ptr<async::cancellation_source>> sources(values.begin(),
+                                                                         values.end());
         for(auto& source: sources) {
             source->cancel();
         }
@@ -623,8 +626,9 @@ struct Peer<CodecT>::Self {
             }
             auto left = std::chrono::ceil<std::chrono::milliseconds>(deadlines.begin()->first -
                                                                      Clock::now());
-            co_await async::when_any(async::sleep(std::max(left, std::chrono::milliseconds::zero()), loop),
-                              wait_for(deadline_changed));
+            co_await async::when_any(
+                async::sleep(std::max(left, std::chrono::milliseconds::zero()), loop),
+                wait_for(deadline_changed));
         }
     }
 
@@ -736,9 +740,9 @@ struct Peer<CodecT>::Self {
     }
 
     async::task<> run_request(protocol::RequestID id,
-                       RequestCallback callback,
-                       PayloadSlice params,
-                       async::cancellation_token token) {
+                              RequestCallback callback,
+                              PayloadSlice params,
+                              async::cancellation_token token) {
         outcome<std::string, Error, async::cancellation> guarded_result = outcome_error(Error());
         // A handler that throws is answered InternalError; the exception
         // does not reach the other handlers, nor run().
@@ -896,8 +900,8 @@ std::vector<UnansweredRequest> Peer<CodecT>::incoming_requests() const {
 
 template <typename CodecT>
 async::task<PayloadSlice, Error> Peer<CodecT>::send_request_impl(protocol::RequestID id,
-                                                          std::string request,
-                                                          request_options opts) {
+                                                                 std::string request,
+                                                                 request_options opts) {
     if(!self->fits(request)) {
         co_await async::fail(self->too_large("request", request.size()));
     }
@@ -931,8 +935,8 @@ RequestResult<Params> Peer<CodecT>::send_request(const Params& params, request_o
 template <typename CodecT>
 template <typename ResultT, typename Params>
 async::task<ResultT, Error> Peer<CodecT>::send_request(std::string_view method,
-                                                const Params& params,
-                                                request_options opts) {
+                                                       const Params& params,
+                                                       request_options opts) {
     if(auto refused = self->refuse_request(opts)) {
         co_await async::fail(std::move(*refused));
     }
@@ -967,10 +971,10 @@ void Peer<CodecT>::on_request(Callback&& callback) {
                   "on_request(callback) requires RequestTraits<Params>");
 
     using Ret = detail::callback_return_t<Callback>;
-    static_assert(
-        std::is_same_v<Ret, RequestResult<Params>> ||
-            std::is_same_v<Ret, async::task<codec::RawValue, Error>>,
-        "request callback return type should be RequestResult<Params> " "or task<codec::RawValue, Error>");
+    static_assert(std::is_same_v<Ret, RequestResult<Params>> ||
+                      std::is_same_v<Ret, async::task<codec::RawValue, Error>>,
+                  "request callback return type should be RequestResult<Params> "
+                  "or async::task<codec::RawValue, Error>");
 
     on_request_impl(protocol::RequestTraits<Params>::method, std::forward<Callback>(callback));
 }
@@ -986,11 +990,11 @@ template <typename CodecT>
 template <typename Callback>
 void Peer<CodecT>::on_request_impl(std::string_view method, Callback&& callback) {
     using Params = detail::callback_param_t<Callback, 1>;
-    auto wrapped = [cb = std::forward<Callback>(callback),
-                    method_name = std::string(method),
-                    peer = this](const protocol::RequestID& request_id,
-                                 PayloadSlice& params_raw,
-                                 async::cancellation_token token) -> async::task<std::string, Error> {
+    auto wrapped =
+        [cb = std::forward<Callback>(callback), method_name = std::string(method), peer = this](
+            const protocol::RequestID& request_id,
+            PayloadSlice& params_raw,
+            async::cancellation_token token) -> async::task<std::string, Error> {
         auto& state = *peer->self;
         auto parsed_params =
             state.codec.template deserialize_value<Params>(params_raw,

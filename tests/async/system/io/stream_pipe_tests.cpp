@@ -45,7 +45,7 @@ result<pipe> pipe_holding(std::string_view text, event_loop& loop) {
     return pipe::open(fds[0], loop);
 }
 
-/// Both ends of an anonymous pipe, opened as kotatsu pipes.
+/// Both ends of an anonymous pipe, opened as async::pipe.
 struct Ends {
     pipe reader;
     pipe writer;

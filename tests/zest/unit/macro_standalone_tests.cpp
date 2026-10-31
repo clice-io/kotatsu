@@ -1,8 +1,9 @@
-// "kotatsu/zest/macro.h" is what a downstream consuming kotatsu as a module has to
-// include: modules cannot export macros, so the test macros must arrive through
-// a textual include that drags in no zest declarations of its own. Including it
-// as the very first header here keeps that contract honest — if it ever grows a
-// dependency on another zest header, this translation unit stops compiling.
+// "kotatsu/zest/macro.h" is what a downstream consuming kotatsu as a module has
+// to include: modules cannot export macros, so the test macros must arrive
+// through a textual include that drags in no zest declarations of its own.
+// Including it as the very first header here keeps that contract honest — if it
+// ever grows a dependency on another zest header, this translation unit stops
+// compiling.
 #include "kotatsu/zest/macro.h"
 
 #if !defined(ZEST_SUITE) || !defined(ZEST_CASE) || !defined(ZEXPECT) || !defined(ZASSERT) ||       \

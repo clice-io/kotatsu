@@ -129,7 +129,7 @@ struct request_options {
 /// its own.
 ///
 /// A handler returns RequestResult<Params> or, for a result it has encoded
-/// itself, task<codec::RawValue, Error>; a request whose result type is
+/// itself, async::task<codec::RawValue, Error>; a request whose result type is
 /// codec::RawValue gets the result as the codec wrote it.
 ///
 /// A request is handled in two steps. First the peer calls the handler as it

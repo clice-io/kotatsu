@@ -1,8 +1,9 @@
-// "kotatsu/deco/macro.h" is what a downstream consuming kotatsu as a module has to
-// include: modules cannot export macros, so the Deco* macros must arrive through
-// a textual include that drags in no deco declarations of its own. Including it
-// as the very first header here keeps that contract honest: if it ever grows a
-// dependency on a facade header, this translation unit stops compiling.
+// "kotatsu/deco/macro.h" is what a downstream consuming kotatsu as a module has
+// to include: modules cannot export macros, so the Deco* macros must arrive
+// through a textual include that drags in no deco declarations of its own.
+// Including it as the very first header here keeps that contract honest: if it
+// ever grows a dependency on a facade header, this translation unit stops
+// compiling.
 #include "kotatsu/deco/macro.h"
 
 #if !defined(DECO_CFG) || !defined(DECO_CFG_START) || !defined(DECO_CFG_END) ||                    \

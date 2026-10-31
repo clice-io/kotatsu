@@ -75,7 +75,7 @@ public:
     /// Over `handle`, which it reads and writes, and closes when it goes: on
     /// Windows a pipe's HANDLE, open to read and write without
     /// FILE_FLAG_OVERLAPPED; elsewhere the descriptor of a connected stream
-    /// socket, such as one to what kotatsu::async::pipe::listen() listens on, without
+    /// socket, such as one to what async::pipe::listen() listens on, without
     /// O_NONBLOCK. A write to a remote that has gone fails, rather than
     /// raise SIGPIPE. An answer whose payload is larger than `max_payload`
     /// is skipped, as StreamTransport skips one.

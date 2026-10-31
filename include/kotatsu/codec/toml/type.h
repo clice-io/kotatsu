@@ -11,11 +11,11 @@
 
 // kotatsu's TOML backend converts every toml++ failure into std::expected /
 // rich_error and never lets an exception escape, so toml++ is pinned to its
-// no-exceptions mode unconditionally (independent of KOTATSU_ENABLE_EXCEPTIONS).
-// This keeps exactly one parse/error code path across all build flavors and
-// keeps EH out of TOML parsing entirely (see PR #168). All translation units
-// must agree on this macro before including toml++, or the toml++ ABI
-// namespaces (ex/noex) will not match across TUs.
+// no-exceptions mode unconditionally (independent of
+// KOTATSU_ENABLE_EXCEPTIONS). This keeps exactly one parse/error code path
+// across all build flavors and keeps EH out of TOML parsing entirely (see PR
+// #168). All translation units must agree on this macro before including
+// toml++, or the toml++ ABI namespaces (ex/noex) will not match across TUs.
 #ifdef TOML_EXCEPTIONS
 #if TOML_EXCEPTIONS
 #error "kotatsu pins toml++ to TOML_EXCEPTIONS=0; do not predefine TOML_EXCEPTIONS=1"

@@ -5,8 +5,8 @@
 // kotatsu as a module still has to pick these up textually, and anything
 // included here would duplicate declarations the module already provides.
 //
-// The kotatsu::meta entities an expansion refers to only have to be visible where
-// the macro is used, e.g. via a codec backend header such as
+// The kotatsu::meta entities an expansion refers to only have to be visible
+// where the macro is used, e.g. via a codec backend header such as
 // "kotatsu/codec/json/json.h".
 
 #define KOTATSU_CONCAT_IMPL(a, b) a##b

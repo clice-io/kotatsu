@@ -5,6 +5,7 @@
 
 #include "kotatsu/ipc/peer/json.h"
 
+namespace async = kotatsu::async;
 namespace ipc = kotatsu::ipc;
 
 namespace {
@@ -40,7 +41,7 @@ ipc::RequestResult<LengthParams, LengthResult> length_of(std::string text) {
 }  // namespace
 
 int main() {
-    kotatsu::async::event_loop loop;
+    async::event_loop loop;
     auto transport = ipc::StreamTransport::open_stdio(loop);
     if(!transport) {
         std::println(stderr, "failed to open stdio transport: {}", transport.error().message);

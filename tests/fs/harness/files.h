@@ -2,11 +2,11 @@
 
 // TempDir, a directory of a test's own, write_text() and read_text(),
 // ScopedCurrentDir, ScopedPermissions, make_junction() on Windows,
-// link_directory(), all through std::filesystem, fstreams, cmd and Win32
-// rather than kotatsu::fs, which the tests check; linked() for a case that makes
-// a symlink; across_file_systems() on Linux for one that crosses file
-// systems; chowned() and ScopedUser on POSIX for one root runs as other
-// users; text_of() and CountedBuffer for reads of large files.
+// link_directory(), all through std::filesystem, fstreams, cmd and Win32 rather
+// than kotatsu::fs, which the tests check; linked() for a case that makes a
+// symlink; across_file_systems() on Linux for one that crosses file systems;
+// chowned() and ScopedUser on POSIX for one root runs as other users; text_of()
+// and CountedBuffer for reads of large files.
 
 #include <cstddef>
 #include <cstdlib>

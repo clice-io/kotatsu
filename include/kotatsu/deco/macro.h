@@ -6,8 +6,8 @@
 // would duplicate declarations the module already provides.
 //
 // The names an expansion refers to only have to be visible where the macro is
-// used, not here: kotatsu::deco::decl and kotatsu::deco::trait, plus std::string,
-// std::vector, std::uint32_t and std::remove_cvref_t. Including
+// used, not here: kotatsu::deco::decl and kotatsu::deco::trait, plus
+// std::string, std::vector, std::uint32_t and std::remove_cvref_t. Including
 // "kotatsu/deco/deco.h" or importing the module covers all of them.
 
 #define DECO_CONCAT_IMPL(a, b) a##b

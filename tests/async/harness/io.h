@@ -22,7 +22,7 @@ template <typename First, typename Second>
 async::task<std::size_t, async::error> winner(First first, Second second) {
     auto won = co_await async::when_any(std::move(first), std::move(second));
     if constexpr(is_outcome_v<decltype(won)>) {
-        auto picked = co_await or_fail(std::move(won));
+        auto picked = co_await async::or_fail(std::move(won));
         co_return picked.index();
     } else {
         co_return won.index();

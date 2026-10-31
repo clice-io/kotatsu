@@ -5,8 +5,9 @@
 // module still has to pick these up textually, and anything included here would
 // duplicate declarations the module already provides.
 //
-// The kotatsu::zest entities an expansion refers to only have to be visible where
-// the macro is used, not here. Include "kotatsu/zest/zest.h" or import the module.
+// The kotatsu::zest entities an expansion refers to only have to be visible
+// where the macro is used, not here. Include "kotatsu/zest/zest.h" or import
+// the module.
 
 #define ZEST_CONCAT_IMPL(a, b) a##b
 #define ZEST_CONCAT(a, b) ZEST_CONCAT_IMPL(a, b)
@@ -33,7 +34,7 @@
 // clang-format off
 #define ZEST_MAKE_ATTRS(...)                                                                       \
     [] constexpr {                                                                                 \
-        ::kotatsu::zest::TestAttrs _a{};                                                          \
+        ::kotatsu::zest::TestAttrs _a{};                                                           \
         [[maybe_unused]] auto& [skip, focus, serial, crashes] = _a;                                \
         __VA_ARGS__;                                                                               \
         return _a;                                                                                 \
@@ -59,8 +60,8 @@
     void test_##name()
 
 // Registers a group of dynamically named test cases. The body receives
-// `const ::kotatsu::zest::CaseRegistrar& add_case` and is invoked once at static
-// init; call `add_case(name, body)` for each case to register. Unlike
+// `const ::kotatsu::zest::CaseRegistrar& add_case` and is invoked once at
+// static init; call `add_case(name, body)` for each case to register. Unlike
 // ZEST_CASE, the registered bodies run without a suite instance. Its hook
 // keeps the group registered as a case's does.
 #define ZEST_CASE_GROUP(name, ...)                                                                 \
