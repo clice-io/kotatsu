@@ -79,10 +79,10 @@ enum class ViolationPolicy : std::uint8_t {
     End,
 };
 
-/// Why a peer's conversation with its remote ended, as Peer::ended() tells
-/// it: no answer can come any more, so the requests pending have failed with
-/// ConnectionClosed and `message`, and a new one fails at once with
-/// ConnectionClosed.
+/// Why a peer's conversation with its remote ended, as Peer::ended() and
+/// Peer::wait_ended() tell it: no answer can come any more, so the requests
+/// pending have failed with ConnectionClosed and `message`, and a new one
+/// fails at once with ConnectionClosed.
 struct ConversationEnd {
     enum class Kind : std::uint8_t {
         /// The input ended: the remote closed its output, or the connection
@@ -187,6 +187,12 @@ public:
     /// requests fail, and kept, the first reason only. None while answers
     /// can still come, which close_output() leaves them.
     std::optional<ConversationEnd> ended() const;
+
+    /// Waits until the conversation has ended, at once if it has, and gives
+    /// why, as ended() then does. It resumes once whatever ended the
+    /// conversation has suspended, before the handlers still running finish,
+    /// which run() waits for. The Peer must outlive it.
+    async::task<ConversationEnd> wait_ended();
 
     /// Sends the request RequestTraits<Params> names.
     template <typename Params>

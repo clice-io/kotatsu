@@ -8,6 +8,7 @@
 #include <span>
 
 #include "kotatsu/support/config.h"
+#include "kotatsu/support/scope_exit.h"
 
 namespace kotatsu::async {
 
@@ -26,8 +27,10 @@ class async_visitor;
 namespace detail {
 
 struct task_access;
+class ResumptionScope;
+class LoopRunScope;
 
-}
+}  // namespace detail
 
 /// Base of the nodes of the task tree: tasks, the aggregates when_all,
 /// when_any and task_group, waits on sync primitives, and pending I/O. Every
@@ -65,6 +68,7 @@ protected:
     friend class aggregate_op;
     friend class wait_node;
     friend class io_op;
+    friend class detail::ResumptionScope;
     template <typename Derived>
     friend class async_visitor;
 
@@ -87,9 +91,27 @@ protected:
     /// coroutine to resume next.
     std::coroutine_handle<> on_child_complete(async_node& child);
 
-    /// Resumes `handle`, then, unless it runs inside another resumption, the
-    /// tasks sync primitives woke meanwhile.
-    static void resume_and_drain(std::coroutine_handle<> handle);
+    /// Runs `step`, which returns the coroutine to resume next, and resumes
+    /// that, all as one resumption. Unless it runs inside another, the tasks
+    /// sync primitives woke meanwhile resume after it, and the frames of the
+    /// tasks that ended in it go last: a frame may hold the last reference to
+    /// what the code that ended it still uses, as a task_group child may own
+    /// the group.
+    template <typename Step>
+    static void resume_and_drain(Step step) {
+        const bool outermost = enter_resumption();
+        // A step that throws ends the resumption undrained.
+        ScopeExit unwinding([outermost]() noexcept {
+            if(outermost) {
+                drop_resumption();
+            }
+        });
+        step().resume();
+        unwinding.release();
+        if(outermost) {
+            leave_resumption();
+        }
+    }
 
     State state = State::Pending;
 
@@ -106,6 +128,25 @@ protected:
 
     /// Where this node was awaited, spawned or scheduled.
     std::source_location location;
+
+private:
+    /// Marks a resumption under way on this thread; true for the outermost.
+    static bool enter_resumption() noexcept;
+
+    /// Ends the outermost resumption without draining it.
+    static void drop_resumption() noexcept;
+
+    /// Ends the outermost resumption: resumes what sync primitives woke, if
+    /// a loop runs, and destroys the frames that ended, until neither leaves
+    /// anything to do.
+    static void leave_resumption();
+
+    /// Whether the frames of tasks that ended wait to go.
+    static bool anything_ended() noexcept;
+
+    /// Destroys the frames of the tasks that ended, and of those that end
+    /// meanwhile.
+    static void destroy_ended();
 };
 
 /// The part of a task's promise that does not depend on its result type: the
@@ -159,8 +200,14 @@ protected:
                                        std::source_location location);
 
     /// Ends this task in `end` and delivers that to its parent; a root the
-    /// event loop owns is destroyed. Returns the coroutine to resume next.
+    /// event loop owns goes once the outermost resumption is over. Returns
+    /// the coroutine to resume next.
     std::coroutine_handle<> finish(State end);
+
+    /// What this task does once the node it awaits has ended in `end`: it
+    /// resumes, or ends cancelled too unless the await `intercept`s that.
+    /// Returns the coroutine to resume next.
+    std::coroutine_handle<> awaited_ended(State end, bool intercept);
 
     /// The coroutine frame. The promise knows its own handle, but this
     /// type-erased base cannot derive the frame address from `this`.
@@ -258,14 +305,22 @@ protected:
     /// ended. Returns the coroutine to resume next.
     std::coroutine_handle<> await_children(task_frame& waiting, std::source_location location);
 
-    /// ~task_group: lets every running child go. Each is cancelled, ends on
-    /// its own, and is freed by the event loop then; what it failed with is
-    /// dropped. A child may end, or run on to its next suspending co_await,
-    /// before this returns; the group refuses to spawn meanwhile.
+    /// ~task_group: destroys the frames of the children that have ended, and
+    /// lets every running child go. Each is cancelled, ends on its own, and
+    /// is freed by the event loop then; what it failed with is dropped. A
+    /// child may end, or run on to its next suspending co_await, before this
+    /// returns; the group refuses to spawn meanwhile.
     void abandon_children();
 
     /// Records the completion of `child` and settles when it was the last.
     std::coroutine_handle<> child_completed(task_frame& child);
+
+    /// task_group: takes the children that have ended, whose frames have not
+    /// gone yet, off the group; the caller destroys them (destroy_frames()).
+    task_frame* take_ended() noexcept;
+
+    /// Destroys the frames take_ended() gave.
+    static void destroy_frames(task_frame* frames);
 
     /// Records `d` as what settles the aggregate; the first decision cancels
     /// the children still running.
@@ -282,7 +337,8 @@ protected:
     State settled_state() const noexcept;
 
     /// Settles when every child has finished and no pin is held, if a task
-    /// awaits the aggregate. Returns the coroutine to resume next.
+    /// awaits the aggregate; a task_group destroys its ended children first.
+    /// Returns the coroutine to resume next.
     std::coroutine_handle<> settle_if_idle();
 
     /// The running children, in the order they started.
@@ -294,6 +350,10 @@ protected:
     /// when_any: the child that finished first.
     task_frame* winner = nullptr;
 
+    /// task_group: the children that have ended, whose frames have not gone
+    /// yet, linked through next_sibling.
+    task_frame* ended = nullptr;
+
     Decision decision = Decision::None;
 
 #if KOTATSU_ENABLE_EXCEPTIONS
@@ -302,8 +362,21 @@ protected:
 #endif
 
 private:
+    friend class detail::LoopRunScope;
+
     void link(task_frame& child) noexcept;
     void unlink(task_frame& child) noexcept;
+
+    /// task_group: puts the group on the list `head` heads, of the groups
+    /// with children that have ended, or takes it off.
+    void list_with_ended(aggregate_op*& head) noexcept;
+    void unlist_with_ended() noexcept;
+
+    /// The links of that list: the next group, and what points at this one,
+    /// the head or the previous group's link, so that the group leaves the
+    /// list whichever head it is under.
+    aggregate_op* next_with_ended = nullptr;
+    aggregate_op** pprev_with_ended = nullptr;
 };
 
 /// Base of a pending I/O operation, the extension point for awaiting what

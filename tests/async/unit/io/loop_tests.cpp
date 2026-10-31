@@ -72,9 +72,6 @@ ZEST_CASE(task_scheduled_while_running_runs_on_a_later_turn) {
     ZEXPECT(order == std::vector{1, 2});
 }
 
-// MSVC's coroutine codegen under ASan cannot destroy a frame from its final
-// suspension, which is how the loop frees a root it owns.
-#if !KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
 ZEST_CASE(scheduled_temporary_is_destroyed_by_the_loop) {
     auto frame_alive = std::make_shared<int>();
     std::weak_ptr<int> watch = frame_alive;
@@ -89,8 +86,8 @@ ZEST_CASE(scheduled_temporary_is_destroyed_by_the_loop) {
 }
 
 // A child that ends cancelled ends a root the loop owns at its co_await: the
-// child's end destroys the root's frame, and the child with it, before the
-// await returns. ASan builds catch a read of the freed child there.
+// loop frees the root's frame, and the child with it, once the resumption
+// that ended them is over.
 ZEST_CASE(scheduled_temporary_ended_by_a_cancelled_child_is_destroyed) {
     auto frame_alive = std::make_shared<int>();
     std::weak_ptr<int> watch = frame_alive;
@@ -111,7 +108,6 @@ ZEST_CASE(scheduled_temporary_ended_by_a_cancelled_child_is_destroyed) {
     ZEXPECT(child_ran);
     ZEXPECT(!resumed);
 }
-#endif
 
 // A loop that goes before its roots' turn frees the ones it owns, a root its
 // caller dropped first included, and leaves a root its caller keeps to it.
@@ -131,6 +127,115 @@ ZEST_CASE(roots_that_never_ran_go_with_their_loop) {
     ZEXPECT(frames.use_count() == 2);
     kept = task<>();
     ZEXPECT(frames.use_count() == 1);
+}
+
+// A loop that goes takes the waits of its tasks off the sync primitives that
+// outlive it: no grant reaches the loop then, and a unit released goes to a
+// waiter of a loop that runs.
+ZEST_CASE(waits_left_on_primitives_go_off_them_with_the_loop) {
+    event signal;
+    semaphore units;
+    auto on_signal = [&]() -> task<> {
+        co_await signal.wait();
+    };
+    auto on_units = [&]() -> task<> {
+        co_await units.acquire();
+    };
+    auto release = [&]() -> task<> {
+        units.release();
+        co_return;
+    };
+    task<> waiting_on_signal = on_signal();
+    task<> acquiring = on_units();
+    {
+        event_loop other;
+        other.schedule(waiting_on_signal);
+        other.schedule(acquiring);
+        ZEXPECT(other.run() == 0);
+        ZEXPECT(signal.has_waiters());
+        ZEXPECT(units.has_waiters());
+    }
+    ZEXPECT(!signal.has_waiters());
+    ZEXPECT(!units.has_waiters());
+    // ASan builds catch a grant to the loop that went.
+    signal.set();
+
+    auto [acquired, released] = run(on_units(), release());
+    ZEXPECT(acquired.has_value());
+    ZEXPECT(released.has_value());
+    ZEXPECT(!waiting_on_signal.done());
+    ZEXPECT(!acquiring.done());
+}
+
+// A loop run inside a task of another frees the roots it owns before run()
+// returns, not once the outer task suspends.
+ZEST_CASE(loop_run_inside_a_task_frees_its_roots_before_it_returns) {
+    auto frame = std::make_shared<int>();
+    std::weak_ptr<int> watch = frame;
+    auto make = [](std::shared_ptr<int>) -> task<> {
+        co_return;
+    };
+    auto outer = [&]() -> task<bool> {
+        event_loop inner;
+        inner.schedule(make(std::move(frame)));
+        inner.run();
+        co_return watch.expired();
+    };
+
+    auto [freed] = run(outer());
+    ZASSERT(freed.has_value());
+    ZEXPECT(*freed);
+}
+
+// A root's frame that runs a loop as it goes: the loop's resumptions, outermost
+// of their own, find the frame off the list already.
+ZEST_CASE(root_whose_frame_runs_a_loop_as_it_goes_is_freed_once) {
+    struct RunsLoop {
+        int& ran;
+
+        explicit RunsLoop(int& ran) : ran(ran) {}
+
+        ~RunsLoop() {
+            auto count = [](int& ran) -> task<> {
+                ran += 1;
+                co_return;
+            };
+            event_loop inner;
+            inner.schedule(count(ran));
+            inner.run();
+        }
+    };
+
+    int ran = 0;
+    auto make = [](std::unique_ptr<RunsLoop>) -> task<> {
+        co_return;
+    };
+
+    loop.schedule(make(std::make_unique<RunsLoop>(ran)));
+    ZEXPECT(loop.run() == 0);
+    ZEXPECT(ran == 1);
+}
+
+// A task left waiting by a loop that went still ends at a cancel, and its
+// frame goes with its owner.
+ZEST_CASE(wait_left_by_a_loop_that_went_ends_at_a_cancel) {
+    auto frame = std::make_shared<int>();
+    std::weak_ptr<int> watch = frame;
+    event never;
+    auto make = [&](std::shared_ptr<int>) -> task<> {
+        co_await never.wait();
+    };
+    std::optional<task<>> root(make(std::move(frame)));
+    {
+        event_loop other;
+        other.schedule(*root);
+        ZEXPECT(other.run() == 0);
+    }
+
+    root->cancel();
+    ZEXPECT(root->is_cancelled());
+    root.reset();
+    ZEXPECT(watch.expired());
 }
 
 // A root cancelled before its first turn never runs, whether the cancel

@@ -28,7 +28,10 @@ class ScopedAwaiter;
 /// variable must not go while tasks wait on it, nor before the tasks it woke
 /// have resumed: one cancelled in between hands what it was granted back to
 /// it. An event may go once it is set. A waiting task resumes on its event
-/// loop, so a primitive must not grant a wait whose loop has gone.
+/// loop; a primitive may outlive the loop, which takes the waits still queued
+/// on it off the queue as it goes: no grant reaches them, and their tasks stay
+/// suspended until a cancel ends them, a condition variable wait only if its
+/// mutex is free then.
 class sync_primitive {
 public:
     enum class Kind : std::uint8_t {
@@ -132,6 +135,13 @@ private:
     /// Hands on what the waiter was granted, for a task that will not use it.
     void give_back();
 
+    /// Takes the waiter off its queue as its loop goes: it is never granted,
+    /// and a condition variable wait notified meanwhile has spent the
+    /// notification. A cancel ends it at once, as a cancel of a queued wait
+    /// does, except that a condition variable wait stays suspended when its
+    /// mutex is taken, or when a cancel reached it while it waited for that.
+    void abandon() noexcept;
+
     /// Resumes the task once the wait was granted, or ends it cancelled when a
     /// cancel reached the wait since. The event loop calls this.
     void resume();
@@ -143,17 +153,24 @@ private:
     sync_primitive::Kind owner_kind;
 
     /// The loop the task waits on, which resumes it once the wait is granted:
-    /// a primitive may grant it where no loop runs.
+    /// a primitive may grant it where no loop runs. Null once abandon() has
+    /// run: the loop went while the wait was queued.
     event_loop* loop = nullptr;
 
     /// The mutex a condition variable wait locks again.
     mutex* relock = nullptr;
 
-    /// Where the waiter is queued; null once it has been granted.
+    /// Where the waiter is queued; null once it has been granted or
+    /// abandoned.
     sync_primitive* queue = nullptr;
 
     wait_node* prev = nullptr;
     wait_node* next = nullptr;
+
+    /// Links in `loop`'s list of its waits queued on primitives, which it
+    /// abandons if it goes first.
+    wait_node* loop_prev = nullptr;
+    wait_node* loop_next = nullptr;
 };
 
 namespace detail {

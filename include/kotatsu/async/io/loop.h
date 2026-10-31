@@ -49,7 +49,9 @@ struct loop_access;
 ///
 /// Lifetime:
 ///   The event_loop must outlive all relays created from it. Using a
-///   relay after its event_loop is destroyed is undefined behavior.
+///   relay after its event_loop is destroyed is undefined behavior. A
+///   relay is done with the loop before run() can see it gone: once run()
+///   has returned because the last relay went, the loop may go at once.
 ///
 /// Thread safety:
 ///   - Construction (create_relay) is NOT thread-safe; call it on the
@@ -102,6 +104,9 @@ class event_loop {
 public:
     event_loop();
 
+    /// Closes the handles still open and frees the roots it owns that never
+    /// ran. A task still suspended stays so; its wait on a sync primitive,
+    /// which may outlive the loop, is taken off the primitive's queue.
     ~event_loop();
 
     /// Returns the event loop running on the current thread.
@@ -152,6 +157,7 @@ public:
 
 private:
     friend class async_node;
+    friend class sync_primitive;
     friend class wait_node;
     friend class io_op;
     friend struct detail::loop_access;
@@ -159,6 +165,13 @@ private:
     struct Self;
 
     void schedule(task_frame& root);
+
+    /// Lists `waiter`, a wait of a task of this loop queued on a sync
+    /// primitive, which may outlive the loop, until untrack(): the
+    /// destructor abandons the waits listed then.
+    void track(wait_node& waiter) noexcept;
+
+    void untrack(wait_node& waiter) noexcept;
 
     /// Queues the task of a wait a sync primitive granted, to resume once
     /// whatever runs now has suspended instead of inline.

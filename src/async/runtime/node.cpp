@@ -13,59 +13,92 @@ namespace kotatsu::async {
 
 namespace {
 
-#if KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-/// MSVC's coroutine codegen under ASan cannot destroy a frame from its own
-/// final suspension: frames wait here until the resumption that ended them
-/// has returned.
-thread_local std::vector<std::coroutine_handle<>> pending_frame_destroys;
-#endif
-
-void destroy_frame(std::coroutine_handle<> frame) {
-#if KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    pending_frame_destroys.push_back(frame);
-#else
-    frame.destroy();
-#endif
-}
-
-/// Destroys the frames that ended in the outermost resumption on this
-/// thread, which has just returned: only now is none of them on the stack.
-void destroy_ended_frames() {
-#if KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
-    while(!pending_frame_destroys.empty()) {
-        for(auto frame: std::exchange(pending_frame_destroys, {})) {
-            frame.destroy();
-        }
-    }
-#endif
-}
+/// The frames of the roots a loop owns that ended in the resumption under way
+/// on this thread, and the task_groups with children that did: they go once
+/// the outermost resumption is over, as a frame may own what the code that
+/// ended it still uses. A group's children go before its join() returns, if
+/// that is sooner.
+thread_local std::vector<std::coroutine_handle<>> ended_roots;
+thread_local aggregate_op* groups_with_ended = nullptr;
 
 /// A resumption is under way on this thread, or a ResumptionScope stands for
 /// one.
-thread_local bool draining = false;
+thread_local bool resuming = false;
 
 }  // namespace
 
-detail::ResumptionScope::ResumptionScope() noexcept : outermost(!std::exchange(draining, true)) {}
+detail::ResumptionScope::ResumptionScope() noexcept : outermost(!std::exchange(resuming, true)) {}
 
 detail::ResumptionScope::~ResumptionScope() {
     if(outermost) {
-        destroy_ended_frames();
-        draining = false;
+        async_node::destroy_ended();
+        resuming = false;
     }
 }
 
-void async_node::resume_and_drain(std::coroutine_handle<> handle) {
-    const bool outermost = !std::exchange(draining, true);
-    handle.resume();
-    if(!outermost) {
-        return;
+detail::LoopRunScope::LoopRunScope() noexcept :
+    outer_resuming(std::exchange(resuming, false)), outer_roots(std::exchange(ended_roots, {})),
+    outer_groups(std::exchange(groups_with_ended, nullptr)) {
+    if(outer_groups != nullptr) {
+        outer_groups->pprev_with_ended = &outer_groups;
     }
-    if(event_loop::has_current()) {
-        event_loop::current().drain_deferred();
+}
+
+detail::LoopRunScope::~LoopRunScope() {
+    // What a resumption that threw left goes with the outer resumption's.
+    outer_roots.insert(outer_roots.end(), ended_roots.begin(), ended_roots.end());
+    ended_roots = std::move(outer_roots);
+    while(auto* group = groups_with_ended) {
+        group->unlist_with_ended();
+        group->list_with_ended(outer_groups);
     }
-    destroy_ended_frames();
-    draining = false;
+    groups_with_ended = std::exchange(outer_groups, nullptr);
+    if(groups_with_ended != nullptr) {
+        groups_with_ended->pprev_with_ended = &groups_with_ended;
+    }
+    resuming = outer_resuming;
+}
+
+bool async_node::enter_resumption() noexcept {
+    return !std::exchange(resuming, true);
+}
+
+void async_node::drop_resumption() noexcept {
+    resuming = false;
+}
+
+bool async_node::anything_ended() noexcept {
+    return !ended_roots.empty() || groups_with_ended != nullptr;
+}
+
+void async_node::destroy_ended() {
+    // Destroying a frame may end more tasks, whose frames join the lists.
+    while(anything_ended()) {
+        while(!ended_roots.empty()) {
+            // Off the list first: a loop run while it goes ends resumptions
+            // of its own, which destroy what is listed.
+            auto root = ended_roots.back();
+            ended_roots.pop_back();
+            root.destroy();
+        }
+        while(auto* group = groups_with_ended) {
+            aggregate_op::destroy_frames(group->take_ended());
+        }
+    }
+}
+
+void async_node::leave_resumption() {
+    // What the destroyed frames held may wake more tasks, which may end more.
+    while(true) {
+        if(event_loop::has_current()) {
+            event_loop::current().drain_deferred();
+        }
+        if(!anything_ended()) {
+            break;
+        }
+        destroy_ended();
+    }
+    resuming = false;
 }
 
 void async_node::cancel() {
@@ -88,7 +121,7 @@ void async_node::cancel() {
         case NodeKind::WhenAll:
         case NodeKind::WhenAny:
         case NodeKind::TaskGroup:
-            resume_and_drain(static_cast<aggregate_op*>(this)->cancel_all());
+            resume_and_drain([this] { return static_cast<aggregate_op*>(this)->cancel_all(); });
             break;
 
         case NodeKind::SystemIO: {
@@ -112,20 +145,25 @@ std::coroutine_handle<> async_node::on_child_complete(async_node& child) {
     }
 
     auto& self = static_cast<task_frame&>(*this);
-    self.child = nullptr;
-    if(child.state == State::Cancelled && !child.intercept) {
-        return self.finish(State::Cancelled);
-    }
     if(child.state == State::Failed && child.kind == NodeKind::Task) {
         // A child that threw resumes its parent instead, whose co_await
         // rethrows.
         auto& failed = static_cast<task_frame&>(child);
         if(failed.hook && !failed.threw()) {
+            self.child = nullptr;
             failed.hook(failed, self);
             return self.finish(State::Failed);
         }
     }
-    return self.handle();
+    return self.awaited_ended(child.state, child.intercept);
+}
+
+std::coroutine_handle<> task_frame::awaited_ended(State end, bool intercept) {
+    child = nullptr;
+    if(end == State::Cancelled && !intercept) {
+        return finish(State::Cancelled);
+    }
+    return handle();
 }
 
 std::coroutine_handle<> task_frame::start(async_node* parent) {
@@ -161,7 +199,7 @@ std::coroutine_handle<> task_frame::finish(State end) {
     state = end;
     if(parent == nullptr) {
         if(owned_by_loop) {
-            destroy_frame(handle());
+            ended_roots.push_back(handle());
         }
         return std::noop_coroutine();
     }
@@ -169,7 +207,7 @@ std::coroutine_handle<> task_frame::finish(State end) {
 }
 
 void detail::task_access::run_root(task_frame& root) {
-    task_frame::resume_and_drain(root.start(nullptr));
+    task_frame::resume_and_drain([&root] { return root.start(nullptr); });
 }
 
 void detail::task_access::drop_root(task_frame& root) {
@@ -181,11 +219,52 @@ void detail::task_access::drop_root(task_frame& root) {
     }
 }
 
+void aggregate_op::list_with_ended(aggregate_op*& head) noexcept {
+    next_with_ended = std::exchange(head, this);
+    if(next_with_ended != nullptr) {
+        next_with_ended->pprev_with_ended = &next_with_ended;
+    }
+    pprev_with_ended = &head;
+}
+
+void aggregate_op::unlist_with_ended() noexcept {
+    *pprev_with_ended = next_with_ended;
+    if(next_with_ended != nullptr) {
+        next_with_ended->pprev_with_ended = pprev_with_ended;
+    }
+    next_with_ended = nullptr;
+    pprev_with_ended = nullptr;
+}
+
+task_frame* aggregate_op::take_ended() noexcept {
+    if(ended != nullptr) {
+        unlist_with_ended();
+    }
+    return std::exchange(ended, nullptr);
+}
+
+void aggregate_op::destroy_frames(task_frame* frames) {
+    while(frames != nullptr) {
+        auto* next = frames->next_sibling;
+        frames->handle().destroy();
+        frames = next;
+    }
+}
+
 void aggregate_op::abandon_children() {
-    // A child the cancel ends at once, or resumes when it catches that, may
-    // run on here; it must not add to the group.
+    // What runs from here, a frame that goes or a child a cancel resumes,
+    // must not add to the group, and may end children still in it: those
+    // join the ended ones.
     cancel_requested = true;
-    while(auto* child = head) {
+    while(true) {
+        if(auto* frames = take_ended()) {
+            destroy_frames(frames);
+            continue;
+        }
+        auto* child = head;
+        if(child == nullptr) {
+            break;
+        }
         unlink(*child);
         child->parent = nullptr;
         child->hook = nullptr;
@@ -233,7 +312,7 @@ std::coroutine_handle<> aggregate_op::arm(task_frame& waiting,
         // after it, which then end without running.
         pin held(*this);
         for(auto* child: children) {
-            resume_and_drain(child->start(this));
+            resume_and_drain([this, child] { return child->start(this); });
         }
     }
     return settle_if_idle();
@@ -243,7 +322,7 @@ void aggregate_op::spawn(task_frame& child, std::source_location location) {
     child.location = location;
     link(child);
     pending += 1;
-    resume_and_drain(child.start(this));
+    resume_and_drain([this, &child] { return child.start(this); });
 }
 
 std::coroutine_handle<> aggregate_op::await_children(task_frame& waiting,
@@ -299,8 +378,12 @@ std::coroutine_handle<> aggregate_op::child_completed(task_frame& child) {
     }
 
     if(kind == NodeKind::TaskGroup) {
-        // A group keeps no child that has ended.
-        destroy_frame(child.handle());
+        // A group keeps no child that has ended, but the child may own the
+        // group: its frame waits, at the latest until the group settles.
+        if(ended == nullptr) {
+            list_with_ended(groups_with_ended);
+        }
+        child.next_sibling = std::exchange(ended, &child);
     }
     pending -= 1;
     return settle_if_idle();
@@ -358,7 +441,24 @@ std::coroutine_handle<> aggregate_op::settle_if_idle() {
         return std::noop_coroutine();
     }
     state = settled_state();
+    if(kind != NodeKind::TaskGroup) {
+        return std::exchange(parent, nullptr)->on_child_complete(*this);
+    }
+#if KOTATSU_WORKAROUND_MSVC_COROUTINE_ASAN_UAF
+    // MSVC's coroutine codegen under ASan cannot destroy the frame of the
+    // child that settles the group, at its final suspension: the children go
+    // once the outermost resumption is over.
     return std::exchange(parent, nullptr)->on_child_complete(*this);
+#else
+    // The children go before the task awaiting the group goes on, or ends,
+    // which may free what they hold; but a child may own the group, so
+    // nothing of it is used after.
+    auto& waiting = static_cast<task_frame&>(*std::exchange(parent, nullptr));
+    const auto end = state;
+    const bool caught = intercept;
+    destroy_frames(take_ended());
+    return waiting.awaited_ended(end, caught);
+#endif
 }
 
 std::coroutine_handle<> io_op::attach(task_frame& waiting, std::source_location location) noexcept {
@@ -379,7 +479,7 @@ void io_op::complete() noexcept {
     state = cancel_requested() ? State::Cancelled : State::Succeeded;
     auto* awaiting = std::exchange(parent, nullptr);
     assert(awaiting != nullptr && "io_op completed while no task awaits it");
-    resume_and_drain(awaiting->on_child_complete(*this));
+    resume_and_drain([this, awaiting] { return awaiting->on_child_complete(*this); });
 }
 
 }  // namespace kotatsu::async

@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <mutex>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -293,6 +294,46 @@ ZEST_CASE(waiter_cancelled_while_it_waits_for_the_mutex_passes_the_notification_
     ZASSERT(woken_while_held.has_value());
     ZEXPECT(*woken_while_held == 0U);
     ZEXPECT(woken == std::vector{2});
+}
+
+// A wait notified and queued on its mutex again when its loop goes is taken
+// off the mutex and has spent the notification, so that the condition
+// variable may go, which its destructor asserts in builds with asserts; a
+// cancel ends the wait once the mutex is free.
+ZEST_CASE(wait_notified_when_its_loop_goes_spends_the_notification) {
+    mutex m;
+    condition_variable cv;
+    event never;
+    auto waiter = [&]() -> task<> {
+        co_await m.lock();
+        std::lock_guard guard(m, std::adopt_lock);
+        co_await cv.wait(m);
+    };
+    auto holder = [&]() -> task<> {
+        co_await m.lock();
+        std::lock_guard guard(m, std::adopt_lock);
+        cv.notify_one();
+        co_await never.wait();
+    };
+    std::optional<task<>> waiting(waiter());
+    std::optional<task<>> holding(holder());
+    {
+        event_loop other;
+        other.schedule(*waiting);
+        other.schedule(*holding);
+        ZEXPECT(other.run() == 0);
+        ZEXPECT(m.has_waiters());
+    }
+    ZEXPECT(!m.has_waiters());
+    ZEXPECT(!never.has_waiters());
+
+    // Its frame going unlocks the mutex.
+    holding.reset();
+    waiting->cancel();
+    ZEXPECT(waiting->is_cancelled());
+    waiting.reset();
+    ZEXPECT(m.try_lock());
+    m.unlock();
 }
 
 };  // ZEST_SUITE(async_runtime_sync_condition_variable)

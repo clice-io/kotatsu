@@ -1,3 +1,4 @@
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -49,6 +50,29 @@ ZEST_CASE(token_wait_ends_cancelled_when_the_source_fires) {
     auto [waiter, driver] = run(source.token().wait(), fire());
     ZEXPECT(waiter.is_cancelled());
     ZEXPECT(driver.has_value());
+}
+
+// How a server shuts down: run() stopped while a guarded request sleeps, the
+// loop gone, then the source. The loop took the request's wait off the
+// source as it went, so the source's cancel reaches nothing of the loop.
+ZEST_CASE(source_outliving_a_stopped_loop_cancels_none_of_its_tasks) {
+    cancellation_source source;
+    std::optional<task<void, void, cancellation>> request;
+    {
+        event_loop other;
+        request.emplace(with_token(sleep(std::chrono::minutes(1), other), source.token()));
+        auto stop = [&]() -> task<> {
+            other.stop();
+            co_return;
+        };
+        other.schedule(*request);
+        other.schedule(stop());
+        ZEXPECT(other.run() != 0);
+    }
+
+    // ASan builds catch a grant to the loop that went.
+    source.cancel();
+    ZEXPECT(!request->done());
 }
 
 ZEST_CASE(token_wait_on_a_fired_token_cancels_at_once) {
