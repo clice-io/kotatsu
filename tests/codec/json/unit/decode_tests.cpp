@@ -25,6 +25,9 @@ namespace {
 constexpr std::string_view incorrect_type =
     "INCORRECT_TYPE: The JSON element does not have the requested type.";
 
+/// The UTF-8 byte order mark, which RFC 8259 lets a parser skip before the text.
+constexpr std::string_view bom = "\xEF\xBB\xBF";
+
 /// Whether the value-returning overload takes T.
 template <typename T>
 concept decodes_by_value = requires(std::string_view text) { json::from_string<T>(text); };
@@ -132,6 +135,51 @@ ZEST_CASE(empty_document_fails) {
     ZASSERT(!status);
     ZEXPECT(status.error().message == "EMPTY: no JSON found");
     ZEXPECT(!status.error().location);
+}
+
+ZEST_CASE(bom_before_the_text_is_skipped) {
+    auto point = json::from_string<test::Point>(std::string(bom) + R"({"x":1,"y":2})");
+    ZASSERT(point);
+    ZEXPECT(point->x == 1);
+    ZEXPECT(point->y == 2);
+}
+
+ZEST_CASE(bom_alone_fails_as_empty_text_does) {
+    std::vector<int> out;
+    auto status = json::from_string(bom, out);
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == "EMPTY: no JSON found");
+    ZEXPECT(!status.error().location);
+}
+
+ZEST_CASE(bom_between_values_fails) {
+    // simdjson takes the mark for the start of a value it cannot read.
+    std::vector<int> out;
+    auto status = json::from_string("[1," + std::string(bom) + "2]", out);
+    ZASSERT(!status);
+    ZEXPECT(status.error().message == incorrect_type);
+    ZASSERT(status.error().location);
+    ZEXPECT(status.error().location->column == 4U);
+}
+
+ZEST_CASE(second_bom_fails) {
+    // simdjson takes the second mark for the root value, which the array then follows.
+    std::vector<int> out;
+    auto status = json::from_string(std::string(bom) + std::string(bom) + "[1]", out);
+    ZASSERT(!status);
+    ZEXPECT(status.error().message ==
+            simdjson::error_message(simdjson::error_code::TRAILING_CONTENT));
+}
+
+ZEST_CASE(failure_after_a_bom_is_located_past_it) {
+    // At its byte in the text as given, and at its column as an editor shows the line.
+    test::Person out{};
+    auto status = json::from_string(std::string(bom) + R"({"age": "x"})", out);
+    ZASSERT(!status);
+    ZASSERT(status.error().location);
+    ZEXPECT(status.error().location->line == 1U);
+    ZEXPECT(status.error().location->column == 9U);
+    ZEXPECT(status.error().location->byte_offset == 11U);
 }
 
 ZEST_CASE(char_reads_one_codepoint_up_to_255) {
