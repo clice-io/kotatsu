@@ -109,7 +109,7 @@ private:
                 return false;
             }
             group.state = group.settled_state();
-            group.destroy_ended_children();
+            destroy_ended_children(&group);
             return true;
         }
 

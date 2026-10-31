@@ -300,8 +300,9 @@ protected:
     /// Records the completion of `child` and settles when it was the last.
     std::coroutine_handle<> child_completed(task_frame& child);
 
-    /// task_group: destroys the frames of the children that have ended.
-    void destroy_ended_children();
+    /// task_group: destroys the frames of the children of `group` that have
+    /// ended. `group` is only compared: it may be gone.
+    static void destroy_ended_children(const aggregate_op* group);
 
     /// Records `d` as what settles the aggregate; the first decision cancels
     /// the children still running.
@@ -318,8 +319,8 @@ protected:
     State settled_state() const noexcept;
 
     /// Settles when every child has finished and no pin is held, if a task
-    /// awaits the aggregate; a task_group destroys its ended children first.
-    /// Returns the coroutine to resume next.
+    /// awaits the aggregate; a task_group then destroys its ended children,
+    /// before the coroutine to resume next, which this returns, runs.
     std::coroutine_handle<> settle_if_idle();
 
     /// The running children, in the order they started.

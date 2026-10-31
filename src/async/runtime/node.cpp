@@ -197,12 +197,12 @@ void detail::task_access::drop_root(task_frame& root) {
     }
 }
 
-void aggregate_op::destroy_ended_children() {
-    destroy_ended([this](const detail::EndedFrame& ended) { return ended.group == this; });
+void aggregate_op::destroy_ended_children(const aggregate_op* group) {
+    destroy_ended([group](const detail::EndedFrame& ended) { return ended.group == group; });
 }
 
 void aggregate_op::abandon_children() {
-    destroy_ended_children();
+    destroy_ended_children(this);
     // A child the cancel ends at once, or resumes when it catches that, may
     // run on here; it must not add to the group.
     cancel_requested = true;
@@ -380,12 +380,15 @@ std::coroutine_handle<> aggregate_op::settle_if_idle() {
         return std::noop_coroutine();
     }
     state = settled_state();
-    if(kind == NodeKind::TaskGroup) {
-        // What the task awaiting the group does next sees no child left, nor
-        // what the children held.
-        destroy_ended_children();
+    const bool group = kind == NodeKind::TaskGroup;
+    auto next = std::exchange(parent, nullptr)->on_child_complete(*this);
+    if(group) {
+        // After the last use of the group, which a child may own, and before
+        // whatever the task awaiting it goes on to: that sees no child left,
+        // nor what the children held.
+        destroy_ended_children(this);
     }
-    return std::exchange(parent, nullptr)->on_child_complete(*this);
+    return next;
 }
 
 std::coroutine_handle<> io_op::attach(task_frame& waiting, std::source_location location) noexcept {
