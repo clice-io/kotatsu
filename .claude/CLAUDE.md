@@ -35,6 +35,14 @@ clice and catter consume.
 - Integration tests alone: `pixi run integration-test [preset]`
   (`ctest -L integration`).
 
+## Documentation
+
+`README.md` says what kotatsu is; `docs/` has an overview page per module
+(purpose, targets, one example, platform notes) and `docs/building.md`. The
+headers' doc comments are the reference, which the pages link rather than
+repeat. A change to a module's targets, options, headers or the names in its
+example updates its page in the same PR.
+
 ## Skills
 
 Read the relevant skill before acting: `cpp-style` before writing C++,
