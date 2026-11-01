@@ -93,7 +93,7 @@ constexpr FieldUse use_of(const meta::field_info& field) {
         use.type = &static_cast<const meta::optional_type_info&>(*use.type).inner();
     }
     use.value_type = use.type;
-    if(use.spec.commands != nullptr) {
+    if(use.spec.commands.given) {
         use.kind = FieldUse::Kind::Commands;
         return use;
     }

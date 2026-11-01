@@ -234,7 +234,7 @@ class Builder {
                       const std::vector<std::string_view>& keys,
                       const std::string& path) {
         Subcommands subcommands{.keys = keys, .path = path, .optional = true, .group = group};
-        for(const auto& entry: use.spec.commands().entries) {
+        for(const auto& entry: use.spec.commands.registry().entries) {
             subcommands.names.push_back(entry.name);
             subcommands.descriptions.push_back(entry.description);
             subcommands.hidden.push_back(entry.hidden);
@@ -366,7 +366,7 @@ std::unique_ptr<Command> build_command(const meta::type_info& type) {
 }
 
 void CommandRegistry::add(CommandEntry entry) {
-    if(sealed) {
+    if(sealed.load(std::memory_order_relaxed)) {
         std::fprintf(stderr,
                      "cli: subcommand %s added after its set was read\n",
                      entry.name.c_str());

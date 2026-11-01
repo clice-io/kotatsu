@@ -66,6 +66,12 @@ struct Pass {
     <std::variant<WithRest, BySpec>> how;
 };
 
+/// The rest in an alternative other than the first, which "--" alone picks.
+struct RestLast {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<BySpec, WithRest>> how;
+};
+
 struct ByName {
     std::string name;
 };
@@ -194,6 +200,13 @@ ZEST_CASE(rest_of_another_alternative_fails) {
     auto pass = parse_line<Pass>("--spec s -- x");
     ZASSERT(!pass.has_value());
     ZEXPECT(pass.error().kind == Error::Kind::Conflict);
+}
+
+ZEST_CASE(empty_rest_alternative_writes_its_delimiter) {
+    auto rest = parse_line<RestLast>("--");
+    ZASSERT(rest.has_value());
+    ZEXPECT(rest->how.index() == 1U);
+    ZEXPECT(cli::to_argv(*rest) == (std::vector<std::string>{"--"}));
 }
 
 ZEST_CASE(alternative_without_a_description_is_headed_by_its_name) {

@@ -41,6 +41,13 @@ namespace detail {
 
 struct CommandRegistry;
 
+/// The set of subcommands a cli::Commands field reads. `given` says there is one: a constant
+/// expression may not compare `registry` with null on every compiler.
+struct CommandSet {
+    bool given = false;
+    const CommandRegistry& (*registry)() = nullptr;
+};
+
 }  // namespace detail
 
 /// What a field's `cli::` annotation entries say about it on a command line, beside the
@@ -78,7 +85,7 @@ struct ArgSpec {
     /// whose argument it gives first, and an argument of another then conflicts.
     bool exclusive = false;
     /// For a cli::Commands field, which sets it, the subcommands files added to its set.
-    const detail::CommandRegistry& (*commands)() = nullptr;
+    detail::CommandSet commands = {};
     /// For a field of subcommands, the words of those a usage leaves out.
     meta::name_list hidden_sub = {};
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <memory>
@@ -47,7 +48,7 @@ struct CommandEntry {
 struct CommandRegistry {
     std::vector<CommandEntry> entries;
     /// Whether a command was built from it, after which the subcommands' places are fixed.
-    bool sealed = false;
+    std::atomic<bool> sealed = false;
 
     /// Adds `entry` where its name sorts. A name taken already, which no compiler sees as the
     /// files adding both are apart, and an entry after the set was read end the program.
@@ -60,18 +61,19 @@ CommandRegistry& registry() {
     return commands;
 }
 
-/// The subcommands of the set `Tag`, which no file adds to from now on.
+/// The subcommands of the set `Tag`, which no file adds to from now on: what a command is built
+/// from.
 template <typename Tag>
 const CommandRegistry& sealed_registry() {
     auto& commands = registry<Tag>();
-    commands.sealed = true;
+    commands.sealed.store(true, std::memory_order_relaxed);
     return commands;
 }
 
 template <typename Tag>
 struct commands_tag {
-    constexpr static auto spec =
-        meta::make_spec(meta::dsl::member_proxy<&ArgSpec::commands>{} = &sealed_registry<Tag>);
+    constexpr static auto spec = meta::make_spec(meta::dsl::member_proxy<&ArgSpec::commands>{} =
+                                                     CommandSet{true, &sealed_registry<Tag>});
 };
 
 /// What a cli::Commands field is: the struct of the subcommand the argv names, its type erased.
@@ -199,7 +201,7 @@ struct deserialize_visit<cli::detail::Reader, cli::detail::ErasedCommand<Tag>, C
         if(reader.node.kind != cli::detail::Node::Kind::Variant) {
             return reader.fail_shape("a subcommand");
         }
-        const auto& entry = cli::detail::sealed_registry<Tag>().entries[reader.node.count];
+        const auto& entry = cli::detail::registry<Tag>().entries[reader.node.count];
         out.entry = &entry;
         out.value = std::unique_ptr<void, void (*)(void*)>(entry.make(), entry.destroy);
         cli::detail::Reader fields{reader.node.items.front(), reader.last};
@@ -214,7 +216,7 @@ struct serialize_visit<cli::detail::Writer, cli::detail::ErasedCommand<Tag>, Con
         if(!value) {
             return writer.visit_null();
         }
-        const auto& entries = cli::detail::sealed_registry<Tag>().entries;
+        const auto& entries = cli::detail::registry<Tag>().entries;
         const auto index = static_cast<std::size_t>(value.entry - entries.data());
         return writer.visit_variant(index, [&](cli::detail::Writer& fields) {
             return value.entry->encode(fields, value.value.get());

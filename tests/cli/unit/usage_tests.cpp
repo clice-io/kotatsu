@@ -73,6 +73,15 @@ struct Must {
     <std::string> must = "x";
 };
 
+enum class Level : std::uint8_t { Low = 1, High };
+
+/// A field whose default value has no name, which no argument writes.
+struct Unnamed {
+    KOTATSU_ANNOTATE(cli::required = true, enum_string = type<naming::rename_policy::identity>)
+    <Level> level;
+    int jobs = 2;
+};
+
 struct Run {
     KOTATSU_ANNOTATE(cli::rest = true, cli::meta_var = "<ARG>")
     <std::vector<std::string>> command;
@@ -189,6 +198,13 @@ ZEST_CASE(required_option_has_no_default) {
     const auto entries = cli::usage_entries<Must>();
     ZASSERT(entries.size() == 1U);
     ZEXPECT(entries[0].default_value.empty());
+}
+
+ZEST_CASE(value_that_does_not_write_has_no_default) {
+    const auto entries = cli::usage_entries<Unnamed>();
+    ZASSERT(entries.size() == 2U);
+    ZEXPECT(entries[0].default_value.empty());
+    ZEXPECT(entries[1].default_value == "2");
 }
 
 };  // ZEST_SUITE(cli_usage)

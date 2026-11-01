@@ -34,8 +34,9 @@ struct UsageEntry {
     bool repeatable = false;
     /// The value it has when the argv leaves it out, as an argv writes it: "0", "a, b". Empty
     /// for none: a required one, a flag, a count, an alias, an empty list, an empty optional,
-    /// an option of an alternative a default-constructed struct does not hold, and all of a
-    /// struct that is not default-constructible.
+    /// an option of an alternative a default-constructed struct does not hold, a value that
+    /// does not write (an enum value without a name), and all of a struct that is not
+    /// default-constructible.
     std::string default_value = {};
     /// The numbers it takes, from its field's minimum and maximum: "1..64", "1..", "..64";
     /// empty when unbounded.
@@ -45,11 +46,11 @@ struct UsageEntry {
 namespace detail {
 
 /// The options a default-constructed `T` holds, which a usage says the defaults of; none for a
-/// `T` that is not default-constructible.
+/// `T` that is not default-constructible, or a field whose value does not write.
 template <typename T>
 Node defaults_of(std::deque<std::string>& texts) {
     if constexpr(std::is_default_constructible_v<T>) {
-        return write_options(T{}, texts);
+        return write_options(T{}, texts, true);
     } else {
         return Node{};
     }

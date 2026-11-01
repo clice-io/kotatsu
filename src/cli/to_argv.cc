@@ -136,9 +136,14 @@ void write(const Command& command, const Node& root, std::vector<std::string>& o
         }
     }
     if(command.rest && present(command, root, command.args[*command.rest].group)) {
-        if(const Node* node = node_at(root, command.args[*command.rest].keys);
-           node != nullptr && !node->items.empty()) {
+        const auto& rest = command.args[*command.rest];
+        const Node* node = node_at(root, rest.keys);
+        const bool given = node != nullptr && !node->items.empty();
+        // "--" alone picks the alternative holding the rest, which nothing else might.
+        if(given || rest.alternative != no_group) {
             out.emplace_back("--");
+        }
+        if(given) {
             for(const auto* value: values_of(*node)) {
                 out.emplace_back(value->text);
             }
