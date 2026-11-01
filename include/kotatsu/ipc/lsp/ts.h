@@ -57,26 +57,6 @@ struct nullable : std::optional<T> {
     }
 };
 
-namespace detail {
-
-/// A std::optional<T> whose value is present even when it is null, for a T
-/// that has null among its values.
-template <typename T>
-struct present_optional : std::optional<T> {
-    using std::optional<T>::optional;
-    using std::optional<T>::operator=;
-
-    /// std::optional's comparisons all match two of these, none better.
-    template <std::same_as<present_optional> L, std::same_as<present_optional> R>
-        requires requires(const std::optional<T>& value) { value == value; }
-    friend constexpr bool operator==(const L& lhs, const R& rhs) {
-        return static_cast<const std::optional<T>&>(lhs) ==
-               static_cast<const std::optional<T>&>(rhs);
-    }
-};
-
-}  // namespace detail
-
 /// `undefined | boolean` where absent means false: false is omitted. The
 /// booleans for which absent means something else are `optional<boolean>`.
 struct optional_bool {
@@ -121,20 +101,31 @@ consteval auto __kotatsu__type_annotation(std::type_identity<optional<T>>) {
     return meta::make_annotation(codec::dsl::presence = codec::presence_kind::omit_if_default);
 }
 
-namespace detail {
-
-template <typename T>
-consteval auto __kotatsu__type_annotation(std::type_identity<present_optional<T>>) {
-    return meta::make_annotation(codec::dsl::presence = codec::presence_kind::omit_if_default);
-}
-
-}  // namespace detail
-
 /// `undefined | T` for a T that has null among its values (a nullable<U>, or
 /// LSPAny): absent is omitted, and null reads as a present null rather than as
 /// absent.
 template <typename T>
-using optional_nullable = detail::present_optional<T>;
+struct optional_nullable : std::optional<T> {
+    using std::optional<T>::optional;
+    using std::optional<T>::operator=;
+
+    constexpr optional_nullable() = default;
+
+    constexpr optional_nullable(std::optional<T> value) : std::optional<T>(std::move(value)) {}
+
+    /// std::optional's comparisons all match two of these, none better.
+    template <std::same_as<optional_nullable> L, std::same_as<optional_nullable> R>
+        requires requires(const std::optional<T>& value) { value == value; }
+    friend constexpr bool operator==(const L& lhs, const R& rhs) {
+        return static_cast<const std::optional<T>&>(lhs) ==
+               static_cast<const std::optional<T>&>(rhs);
+    }
+};
+
+template <typename T>
+consteval auto __kotatsu__type_annotation(std::type_identity<optional_nullable<T>>) {
+    return meta::make_annotation(codec::dsl::presence = codec::presence_kind::omit_if_default);
+}
 
 /// `undefined | T` where T is the enclosing structure itself, which a
 /// by-value member cannot hold.
@@ -170,12 +161,6 @@ using URI = string;
 using DocumentUri = string;
 
 }  // namespace kotatsu::ipc::protocol
-
-namespace kotatsu::ipc::lsp {
-
-namespace protocol = kotatsu::ipc::protocol;
-
-}  // namespace kotatsu::ipc::lsp
 
 namespace kotatsu::codec {
 
@@ -237,17 +222,17 @@ struct repr<ipc::protocol::optional_ptr<T>> {
 };
 
 /// Read and written as its value, so that null reaches T; absence is the
-/// field's, which optional_nullable leaves out, so it is never written empty.
+/// field's, which its presence leaves out, so it is never written empty.
 template <typename T>
-struct repr<ipc::protocol::detail::present_optional<T>> {
+struct repr<ipc::protocol::optional_nullable<T>> {
     using type = T;
 
-    const static type& to(const ipc::protocol::detail::present_optional<T>& value) {
+    const static type& to(const ipc::protocol::optional_nullable<T>& value) {
         return *value;
     }
 
-    static ipc::protocol::detail::present_optional<T> from(type value) {
-        return ipc::protocol::detail::present_optional<T>(std::move(value));
+    static ipc::protocol::optional_nullable<T> from(type value) {
+        return ipc::protocol::optional_nullable<T>(std::move(value));
     }
 };
 
@@ -255,25 +240,17 @@ struct repr<ipc::protocol::detail::present_optional<T>> {
 /// the std::optional it is.
 template <typename T, typename F>
     requires requires { requires F::writes_every_field; }
-struct repr<ipc::protocol::detail::present_optional<T>, F> {
+struct repr<ipc::protocol::optional_nullable<T>, F> {
     using type = std::optional<T>;
 
-    const static type& to(const ipc::protocol::detail::present_optional<T>& value) {
+    const static type& to(const ipc::protocol::optional_nullable<T>& value) {
         return value;
     }
 
-    static ipc::protocol::detail::present_optional<T> from(type value) {
-        ipc::protocol::detail::present_optional<T> read;
-        if(value) {
-            read = std::move(*value);
-        }
-        return read;
+    static ipc::protocol::optional_nullable<T> from(type value) {
+        return value;
     }
 };
-
-}  // namespace kotatsu::codec
-
-namespace kotatsu::codec {
 
 template <typename Vis, auto Text>
 struct serialize_visit<Vis, ipc::protocol::Literal<Text>> {

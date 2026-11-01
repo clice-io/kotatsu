@@ -41,20 +41,15 @@ struct Question {
     std::optional<bool> clamped;
 };
 
-KANNOTATION(left_out_if_none, presence = omit_if_default);
+/// What an answer leaves empty, it leaves out.
+KANNOTATE_TYPE(struct Answer, presence_all = omit_if_default);
 
 struct Answer {
-    KANNOTATE(&uri, left_out_if_none)
     std::optional<std::string> uri;
-    KANNOTATE(&path, left_out_if_none)
     std::optional<std::string> path;
-    KANNOTATE(&line, left_out_if_none)
     std::optional<std::uint32_t> line;
-    KANNOTATE(&character, left_out_if_none)
     std::optional<std::uint32_t> character;
-    KANNOTATE(&offset, left_out_if_none)
     std::optional<std::uint32_t> offset;
-    KANNOTATE(&error, left_out_if_none)
     std::optional<std::string> error;
 };
 
