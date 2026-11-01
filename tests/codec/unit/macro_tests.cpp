@@ -210,7 +210,7 @@ ZEST_CASE(annotation_struct_attributes_make_a_struct_spec) {
 
     using strict_attrs = meta::type_attrs_t<StrictProfile>;
     constexpr const auto& strict = codec::struct_spec_of<strict_attrs>;
-    ZSTATIC_EXPECT(strict.rename_all == naming::Casing::LowerCamel);
+    ZSTATIC_EXPECT(strict.rename_all == naming::casing_fn(naming::Casing::LowerCamel));
     ZSTATIC_EXPECT(strict.deny_unknown_fields);
     ZSTATIC_EXPECT(strict.presence_all == codec::presence_kind::optional);
     // Struct attributes alone make the struct spec and nothing else.
@@ -230,7 +230,7 @@ ZEST_CASE(annotate_takes_struct_attributes_on_a_field) {
     ZSTATIC_EXPECT(shape.tag == std::string_view("kind"));
     constexpr const auto& inner =
         codec::struct_spec_of<meta::field_attrs_t<StructEntriesOnFields, 1>>;
-    ZSTATIC_EXPECT(inner.rename_all == naming::Casing::UpperSnake);
+    ZSTATIC_EXPECT(inner.rename_all == naming::casing_fn(naming::Casing::UpperSnake));
     ZSTATIC_EXPECT(inner.deny_unknown_fields);
 }
 

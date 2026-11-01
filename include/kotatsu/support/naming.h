@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace kotatsu::naming {
 
@@ -205,6 +206,61 @@ template <> struct casing_policy<Casing::UpperSnake> { using type = rename_polic
 /// The rename_policy type behind a Casing value.
 template <Casing C>
 using rename_policy_t = typename detail::casing_policy<C>::type;
+
+/// A rename policy as a value, which an annotation's spec holds: the function spelling a name
+/// as the policy does.
+using rename_fn = std::string (*)(std::string_view);
+
+/// Spells name as Policy does: Policy's rename_fn.
+template <renames Policy>
+constexpr std::string spell_with(std::string_view name) {
+    return std::string(Policy{}(name));
+}
+
+/// The rename_fn of the policy a Casing value names.
+constexpr rename_fn casing_fn(Casing casing) {
+    switch(casing) {
+        case Casing::Identity: return &spell_with<rename_policy::identity>;
+        case Casing::LowerSnake: return &spell_with<rename_policy::lower_snake>;
+        case Casing::LowerCamel: return &spell_with<rename_policy::lower_camel>;
+        case Casing::UpperCamel: return &spell_with<rename_policy::upper_camel>;
+        case Casing::UpperSnake: return &spell_with<rename_policy::upper_snake>;
+    }
+    return &spell_with<rename_policy::identity>;
+}
+
+namespace detail {
+
+template <rename_fn Fn>
+struct fn_policy {
+    constexpr std::string operator()(std::string_view name) const {
+        return Fn(name);
+    }
+};
+
+template <rename_fn Fn>
+consteval auto policy_of() {
+    if constexpr(Fn == &spell_with<rename_policy::identity>) {
+        return std::type_identity<rename_policy::identity>{};
+    } else if constexpr(Fn == &spell_with<rename_policy::lower_snake>) {
+        return std::type_identity<rename_policy::lower_snake>{};
+    } else if constexpr(Fn == &spell_with<rename_policy::lower_camel>) {
+        return std::type_identity<rename_policy::lower_camel>{};
+    } else if constexpr(Fn == &spell_with<rename_policy::upper_camel>) {
+        return std::type_identity<rename_policy::upper_camel>{};
+    } else if constexpr(Fn == &spell_with<rename_policy::upper_snake>) {
+        return std::type_identity<rename_policy::upper_snake>{};
+    } else {
+        return std::type_identity<fn_policy<Fn>>{};
+    }
+}
+
+}  // namespace detail
+
+/// The rename policy whose rename_fn Fn is: the policy itself for those above, which share
+/// their name tables with a format naming them, else one calling Fn.
+template <rename_fn Fn>
+using rename_policy_of_t = typename decltype(detail::policy_of<Fn>())::type;
 
 namespace detail {
 

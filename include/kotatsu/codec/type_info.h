@@ -174,11 +174,11 @@ using effective_field_rename_t = typename effective_field_rename<Config>::type;
 /// rename_all of E's own annotation, else Config's.
 template <typename Repr, typename E, typename Config>
 consteval auto enum_names_policy() {
-    constexpr std::optional<naming::Casing> own = struct_spec_of<meta::attrs_of_t<E>>.rename_all;
+    constexpr naming::rename_fn own = struct_spec_of<meta::attrs_of_t<E>>.rename_all;
     if constexpr(!std::is_void_v<typename Repr::policy>) {
         return std::type_identity<typename Repr::policy>{};
-    } else if constexpr(own.has_value()) {
-        return std::type_identity<naming::rename_policy_t<*own>>{};
+    } else if constexpr(own != nullptr) {
+        return std::type_identity<naming::rename_policy_of_t<own>>{};
     } else {
         return std::type_identity<effective_field_rename_t<Config>>{};
     }
@@ -209,8 +209,8 @@ constexpr auto resolve_tag_names() {
         return names;
     } else {
         using policy = typename decltype([] {
-            if constexpr(spec.rename_all.has_value()) {
-                return std::type_identity<naming::rename_policy_t<*spec.rename_all>>{};
+            if constexpr(spec.rename_all != nullptr) {
+                return std::type_identity<naming::rename_policy_of_t<spec.rename_all>>{};
             } else {
                 return std::type_identity<detail::effective_field_rename_t<Config>>{};
             }
@@ -267,7 +267,7 @@ constexpr bool is_runtime_struct_spec_attr_v = false;
 template <typename Tag>
 constexpr bool is_runtime_struct_spec_attr_v<meta::spec_attr<Tag, struct_spec>> =
     meta::spec_attr<Tag, struct_spec>::value.tagging != tag_mode::none ||
-    meta::spec_attr<Tag, struct_spec>::value.rename_all.has_value() ||
+    meta::spec_attr<Tag, struct_spec>::value.rename_all != nullptr ||
     meta::spec_attr<Tag, struct_spec>::value.deny_unknown_fields ||
     meta::spec_attr<Tag, struct_spec>::value.presence_all.has_value();
 
