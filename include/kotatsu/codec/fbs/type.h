@@ -41,8 +41,9 @@ using string_offset_t = offset_t<String>;
 
 using verifier_t = ::flatbuffers::Verifier;
 
-/// Format tag: scopes a codec::repr specialization to the flatbuffers backend
-/// (codec::repr<T, codec::fbs::format>).
+/// The flatbuffers backend's format, which its visitors carry and which
+/// scopes a repr to flatbuffers (codec::repr<T, codec::fbs::format>). The
+/// entry points take no format of their own: the layout is the type's alone.
 ///
 /// # Lowerings
 ///

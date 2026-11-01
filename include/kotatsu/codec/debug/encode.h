@@ -366,7 +366,7 @@ auto to_string(const T& value, bool pretty = false) -> std::expected<std::string
     std::string result;
     Formatter fmt{result, pretty};
     ValueWriter<F> vis{fmt};
-    KOTATSU_EXPECTED_TRY(detail::run_encode<F>(vis, value));
+    KOTATSU_EXPECTED_TRY(codec::detail::run_encode<F>(vis, value));
     return result;
 }
 

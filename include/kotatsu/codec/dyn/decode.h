@@ -187,18 +187,13 @@ struct ValueReader {
         return visit_seq(std::forward<Callback>(cb));
     }
 
+    /// An object read with MapKeyReader keys.
     template <typename Callback>
     bool visit_map(Callback&& cb) {
-        const auto* obj = node.get_object();
-        if(!obj) {
-            return fail_type("object");
-        }
-        for(const auto& [k, v]: *obj) {
-            MapKeyReader<Format> kr{std::string_view(k)};
-            ValueReader<Format> vr{v};
-            KOTATSU_CODEC_TRY(cb(kr, vr));
-        }
-        return true;
+        return visit_struct([&](std::string_view key, ValueReader& value) {
+            MapKeyReader<Format> kr{key};
+            return cb(kr, value);
+        });
     }
 
 private:

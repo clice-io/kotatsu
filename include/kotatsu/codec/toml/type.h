@@ -34,7 +34,8 @@ static_assert(!TOML_EXCEPTIONS, "toml++ must be in no-exceptions mode for kotats
 
 namespace kotatsu::codec::toml {
 
-/// Format tag: scopes a codec::repr specialization to the TOML backend
+/// The TOML backend's format, which a format of your own extends to say what
+/// it changes for TOML (codec::extend), and which scopes a repr to TOML
 /// (codec::repr<T, codec::toml::format>).
 ///
 /// # Lowerings
@@ -77,10 +78,10 @@ constexpr inline std::string_view boxed_root_key = "__value";
 
 /// Whether a T value is the document's root table itself rather than a value
 /// boxed under boxed_root_key: judged on the representation the dispatch
-/// resolves (annotations and toml-scoped reprs included), with kind_of's
+/// resolves under F (annotations and F's reprs included), with kind_of's
 /// test, where str-like or tuple-like wins over reflection. A raw Table is
 /// its own root even though its range kind would box it.
-template <typename T, typename F = toml::format>
+template <typename T, typename F>
 constexpr bool root_table_v = [] {
     using R = codec::resolved_repr_t<T, F>;
     constexpr auto kind = meta::kind_of<R>();
@@ -91,7 +92,7 @@ constexpr bool root_table_v = [] {
 /// Whether T is a nullable root (an optional or pointer with no repr of its
 /// own): absent, it is the empty document; present, the root is routed by
 /// the value it wraps.
-template <typename T, typename F = toml::format>
+template <typename T, typename F>
 constexpr bool nullable_root_v = std::is_same_v<codec::resolved_repr_t<T, F>, T> &&
                                  (meta::kind_of<T>() == meta::type_kind::optional ||
                                   meta::kind_of<T>() == meta::type_kind::pointer);

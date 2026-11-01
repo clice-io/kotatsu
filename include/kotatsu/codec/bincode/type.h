@@ -7,8 +7,9 @@
 
 namespace kotatsu::codec::bincode {
 
-/// Format tag: scopes a codec::repr specialization to the bincode backend
-/// (codec::repr<T, codec::bincode::format>).
+/// The bincode backend's format, which a format of your own extends to say
+/// what it changes for bincode (codec::extend), and which scopes a repr to
+/// bincode (codec::repr<T, codec::bincode::format>).
 ///
 /// # Lowerings
 ///

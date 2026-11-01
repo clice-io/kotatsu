@@ -80,7 +80,7 @@ private:
 
 /// Substitute a type by its resolved representation: annotation behavior attrs
 /// take precedence over the underlying type's codec::repr, and chained reprs
-/// are followed under the fbs format tag (codec::resolved_repr_t); identity
+/// are followed under fbs::format (codec::resolved_repr_t); identity
 /// when neither applies. Flatbuffers computes layout statically, so a dynamic
 /// representation is rejected here.
 template <typename T>
@@ -291,7 +291,7 @@ consteval field_layout field_layout_of() {
 template <typename Object>
 using object_schema = codec::virtual_schema<Object, fbs::format>;
 
-/// The view type of a struct field slot: the type meta's resolver gives its
+/// The view type of a struct field slot: the type the codec's resolver gives its
 /// raw type and attrs, the type the dispatch wrote. A tagged variant is that
 /// variant itself; anything else still has its nullable wrappers peeled.
 template <typename Slot>
@@ -356,7 +356,7 @@ consteval auto member_fields() {
 
 /// The slots of Object's fields of type M: a field's slot is the count of the
 /// slots the fields before it take — one each, none for a skipped one, a
-/// flattened one's own count — as meta's schema lays them out.
+/// flattened one's own count — as the codec's schema lays them out.
 template <typename Object, typename M>
 consteval auto member_slots() {
     constexpr auto taken = []<std::size_t... Is>(std::index_sequence<Is...>) {

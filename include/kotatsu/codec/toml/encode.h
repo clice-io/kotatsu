@@ -137,11 +137,6 @@ struct ValueWriter {
 };
 
 template <typename Format>
-using TableValueWriter = ValueWriter<Format, TableSink>;
-template <typename Format>
-using ArrayValueWriter = ValueWriter<Format, ArraySink>;
-
-template <typename Format>
 struct TableWriter {
     Table& tbl;
 
@@ -201,7 +196,7 @@ bool ValueWriter<Format, Sink>::visit_tuple(const T& value, Body&& body) {
 template <typename Format>
 template <typename Field, typename F>
 bool TableWriter<Format>::visit_field(Field field, F&& writer) {
-    TableValueWriter<Format> vw{
+    ValueWriter<Format, TableSink> vw{
         {tbl, std::string(field.name)}
     };
     return writer(vw);
@@ -210,7 +205,7 @@ bool TableWriter<Format>::visit_field(Field field, F&& writer) {
 template <typename Format>
 template <typename F>
 bool ArraySeqWriter<Format>::visit_element(F&& writer) {
-    ArrayValueWriter<Format> vw{{arr}};
+    ValueWriter<Format, ArraySink> vw{{arr}};
     return writer(vw);
 }
 
@@ -220,7 +215,7 @@ bool MapWriter<Format>::visit_entry(KF&& key_fn, VF&& value_fn) {
     std::string key;
     MapKeyWriter<StringKeySink, Format> kw{{key}};
     KOTATSU_CODEC_TRY(key_fn(kw));
-    TableValueWriter<Format> vw{
+    ValueWriter<Format, TableSink> vw{
         {tbl, std::move(key)}
     };
     return value_fn(vw);
@@ -257,7 +252,7 @@ auto to_toml(const T& value, const encode_options& options = {})
             ValueWriter<F, RootSink> vw{{root}};
             KOTATSU_EXPECTED_TRY(codec::detail::run_encode<F>(vw, value, options));
         } else {
-            TableValueWriter<F> vw{
+            ValueWriter<F, TableSink> vw{
                 {root, std::string(detail::boxed_root_key)}
             };
             KOTATSU_EXPECTED_TRY(codec::detail::run_encode<F>(vw, value, options));

@@ -223,7 +223,7 @@ struct ValueReader {
     template <typename Callback>
     bool visit_map(Callback&& cb) {
         return visit_struct([&](std::string_view key, ValueReader& value) {
-            MapKeyReader<format> kr{key};
+            MapKeyReader<Format> kr{key};
             return cb(kr, value);
         });
     }
@@ -290,7 +290,6 @@ inline auto parse_table(std::string_view text) -> std::expected<Table, rich_erro
 /// Decodes a toml::Table DOM into `out` under the format F, routing the root
 /// the same way to_toml produced it (root table vs boxed `__value` key).
 template <typename F = toml::format, typename T>
-    requires std::derived_from<F, codec::format>
 auto from_toml(const Table& tbl, T& out, const decode_options& options = {})
     -> std::expected<void, rich_error> {
     static_assert(std::derived_from<F, toml::format>, "a TOML format extends toml::format");

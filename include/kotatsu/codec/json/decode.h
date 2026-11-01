@@ -141,11 +141,6 @@ struct Reader {
     Reader(ondemand::Value& v, const char* base, std::size_t size) :
         src(v), buf_base(base), buf_size(size) {}
 
-    template <typename F>
-    decltype(auto) apply(F&& f) const {
-        return src.apply(std::forward<F>(f));
-    }
-
     /// Fails with err located where the iterator stopped, by byte offset
     /// alone: from_string counts the line and column of the location it
     /// reports once the decode is over, so that the failures of untagged
