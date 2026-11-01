@@ -20,7 +20,7 @@
 #include <vector>
 
 #include "kotatsu/support/config.h"
-#include "kotatsu/codec/visit/encode.h"
+#include "kotatsu/codec/encode.h"
 
 namespace kotatsu::codec::dyn {
 

@@ -11,12 +11,11 @@
 #include <type_traits>
 
 #include "kotatsu/support/expected_try.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/encode.h"
+#include "kotatsu/codec/format.h"
+#include "kotatsu/codec/repr.h"
 #include "kotatsu/codec/toml/type.h"
-#include "kotatsu/codec/visit/common.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/context.h"
-#include "kotatsu/codec/visit/encode.h"
-#include "kotatsu/codec/visit/map_key.h"
 
 namespace kotatsu::codec::toml {
 

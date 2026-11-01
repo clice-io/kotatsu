@@ -23,7 +23,7 @@
 #include "kotatsu/meta/enum.h"
 #include "kotatsu/meta/spelling.h"
 #include "kotatsu/meta/type_info.h"
-#include "kotatsu/codec/visit/decode.h"
+#include "kotatsu/codec/decode.h"
 
 namespace kotatsu::cli {
 

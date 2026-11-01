@@ -16,12 +16,11 @@
 #include "kotatsu/support/expected_try.h"
 #include "kotatsu/support/numeric.h"
 #include "kotatsu/support/swar.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/decode.h"
+#include "kotatsu/codec/format.h"
 #include "kotatsu/codec/json/type.h"
-#include "kotatsu/codec/visit/common.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/context.h"
-#include "kotatsu/codec/visit/decode.h"
-#include "kotatsu/codec/visit/map_key.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::codec::json {
 

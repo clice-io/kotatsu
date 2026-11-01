@@ -15,11 +15,11 @@
 #include "kotatsu/support/ranges.h"
 #include "kotatsu/meta/repr.h"
 #include "kotatsu/meta/type_kind.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/encode.h"
 #include "kotatsu/codec/fbs/proxy.h"
 #include "kotatsu/codec/fbs/type.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/context.h"
-#include "kotatsu/codec/visit/encode.h"
+#include "kotatsu/codec/format.h"
 
 namespace kotatsu::codec::fbs {
 

@@ -68,12 +68,12 @@ kotatsu_library(
 
 kotatsu_library(
     name = "codec",
-    hdrs = ["include/kotatsu/codec/macro.h"] + glob([
+    hdrs = glob([
         "include/kotatsu/codec/bincode/**",
         "include/kotatsu/codec/blob/**",
         "include/kotatsu/codec/debug/**",
         "include/kotatsu/codec/dyn/**",
-        "include/kotatsu/codec/visit/**",
+        "include/kotatsu/codec/*.h",
     ]),
     deps = [
         ":meta",

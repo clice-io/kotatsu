@@ -15,7 +15,7 @@
 #include "kotatsu/ipc/codec/bincode.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/codec/bincode/bincode.h"
-#include "kotatsu/codec/visit/common.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 

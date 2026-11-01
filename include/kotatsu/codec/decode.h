@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <charconv>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <format>
 #include <memory>
@@ -13,14 +15,16 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
 
-#include "config.h"
 #include "context.h"
-#include "dispatch.h"
+#include "format.h"
+#include "type_info.h"
+#include "kotatsu/support/numeric.h"
 #include "kotatsu/support/ranges.h"
 #include "kotatsu/support/type_list.h"
 #include "kotatsu/meta/annotation.h"
@@ -1088,5 +1092,50 @@ std::expected<void, rich_error> run_decode(Vis& vis, T& out) {
 }
 
 }  // namespace detail
+
+// Map keys for backends whose native maps take only string keys (json, toml,
+// dyn): integer keys are rendered as their decimal string on encode and
+// parsed back on decode. Format is the backend's format tag — void for a
+// format-agnostic backend — so format-scoped meta::repr specializations
+// resolve for key types the same way they do for values.
+
+/// Decodes a map key from its string form.
+template <typename Format = void>
+struct MapKeyReader {
+    std::string_view str;
+    using format = Format;
+
+    template <typename T>
+    bool visit_str(T& out) {
+        out = T(str);
+        return true;
+    }
+
+    template <typename T>
+    bool visit_int(T& out) {
+        return parse<std::int64_t>("integer", out);
+    }
+
+    template <typename T>
+    bool visit_uint(T& out) {
+        return parse<std::uint64_t>("unsigned integer", out);
+    }
+
+private:
+    template <typename Wide, typename T>
+    bool parse(std::string_view target, T& out) {
+        Wide v = 0;
+        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), v);
+        if(ec != std::errc{} || ptr != str.data() + str.size()) {
+            return scoped_context<rich_error>::fail(
+                rich_error(std::format("cannot parse map key '{}' as {}", str, target)));
+        }
+        if(!kotatsu::narrow_int(v, out)) {
+            return scoped_context<rich_error>::fail(
+                rich_error(std::format("map key '{}' out of {} range", str, target)));
+        }
+        return true;
+    }
+};
 
 }  // namespace kotatsu::codec

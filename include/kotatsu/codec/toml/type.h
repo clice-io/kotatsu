@@ -7,7 +7,7 @@
 
 #include "kotatsu/meta/type_info.h"
 #include "kotatsu/meta/type_kind.h"
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
 
 // kotatsu's TOML backend converts every toml++ failure into std::expected /
 // rich_error and never lets an exception escape, so toml++ is pinned to its

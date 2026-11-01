@@ -22,7 +22,7 @@
 #include "kotatsu/meta/attrs.h"
 #include "kotatsu/meta/repr.h"
 #include "kotatsu/meta/type_kind.h"
-#include "kotatsu/codec/visit/encode.h"
+#include "kotatsu/codec/encode.h"
 
 namespace kotatsu::test {
 

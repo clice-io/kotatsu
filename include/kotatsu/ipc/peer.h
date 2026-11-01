@@ -13,7 +13,7 @@
 #include "kotatsu/ipc/logger.h"
 #include "kotatsu/ipc/transport.h"
 #include "kotatsu/async/async.h"
-#include "kotatsu/codec/visit/common.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::ipc {
 

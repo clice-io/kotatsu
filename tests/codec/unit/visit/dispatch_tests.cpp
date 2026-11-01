@@ -5,8 +5,8 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/support/naming.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/dispatch.h"
+#include "kotatsu/codec/format.h"
+#include "kotatsu/codec/type_info.h"
 
 namespace kotatsu::codec {
 

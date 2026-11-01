@@ -13,11 +13,11 @@
 #include <vector>
 
 #include "kotatsu/support/expected_try.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/decode.h"
 #include "kotatsu/codec/fbs/proxy.h"
 #include "kotatsu/codec/fbs/type.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/context.h"
-#include "kotatsu/codec/visit/decode.h"
+#include "kotatsu/codec/format.h"
 
 namespace kotatsu::codec::fbs {
 

@@ -9,12 +9,11 @@
 #include <string_view>
 
 #include "kotatsu/support/expected_try.h"
+#include "kotatsu/codec/context.h"
 #include "kotatsu/codec/dyn/document.h"
-#include "kotatsu/codec/visit/common.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/context.h"
-#include "kotatsu/codec/visit/encode.h"
-#include "kotatsu/codec/visit/map_key.h"
+#include "kotatsu/codec/encode.h"
+#include "kotatsu/codec/format.h"
+#include "kotatsu/codec/repr.h"
 
 // The dyn backend is deliberately format-agnostic: its visitors declare no
 // `format` tag, so format-scoped meta::repr specializations never apply here

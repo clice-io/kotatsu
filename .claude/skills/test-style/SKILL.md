@@ -50,7 +50,7 @@ tests/snapshots/<suite>/      snapshot files
 ```
 
 - The tests of header `<module>/a/b.h` are `unit/a/b_tests.cpp`. A large header's tests split by aspect, into `unit/a/b_<aspect>_tests.cpp` or into a directory `unit/a/b/<aspect>_tests.cpp`.
-- codec's protocol (`visit/`, `meta::repr`, attrs, config) is tested once, by a kit every backend runs: `codec/harness/visit/kit.h` holds the primitives and `Caps`, and each area (`values.h`, `attrs.h`, `repr.h`, `variants.h`, `probing.h`) registers its cases for a backend. A backend adapts itself in `codec/<backend>/harness/backend.h` and runs each area in `codec/<backend>/unit/visit/<area>_tests.cpp`, one `ZEST_CASE_GROUP` per file; blob, which lays out the struct itself rather than speaking the protocol, has no `visit/` tests. Fixtures only the codec's tests use live in `codec/harness/fixtures/`.
+- codec's protocol (the core headers in `codec/`, `meta::repr`, attrs, config) is tested once, by a kit every backend runs: `codec/harness/visit/kit.h` holds the primitives and `Caps`, and each area (`values.h`, `attrs.h`, `repr.h`, `variants.h`, `probing.h`) registers its cases for a backend. A backend adapts itself in `codec/<backend>/harness/backend.h` and runs each area in `codec/<backend>/unit/visit/<area>_tests.cpp`, one `ZEST_CASE_GROUP` per file; blob, which lays out the struct itself rather than speaking the protocol, has no `visit/` tests. Fixtures only the codec's tests use live in `codec/harness/fixtures/`.
 - Build options are checked once, where `tests/CMakeLists.txt` (or the parent module's `CMakeLists.txt`) adds the module's directory. `tests/BUILD.bazel` lists the modules too, building every test binary per module and level, with its snapshots and the files beside its sources as data.
 
 ## Dependencies
@@ -58,7 +58,7 @@ tests/snapshots/<suite>/      snapshot files
 What each module's headers include, and so what its tests may use:
 
 - `support`; `fs` on support; `sys` on fs; `meta` on support; `cli` on codec's core and meta, privately sys.
-- `codec`: its core (`visit/`, `macro.h`) on meta; the backends `blob`, `debug`, `dyn`, `toml` and `fbs` on the core; `bincode` and `json` on the core and `dyn`.
+- `codec`: its core (the headers in `codec/` itself) on meta; the backends `blob`, `debug`, `dyn`, `toml` and `fbs` on the core; `bincode` and `json` on the core and `dyn`.
 - `async` on support, `fs` and `sys`; `ipc`'s codecs (`codec.h`, `codec/`, `framing.h`, `protocol.h`) and its blocking client (`blocking_client.h`) on codec (`json`, `dyn`, `bincode`), the rest of `ipc` on those and async; `ipc/lsp` on ipc; `http` on async and codec `json`.
 - `zest` on all of the above that it checks, prints, parses or runs with. Every test includes zest; that is the one exception.
 

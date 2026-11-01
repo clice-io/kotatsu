@@ -1,5 +1,5 @@
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/codec/visit/config.h"
+#include "kotatsu/codec/format.h"
 
 namespace kotatsu::codec {
 

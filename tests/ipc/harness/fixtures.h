@@ -9,7 +9,7 @@
 
 #include "kotatsu/ipc/protocol.h"
 #include "kotatsu/meta/repr.h"
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
 
 namespace kotatsu::test {
 

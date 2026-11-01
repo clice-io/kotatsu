@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
 
 namespace kotatsu::codec::bincode {
 

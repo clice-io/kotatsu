@@ -6,15 +6,16 @@
 #include <expected>
 #include <format>
 #include <ranges>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
 
-#include "common.h"
-#include "config.h"
 #include "context.h"
-#include "dispatch.h"
+#include "format.h"
+#include "repr.h"
+#include "type_info.h"
 #include "kotatsu/support/type_list.h"
 #include "kotatsu/support/utf8.h"
 #include "kotatsu/meta/annotation.h"
@@ -489,5 +490,46 @@ std::expected<void, rich_error> run_encode(Vis& vis, const T& value) {
 }
 
 }  // namespace detail
+
+// Map keys for backends whose native maps take only string keys (json, toml,
+// dyn): integer keys are rendered as their decimal string on encode and
+// parsed back on decode. Format is the backend's format tag — void for a
+// format-agnostic backend — so format-scoped meta::repr specializations
+// resolve for key types the same way they do for values.
+
+/// Encodes a map key into its string form, handing the result to Sink::emit
+/// as a string_view that is only valid for the duration of that call.
+template <typename Sink, typename Format = void>
+struct MapKeyWriter {
+    Sink sink;
+    using format = Format;
+
+    template <typename T>
+    bool visit_str(const T& v) {
+        sink.emit(std::string_view(v));
+        return true;
+    }
+
+    template <typename T>
+    bool visit_int(T v) {
+        sink.emit(std::to_string(static_cast<std::int64_t>(v)));
+        return true;
+    }
+
+    template <typename T>
+    bool visit_uint(T v) {
+        sink.emit(std::to_string(static_cast<std::uint64_t>(v)));
+        return true;
+    }
+};
+
+/// Sink for backends whose native map type is keyed by std::string.
+struct StringKeySink {
+    std::string& output;
+
+    void emit(std::string_view key) {
+        output = key;
+    }
+};
 
 }  // namespace kotatsu::codec

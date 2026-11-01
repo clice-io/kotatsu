@@ -28,8 +28,8 @@
 #include "kotatsu/meta/type_info.h"
 #include "kotatsu/codec/dyn/decode.h"
 #include "kotatsu/codec/dyn/document.h"
+#include "kotatsu/codec/format.h"
 #include "kotatsu/codec/json/json.h"
-#include "kotatsu/codec/visit/config.h"
 
 namespace kotatsu::codec::json {
 

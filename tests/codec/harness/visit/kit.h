@@ -35,7 +35,7 @@
 #include "codec/harness/fixtures/structs.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/compare.h"
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
 
 namespace kotatsu::test {
 

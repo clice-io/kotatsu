@@ -13,7 +13,7 @@
 
 #include "kotatsu/meta/struct.h"
 #include "kotatsu/codec/blob/type.h"
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
 
 namespace kotatsu::codec::blob {
 

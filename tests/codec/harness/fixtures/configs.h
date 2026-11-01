@@ -4,7 +4,7 @@
 // reads live in tests/fixtures/configs.h.
 
 #include "kotatsu/support/naming.h"
-#include "kotatsu/codec/visit/config.h"
+#include "kotatsu/codec/format.h"
 
 namespace kotatsu::test {
 

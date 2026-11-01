@@ -8,10 +8,10 @@
 #include <utility>
 #include <variant>
 
+#include "kotatsu/codec/decode.h"
 #include "kotatsu/codec/dyn/dyn.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/decode.h"
-#include "kotatsu/codec/visit/encode.h"
+#include "kotatsu/codec/encode.h"
+#include "kotatsu/codec/format.h"
 
 namespace kotatsu::ipc::protocol {
 

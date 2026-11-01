@@ -12,7 +12,7 @@
 
 #include "kotatsu/cli/parse.h"
 #include "kotatsu/meta/spelling.h"
-#include "kotatsu/codec/visit/encode.h"
+#include "kotatsu/codec/encode.h"
 
 namespace kotatsu::cli {
 

@@ -20,8 +20,8 @@
 #include "kotatsu/support/expected_try.h"
 #include "kotatsu/codec/bincode/type.h"
 #include "kotatsu/codec/dyn/document.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/encode.h"
+#include "kotatsu/codec/encode.h"
+#include "kotatsu/codec/format.h"
 
 namespace kotatsu::codec::bincode {
 

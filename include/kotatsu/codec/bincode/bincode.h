@@ -4,7 +4,7 @@
 #include "kotatsu/codec/bincode/encode.h"
 #include "kotatsu/codec/bincode/type.h"
 #include "kotatsu/codec/macro.h"
-#include "kotatsu/codec/visit/common.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::codec {
 

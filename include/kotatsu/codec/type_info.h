@@ -83,29 +83,4 @@ bool skipped(const T& value, bool is_serialize) {
     }
 }
 
-/// Puts a step, a key or an element index, in front of error's path.
-template <typename Step>
-void prepend_step(rich_error& error, const Step& at) {
-    if constexpr(std::is_convertible_v<const Step&, std::string_view>) {
-        error.prepend_field(at);
-    } else {
-        error.prepend_index(at);
-    }
-}
-
-/// When a step fails, prepends where it was, a key or an element index, to
-/// the active error's path; returns ok. Config::detailed_error turns the
-/// tracking off.
-template <typename Config, typename Step>
-bool trace_path(bool ok, const Step& at) {
-    if constexpr(Config::detailed_error) {
-        if(!ok) {
-            if(auto* e = scoped_context<rich_error>::try_current()) {
-                prepend_step(*e, at);
-            }
-        }
-    }
-    return ok;
-}
-
 }  // namespace kotatsu::codec::detail

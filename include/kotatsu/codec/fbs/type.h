@@ -13,8 +13,8 @@
 #include "kotatsu/support/type_traits.h"
 #include "kotatsu/meta/repr.h"
 #include "kotatsu/meta/type_kind.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/format.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include "flatbuffers/flatbuffers.h"

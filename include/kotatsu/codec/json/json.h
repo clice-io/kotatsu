@@ -8,7 +8,7 @@
 #include "kotatsu/codec/json/encode.h"
 #include "kotatsu/codec/json/type.h"
 #include "kotatsu/codec/macro.h"
-#include "kotatsu/codec/visit/common.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::codec::json {
 

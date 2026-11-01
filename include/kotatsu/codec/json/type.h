@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
 
 #if __has_include(<simdjson.h>)
 #include "simdjson.h"

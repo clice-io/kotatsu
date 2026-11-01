@@ -34,7 +34,7 @@
 #include "kotatsu/ipc/codec.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/codec/dyn/dyn.h"
-#include "kotatsu/codec/visit/common.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 

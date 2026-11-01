@@ -10,7 +10,7 @@
 #include "ipc/harness/peer_fixture.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
-#include "kotatsu/codec/visit/common.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 

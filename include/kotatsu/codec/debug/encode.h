@@ -14,10 +14,10 @@
 #include "kotatsu/support/expected_try.h"
 #include "kotatsu/meta/enum.h"
 #include "kotatsu/meta/name.h"
-#include "kotatsu/codec/visit/common.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/context.h"
-#include "kotatsu/codec/visit/encode.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/encode.h"
+#include "kotatsu/codec/format.h"
+#include "kotatsu/codec/repr.h"
 
 // The debug backend renders Rust-Debug-style text for humans and logs —
 // struct `TypeName { field: value }`, enum `TypeName::MemberName`, bytes as
