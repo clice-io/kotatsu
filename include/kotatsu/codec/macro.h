@@ -49,10 +49,14 @@
 /// Names a bundle of attributes, reusable in any annotation as one more attribute there, which
 /// the attributes written after it override. Written at namespace scope:
 ///
-///     KANNOTATION(help, description = "display this help", cli::names = {"-h", "--help"});
+///     namespace app {
+///     KANNOTATION(help_option, description = "display this help", cli::names = {"-h", "--help"});
+///     }
 ///
-///     KANNOTATE(&help, help, description = "show usage")
+///     KANNOTATE(&help, app::help_option, description = "show usage")
 ///     bool help = false;
+///
+/// In a class, a bundle named like one of its members is named with its namespace.
 #define KANNOTATION(name, ...)                                                                     \
     [[maybe_unused]] constexpr inline auto name = KANNOTATION_ATTRIBUTES(__VA_ARGS__)
 
@@ -82,9 +86,10 @@
     }
 
 /// Annotates a field from outside its class, for a class whose definition
-/// cannot be changed. `&T::field` names the field, its class and all. Written
-/// in the namespace of the class, where argument-dependent lookup finds it,
-/// with the class complete:
+/// cannot be changed. `&T::field` names the field, its class and all, in
+/// parentheses when T's template arguments hold a comma. Written in the
+/// namespace of the class, where argument-dependent lookup finds it, which a
+/// static_assert checks, with the class complete:
 ///
 ///     KANNOTATE_FIELD(&third_party::Point::y, rename = "Y");
 ///
@@ -97,7 +102,10 @@
                       "KANNOTATE_FIELD names a data member: &T::field");                           \
         return KANNOTATION_ATTRIBUTES(__VA_ARGS__);                                                \
     }                                                                                              \
-    static_assert(true)
+    static_assert(::kotatsu::meta::detail::field_annotation_found<                                 \
+                      ::kotatsu::class_type_t<decltype(member)>,                                   \
+                      ::kotatsu::meta::detail::member_key_t<#member>>,                             \
+                  "KANNOTATE_FIELD: write it in the namespace of the class whose field it names")
 
 // Whether the first token of a KANNOTATE_TYPE argument is `struct` or `class`:
 // pasted onto KOTATSU_CLASS_KEY_, it makes a macro that puts 1 second, and any

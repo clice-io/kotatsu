@@ -41,17 +41,26 @@ namespace kotatsu::codec::json {
 ///   their decimal string form
 /// - structure → object keyed by (renamed) field names
 /// - variant → shaped by the spec's tag_mode (see encode_tagged_variant in
-///   visit/encode.h); untagged variants emit the bare payload
+///   encode.h); untagged variants emit the bare payload
 /// - raw_value → spliced into the output verbatim; an empty raw_value is `null`
 struct format : codec::extend<codec::format> {
     /// Its documents are UTF-8 text.
     constexpr static bool utf8 = true;
 };
 
-/// How one encode to JSON goes, decided at run time.
-struct encode_options : codec::encode_options {
+/// How one encode to JSON goes, decided at run time: codec::encode_options,
+/// and the room the text starts with. Its members are its own, so that
+/// designated initializers name any of them.
+struct encode_options {
+    /// What a string that is not UTF-8 makes of the encode.
+    codec::invalid_utf8 invalid_utf8 = codec::invalid_utf8::Error;
     /// The room the text starts with; unset, 1 KiB.
     std::optional<std::size_t> initial_capacity = {};
+
+    /// The options every backend's encode takes.
+    constexpr codec::encode_options common() const {
+        return {.invalid_utf8 = invalid_utf8};
+    }
 };
 
 }  // namespace kotatsu::codec::json

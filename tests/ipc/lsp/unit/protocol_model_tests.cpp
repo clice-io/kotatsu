@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <format>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -24,6 +25,11 @@ using codec::json::to_string;
 
 constexpr std::string_view range_json =
     R"({"start":{"line":0,"character":0},"end":{"line":0,"character":1}})";
+
+/// A format that, as bincode and fbs do, writes every field.
+struct EveryField : codec::extend<codec::format> {
+    constexpr static bool writes_every_field = true;
+};
 
 ZEST_SUITE(ipc_lsp_protocol_model) {
 
@@ -318,6 +324,15 @@ ZEST_CASE(optional_nullable_member_roundtrips_through_bincode) {
         ZASSERT(codec::bincode::from_bytes(std::span<const std::byte>(*bytes), back));
         ZEXPECT((back.active_parameter == info.active_parameter));
     }
+}
+
+// Any format that writes every field, fbs as bincode, writes the empty one
+// as the std::optional it is, never reading it as its value.
+ZEST_CASE(optional_nullable_is_an_optional_where_every_field_is_written) {
+    using member = protocol::optional_nullable<protocol::uinteger>;
+    ZEXPECT(zest::type_eq<codec::resolved_repr_t<member, EveryField>,
+                          std::optional<protocol::uinteger>>());
+    ZEXPECT(zest::type_eq<codec::resolved_repr_t<member>, protocol::uinteger>());
 }
 
 // LSPAny inside a structure, beside other optional members: bincode reads

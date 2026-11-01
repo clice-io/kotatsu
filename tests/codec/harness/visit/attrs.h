@@ -1,8 +1,8 @@
 #pragma once
 
-// Attrs and config: how field and struct annotations, the behavior attrs and
-// the config knobs shape the document, and the protocol's errors for keyed
-// documents.
+// Attributes and formats: how field and struct annotations, the behavior
+// attributes, the format's knobs and the options shape the document, and the
+// protocol's errors for keyed documents.
 
 #include <cmath>
 #include <cstdint>
@@ -65,11 +65,21 @@ void attrs(const Kit<B>& kit) {
         };
     };
     roundtrip<CamelSettings>(kit, "format_rename_all_roundtrip", nested_rename);
+    auto dashed = [] {
+        return DashedPair{.item_id = 2, .user_name = 7};
+    };
+    roundtrip(kit, "rename_all_policy_type_roundtrip", dashed);
     auto documented = [] {
         return Documented{.id = 7, .name = "ada"};
     };
     roundtrip(kit, "description_roundtrip", documented);
     if constexpr(B::caps.self_describing) {
+        encodes_as(kit, "rename_all_policy_type_encodes_as_plain", dashed, [] {
+            return Ints{
+                {"item-id",   2},
+                {"user-name", 7}
+            };
+        });
         encodes_as(kit, "rename_all_encodes_as_plain", renamed_root, [] {
             return RenameTargetCamel{.userName = 7, .displayName = "ada"};
         });

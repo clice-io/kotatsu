@@ -49,7 +49,7 @@ ZEST_CASE(schema_agrees_with_encoder_on_enums) {
     ZEXPECT(zest::contains(schema, R"("c":{"type":"integer","minimum":-128,"maximum":127})"));
 }
 
-ZEST_CASE(schema_agrees_with_encoder_on_enum_rename) {
+ZEST_CASE(schema_agrees_with_encoder_on_enum_names) {
     // The schema lists the spellings the encoder writes, not the raw
     // reflected names.
     const auto encoded = json::to_string(test::shouting_color::green);

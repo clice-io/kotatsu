@@ -62,6 +62,16 @@ ZEST_CASE(value_overload_takes_format) {
     ZEXPECT(result->item_id == "abc");
 }
 
+ZEST_CASE(value_overload_takes_options_held_in_a_variable) {
+    // Not taken for the out-parameter overload, whose first argument is a
+    // format.
+    codec::decode_options options;
+    options.deny_unknown_fields = true;
+    auto result = json::from_string<test::Point>(R"({"x":1,"y":2,"z":3})", options);
+    ZASSERT(!result);
+    ZEXPECT(result.error().message == "unknown field 'z'");
+}
+
 ZEST_CASE(number_out_of_range_fails) {
     std::uint8_t out = 0;
     auto status = json::from_string("300", out);

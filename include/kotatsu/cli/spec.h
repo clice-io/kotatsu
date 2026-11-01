@@ -67,7 +67,7 @@ struct ArgSpec {
     /// Whether a flag counts how often it is given (`-v -v -v`) rather than whether it is.
     bool count = false;
     /// Whether it must be given: the field's presence is required (`presence = required`; a
-    /// field is optional otherwise, under cli's config). A positional scalar must be, unless it
+    /// field is optional otherwise, under cli::format). A positional scalar must be, unless it
     /// is a std::optional.
     bool required = false;
     /// Whether giving it ends the parse: nothing after it is read, and nothing required is

@@ -25,8 +25,9 @@ struct Json {
 
     template <typename Settings = void, typename T>
     static auto encode(const T& value) {
-        codec::json::encode_options options;
-        static_cast<codec::encode_options&>(options) = kit_encode_options<Settings>();
+        const codec::json::encode_options options{
+            .invalid_utf8 = kit_encode_options<Settings>().invalid_utf8,
+        };
         return codec::json::to_string<kit_format_t<codec::json::format, Settings>>(value, options);
     }
 

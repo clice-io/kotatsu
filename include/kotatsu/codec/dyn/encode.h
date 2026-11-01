@@ -15,11 +15,11 @@
 #include "kotatsu/codec/format.h"
 #include "kotatsu/codec/repr.h"
 
-// The dyn backend is deliberately format-agnostic: its visitors declare no
-// `format` tag, so format-scoped codec::repr specializations never apply here
-// — only the format-neutral repr<T>. dyn::Value is the interchange DOM that
-// other backends convert through, and a concrete format's repr leaking into
-// it would bake that format's shape into every conversion.
+// The dyn backend takes any format, codec::format by default: dyn::Value is
+// the interchange DOM other backends convert through, so a tree built under
+// the root format holds no backend's shape, and one built under a backend's
+// format (to_dyn<ipc::lsp_format>, say) holds that backend's reprs and
+// names.
 
 namespace kotatsu::codec::dyn {
 

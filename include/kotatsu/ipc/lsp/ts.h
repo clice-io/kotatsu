@@ -177,12 +177,6 @@ namespace protocol = kotatsu::ipc::protocol;
 
 }  // namespace kotatsu::ipc::lsp
 
-namespace kotatsu::codec::bincode {
-
-struct format;
-
-}  // namespace kotatsu::codec::bincode
-
 namespace kotatsu::codec {
 
 /// Read and written as the std::optional it is; being no std::optional to the
@@ -257,10 +251,11 @@ struct repr<ipc::protocol::detail::present_optional<T>> {
     }
 };
 
-/// In bincode, which writes every field, the empty one too, as the
-/// std::optional it is.
-template <typename T>
-struct repr<ipc::protocol::detail::present_optional<T>, codec::bincode::format> {
+/// In a format that writes every field, the empty one too (bincode, fbs), as
+/// the std::optional it is.
+template <typename T, typename F>
+    requires requires { requires F::writes_every_field; }
+struct repr<ipc::protocol::detail::present_optional<T>, F> {
     using type = std::optional<T>;
 
     const static type& to(const ipc::protocol::detail::present_optional<T>& value) {

@@ -75,8 +75,9 @@ struct variant_type_info : type_info {
     std::string_view tag_field;
     std::string_view content_field;
     std::span<const std::string_view> alt_names;
-    /// Under adjacent tagging, keys beside the tag and the content are
-    /// denied, as a struct's unknown fields, rather than passed over.
+    /// Whether the variant's deny_unknown_fields denies, rather than passes
+    /// over, the keys beside the tag and the content (adjacent tagging), or
+    /// beside the tag and an alternative's fields (internal tagging).
     bool deny_unknown = false;
 };
 
@@ -160,6 +161,11 @@ constexpr bool fields_distinct(std::span<const field_info> fields) {
 
 namespace detail {
 
+/// Whether a node of type T can carry a tagging spec: only a std::variant, or
+/// a class derived from one, has alternatives to tag.
+template <typename T>
+concept taggable = is_specialization_of<std::variant, T> || meta::derived_variant<T>;
+
 template <typename T, std::size_t I, typename Policy>
 struct renamed_name_static {
     constexpr static std::size_t len = std::string(Policy{}(meta::field_name<I, T>())).size();
@@ -189,15 +195,14 @@ struct effective_field_rename<Format> {
 template <typename Format>
 using effective_field_rename_t = typename effective_field_rename<Format>::type;
 
-/// The policy an enum_names repr spells E's enumerators with under Format: its own, else the
-/// rename_all of E's own annotation, else Format's.
+/// The policy an enum_names repr spells E's enumerators with under Format, the
+/// scope of the enum's node (node_format_t): the repr's own, else the
+/// rename_all the node merged, the field's over E's type annotation's, else
+/// the format's.
 template <typename Repr, typename E, typename Format>
 consteval auto enum_names_policy() {
-    constexpr naming::rename_fn own = struct_spec_of<meta::attrs_of_t<E>>.rename_all;
     if constexpr(!std::is_void_v<typename Repr::policy>) {
         return std::type_identity<typename Repr::policy>{};
-    } else if constexpr(own != nullptr) {
-        return std::type_identity<naming::rename_policy_of_t<own>>{};
     } else {
         return std::type_identity<effective_field_rename_t<Format>>{};
     }
@@ -228,8 +233,8 @@ constexpr auto resolve_tag_names() {
         return names;
     } else {
         using policy = typename decltype([] {
-            if constexpr(spec.rename_all != nullptr) {
-                return std::type_identity<naming::rename_policy_of_t<spec.rename_all>>{};
+            if constexpr(SpecAttr::value.rename_all != nullptr) {
+                return std::type_identity<naming::rename_policy_of_t<SpecAttr::value.rename_all>>{};
             } else {
                 return std::type_identity<detail::effective_field_rename_t<Format>>{};
             }
@@ -371,37 +376,46 @@ constexpr auto resolve_repr();
 /// field's slot holds it.
 template <typename Raw, typename Attrs, typename Format = format>
 constexpr auto resolve_node() {
-    if constexpr(meta::derived_variant<Raw>) {
-        // Read and written as the variant it is, under its own annotation.
-        return resolve_node<meta::variant_base_t<Raw>, Attrs, Format>();
-    } else if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
+    // An enum's names are spelled by the scope its node merges, the field's
+    // rename_all over its type's.
+    using scope = node_format_t<Format, Raw, Attrs>;
+    if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
         using adapter = typename tuple_find_spec_t<Attrs, behavior::with>::adapter;
         if constexpr(names_enum<adapter>) {
             return resolved_repr<std::string_view,
                                  std::tuple<>,
                                  Format,
-                                 enum_info_node<Raw, enum_names_policy_t<adapter, Raw, Format>>>{};
+                                 enum_info_node<Raw, enum_names_policy_t<adapter, Raw, scope>>>{};
         } else {
             return resolve_repr<declared_repr_t<adapter>, Format>();
         }
     } else if constexpr(tuple_has_spec_v<Attrs, behavior::as>) {
         using target = typename tuple_find_spec_t<Attrs, behavior::as>::target;
         return resolve_repr<target, Format>();
-    } else if constexpr(is_specialization_of<std::variant, Raw> &&
-                        struct_spec_of<Attrs>.tagging != tag_mode::none) {
-        return resolved_repr<Raw, std::tuple<struct_spec_attr_t<Attrs>>, Format>{};
+    } else if constexpr(taggable<Raw> && struct_spec_of<Attrs>.tagging != tag_mode::none) {
+        // Read and written as the variant it is, whatever repr its type has.
+        using variant_t = typename decltype([] {
+            if constexpr(meta::derived_variant<Raw>) {
+                return std::type_identity<meta::variant_base_t<Raw>>{};
+            } else {
+                return std::type_identity<Raw>{};
+            }
+        }())::type;
+        return resolved_repr<variant_t, std::tuple<struct_spec_attr_t<Attrs>>, Format>{};
     } else if constexpr(has_repr<Raw, Format>) {
         using chosen = repr_for<Raw, Format>;
         if constexpr(names_enum<chosen>) {
             return resolved_repr<std::string_view,
                                  std::tuple<>,
                                  Format,
-                                 enum_info_node<Raw, enum_names_policy_t<chosen, Raw, Format>>>{};
+                                 enum_info_node<Raw, enum_names_policy_t<chosen, Raw, scope>>>{};
         } else {
-            return resolve_repr<declared_repr_t<chosen>, node_format_t<Format, Raw, Attrs>>();
+            return resolve_repr<declared_repr_t<chosen>, scope>();
         }
+    } else if constexpr(meta::derived_variant<Raw>) {
+        return resolve_node<meta::variant_base_t<Raw>, Attrs, Format>();
     } else {
-        return resolved_repr<Raw, std::tuple<>, node_format_t<Format, Raw, Attrs>>{};
+        return resolved_repr<Raw, std::tuple<>, scope>{};
     }
 }
 
@@ -414,9 +428,9 @@ template <typename T, typename AttrsT, typename Format, meta::type_kind Kind = m
 struct type_instance_impl;
 
 /// The instance key is the resolution result, not the annotated input: two
-/// textually identical annotations (KANNOTATE mints a fresh tag per
-/// use) resolve to the same type and the same value-parameterized scoped
-/// format, so they share one type_info instance — and thus one $defs entry in
+/// annotations that say the same (each KANNOTATE is its own function) resolve
+/// to the same type and the same value-parameterized scoped format, so they
+/// share one type_info instance — and thus one $defs entry in
 /// schema output. Tagged variant specs keep their own tag (the string
 /// payloads are not structural); schema backends emit variants inline rather
 /// than as shared defs, so distinct instances are harmless there.
@@ -535,7 +549,7 @@ struct variant_info_node<std::variant<Ts...>, Format, AttrsTuple> {
         spec.tag,
         spec.content,
         {alt_names.data(),         has_tag ? alt_names.size() : 0},
-        format_denies_unknown<Format>(),
+        spec.deny_unknown_fields || format_denies_unknown<Format>(),
     };
 };
 
@@ -699,9 +713,13 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 
     if constexpr(spec.skip) {
     } else if constexpr(spec.flatten) {
+        // The flattened struct's fields are its own members: named and marked
+        // by its own attributes, or the field's holding it, not by T's.
         using inner_t = std::remove_cv_t<field_t>;
+        using inner_scope =
+            node_format_t<members_format_t<Format>, inner_t, meta::field_attrs_t<T, I>>;
         std::size_t inner_offset = base_offset + meta::field_offset<T>(I);
-        auto inner = build_fields<inner_t, Format>(inner_offset);
+        auto inner = build_fields<inner_t, inner_scope>(inner_offset);
         for(std::size_t i = 0; i < inner.size(); ++i) {
             result[out++] = inner[i];
         }
@@ -791,25 +809,38 @@ struct single_field_slots<T, I, /*Skipped=*/false, /*Flattened=*/true> {
 
 }  // namespace detail
 
+namespace detail {
+
+/// The info of struct T under Format, its scope: the instance type_info::of
+/// resolves T to, without merging T's own annotation again over a field's.
+template <typename T, typename Format>
+constexpr const struct_type_info& struct_info() {
+    return type_instance_impl<T, std::tuple<>, Format>::value;
+}
+
+}  // namespace detail
+
+/// The fields of struct T as a document holds them under Format, the scope T
+/// is read and written in: the format with T's own attributes, or the field's
+/// holding it, merged in (node_format_t).
 template <typename T, typename Format = format>
     requires meta::reflectable_class<T>
 struct virtual_schema {
     static_assert(std::is_same_v<resolved_repr_t<T, Format>, T>,
                   "virtual_schema: the struct travels as another type, through a codec::repr");
 
-    // Obtain fields from type_info::of<T>().fields (the span inside struct_type_info::value)
-    // rather than referencing type_instance<T>::fields directly.  This matters for recursive
-    // types: build_fields<T>() stores type_info::of<child> function pointers which
-    // transitively instantiate type_instance<T>::value.  If we enter through `value` first,
+    // Obtain fields from the instance's value (the span inside struct_type_info::value)
+    // rather than referencing type_instance_impl<T>::fields directly.  This matters for
+    // recursive types: build_fields<T>() stores type_info::of<child> function pointers which
+    // transitively instantiate the instance's value.  If we enter through `value` first,
     // the constexpr evaluator resolves `fields` as a sub-expression of `value` and the
     // back-reference to `value` is recognized as already-in-progress (no re-entry).
     // Entering through `fields` directly would leave `value` unevaluated, causing Clang to
     // attempt its verification and discover a circular dependency.
-    constexpr static std::span<const field_info> fields =
-        static_cast<const struct_type_info&>(type_info::of<T, Format>()).fields;
+    constexpr static std::span<const field_info> fields = detail::struct_info<T, Format>().fields;
 
     using slots = detail::build_slots_t<T>;
-    constexpr static bool deny_unknown = detail::type_instance<T, Format>::deny_unknown;
+    constexpr static bool deny_unknown = detail::struct_info<T, Format>().deny_unknown;
 };
 
 namespace detail {
@@ -821,7 +852,8 @@ consteval bool has_field_named(std::string_view name) {
     if constexpr(std::is_same_v<T, std::monostate>) {
         return false;
     } else {
-        return std::ranges::any_of(virtual_schema<T, Format>::fields, [&](const field_info& field) {
+        using scope = node_format_t<Format, T, meta::attrs_of_t<T>>;
+        return std::ranges::any_of(virtual_schema<T, scope>::fields, [&](const field_info& field) {
             return field.name == name ||
                    std::ranges::find(field.aliases, name) != field.aliases.end();
         });
@@ -837,17 +869,26 @@ consteval void assert_internal_tag_fits() {
                   "document would hold the key twice");
 }
 
-/// Whether a node of type T can carry a tagging spec: only a std::variant
-/// has alternatives to tag.
+}  // namespace detail
+
+namespace detail {
+
+/// A value-initialized T, one per type, which omit_if_default fields compare
+/// with.
 template <typename T>
-concept taggable = is_specialization_of<std::variant, T>;
+const T& value_initialized() {
+    const static T value = T();
+    return value;
+}
 
 }  // namespace detail
 
-/// Field I of struct T as a document holds it under the format F, with T's own
-/// attributes merged in: what encode and decode hand a visitor's visit_field,
-/// all of it known at compile time. I counts the fields a document holds,
-/// skipped ones left out and a flattened struct's spread in its place.
+/// Field I of struct T as a document holds it under F, the scope T is read and
+/// written in (the format, with the attributes of T's own annotation or of the
+/// field holding it merged in): what encode and decode hand a visitor's
+/// visit_field, all of it known at compile time. I counts the fields a
+/// document holds, skipped ones left out and a flattened struct's spread in
+/// its place.
 template <typename T, std::size_t I, typename F = format>
 struct field {
 private:
@@ -906,9 +947,11 @@ public:
             static_assert(std::is_default_constructible_v<T>,
                           "presence = omit_if_default compares a field with its value in a "
                           "value-initialized struct: the struct needs a default constructor");
-            const static T defaults = T();
-            return meta::eq(of(owner), of(defaults));
+            return meta::eq(of(owner), of(detail::value_initialized<T>()));
         } else if constexpr(presence == presence_kind::omit_if) {
+            static_assert(tuple_has_spec_v<attrs, behavior::omit_if>,
+                          "presence = omit_if takes its predicate as a type: "
+                          "presence = type<Pred>");
             using pred = typename tuple_find_spec_t<attrs, behavior::omit_if>::predicate;
             return static_cast<bool>(pred{}(of(owner)));
         } else {

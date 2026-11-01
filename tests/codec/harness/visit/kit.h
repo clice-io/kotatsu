@@ -1,7 +1,7 @@
 #pragma once
 
-// The shared protocol suite. The visit layer (visit/encode.h, visit/decode.h,
-// codec::repr, attrs, config) is one protocol shared by every backend, so its
+// The shared protocol suite. The core (encode.h, decode.h, codec::repr, the
+// attributes, formats and options) is one protocol shared by every backend, so its
 // behaviour is written once, in the area headers next to this one, and each
 // backend runs every area through a Kit over its adapter:
 //

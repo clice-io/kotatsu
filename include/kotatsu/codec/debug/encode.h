@@ -21,9 +21,8 @@
 
 // The debug backend renders Rust-Debug-style text for humans and logs —
 // struct `TypeName { field: value }`, enum `TypeName::MemberName`, bytes as
-// hex — and is encode-only: nothing parses it back. It is deliberately
-// format-agnostic (no `format` tag), so format-scoped codec::repr
-// specializations never apply; what you see is the format-neutral shape.
+// hex — and is encode-only: nothing parses it back. It takes any format,
+// codec::format by default, whose reprs and names it shows.
 
 namespace kotatsu::codec::debug {
 

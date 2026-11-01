@@ -306,7 +306,8 @@ constexpr auto make_annotation(const Args&... args) {
     auto attributes = detail::compose_attributes(
         detail::compose_bundles(std::tuple<>{}, detail::bundle_attributes(args)...),
         std::tuple_cat(detail::direct_attributes(args)...));
-    // Checked where the annotation is written, not first where a field uses it.
+    // Checked where the annotation is evaluated: where KANNOTATION is written,
+    // and where a field or type annotation is first read.
     detail::check_specs(attributes);
     return attributes;
 }
@@ -514,9 +515,10 @@ struct name_key {};
 
 namespace detail {
 
-/// The member a KANNOTATE or KANNOTATE_FIELD argument names, `&help` or `&ns::T::help`: its
-/// last name.
+/// The member a KANNOTATE or KANNOTATE_FIELD argument names, `&help` or `&ns::T::help`, in
+/// parentheses too, as a template argument list with a comma needs: its last name.
 consteval std::string_view member_name(std::string_view spelled) {
+    spelled = spelled.substr(0, spelled.find_last_not_of(") ") + 1);
     return spelled.substr(spelled.find_last_of("&: ") + 1);
 }
 
@@ -554,6 +556,20 @@ template <typename T, std::size_t I>
 concept annotated_out_of_class =
     requires { __kotatsu__field_annotation(std::type_identity<T>{}, key_of<T, I>()); };
 
+/// Whether argument-dependent lookup finds a KANNOTATE_FIELD of T filed under Key, which T has
+/// a field of: what KANNOTATE_FIELD checks it is written where it is read.
+template <typename T, typename Key>
+consteval bool has_field_keyed() {
+    return []<std::size_t... I>(std::index_sequence<I...>) {
+        return (std::is_same_v<decltype(key_of<T, I>()), Key> || ...);
+    }(std::make_index_sequence<field_count<T>()>{});
+}
+
+template <typename T, typename Key>
+concept field_annotation_found = requires {
+    __kotatsu__field_annotation(std::type_identity<T>{}, Key{});
+} && has_field_keyed<T, Key>();
+
 }  // namespace detail
 
 /// Whether KANNOTATE or KANNOTATE_FIELD annotates field I of T.
@@ -562,19 +578,24 @@ concept field_annotated = detail::annotated_in_class<T, I> || detail::annotated_
 
 namespace detail {
 
+template <typename T, std::size_t I>
+consteval auto field_annotation_attributes() {
+    if constexpr(annotated_in_class<T, I>) {
+        return T::__kotatsu__annotation(key_of<T, I>());
+    } else {
+        return __kotatsu__field_annotation(std::type_identity<T>{}, key_of<T, I>());
+    }
+}
+
 /// The annotation KANNOTATE or KANNOTATE_FIELD gives field I of T, as a tag.
 template <typename T, std::size_t I>
 struct field_annotation {
     static_assert(!(annotated_in_class<T, I> && annotated_out_of_class<T, I>),
                   "a field is annotated both in its class and out of it");
 
-    constexpr static auto attributes = [] {
-        if constexpr(annotated_in_class<T, I>) {
-            return T::__kotatsu__annotation(key_of<T, I>());
-        } else {
-            return __kotatsu__field_annotation(std::type_identity<T>{}, key_of<T, I>());
-        }
-    }();
+    // A function, not a lambda: MSVC copies the attributes a lambda here
+    // returns from uninitialized storage.
+    constexpr static auto attributes = field_annotation_attributes<T, I>();
 };
 
 template <typename T, std::size_t I>

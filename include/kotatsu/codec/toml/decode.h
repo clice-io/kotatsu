@@ -290,6 +290,7 @@ inline auto parse_table(std::string_view text) -> std::expected<Table, rich_erro
 /// Decodes a toml::Table DOM into `out` under the format F, routing the root
 /// the same way to_toml produced it (root table vs boxed `__value` key).
 template <typename F = toml::format, typename T>
+    requires std::derived_from<F, codec::format>
 auto from_toml(const Table& tbl, T& out, const decode_options& options = {})
     -> std::expected<void, rich_error> {
     static_assert(std::derived_from<F, toml::format>, "a TOML format extends toml::format");
@@ -300,6 +301,7 @@ auto from_toml(const Table& tbl, T& out, const decode_options& options = {})
 /// Decodes TOML text into `out` (or, in the value-returning overload, into a
 /// value-initialized T): parse_table followed by from_toml.
 template <typename F = toml::format, typename T>
+    requires std::derived_from<F, codec::format>
 auto from_string(std::string_view text, T& out, const decode_options& options = {})
     -> std::expected<void, rich_error> {
     KOTATSU_EXPECTED_TRY_V(auto table, parse_table(text));

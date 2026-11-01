@@ -711,25 +711,26 @@ bool verify_table(verifier_t& v, const Table* tbl) {
     if(!tbl->VerifyTableStart(v)) {
         return false;
     }
-    using detail::field_slot;
     bool ok;
     if constexpr(is_specialization_of<std::variant, T>) {
         detail::assert_slots_fit<std::variant_size_v<T> + 1>();
         // variant_view::get<I>() is reachable for every alternative
         // regardless of the stored tag, so every payload slot must verify.
-        ok = tbl->VerifyField<std::uint32_t>(v, field_slot(0), alignof(std::uint32_t)) &&
+        ok = tbl->VerifyField<std::uint32_t>(v, detail::field_slot(0), alignof(std::uint32_t)) &&
              [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                  return (verify_field<deep_clean_t<std::variant_alternative_t<Is, T>>>(
                              v,
                              tbl,
-                             field_slot(Is + 1)) &&
+                             detail::field_slot(Is + 1)) &&
                          ...);
              }(std::make_index_sequence<std::variant_size_v<T>>{});
     } else if constexpr(meta::tuple_like<T>) {
         detail::assert_slots_fit<std::tuple_size_v<T>>();
         ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             return (
-                verify_field<deep_clean_t<std::tuple_element_t<Is, T>>>(v, tbl, field_slot(Is)) &&
+                verify_field<deep_clean_t<std::tuple_element_t<Is, T>>>(v,
+                                                                        tbl,
+                                                                        detail::field_slot(Is)) &&
                 ...);
         }(std::make_index_sequence<std::tuple_size_v<T>>{});
     } else {
@@ -737,7 +738,7 @@ bool verify_table(verifier_t& v, const Table* tbl) {
         constexpr auto slot_count = type_list_size_v<typename object_schema<T>::slots>;
         detail::assert_slots_fit<slot_count>();
         ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            return (verify_field<slot_view_t<T, Is>>(v, tbl, field_slot(Is)) && ...);
+            return (verify_field<slot_view_t<T, Is>>(v, tbl, detail::field_slot(Is)) && ...);
         }(std::make_index_sequence<slot_count>{});
     }
     v.EndTable();

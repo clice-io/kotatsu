@@ -255,7 +255,7 @@ auto to_string(const T& value, const json::encode_options& options = {})
     static_assert(std::derived_from<F, json::format>, "a JSON format extends json::format");
     StringBuilder builder(options.initial_capacity.value_or(default_capacity));
     ValueWriter<F> vis{builder};
-    KOTATSU_EXPECTED_TRY(codec::detail::run_encode<F>(vis, value, options));
+    KOTATSU_EXPECTED_TRY(codec::detail::run_encode<F>(vis, value, options.common()));
     return std::move(builder).take();
 }
 

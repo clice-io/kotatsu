@@ -115,7 +115,7 @@ function capitalized(text: string): string {
 }
 
 /**
- * snake_case member whose lower_camel rename (ipc::lsp_config) restores the
+ * snake_case member whose lower_camel rename (ipc::lsp_format) restores the
  * property name.
  */
 function memberName(propertyName: string): string {

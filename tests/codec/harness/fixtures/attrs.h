@@ -10,6 +10,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -23,6 +24,29 @@
 #include "kotatsu/codec/macro.h"
 
 namespace kotatsu::test {
+
+/// A rename policy of the program's own: words joined by dashes.
+struct Dashed {
+    constexpr std::string operator()(std::string_view name) const {
+        std::string out(name);
+        for(auto& c: out) {
+            if(c == '_') {
+                c = '-';
+            }
+        }
+        return out;
+    }
+};
+
+/// Its fields spelled by a policy type.
+KANNOTATE_TYPE(struct DashedPair, rename_all = type<Dashed>);
+
+struct DashedPair {
+    int item_id;
+    int user_name;
+
+    auto operator==(const DashedPair&) const -> bool = default;
+};
 
 struct AnnotatedPlain {
     int id;

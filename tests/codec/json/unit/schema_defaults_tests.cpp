@@ -308,6 +308,26 @@ struct renamed_defaults_holder {
     renamed_defaults_child child;
 };
 
+/// Three levels: the middle one renames its own fields, which the leaf's do
+/// not take, and the leaf states no default for its secret, which no whole-
+/// object default above it states either.
+struct nested_defaults_leaf {
+    std::int32_t item_count = 1;
+    KANNOTATE(&secret, presence = optional, schema_default = false)
+    std::int32_t secret = 7;
+};
+
+KANNOTATE_TYPE(struct nested_defaults_middle, rename_all = Casing::LowerCamel);
+
+struct nested_defaults_middle {
+    KANNOTATE(&leaf_value, presence = optional)
+    nested_defaults_leaf leaf_value;
+};
+
+struct nested_defaults_root {
+    nested_defaults_middle middle;
+};
+
 /// renamed_defaults_child, its fields renamed wherever it stands.
 KANNOTATE_TYPE(struct renamed_defaults_root, rename_all = Casing::LowerCamel);
 
@@ -577,17 +597,27 @@ ZEST_CASE(defaults_declarative_repr_unannotated) {
 
 ZEST_CASE(defaults_follow_slot_rename_all) {
     // A rename_all spec on the field slot renames the child $def's
-    // properties; the fresh document is encoded under the same merged
-    // config, so the renamed property still pairs with its default.
+    // properties; the fresh document is encoded under the same scoped
+    // format, so the renamed property still pairs with its default.
     const auto result = json::schema_string<renamed_defaults_holder>().value();
     ZEXPECT(zest::contains(result, R"("firstValue")"));
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
 }
 
+ZEST_CASE(defaults_keep_each_struct_s_own_names_at_every_depth) {
+    // The middle $def's leafValue default is the leaf as a document writes
+    // it: its fields keep their own names, and its secret is left out.
+    const auto result = json::schema_string<nested_defaults_root>().value();
+    ZEXPECT(zest::contains(result, R"("default":{"item_count":1})"));
+    ZEXPECT(!zest::contains(result, R"("itemCount")"));
+    ZEXPECT(!zest::contains(result, R"("secret":7)"));
+    ZEXPECT(!zest::contains(result, R"("default":7)"));
+}
+
 ZEST_CASE(defaults_annotated_root_rename_all) {
     // A structural annotation on the root itself shapes the fresh document
     // the same way it shapes the schema: the fresh root encodes under the
-    // resolution's merged config, so the renamed property still pairs with
+    // resolution's scoped format, so the renamed property still pairs with
     // its default.
     const auto result = json::schema_string<renamed_defaults_root>().value();
     ZEXPECT(zest::contains(result, R"("firstValue")"));

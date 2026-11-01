@@ -204,6 +204,8 @@ private:
     struct InternalTag {
         std::string_view field;
         std::string_view alt_name;
+        /// Whether the variant denies keys its alternative has no field for.
+        bool deny_unknown = false;
     };
 
     /// A struct's object schema, written into target; with a tag, the object
@@ -253,7 +255,7 @@ private:
         if(!named_once.empty()) {
             target.insert("allOf", std::move(named_once));
         }
-        if(si->deny_unknown || opts.deny_unknown_fields) {
+        if(si->deny_unknown || opts.deny_unknown_fields || (tag && tag->deny_unknown)) {
             target.insert("additionalProperties", false);
         }
         return {};
@@ -573,17 +575,21 @@ private:
         };
     }
 
-    result_t make_internal_tagged(const codec::type_info* ti,
-                                  std::string_view tag_field,
-                                  std::string_view alt_name) {
+    result_t make_internal_tagged(const codec::type_info* ti, const InternalTag& tag) {
         ti = unwrap(ti);
+        const auto tag_field = tag.field;
+        const auto alt_name = tag.alt_name;
         if(ti->kind == tk::null) {
             // A std::monostate is a unit variant: the tag alone.
-            return dyn::Value{
+            dyn::Object unit{
                 {"type",       "object"                                         },
                 {"properties", {{std::string(tag_field), {{"const", alt_name}}}}},
                 {"required",   dyn::Array{dyn::Value(tag_field)}                },
             };
+            if(tag.deny_unknown || opts.deny_unknown_fields) {
+                unit.insert("additionalProperties", false);
+            }
+            return dyn::Value(std::move(unit));
         }
         if(ti->kind != tk::structure) {
             KOTATSU_EXPECTED_TRY_V(auto schema, make_schema(ti));
@@ -596,7 +602,6 @@ private:
             };
         }
         dyn::Object obj;
-        InternalTag tag{.field = tag_field, .alt_name = alt_name};
         KOTATSU_EXPECTED_TRY(
             add_struct_body(obj, static_cast<const codec::struct_type_info*>(ti), &tag));
         // The body is inlined here rather than $def'd, so it names its type
@@ -635,9 +640,13 @@ private:
 
                 case codec::tag_mode::internal: {
                     auto alt_name = alternative_name(vi, i);
-                    KOTATSU_EXPECTED_TRY_V(
-                        auto schema,
-                        make_internal_tagged(&vi->alternatives[i](), vi->tag_field, alt_name));
+                    const InternalTag tag{
+                        .field = vi->tag_field,
+                        .alt_name = alt_name,
+                        .deny_unknown = vi->deny_unknown,
+                    };
+                    KOTATSU_EXPECTED_TRY_V(auto schema,
+                                           make_internal_tagged(&vi->alternatives[i](), tag));
                     alts.push_back(std::move(schema));
                     break;
                 }
@@ -869,15 +878,46 @@ constexpr bool decoder_reads_directly() {
     }
 }
 
-template <typename T, typename Format>
+/// S, the scope of a struct, leaving out the fields whose default the schema
+/// does not state: the layer goes beneath S's own policies, so that it
+/// reaches the struct's members, whose scope is S's base, while S's policies
+/// reach no deeper than in a document.
+template <typename S>
+struct unstated_omitted {
+    using type = default_document_format<S>;
+};
+
+template <typename Base, naming::rename_fn R, bool D, std::uint8_t P>
+struct unstated_omitted<codec::detail::scoped_format<Base, R, D, P>> {
+    using type = codec::detail::scoped_format<default_document_format<Base>, R, D, P>;
+};
+
+/// The document T(), a struct, encodes to in S, its scope, with the fields
+/// whose default the schema does not state left out.
+template <typename T, typename S>
+std::expected<std::string, rich_error> fresh_document() {
+    using format = typename unstated_omitted<S>::type;
+    rich_error error;
+    codec::scoped_context<rich_error> guard(error);
+    StringBuilder builder(default_capacity);
+    ValueWriter<format> writer{builder};
+    if(!codec::detail::encode_plain<format>(writer, T())) {
+        return std::unexpected(std::move(error));
+    }
+    return std::move(builder).take();
+}
+
+/// Collects the fresh documents of T and what it holds, T standing where
+/// Format, the format around it, and Attrs, its node's attributes (a field's,
+/// or else its type's), place it.
+template <typename T, typename Format, typename Attrs = meta::attrs_of_t<T>>
 void collect_fresh(FreshDefaults& out);
 
 template <typename Format, typename... Slots>
 void collect_fresh_slots(FreshDefaults& out, kotatsu::type_list<Slots...>) {
     (collect_fresh<typename Slots::raw_type,
-                   codec::node_format_t<codec::members_format_t<Format>,
-                                        typename Slots::raw_type,
-                                        typename Slots::attrs>>(out),
+                   codec::members_format_t<Format>,
+                   typename Slots::attrs>(out),
      ...);
 }
 
@@ -886,24 +926,22 @@ void collect_fresh_alternatives(FreshDefaults& out, std::type_identity<std::vari
     (collect_fresh<Ts, Format>(out), ...);
 }
 
-template <typename T, typename Format>
+template <typename T, typename Format, typename Attrs>
 void collect_fresh(FreshDefaults& out) {
     // A repr-routed type is skipped, subtree included: decode reads the
     // repr's value, not a T, so no honest fresh document exists here.
-    if constexpr(decoder_reads_directly<T, codec::members_format_t<Format>>()) {
+    if constexpr(decoder_reads_directly<T, Format>()) {
         using tk = meta::type_kind;
-        using resolved = codec::resolved_repr_t<T, codec::members_format_t<Format>>;
+        using resolved = codec::resolved_repr_t<T, Format>;
         constexpr tk kind = meta::kind_of<resolved>();
         if constexpr(kind == tk::structure) {
-            const codec::type_info& ti = codec::type_info::of<T, Format>();
+            // The scope the emitter's info for T was built in: the node's
+            // attributes, the field's over T's own, merged onto Format.
+            using scope = codec::node_format_t<Format, T, Attrs>;
+            const codec::type_info& ti = codec::detail::struct_info<T, scope>();
             if(!out.seen.insert(&ti).second) {
                 return;
             }
-            // The resolved format carries T's own structural annotations (an
-            // annotated root or container element — slots merge theirs
-            // before recursing), so the document keys and field names below
-            // match the schema the emitter derives from the same resolution.
-            using scope = codec::resolved_format_t<T, Format>;
             auto name = kotatsu::naming::normalize_identifier(ti.type_name);
             if(!out.claimed.insert(name).second) {
                 // Two distinct types under one normalized name: the emitter
@@ -913,14 +951,13 @@ void collect_fresh(FreshDefaults& out) {
                 // document.
                 out.docs.erase(name);
             } else if constexpr(std::is_default_constructible_v<T>) {
-                if(auto text = to_string<default_document_format<scope>>(T())) {
+                if(auto text = fresh_document<T, scope>()) {
                     if(auto doc = from_string<dyn::Value>(*text)) {
                         out.docs.emplace(name, std::move(*doc));
                     }
                 }
             }
-            collect_fresh_slots<scope>(out,
-                                       typename codec::virtual_schema<resolved, scope>::slots{});
+            collect_fresh_slots<scope>(out, typename codec::virtual_schema<T, scope>::slots{});
         } else if constexpr(kind == tk::optional) {
             collect_fresh<typename resolved::value_type, Format>(out);
         } else if constexpr(kind == tk::pointer) {

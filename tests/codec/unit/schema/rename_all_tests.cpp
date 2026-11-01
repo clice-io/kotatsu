@@ -155,11 +155,13 @@ ZEST_CASE(alias_unaffected_by_rename_all) {
 }
 
 ZEST_CASE(rename_all_takes_a_policy_type) {
-    constexpr auto& fields = virtual_schema<DashedFields>::fields;
-    ZSTATIC_EXPECT(fields[0].name == "user-name");
-    ZSTATIC_EXPECT(fields[1].name == "item-id");
+    const auto& info = static_cast<const struct_type_info&>(type_info::of<DashedFields>());
+    ZEXPECT(info.fields[0].name == "user-name");
+    ZEXPECT(info.fields[1].name == "item-id");
     // The annotation's policy stands over the format's.
-    ZSTATIC_EXPECT(virtual_schema<DashedFields, fx::CamelSettings>::fields[1].name == "item-id");
+    const auto& camel =
+        static_cast<const struct_type_info&>(type_info::of<DashedFields, fx::CamelSettings>());
+    ZEXPECT(camel.fields[1].name == "item-id");
 }
 
 ZEST_CASE(policy_type_spells_enumerators_and_tags) {

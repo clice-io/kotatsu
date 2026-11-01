@@ -540,6 +540,7 @@ struct ParsedDocument {
 /// into `out`, without a copy of the text (or, in the value-returning
 /// overload, into a value-initialized T).
 template <typename F = json::format, typename T>
+    requires std::derived_from<F, codec::format>
 auto from_padded_string(padded_string_view json, T& out, const decode_options& options = {})
     -> std::expected<void, rich_error> {
     static_assert(std::derived_from<F, json::format>, "a JSON format extends json::format");
@@ -563,6 +564,7 @@ auto from_padded_string(padded_string_view json, const decode_options& options =
 /// Decodes JSON text into `out` (or, in the value-returning overload, into a
 /// value-initialized T) under the format F.
 template <typename F = json::format, typename T>
+    requires std::derived_from<F, codec::format>
 auto from_string(std::string_view json, T& out, const decode_options& options = {})
     -> std::expected<void, rich_error> {
     padded_string padded(json);

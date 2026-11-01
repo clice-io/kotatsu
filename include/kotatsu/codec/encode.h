@@ -203,7 +203,11 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
                             if constexpr(std::is_same_v<alt_t, std::monostate>) {
                                 return true;
                             } else {
-                                return encode_struct_fields<Format>(sv, alt);
+                                // Under the alternative's own scope, as it
+                                // would be written alone.
+                                using scope =
+                                    codec::node_format_t<Format, alt_t, meta::attrs_of_t<alt_t>>;
+                                return encode_struct_fields<scope>(sv, alt);
                             }
                         });
                     },
@@ -230,15 +234,18 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
 
 /// Encodes a value under a node's attributes (a struct field's, or an
 /// annotation's): behavior::with > behavior::as > variant tagging > the struct-level policy merge
-/// (scoped_format_t), the precedence meta's repr resolver replays.
+/// (scoped_format_t), the precedence the repr resolver replays. A class
+/// derived from a std::variant is tagged as that variant; untagged, it is
+/// written as its type writes it, its repr first.
 template <typename Format, typename Attrs, typename Vis, typename T>
 bool encode_with_attrs(Vis& vis, const T& value) {
-    if constexpr(meta::derived_variant<T>) {
-        return encode_with_attrs<Format, Attrs>(vis,
-                                                static_cast<const meta::variant_base_t<T>&>(value));
-    } else if constexpr(tuple_has_spec_v<Attrs, codec::behavior::with>) {
+    if constexpr(tuple_has_spec_v<Attrs, codec::behavior::with>) {
         using adapter = typename tuple_find_spec_t<Attrs, codec::behavior::with>::adapter;
-        return repr_encode<adapter, Format>(vis, value);
+        if constexpr(names_enum<adapter>) {
+            return repr_encode<adapter, codec::node_format_t<Format, T, Attrs>>(vis, value);
+        } else {
+            return repr_encode<adapter, Format>(vis, value);
+        }
     } else if constexpr(tuple_has_spec_v<Attrs, codec::behavior::as>) {
         using target = typename tuple_find_spec_t<Attrs, codec::behavior::as>::target;
         target converted(value);
@@ -246,7 +253,13 @@ bool encode_with_attrs(Vis& vis, const T& value) {
     } else if constexpr(codec::struct_spec_of<Attrs>.tagging != codec::tag_mode::none) {
         static_assert(taggable<T>, "a tagging attribute requires a std::variant");
         using spec_attr = struct_spec_attr_t<Attrs>;
-        return encode_tagged_variant<Format, spec_attr>(vis, value);
+        if constexpr(meta::derived_variant<T>) {
+            return encode_tagged_variant<Format, spec_attr>(
+                vis,
+                static_cast<const meta::variant_base_t<T>&>(value));
+        } else {
+            return encode_tagged_variant<Format, spec_attr>(vis, value);
+        }
     } else {
         return encode_plain<codec::node_format_t<Format, T, Attrs>>(vis, value);
     }
@@ -259,22 +272,24 @@ bool encode_one_field(Vis& vis, const T& value) {
 
     // A visitor that writes every field has nothing to mark one absent, so
     // presence omits fields only elsewhere.
-    if constexpr(!writes_every_field<Vis>) {
-        if constexpr(omits_unstated_defaults<Format> && !descriptor::info.schema_default) {
-            return true;
+    constexpr bool omits = !writes_every_field<Vis>;
+    if constexpr(omits && omits_unstated_defaults<Format> && !descriptor::info.schema_default) {
+        return true;
+    } else {
+        if constexpr(omits) {
+            if(descriptor::omitted(value)) {
+                return true;
+            }
         }
-        if(descriptor::omitted(value)) {
-            return true;
-        }
-    }
-    const auto& field_ref = descriptor::of(value);
+        const auto& field_ref = descriptor::of(value);
 
-    bool ok = vis.visit_field(descriptor{}, [&](auto& fv) -> bool {
-        return encode_with_attrs<codec::members_format_t<Format>, typename descriptor::attrs>(
-            fv,
-            field_ref);
-    });
-    return trace_path(ok, descriptor::name);
+        bool ok = vis.visit_field(descriptor{}, [&](auto& fv) -> bool {
+            return encode_with_attrs<codec::members_format_t<Format>, typename descriptor::attrs>(
+                fv,
+                field_ref);
+        });
+        return trace_path(ok, descriptor::name);
+    }
 }
 
 }  // namespace detail

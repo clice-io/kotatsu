@@ -227,11 +227,13 @@ inline bool fail_unknown_tag(std::string_view name) {
 /// deny_unknown_fields / presence_all merge.
 template <typename Format, typename Attrs, typename Vis, typename T>
 bool decode_with_attrs(Vis& vis, T& out) {
-    if constexpr(meta::derived_variant<T>) {
-        return decode_with_attrs<Format, Attrs>(vis, static_cast<meta::variant_base_t<T>&>(out));
-    } else if constexpr(tuple_has_spec_v<Attrs, codec::behavior::with>) {
+    if constexpr(tuple_has_spec_v<Attrs, codec::behavior::with>) {
         using adapter = typename tuple_find_spec_t<Attrs, codec::behavior::with>::adapter;
-        return repr_decode<adapter, Format>(vis, out);
+        if constexpr(names_enum<adapter>) {
+            return repr_decode<adapter, codec::node_format_t<Format, T, Attrs>>(vis, out);
+        } else {
+            return repr_decode<adapter, Format>(vis, out);
+        }
     } else if constexpr(tuple_has_spec_v<Attrs, codec::behavior::as>) {
         using target = typename tuple_find_spec_t<Attrs, codec::behavior::as>::target;
         auto converted = target();
@@ -243,7 +245,12 @@ bool decode_with_attrs(Vis& vis, T& out) {
         // decode_variant reads the variant as itself, tagged or not; a repr
         // of its type does not apply.
         using spec_attr = struct_spec_attr_t<Attrs>;
-        return decode_variant<Format, spec_attr>(vis, out);
+        if constexpr(meta::derived_variant<T>) {
+            return decode_variant<Format, spec_attr>(vis,
+                                                     static_cast<meta::variant_base_t<T>&>(out));
+        } else {
+            return decode_variant<Format, spec_attr>(vis, out);
+        }
     } else {
         return decode_plain<codec::node_format_t<Format, T, Attrs>>(vis, out);
     }
@@ -316,13 +323,15 @@ inline std::size_t find_field_slot(std::span<const codec::field_info> fields,
 }
 
 /// Data-driven field matching: decodes the slot key names into out and sets
-/// the slot's bit in field_mask, or passes over an unknown key.
+/// the slot's bit in field_mask, or passes over an unknown key, which fails
+/// under deny_unknown, the struct's or the options'.
 template <typename Format, typename T, typename Vis>
 bool match_field(std::string_view key,
                  Vis& reader,
                  T& out,
                  std::uint64_t& field_mask,
-                 UnknownFields* sink) {
+                 UnknownFields* sink,
+                 bool deny_unknown = false) {
     using schema = codec::virtual_schema<T, Format>;
     constexpr std::size_t N = type_list_size_v<typename schema::slots>;
     static_assert(N <= 64, "struct field count exceeds field_mask capacity (max 64 fields)");
@@ -331,7 +340,8 @@ bool match_field(std::string_view key,
     if(slot == N) {
         // The data-driven readers move to the next entry whether or not the
         // callback read this one.
-        const bool deny = schema::deny_unknown || current_decode_options().deny_unknown_fields;
+        const bool deny =
+            deny_unknown || schema::deny_unknown || current_decode_options().deny_unknown_fields;
         return pass_unknown_field(deny, key, reader, sink);
     }
 
@@ -459,6 +469,9 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     assert_internal_tag_fits<Format, SpecAttr, Ts...>();
     constexpr auto names = codec::resolve_tag_names<SpecAttr, Format, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
+    // The variant's own deny_unknown_fields reaches every alternative's keys.
+    constexpr bool variant_denies =
+        SpecAttr::value.deny_unknown_fields || format_denies_unknown<Format>();
 
     std::size_t idx = peek_tag_index(vis, tag_key, names);
     if(idx != npos) {
@@ -487,12 +500,16 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
             using alt_t = std::variant_alternative_t<I, std::variant<Ts...>>;
             if constexpr(std::is_same_v<alt_t, std::monostate>) {
                 // A unit variant has no fields: any key but the tag is unknown.
-                return pass_unknown_field(current_decode_options().deny_unknown_fields,
-                                          key,
-                                          fv,
-                                          sink);
+                const bool deny = variant_denies || current_decode_options().deny_unknown_fields;
+                return pass_unknown_field(deny, key, fv, sink);
             } else {
-                return match_field<Format, alt_t>(key, fv, std::get<I>(var), field_mask, sink);
+                using scope = codec::node_format_t<Format, alt_t, meta::attrs_of_t<alt_t>>;
+                return match_field<scope, alt_t>(key,
+                                                 fv,
+                                                 std::get<I>(var),
+                                                 field_mask,
+                                                 sink,
+                                                 variant_denies);
             }
         });
     });
@@ -514,7 +531,8 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
         if constexpr(std::is_same_v<alt_t, std::monostate>) {
             return true;
         } else {
-            return check_required_fields<Format, alt_t>(field_mask);
+            using scope = codec::node_format_t<Format, alt_t, meta::attrs_of_t<alt_t>>;
+            return check_required_fields<scope, alt_t>(field_mask);
         }
     });
 }
@@ -542,8 +560,9 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
             return idx != npos || fail_unusable_tag(fv);
         }
         if(key != content_key) {
-            const bool deny =
-                format_denies_unknown<Format>() || current_decode_options().deny_unknown_fields;
+            const bool deny = SpecAttr::value.deny_unknown_fields ||
+                              format_denies_unknown<Format>() ||
+                              current_decode_options().deny_unknown_fields;
             return pass_unknown_field(deny, key, fv, sink);
         }
         // Without a usable tag the content cannot be placed: the tag's own
@@ -680,7 +699,7 @@ constexpr bool probes_as_untagged_variant() {
         using chosen = codec::repr_for<T, Format>;
         if constexpr(
             requires { chosen::from(std::declval<codec::declared_repr_t<chosen>>()); } &&
-            !requires(Vis& v, T& out) { chosen::template deserialize<Format>(v, out); })
+            !requires(Vis& v, T& out) { chosen::decode(v, out); })
             return probes_as_untagged_variant<Format, Vis, codec::declared_repr_t<chosen>>();
         else
             return false;

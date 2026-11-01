@@ -42,6 +42,15 @@ struct Point {
 
 KANNOTATE_FIELD(&third_party::Point::y, rename = "Y", alias = {"why"});
 
+template <typename A, typename B>
+struct Pair {
+    A first;
+    B second;
+};
+
+// The comma in the template arguments takes parentheses.
+KANNOTATE_FIELD((&third_party::Pair<int, int>::second), rename = "Second");
+
 }  // namespace third_party
 
 namespace downstream {
@@ -156,6 +165,11 @@ ZEST_CASE(annotate_field_annotates_a_class_from_outside) {
     ZSTATIC_EXPECT(y.rename == std::string_view("Y"));
     ZSTATIC_EXPECT(y.alias[0] == std::string_view("why"));
     ZSTATIC_EXPECT(codec::field_spec_of<third_party::Point, 0>.rename.empty());
+}
+
+ZEST_CASE(annotate_field_takes_a_parenthesized_member) {
+    ZSTATIC_EXPECT((codec::field_spec_of<third_party::Pair<int, int>, 1>.rename == "Second"));
+    ZSTATIC_EXPECT((codec::field_spec_of<third_party::Pair<int, int>, 0>.rename.empty()));
 }
 
 ZEST_CASE(annotate_type_declares_the_struct_where_it_is_written) {

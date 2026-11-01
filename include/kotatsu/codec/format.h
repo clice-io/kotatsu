@@ -87,7 +87,11 @@ namespace detail {
 
 template <typename Vis>
 constexpr auto format_of_impl() {
-    if constexpr(requires { typename Vis::format; }) {
+    if constexpr(std::derived_from<Vis, format>) {
+        // A format carries none: `Vis::format` would name its root, which MSVC
+        // reads as the root's constructor.
+        return std::type_identity<void>{};
+    } else if constexpr(requires { typename Vis::format; }) {
         return std::type_identity<typename Vis::format>{};
     } else {
         return std::type_identity<void>{};

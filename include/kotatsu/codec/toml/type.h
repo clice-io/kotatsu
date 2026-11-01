@@ -61,7 +61,7 @@ namespace kotatsu::codec::toml {
 ///   their decimal string form
 /// - structure → table keyed by (renamed) field names
 /// - variant → shaped by the spec's tag_mode (see encode_tagged_variant in
-///   visit/encode.h); untagged variants emit the bare payload
+///   encode.h); untagged variants emit the bare payload
 struct format : codec::extend<codec::format> {
     /// Its documents are UTF-8 text.
     constexpr static bool utf8 = true;

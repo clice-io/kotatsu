@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "kotatsu/codec/context.h"
+#include "kotatsu/codec/format.h"
 
 namespace kotatsu::codec::bincode {
 

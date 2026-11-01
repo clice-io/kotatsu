@@ -562,15 +562,40 @@ struct scoped_format :
     using base = Base;
 };
 
-template <typename Base, naming::rename_fn RenameAll, bool DenyUnknown, std::uint8_t Presence>
-struct scope_format_impl {
-    using type = scoped_format<Base, RenameAll, DenyUnknown, Presence>;
-};
+/// The rename_fn Base spells names with: its rename_all's, else identity's.
+template <typename Base>
+consteval naming::rename_fn base_rename_fn() {
+    if constexpr(requires { typename Base::rename_all; }) {
+        return &naming::spell_with<typename Base::rename_all>;
+    } else {
+        return &naming::spell_with<naming::rename_policy::identity>;
+    }
+}
 
 template <typename Base>
-struct scope_format_impl<Base, nullptr, false, 0> {
-    using type = Base;
+consteval std::uint8_t base_presence_code() {
+    if constexpr(requires { Base::presence_all; }) {
+        return optional_code(Base::presence_all);
+    } else {
+        return 0;
+    }
+}
+
+/// Base under the layers that say what Base does not: a policy equal to
+/// Base's own is dropped, so a struct whose annotation restates the format
+/// shares the format's type_info, and its $def.
+template <typename Base, naming::rename_fn RenameAll, bool DenyUnknown, std::uint8_t Presence>
+struct layered_format {
+    constexpr static naming::rename_fn rename =
+        RenameAll == base_rename_fn<Base>() ? nullptr : RenameAll;
+    constexpr static std::uint8_t presence = Presence == base_presence_code<Base>() ? 0 : Presence;
+    using type = std::conditional_t<rename == nullptr && !DenyUnknown && presence == 0,
+                                    Base,
+                                    scoped_format<Base, rename, DenyUnknown, presence>>;
 };
+
+template <typename Base, naming::rename_fn RenameAll, bool DenyUnknown, std::uint8_t Presence>
+struct scope_format_impl : layered_format<Base, RenameAll, DenyUnknown, Presence> {};
 
 /// Merging onto an already-merged base rebuilds a single normalized layer
 /// instead of stacking (a deeper rename or presence overrides, deny is
@@ -584,17 +609,11 @@ template <typename Base,
           naming::rename_fn RenameAll,
           bool DenyUnknown,
           std::uint8_t Presence>
-struct scope_format_impl<scoped_format<Base, R0, D0, P0>, RenameAll, DenyUnknown, Presence> {
-    using type = scoped_format<Base,
-                               RenameAll != nullptr ? RenameAll : R0,
-                               D0 || DenyUnknown,
-                               Presence != 0 ? Presence : P0>;
-};
-
-template <typename Base, naming::rename_fn R0, bool D0, std::uint8_t P0>
-struct scope_format_impl<scoped_format<Base, R0, D0, P0>, nullptr, false, 0> {
-    using type = scoped_format<Base, R0, D0, P0>;
-};
+struct scope_format_impl<scoped_format<Base, R0, D0, P0>, RenameAll, DenyUnknown, Presence> :
+    layered_format<Base,
+                   RenameAll != nullptr ? RenameAll : R0,
+                   D0 || DenyUnknown,
+                   Presence != 0 ? Presence : P0> {};
 
 }  // namespace detail
 
@@ -616,23 +635,30 @@ using scoped_format_t =
 /// The format a node of type T carrying AttrsTuple (a field's attrs, or an
 /// annotation's) is read and written under: its rename_all /
 /// deny_unknown_fields / presence_all merge onto Format when T is a
-/// reflectable struct, the only kind those policies act on, and are inert on
-/// every other node.
+/// reflectable struct, whose members they name and mark, or an enum, whose
+/// names an enum_names repr spells by its rename_all; they are inert on every
+/// other node.
 template <typename Format, typename T, typename AttrsTuple>
-using node_format_t =
-    std::conditional_t<meta::reflectable_class<T>, scoped_format_t<Format, AttrsTuple>, Format>;
+using node_format_t = std::conditional_t<meta::reflectable_class<T> || std::is_enum_v<T>,
+                                         scoped_format_t<Format, AttrsTuple>,
+                                         Format>;
 
 /// The format the values of a struct's fields are read and written under:
 /// the one its own rename_all / deny_unknown_fields / presence_all merged
 /// onto, which name and mark its members alone and reach no deeper.
 template <typename Format>
-using members_format_t = typename decltype([] {
-    if constexpr(requires { typename Format::members_of; }) {
-        return std::type_identity<typename Format::members_of>{};
-    } else {
-        return std::type_identity<Format>{};
-    }
-}())::type;
+struct members_format {
+    using type = Format;
+};
+
+template <typename Format>
+    requires requires { typename Format::members_of; }
+struct members_format<Format> {
+    using type = typename Format::members_of;
+};
+
+template <typename Format>
+using members_format_t = typename members_format<Format>::type;
 
 /// The presence a field of kind `kind` whose spec is `spec` has under Format: the spec's own,
 /// else Format's presence_all (a struct's, merged on the way, or the format's own), else

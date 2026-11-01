@@ -210,6 +210,7 @@ private:
 /// Decodes a dyn::Value DOM tree into `out` (or, in the value-returning
 /// overload, into a value-initialized T) under the format F.
 template <typename F = codec::format, typename T>
+    requires std::derived_from<F, codec::format>
 auto from_dyn(const Value& value, T& out, const decode_options& options = {})
     -> std::expected<void, rich_error> {
     ValueReader<F> vis{value};
