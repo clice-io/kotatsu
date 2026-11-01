@@ -16,7 +16,7 @@
 
 #include "execution.h"
 #include "kotatsu/cli/parse.h"
-#include "kotatsu/cli/usage.h"
+#include "kotatsu/cli/report.h"
 #include "kotatsu/zest/assert/trace.h"
 #include "kotatsu/zest/runner/registry.h"
 #include "kotatsu/zest/runner/run.h"
@@ -311,16 +311,15 @@ TestState run_in_process(const Entry& entry) {
 }
 
 int run_cli(int argc, char** argv, std::string_view command_overview) {
-    const cli::Style style{.color = true};
     // The arguments after the program's name.
     auto parsed = cli::parse<CliOptions>(
         std::span(argv, static_cast<std::size_t>(argc)).subspan(std::min(argc, 1)));
     if(!parsed) {
-        std::println(stderr, "{}", parsed.error().render(style));
+        cli::report(parsed.error());
         return 2;
     }
     if(parsed->help) {
-        std::print("{}", cli::usage<CliOptions>(command_overview, style));
+        cli::print_usage<CliOptions>(command_overview);
         return 0;
     }
     auto& options = *parsed;

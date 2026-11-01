@@ -109,6 +109,7 @@ cc_library(
     ("codec/json", "unit", [":codec_json_harness"]),
     ("codec/toml", "unit", [":codec_toml_harness"]),
     ("cli", "unit", [":cli_harness"]),
+    ("cli", "system", [":cli_harness"]),
     ("async", "unit", [
         ":async_harness",
         "//:zest_async",

@@ -77,6 +77,12 @@ ZEST_CASE(color_look_draws_the_mark) {
     ZEXPECT(rendered.contains("╰─▶"));
 }
 
+ZEST_CASE(suggestion_follows_the_message) {
+    auto error = at({"--verbos"}, 0, 1);
+    error.suggestion = "--verbose";
+    ZEXPECT(error.render().ends_with("bad; did you mean '--verbose'?"));
+}
+
 };  // ZEST_SUITE(cli_error)
 
 }  // namespace

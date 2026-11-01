@@ -134,11 +134,13 @@ std::string
 }  // namespace
 
 std::string Error::render(const Style& style) const {
+    const auto said =
+        suggestion.empty() ? message : std::format("{}; did you mean '{}'?", message, suggestion);
     if(argv.empty()) {
         return style.color ? std::format("{} {}",
                                          detail::paint(detail::ansi_error, "error"),
-                                         detail::paint(detail::ansi_bold, message))
-                           : message;
+                                         detail::paint(detail::ansi_bold, said))
+                           : said;
     }
 
     const auto argc = static_cast<std::uint32_t>(argv.size());
@@ -166,7 +168,7 @@ std::string Error::render(const Style& style) const {
                            at_end ? "at end of argv" : std::format("at argv[{}]", first),
                            shown.line,
                            marker,
-                           message);
+                           said);
     }
 
     using namespace detail;
@@ -179,7 +181,7 @@ std::string Error::render(const Style& style) const {
                        paint(ansi_help, "│"),
                        std::string(shown.marker_start, ' '),
                        paint(ansi_marker, "╰─▶"),
-                       paint(ansi_bold, message));
+                       paint(ansi_bold, said));
 }
 
 Error detail::error_at(Error::Kind kind,

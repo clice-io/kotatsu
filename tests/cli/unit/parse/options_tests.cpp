@@ -63,6 +63,28 @@ struct Files {
     <std::vector<std::string>> files;
 };
 
+struct Tuned {
+    KOTATSU_ANNOTATE(minimum = 1, maximum = 64, description = "Workers")
+    <int> jobs = 4;
+    KOTATSU_ANNOTATE(choices = {"fast", "slow"})
+    <std::string> mode = "fast";
+    std::vector<std::string> include;
+    std::string name;
+};
+
+struct Bounded {
+    KOTATSU_ANNOTATE(minimum = 0, maximum = 1)
+    <double> ratio = 0;
+    KOTATSU_ANNOTATE(cli::count = true, cli::names = {"-v"}, maximum = 3)
+    <std::uint32_t> noise = 0;
+    KOTATSU_ANNOTATE(choices = {"a", "b"})
+    <std::pair<std::string, std::string>> pair;
+    KOTATSU_ANNOTATE(cli::positional = true, choices = {"a", "b"})
+    <std::optional<std::string>> word;
+    KOTATSU_ANNOTATE(cli::hidden = true)
+    <bool> secret = false;
+};
+
 template <typename T = Options>
 std::expected<T, Error> parse_line(std::string_view line) {
     return cli::parse<T>(test::split(line));
@@ -256,6 +278,115 @@ ZEST_CASE(dash_word_in_a_command_without_options_fails) {
     auto files = parse_line<Files>("--force a");
     ZASSERT(!files.has_value());
     ZEXPECT(files.error().kind == Error::Kind::UnknownOption);
+}
+
+ZEST_CASE(parse_into_keeps_what_the_argv_leaves_out) {
+    Tuned tuned;
+    tuned.jobs = 8;
+    tuned.name = std::string("from-config");
+    tuned.include = std::vector<std::string>{"a"};
+    ZASSERT(cli::parse_into(tuned, test::split("--include b --mode slow")).has_value());
+    ZEXPECT(tuned.jobs == 8);
+    ZEXPECT(std::string(tuned.name) == "from-config");
+    ZEXPECT(std::string(tuned.mode) == "slow");
+}
+
+ZEST_CASE(parse_into_replaces_a_given_list) {
+    Tuned tuned;
+    tuned.include = std::vector<std::string>{"a"};
+    ZASSERT(cli::parse_into(tuned, test::split("--include b")).has_value());
+    ZEXPECT(tuned.include == (std::vector<std::string>{"b"}));
+}
+
+ZEST_CASE(value_below_the_minimum_fails) {
+    auto tuned = parse_line<Tuned>("--jobs 0");
+    ZASSERT(!tuned.has_value());
+    ZEXPECT(tuned.error().kind == Error::Kind::InvalidValue);
+    ZEXPECT(tuned.error().message == "value 0 is below the minimum 1");
+    ZEXPECT(tuned.error().begin == 1U);
+}
+
+ZEST_CASE(value_above_the_maximum_fails) {
+    auto tuned = parse_line<Tuned>("--jobs=65");
+    ZASSERT(!tuned.has_value());
+    ZEXPECT(tuned.error().kind == Error::Kind::InvalidValue);
+    ZEXPECT(tuned.error().message == "value 65 is above the maximum 64");
+}
+
+ZEST_CASE(value_of_no_choice_fails) {
+    auto tuned = parse_line<Tuned>("--mode medium");
+    ZASSERT(!tuned.has_value());
+    ZEXPECT(tuned.error().kind == Error::Kind::InvalidValue);
+    ZEXPECT(tuned.error().message == "invalid value 'medium' (supported: fast, slow)");
+}
+
+ZEST_CASE(bounded_value_of_no_number_fails_as_its_type) {
+    auto tuned = parse_line<Tuned>("--jobs many");
+    ZASSERT(!tuned.has_value());
+    ZEXPECT(tuned.error().message == "invalid integer value: many");
+}
+
+ZEST_CASE(nan_of_a_bounded_number_fails) {
+    auto bounded = parse_line<Bounded>("--ratio nan");
+    ZASSERT(!bounded.has_value());
+    ZEXPECT(bounded.error().message == "value nan is not a number in 0..1");
+}
+
+ZEST_CASE(integer_in_another_notation_fails_as_an_integer) {
+    auto tuned = parse_line<Tuned>("--jobs 1e3");
+    ZASSERT(!tuned.has_value());
+    ZEXPECT(tuned.error().message == "invalid integer value: 1e3");
+}
+
+ZEST_CASE(count_past_its_maximum_fails) {
+    auto bounded = parse_line<Bounded>("-v -v -v -v");
+    ZASSERT(!bounded.has_value());
+    ZEXPECT(bounded.error().message == "value 4 is above the maximum 3");
+}
+
+ZEST_CASE(tuple_element_of_no_choice_fails) {
+    auto bounded = parse_line<Bounded>("--pair a z");
+    ZASSERT(!bounded.has_value());
+    ZEXPECT(bounded.error().message == "invalid value 'z' (supported: a, b)");
+    ZEXPECT(bounded.error().begin == 2U);
+}
+
+ZEST_CASE(positional_of_no_choice_fails) {
+    auto bounded = parse_line<Bounded>("c");
+    ZASSERT(!bounded.has_value());
+    ZEXPECT(bounded.error().message == "invalid value 'c' (supported: a, b)");
+}
+
+ZEST_CASE(unknown_short_option_suggests_none) {
+    auto options = parse_line("--must y -q");
+    ZASSERT(!options.has_value());
+    ZEXPECT(options.error().suggestion.empty());
+}
+
+ZEST_CASE(unknown_option_near_a_hidden_one_suggests_none) {
+    auto bounded = parse_line<Bounded>("--secre");
+    ZASSERT(!bounded.has_value());
+    ZEXPECT(bounded.error().suggestion.empty());
+}
+
+ZEST_CASE(unknown_option_fails_suggesting_the_closest) {
+    auto options = parse_line("--must y --verbos");
+    ZASSERT(!options.has_value());
+    ZEXPECT(options.error().suggestion == "--verbose");
+    ZEXPECT(
+        options.error().render().ends_with("unknown option '--verbos'; did you mean '--verbose'?"));
+}
+
+ZEST_CASE(unknown_option_with_a_value_fails_suggesting_by_its_name) {
+    auto options = parse_line("--must y --jbos=3");
+    ZASSERT(!options.has_value());
+    ZEXPECT(options.error().suggestion == "--jobs");
+}
+
+ZEST_CASE(unknown_option_far_from_all_suggests_none) {
+    auto options = parse_line("--must y --zzzzzzzz");
+    ZASSERT(!options.has_value());
+    ZEXPECT(options.error().suggestion.empty());
 }
 
 };  // ZEST_SUITE(cli_parse_options)

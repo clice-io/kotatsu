@@ -5,6 +5,7 @@
 #include <deque>
 #include <expected>
 #include <format>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -49,7 +50,8 @@ struct Node {
         List,
         /// The fields of a struct the argv gives something, `keys[i]` naming `items[i]`.
         Object,
-        /// A subcommand: alternative `count` of a variant, its fields `items[0]`.
+        /// A subcommand or an exclusive field: alternative `count` of a variant, its fields
+        /// `items[0]`.
         Variant,
     };
 
@@ -72,15 +74,24 @@ using decode_config = codec::default_config<DecodeConfig>;
 
 struct Command;
 
-/// The command `type`, a struct, describes: its options, positional arguments, groups and
-/// subcommands, and their option table. Built on first use.
-const Command& command_of(const meta::type_info& type);
+/// Frees a command, a type complete only where it is built.
+struct CommandDeleter {
+    void operator()(Command* command) const;
+};
 
-/// The command of options `T`, which a mistake in them keeps from compiling.
+using CommandPtr = std::unique_ptr<Command, CommandDeleter>;
+
+/// Builds the command `type`, a struct, describes: its options, positional arguments, groups
+/// and subcommands, and their option table.
+CommandPtr build_command(const meta::type_info& type);
+
+/// The command of options `T`, which a mistake in them keeps from compiling. Built on first
+/// use.
 template <typename T>
 const Command& command_of() {
     static_assert(check_declaration(meta::type_info_of<T, decode_config>()));
-    return command_of(meta::type_info_of<T, decode_config>());
+    const static CommandPtr command = build_command(meta::type_info_of<T, decode_config>());
+    return *command;
 }
 
 /// What an argv gives a command: the tree its decode reads, and where the nodes come from.
@@ -299,16 +310,15 @@ std::string invalid_enum_value(std::string_view text) {
 
 }  // namespace detail
 
-/// parse(), then `visit(options, given)` for each argument it read, in order: what the options
-/// alone do not keep, such as the order of the occurrences of two options.
+/// parse_into(), then `visit(options, given)` for each argument it read, in order: what the
+/// options alone do not keep, such as the order of the occurrences of two options.
 template <typename T, typename Visit>
     requires std::invocable<Visit&, T&, const Given&>
-std::expected<T, Error> parse(string_list_ref argv, Visit visit) {
+std::expected<void, Error> parse_into(T& options, string_list_ref argv, Visit visit) {
     detail::Reading reading;
     if(auto err = detail::read(detail::command_of<T>(), argv, reading)) {
         return std::unexpected(std::move(*err));
     }
-    T options{};
     const detail::Node* last = nullptr;
     codec::rich_error error;
     codec::scoped_context<codec::rich_error> guard(error);
@@ -318,6 +328,27 @@ std::expected<T, Error> parse(string_list_ref argv, Visit visit) {
     }
     for(const auto& given: reading.given) {
         visit(options, given);
+    }
+    return {};
+}
+
+/// Parses `argv` onto `options`, which keep what the argv does not give: options read from a
+/// config file first, say, that the command line then overrides. A list, a variant or a
+/// cli::Commands field the argv gives is replaced, not merged with what it held, and a required
+/// option counts as given only when the argv gives it. On an error, `options` may hold part of
+/// what was read.
+template <typename T>
+std::expected<void, Error> parse_into(T& options, string_list_ref argv) {
+    return parse_into(options, argv, [](T&, const Given&) {});
+}
+
+/// parse(), then `visit(options, given)` for each argument it read, in order.
+template <typename T, typename Visit>
+    requires std::invocable<Visit&, T&, const Given&>
+std::expected<T, Error> parse(string_list_ref argv, Visit visit) {
+    T options{};
+    if(auto read = parse_into(options, argv, std::move(visit)); !read) {
+        return std::unexpected(std::move(read.error()));
     }
     return options;
 }

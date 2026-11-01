@@ -28,7 +28,7 @@ Each page gives a module's purpose, its build targets, a short example and what 
 | codec   | meta, support                                          |
 | fs      | support                                                |
 | sys     | fs, support                                            |
-| cli     | meta, codec, support                                   |
+| cli     | meta, codec, support; privately sys                    |
 | async   | fs, sys, support                                       |
 | ipc     | codec, support; its peers and the LSP part also async  |
 | http    | async; codec's JSON backend when it is enabled         |

@@ -1,16 +1,18 @@
 #include "command.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <format>
-#include <map>
-#include <mutex>
 #include <ranges>
 #include <set>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include "kotatsu/cli/commands.h"
 #include "kotatsu/cli/parse.h"
 
 namespace kotatsu::cli::detail {
@@ -26,23 +28,31 @@ std::span<const std::string_view> prefixes_of(std::string_view name) {
     return name.starts_with('-') ? pfx_dash : pfx_slash_dash;
 }
 
-/// What a usage shows for a value of `type` declared with `spec`: its meta_var, else the names
-/// of an enum, else "<value>".
-std::string value_token(const ArgSpec& spec, const meta::type_info& type) {
-    if(!spec.meta_var.empty()) {
-        return std::string(spec.meta_var);
+/// `names` as a usage shows the values they are: "<a|b|c>", cut after six.
+std::string choices_token(std::span<const std::string_view> names, bool kebab_case) {
+    constexpr std::size_t shown = 6;
+    std::string token = "<";
+    for(std::size_t i = 0; i < std::min(names.size(), shown); ++i) {
+        token += i == 0 ? "" : "|";
+        token += kebab_case ? kebab(names[i]) : std::string(names[i]);
     }
-    if(type.kind == meta::type_kind::enumeration) {
-        const auto names = static_cast<const meta::enum_type_info&>(type).member_names;
+    token += names.size() > shown ? "|...>" : ">";
+    return token;
+}
+
+/// What a usage shows for a value of `arg`: its meta_var, else its field's choices, else the
+/// names of an enum, else "<value>".
+std::string value_token(const Arg& arg) {
+    if(!arg.spec.meta_var.empty()) {
+        return std::string(arg.spec.meta_var);
+    }
+    if(!arg.field->choices.empty()) {
+        return choices_token(arg.field->choices, false);
+    }
+    if(arg.value_type->kind == meta::type_kind::enumeration) {
+        const auto names = static_cast<const meta::enum_type_info&>(*arg.value_type).member_names;
         if(!names.empty()) {
-            constexpr std::size_t shown = 6;
-            std::string token = "<";
-            for(std::size_t i = 0; i < std::min(names.size(), shown); ++i) {
-                token += i == 0 ? "" : "|";
-                token += kebab(names[i]);
-            }
-            token += names.size() > shown ? "|...>" : ">";
-            return token;
+            return choices_token(names, true);
         }
     }
     return "<value>";
@@ -68,19 +78,22 @@ std::string numbered(std::string_view token, std::uint32_t count) {
     return numbered_tokens;
 }
 
-std::string join(const std::vector<std::string>& parts, std::string_view separator) {
-    std::string joined;
-    for(const auto& part: parts) {
-        joined += joined.empty() ? "" : separator;
-        joined += part;
-    }
-    return joined;
-}
+/// A command being built, and the one it is a subcommand of: what finds a set of subcommands
+/// holding one that holds the set again, which no argv could end.
+struct Building {
+    const meta::type_info* type = nullptr;
+    const Building* parent = nullptr;
+};
+
+CommandPtr make_command(const meta::type_info& type, const Building* parent);
 
 /// Builds a command by the rules declaration.h states, which check_declaration() has held its
 /// struct to.
 class Builder {
     Command& command;
+    const Building& building;
+    /// The group of the alternative of an exclusive field whose fields are being added.
+    std::uint32_t current_alternative = no_group;
     /// The '=' forms of the names, named once every field has named its own.
     std::vector<std::pair<NameForm, std::uint32_t>> equals_forms;
 
@@ -116,7 +129,7 @@ class Builder {
     void name(std::uint32_t index) {
         auto& arg = command.args[index];
         const auto forms = name_forms(arg, arg.field->declared_name);
-        const auto token = value_token(arg.spec, *arg.value_type);
+        const auto token = value_token(arg);
         std::vector<std::string> own;
         std::vector<std::string> separate;
         std::vector<std::string> joined;
@@ -173,7 +186,12 @@ class Builder {
     void add_arg(Arg arg) {
         const auto index = static_cast<std::uint32_t>(command.args.size());
         auto& added = command.args.emplace_back(std::move(arg));
-        const auto token = value_token(added.spec, *added.value_type);
+        if(added.alternative != no_group) {
+            const auto& g = command.groups[added.alternative];
+            auto& first = command.exclusives[g.exclusive].first_args[g.alternative];
+            first = first == no_arg ? index : first;
+        }
+        const auto token = value_token(added);
         if(added.spec.rest) {
             command.rest = index;
             added.usage = std::format("-- {}...", token);
@@ -212,9 +230,64 @@ class Builder {
             subcommands.names.push_back(std::move(word));
             subcommands.descriptions.push_back(
                 static_cast<const meta::struct_type_info&>(alternative).description);
-            subcommands.commands.push_back(build_command(alternative));
+            subcommands.commands.push_back(make_command(alternative, &building));
         }
         command.subcommands = std::move(subcommands);
+    }
+
+    /// Adds the subcommands files added to the set of a cli::Commands field, which may be left
+    /// out: the field is empty then.
+    void add_commands(const FieldUse& use,
+                      std::uint32_t group,
+                      const std::vector<std::string_view>& keys,
+                      const std::string& path) {
+        Subcommands subcommands{.keys = keys, .path = path, .optional = true, .group = group};
+        for(const auto& entry: use.spec.commands.registry().entries) {
+            subcommands.names.push_back(entry.name);
+            subcommands.descriptions.push_back(entry.description);
+            subcommands.hidden.push_back(entry.hidden);
+            subcommands.commands.push_back(make_command(*entry.type, &building));
+        }
+        command.subcommands = std::move(subcommands);
+    }
+
+    /// Adds the alternatives of an exclusive field as groups of the command's arguments, each
+    /// headed by the field's description and its struct's.
+    void add_exclusive(const meta::field_info& field,
+                       const FieldUse& use,
+                       std::uint32_t group,
+                       const std::vector<std::string_view>& keys,
+                       const std::string& path) {
+        const auto index = static_cast<std::uint32_t>(command.exclusives.size());
+        const auto& variant = static_cast<const meta::variant_type_info&>(*use.type);
+        command.exclusives.push_back(Exclusive{
+            .keys = keys,
+            .group = group,
+            .required = use.spec.required,
+            .first_args = std::vector<std::uint32_t>(variant.alternatives.size(), no_arg),
+        });
+        const auto title = field.description.empty() ? std::string(field.declared_name)
+                                                     : std::string(field.description);
+        for(std::uint32_t i = 0; i < variant.alternatives.size(); ++i) {
+            const auto& alternative =
+                static_cast<const meta::struct_type_info&>(variant.alternatives[i]());
+            const auto inner = static_cast<std::uint32_t>(command.groups.size());
+            command.groups.push_back(Group{
+                .parent = group,
+                .keys = keys,
+                .description = std::format("{}, one of: {}",
+                                           title,
+                                           alternative.description.empty()
+                                               ? kebab(alternative.type_name)
+                                               : std::string(alternative.description)),
+                .exclusive = index,
+                .alternative = i,
+            });
+            command.exclusives[index].alternatives.push_back(inner);
+            current_alternative = inner;
+            add_struct(alternative, inner, keys, path);
+            current_alternative = no_group;
+        }
     }
 
     void add_struct(const meta::struct_type_info& type,
@@ -233,7 +306,7 @@ class Builder {
                     command.groups.push_back(Group{.parent = group,
                                                    .optional = use.optional,
                                                    .keys = field_keys,
-                                                   .description = field.description});
+                                                   .description = std::string(field.description)});
                     add_struct(static_cast<const meta::struct_type_info&>(*use.type),
                                inner,
                                field_keys,
@@ -243,10 +316,17 @@ class Builder {
                 case FieldUse::Kind::Subcommands:
                     add_subcommands(use, group, field_keys, field_path);
                     break;
+                case FieldUse::Kind::Exclusive:
+                    add_exclusive(field, use, group, field_keys, field_path);
+                    break;
+                case FieldUse::Kind::Commands:
+                    add_commands(use, group, field_keys, field_path);
+                    break;
                 case FieldUse::Kind::Arg: {
                     Arg arg{use};
                     arg.field = &field;
                     arg.group = group;
+                    arg.alternative = current_alternative;
                     arg.keys = std::move(field_keys);
                     arg.path = field_path;
                     arg.help = field.description;
@@ -258,7 +338,7 @@ class Builder {
     }
 
 public:
-    explicit Builder(Command& command) : command(command) {}
+    Builder(Command& command, const Building& building) : command(command), building(building) {}
 
     void build(const meta::struct_type_info& type) {
         command.type = &type;
@@ -285,17 +365,87 @@ public:
     }
 };
 
+CommandPtr make_command(const meta::type_info& type, const Building* parent) {
+    for(const Building* outer = parent; outer != nullptr; outer = outer->parent) {
+        if(outer->type == &type) {
+            std::fprintf(stderr,
+                         "cli: subcommand %.*s holds itself\n",
+                         static_cast<int>(type.type_name.size()),
+                         type.type_name.data());
+            std::abort();
+        }
+    }
+    const Building building{.type = &type, .parent = parent};
+    CommandPtr command(new Command());
+    Builder(*command, building).build(static_cast<const meta::struct_type_info&>(type));
+    return command;
+}
+
 }  // namespace
 
-std::unique_ptr<Command> build_command(const meta::type_info& type) {
-    auto command = std::make_unique<Command>();
-    Builder(*command).build(static_cast<const meta::struct_type_info&>(type));
-    return command;
+void CommandDeleter::operator()(Command* command) const {
+    delete command;
+}
+
+CommandPtr build_command(const meta::type_info& type) {
+    return make_command(type, nullptr);
+}
+
+void CommandRegistry::add(CommandEntry entry) {
+    if(sealed) {
+        std::fprintf(stderr,
+                     "cli: subcommand %s added after its set was read\n",
+                     entry.name.c_str());
+        std::abort();
+    }
+    const auto at = std::ranges::lower_bound(entries, entry.name, {}, &CommandEntry::name);
+    if(at != entries.end() && at->name == entry.name) {
+        std::fprintf(stderr, "cli: two subcommands are named %s\n", entry.name.c_str());
+        std::abort();
+    }
+    entries.insert(at, std::move(entry));
+}
+
+std::uint32_t held(const Command& command, const Node& root, std::uint32_t exclusive) {
+    const Node* node = find_node(root, command.exclusives[exclusive].keys);
+    return node != nullptr && node->kind == Node::Kind::Variant ? node->count : no_alternative;
+}
+
+bool present(const Command& command, const Node& root, std::uint32_t group) {
+    for(; group != no_group; group = command.groups[group].parent) {
+        const auto& g = command.groups[group];
+        if(g.exclusive != no_exclusive && held(command, root, g.exclusive) != g.alternative) {
+            return false;
+        }
+        if(g.optional) {
+            const Node* node = find_node(root, g.keys);
+            if(node == nullptr || node->kind != Node::Kind::Object) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+std::string number_text(const meta::schema_number& number) {
+    return std::visit(
+        []<typename N>(N value) -> std::string {
+            if constexpr(std::same_as<N, std::monostate>) {
+                return "";
+            } else {
+                return std::format("{}", value);
+            }
+        },
+        number);
 }
 
 const Node* find_node(const Node& root, std::span<const std::string_view> keys) {
     const Node* node = &root;
     for(auto key: keys) {
+        // The alternative an exclusive field holds is its fields.
+        if(node->kind == Node::Kind::Variant && !node->items.empty()) {
+            node = &node->items.front();
+        }
         if(node->kind != Node::Kind::Object) {
             return nullptr;
         }
@@ -311,6 +461,9 @@ const Node* find_node(const Node& root, std::span<const std::string_view> keys) 
 Node& make_node(Node& root, std::span<const std::string_view> keys, Node::Kind kind) {
     Node* node = &root;
     for(std::size_t i = 0; i < keys.size(); ++i) {
+        if(node->kind == Node::Kind::Variant) {
+            node = &node->items.front();
+        }
         const auto found = std::ranges::find(node->keys, keys[i]);
         if(found != node->keys.end()) {
             node = &node->items[found - node->keys.begin()];
@@ -321,17 +474,6 @@ Node& make_node(Node& root, std::span<const std::string_view> keys, Node::Kind k
             Node{.kind = i + 1 == keys.size() ? kind : Node::Kind::Object});
     }
     return *node;
-}
-
-const Command& command_of(const meta::type_info& type) {
-    static std::mutex mutex;
-    static std::map<const meta::type_info*, std::unique_ptr<Command>> commands;
-    const std::lock_guard lock(mutex);
-    auto& command = commands[&type];
-    if(!command) {
-        command = build_command(type);
-    }
-    return *command;
 }
 
 }  // namespace kotatsu::cli::detail

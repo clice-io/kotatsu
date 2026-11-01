@@ -119,6 +119,87 @@ struct InnerTwice {
     std::variant<Twice> command;
 };
 
+struct Choice {
+    int a = 0;
+};
+
+struct Nested {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<Choice, Serve>> inner;
+};
+
+/// An exclusive field inside an alternative of another.
+struct NestedExclusive {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<Nested, Choice>> outer;
+};
+
+struct ExclusiveScalar {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <int> value;
+};
+
+/// Two alternatives naming an option the same.
+struct ExclusiveTwice {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<Choice, Inner>> one;
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<Inner, Serve>> two;
+};
+
+struct AlsoVerbose {
+    bool verbose = false;
+};
+
+/// One exclusive field whose two alternatives name an option the same.
+struct OneFieldTwice {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<Inner, AlsoVerbose>> field;
+};
+
+struct ExclusiveOfAScalar {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<Choice, int>> field;
+};
+
+struct ExclusiveStruct {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <Choice> field;
+};
+
+struct Top {
+    using signature = int();
+};
+
+struct VariantAndCommands {
+    std::variant<Serve> first;
+    cli::Commands<Top> second;
+};
+
+struct WithCommands {
+    cli::Commands<Top> command;
+};
+
+struct CommandsInAnAlternative {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<WithCommands, Choice>> field;
+};
+
+struct First {
+    KOTATSU_ANNOTATE(cli::positional = true)
+    <std::string> a;
+};
+
+struct Second {
+    KOTATSU_ANNOTATE(cli::positional = true)
+    <std::string> b;
+};
+
+struct PositionalsInTwoAlternatives {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<First, Second>> field;
+};
+
 ZEST_SUITE(cli_declaration) {
 
 ZEST_CASE(sound_options_compile) {
@@ -179,6 +260,44 @@ ZEST_CASE(mistake_in_a_subcommand_does_not_compile) {
 
 ZEST_CASE(options_of_no_struct_do_not_compile) {
     ZSTATIC_EXPECT(!declared<std::tuple<int>>);
+}
+
+ZEST_CASE(nested_exclusive_fields_do_not_compile) {
+    ZSTATIC_EXPECT(declared<Nested>);
+    ZSTATIC_EXPECT(!declared<NestedExclusive>);
+}
+
+ZEST_CASE(exclusive_scalar_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<ExclusiveScalar>);
+}
+
+ZEST_CASE(alternatives_naming_an_option_the_same_do_not_compile) {
+    ZSTATIC_EXPECT(!declared<ExclusiveTwice>);
+}
+
+ZEST_CASE(alternatives_of_one_field_naming_an_option_the_same_do_not_compile) {
+    ZSTATIC_EXPECT(!declared<OneFieldTwice>);
+}
+
+ZEST_CASE(exclusive_alternative_of_no_struct_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<ExclusiveOfAScalar>);
+}
+
+ZEST_CASE(exclusive_struct_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<ExclusiveStruct>);
+}
+
+ZEST_CASE(variant_and_commands_fields_do_not_compile) {
+    ZSTATIC_EXPECT(declared<WithCommands>);
+    ZSTATIC_EXPECT(!declared<VariantAndCommands>);
+}
+
+ZEST_CASE(commands_in_an_alternative_do_not_compile) {
+    ZSTATIC_EXPECT(!declared<CommandsInAnAlternative>);
+}
+
+ZEST_CASE(positionals_in_two_alternatives_do_not_compile) {
+    ZSTATIC_EXPECT(!declared<PositionalsInTwoAlternatives>);
 }
 
 };  // ZEST_SUITE(cli_declaration)

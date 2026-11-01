@@ -14,12 +14,12 @@ usable alone. cli reads argv only; config files are [codec](codec.md)'s.
 
 ## Targets
 
-|            |                                                                                                            |
-| ---------- | ---------------------------------------------------------------------------------------------------------- |
-| Bazel      | `@kotatsu//:cli`; the option table alone `@kotatsu//:cli_table`                                            |
-| CMake      | `kotatsu::cli`, and the option table `kotatsu::cli::table`, with `KOTATSU_ENABLE_CLI` (on by default)      |
-| Headers    | [include/kotatsu/cli/](../include/kotatsu/cli/)                                                            |
-| Depends on | [meta](meta.md), [codec](codec.md), [support](support.md); the option table on [support](support.md) alone |
+|            |                                                                                                                                     |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Bazel      | `@kotatsu//:cli`; the option table alone `@kotatsu//:cli_table`                                                                     |
+| CMake      | `kotatsu::cli`, and the option table `kotatsu::cli::table`, with `KOTATSU_ENABLE_CLI` (on by default)                               |
+| Headers    | [include/kotatsu/cli/](../include/kotatsu/cli/)                                                                                     |
+| Depends on | [meta](meta.md), [codec](codec.md), [support](support.md), privately [sys](sys.md); the option table on [support](support.md) alone |
 
 ## Example
 
@@ -48,11 +48,11 @@ struct Clone {
 int main(int argc, char** argv) {
     auto options = cli::parse<Clone>(std::span(argv, argc).subspan(1));
     if(!options) {
-        std::println(stderr, "{}", options.error().render());
+        cli::report(options.error());
         return 2;
     }
     if(options->help) {
-        std::print("{}", cli::usage<Clone>("clone [OPTIONS] <REPO>"));
+        cli::print_usage<Clone>("clone [OPTIONS] <REPO>");
         return 0;
     }
     std::println("{} at {}", options->repo, options->branch.value_or("HEAD"));
@@ -63,14 +63,16 @@ Adapted from `tests/cli/unit/parse/positional_tests.cpp` and `tests/cli/unit/usa
 
 ## Overview
 
-| Header                                        | Contents                                                                                                                           |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| [cli.h](../include/kotatsu/cli/cli.h)         | The headers below but the table, and `KOTATSU_ANNOTATE`                                                                            |
-| [spec.h](../include/kotatsu/cli/spec.h)       | `ArgSpec`, what a field's `cli::` entries say (`names`, `positional`, `rest`, `count`, `required`, `hidden`, ...), `Help`, `Alias` |
-| [parse.h](../include/kotatsu/cli/parse.h)     | `parse<T>`, from a `string_list_ref` or any range of strings, with a visit of each argument it reads, and `Given`                  |
-| [error.h](../include/kotatsu/cli/error.h)     | `Error`, its `Kind` and the argv span at fault, and `render`, under a `Style`                                                      |
-| [usage.h](../include/kotatsu/cli/usage.h)     | `usage<T>`, the help text, and `usage_entries<T>`, its lines for a program to lay out itself                                       |
-| [to_argv.h](../include/kotatsu/cli/to_argv.h) | `to_argv`: options written back as the argv that parses to them                                                                    |
+| Header                                          | Contents                                                                                                                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [cli.h](../include/kotatsu/cli/cli.h)           | The headers below but the table, and `KOTATSU_ANNOTATE`                                                                                                             |
+| [spec.h](../include/kotatsu/cli/spec.h)         | `ArgSpec`, what a field's `cli::` entries say (`names`, `positional`, `rest`, `count`, `required`, `hidden`, `exclusive`, ...), `Help`, `Alias`                     |
+| [parse.h](../include/kotatsu/cli/parse.h)       | `parse<T>`, from a `string_list_ref` or any range of strings, and `parse_into`, onto options already held, each with a visit of the arguments it reads, and `Given` |
+| [commands.h](../include/kotatsu/cli/commands.h) | `Commands<Tag>`, a field of subcommands files add with `add_command`, which calling runs                                                                            |
+| [error.h](../include/kotatsu/cli/error.h)       | `Error`, its `Kind`, the argv span at fault, its subcommands and a suggestion, and `render`, under a `Style`                                                        |
+| [report.h](../include/kotatsu/cli/report.h)     | `report` and `print_usage`, in the style for a terminal (`style_for`)                                                                                               |
+| [usage.h](../include/kotatsu/cli/usage.h)       | `usage<T>`, the help text with defaults and ranges, and `usage_entries<T>`, its lines for a program to lay out itself                                               |
+| [to_argv.h](../include/kotatsu/cli/to_argv.h)   | `to_argv`: options written back as the argv that parses to them                                                                                                     |
 
 ### Option table
 
@@ -87,7 +89,9 @@ with aliases, grouped short options (`-abc`) and visibility masks.
 
 ## Platform notes
 
-None: cli parses the same on every platform.
+cli parses the same on every platform. `report` and `print_usage` color what they write when
+the descriptor is a terminal (a console on Windows) and `NO_COLOR` is unset, and write UTF-16
+to a Windows console.
 
 ## See also
 

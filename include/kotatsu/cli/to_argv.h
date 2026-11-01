@@ -23,6 +23,9 @@ namespace detail {
 struct Writer {
     Node& node;
     std::deque<std::string>& texts;
+    /// Whether a field that fails to write is left out rather than failing the options, as a
+    /// usage collecting the defaults does: it shows none for a value no argument names.
+    bool lenient = false;
 
     constexpr static bool human_readable = true;
 
@@ -67,12 +70,13 @@ struct Writer {
         return true;
     }
 
-    /// A subcommand: alternative `index`, its fields below. A variant tagged by name writes an
-    /// object of one field instead, the name of the alternative its key.
+    /// A subcommand or an exclusive field's alternative: alternative `index`, its fields below.
+    /// A variant tagged by name writes an object of one field instead, the name of the
+    /// alternative its key.
     template <typename Body>
     bool visit_variant(std::size_t index, Body&& body) {
         node = Node{.kind = Node::Kind::Variant, .count = static_cast<std::uint32_t>(index)};
-        Writer fields{node.items.emplace_back(), texts};
+        Writer fields{node.items.emplace_back(), texts, lenient};
         return body(fields);
     }
 
@@ -89,22 +93,32 @@ struct Writer {
 struct FieldWriter {
     Node& node;
     std::deque<std::string>& texts;
+    bool lenient = false;
 
     template <typename F>
     bool visit_field(std::size_t, std::string_view name, F&& write) {
         node.keys.push_back(name);
-        Writer field{node.items.emplace_back(), texts};
-        return write(field);
+        Writer field{node.items.emplace_back(), texts, lenient};
+        if(write(field)) {
+            return true;
+        }
+        if(!lenient) {
+            return false;
+        }
+        node.keys.pop_back();
+        node.items.pop_back();
+        return true;
     }
 };
 
 struct ElementWriter {
     Node& node;
     std::deque<std::string>& texts;
+    bool lenient = false;
 
     template <typename F>
     bool visit_element(F&& write) {
-        Writer element{node.items.emplace_back(), texts};
+        Writer element{node.items.emplace_back(), texts, lenient};
         return write(element);
     }
 };
@@ -112,14 +126,14 @@ struct ElementWriter {
 template <typename T, typename Body>
 bool Writer::visit_struct(const T&, Body&& body) {
     node = Node{.kind = Node::Kind::Object};
-    FieldWriter fields{node, texts};
+    FieldWriter fields{node, texts, lenient};
     return body(fields);
 }
 
 template <typename Container, typename Body>
 bool Writer::visit_seq(const Container&, Body&& body) {
     node = Node{.kind = Node::Kind::List};
-    ElementWriter elements{node, texts};
+    ElementWriter elements{node, texts, lenient};
     return body(elements);
 }
 
@@ -133,19 +147,29 @@ std::vector<std::string> write_args(const Command& command, const Node& root);
 
 }  // namespace detail
 
+namespace detail {
+
+/// `options` as a Writer writes them, their texts kept in `texts`; leniently, without the
+/// fields that fail to write.
+template <typename T>
+Node write_options(const T& options, std::deque<std::string>& texts, bool lenient = false) {
+    Node root;
+    Writer writer{root, texts, lenient};
+    codec::rich_error error;
+    codec::scoped_context<codec::rich_error> guard(error);
+    [[maybe_unused]] const bool written = codec::encode_value<decode_config>(writer, options);
+    assert(written);
+    return root;
+}
+
+}  // namespace detail
+
 /// The argv parse() reads back as `options`: each option and positional argument with a
 /// value, in declaration order, then the subcommand and its own.
 template <typename T>
 std::vector<std::string> to_argv(const T& options) {
-    detail::Node root;
     std::deque<std::string> texts;
-    detail::Writer writer{root, texts};
-    codec::rich_error error;
-    codec::scoped_context<codec::rich_error> guard(error);
-    [[maybe_unused]] const bool written =
-        codec::encode_value<detail::decode_config>(writer, options);
-    assert(written);
-    return detail::write_args(detail::command_of<T>(), root);
+    return detail::write_args(detail::command_of<T>(), detail::write_options(options, texts));
 }
 
 }  // namespace kotatsu::cli
