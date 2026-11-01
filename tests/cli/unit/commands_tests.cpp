@@ -106,7 +106,7 @@ int again(Again&) {
 
 /// A cli::Commands field, its type annotated already, annotated again.
 struct MustPick {
-    KANNOTATE(command, cli::required = true)
+    KANNOTATE(&command, cli::required = true)
     cli::Commands<Top> command;
 };
 

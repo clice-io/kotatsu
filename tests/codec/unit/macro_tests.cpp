@@ -19,18 +19,30 @@
 namespace {
 
 struct DownstreamConfig {
-    KANNOTATE(compile_commands, rename = "compileCommands")
+    KANNOTATE(&compile_commands, rename = "compileCommands")
     int compile_commands = 0;
 };
 
 template <typename T>
 struct DownstreamBox {
-    KANNOTATE(value, alias = {"v"})
+    KANNOTATE(&value, alias = {"v"})
     T value;
 };
 
 /// Named like the struct the namespace below annotates.
 struct Options {};
+
+namespace third_party {
+
+/// A struct whose definition the annotation below does not touch.
+struct Point {
+    int x = 0;
+    int y = 0;
+};
+
+KANNOTATE_FIELD(&third_party::Point::y, rename = "Y", alias = {"why"});
+
+}  // namespace third_party
 
 namespace downstream {
 
@@ -79,24 +91,24 @@ struct Profile {
 };
 
 struct Entries {
-    KANNOTATE(user_id, rename = "id", alias = {"uid"}, description = "Identifier.")
+    KANNOTATE(&user_id, rename = "id", alias = {"uid"}, description = "Identifier.")
     int user_id;
-    KANNOTATE(internal, skip = true)
+    KANNOTATE(&internal, skip = true)
     int internal;
-    KANNOTATE(profile, flatten = true)
+    KANNOTATE(&profile, flatten = true)
     Profile profile;
-    KANNOTATE(note, defaulted = true, skip_if = skip_when::none)
+    KANNOTATE(&note, defaulted = true, skip_if = skip_when::none)
     std::optional<int> note;
 };
 
 struct Behaviors {
-    KANNOTATE(as_text, as = type<std::string>)
+    KANNOTATE(&as_text, as = type<std::string>)
     int as_text;
-    KANNOTATE(with_adapter, with = type<test::DecimalText>)
+    KANNOTATE(&with_adapter, with = type<test::DecimalText>)
     int with_adapter;
-    KANNOTATE(skip_negative, skip_if = type<test::IsNegative>)
+    KANNOTATE(&skip_negative, skip_if = type<test::IsNegative>)
     int skip_negative;
-    KANNOTATE(level, enum_string = type<naming::rename_policy::lower_camel>)
+    KANNOTATE(&level, enum_string = type<naming::rename_policy::lower_camel>)
     Level level;
 };
 
@@ -120,19 +132,19 @@ struct StrictProfile {
 
 /// A bundle, then an entry that overrides one of its own.
 struct Bundled {
-    KANNOTATE(shape, ShapeTag, tag = "type")
+    KANNOTATE(&shape, ShapeTag, tag = "type")
     std::variant<test::Circle, test::Rect> shape;
 };
 
 struct DescribedProfile {
-    KANNOTATE(profile, description = "Whose profile.")
+    KANNOTATE(&profile, description = "Whose profile.")
     Profile profile;
 };
 
 struct StructEntriesOnFields {
-    KANNOTATE(shape, tag = "kind", tag_names = {"circle", "rect"})
+    KANNOTATE(&shape, tag = "kind", tag_names = {"circle", "rect"})
     std::variant<test::Circle, test::Rect> shape;
-    KANNOTATE(inner, rename_all = Casing::UpperSnake, deny_unknown_fields = true)
+    KANNOTATE(&inner, rename_all = Casing::UpperSnake, deny_unknown_fields = true)
     Profile inner;
 };
 
@@ -141,6 +153,13 @@ ZEST_SUITE(codec_macro) {
 ZEST_CASE(annotate_works_outside_kotatsu) {
     constexpr const auto& spec = meta::field_spec_of<DownstreamConfig, 0>;
     ZSTATIC_EXPECT(spec.rename == std::string_view("compileCommands"));
+}
+
+ZEST_CASE(annotate_field_annotates_a_class_from_outside) {
+    constexpr const auto& y = meta::field_spec_of<third_party::Point, 1>;
+    ZSTATIC_EXPECT(y.rename == std::string_view("Y"));
+    ZSTATIC_EXPECT(y.alias[0] == std::string_view("why"));
+    ZSTATIC_EXPECT(meta::field_spec_of<third_party::Point, 0>.rename.empty());
 }
 
 ZEST_CASE(annotate_type_declares_the_struct_where_it_is_written) {

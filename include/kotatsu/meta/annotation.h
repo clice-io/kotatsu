@@ -8,6 +8,7 @@
 
 #include "attrs.h"
 #include "struct.h"
+#include "kotatsu/support/function_traits.h"
 
 namespace kotatsu::meta {
 
@@ -36,6 +37,33 @@ field_key_text(const char (&)[N]) -> field_key_text<N - 1>;
 /// It appears only in consteval functions, so it is neither emitted nor mangled.
 template <detail::field_key_text Name>
 struct name_key {};
+
+namespace detail {
+
+/// The member a KANNOTATE or KANNOTATE_FIELD argument names, `&help` or `&ns::T::help`: its
+/// last name.
+consteval std::string_view member_name(std::string_view spelled) {
+    return spelled.substr(spelled.find_last_of("&: ") + 1);
+}
+
+template <field_key_text Spelled>
+consteval auto member_key() {
+    constexpr std::string_view name = member_name({Spelled.text, sizeof(Spelled.text) - 1});
+    return name_key<field_key_text<name.size()>(name)>{};
+}
+
+/// The key of the member a KANNOTATE or KANNOTATE_FIELD argument names.
+template <field_key_text Spelled>
+using member_key_t = decltype(member_key<Spelled>());
+
+/// What KANNOTATE checks its `&member` against: `member_probe{} & member` names the member as
+/// an unevaluated operand may, in a static function too, so a name no member has fails.
+struct member_probe {
+    template <typename T>
+    friend consteval bool operator&(member_probe, const T&);
+};
+
+}  // namespace detail
 
 namespace detail {
 

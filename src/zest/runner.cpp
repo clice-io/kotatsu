@@ -57,10 +57,10 @@ const Entry* running = nullptr;
 struct CliOptions {
     Options zest;
 
-    KANNOTATE(help, cli::help)
+    KANNOTATE(&help, cli::help)
     bool help = false;
 
-    KANNOTATE(test_filter_input,
+    KANNOTATE(&test_filter_input,
               cli::positional = true,
               cli::meta_var = "<PATTERN>",
               description = "positional fallback for test name filter")

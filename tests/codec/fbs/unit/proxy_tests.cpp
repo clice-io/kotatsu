@@ -243,9 +243,9 @@ struct Reprs {
     std::vector<test::Lamport> stamps;
     std::map<test::Relation, std::int32_t> by_relation;
     std::map<std::string, test::Relation> relation_by_name;
-    KANNOTATE(packed, with = type<test::VersionAsNumber>)
+    KANNOTATE(&packed, with = type<test::VersionAsNumber>)
     test::Version packed;
-    KANNOTATE(widened, as = type<std::int64_t>)
+    KANNOTATE(&widened, as = type<std::int64_t>)
     std::int32_t widened;
     test::AccessGrant grant;
 };

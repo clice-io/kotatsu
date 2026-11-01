@@ -125,7 +125,7 @@ struct Alias {
 /// parse where it stands, so that nothing required is missed, and the caller finds it set and
 /// prints the usage.
 ///
-///     KANNOTATE(help, cli::help)
+///     KANNOTATE(&help, cli::help)
 ///     bool help = false;
 [[maybe_unused]] constexpr inline auto help =
     meta::make_annotation(meta::dsl::description = "display this help and exit",

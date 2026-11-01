@@ -17,12 +17,12 @@ namespace {
 
 struct Project {
     std::optional<std::string> workspace;
-    KANNOTATE(jobs, cli::names = {"-j", "--jobs"})
+    KANNOTATE(&jobs, cli::names = {"-j", "--jobs"})
     unsigned jobs = 0;
 };
 
 struct Remote {
-    KANNOTATE(host, cli::required = true)
+    KANNOTATE(&host, cli::required = true)
     std::string host;
     int port = 0;
 };
@@ -35,13 +35,13 @@ struct Index {
 KANNOTATE_TYPE(struct Serve, description = "Start the server");
 
 struct Serve {
-    KANNOTATE(help, cli::help)
+    KANNOTATE(&help, cli::help)
     bool help = false;
     int port = 0;
 };
 
 struct ProjectFiles {
-    KANNOTATE(path, cli::positional = true)
+    KANNOTATE(&path, cli::positional = true)
     std::string path;
 };
 
@@ -51,7 +51,7 @@ struct Tool {
 };
 
 struct Main {
-    KANNOTATE(path, cli::positional = true)
+    KANNOTATE(&path, cli::positional = true)
     std::optional<std::string> path;
     std::optional<std::variant<Serve>> operation;
 };
@@ -62,13 +62,13 @@ struct Query {
 };
 
 struct Daemon {
-    KANNOTATE(config, cli::required = true)
+    KANNOTATE(&config, cli::required = true)
     std::string config;
     std::variant<Serve> command;
 };
 
 struct Service {
-    KANNOTATE(command, tagged = true, tag_names = {"up", "index"})
+    KANNOTATE(&command, tagged = true, tag_names = {"up", "index"})
     std::variant<Serve, Index> command;
 };
 

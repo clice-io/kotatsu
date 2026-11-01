@@ -53,14 +53,15 @@
 ///
 ///     KANNOTATION(help, description = "display this help", cli::names = {"-h", "--help"});
 ///
-///     KANNOTATE(help, help, description = "show usage")
+///     KANNOTATE(&help, help, description = "show usage")
 ///     bool help = false;
 #define KANNOTATION(name, ...)                                                                     \
     [[maybe_unused]] constexpr inline auto name = KANNOTATION_ENTRIES(__VA_ARGS__)
 
-/// Annotates field `field` of the class it is written in, above the field:
+/// Annotates a field of the class it is written in, above the field, which
+/// `&field` names as a member pointer names it:
 ///
-///     KANNOTATE(compile_commands,
+///     KANNOTATE(&compile_commands,
 ///               rename = "compileCommands",
 ///               alias = {"compile_commands"},
 ///               description = "Path to the compilation database.")
@@ -68,31 +69,34 @@
 ///
 /// The field keeps the type it is declared with. The annotation is filed under
 /// the field's name, by a consteval function that is neither emitted nor
-/// mangled; a name no field of the class has fails to compile, and so does a
+/// mangled; a name no member of the class has fails to compile, and so does a
 /// second annotation of one field. Type-valued attributes ride along as
 /// `as = type<Target>`, `with = type<Adapter>`, `skip_if = type<Pred>` and
 /// `enum_string = type<Policy>`. A field whose type KANNOTATE_TYPE annotates
 /// keeps that annotation: an entry given here overrides the type's, and the
 /// rest of both apply.
-#define KANNOTATE(field, ...)                                                                      \
+#define KANNOTATE(member, ...)                                                                    \
     [[maybe_unused]] static consteval auto __kotatsu__annotation(                                  \
-        ::kotatsu::meta::name_key<#field>) {                                                       \
-        [[maybe_unused]] ::std::type_identity<decltype(field)> annotated;                          \
+        ::kotatsu::meta::detail::member_key_t<#member>) {                                          \
+        [[maybe_unused]] ::std::type_identity<decltype(::kotatsu::meta::detail::member_probe {     \
+        } member)> annotated;                                                                      \
         return KANNOTATION_ENTRIES(__VA_ARGS__);                                                   \
     }
 
-/// Annotates field `field` of class `type` from outside the class, for a class
-/// whose definition cannot be changed. Written in the namespace of `type`,
-/// where argument-dependent lookup finds it; `type` must be complete there:
+/// Annotates a field from outside its class, for a class whose definition
+/// cannot be changed. `&T::field` names the field, its class and all. Written
+/// in the namespace of the class, where argument-dependent lookup finds it,
+/// with the class complete:
 ///
-///     KANNOTATE_FIELD(third_party::Point, y, rename = "Y");
+///     KANNOTATE_FIELD(&third_party::Point::y, rename = "Y");
 ///
 /// A field annotated both here and in its class fails to compile.
-#define KANNOTATE_FIELD(type, field, ...)                                                          \
+#define KANNOTATE_FIELD(member, ...)                                                               \
     [[maybe_unused]] consteval auto __kotatsu__field_annotation(                                   \
-        ::std::type_identity<type>,                                                                \
-        ::kotatsu::meta::name_key<#field>) {                                                       \
-        [[maybe_unused]] ::std::type_identity<decltype(type::field)> annotated;                    \
+        ::std::type_identity<::kotatsu::class_type_t<decltype(member)>>,                           \
+        ::kotatsu::meta::detail::member_key_t<#member>) {                                          \
+        static_assert(::std::is_member_object_pointer_v<decltype(member)>,                         \
+                      "KANNOTATE_FIELD names a data member: &T::field");                           \
         return KANNOTATION_ENTRIES(__VA_ARGS__);                                                   \
     }                                                                                              \
     static_assert(true)

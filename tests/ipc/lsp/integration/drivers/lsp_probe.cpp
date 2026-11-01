@@ -44,17 +44,17 @@ struct Question {
 KANNOTATION(left_out_if_none, skip_if = skip_when::none);
 
 struct Answer {
-    KANNOTATE(uri, left_out_if_none)
+    KANNOTATE(&uri, left_out_if_none)
     std::optional<std::string> uri;
-    KANNOTATE(path, left_out_if_none)
+    KANNOTATE(&path, left_out_if_none)
     std::optional<std::string> path;
-    KANNOTATE(line, left_out_if_none)
+    KANNOTATE(&line, left_out_if_none)
     std::optional<std::uint32_t> line;
-    KANNOTATE(character, left_out_if_none)
+    KANNOTATE(&character, left_out_if_none)
     std::optional<std::uint32_t> character;
-    KANNOTATE(offset, left_out_if_none)
+    KANNOTATE(&offset, left_out_if_none)
     std::optional<std::uint32_t> offset;
-    KANNOTATE(error, left_out_if_none)
+    KANNOTATE(&error, left_out_if_none)
     std::optional<std::string> error;
 };
 

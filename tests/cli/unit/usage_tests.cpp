@@ -16,31 +16,31 @@ namespace {
 enum class Mode : std::uint8_t { Pipe, Socket };
 
 struct Where {
-    KANNOTATE(workspace, description = "Project root directory")
+    KANNOTATE(&workspace, description = "Project root directory")
     std::optional<std::string> workspace;
 };
 
 struct Remote {
-    KANNOTATE(host, description = "Host to connect to")
+    KANNOTATE(&host, description = "Host to connect to")
     std::string host;
 };
 
 KANNOTATE_TYPE(struct Serve, description = "Start the server");
 
 struct Serve {
-    KANNOTATE(help, cli::help)
+    KANNOTATE(&help, cli::help)
     bool help = false;
-    KANNOTATE(mode, description = "Server mode")
+    KANNOTATE(&mode, description = "Server mode")
     Mode mode = Mode::Pipe;
-    KANNOTATE(jobs, cli::names = {"-j", "--jobs"}, cli::meta_var = "<N>", description = "Workers")
+    KANNOTATE(&jobs, cli::names = {"-j", "--jobs"}, cli::meta_var = "<N>", description = "Workers")
     unsigned jobs = 0;
-    KANNOTATE(scope, description = "Scopes to look in")
+    KANNOTATE(&scope, description = "Scopes to look in")
     std::vector<std::string> scope;
     std::optional<std::string> record;
     Where where;
-    KANNOTATE(remote, description = "Remote")
+    KANNOTATE(&remote, description = "Remote")
     std::optional<Remote> remote;
-    KANNOTATE(paths, cli::positional = true, cli::meta_var = "<PATH>", description = "Files")
+    KANNOTATE(&paths, cli::positional = true, cli::meta_var = "<PATH>", description = "Files")
     std::vector<std::string> paths;
 };
 
@@ -51,29 +51,29 @@ struct Query {};
 KANNOTATE_TYPE(struct Tool, description = "A tool");
 
 struct Tool {
-    KANNOTATE(help, cli::help)
+    KANNOTATE(&help, cli::help)
     bool help = false;
     std::variant<Serve, Query> command;
 };
 
 struct Internal {
-    KANNOTATE(trace, cli::hidden = true)
+    KANNOTATE(&trace, cli::hidden = true)
     bool trace = false;
-    KANNOTATE(command, cli::hidden_sub = {"serve"})
+    KANNOTATE(&command, cli::hidden_sub = {"serve"})
     std::variant<Serve, Query> command;
 };
 
 struct Tuned {
-    KANNOTATE(jobs, minimum = 1, maximum = 64, description = "Workers")
+    KANNOTATE(&jobs, minimum = 1, maximum = 64, description = "Workers")
     int jobs = 4;
-    KANNOTATE(mode, choices = {"fast", "slow"})
+    KANNOTATE(&mode, choices = {"fast", "slow"})
     std::string mode = "fast";
     std::vector<std::string> include = {"a", "b"};
     std::string name;
 };
 
 struct Must {
-    KANNOTATE(must, cli::required = true)
+    KANNOTATE(&must, cli::required = true)
     std::string must = "x";
 };
 
@@ -81,20 +81,20 @@ enum class Level : std::uint8_t { Low = 1, High };
 
 /// A field whose default value has no name, which no argument writes.
 struct Unnamed {
-    KANNOTATE(level, cli::required = true, enum_string = type<naming::rename_policy::identity>)
+    KANNOTATE(&level, cli::required = true, enum_string = type<naming::rename_policy::identity>)
     Level level;
     int jobs = 2;
 };
 
 /// The help option, kept out of the usage.
 struct QuietHelp {
-    KANNOTATE(help, cli::help, cli::hidden = true)
+    KANNOTATE(&help, cli::help, cli::hidden = true)
     bool help = false;
     int jobs = 0;
 };
 
 struct Run {
-    KANNOTATE(command, cli::rest = true, cli::meta_var = "<ARG>")
+    KANNOTATE(&command, cli::rest = true, cli::meta_var = "<ARG>")
     std::vector<std::string> command;
 };
 

@@ -50,7 +50,7 @@ std::string captured(Write write) {
 KANNOTATE_TYPE(struct Options, description = "A tool");
 
 struct Options {
-    KANNOTATE(jobs, description = "Workers")
+    KANNOTATE(&jobs, description = "Workers")
     int jobs = 2;
 };
 

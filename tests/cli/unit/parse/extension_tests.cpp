@@ -17,13 +17,13 @@ namespace {
 
 struct Optimize {
     int level = 0;
-    KANNOTATE(o2, cli::names = {"-O2"}, cli::forward = {"--level", "2"}, description = "--level 2")
+    KANNOTATE(&o2, cli::names = {"-O2"}, cli::forward = {"--level", "2"}, description = "--level 2")
     cli::Alias o2;
 };
 
 struct Strict {
     unsigned level = 0;
-    KANNOTATE(neg, cli::names = {"-Oneg"}, cli::forward = {"--level", "-1"})
+    KANNOTATE(&neg, cli::names = {"-Oneg"}, cli::forward = {"--level", "-1"})
     cli::Alias neg;
 };
 
@@ -52,9 +52,9 @@ struct Port {
 
 struct Server {
     Port port;
-    KANNOTATE(help, cli::help)
+    KANNOTATE(&help, cli::help)
     bool help = false;
-    KANNOTATE(host, cli::required = true)
+    KANNOTATE(&host, cli::required = true)
     std::string host;
 };
 

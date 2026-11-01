@@ -155,7 +155,7 @@ struct NestedTagged : std::variant<int, TaggedWrapper> {
 
 /// Externally tagged without tag names: the alternatives' type names tag them.
 struct DefaultNamed {
-    KANNOTATE(value, tagged = true)
+    KANNOTATE(&value, tagged = true)
     std::variant<Circle, Rect> value;
 };
 

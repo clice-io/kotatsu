@@ -167,20 +167,20 @@ struct Shout {
 
 /// A field adapter over the type's own repr: the adapter decides.
 struct PackedVersion {
-    KANNOTATE(value, with = type<VersionAsNumber>)
+    KANNOTATE(&value, with = type<VersionAsNumber>)
     Version value;
 };
 
 /// A field adapter of the imperative form.
 struct Loud {
-    KANNOTATE(value, with = type<Shout>)
+    KANNOTATE(&value, with = type<Shout>)
     std::string value;
 };
 
 /// A field's rename_all and deny_unknown_fields reach the alternatives of the
 /// tagged variant its type's repr declares.
 struct StrictLoad {
-    KANNOTATE(value, StrictCamelTag)
+    KANNOTATE(&value, StrictCamelTag)
     LoadResult value;
 };
 

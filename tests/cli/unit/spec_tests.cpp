@@ -10,17 +10,17 @@ namespace kotatsu::cli {
 namespace {
 
 struct Fields {
-    KANNOTATE(out, cli::names = {"-o", "--out"}, cli::meta_var = "<FILE>", description = "Out")
+    KANNOTATE(&out, cli::names = {"-o", "--out"}, cli::meta_var = "<FILE>", description = "Out")
     std::string out;
-    KANNOTATE(input, cli::positional = true, cli::arg_num = ArgNum(1, 2))
+    KANNOTATE(&input, cli::positional = true, cli::arg_num = ArgNum(1, 2))
     std::vector<int> input;
     std::string plain;
-    KANNOTATE(help, cli::help, cli::hidden = true)
+    KANNOTATE(&help, cli::help, cli::hidden = true)
     bool help = false;
 };
 
 struct Helped {
-    KANNOTATE(help, cli::help)
+    KANNOTATE(&help, cli::help)
     bool help = false;
 };
 

@@ -39,7 +39,7 @@ struct Triple {
 
 struct SkipsSecondOnDecode {
     int first;
-    KANNOTATE(second, skip_if = type<SkipOnDecode>)
+    KANNOTATE(&second, skip_if = type<SkipOnDecode>)
     int second = 88;
     int third;
 };

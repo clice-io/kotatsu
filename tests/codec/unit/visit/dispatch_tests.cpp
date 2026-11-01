@@ -18,7 +18,7 @@ struct Shape {
 };
 
 struct Polygon {
-    KANNOTATE(vertex_count, alias = {"corners"})
+    KANNOTATE(&vertex_count, alias = {"corners"})
     int vertex_count;
 };
 

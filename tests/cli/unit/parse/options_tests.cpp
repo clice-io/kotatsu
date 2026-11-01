@@ -22,7 +22,7 @@ enum class Level : std::uint8_t { Trace, Debug, Info, Warn };
 
 struct Options {
     bool verbose = false;
-    KANNOTATE(noise, cli::count = true, cli::names = {"-v"})
+    KANNOTATE(&noise, cli::count = true, cli::names = {"-v"})
     std::uint32_t noise = 0;
     int jobs = 1;
     double ratio = 0.5;
@@ -30,26 +30,26 @@ struct Options {
     Level level = Level::Warn;
     std::optional<std::string> output;
     std::vector<std::string> include;
-    KANNOTATE(tags, cli::comma = true)
+    KANNOTATE(&tags, cli::comma = true)
     std::vector<std::string> tags;
     std::vector<std::pair<std::string, std::string>> define;
     std::tuple<int, int> size = {0, 0};
-    KANNOTATE(out, cli::names = {"-o", "--out"})
+    KANNOTATE(&out, cli::names = {"-o", "--out"})
     std::string out;
-    KANNOTATE(dir, cli::names = {"-I"}, cli::style = KVStyle::Joined)
+    KANNOTATE(&dir, cli::names = {"-I"}, cli::style = KVStyle::Joined)
     std::string dir;
-    KANNOTATE(sep, cli::names = {"--sep"}, cli::style = KVStyle::Separate)
+    KANNOTATE(&sep, cli::names = {"--sep"}, cli::style = KVStyle::Separate)
     std::string sep;
-    KANNOTATE(must, cli::required = true)
+    KANNOTATE(&must, cli::required = true)
     std::string must = "x";
     std::string x;
 };
 
 /// An option named with '=' beside one whose '=' form it is, declared first.
 struct Spelled {
-    KANNOTATE(separate, cli::names = {"--x"})
+    KANNOTATE(&separate, cli::names = {"--x"})
     std::string separate;
-    KANNOTATE(joined, cli::names = {"--x="})
+    KANNOTATE(&joined, cli::names = {"--x="})
     std::string joined;
 };
 
@@ -59,29 +59,29 @@ struct Toggles {
 
 /// A command that names no option.
 struct Files {
-    KANNOTATE(files, cli::positional = true)
+    KANNOTATE(&files, cli::positional = true)
     std::vector<std::string> files;
 };
 
 struct Tuned {
-    KANNOTATE(jobs, minimum = 1, maximum = 64, description = "Workers")
+    KANNOTATE(&jobs, minimum = 1, maximum = 64, description = "Workers")
     int jobs = 4;
-    KANNOTATE(mode, choices = {"fast", "slow"})
+    KANNOTATE(&mode, choices = {"fast", "slow"})
     std::string mode = "fast";
     std::vector<std::string> include;
     std::string name;
 };
 
 struct Bounded {
-    KANNOTATE(ratio, minimum = 0, maximum = 1)
+    KANNOTATE(&ratio, minimum = 0, maximum = 1)
     double ratio = 0;
-    KANNOTATE(noise, cli::count = true, cli::names = {"-v"}, maximum = 3)
+    KANNOTATE(&noise, cli::count = true, cli::names = {"-v"}, maximum = 3)
     std::uint32_t noise = 0;
-    KANNOTATE(pair, choices = {"a", "b"})
+    KANNOTATE(&pair, choices = {"a", "b"})
     std::pair<std::string, std::string> pair;
-    KANNOTATE(word, cli::positional = true, choices = {"a", "b"})
+    KANNOTATE(&word, cli::positional = true, choices = {"a", "b"})
     std::optional<std::string> word;
-    KANNOTATE(secret, cli::hidden = true)
+    KANNOTATE(&secret, cli::hidden = true)
     bool secret = false;
 };
 

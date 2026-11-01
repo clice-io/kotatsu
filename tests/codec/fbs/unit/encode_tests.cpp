@@ -322,7 +322,7 @@ struct CellProbe {
 };
 
 struct AdaptedProbe {
-    KANNOTATE(cal, with = type<CalibrationText>)
+    KANNOTATE(&cal, with = type<CalibrationText>)
     Calibration cal;
 
     auto operator==(const AdaptedProbe&) const -> bool = default;

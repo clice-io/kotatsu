@@ -22,40 +22,40 @@ struct Serve {
 
 struct Options {
     bool verbose = false;
-    KANNOTATE(noise, cli::count = true, cli::names = {"-v"})
+    KANNOTATE(&noise, cli::count = true, cli::names = {"-v"})
     std::uint32_t noise = 0;
-    KANNOTATE(jobs, cli::names = {"-j", "--jobs"})
+    KANNOTATE(&jobs, cli::names = {"-j", "--jobs"})
     int jobs = 0;
     Level level = Level::Info;
     std::optional<std::string> output;
     std::vector<std::string> include;
-    KANNOTATE(tags, cli::comma = true)
+    KANNOTATE(&tags, cli::comma = true)
     std::vector<std::string> tags;
     std::vector<std::pair<std::string, std::string>> define;
-    KANNOTATE(dir, cli::names = {"-I"}, cli::style = KVStyle::Joined)
+    KANNOTATE(&dir, cli::names = {"-I"}, cli::style = KVStyle::Joined)
     std::string dir;
-    KANNOTATE(sep, cli::names = {"--sep"}, cli::style = KVStyle::Separate)
+    KANNOTATE(&sep, cli::names = {"--sep"}, cli::style = KVStyle::Separate)
     std::string sep;
-    KANNOTATE(paths, cli::positional = true)
+    KANNOTATE(&paths, cli::positional = true)
     std::vector<std::string> paths;
     std::optional<std::variant<Serve>> command;
 };
 
 struct Values {
     std::vector<bool> seen;
-    KANNOTATE(on, cli::positional = true)
+    KANNOTATE(&on, cli::positional = true)
     bool on = true;
-    KANNOTATE(word, cli::positional = true)
+    KANNOTATE(&word, cli::positional = true)
     std::optional<std::string> word;
 };
 
 struct Service {
-    KANNOTATE(command, tagged = true, tag_names = {"up"})
+    KANNOTATE(&command, tagged = true, tag_names = {"up"})
     std::variant<Serve> command;
 };
 
 struct Run {
-    KANNOTATE(command, cli::rest = true)
+    KANNOTATE(&command, cli::rest = true)
     std::vector<std::string> command;
 };
 

@@ -58,7 +58,7 @@ struct DeepOuterPlain {
 
 struct FlattenInnerWithSkip {
     int keep_a;
-    KANNOTATE(drop_b, skip = true)
+    KANNOTATE(&drop_b, skip = true)
     int drop_b;
     int keep_c;
 
@@ -67,7 +67,7 @@ struct FlattenInnerWithSkip {
 
 struct FlattenOuterWithChildSkip {
     int head;
-    KANNOTATE(inner, flatten = true)
+    KANNOTATE(&inner, flatten = true)
     FlattenInnerWithSkip inner;
 };
 
@@ -78,7 +78,7 @@ struct FlattenOuterWithChildSkipPlain {
 };
 
 struct FlattenInnerWithRename {
-    KANNOTATE(a, rename = "renamed_a")
+    KANNOTATE(&a, rename = "renamed_a")
     int a;
     int b;
 
@@ -86,7 +86,7 @@ struct FlattenInnerWithRename {
 };
 
 struct FlattenOuterWithChildRename {
-    KANNOTATE(inner, flatten = true)
+    KANNOTATE(&inner, flatten = true)
     FlattenInnerWithRename inner;
 };
 
@@ -119,7 +119,7 @@ struct RenameTargetWithExtra {
 
 /// On a field, a struct-level annotation's policies apply inside it.
 struct SnakeStrict {
-    KANNOTATE(value, rename_all = Casing::UpperSnake, deny_unknown_fields = true)
+    KANNOTATE(&value, rename_all = Casing::UpperSnake, deny_unknown_fields = true)
     RenameTarget value;
 };
 
@@ -198,7 +198,7 @@ struct ExtraBeforeTextPlain {
 
 /// A field the document may name by an alias.
 struct AliasedOrigin {
-    KANNOTATE(origin, alias = {"anchor"})
+    KANNOTATE(&origin, alias = {"anchor"})
     Point origin;
 };
 
@@ -235,7 +235,7 @@ struct Tunables {
 /// defaulted_fields on a field reaches the struct below it, not the one
 /// holding it.
 struct TunablesHolder {
-    KANNOTATE(tunables, defaulted_fields = true)
+    KANNOTATE(&tunables, defaulted_fields = true)
     Tunables tunables;
     int count;
 };
@@ -243,7 +243,7 @@ struct TunablesHolder {
 /// A field whose default a schema leaves unstated.
 struct WithUnstated {
     int id;
-    KANNOTATE(seed, schema_default = false)
+    KANNOTATE(&seed, schema_default = false)
     int seed;
 };
 
@@ -251,9 +251,9 @@ struct WithUnstated {
 KANNOTATION(AliasDup, alias = {"dup"});
 
 struct SharedAlias {
-    KANNOTATE(left, AliasDup)
+    KANNOTATE(&left, AliasDup)
     int left;
-    KANNOTATE(right, AliasDup)
+    KANNOTATE(&right, AliasDup)
     int right;
 };
 
@@ -264,7 +264,7 @@ struct CamelCollision {
 };
 
 struct Documented {
-    KANNOTATE(id, description = "Numeric identifier.")
+    KANNOTATE(&id, description = "Numeric identifier.")
     int id;
     std::string name;
 };
@@ -272,7 +272,7 @@ struct Documented {
 /// A skipped field needs no codec support for its type.
 struct SkipsRawPointer {
     int id;
-    KANNOTATE(raw, skip = true)
+    KANNOTATE(&raw, skip = true)
     int* raw;
 };
 
@@ -293,13 +293,13 @@ struct DecimalText {
 
 /// Travels as decimal text, in a field.
 struct Decimal {
-    KANNOTATE(value, with = type<DecimalText>)
+    KANNOTATE(&value, with = type<DecimalText>)
     int value;
 };
 
 /// Renamed, and travelling as decimal text, by one annotation.
 struct RenamedDecimal {
-    KANNOTATE(value, rename = "amount", with = type<DecimalText>)
+    KANNOTATE(&value, rename = "amount", with = type<DecimalText>)
     int value;
 };
 
@@ -371,16 +371,16 @@ struct Tally {
 };
 
 struct TallyAsHeld {
-    KANNOTATE(value, as = type<HoldsExplicit>)
+    KANNOTATE(&value, as = type<HoldsExplicit>)
     Tally value;
 };
 
 struct AsTargets {
-    KANNOTATE(owner, as = type<std::string>)
+    KANNOTATE(&owner, as = type<std::string>)
     UserId owner;
-    KANNOTATE(samples, as = type<std::vector<int>>)
+    KANNOTATE(&samples, as = type<std::vector<int>>)
     Samples samples;
-    KANNOTATE(cell, as = type<Point>)
+    KANNOTATE(&cell, as = type<Point>)
     GridIndex cell;
 };
 
@@ -400,7 +400,7 @@ struct SkipCellOnDecode {
 /// A field that travels as another type and is skipped on decode: the
 /// document still holds it, written as that other type.
 struct CellSkippedOnDecode {
-    KANNOTATE(cell, as = type<Point>, skip_if = type<SkipCellOnDecode>)
+    KANNOTATE(&cell, as = type<Point>, skip_if = type<SkipCellOnDecode>)
     GridIndex cell;
     int after = 0;
 };
@@ -420,7 +420,7 @@ struct SkipHeldOnDecode {
 /// A field skipped on decode whose type only value-initialization makes: a
 /// positional decode reads past it into a value of its own.
 struct HeldSkippedOnDecode {
-    KANNOTATE(held, skip_if = type<SkipHeldOnDecode>)
+    KANNOTATE(&held, skip_if = type<SkipHeldOnDecode>)
     HoldsExplicit held;
     int after = 0;
 };
@@ -438,7 +438,7 @@ struct IsEmptyText {
 };
 
 struct SkipsEmptyText {
-    KANNOTATE(text, skip_if = type<IsEmptyText>)
+    KANNOTATE(&text, skip_if = type<IsEmptyText>)
     std::string text;
 };
 
@@ -448,12 +448,12 @@ struct TextPlain {
 
 /// Travels as its enumerator's name, in lowerCamel, in a field.
 struct AccessName {
-    KANNOTATE(value, enum_string = type<naming::rename_policy::lower_camel>)
+    KANNOTATE(&value, enum_string = type<naming::rename_policy::lower_camel>)
     Access value;
 };
 
 struct AccessGrant {
-    KANNOTATE(level, enum_string = type<naming::rename_policy::lower_camel>)
+    KANNOTATE(&level, enum_string = type<naming::rename_policy::lower_camel>)
     Access level;
     int count;
 };
@@ -475,13 +475,13 @@ struct IsNegative {
 /// did not read shows.
 struct Skippable {
     int id;
-    KANNOTATE(note, skip_if = skip_when::none)
+    KANNOTATE(&note, skip_if = skip_when::none)
     std::optional<std::string> note = "kept";
-    KANNOTATE(tags, skip_if = skip_when::empty)
+    KANNOTATE(&tags, skip_if = skip_when::empty)
     std::vector<int> tags = std::vector<int>{9};
-    KANNOTATE(generation, skip_if = skip_when::default_value)
+    KANNOTATE(&generation, skip_if = skip_when::default_value)
     int generation = 7;
-    KANNOTATE(score, skip_if = type<IsNegative>)
+    KANNOTATE(&score, skip_if = type<IsNegative>)
     int score = 3;
 };
 

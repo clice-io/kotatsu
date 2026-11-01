@@ -18,39 +18,39 @@ namespace {
 KANNOTATE_TYPE(struct ByLocator, description = "by locator");
 
 struct ByLocator {
-    KANNOTATE(locator, cli::positional = true, cli::meta_var = "<LOCATOR>")
+    KANNOTATE(&locator, cli::positional = true, cli::meta_var = "<LOCATOR>")
     std::string locator;
-    KANNOTATE(new_name, cli::positional = true, cli::meta_var = "<NEW-NAME>")
+    KANNOTATE(&new_name, cli::positional = true, cli::meta_var = "<NEW-NAME>")
     std::string new_name;
 };
 
 KANNOTATE_TYPE(struct BySpec, description = "by spec");
 
 struct BySpec {
-    KANNOTATE(spec, cli::required = true)
+    KANNOTATE(&spec, cli::required = true)
     std::string spec;
     bool dry = false;
 };
 
 struct Rename {
     bool verbose = false;
-    KANNOTATE(target, cli::exclusive = true, description = "Target")
+    KANNOTATE(&target, cli::exclusive = true, description = "Target")
     std::variant<ByLocator, BySpec> target;
 };
 
 struct Pick {
-    KANNOTATE(target, cli::exclusive = true, cli::required = true)
+    KANNOTATE(&target, cli::exclusive = true, cli::required = true)
     std::variant<BySpec, ByLocator> target;
 };
 
 struct Maybe {
-    KANNOTATE(target, cli::exclusive = true)
+    KANNOTATE(&target, cli::exclusive = true)
     std::optional<std::variant<BySpec, ByLocator>> target;
 };
 
 struct Wrapped {
     int level = 0;
-    KANNOTATE(target, cli::exclusive = true, cli::required = true)
+    KANNOTATE(&target, cli::exclusive = true, cli::required = true)
     std::variant<BySpec, ByLocator> target;
 };
 
@@ -59,18 +59,18 @@ struct Outer {
 };
 
 struct WithRest {
-    KANNOTATE(command, cli::rest = true)
+    KANNOTATE(&command, cli::rest = true)
     std::vector<std::string> command;
 };
 
 struct Pass {
-    KANNOTATE(how, cli::exclusive = true)
+    KANNOTATE(&how, cli::exclusive = true)
     std::variant<WithRest, BySpec> how;
 };
 
 /// The rest in an alternative other than the first, which "--" alone picks.
 struct RestLast {
-    KANNOTATE(how, cli::exclusive = true)
+    KANNOTATE(&how, cli::exclusive = true)
     std::variant<BySpec, WithRest> how;
 };
 
@@ -83,7 +83,7 @@ struct ById {
 };
 
 struct Plain {
-    KANNOTATE(choice, cli::exclusive = true)
+    KANNOTATE(&choice, cli::exclusive = true)
     std::variant<ByName, ById> choice;
 };
 

@@ -146,7 +146,7 @@ consteval auto __kotatsu__type_annotation(std::type_identity<ErasedCommand<Tag>>
 ///
 ///     struct Top { using signature = int(Context&); };
 ///     struct Options {
-///         KANNOTATE(help, cli::help)
+///         KANNOTATE(&help, cli::help)
 ///         bool help = false;
 ///         cli::Commands<Top> command;
 ///     };
