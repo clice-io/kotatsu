@@ -214,20 +214,32 @@ struct defaults_alt_b {
 };
 
 KANNOTATION(defaults_internal_annotation, tag = "kind", tag_names = {"a", "b"});
-using defaults_internal_variant =
-    annotate<defaults_internal_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
 
-struct defaults_variant_holder {
-    defaults_internal_variant shape;
+KANNOTATE_TYPE(struct defaults_internal_variant, defaults_internal_annotation);
+
+struct defaults_internal_variant : std::variant<defaults_alt_a, defaults_alt_b> {
+    using variant::variant;
 };
 
-KANNOTATION(defaults_adjacent_annotation, tag = "type", content = "value", tag_names = {"a", "b"});
-using defaults_adjacent_variant =
-    annotate<defaults_adjacent_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
+struct defaults_variant_holder {
+    KANNOTATE(shape, defaults_internal_annotation)
+    std::variant<defaults_alt_a, defaults_alt_b> shape;
+};
 
-KANNOTATION(defaults_external_annotation, tagged = true, tag_names = {"a", "b"});
-using defaults_external_variant =
-    annotate<defaults_external_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
+KANNOTATE_TYPE(struct defaults_adjacent_variant,
+               tag = "type",
+               content = "value",
+               tag_names = {"a", "b"});
+
+struct defaults_adjacent_variant : std::variant<defaults_alt_a, defaults_alt_b> {
+    using variant::variant;
+};
+
+KANNOTATE_TYPE(struct defaults_external_variant, tagged = true, tag_names = {"a", "b"});
+
+struct defaults_external_variant : std::variant<defaults_alt_a, defaults_alt_b> {
+    using variant::variant;
+};
 
 struct defaults_elem_a {
     KANNOTATE(alpha, defaulted = true)
@@ -257,7 +269,8 @@ struct defaults_seq_override {
 };
 
 struct defaults_variant_override {
-    defaults_internal_variant shape{
+    KANNOTATE(shape, defaults_internal_annotation)
+    std::variant<defaults_alt_a, defaults_alt_b> shape{
         defaults_alt_a{.depth = 8, .name = {}}
     };
 };
@@ -297,9 +310,13 @@ struct renamed_defaults_holder {
     renamed_defaults_child child;
 };
 
-KANNOTATION(renamed_defaults_root_annotation, rename_all = Casing::LowerCamel);
-using renamed_defaults_root =
-    annotate<renamed_defaults_root_annotation>::type<renamed_defaults_child>;
+/// renamed_defaults_child, its fields renamed wherever it stands.
+KANNOTATE_TYPE(struct renamed_defaults_root, rename_all = Casing::LowerCamel);
+
+struct renamed_defaults_root {
+    KANNOTATE(first_value, defaulted = true)
+    std::int32_t first_value = 4;
+};
 
 namespace json = kotatsu::codec::json;
 

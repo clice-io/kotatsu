@@ -57,7 +57,8 @@ const Entry* running = nullptr;
 struct CliOptions {
     Options zest;
 
-    cli::Help help;
+    KANNOTATE(help, cli::help)
+    bool help = false;
 
     KANNOTATE(test_filter_input,
               cli::positional = true,

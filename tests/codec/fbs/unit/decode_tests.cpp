@@ -23,6 +23,7 @@
 #include "kotatsu/meta/attrs.h"
 #include "kotatsu/meta/compare.h"
 #include "kotatsu/codec/fbs/fbs.h"
+#include "kotatsu/codec/macro.h"
 
 // What the fbs decoders do with bytes that did not come from to_bytes. The
 // eager from_bytes verifies every access while it reads; table_view
@@ -191,9 +192,10 @@ struct Rich {
     std::set<std::int32_t> uniq;
     std::variant<std::monostate, Inner> maybe;
     std::tuple<std::int32_t, std::array<std::int32_t, 3>> mixed;
-    meta::annotation<std::int32_t, meta::behavior::as<std::int64_t>> widened{0};
-    meta::annotation<Grade, meta::behavior::enum_string<naming::rename_policy::identity>>
-        level_name{Grade::low};
+    KANNOTATE(widened, as = type<std::int64_t>)
+    std::int32_t widened = 0;
+    KANNOTATE(level_name, enum_string = type<naming::rename_policy::identity>)
+    Grade level_name = Grade::low;
 
     auto operator==(const Rich&) const -> bool = default;
 };
@@ -222,8 +224,8 @@ auto make_rich() -> Rich {
         .uniq = {5, 9},
         .maybe = Inner{.a = 1, .name = "table payload"},
         .mixed = {11, {21, 22, 23}},
-        .widened = {1234},
-        .level_name = {Grade::high},
+        .widened = 1234,
+        .level_name = Grade::high,
     };
 }
 

@@ -36,7 +36,8 @@ namespace cli = kotatsu::cli;
 
 KANNOTATE_TYPE(struct Clone, description = "Clone a repository");
 struct Clone {
-    cli::Help help;
+    KANNOTATE(help, cli::help)
+    bool help = false;
     KANNOTATE(repo, cli::positional = true, cli::meta_var = "<REPO>", description = "Repository URL")
     std::string repo;
     KANNOTATE(branch, cli::names = {"-b", "--branch"}, cli::meta_var = "<BRANCH>")

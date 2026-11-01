@@ -69,12 +69,6 @@ const CommandRegistry& sealed_registry() {
     return commands;
 }
 
-template <typename Tag>
-struct commands_tag {
-    constexpr static auto entries = meta::make_annotation(
-        meta::dsl::member_proxy<&ArgSpec::commands>{} = CommandSet{true, &sealed_registry<Tag>});
-};
-
 /// What a cli::Commands field is: the struct of the subcommand the argv names, its type erased.
 template <typename Tag>
 class ErasedCommand {
@@ -134,6 +128,13 @@ private:
     std::unique_ptr<void, void (*)(void*)> value{nullptr, [](void*) {}};
 };
 
+/// A Commands field takes the set `Tag` names: the subcommands every file added to it.
+template <typename Tag>
+consteval auto __kotatsu__type_annotation(std::type_identity<ErasedCommand<Tag>>) {
+    return meta::make_annotation(meta::dsl::member_proxy<&ArgSpec::commands>{} =
+                                     CommandSet{true, &sealed_registry<Tag>});
+}
+
 }  // namespace detail
 
 /// A field of subcommands that files add to themselves, rather than a std::variant naming
@@ -144,13 +145,16 @@ private:
 /// the argv names is read afresh: parse_into() keeps none of one held before.
 ///
 ///     struct Top { using signature = int(Context&); };
-///     struct Options { cli::Help help; cli::Commands<Top> command; };
+///     struct Options {
+///         KANNOTATE(help, cli::help)
+///         bool help = false;
+///         cli::Commands<Top> command;
+///     };
 ///     // serve.cc
 ///     int run(Serve& serve, Context& context);
 ///     const auto added = cli::add_command<Top>(run);
 template <typename Tag>
-using Commands =
-    meta::annotate<detail::commands_tag<Tag>>::template type<detail::ErasedCommand<Tag>>;
+using Commands = detail::ErasedCommand<Tag>;
 
 /// Adds the subcommand `T`, run by `run`, to the set `Tag` names, under `info.name` or `T`'s
 /// name in kebab case, and returns true. Call it to initialize a variable at namespace scope, in

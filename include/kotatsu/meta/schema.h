@@ -22,7 +22,7 @@ template <typename T,
           bool Flattened = field_spec_of<T, I>.flatten>
 struct single_field_slots {
     using field_t = std::remove_cv_t<meta::field_type<T, I>>;
-    using raw_type = raw_type_t<field_t>;
+    using raw_type = field_t;
     using attrs_t = field_attrs_t<T, I>;
 
     using type = type_list<field_slot<raw_type, filter_runtime_attrs_t<attrs_t>>>;
@@ -48,7 +48,7 @@ using build_slots_t =
 template <typename T, std::size_t I>
 struct single_field_slots<T, I, /*Skipped=*/false, /*Flattened=*/true> {
     using field_t = meta::field_type<T, I>;
-    using inner_t = raw_type_t<field_t>;
+    using inner_t = std::remove_cv_t<field_t>;
     using type = build_slots_t<inner_t>;
 };
 

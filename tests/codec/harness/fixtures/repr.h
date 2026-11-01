@@ -23,6 +23,7 @@
 #include "kotatsu/meta/repr.h"
 #include "kotatsu/meta/type_kind.h"
 #include "kotatsu/codec/encode.h"
+#include "kotatsu/codec/macro.h"
 
 namespace kotatsu::test {
 
@@ -89,6 +90,8 @@ struct LineRange {
 
     auto operator==(const LineRange&) const -> bool = default;
 };
+
+KANNOTATE_TYPE(struct LineSpan, StrictCamelTag);
 
 struct LineSpan {
     int start_line = 0;
@@ -161,6 +164,25 @@ struct Shout {
 };
 
 // Holders of values under a repr, and the plain structs of their documents.
+
+/// A field adapter over the type's own repr: the adapter decides.
+struct PackedVersion {
+    KANNOTATE(value, with = type<VersionAsNumber>)
+    Version value;
+};
+
+/// A field adapter of the imperative form.
+struct Loud {
+    KANNOTATE(value, with = type<Shout>)
+    std::string value;
+};
+
+/// A field's rename_all and deny_unknown_fields reach the alternatives of the
+/// tagged variant its type's repr declares.
+struct StrictLoad {
+    KANNOTATE(value, StrictCamelTag)
+    LoadResult value;
+};
 
 struct Symbol {
     Relation rel;
@@ -369,17 +391,14 @@ struct repr<test::Lamport> {
 
 template <>
 struct repr<test::LineRange> {
-    using type = annotate<test::StrictCamelTag>::type<test::LineSpan>;
+    using type = test::LineSpan;
 
     static type to(const test::LineRange& r) {
-        return {
-            {.start_line = r.first, .line_count = r.last - r.first}
-        };
+        return {.start_line = r.first, .line_count = r.last - r.first};
     }
 
     static test::LineRange from(const type& span) {
-        const auto& s = annotated_value(span);
-        return {.first = s.start_line, .last = s.start_line + s.line_count};
+        return {.first = span.start_line, .last = span.start_line + span.line_count};
     }
 };
 

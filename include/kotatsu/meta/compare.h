@@ -8,8 +8,8 @@
 #include <utility>
 #include <variant>
 
-#include "annotation.h"
 #include "struct.h"
+#include "type_kind.h"
 #include "kotatsu/support/ranges.h"
 
 namespace kotatsu::meta::detail {
@@ -28,21 +28,18 @@ concept standard_integer =
 template <typename L, typename R>
 concept reflectable_pair = reflectable_class<L> && reflectable_class<R>;
 
-/// A std::variant, or an annotation of one.
+/// A std::variant, or a class derived from one.
 template <typename T>
-concept variant_like = is_specialization_of<std::variant, raw_type_t<std::remove_cvref_t<T>>>;
+concept variant_like = is_specialization_of<std::variant, std::remove_cvref_t<T>> ||
+                       derived_variant<std::remove_cvref_t<T>>;
 
 template <typename L, typename R>
 concept variant_pair = variant_like<L> && variant_like<R>;
 
-template <typename T>
-    requires variant_like<T>
-constexpr auto as_variant(const T& v) -> const raw_type_t<T>& {
-    if constexpr(annotated_type<T>) {
-        return annotated_value(v);
-    } else {
-        return v;
-    }
+/// The std::variant v is.
+template <typename... Ts>
+constexpr auto as_variant(const std::variant<Ts...>& v) -> const std::variant<Ts...>& {
+    return v;
 }
 
 template <typename T>

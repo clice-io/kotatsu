@@ -15,8 +15,13 @@ struct Fields {
     KANNOTATE(input, cli::positional = true, cli::arg_num = ArgNum(1, 2))
     std::vector<int> input;
     std::string plain;
-    KANNOTATE(help, cli::hidden = true)
-    Help help;
+    KANNOTATE(help, cli::help, cli::hidden = true)
+    bool help = false;
+};
+
+struct Helped {
+    KANNOTATE(help, cli::help)
+    bool help = false;
 };
 
 ZEST_SUITE(cli_spec) {
@@ -40,7 +45,7 @@ ZEST_CASE(field_without_entries_has_no_spec) {
 }
 
 ZEST_CASE(help_option_stops_and_is_not_required) {
-    constexpr const auto* spec = meta::extension_in<ArgSpec, meta::attrs_of_t<Help>>;
+    constexpr const auto* spec = meta::extension_of<ArgSpec, Helped, 0>;
     ZSTATIC_EXPECT(spec->stop);
     ZSTATIC_EXPECT(!spec->required);
     ZSTATIC_EXPECT(spec->names[0] == "-h");

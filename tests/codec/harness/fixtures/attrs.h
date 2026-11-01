@@ -20,6 +20,7 @@
 #include "fixtures/attrs.h"
 #include "kotatsu/meta/annotation.h"
 #include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/macro.h"
 
 namespace kotatsu::test {
 
@@ -57,7 +58,8 @@ struct DeepOuterPlain {
 
 struct FlattenInnerWithSkip {
     int keep_a;
-    meta::annotate<Skip>::type<int> drop_b;
+    KANNOTATE(drop_b, skip = true)
+    int drop_b;
     int keep_c;
 
     auto operator==(const FlattenInnerWithSkip&) const -> bool = default;
@@ -65,7 +67,8 @@ struct FlattenInnerWithSkip {
 
 struct FlattenOuterWithChildSkip {
     int head;
-    meta::annotate<Flatten>::type<FlattenInnerWithSkip> inner;
+    KANNOTATE(inner, flatten = true)
+    FlattenInnerWithSkip inner;
 };
 
 struct FlattenOuterWithChildSkipPlain {
@@ -74,19 +77,17 @@ struct FlattenOuterWithChildSkipPlain {
     int keep_c;
 };
 
-struct RenameToRenamedA {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "renamed_a");
-};
-
 struct FlattenInnerWithRename {
-    meta::annotate<RenameToRenamedA>::type<int> a;
+    KANNOTATE(a, rename = "renamed_a")
+    int a;
     int b;
 
     auto operator==(const FlattenInnerWithRename&) const -> bool = default;
 };
 
 struct FlattenOuterWithChildRename {
-    meta::annotate<Flatten>::type<FlattenInnerWithRename> inner;
+    KANNOTATE(inner, flatten = true)
+    FlattenInnerWithRename inner;
 };
 
 struct FlattenOuterWithChildRenamePlain {
@@ -117,10 +118,9 @@ struct RenameTargetWithExtra {
 };
 
 /// On a field, a struct-level annotation's policies apply inside it.
-struct UpperSnakeStrictTag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::rename_all = naming::Casing::UpperSnake,
-                              meta::dsl::deny_unknown_fields = true);
+struct SnakeStrict {
+    KANNOTATE(value, rename_all = Casing::UpperSnake, deny_unknown_fields = true)
+    RenameTarget value;
 };
 
 struct RenameTargetUpperSnake {
@@ -136,7 +136,11 @@ struct RenameTargetUpperSnakeWithExtra {
 
 /// rename_all merges into the config only at a reflected struct; an untagged
 /// variant is not one, so its alternatives keep their names.
-using CamelChoice = meta::annotate<RenameAllCamelTag>::type<std::variant<RenameTarget, int>>;
+KANNOTATE_TYPE(struct CamelChoice, rename_all = Casing::LowerCamel);
+
+struct CamelChoice : std::variant<RenameTarget, int> {
+    using variant::variant;
+};
 
 struct RenameAllTargetCamel {
     int userName;
@@ -192,13 +196,10 @@ struct ExtraBeforeTextPlain {
     std::int32_t y;
 };
 
-struct AliasAnchor {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::alias = {"anchor"});
-};
-
 /// A field the document may name by an alias.
 struct AliasedOrigin {
-    meta::annotate<AliasAnchor>::type<Point> origin;
+    KANNOTATE(origin, alias = {"anchor"})
+    Point origin;
 };
 
 template <typename T>
@@ -231,35 +232,29 @@ struct Tunables {
     auto operator==(const Tunables&) const -> bool = default;
 };
 
-struct DefaultedFieldsTag {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::defaulted_fields = true);
-};
-
 /// defaulted_fields on a field reaches the struct below it, not the one
 /// holding it.
 struct TunablesHolder {
-    meta::annotate<DefaultedFieldsTag>::type<Tunables> tunables;
+    KANNOTATE(tunables, defaulted_fields = true)
+    Tunables tunables;
     int count;
 };
 
 /// A field whose default a schema leaves unstated.
-struct UnstatedDefault {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::schema_default = false);
-};
-
 struct WithUnstated {
     int id;
-    meta::annotate<UnstatedDefault>::type<int> seed;
+    KANNOTATE(seed, schema_default = false)
+    int seed;
 };
 
 /// Two fields answering to one name.
-struct AliasDup {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::alias = {"dup"});
-};
+KANNOTATION(AliasDup, alias = {"dup"});
 
 struct SharedAlias {
-    meta::annotate<AliasDup>::type<int> left;
-    meta::annotate<AliasDup>::type<int> right;
+    KANNOTATE(left, AliasDup)
+    int left;
+    KANNOTATE(right, AliasDup)
+    int right;
 };
 
 /// Two fields that lower_camel renames to one name.
@@ -268,20 +263,17 @@ struct CamelCollision {
     int userId;
 };
 
-struct DescribeId {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::description = "Numeric identifier.");
-};
-
 struct Documented {
-    meta::annotate<DescribeId>::type<int> id;
+    KANNOTATE(id, description = "Numeric identifier.")
+    int id;
     std::string name;
 };
 
 /// A skipped field needs no codec support for its type.
 struct SkipsRawPointer {
     int id;
-    meta::annotate<Skip>::type<int*> raw;
+    KANNOTATE(raw, skip = true)
+    int* raw;
 };
 
 /// Travels as its decimal text (behavior::with).
@@ -299,15 +291,16 @@ struct DecimalText {
     }
 };
 
-struct amount_tag {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "amount");
+/// Travels as decimal text, in a field.
+struct Decimal {
+    KANNOTATE(value, with = type<DecimalText>)
+    int value;
 };
 
-/// An annotation of an annotation: renamed by the outer one, and travelling as decimal text
-/// by the inner one.
+/// Renamed, and travelling as decimal text, by one annotation.
 struct RenamedDecimal {
-    meta::annotate<amount_tag>::type<meta::annotation<int, meta::behavior::with<DecimalText>>>
-        value;
+    KANNOTATE(value, rename = "amount", with = type<DecimalText>)
+    int value;
 };
 
 struct RenamedDecimalPlain {
@@ -377,12 +370,18 @@ struct Tally {
     auto operator==(const Tally&) const -> bool = default;
 };
 
-using TallyAsHeld = meta::annotation<Tally, meta::behavior::as<HoldsExplicit>>;
+struct TallyAsHeld {
+    KANNOTATE(value, as = type<HoldsExplicit>)
+    Tally value;
+};
 
 struct AsTargets {
-    meta::annotation<UserId, meta::behavior::as<std::string>> owner;
-    meta::annotation<Samples, meta::behavior::as<std::vector<int>>> samples;
-    meta::annotation<GridIndex, meta::behavior::as<Point>> cell;
+    KANNOTATE(owner, as = type<std::string>)
+    UserId owner;
+    KANNOTATE(samples, as = type<std::vector<int>>)
+    Samples samples;
+    KANNOTATE(cell, as = type<Point>)
+    GridIndex cell;
 };
 
 struct AsTargetsPlain {
@@ -401,9 +400,8 @@ struct SkipCellOnDecode {
 /// A field that travels as another type and is skipped on decode: the
 /// document still holds it, written as that other type.
 struct CellSkippedOnDecode {
-    meta::
-        annotation<GridIndex, meta::behavior::as<Point>, meta::behavior::skip_if<SkipCellOnDecode>>
-            cell;
+    KANNOTATE(cell, as = type<Point>, skip_if = type<SkipCellOnDecode>)
+    GridIndex cell;
     int after = 0;
 };
 
@@ -422,7 +420,8 @@ struct SkipHeldOnDecode {
 /// A field skipped on decode whose type only value-initialization makes: a
 /// positional decode reads past it into a value of its own.
 struct HeldSkippedOnDecode {
-    meta::annotation<HoldsExplicit, meta::behavior::skip_if<SkipHeldOnDecode>> held;
+    KANNOTATE(held, skip_if = type<SkipHeldOnDecode>)
+    HoldsExplicit held;
     int after = 0;
 };
 
@@ -439,18 +438,23 @@ struct IsEmptyText {
 };
 
 struct SkipsEmptyText {
-    meta::annotation<std::string, meta::behavior::skip_if<IsEmptyText>> text;
+    KANNOTATE(text, skip_if = type<IsEmptyText>)
+    std::string text;
 };
 
 struct TextPlain {
     std::string text;
 };
 
-using AccessName =
-    meta::annotation<Access, meta::behavior::enum_string<naming::rename_policy::lower_camel>>;
+/// Travels as its enumerator's name, in lowerCamel, in a field.
+struct AccessName {
+    KANNOTATE(value, enum_string = type<naming::rename_policy::lower_camel>)
+    Access value;
+};
 
 struct AccessGrant {
-    AccessName level;
+    KANNOTATE(level, enum_string = type<naming::rename_policy::lower_camel>)
+    Access level;
     int count;
 };
 
@@ -466,35 +470,19 @@ struct IsNegative {
     }
 };
 
-struct SkipWhenNone {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::skip_if = meta::skip_when::none);
-};
-
-struct SkipWhenEmpty {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::skip_if = meta::skip_when::empty);
-};
-
-struct SkipWhenDefault {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::skip_if = meta::skip_when::default_value);
-};
-
-struct SkipIfNegative {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::skip_if = meta::dsl::type<IsNegative>);
-};
-
 /// Every skip condition: the built-in ones and a predicate. The initializers
 /// are not what a skip condition matches, so a decoder that resets a field it
 /// did not read shows.
 struct Skippable {
     int id;
-    meta::annotate<SkipWhenNone>::type<std::optional<std::string>> note = "kept";
-    meta::annotate<SkipWhenEmpty>::type<std::vector<int>> tags = std::vector<int>{9};
-    meta::annotate<SkipWhenDefault>::type<int> generation = 7;
-    meta::annotate<SkipIfNegative>::type<int> score = 3;
+    KANNOTATE(note, skip_if = skip_when::none)
+    std::optional<std::string> note = "kept";
+    KANNOTATE(tags, skip_if = skip_when::empty)
+    std::vector<int> tags = std::vector<int>{9};
+    KANNOTATE(generation, skip_if = skip_when::default_value)
+    int generation = 7;
+    KANNOTATE(score, skip_if = type<IsNegative>)
+    int score = 3;
 };
 
 struct SkippablePlain {

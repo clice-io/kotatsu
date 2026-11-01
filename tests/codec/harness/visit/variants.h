@@ -19,9 +19,6 @@
 #include "codec/harness/visit/kit.h"
 #include "fixtures/configs.h"
 #include "fixtures/structs.h"
-#include "fixtures/tagged.h"
-#include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
 
 namespace kotatsu::test {
 
@@ -121,11 +118,10 @@ void variants(const Kit<B>& kit) {
                 .in = {.kind = "circle", .radius = 1.5},
             };
         });
-        using DefaultNamed = meta::annotate<TaggedTag>::type<std::variant<Circle, Rect>>;
         encodes_as(
             kit,
             "default_tag_names_are_type_names",
-            [] { return Field<DefaultNamed>{DefaultNamed{Circle{.radius = 1.5}}}; },
+            [] { return DefaultNamed{Circle{.radius = 1.5}}; },
             [] { return Field<std::map<std::string, Circle>>{{{"Circle", {.radius = 1.5}}}}; });
     }
     // Where a document is not human readable, each tagging travels as the

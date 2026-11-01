@@ -43,16 +43,19 @@ struct Question {
 
 KANNOTATION(left_out_if_none, skip_if = skip_when::none);
 
-template <typename T>
-using omittable = meta::annotate<left_out_if_none>::type<std::optional<T>>;
-
 struct Answer {
-    omittable<std::string> uri;
-    omittable<std::string> path;
-    omittable<std::uint32_t> line;
-    omittable<std::uint32_t> character;
-    omittable<std::uint32_t> offset;
-    omittable<std::string> error;
+    KANNOTATE(uri, left_out_if_none)
+    std::optional<std::string> uri;
+    KANNOTATE(path, left_out_if_none)
+    std::optional<std::string> path;
+    KANNOTATE(line, left_out_if_none)
+    std::optional<std::uint32_t> line;
+    KANNOTATE(character, left_out_if_none)
+    std::optional<std::uint32_t> character;
+    KANNOTATE(offset, left_out_if_none)
+    std::optional<std::uint32_t> offset;
+    KANNOTATE(error, left_out_if_none)
+    std::optional<std::string> error;
 };
 
 Answer answer(const Question& question) {

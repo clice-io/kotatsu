@@ -29,7 +29,7 @@ namespace fx = ::kotatsu::test;
 /// Annotated above it, as KANNOTATE_TYPE (in codec's macro sheet) writes it.
 struct Described;
 
-constexpr auto kotatsu_type_annotation(std::type_identity<Described>) {
+constexpr auto __kotatsu__type_annotation(std::type_identity<Described>) {
     return make_annotation(dsl::description = "A described struct");
 }
 
@@ -44,7 +44,7 @@ enum class Lamp : std::uint8_t { Off, On };
 
 /// Annotated after its definition, as KANNOTATE_TYPE writes it for a type declared
 /// already.
-constexpr auto kotatsu_type_annotation(std::type_identity<Lamp>) {
+constexpr auto __kotatsu__type_annotation(std::type_identity<Lamp>) {
     return make_annotation(dsl::description = "A lamp");
 }
 

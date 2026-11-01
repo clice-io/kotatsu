@@ -121,19 +121,15 @@ struct Alias {
     constexpr bool operator==(const Alias&) const = default;
 };
 
-namespace detail {
-
-struct help_tag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::description = "display this help and exit",
-                              names = {"-h", "--help"},
-                              stop = true);
-};
-
-}  // namespace detail
-
-/// The standard help option, `-h` and `--help`: given, it ends the parse where it stands, so
-/// that nothing required is missed, and the caller finds it set and prints the usage.
-using Help = meta::annotate<detail::help_tag>::type<bool>;
+/// The standard help option, `-h` and `--help`, as a bundle of entries: given, it ends the
+/// parse where it stands, so that nothing required is missed, and the caller finds it set and
+/// prints the usage.
+///
+///     KANNOTATE(help, cli::help)
+///     bool help = false;
+[[maybe_unused]] constexpr inline auto help =
+    meta::make_annotation(meta::dsl::description = "display this help and exit",
+                          names = {"-h", "--help"},
+                          stop = true);
 
 }  // namespace kotatsu::cli

@@ -257,8 +257,14 @@ consteval bool inline_struct() {
         // outright (assert_fields_reflected).
         return false;
     } else {
+        // A field's attrs replace its raw handling (with/as substitute the
+        // shape, skip_if drops the slot), so an annotated field cannot join a
+        // memcpy image at any nesting depth; the enclosing struct degrades to
+        // a table, where the dispatch applies the attrs.
         return []<std::size_t... I>(std::index_sequence<I...>) {
-            return (inline_struct_field<meta::field_type<T, I>>() && ...);
+            return ((std::is_same_v<meta::field_attrs_t<T, I>, std::tuple<>> &&
+                     inline_struct_field<meta::field_type<T, I>>()) &&
+                    ...);
         }(std::make_index_sequence<meta::field_count<T>()>{});
     }
 }
@@ -269,16 +275,7 @@ consteval bool inline_struct_field() {
     // meta::field_type yields const-qualified types, so strip cv before
     // matching.
     using U = std::remove_cv_t<T>;
-    if constexpr(meta::annotated_type<U>) {
-        // An annotation's attrs replace the field's raw handling (with/as
-        // substitute the shape, skip_if drops the slot), so an annotated
-        // field cannot join a memcpy image at any nesting depth; the
-        // enclosing struct degrades to a table, where the dispatch applies
-        // the attrs. Checked before the reflection branch: an annotation
-        // wrapping an aggregate is itself an aggregate that reflection
-        // would walk right through, hiding the attrs.
-        return false;
-    } else if constexpr(is_optional_v<U>) {
+    if constexpr(is_optional_v<U>) {
         // std::optional<int> is trivially copyable, yet not every byte image
         // is a valid optional: the engagement flag admits only two values,
         // and inline structs are verified for size/alignment alone. An

@@ -317,8 +317,7 @@ using field_value_t = std::remove_cv_t<meta::field_type<Object, I>>;
 
 /// Whether Object's I-th field has a slot of its own, so the views address
 /// it: a skipped field has none, and a flattened field's own fields take the
-/// enclosing table's slots. Both are attrs of the field's type, so either
-/// every member of a type is addressable or none is.
+/// enclosing table's slots.
 template <typename Object, std::size_t I>
 constexpr bool addressable_field_v =
     !meta::field_spec_of<Object, I>.skip && !meta::field_spec_of<Object, I>.flatten;
@@ -338,11 +337,12 @@ struct member_types<Object, std::index_sequence<Is...>> {
 template <typename Object>
 using member_types_t = typename member_types<Object>::type;
 
-/// The indices of Object's fields of type M, in declaration order.
+/// The indices of Object's addressable fields of type M, in declaration order.
 template <typename Object, typename M>
 consteval auto member_fields() {
     constexpr auto typed = []<std::size_t... Is>(std::index_sequence<Is...>) {
-        return std::array<bool, sizeof...(Is)>{std::same_as<field_value_t<Object, Is>, M>...};
+        return std::array<bool, sizeof...(Is)>{
+            (std::same_as<field_value_t<Object, Is>, M> && addressable_field_v<Object, Is>)...};
     }(std::make_index_sequence<meta::field_count<Object>()>{});
     std::array<std::size_t, std::ranges::count(typed, true)> fields{};
     std::size_t next = 0;
@@ -558,10 +558,17 @@ private:
             meta::reflection<Object>::field_addrs(unknown.value));
         const void* address = std::addressof(unknown.value.*member);
         const auto fields = member_fields<Object, M>();
-        return static_cast<std::size_t>(
-            std::ranges::find(fields, address, [&](std::size_t i) { return addresses[i]; }) -
-            fields.begin());
+        const auto found =
+            std::ranges::find(fields, address, [&](std::size_t i) { return addresses[i]; });
+        if(found == fields.end()) {
+            member_has_no_slot();
+        }
+        return static_cast<std::size_t>(found - fields.begin());
     }
+
+    /// Not a constant expression: what a view reports, at compile time, for a member it cannot
+    /// address, a skipped or flattened one, which has no slot of its own.
+    static void member_has_no_slot() {}
 };
 
 /// table_view's access to Object's members of type M. table_view gathers one

@@ -324,7 +324,10 @@ constexpr auto resolve_repr();
 /// field's slot holds it.
 template <typename Raw, typename Attrs, typename Config = default_config>
 constexpr auto resolve_node() {
-    if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
+    if constexpr(derived_variant<Raw>) {
+        // Read and written as the variant it is, under its own annotation.
+        return resolve_node<variant_base_t<Raw>, Attrs, Config>();
+    } else if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
         using adapter = typename tuple_find_spec_t<Attrs, behavior::with>::adapter;
         return resolve_repr<declared_repr_t<adapter>, Config>();
     } else if constexpr(tuple_has_spec_v<Attrs, behavior::as>) {
@@ -351,7 +354,7 @@ constexpr auto resolve_node() {
 
 template <typename T, typename Config>
 constexpr auto resolve_repr() {
-    return resolve_node<raw_type_t<T>, attrs_of_t<T>, Config>();
+    return resolve_node<std::remove_cv_t<T>, attrs_of_t<T>, Config>();
 }
 
 template <typename T, typename AttrsT, typename Config, type_kind Kind = kind_of<T>()>
@@ -405,7 +408,7 @@ constexpr std::size_t single_field_count() {
     if constexpr(spec.skip) {
         return 0;
     } else if constexpr(spec.flatten) {
-        using inner_t = std::remove_cvref_t<raw_type_t<field_t>>;
+        using inner_t = std::remove_cv_t<field_t>;
         static_assert(meta::reflectable_class<inner_t>,
                       "flatten requires the field type to be a reflectable struct");
         return effective_field_count<inner_t>();
@@ -582,7 +585,7 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 template <typename T, typename Config, std::size_t I>
 constexpr field_info make_field_info(std::size_t base_offset) {
     using field_t = meta::field_type<T, I>;
-    using raw_t = std::remove_cv_t<raw_type_t<field_t>>;
+    using raw_t = std::remove_cv_t<field_t>;
     using attrs_t = field_attrs_t<T, I>;
     constexpr const field_spec& spec = field_spec_of<T, I>;
     constexpr type_kind raw_kind = kind_of<raw_t>();
@@ -629,7 +632,7 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 
     if constexpr(spec.skip) {
     } else if constexpr(spec.flatten) {
-        using inner_t = raw_type_t<field_t>;
+        using inner_t = std::remove_cv_t<field_t>;
         std::size_t inner_offset = base_offset + meta::field_offset<T>(I);
         auto inner = build_fields<inner_t, Config>(inner_offset);
         for(std::size_t i = 0; i < inner.size(); ++i) {

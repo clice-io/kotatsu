@@ -2,12 +2,13 @@
 
 // Attribute fixtures: rename / skip / alias / flatten / defaulted /
 // rename_all / deny_unknown_fields, and the behavior attrs skip_if / with /
-// as / enum_string with their combinations. The annotations are written with
-// meta's own spec API rather than the codec's annotation macros, so meta's
-// tests can use them.
+// as / enum_string with their combinations. The annotations are written as
+// KANNOTATE and KANNOTATE_TYPE (in codec's macro sheet) expand to, with
+// meta's own spec API, so meta's tests can use them.
 
 #include <optional>
 #include <string>
+#include <type_traits>
 
 #include "fixtures/enums.h"
 #include "kotatsu/meta/annotation.h"
@@ -15,30 +16,27 @@
 
 namespace kotatsu::test {
 
-struct RenameToId {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "id");
-};
-
-struct Skip {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::skip = true);
-};
-
-struct Flatten {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::flatten = true);
-};
-
 struct AnnotatedStruct {
-    meta::annotate<RenameToId>::type<int> user_id;
-    meta::annotate<Skip>::type<std::string> internal = "kept";
+    static consteval auto __kotatsu__annotation(meta::name_key<"user_id">) {
+        return meta::make_annotation(meta::dsl::rename = "id");
+    }
+
+    int user_id;
+
+    static consteval auto __kotatsu__annotation(meta::name_key<"internal">) {
+        return meta::make_annotation(meta::dsl::skip = true);
+    }
+
+    std::string internal = "kept";
     float value;
 };
 
-struct AliasUserId {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::alias = {"user_id", "userId"});
-};
-
 struct AliasStruct {
-    meta::annotate<AliasUserId>::type<int> id;
+    static consteval auto __kotatsu__annotation(meta::name_key<"id">) {
+        return meta::make_annotation(meta::dsl::alias = {"user_id", "userId"});
+    }
+
+    int id;
     std::string name;
 };
 
@@ -51,7 +49,12 @@ struct Inner {
 
 struct Outer {
     int x;
-    meta::annotate<Flatten>::type<Inner> inner;
+
+    static consteval auto __kotatsu__annotation(meta::name_key<"inner">) {
+        return meta::make_annotation(meta::dsl::flatten = true);
+    }
+
+    Inner inner;
     int y;
 };
 
@@ -64,23 +67,33 @@ struct DeepInner {
 
 struct Middle {
     int m;
-    meta::annotate<Flatten>::type<DeepInner> deep;
+
+    static consteval auto __kotatsu__annotation(meta::name_key<"deep">) {
+        return meta::make_annotation(meta::dsl::flatten = true);
+    }
+
+    DeepInner deep;
 
     auto operator==(const Middle&) const -> bool = default;
 };
 
 struct DeepOuter {
     int head;
-    meta::annotate<Flatten>::type<Middle> mid;
+
+    static consteval auto __kotatsu__annotation(meta::name_key<"mid">) {
+        return meta::make_annotation(meta::dsl::flatten = true);
+    }
+
+    Middle mid;
     int tail;
 };
 
-struct Defaulted {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::defaulted = true);
-};
-
 struct DefaultStruct {
-    meta::annotate<Defaulted>::type<int> with_default = 3;
+    static consteval auto __kotatsu__annotation(meta::name_key<"with_default">) {
+        return meta::make_annotation(meta::dsl::defaulted = true);
+    }
+
+    int with_default = 3;
     std::string version;
     int plain;
 };
@@ -92,18 +105,29 @@ struct RenameTarget {
     auto operator==(const RenameTarget&) const -> bool = default;
 };
 
-struct RenameAllCamelTag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::rename_all = naming::Casing::LowerCamel);
+/// RenameTarget's fields, renamed to lowerCamel wherever a RenamedRoot stands.
+struct RenamedRoot;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<RenamedRoot>) {
+    return meta::make_annotation(meta::dsl::rename_all = naming::Casing::LowerCamel);
+}
+
+struct RenamedRoot {
+    int user_name;
+    std::string display_name;
 };
 
-using RenamedRoot = meta::annotate<RenameAllCamelTag>::type<RenameTarget>;
+/// RenameTarget's fields, denying any other wherever a StrictRoot stands.
+struct StrictRoot;
 
-struct DenyUnknownTag {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::deny_unknown_fields = true);
+constexpr auto __kotatsu__type_annotation(std::type_identity<StrictRoot>) {
+    return meta::make_annotation(meta::dsl::deny_unknown_fields = true);
+}
+
+struct StrictRoot {
+    int user_name;
+    std::string display_name;
 };
-
-using StrictRoot = meta::annotate<DenyUnknownTag>::type<RenameTarget>;
 
 struct RenameAllTarget {
     int user_name;
@@ -111,22 +135,22 @@ struct RenameAllTarget {
     std::string item_id;
 };
 
-struct RenameToUpperId {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "ID");
-};
-
 struct MixedRenameStruct {
-    meta::annotate<RenameToUpperId>::type<int> user_id;
+    static consteval auto __kotatsu__annotation(meta::name_key<"user_id">) {
+        return meta::make_annotation(meta::dsl::rename = "ID");
+    }
+
+    int user_id;
     float total_score;
     std::string item_name;
 };
 
-struct AliasUserIdOnly {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::alias = {"user_id"});
-};
-
 struct AliasRenameAllStruct {
-    meta::annotate<AliasUserIdOnly>::type<int> id;
+    static consteval auto __kotatsu__annotation(meta::name_key<"id">) {
+        return meta::make_annotation(meta::dsl::alias = {"user_id"});
+    }
+
+    int id;
     float total_score;
 };
 
@@ -135,60 +159,75 @@ struct IntToStringAdapter {
 };
 
 struct BehaviorStruct {
-    meta::annotation<std::optional<int>, meta::behavior::skip_if<meta::pred::optional_none>> maybe;
-    meta::annotation<int, meta::behavior::as<std::string>> as_str;
+    static consteval auto __kotatsu__annotation(meta::name_key<"maybe">) {
+        return meta::make_annotation(meta::dsl::skip_if =
+                                         meta::dsl::type<meta::pred::optional_none>);
+    }
+
+    std::optional<int> maybe;
+
+    static consteval auto __kotatsu__annotation(meta::name_key<"as_str">) {
+        return meta::make_annotation(meta::dsl::as = meta::dsl::type<std::string>);
+    }
+
+    int as_str;
     float plain;
 };
 
 struct WithReprStruct {
-    meta::annotation<int, meta::behavior::with<IntToStringAdapter>> converted;
+    static consteval auto __kotatsu__annotation(meta::name_key<"converted">) {
+        return meta::make_annotation(meta::dsl::with = meta::dsl::type<IntToStringAdapter>);
+    }
+
+    int converted;
     float plain;
 };
 
 struct EnumStringStruct {
-    meta::annotation<Color, meta::behavior::enum_string<naming::rename_policy::identity>>
-        color_field;
+    static consteval auto __kotatsu__annotation(meta::name_key<"color_field">) {
+        return meta::make_annotation(meta::dsl::enum_string =
+                                         meta::dsl::type<naming::rename_policy::identity>);
+    }
+
+    Color color_field;
     int count;
 };
 
-/// An enum reaching behavior::enum_string through a representation chain.
-struct EnumStringThroughAs {
-    meta::annotation<
-        Color,
-        meta::behavior::as<
-            meta::annotation<Color, meta::behavior::enum_string<naming::rename_policy::identity>>>>
-        color_field;
-};
-
-struct DefaultedUnlessNone {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::defaulted = true,
-                              meta::dsl::skip_if = meta::dsl::type<meta::pred::optional_none>);
-};
-
-struct RenameToScoreAsString {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::rename = "score",
-                              meta::dsl::as = meta::dsl::type<std::string>);
-};
-
 struct MultiAttrStruct {
-    meta::annotate<DefaultedUnlessNone>::type<std::optional<int>> opt_with_default;
-    meta::annotate<RenameToScoreAsString>::type<int> renamed_as;
+    static consteval auto __kotatsu__annotation(meta::name_key<"opt_with_default">) {
+        return meta::make_annotation(meta::dsl::defaulted = true,
+                                     meta::dsl::skip_if =
+                                         meta::dsl::type<meta::pred::optional_none>);
+    }
+
+    std::optional<int> opt_with_default;
+
+    static consteval auto __kotatsu__annotation(meta::name_key<"renamed_as">) {
+        return meta::make_annotation(meta::dsl::rename = "score",
+                                     meta::dsl::as = meta::dsl::type<std::string>);
+    }
+
+    int renamed_as;
 };
 
 struct SkipIfAsStruct {
-    meta::annotation<std::optional<std::string>,
-                     meta::behavior::skip_if<meta::pred::optional_none>,
-                     meta::behavior::as<std::string>>
-        field;
+    static consteval auto __kotatsu__annotation(meta::name_key<"field">) {
+        return meta::make_annotation(meta::dsl::skip_if =
+                                         meta::dsl::type<meta::pred::optional_none>,
+                                     meta::dsl::as = meta::dsl::type<std::string>);
+    }
+
+    std::optional<std::string> field;
 };
 
 struct SkipIfWithStruct {
-    meta::annotation<std::optional<int>,
-                     meta::behavior::skip_if<meta::pred::optional_none>,
-                     meta::behavior::with<IntToStringAdapter>>
-        field;
+    static consteval auto __kotatsu__annotation(meta::name_key<"field">) {
+        return meta::make_annotation(meta::dsl::skip_if =
+                                         meta::dsl::type<meta::pred::optional_none>,
+                                     meta::dsl::with = meta::dsl::type<IntToStringAdapter>);
+    }
+
+    std::optional<int> field;
 };
 
 }  // namespace kotatsu::test

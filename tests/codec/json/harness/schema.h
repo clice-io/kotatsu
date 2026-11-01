@@ -6,7 +6,6 @@
 #include <string>
 #include <variant>
 
-#include "kotatsu/meta/annotation.h"
 #include "kotatsu/meta/attrs.h"
 #include "kotatsu/codec/macro.h"
 
@@ -32,8 +31,10 @@ struct casing_child {
     std::int32_t first_value;
 };
 
-KANNOTATION(root_external_annotation, tagged = true, tag_names = {"integer", "text"});
-using root_external_variant =
-    meta::annotate<root_external_annotation>::type<std::variant<std::int32_t, std::string>>;
+KANNOTATE_TYPE(struct root_external_variant, tagged = true, tag_names = {"integer", "text"});
+
+struct root_external_variant : std::variant<std::int32_t, std::string> {
+    using variant::variant;
+};
 
 }  // namespace kotatsu::test

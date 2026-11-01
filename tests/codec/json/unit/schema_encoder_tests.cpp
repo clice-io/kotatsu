@@ -215,12 +215,6 @@ ZEST_CASE(schema_follows_chained_repr) {
     ZEXPECT(zest::contains(*schema, R"("value":{"type":"integer")"));
 }
 
-ZEST_CASE(schema_follows_annotation_in_repr_type) {
-    auto schema = json::schema_string<test::Field<test::BasisPoints>>();
-    ZASSERT(schema);
-    ZEXPECT(zest::contains(*schema, R"("value":{"anyOf":[{"type":"number"},{"type":"null"}]})"));
-}
-
 ZEST_CASE(schema_follows_struct_attrs_in_repr_type) {
     auto schema = json::schema_string<test::Field<test::LineRange>>();
     ZASSERT(schema);
@@ -244,8 +238,7 @@ ZEST_CASE(schema_of_tagged_variant_ignores_its_types_repr) {
 }
 
 ZEST_CASE(schema_follows_outer_policy_on_repr_alternatives) {
-    auto schema =
-        json::schema_string<test::Field<annotate<test::StrictCamelTag>::type<test::LoadResult>>>();
+    auto schema = json::schema_string<test::StrictLoad>();
     ZASSERT(schema);
     ZEXPECT(zest::contains(*schema, R"("byteCount")"));
     ZEXPECT(!zest::contains(*schema, R"("byte_count")"));

@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "kotatsu/meta/annotation.h"
 #include "kotatsu/meta/attrs.h"
 #include "kotatsu/meta/struct.h"
 
@@ -228,12 +229,14 @@ consteval Kind kind_of() {
         return Kind::Scalar;
     } else if constexpr(is_vec_v<A>) {
         return Kind::Vec;
-    } else if constexpr(meta::annotated_type<A>) {
-        static_assert(sizeof(A) == 0,
-                      "a blob lays a record out as the struct itself: annotations do not apply");
     } else if constexpr(std::is_class_v<A> && std::is_aggregate_v<A>) {
         static_assert(std::is_empty_v<A> || field_count_v<A> > 0,
                       "reflection sees none of this struct's fields");
+        static_assert(
+            []<std::size_t... I>(std::index_sequence<I...>) {
+                return (!meta::field_annotated<A, I> && ...);
+            }(std::make_index_sequence<field_count_v<A>>{}),
+            "a blob lays a record out as the struct itself: annotations do not apply");
         static_assert(std::is_standard_layout_v<A>, "a record read in place is standard-layout");
         static_assert(alignof(A) <= alignment, "a blob aligns what it holds to 8 bytes at most");
         return Kind::Record;

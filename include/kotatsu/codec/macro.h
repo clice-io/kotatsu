@@ -48,17 +48,15 @@
         return ::kotatsu::meta::make_annotation(__VA_ARGS__);                                      \
     }()
 
-/// Defines a named, reusable annotation tag. Its entries may be field entries
-/// (rename, skip, ...), struct or variant entries (rename_all, tagged, ...) or
-/// both; attach it with kotatsu::meta::annotate:
+/// Names a bundle of entries, reusable in any annotation as one more entry there, which the
+/// entries written after it override. Written at namespace scope:
 ///
-///     KANNOTATION(shape_annotation, tag = "kind", tag_names = {"circle", "rect"});
-///     using shape = kotatsu::meta::annotate<shape_annotation>::type<
-///         std::variant<circle, rect>>;
+///     KANNOTATION(help, description = "display this help", cli::names = {"-h", "--help"});
+///
+///     KANNOTATE(help, help, description = "show usage")
+///     bool help = false;
 #define KANNOTATION(name, ...)                                                                     \
-    struct name {                                                                                  \
-        constexpr static auto entries = KANNOTATION_ENTRIES(__VA_ARGS__);                          \
-    }
+    [[maybe_unused]] constexpr inline auto name = KANNOTATION_ENTRIES(__VA_ARGS__)
 
 /// Annotates field `field` of the class it is written in, above the field:
 ///
@@ -73,9 +71,9 @@
 /// mangled; a name no field of the class has fails to compile, and so does a
 /// second annotation of one field. Type-valued attributes ride along as
 /// `as = type<Target>`, `with = type<Adapter>`, `skip_if = type<Pred>` and
-/// `enum_string = type<Policy>`. A field whose type is an annotation already
-/// (cli::Help, a meta::annotate alias) keeps it: an entry given here overrides
-/// the type's, and the rest of both apply.
+/// `enum_string = type<Policy>`. A field whose type KANNOTATE_TYPE annotates
+/// keeps that annotation: an entry given here overrides the type's, and the
+/// rest of both apply.
 #define KANNOTATE(field, ...)                                                                      \
     [[maybe_unused]] static consteval auto __kotatsu__annotation(                                  \
         ::kotatsu::meta::name_key<#field>) {                                                       \
@@ -112,8 +110,19 @@
 #define KOTATSU_WHEN_1(...) __VA_ARGS__
 #define KOTATSU_WHEN(condition) KOTATSU_CONCAT(KOTATSU_WHEN_, condition)
 
-/// Annotates a type for every field of that type: its description, and
-/// extension entries; a field's own annotation overrides it entry by entry.
+/// Annotates a type, wherever a value of it is: a document's root, an element,
+/// a field. It takes the type's description, when a field of it is left out
+/// (skip_if, defaulted), the struct and variant entries (rename_all,
+/// deny_unknown_fields, tag, tag_names, ...) and extension entries; a field's
+/// own annotation overrides them entry by entry. A variant that a document
+/// holds other than as a field takes its tagging here, as a class derived from
+/// the std::variant:
+///
+///     KANNOTATE_TYPE(struct Shape, tag = "kind", tag_names = {"circle", "rect"});
+///     struct Shape : std::variant<Circle, Rect> {
+///         using variant::variant;
+///     };
+///
 /// Written above the type, `struct X` (or `class X`) declares X in the
 /// namespace it is written in, as `struct X;` would:
 ///
@@ -131,7 +140,7 @@
 /// type does not take the annotation.
 #define KANNOTATE_TYPE(annotated, ...)                                                             \
     KOTATSU_WHEN(KOTATSU_DECLARES(annotated))(annotated;) [[maybe_unused]] constexpr auto          \
-        kotatsu_type_annotation(::std::type_identity<annotated>) {                                 \
+        __kotatsu__type_annotation(::std::type_identity<annotated>) {                              \
         return KANNOTATION_ENTRIES(__VA_ARGS__);                                                   \
     }                                                                                              \
     static_assert(::kotatsu::meta::detail::has_type_annotation<annotated>,                         \

@@ -29,6 +29,7 @@
 #include "kotatsu/meta/annotation.h"
 #include "kotatsu/meta/attrs.h"
 #include "kotatsu/codec/fbs/fbs.h"
+#include "kotatsu/codec/macro.h"
 
 // What the fbs encoder writes: which structs inline and which become tables,
 // the slot layout of tables, tuples, variants, vectors and maps, and the
@@ -110,8 +111,8 @@ struct Marker {
 /// is what travels.
 enum class ProbeKind : std::uint8_t { heat, light };
 
-/// Aggregate whose annotation derives from it: reflection walks straight
-/// through the annotation, so only the annotation guard keeps the adapter.
+/// An aggregate a field adapts: reflection sees only an int32 cell in it, so
+/// only the annotation guard keeps the adapter.
 struct Calibration {
     std::int32_t code = 0;
 
@@ -321,7 +322,8 @@ struct CellProbe {
 };
 
 struct AdaptedProbe {
-    meta::annotation<Calibration, meta::behavior::with<CalibrationText>> cal;
+    KANNOTATE(cal, with = type<CalibrationText>)
+    Calibration cal;
 
     auto operator==(const AdaptedProbe&) const -> bool = default;
 };
@@ -960,18 +962,14 @@ ZEST_CASE(inline_struct_with_default_initializers_stays_inline) {
 }
 
 ZEST_CASE(string_repr_elements_are_strings) {
-    // An iterable class and an adapted int both travel as strings, so the
-    // vector is one of strings, not of their raw shape.
-    using Decimal = meta::annotation<int, meta::behavior::with<test::DecimalText>>;
-
+    // An iterable class travels as a string, so the vector is one of strings,
+    // not of its raw shape.
     struct Lists {
         std::vector<IdSet> groups;
-        std::vector<Decimal> numbers;
     };
 
     const Lists input{
         .groups = {IdSet{{10, 20}}, IdSet{}, IdSet{{7}}},
-        .numbers = {12, -3},
     };
     auto bytes = fbs::to_bytes(input);
     ZASSERT(bytes);
@@ -980,14 +978,9 @@ ZEST_CASE(string_repr_elements_are_strings) {
     ZASSERT(groups != nullptr);
     ZASSERT(groups->size() == 3U);
     ZEXPECT(groups->Get(0)->str() == "10,20");
-    const auto* numbers = root->GetPointer<const fbs::Vector<fbs::offset_t<fbs::String>>*>(slot(1));
-    ZASSERT(numbers != nullptr);
-    ZASSERT(numbers->size() == 2U);
-    ZEXPECT(numbers->Get(1)->str() == "-3");
     auto decoded = fbs::from_bytes<Lists>(*bytes);
     ZASSERT(decoded);
     ZEXPECT(decoded->groups == input.groups);
-    ZEXPECT(meta::eq(decoded->numbers, input.numbers));
 }
 
 ZEST_CASE(table_repr_elements_are_tables) {

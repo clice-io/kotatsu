@@ -19,6 +19,7 @@
 #include "kotatsu/support/naming.h"
 #include "kotatsu/support/numeric.h"
 #include "kotatsu/support/type_list.h"
+#include "kotatsu/support/type_traits.h"
 
 namespace kotatsu::meta {
 
@@ -551,24 +552,74 @@ constexpr auto compose_entries(const std::tuple<Is...>& inner, const std::tuple<
 
 }  // namespace detail
 
-/// The entries of one annotation, checked, as the tag it makes keeps them in its static
-/// `entries`: what KANNOTATION expands to, and what a hand-written tag writes,
-///
-///     struct user_id_tag {
-///         constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "userId");
-///     };
+namespace detail {
+
+/// Whether an argument of make_annotation is a bundle: the entries another make_annotation
+/// returned, which KANNOTATION keeps under a name.
+template <typename T>
+constexpr bool is_bundle_v = is_specialization_of<std::tuple, T>;
+
+template <typename Arg>
+constexpr auto bundle_entries(const Arg& arg) {
+    if constexpr(is_bundle_v<Arg>) {
+        return arg;
+    } else {
+        return std::tuple<>{};
+    }
+}
+
+template <typename Arg>
+constexpr auto direct_entries(const Arg& arg) {
+    if constexpr(is_bundle_v<Arg>) {
+        return std::tuple<>{};
+    } else {
+        return std::tuple<Arg>{arg};
+    }
+}
+
+template <typename Entries>
+constexpr auto compose_bundles(const Entries& entries) {
+    return entries;
+}
+
+/// The entries the bundles make, a later bundle overriding an earlier one.
+template <typename Entries, typename Next, typename... Rest>
+constexpr auto compose_bundles(const Entries& entries, const Next& next, const Rest&... rest) {
+    return compose_bundles(compose_entries(entries, next), rest...);
+}
+
+/// Whether no entry is written twice among the arguments, bundles aside: a bundle's entries
+/// give way to the ones written after it.
+template <typename... Args>
+consteval bool direct_entries_unique() {
+    return []<typename... Cs>(std::type_identity<std::tuple<Cs...>>) {
+        return component_kinds_unique<Cs...>();
+    }(std::type_identity<decltype(std::tuple_cat(
+               std::conditional_t<is_bundle_v<Args>, std::tuple<>, std::tuple<Args>>{}...))>{});
+}
+
+}  // namespace detail
+
+/// The entries of one annotation, checked: what KANNOTATE, KANNOTATE_FIELD, KANNOTATE_TYPE and
+/// KANNOTATION keep. An argument is an entry (`rename = "userId"`) or a bundle, the entries a
+/// KANNOTATION names, which the entries written beside it override, and a later bundle an
+/// earlier one.
 ///
 /// Kept as written rather than folded, so that the names they list stay where the specs view
 /// them, and so that annotations compose entry by entry. Field entries make a field_spec,
 /// struct entries a struct_spec, and an extension's entries its own spec; any mix may share
 /// one annotation.
-template <typename... Cs>
-constexpr std::tuple<Cs...> make_annotation(const Cs&... components) {
-    static_assert((dsl::component<Cs> && ...),
-                  "annotation entries must be assignments, e.g. skip = true");
-    static_assert(detail::component_kinds_unique<Cs...>(),
+template <typename... Args>
+constexpr auto make_annotation(const Args&... args) {
+    static_assert(((detail::is_bundle_v<Args> || dsl::component<Args>) && ...),
+                  "annotation entries must be assignments, e.g. skip = true, or bundles");
+    static_assert(detail::direct_entries_unique<Args...>(),
                   "annotation: the same attribute appears twice");
-    std::tuple<Cs...> entries{components...};
+    // The entries written here override the bundles', which never override one another's
+    // tagging group as entries of one annotation would.
+    auto entries = detail::compose_entries(
+        detail::compose_bundles(std::tuple<>{}, detail::bundle_entries(args)...),
+        std::tuple_cat(detail::direct_entries(args)...));
     // Checked where the annotation is written, not first where a field uses it.
     detail::field_spec_from(entries);
     detail::struct_spec_from(entries);

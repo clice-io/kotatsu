@@ -915,16 +915,15 @@ schema_options options_of() {
 }
 
 /// True when decode reads a T value directly: T resolves to itself, or is a
-/// structural meta::annotate wrapper whose resolution is the wrapped type —
-/// a plain wrapper, no repr. Anything routed through a meta::repr makes
-/// decode read the repr's value instead, whose relationship to a fresh T is
-/// the repr's business; the defaults pass covers only the direct kind and
-/// leaves the rest honestly unannotated.
+/// class derived from the std::variant it resolves to. Anything routed
+/// through a meta::repr makes decode read the repr's value instead, whose
+/// relationship to a fresh T is the repr's business; the defaults pass covers
+/// only the direct kind and leaves the rest honestly unannotated.
 template <typename T>
 constexpr bool decoder_reads_directly() {
     using resolved = meta::resolved_repr_t<T, format>;
-    if constexpr(meta::annotated_type<T>) {
-        return std::same_as<resolved, typename T::annotated_type>;
+    if constexpr(meta::derived_variant<T>) {
+        return std::same_as<resolved, meta::variant_base_t<T>>;
     } else {
         return std::same_as<resolved, T>;
     }
@@ -1019,8 +1018,8 @@ inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool p
 }  // namespace detail
 
 /// When T is default-constructible and the decoder reads it directly — T
-/// resolves to itself, or is a structural meta::annotate wrapper of the type
-/// it resolves to — the schema also carries `default` annotations: fresh
+/// resolves to itself, or is a class derived from the std::variant it
+/// resolves to — the schema also carries `default` annotations: fresh
 /// instances are encoded through the real JSON encoder under Config and
 /// parsed back into documents, so the values match what to_string emits byte
 /// for byte (enum renames, nan handling, structural annotations on the root

@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <variant>
 
 #include "codec/harness/fixtures/attrs.h"
@@ -103,6 +104,26 @@ KANNOTATION(ShapeTag, tag = "kind", tag_names = {"circle", "rect"});
 KANNOTATION(StrictCamel, rename_all = Casing::LowerCamel, deny_unknown_fields = true);
 KANNOTATION(AllDefaulted, defaulted_fields = true);
 
+KANNOTATE_TYPE(struct Shape, ShapeTag);
+
+struct Shape : std::variant<test::Circle, test::Rect> {
+    using variant::variant;
+};
+
+/// Two bundles in one annotation.
+KANNOTATE_TYPE(struct StrictProfile, StrictCamel, AllDefaulted);
+
+struct StrictProfile {
+    std::string first;
+    int age = 0;
+};
+
+/// A bundle, then an entry that overrides one of its own.
+struct Bundled {
+    KANNOTATE(shape, ShapeTag, tag = "type")
+    std::variant<test::Circle, test::Rect> shape;
+};
+
 struct DescribedProfile {
     KANNOTATE(profile, description = "Whose profile.")
     Profile profile;
@@ -171,17 +192,24 @@ ZEST_CASE(annotate_type_entries_become_behavior_attrs) {
 }
 
 ZEST_CASE(annotation_struct_entries_make_a_struct_spec) {
-    constexpr const auto& shape = meta::attrs::struct_spec<ShapeTag>::value;
+    constexpr const auto& shape = meta::struct_spec_of<meta::type_attrs_t<Shape>>;
     ZSTATIC_EXPECT(shape.tagging == meta::tag_mode::internal);
     ZSTATIC_EXPECT(shape.tag == std::string_view("kind"));
     ZSTATIC_EXPECT(shape.tag_names[1] == std::string_view("rect"));
 
-    constexpr const auto& strict = meta::attrs::struct_spec<StrictCamel>::value;
+    using strict_attrs = meta::type_attrs_t<StrictProfile>;
+    constexpr const auto& strict = meta::struct_spec_of<strict_attrs>;
     ZSTATIC_EXPECT(strict.rename_all == naming::Casing::LowerCamel);
     ZSTATIC_EXPECT(strict.deny_unknown_fields);
-    ZSTATIC_EXPECT(meta::attrs::struct_spec<AllDefaulted>::value.defaulted_fields);
-    ZEXPECT(zest::type_eq<meta::annotate<StrictCamel>::type<Profile>,
-                          meta::annotation<Profile, meta::attrs::struct_spec<StrictCamel>>>());
+    ZSTATIC_EXPECT(strict.defaulted_fields);
+    // Struct entries alone make the struct spec and nothing else.
+    ZSTATIC_EXPECT(std::tuple_size_v<strict_attrs> == 1U);
+}
+
+ZEST_CASE(entries_after_a_bundle_override_its_own) {
+    constexpr const auto& shape = meta::struct_spec_of<meta::field_attrs_t<Bundled, 0>>;
+    ZSTATIC_EXPECT(shape.tag == std::string_view("type"));
+    ZSTATIC_EXPECT(shape.tag_names[0] == std::string_view("circle"));
 }
 
 ZEST_CASE(annotate_takes_struct_entries_on_a_field) {

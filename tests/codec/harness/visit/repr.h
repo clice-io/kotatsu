@@ -16,8 +16,6 @@
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/visit/kit.h"
 #include "fixtures/repr.h"
-#include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
 
 namespace kotatsu::test {
 
@@ -55,9 +53,10 @@ void repr(const Kit<B>& kit) {
         });
     }
 
-    using PackedVersion = meta::annotation<Version, meta::behavior::with<VersionAsNumber>>;
     auto packed = [] {
-        return Field<PackedVersion>{{{.major = 3, .minor = 14}}};
+        return PackedVersion{
+            {.major = 3, .minor = 14}
+        };
     };
     encodes_as(kit, "field_annotation_beats_type_repr", packed, [] {
         return Field<std::uint32_t>{3014};
@@ -73,9 +72,8 @@ void repr(const Kit<B>& kit) {
     };
     encodes_as(kit, "imperative_encodes_as_plain", hex, [] { return std::string("deadbeef"); });
     roundtrip(kit, "imperative_roundtrip", hex);
-    using Loud = meta::annotation<std::string, meta::behavior::with<Shout>>;
     auto loud = [] {
-        return Field<Loud>{"loud"};
+        return Loud{"loud"};
     };
     encodes_as(kit, "imperative_with_encodes_as_plain", loud, [] {
         return Field<std::string>{"LOUD"};
@@ -103,13 +101,6 @@ void repr(const Kit<B>& kit) {
         roundtrip(kit, "nullable_repr_roundtrip", unstamped);
     }
     roundtrip(kit, "nullable_repr_engaged_roundtrip", [] { return Stamped{.stamp = {.tick = 5}}; });
-    auto fee = [] {
-        return Field<BasisPoints>{{.v = 250}};
-    };
-    encodes_as(kit, "annotation_in_repr_type_encodes_as_plain", fee, [] {
-        return Field<double>{250.0};
-    });
-    roundtrip(kit, "annotation_in_repr_type_roundtrip", fee);
     auto range = [] {
         return Field<LineRange>{
             {.first = 3, .last = 7}
@@ -142,9 +133,10 @@ void repr(const Kit<B>& kit) {
         });
     }
     roundtrip(kit, "tagging_in_repr_type_roundtrip", failed_load);
-    using StrictLoad = meta::annotate<StrictCamelTag>::type<LoadResult>;
     auto strict_load = [] {
-        return Field<StrictLoad>{{{.ok = true, .bytes = 3, .message = {}}}};
+        return StrictLoad{
+            {.ok = true, .bytes = 3, .message = {}}
+        };
     };
     if constexpr(B::caps.self_describing) {
         encodes_as(kit, "outer_policy_reaches_tagged_repr_alternatives", strict_load, [] {
@@ -157,7 +149,7 @@ void repr(const Kit<B>& kit) {
     auto adapted = [] {
         return AdaptedChoice{7};
     };
-    encodes_as(kit, "adapter_beats_tagging", adapted, [] { return std::string("i:7"); });
+    encodes_as(kit, "adapter_beats_tagging", adapted, [] { return Field<std::string>{"i:7"}; });
     roundtrip(kit, "adapter_beats_tagging_roundtrip", adapted);
     // Tagging beats the repr of the variant's type, tags or no tags: the
     // tagged variant is written as the variant, as a twin without the repr
@@ -175,13 +167,6 @@ void repr(const Kit<B>& kit) {
             7
         };
     });
-    auto packed_alternative = [] {
-        return std::variant<PackedVersion, std::string>{PackedVersion{{.major = 3, .minor = 14}}};
-    };
-    encodes_as(kit, "annotated_repr_alternative_encodes_as_plain", packed_alternative, [] {
-        return std::variant<std::uint32_t, std::string>{std::uint32_t{3014}};
-    });
-    roundtrip(kit, "annotated_repr_alternative_roundtrip", packed_alternative);
 
     // A backend with a format tag carries Journal as an integer; one without
     // sees the format-agnostic textual repr.
@@ -261,16 +246,15 @@ void repr(const Kit<B>& kit) {
             "struct_attrs_in_repr_type_deny_unknown_fails",
             [] { return LineSpanCamelWithExtra{.startLine = 3, .lineCount = 4, .x = 1}; },
             {.message = "unknown field 'x'", .path = "value"});
-        read_in_field_fails<StrictLoad>(kit,
-                                        "outer_policy_denies_unknown_in_alternative_fails",
-                                        [] {
-                                            return LoadOkDocument<ByteCountCamelWithExtra>{
-                                                .status = "ok",
-                                                .value = {.byteCount = 3, .x = 1}
-                                            };
-                                        },
-                                        // Under the field, then the content key.
-                                        {.message = "unknown field 'x'", .path = "value.value"});
+        read_fails<StrictLoad>(kit,
+                               "outer_policy_denies_unknown_in_alternative_fails",
+                               [] {
+                                   return Field<LoadOkDocument<ByteCountCamelWithExtra>>{
+                                       {.status = "ok", .value = {.byteCount = 3, .x = 1}}
+                                   };
+                               },
+                               // Under the field, then the content key.
+                               {.message = "unknown field 'x'", .path = "value.value"});
         // Untagged probing judges an alternative by the repr the backend's
         // format selects.
         using JournalOrNumber = std::variant<Journal, std::int64_t>;

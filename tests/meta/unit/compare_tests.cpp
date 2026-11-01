@@ -12,8 +12,6 @@
 #include <vector>
 
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
 #include "kotatsu/meta/compare.h"
 
 namespace kotatsu::meta {
@@ -734,15 +732,15 @@ ZEST_CASE(variant_valueless_compares_less) {
 }
 #endif
 
-struct kind_tag {
-    constexpr static auto entries = meta::make_annotation(dsl::tag = "kind");
+/// A variant with a name of its own, as one tagged other than as a field is.
+struct named_shape : std::variant<v_circle, v_rect> {
+    using variant::variant;
 };
 
-ZEST_CASE(variant_in_annotation) {
-    using tagged_shape_t = annotate<kind_tag>::type<std::variant<v_circle, v_rect>>;
-    tagged_shape_t lhs = v_circle{.radius = 2};
-    tagged_shape_t rhs = v_circle{.radius = 2};
-    tagged_shape_t other = v_rect{.width = 3, .height = 4};
+ZEST_CASE(derived_variant_compares_as_its_variant) {
+    named_shape lhs = v_circle{.radius = 2};
+    named_shape rhs = v_circle{.radius = 2};
+    named_shape other = v_rect{.width = 3, .height = 4};
     ZEXPECT(eq(lhs, rhs));
     ZEXPECT(!eq(lhs, other));
     ZEXPECT(lt(lhs, other));

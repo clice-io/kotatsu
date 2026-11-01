@@ -139,16 +139,20 @@ struct tagged_rect {
     double height;
 };
 
-KANNOTATION(root_internal_annotation, tag = "kind", tag_names = {"circle", "rect"});
-using root_internal_variant =
-    annotate<root_internal_annotation>::type<std::variant<tagged_circle, tagged_rect>>;
+KANNOTATE_TYPE(struct root_internal_variant, tag = "kind", tag_names = {"circle", "rect"});
 
-KANNOTATION(root_adjacent_annotation,
-            tag = "type",
-            content = "value",
-            tag_names = {"integer", "text"});
-using root_adjacent_variant =
-    annotate<root_adjacent_annotation>::type<std::variant<std::int32_t, std::string>>;
+struct root_internal_variant : std::variant<tagged_circle, tagged_rect> {
+    using variant::variant;
+};
+
+KANNOTATE_TYPE(struct root_adjacent_variant,
+               tag = "type",
+               content = "value",
+               tag_names = {"integer", "text"});
+
+struct root_adjacent_variant : std::variant<std::int32_t, std::string> {
+    using variant::variant;
+};
 
 struct map_str_struct {
     std::map<std::string, point2d> entries;

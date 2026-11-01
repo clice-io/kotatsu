@@ -22,8 +22,6 @@
 #include "codec/harness/visit/kit.h"
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
-#include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
 
 namespace kotatsu::test {
 
@@ -50,14 +48,13 @@ void attrs(const Kit<B>& kit) {
     // whatever they are called, so names are checked where they travel, in a
     // keyed document, and the roundtrips run everywhere.
     auto renamed_root = [] {
-        return RenamedRoot{
-            {.user_name = 7, .display_name = "ada"}
-        };
+        return RenamedRoot{.user_name = 7, .display_name = "ada"};
     };
     roundtrip(kit, "rename_all_roundtrip", renamed_root);
-    using SnakeStrict = meta::annotate<UpperSnakeStrictTag>::type<RenameTarget>;
     auto policy_on_field = [] {
-        return Field<SnakeStrict>{{{.user_name = 7, .display_name = "ada"}}};
+        return SnakeStrict{
+            {.user_name = 7, .display_name = "ada"}
+        };
     };
     roundtrip(kit, "rename_all_on_field_roundtrip", policy_on_field);
     auto nested_rename = [] {
@@ -113,7 +110,11 @@ void attrs(const Kit<B>& kit) {
     // document and in fbs's tables. bincode concatenates a nested struct's
     // fields either way, so there these cases hold whatever flatten does.
     auto outer = [] {
-        return Outer{.x = 1, .inner = {{.a = 2, .b = 3}}, .y = 4};
+        return Outer{
+            .x = 1,
+            .inner = {.a = 2, .b = 3},
+            .y = 4
+        };
     };
     auto outer_plain = [] {
         return OuterPlain{.x = 1, .a = 2, .b = 3, .y = 4};
@@ -121,7 +122,11 @@ void attrs(const Kit<B>& kit) {
     encodes_as(kit, "flatten_encodes_as_plain", outer, outer_plain);
     reads<Outer>(kit, "flatten_reads", outer_plain, outer);
     auto deep = [] {
-        return DeepOuter{.head = 1, .mid = {{.m = 2, .deep = {{.p = 3, .q = 4}}}}, .tail = 5};
+        return DeepOuter{
+            .head = 1,
+            .mid = {.m = 2, .deep = {.p = 3, .q = 4}},
+            .tail = 5
+        };
     };
     auto deep_plain = [] {
         return DeepOuterPlain{.head = 1, .m = 2, .p = 3, .q = 4, .tail = 5};
@@ -129,7 +134,9 @@ void attrs(const Kit<B>& kit) {
     encodes_as(kit, "deep_flatten_encodes_as_plain", deep, deep_plain);
     reads<DeepOuter>(kit, "deep_flatten_reads", deep_plain, deep);
     auto inner_rename = [] {
-        return FlattenOuterWithChildRename{{{.a = 1, .b = 2}}};
+        return FlattenOuterWithChildRename{
+            {.a = 1, .b = 2}
+        };
     };
     auto inner_rename_plain = [] {
         return FlattenOuterWithChildRenamePlain{.renamed_a = 1, .b = 2};
@@ -148,14 +155,14 @@ void attrs(const Kit<B>& kit) {
         [] {
             return FlattenOuterWithChildSkip{
                 .head = 1,
-                .inner = {{.keep_a = 2, .drop_b = 9, .keep_c = 3}},
+                .inner = {.keep_a = 2, .drop_b = 9, .keep_c = 3},
             };
         },
         inner_skip_plain);
     reads<FlattenOuterWithChildSkip>(kit, "flatten_keeps_inner_skip_reads", inner_skip_plain, [] {
         return FlattenOuterWithChildSkip{
             .head = 1,
-            .inner = {{.keep_a = 2, .drop_b = 0, .keep_c = 3}},
+            .inner = {.keep_a = 2, .drop_b = 0, .keep_c = 3},
         };
     });
 
@@ -177,28 +184,20 @@ void attrs(const Kit<B>& kit) {
     // The target is value-initialized before it is read: the explicit default
     // constructor of one of its members rejects `{}`.
     roundtrip(kit, "as_value_initialized_target_roundtrip", [] {
-        return Field<TallyAsHeld>{TallyAsHeld(Tally(std::vector<int>{1, 2}))};
+        return TallyAsHeld{Tally(std::vector<int>{1, 2})};
     });
-    using Decimal = meta::annotation<int, meta::behavior::with<DecimalText>>;
     auto decimal = [] {
-        return Field<Decimal>{42};
+        return Decimal{42};
     };
     encodes_as(kit, "with_encodes_as_plain", decimal, [] { return Field<std::string>{"42"}; });
     roundtrip(kit, "with_roundtrip", decimal);
     auto renamed_decimal = [] {
         return RenamedDecimal{.value = 42};
     };
-    encodes_as(kit, "annotation_of_an_annotation_encodes_as_both_say", renamed_decimal, [] {
+    encodes_as(kit, "rename_and_with_encode_as_both_say", renamed_decimal, [] {
         return RenamedDecimalPlain{.amount = "42"};
     });
-    roundtrip(kit, "annotation_of_an_annotation_roundtrip", renamed_decimal);
-    auto maybe_decimal = [] {
-        return Field<std::optional<Decimal>>{Decimal{42}};
-    };
-    encodes_as(kit, "with_in_optional_encodes_as_plain", maybe_decimal, [] {
-        return Field<std::optional<std::string>>{"42"};
-    });
-    roundtrip(kit, "with_in_optional_roundtrip", maybe_decimal);
+    roundtrip(kit, "rename_and_with_roundtrip", renamed_decimal);
     auto grant = [] {
         return AccessGrant{.level = Access::read_only, .count = 2};
     };
@@ -206,16 +205,9 @@ void attrs(const Kit<B>& kit) {
         return AccessGrantPlain{.level = "readOnly", .count = 2};
     });
     roundtrip(kit, "enum_string_roundtrip", grant);
-    auto access_name = [] {
-        return AccessName{Access::full_control};
-    };
-    encodes_as(kit, "enum_string_root_encodes_as_plain", access_name, [] {
-        return std::string("fullControl");
-    });
-    roundtrip(kit, "enum_string_root_roundtrip", access_name);
     write_fails(kit,
                 "enum_string_unnamed_value_fails",
-                [] { return Field<AccessName>{AccessName{static_cast<Access>(9)}}; },
+                [] { return AccessName{static_cast<Access>(9)}; },
                 {.message = "enum value 9 has no reflected name", .path = "value"});
     auto matching = [] {
         return Skippable{
@@ -250,7 +242,10 @@ void attrs(const Kit<B>& kit) {
             };
         },
         [] {
-            return HeldSkippedOnDecode{.held = {{.list = ExplicitList(), .count = 0}}, .after = 7};
+            return HeldSkippedOnDecode{
+                .held = {.list = ExplicitList(), .count = 0},
+                .after = 7
+            };
         });
     // A one-argument predicate judges the value being written: a decode
     // reads the field whatever the value it decodes into holds, here the
@@ -437,7 +432,7 @@ void attrs(const Kit<B>& kit) {
             },
             [] {
                 return TunablesHolder{
-                    .tunables = {{.threads = 4, .name = "worker", .limits = {.low = 0, .high = 9}}},
+                    .tunables = {.threads = 4, .name = "worker", .limits = {.low = 0, .high = 9}},
                     .count = 3,
                 };
             });
@@ -543,7 +538,11 @@ void attrs(const Kit<B>& kit) {
                     {.x = 1, .y = 2, .extra = true}
                 };
             },
-            [] { return AliasedOrigin{{{.x = 1, .y = 2}}}; },
+            [] {
+                return AliasedOrigin{
+                    {.x = 1, .y = 2}
+                };
+            },
             {"unknown field 'extra' at anchor"});
         read_fails<AliasedOrigin>(
             kit,
@@ -582,15 +581,14 @@ void attrs(const Kit<B>& kit) {
                                         "unknown_field_under_config_fails",
                                         with_extra,
                                         {.message = "unknown field 'extra'", .path = ""});
-        read_in_field_fails<SnakeStrict>(kit,
-                                         "rename_all_on_field_denies_unknown_fails",
-                                         [] {
-                                             return RenameTargetUpperSnakeWithExtra{.USER_NAME = 7,
-                                                                                    .DISPLAY_NAME =
-                                                                                        "ada",
-                                                                                    .EXTRA = 1};
-                                         },
-                                         {.message = "unknown field 'EXTRA'", .path = "value"});
+        read_fails<SnakeStrict>(kit,
+                                "rename_all_on_field_denies_unknown_fails",
+                                [] {
+                                    return Field<RenameTargetUpperSnakeWithExtra>{
+                                        {.USER_NAME = 7, .DISPLAY_NAME = "ada", .EXTRA = 1}
+                                    };
+                                },
+                                {.message = "unknown field 'EXTRA'", .path = "value"});
         // In a field, so a backend that routes roots by their declared shape
         // (toml) places the variant as it places the struct.
         encodes_as(
@@ -633,12 +631,6 @@ void attrs(const Kit<B>& kit) {
             [] { return AccessGrantPlain{.level = "super_admin", .count = 1}; },
             [] { return AccessGrant{.level = Access::full_control, .count = 1}; },
             {.message = "unknown enum value 'super_admin'", .path = "level"});
-        read_fails_over(
-            kit,
-            "enum_string_root_unknown_name_fails",
-            [] { return std::string("super_admin"); },
-            [] { return AccessName{Access::full_control}; },
-            {.message = "unknown enum value 'super_admin'", .path = ""});
 
         // Leaf errors are the backend's to word; their paths are the protocol's.
         using Texts = std::map<std::string, std::string>;

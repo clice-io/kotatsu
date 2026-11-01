@@ -63,8 +63,9 @@ ZEST_CASE(enum_string) {
     // keeps the members, spelled through the policy.
     ZSTATIC_EXPECT(fields[0].type().kind == type_kind::enumeration);
     ZEXPECT(static_cast<const enum_type_info&>(fields[0].type()).rename != nullptr);
-    ZEXPECT(zest::type_eq<resolved_repr_t<decltype(fx::EnumStringStruct::color_field)>,
-                          std::string_view>());
+    using resolved =
+        decltype(detail::resolve_node<fx::Color, field_attrs_t<fx::EnumStringStruct, 0>>());
+    ZEXPECT(zest::type_eq<typename resolved::type, std::string_view>());
 
     // Verify slot types
     using slots = virtual_schema<fx::EnumStringStruct>::slots;
@@ -73,13 +74,6 @@ ZEST_CASE(enum_string) {
 
     // plain int is unaffected
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::int32);
-}
-
-ZEST_CASE(enum_string_through_a_chain) {
-    // The members survive an as<> that resolves to the annotated enum.
-    constexpr auto& fields = virtual_schema<fx::EnumStringThroughAs>::fields;
-    ZSTATIC_EXPECT(fields[0].type().kind == type_kind::enumeration);
-    ZEXPECT(static_cast<const enum_type_info&>(fields[0].type()).rename != nullptr);
 }
 
 ZEST_CASE(tagged_variant) {

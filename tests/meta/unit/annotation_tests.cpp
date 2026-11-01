@@ -1,47 +1,16 @@
-#include <cstdint>
-#include <format>
-#include <memory>
-#include <optional>
-#include <string>
 #include <string_view>
-#include <tuple>
 #include <type_traits>
-#include <utility>
 #include <variant>
 
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/annotation.h"
 
-namespace kotatsu::meta {
-
-namespace {
-
-/// An aggregate with a std::formatter of its own.
-struct Labeled {
-    int value;
-};
-
-}  // namespace
-
-}  // namespace kotatsu::meta
-
-template <>
-struct std::formatter<kotatsu::meta::Labeled> : std::formatter<int> {
-    template <typename Context>
-    auto format(const kotatsu::meta::Labeled& labeled, Context& ctx) const {
-        ctx.advance_to(std::format_to(ctx.out(), "labeled "));
-        return std::formatter<int>::format(labeled.value, ctx);
-    }
-};
+// Annotations are written below as KANNOTATE and KANNOTATE_TYPE (in codec's
+// macro sheet) expand to.
 
 namespace kotatsu::meta {
 
 namespace {
-
-/// Has no std::formatter.
-struct Unformattable {
-    int value;
-};
 
 /// The spec of an extension, a module beside meta with entries of its own.
 struct Probe {
@@ -51,39 +20,6 @@ struct Probe {
 
 [[maybe_unused]] constexpr inline dsl::member_proxy<&Probe::label> label{};
 [[maybe_unused]] constexpr inline dsl::member_proxy<&Probe::weight> weight{};
-
-struct inner_tag {
-    constexpr static auto entries = make_annotation(dsl::description = "inner",
-                                                    dsl::alias = {"in"},
-                                                    dsl::as = dsl::type<std::int64_t>,
-                                                    label = "probe",
-                                                    weight = 3);
-};
-
-struct outer_tag {
-    constexpr static auto entries =
-        make_annotation(dsl::description = "outer", dsl::rename = "renamed", weight = 5);
-};
-
-struct Adapter {};
-
-struct with_tag {
-    constexpr static auto entries = make_annotation(dsl::with = dsl::type<Adapter>);
-};
-
-struct skip_empty_tag {
-    constexpr static auto entries = make_annotation(dsl::skip_if = skip_when::empty);
-};
-
-struct Negative {
-    constexpr bool operator()(const int& value) const {
-        return value < 0;
-    }
-};
-
-struct skip_negative_tag {
-    constexpr static auto entries = make_annotation(dsl::skip_if = dsl::type<Negative>);
-};
 
 struct ten_aliases_tag {
     constexpr static auto entries =
@@ -99,16 +35,13 @@ struct nine_names_tag {
                         dsl::tag_names = {"a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"});
 };
 
-/// Field entries and struct entries in one annotation.
-struct mixed_tag {
-    constexpr static auto entries = make_annotation(dsl::rename = "shape", dsl::tag = "kind");
-};
-
-/// Annotated above it, as KANNOTATE_TYPE (in codec's macro sheet) writes it.
 struct Weighed;
 
-constexpr auto kotatsu_type_annotation(std::type_identity<Weighed>) {
-    return make_annotation(dsl::description = "weighed", label = "type", weight = 1);
+constexpr auto __kotatsu__type_annotation(std::type_identity<Weighed>) {
+    return make_annotation(dsl::description = "weighed",
+                           dsl::defaulted = true,
+                           label = "type",
+                           weight = 1);
 }
 
 struct Weighed {
@@ -117,103 +50,101 @@ struct Weighed {
 
 struct HoldsWeighed {
     Weighed plain;
+
+    static consteval auto __kotatsu__annotation(name_key<"heavier">) {
+        return make_annotation(dsl::description = "heavier", dsl::rename = "renamed", weight = 9);
+    }
+
+    Weighed heavier;
 };
 
-struct heavier_tag {
-    constexpr static auto entries = make_annotation(dsl::description = "heavier", weight = 9);
+/// Holds when the value it judges is negative.
+struct Negative {
+    template <typename T>
+    constexpr bool operator()(const T& held) const {
+        return held.value < 0;
+    }
 };
 
-struct never_skipped_tag {
-    constexpr static auto entries = make_annotation(dsl::skip_if = skip_when::never);
+/// Left out where it holds its default.
+struct Plain;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<Plain>) {
+    return make_annotation(dsl::skip_if = skip_when::default_value);
+}
+
+struct Plain {
+    int value = 0;
+
+    auto operator==(const Plain&) const -> bool = default;
 };
 
-struct kind_tag {
-    constexpr static auto entries = make_annotation(dsl::tag = "kind");
+/// Left out where it is negative.
+struct Signed;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<Signed>) {
+    return make_annotation(dsl::skip_if = dsl::type<Negative>);
+}
+
+struct Signed {
+    int value = 0;
 };
 
-struct externally_tagged_tag {
-    constexpr static auto entries = make_annotation(dsl::tagged = true);
+struct SkipOverrides {
+    static consteval auto __kotatsu__annotation(name_key<"predicate_over_value">) {
+        return make_annotation(dsl::skip_if = dsl::type<Negative>);
+    }
+
+    Plain predicate_over_value;
+
+    static consteval auto __kotatsu__annotation(name_key<"value_over_predicate">) {
+        return make_annotation(dsl::skip_if = skip_when::default_value);
+    }
+
+    Signed value_over_predicate;
+
+    static consteval auto __kotatsu__annotation(name_key<"never_over_predicate">) {
+        return make_annotation(dsl::skip_if = skip_when::never);
+    }
+
+    Signed never_over_predicate;
+
+    static consteval auto __kotatsu__annotation(name_key<"renamed">) {
+        return make_annotation(dsl::rename = "renamed");
+    }
+
+    Signed renamed;
+};
+
+/// Internally tagged wherever it is.
+struct Shape;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<Shape>) {
+    return make_annotation(dsl::tag = "kind");
+}
+
+struct Shape : std::variant<Alt<0>, Alt<1>> {
+    using variant::variant;
+};
+
+struct HoldsShapes {
+    Shape internal;
+
+    static consteval auto __kotatsu__annotation(name_key<"external">) {
+        return make_annotation(dsl::tagged = true);
+    }
+
+    Shape external;
+
+    /// Field entries and struct entries in one annotation.
+    static consteval auto __kotatsu__annotation(name_key<"mixed">) {
+        return make_annotation(dsl::rename = "shape", dsl::tag = "kind");
+    }
+
+    std::variant<Alt<0>, Alt<1>> mixed;
 };
 
 ZEST_SUITE(meta_annotation) {
-
-ZEST_CASE(class_wrapper_takes_the_wrapped_value) {
-    std::optional<std::string> text = "a";
-    annotation<std::optional<std::string>> copied = text;
-    ZASSERT(copied);
-    ZEXPECT(*copied == "a");
-
-    annotation<std::unique_ptr<int>> owned = std::make_unique<int>(1);
-    ZASSERT(owned != nullptr);
-    ZEXPECT(*owned == 1);
-
-    static_assert(
-        !std::is_constructible_v<annotation<std::unique_ptr<int>>, const std::unique_ptr<int>&>);
-}
-
-ZEST_CASE(formats_as_the_annotated_value) {
-    // A wrapped scalar, and a class it inherits from, with the value's spec.
-    annotation<int> count = 42;
-    ZEXPECT(std::format("{:>4}", count) == "  42");
-    annotation<bool> flag = true;
-    ZEXPECT(std::format("{}", flag) == "true");
-    annotation<std::string> name = std::string("clice");
-    ZEXPECT(std::format("{}|{:*^9}", name, name) == "clice|**clice**");
-    ZSTATIC_EXPECT(!std::formattable<annotation<Unformattable>, char>);
-}
-
-ZEST_CASE(annotation_of_an_annotation_annotates_the_type_inside) {
-    using twice = annotate<outer_tag>::type<annotate<inner_tag>::type<int>>;
-    ZSTATIC_EXPECT((std::is_same_v<typename twice::annotated_type, int>));
-    ZSTATIC_EXPECT((std::is_same_v<raw_type_t<twice>, int>));
-}
-
-ZEST_CASE(outer_entries_override_inner_ones) {
-    using twice = annotate<outer_tag>::type<annotate<inner_tag>::type<int>>;
-    constexpr const field_spec& spec = spec_of<attrs_of_t<twice>>;
-    ZSTATIC_EXPECT(spec.description == "outer");
-    // What only one of them says stays.
-    ZSTATIC_EXPECT(spec.rename == "renamed");
-    ZSTATIC_EXPECT(spec.alias.size() == 1u);
-    ZSTATIC_EXPECT(spec.alias[0] == "in");
-    ZSTATIC_EXPECT(extension_in<Probe, attrs_of_t<twice>>->label == "probe");
-    ZSTATIC_EXPECT(extension_in<Probe, attrs_of_t<twice>>->weight == 5);
-    ZSTATIC_EXPECT((tuple_has_v<typename twice::attrs, behavior::as<std::int64_t>>));
-}
-
-ZEST_CASE(outer_representation_overrides_inner_one) {
-    using twice = annotate<with_tag>::type<annotate<inner_tag>::type<int>>;
-    using attrs_t = typename twice::attrs;
-    ZSTATIC_EXPECT((tuple_has_v<attrs_t, behavior::with<Adapter>>));
-    ZSTATIC_EXPECT(!(tuple_has_v<attrs_t, behavior::as<std::int64_t>>));
-}
-
-ZEST_CASE(outer_skip_condition_overrides_inner_one) {
-    using predicate_over_value =
-        annotate<skip_negative_tag>::type<annotate<skip_empty_tag>::type<int>>;
-    ZSTATIC_EXPECT(spec_of<attrs_of_t<predicate_over_value>>.skip_if == skip_when::never);
-    ZSTATIC_EXPECT(
-        (tuple_has_v<typename predicate_over_value::attrs, behavior::skip_if<Negative>>));
-
-    using value_over_predicate =
-        annotate<skip_empty_tag>::type<annotate<skip_negative_tag>::type<int>>;
-    ZSTATIC_EXPECT(spec_of<attrs_of_t<value_over_predicate>>.skip_if == skip_when::empty);
-    ZSTATIC_EXPECT(
-        !(tuple_has_v<typename value_over_predicate::attrs, behavior::skip_if<Negative>>));
-}
-
-ZEST_CASE(annotation_of_a_bare_annotation_keeps_its_behavior) {
-    using twice = annotate<outer_tag>::type<annotation<int, behavior::as<std::int64_t>>>;
-    ZSTATIC_EXPECT((tuple_has_v<typename twice::attrs, behavior::as<std::int64_t>>));
-    ZSTATIC_EXPECT(spec_of<attrs_of_t<twice>>.rename == "renamed");
-}
-
-ZEST_CASE(annotation_of_an_annotation_reads_the_value_inside) {
-    annotate<outer_tag>::type<annotate<inner_tag>::type<int>> value = 7;
-    ZEXPECT(annotated_value(value) == 7);
-    value = 8;
-    ZEXPECT(annotated_value(value) == 8);
-}
 
 ZEST_CASE(name_lists_take_any_number_of_names) {
     constexpr const field_spec& spec = attrs::spec<ten_aliases_tag>::value;
@@ -233,18 +164,21 @@ ZEST_CASE(name_lists_take_any_number_of_names) {
 }
 
 ZEST_CASE(one_annotation_takes_field_and_struct_entries) {
-    using shape = annotate<mixed_tag>::type<std::variant<Alt<0>, Alt<1>>>;
-    ZSTATIC_EXPECT(spec_of<attrs_of_t<shape>>.rename == "shape");
-    ZSTATIC_EXPECT(struct_spec_of<typename shape::attrs>.tagging == tag_mode::internal);
+    using attrs_t = field_attrs_t<HoldsShapes, 2>;
+    ZSTATIC_EXPECT(spec_of<attrs_t>.rename == "shape");
+    ZSTATIC_EXPECT(struct_spec_of<attrs_t>.tagging == tag_mode::internal);
 }
 
 ZEST_CASE(field_annotation_overrides_its_type_annotation) {
     ZSTATIC_EXPECT(spec_of<attrs_of_t<Weighed>>.description == "weighed");
     ZSTATIC_EXPECT(extension_in<Probe, attrs_of_t<Weighed>>->weight == 1);
-    using heavier = annotate<heavier_tag>::type<Weighed>;
-    ZSTATIC_EXPECT(spec_of<attrs_of_t<heavier>>.description == "heavier");
-    ZSTATIC_EXPECT(extension_in<Probe, attrs_of_t<heavier>>->label == "type");
-    ZSTATIC_EXPECT(extension_in<Probe, attrs_of_t<heavier>>->weight == 9);
+    using heavier = field_attrs_t<HoldsWeighed, 1>;
+    ZSTATIC_EXPECT(spec_of<heavier>.description == "heavier");
+    ZSTATIC_EXPECT(extension_in<Probe, heavier>->weight == 9);
+    // What only one of them says stays.
+    ZSTATIC_EXPECT(spec_of<heavier>.rename == "renamed");
+    ZSTATIC_EXPECT(spec_of<heavier>.defaulted);
+    ZSTATIC_EXPECT(extension_in<Probe, heavier>->label == "type");
 }
 
 ZEST_CASE(type_annotation_reaches_a_plain_field) {
@@ -253,29 +187,33 @@ ZEST_CASE(type_annotation_reaches_a_plain_field) {
     ZEXPECT(info.fields[0].extension<Probe>()->weight == 1);
 }
 
-ZEST_CASE(outer_never_overrides_inner_skip_predicate) {
-    using twice = annotate<never_skipped_tag>::type<annotate<skip_negative_tag>::type<int>>;
-    ZSTATIC_EXPECT(!(tuple_has_v<typename twice::attrs, behavior::skip_if<Negative>>));
-    ZSTATIC_EXPECT(spec_of<attrs_of_t<twice>>.skip_if == skip_when::never);
+ZEST_CASE(field_skip_condition_overrides_type_one) {
+    using predicate_over_value = field_attrs_t<SkipOverrides, 0>;
+    ZSTATIC_EXPECT(spec_of<predicate_over_value>.skip_if == skip_when::never);
+    ZSTATIC_EXPECT((tuple_has_v<predicate_over_value, behavior::skip_if<Negative>>));
+
+    using value_over_predicate = field_attrs_t<SkipOverrides, 1>;
+    ZSTATIC_EXPECT(spec_of<value_over_predicate>.skip_if == skip_when::default_value);
+    ZSTATIC_EXPECT(!(tuple_has_v<value_over_predicate, behavior::skip_if<Negative>>));
 }
 
-ZEST_CASE(bare_skip_predicate_overrides_inner_skip_condition) {
-    using twice = annotation<annotate<skip_empty_tag>::type<int>, behavior::skip_if<Negative>>;
-    ZSTATIC_EXPECT((tuple_has_v<typename twice::attrs, behavior::skip_if<Negative>>));
-    ZSTATIC_EXPECT(spec_of<attrs_of_t<twice>>.skip_if == skip_when::never);
+ZEST_CASE(field_never_overrides_type_skip_predicate) {
+    using never_over_predicate = field_attrs_t<SkipOverrides, 2>;
+    ZSTATIC_EXPECT(!(tuple_has_v<never_over_predicate, behavior::skip_if<Negative>>));
+    ZSTATIC_EXPECT(spec_of<never_over_predicate>.skip_if == skip_when::never);
 }
 
-ZEST_CASE(outer_tagging_overrides_inner_one) {
-    using shape = annotate<kind_tag>::type<std::variant<Alt<0>, Alt<1>>>;
-    using twice = annotate<externally_tagged_tag>::type<shape>;
-    ZSTATIC_EXPECT(struct_spec_of<typename twice::attrs>.tagging == tag_mode::external);
-    ZSTATIC_EXPECT(struct_spec_of<typename twice::attrs>.tag.empty());
+ZEST_CASE(field_annotation_keeps_its_type_skip_predicate) {
+    using renamed = field_attrs_t<SkipOverrides, 3>;
+    ZSTATIC_EXPECT((tuple_has_v<renamed, behavior::skip_if<Negative>>));
+    ZSTATIC_EXPECT(spec_of<renamed>.rename == "renamed");
 }
 
-ZEST_CASE(annotation_of_an_annotation_formats_as_the_value_inside) {
-    annotation<annotation<Labeled>> twice{};
-    twice.value = 3;
-    ZEXPECT(std::format("{}", twice) == "labeled 3");
+ZEST_CASE(field_tagging_overrides_type_one) {
+    ZSTATIC_EXPECT(struct_spec_of<field_attrs_t<HoldsShapes, 0>>.tagging == tag_mode::internal);
+    using external = field_attrs_t<HoldsShapes, 1>;
+    ZSTATIC_EXPECT(struct_spec_of<external>.tagging == tag_mode::external);
+    ZSTATIC_EXPECT(struct_spec_of<external>.tag.empty());
 }
 
 };  // ZEST_SUITE(meta_annotation)

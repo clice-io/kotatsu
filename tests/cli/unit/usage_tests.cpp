@@ -28,7 +28,8 @@ struct Remote {
 KANNOTATE_TYPE(struct Serve, description = "Start the server");
 
 struct Serve {
-    cli::Help help;
+    KANNOTATE(help, cli::help)
+    bool help = false;
     KANNOTATE(mode, description = "Server mode")
     Mode mode = Mode::Pipe;
     KANNOTATE(jobs, cli::names = {"-j", "--jobs"}, cli::meta_var = "<N>", description = "Workers")
@@ -50,7 +51,8 @@ struct Query {};
 KANNOTATE_TYPE(struct Tool, description = "A tool");
 
 struct Tool {
-    cli::Help help;
+    KANNOTATE(help, cli::help)
+    bool help = false;
     std::variant<Serve, Query> command;
 };
 
@@ -86,8 +88,8 @@ struct Unnamed {
 
 /// The help option, kept out of the usage.
 struct QuietHelp {
-    KANNOTATE(help, cli::hidden = true)
-    cli::Help help;
+    KANNOTATE(help, cli::help, cli::hidden = true)
+    bool help = false;
     int jobs = 0;
 };
 

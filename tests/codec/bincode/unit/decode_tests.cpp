@@ -18,6 +18,7 @@
 #include "kotatsu/meta/compare.h"
 #include "kotatsu/meta/repr.h"
 #include "kotatsu/codec/bincode/bincode.h"
+#include "kotatsu/codec/macro.h"
 
 namespace kotatsu::codec {
 
@@ -38,7 +39,8 @@ struct Triple {
 
 struct SkipsSecondOnDecode {
     int first;
-    meta::annotation<int, meta::behavior::skip_if<SkipOnDecode>> second = 88;
+    KANNOTATE(second, skip_if = type<SkipOnDecode>)
+    int second = 88;
     int third;
 };
 
@@ -244,7 +246,7 @@ ZEST_CASE(skip_if_on_decode_reads_past_the_field) {
     SkipsSecondOnDecode out{};
     ZASSERT(bincode::from_bytes(*encoded, out));
     ZEXPECT(out.first == 1);
-    ZEXPECT(meta::annotated_value(out.second) == 88);
+    ZEXPECT(out.second == 88);
     ZEXPECT(out.third == 3);
 }
 

@@ -269,9 +269,11 @@ struct desc_tagged_rect {
     double height;
 };
 
-KANNOTATION(desc_internal_annotation, tag = "kind", tag_names = {"circle", "rect"});
-using desc_internal_variant =
-    annotate<desc_internal_annotation>::type<std::variant<desc_tagged_circle, desc_tagged_rect>>;
+KANNOTATE_TYPE(struct desc_internal_variant, tag = "kind", tag_names = {"circle", "rect"});
+
+struct desc_internal_variant : std::variant<desc_tagged_circle, desc_tagged_rect> {
+    using variant::variant;
+};
 
 namespace json = kotatsu::codec::json;
 

@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <string>
+#include <type_traits>
 #include <variant>
 
 #include "fixtures/attrs.h"
@@ -10,6 +11,8 @@
 // How type_info follows meta::repr: through chains, annotations and tagging
 // nested in declared representations, and format scopes. The codec follows
 // the same resolution when it encodes, which the codec kit's repr area checks.
+// The annotations are written as KANNOTATE and KANNOTATE_TYPE (in codec's
+// macro sheet) expand to.
 
 namespace kotatsu::meta {
 
@@ -19,30 +22,70 @@ struct MergePoint {
     int x_val = 0;
 };
 
-struct CamelOnly {
-    constexpr static auto entries =
-        meta::make_annotation(dsl::rename_all = naming::Casing::LowerCamel);
-};
-
-struct DenyOnly {
-    constexpr static auto entries = meta::make_annotation(dsl::deny_unknown_fields = true);
-};
-
-struct DefaultedOnly {
-    constexpr static auto entries = meta::make_annotation(dsl::defaulted_fields = true);
-};
-
 /// A struct whose field merges a policy of its own below a defaulted one.
+struct RenamedInside;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<RenamedInside>) {
+    return make_annotation(dsl::defaulted_fields = true);
+}
+
 struct RenamedInside {
-    annotate<CamelOnly>::type<MergePoint> inner;
+    static consteval auto __kotatsu__annotation(name_key<"inner">) {
+        return make_annotation(dsl::rename_all = naming::Casing::LowerCamel);
+    }
+
+    MergePoint inner;
 };
 
-/// "camel, then deny" across two chained reprs, and both on one.
+/// "camel, then deny" across two chained reprs, and both on one: each step
+/// is annotated, and declares the next.
+struct DenyStep;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<DenyStep>) {
+    return make_annotation(dsl::deny_unknown_fields = true);
+}
+
 struct DenyStep {};
+
+struct CamelStep;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<CamelStep>) {
+    return make_annotation(dsl::rename_all = naming::Casing::LowerCamel);
+}
+
+struct CamelStep {};
+
+struct StrictStep;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<StrictStep>) {
+    return test::StrictCamelTag;
+}
+
+struct StrictStep {};
 
 struct ChainedPolicies {};
 
 struct FlatPolicies {};
+
+/// LoadResult under a field's rename_all and deny_unknown_fields.
+struct StrictLoad {
+    static consteval auto __kotatsu__annotation(name_key<"value">) {
+        return test::StrictCamelTag;
+    }
+
+    test::LoadResult value;
+};
+
+/// rename_all on a variant that is not tagged.
+struct CamelChoice;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<CamelChoice>) {
+    return make_annotation(dsl::rename_all = naming::Casing::LowerCamel);
+}
+
+struct CamelChoice : std::variant<test::RenameTarget, int> {
+    using variant::variant;
+};
 
 /// A format tag no backend declares.
 struct TestFormat {};
@@ -51,17 +94,27 @@ struct TestFormat {};
 
 template <>
 struct repr<DenyStep> {
-    using type = annotate<DenyOnly>::type<MergePoint>;
+    using type = MergePoint;
+};
+
+template <>
+struct repr<CamelStep> {
+    using type = DenyStep;
 };
 
 template <>
 struct repr<ChainedPolicies> {
-    using type = annotate<CamelOnly>::type<DenyStep>;
+    using type = CamelStep;
+};
+
+template <>
+struct repr<StrictStep> {
+    using type = MergePoint;
 };
 
 template <>
 struct repr<FlatPolicies> {
-    using type = annotate<test::StrictCamelTag>::type<MergePoint>;
+    using type = StrictStep;
 };
 
 namespace {
@@ -84,18 +137,13 @@ ZEST_CASE(equivalent_merge_chains_share_type_info) {
 
 ZEST_CASE(defaulted_fields_stays_through_a_deeper_merge) {
     // Like deny, defaulted is sticky: the rename merged below it keeps it.
-    const auto& info = static_cast<const struct_type_info&>(
-        type_info_of<annotate<DefaultedOnly>::type<RenamedInside>>());
+    const auto& info = static_cast<const struct_type_info&>(type_info_of<RenamedInside>());
     ZASSERT(info.fields.size() == 1U);
     ZEXPECT(info.fields[0].has_default);
     const auto& inner = static_cast<const struct_type_info&>(info.fields[0].type());
     ZASSERT(inner.fields.size() == 1U);
     ZEXPECT(inner.fields[0].name == "xVal");
     ZEXPECT(inner.fields[0].has_default);
-}
-
-ZEST_CASE(annotation_in_declared_repr_resolves) {
-    ZEXPECT(zest::type_eq<resolved_repr_t<test::BasisPoints>, double>());
 }
 
 ZEST_CASE(tagging_in_declared_repr_reaches_type_info) {
@@ -107,7 +155,9 @@ ZEST_CASE(tagging_in_declared_repr_reaches_type_info) {
 }
 
 ZEST_CASE(outer_policy_reaches_repr_alternatives) {
-    const auto& info = type_info_of<annotate<test::StrictCamelTag>::type<test::LoadResult>>();
+    const auto& holder = static_cast<const struct_type_info&>(type_info_of<StrictLoad>());
+    ZASSERT(holder.fields.size() == 1U);
+    const auto& info = holder.fields[0].type();
     ZASSERT(info.kind == type_kind::variant);
     const auto& variant = static_cast<const variant_type_info&>(info);
     ZEXPECT(variant.tagging == tag_mode::adjacent);
@@ -119,7 +169,9 @@ ZEST_CASE(outer_policy_reaches_repr_alternatives) {
 }
 
 ZEST_CASE(adapter_beats_tagging_in_resolution) {
-    ZEXPECT(zest::type_eq<resolved_repr_t<test::AdaptedChoice>, std::string>());
+    using resolved = decltype(detail::resolve_node<std::variant<int, std::string>,
+                                                   field_attrs_t<test::AdaptedChoice, 0>>());
+    ZEXPECT(zest::type_eq<typename resolved::type, std::string>());
 }
 
 ZEST_CASE(tagging_beats_the_variants_repr_in_resolution) {
@@ -137,8 +189,7 @@ ZEST_CASE(format_scoped_repr_resolves_under_its_format) {
 ZEST_CASE(rename_all_on_untagged_variant_is_inert) {
     // rename_all merges only at a reflected struct; an untagged variant is not
     // one, so its alternatives keep their names.
-    using choice = annotate<CamelOnly>::type<std::variant<test::RenameTarget, int>>;
-    const auto& erased = type_info_of<choice>();
+    const auto& erased = type_info_of<CamelChoice>();
     ZASSERT(erased.kind == type_kind::variant);
     const auto& info = static_cast<const variant_type_info&>(erased);
     ZASSERT(info.alternatives.size() == 2U);

@@ -52,7 +52,8 @@ struct Port {
 
 struct Server {
     Port port;
-    cli::Help help;
+    KANNOTATE(help, cli::help)
+    bool help = false;
     KANNOTATE(host, cli::required = true)
     std::string host;
 };

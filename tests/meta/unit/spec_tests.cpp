@@ -90,9 +90,21 @@ struct extension_tag {
         make_annotation(dsl::description = "Weighed.", label = "probe", weight = 3);
 };
 
+// The fields and types below are annotated as KANNOTATE and KANNOTATE_TYPE (in
+// codec's macro sheet) expand to.
+
 struct holds_extension {
-    annotate<extension_tag>::type<int> weighed;
-    annotate<full_tag>::type<int> plain;
+    static consteval auto __kotatsu__annotation(name_key<"weighed">) {
+        return extension_tag::entries;
+    }
+
+    int weighed;
+
+    static consteval auto __kotatsu__annotation(name_key<"plain">) {
+        return full_tag::entries;
+    }
+
+    int plain;
 };
 
 struct inner_pair {
@@ -126,20 +138,91 @@ struct config_struct_tag {
                                                     dsl::deny_unknown_fields = true);
 };
 
-struct config_struct_tag_twin {
-    constexpr static auto entries = make_annotation(dsl::rename_all = naming::Casing::LowerCamel,
-                                                    dsl::deny_unknown_fields = true);
-};
-
-struct noop_struct_tag {
-    constexpr static auto entries = make_annotation(dsl::deny_unknown_fields = false);
-};
-
 struct spec_struct {
-    annotate<full_tag>::type<int> user_id;
-    annotate<skip_tag>::type<int> internal = 0;
-    annotate<flatten_tag>::type<inner_pair> pair;
-    annotate<defaulted_tag>::type<int> retries = 0;
+    static consteval auto __kotatsu__annotation(name_key<"user_id">) {
+        return full_tag::entries;
+    }
+
+    int user_id;
+
+    static consteval auto __kotatsu__annotation(name_key<"internal">) {
+        return skip_tag::entries;
+    }
+
+    int internal = 0;
+
+    static consteval auto __kotatsu__annotation(name_key<"pair">) {
+        return flatten_tag::entries;
+    }
+
+    inner_pair pair;
+
+    static consteval auto __kotatsu__annotation(name_key<"retries">) {
+        return defaulted_tag::entries;
+    }
+
+    int retries = 0;
+};
+
+struct behavior_struct {
+    static consteval auto __kotatsu__annotation(name_key<"converted">) {
+        return extras_tag::entries;
+    }
+
+    std::int32_t converted;
+
+    static consteval auto __kotatsu__annotation(name_key<"adapted">) {
+        return with_tag::entries;
+    }
+
+    int adapted;
+
+    static consteval auto __kotatsu__annotation(name_key<"skipped">) {
+        return make_annotation(dsl::defaulted = true, dsl::skip_if = dsl::type<custom_pred>);
+    }
+
+    int skipped;
+};
+
+/// Each field merges the same untagged struct spec, the last none at all.
+struct policy_fields {
+    static consteval auto __kotatsu__annotation(name_key<"lhs">) {
+        return config_struct_tag::entries;
+    }
+
+    inner_pair lhs;
+
+    static consteval auto __kotatsu__annotation(name_key<"rhs">) {
+        return config_struct_tag::entries;
+    }
+
+    inner_pair rhs;
+
+    static consteval auto __kotatsu__annotation(name_key<"noop">) {
+        return make_annotation(dsl::deny_unknown_fields = false);
+    }
+
+    inner_pair noop;
+};
+
+struct shape;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<shape>) {
+    return internal_struct_tag::entries;
+}
+
+struct shape : std::variant<circle_alt, rect_alt> {
+    using variant::variant;
+};
+
+struct adjacent_shape;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<adjacent_shape>) {
+    return adjacent_struct_tag::entries;
+}
+
+struct adjacent_shape : std::variant<circle_alt, rect_alt> {
+    using variant::variant;
 };
 
 ZEST_SUITE(meta_spec) {
@@ -155,7 +238,7 @@ ZEST_CASE(entries_fold_into_values) {
     ZSTATIC_EXPECT(!spec.flatten);
     ZSTATIC_EXPECT(!spec.defaulted);
     ZSTATIC_EXPECT(spec.skip_if == skip_when::never);
-    ZSTATIC_EXPECT(std::tuple_size_v<typename annotate<full_tag>::type<int>::attrs> == 1);
+    ZSTATIC_EXPECT(std::tuple_size_v<field_attrs_t<spec_struct, 0>> == 1);
 }
 
 ZEST_CASE(entries_fold_into_what_a_schema_states) {
@@ -209,10 +292,8 @@ ZEST_CASE(extension_entries_are_told_apart_by_their_member) {
 }
 
 ZEST_CASE(extension_of_finds_a_field_s_extension) {
-    using weighed_t = annotate<extension_tag>::type<int>;
-    ZSTATIC_EXPECT(extension_in<probe_extension, attrs_of_t<weighed_t>>->weight == 3);
-    ZSTATIC_EXPECT(extension_in<probe_extension, attrs_of_t<annotate<full_tag>::type<int>>> ==
-                   nullptr);
+    ZSTATIC_EXPECT(extension_of<probe_extension, holds_extension, 0>->weight == 3);
+    ZSTATIC_EXPECT(extension_of<probe_extension, holds_extension, 1> == nullptr);
     ZSTATIC_EXPECT(extension_in<probe_extension, attrs_of_t<int>> == nullptr);
 }
 
@@ -234,18 +315,17 @@ ZEST_CASE(field_info_finds_extensions_at_compile_time) {
     ZSTATIC_EXPECT(!info.fields[1].has_extension<probe_extension>());
 }
 
-ZEST_CASE(annotate_maps_components_to_behavior_attrs) {
-    using annotated = annotate<extras_tag>::type<std::int32_t>;
-    ZSTATIC_EXPECT((std::is_same_v<typename annotated::annotated_type, std::int32_t>));
-    using attrs_t = typename annotated::attrs;
-    ZSTATIC_EXPECT((tuple_has_v<attrs_t, attrs::spec<extras_tag>>));
-    ZSTATIC_EXPECT((tuple_has_v<attrs_t, behavior::as<std::int64_t>>));
+ZEST_CASE(annotation_maps_components_to_behavior_attrs) {
+    using converted = field_attrs_t<behavior_struct, 0>;
+    ZSTATIC_EXPECT(tuple_has_spec_v<converted, attrs::spec>);
+    ZSTATIC_EXPECT(spec_of<converted>.description == "Converted field.");
+    ZSTATIC_EXPECT((tuple_has_v<converted, behavior::as<std::int64_t>>));
 
-    using with_extra = annotate<defaulted_tag>::type<int, behavior::skip_if<custom_pred>>;
+    ZSTATIC_EXPECT((tuple_has_v<field_attrs_t<behavior_struct, 1>, behavior::with<probe_adapter>>));
 
-    using adapted = annotate<with_tag>::type<int>;
-    ZSTATIC_EXPECT((tuple_has_v<typename adapted::attrs, behavior::with<probe_adapter>>));
-    ZSTATIC_EXPECT((tuple_has_v<typename with_extra::attrs, behavior::skip_if<custom_pred>>));
+    using skipped = field_attrs_t<behavior_struct, 2>;
+    ZSTATIC_EXPECT((tuple_has_v<skipped, behavior::skip_if<custom_pred>>));
+    ZSTATIC_EXPECT(spec_of<skipped>.defaulted);
 }
 
 ZEST_CASE(skip_predicate_decides_by_direction) {
@@ -258,8 +338,7 @@ ZEST_CASE(skip_predicate_decides_by_direction) {
 }
 
 ZEST_CASE(spec_of_reads_annotation_and_defaults_to_empty) {
-    using annotated = annotate<full_tag>::type<int>;
-    ZSTATIC_EXPECT(spec_of<attrs_of_t<annotated>>.rename == "userId");
+    ZSTATIC_EXPECT(spec_of<field_attrs_t<spec_struct, 0>>.rename == "userId");
     ZSTATIC_EXPECT(spec_of<attrs_of_t<int>>.rename == "");
     ZSTATIC_EXPECT((&spec_of<attrs_of_t<int>> == &empty_field_spec));
 }
@@ -293,7 +372,7 @@ ZEST_CASE(name_only_spec_shares_slot_with_bare_field) {
 
     // A defaulted spec stays in the slot attrs for decode.
     using retries_slot = type_list_element_t<3, slots>;
-    ZSTATIC_EXPECT((tuple_has_v<typename retries_slot::attrs, attrs::spec<defaulted_tag>>));
+    ZSTATIC_EXPECT(spec_of<typename retries_slot::attrs>.defaulted);
 }
 
 ZEST_CASE(struct_entries_fold_into_values_and_derive_tagging) {
@@ -330,29 +409,25 @@ ZEST_CASE(casing_maps_to_rename_policies) {
     ZSTATIC_EXPECT((std::is_same_v<rename_policy_t<Casing::UpperSnake>, policy::upper_snake>));
 }
 
-ZEST_CASE(annotate_attaches_struct_spec) {
-    using shape = annotate<internal_struct_tag>::type<std::variant<circle_alt, rect_alt>>;
-    ZSTATIC_EXPECT((tuple_has_v<typename shape::attrs, attrs::struct_spec<internal_struct_tag>>));
-    ZSTATIC_EXPECT((&struct_spec_of<typename shape::attrs> ==
-                    &attrs::struct_spec<internal_struct_tag>::value));
+ZEST_CASE(type_annotation_attaches_struct_spec) {
+    ZSTATIC_EXPECT(tuple_has_spec_v<type_attrs_t<shape>, attrs::struct_spec>);
+    ZSTATIC_EXPECT(struct_spec_of<type_attrs_t<shape>>.tag == "kind");
     ZSTATIC_EXPECT((&struct_spec_of<std::tuple<>> == &empty_struct_spec));
 }
 
 ZEST_CASE(equivalent_untagged_struct_specs_share_type_info) {
-    // KANNOTATE mints a fresh tag per use, so identical untagged
+    // Each field's annotation is a tag of its own, so identical untagged
     // struct specs live on distinct tags; the type_info instance is keyed by
     // the spec values and must be shared.
-    using lhs = annotate<config_struct_tag>::type<inner_pair>;
-    using rhs = annotate<config_struct_tag_twin>::type<inner_pair>;
-    ZSTATIC_EXPECT((&type_info_of<lhs>() == &type_info_of<rhs>()));
+    const auto& fields = static_cast<const struct_type_info&>(type_info_of<policy_fields>()).fields;
+    ZASSERT(fields.size() == 3u);
+    ZEXPECT((&fields[0].type() == &fields[1].type()));
 
     // A spec whose values match the defaults collapses to the bare type.
-    using noop = annotate<noop_struct_tag>::type<inner_pair>;
-    ZSTATIC_EXPECT((&type_info_of<noop>() == &type_info_of<inner_pair>()));
+    ZEXPECT((&fields[2].type() == &type_info_of<inner_pair>()));
 }
 
 ZEST_CASE(variant_type_info_carries_struct_spec) {
-    using shape = annotate<internal_struct_tag>::type<std::variant<circle_alt, rect_alt>>;
     const auto& info = static_cast<const variant_type_info&>(type_info_of<shape>());
     ZEXPECT(info.tagging == tag_mode::internal);
     ZEXPECT(info.tag_field == "kind");
@@ -362,8 +437,7 @@ ZEST_CASE(variant_type_info_carries_struct_spec) {
     ZEXPECT(info.alt_names[1] == "rect");
 
     // Without tag_names the alternatives fall back to their type names.
-    using adjacent = annotate<adjacent_struct_tag>::type<std::variant<circle_alt, rect_alt>>;
-    const auto& adj = static_cast<const variant_type_info&>(type_info_of<adjacent>());
+    const auto& adj = static_cast<const variant_type_info&>(type_info_of<adjacent_shape>());
     ZEXPECT(adj.content_field == "c");
     ZASSERT(adj.alt_names.size() == 2u);
     ZEXPECT(adj.alt_names[0] == "circle_alt");

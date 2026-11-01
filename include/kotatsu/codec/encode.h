@@ -49,6 +49,15 @@ bool encode_value(Vis& vis, const T& value);
 template <typename Config, typename Vis, typename T>
 bool encode_struct_fields(Vis& vis, const T& value);
 
+namespace detail {
+
+/// Encodes a value as its type writes it, its type's annotation aside: a
+/// meta::repr, or what its kind is.
+template <typename Config, typename Vis, typename T>
+bool encode_plain(Vis& vis, const T& value);
+
+}  // namespace detail
+
 /// The name of a struct's field as encode hands it to a visitor's
 /// visit_field: a visitor that takes a std::string_view reads it as one, and
 /// one that takes a FieldName has it at compile time.
@@ -214,7 +223,10 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
 /// precedence meta's repr resolver replays.
 template <typename Config, typename Attrs, typename Vis, typename T>
 bool encode_with_attrs(Vis& vis, const T& value) {
-    if constexpr(tuple_has_spec_v<Attrs, meta::behavior::with>) {
+    if constexpr(meta::derived_variant<T>) {
+        return encode_with_attrs<Config, Attrs>(vis,
+                                                static_cast<const meta::variant_base_t<T>&>(value));
+    } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::with>) {
         using adapter = typename tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
         return repr_encode<adapter, Config>(vis, value);
     } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::as>) {
@@ -235,7 +247,7 @@ bool encode_with_attrs(Vis& vis, const T& value) {
         using spec_attr = tuple_find_spec_t<Attrs, meta::attrs::struct_spec>;
         return encode_tagged_variant<Config, spec_attr>(vis, value);
     } else {
-        return encode_value<meta::node_config_t<Config, T, Attrs>>(vis, value);
+        return encode_plain<meta::node_config_t<Config, T, Attrs>>(vis, value);
     }
 }
 
@@ -271,6 +283,17 @@ bool encode_one_field(Vis& vis, const T& value) {
 
 template <typename Config, typename Vis, typename T>
 bool encode_value(Vis& vis, const T& value) {
+    if constexpr(!std::is_same_v<meta::attrs_of_t<T>, std::tuple<>>) {
+        return detail::encode_with_attrs<Config, meta::attrs_of_t<T>>(vis, value);
+    } else {
+        return detail::encode_plain<Config>(vis, value);
+    }
+}
+
+namespace detail {
+
+template <typename Config, typename Vis, typename T>
+bool encode_plain(Vis& vis, const T& value) {
     if constexpr(requires(Vis& v, const T& val) {
                      serialize_visit<Vis, T, Config>::visit(v, val);
                  }) {
@@ -278,11 +301,10 @@ bool encode_value(Vis& vis, const T& value) {
                       "type has both a serialize_visit specialization and a meta::repr; "
                       "keep exactly one");
         return serialize_visit<Vis, T, Config>::visit(vis, value);
-    } else if constexpr(meta::annotated_type<T>) {
-        return detail::encode_with_attrs<Config, typename T::attrs>(vis,
-                                                                    meta::annotated_value(value));
     } else if constexpr(meta::has_repr<T, meta::format_of_t<Vis>>) {
-        return detail::repr_encode<meta::repr_for<T, meta::format_of_t<Vis>>, Config>(vis, value);
+        return repr_encode<meta::repr_for<T, meta::format_of_t<Vis>>, Config>(vis, value);
+    } else if constexpr(meta::derived_variant<T>) {
+        return encode_plain<Config>(vis, static_cast<const meta::variant_base_t<T>&>(value));
     } else {
         constexpr auto kind = meta::kind_of<T>();
         using enum meta::type_kind;
@@ -462,6 +484,8 @@ bool encode_value(Vis& vis, const T& value) {
         }
     }
 }
+
+}  // namespace detail
 
 template <typename Config, typename Vis, typename T>
 bool encode_struct_fields(Vis& vis, const T& value) {

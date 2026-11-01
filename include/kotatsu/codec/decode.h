@@ -52,6 +52,15 @@ bool decode_value(Vis& vis, T& out);
 template <typename Config, typename Vis, typename T>
 bool decode_struct_fields(Vis& vis, T& out);
 
+namespace detail {
+
+/// Decodes a value as its type reads it, its type's annotation aside: a
+/// meta::repr, or what its kind is.
+template <typename Config, typename Vis, typename T>
+bool decode_plain(Vis& vis, T& out);
+
+}  // namespace detail
+
 template <typename Config, typename TagAttr, typename Vis, typename Var>
 bool decode_variant(Vis& vis, Var& var);
 
@@ -211,7 +220,9 @@ bool decode_enum_name(Vis& vis, E& out, Rename rename) {
 /// deny_unknown_fields / defaulted_fields merge.
 template <typename Config, typename Attrs, typename Vis, typename T>
 bool decode_with_attrs(Vis& vis, T& out) {
-    if constexpr(tuple_has_spec_v<Attrs, meta::behavior::with>) {
+    if constexpr(meta::derived_variant<T>) {
+        return decode_with_attrs<Config, Attrs>(vis, static_cast<meta::variant_base_t<T>&>(out));
+    } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::with>) {
         using adapter = typename tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
         return repr_decode<adapter, Config>(vis, out);
     } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::as>) {
@@ -233,7 +244,7 @@ bool decode_with_attrs(Vis& vis, T& out) {
         using spec_attr = tuple_find_spec_t<Attrs, meta::attrs::struct_spec>;
         return decode_variant<Config, spec_attr>(vis, out);
     } else {
-        return decode_value<meta::node_config_t<Config, T, Attrs>>(vis, out);
+        return decode_plain<meta::node_config_t<Config, T, Attrs>>(vis, out);
     }
 }
 
@@ -839,16 +850,28 @@ template <typename Config, typename Vis, typename T>
 bool decode_value(Vis& vis, T& out) {
     using V = std::remove_const_t<T>;
 
+    if constexpr(!std::is_same_v<meta::attrs_of_t<V>, std::tuple<>>) {
+        return detail::decode_with_attrs<Config, meta::attrs_of_t<V>>(vis, out);
+    } else {
+        return detail::decode_plain<Config>(vis, out);
+    }
+}
+
+namespace detail {
+
+template <typename Config, typename Vis, typename T>
+bool decode_plain(Vis& vis, T& out) {
+    using V = std::remove_const_t<T>;
+
     if constexpr(requires(Vis& v, V& val) { deserialize_visit<Vis, V, Config>::visit(v, val); }) {
         static_assert(!meta::has_repr<V, meta::format_of_t<Vis>>,
                       "type has both a deserialize_visit specialization and a meta::repr; "
                       "keep exactly one");
         return deserialize_visit<Vis, V, Config>::visit(vis, out);
-    } else if constexpr(meta::annotated_type<V>) {
-        return detail::decode_with_attrs<Config, typename V::attrs>(vis,
-                                                                    meta::annotated_value(out));
     } else if constexpr(meta::has_repr<V, meta::format_of_t<Vis>>) {
-        return detail::repr_decode<meta::repr_for<V, meta::format_of_t<Vis>>, Config>(vis, out);
+        return repr_decode<meta::repr_for<V, meta::format_of_t<Vis>>, Config>(vis, out);
+    } else if constexpr(meta::derived_variant<V>) {
+        return decode_plain<Config>(vis, static_cast<meta::variant_base_t<V>&>(out));
     } else {
         constexpr auto kind = meta::kind_of<V>();
         using enum meta::type_kind;
@@ -1064,6 +1087,8 @@ bool decode_value(Vis& vis, T& out) {
         }
     }
 }
+
+}  // namespace detail
 
 template <typename Config, typename Vis, typename T>
 bool decode_struct_fields(Vis& vis, T& out) {

@@ -35,7 +35,8 @@ struct Index {
 KANNOTATE_TYPE(struct Serve, description = "Start the server");
 
 struct Serve {
-    cli::Help help;
+    KANNOTATE(help, cli::help)
+    bool help = false;
     int port = 0;
 };
 

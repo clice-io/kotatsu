@@ -19,17 +19,11 @@
 
 namespace kotatsu::meta {
 
-template <typename T>
-concept annotated_type = requires {
-    typename std::remove_cvref_t<T>::annotated_type;
-    typename std::remove_cvref_t<T>::attrs;
-};
-
 namespace attrs {
 
-/// The field entries of one annotation, and its extensions' specs. Tag is the struct
-/// KANNOTATE generates, or one written by hand, whose static `entries` make_annotation
-/// returned; only the short tag name appears in template arguments.
+/// The field entries of one annotation, and its extensions' specs. Tag holds the entries in its
+/// static `entries`, as make_annotation returned them; only the short tag name appears in
+/// template arguments.
 template <typename Tag>
 struct spec {
     using tag = Tag;
@@ -515,47 +509,91 @@ namespace detail {
 
 /// Declared so that the unqualified call below finds the user's by argument-dependent
 /// lookup, in the namespace of the type KANNOTATE_TYPE annotates.
-void kotatsu_type_annotation() = delete;
+void __kotatsu__type_annotation() = delete;
 
 /// Whether KANNOTATE_TYPE annotates `T`. A class derived from it is not: a
 /// std::type_identity of it converts to none of its base's.
 template <typename T>
 concept has_type_annotation = (std::is_class_v<T> || std::is_enum_v<T>) &&
-                              requires { kotatsu_type_annotation(std::type_identity<T>{}); };
+                              requires { __kotatsu__type_annotation(std::type_identity<T>{}); };
 
-/// Whether an entry may annotate a type: its description, or an extension's.
+/// Whether an entry may annotate a type, as the default of every field of that type: its
+/// description, when the value is left out (skip_if, defaulted), the struct or variant
+/// entries (rename_all, tagging, ...), or an extension's. What a field alone has (its name,
+/// whether it is skipped or flattened, how its value is represented, its schema bounds) is
+/// not.
 template <typename C>
-constexpr bool type_entry_v = dsl::extension_component<C>;
+constexpr bool type_entry_v = dsl::extension_component<C> || dsl::spec_component<C, struct_spec>;
 
 template <auto Member, typename V>
 constexpr bool type_entry_v<dsl::value_component<dsl::aspect::description, Member, V>> = true;
+
+template <auto Member, typename V>
+constexpr bool type_entry_v<dsl::value_component<dsl::aspect::skip_if, Member, V>> = true;
+
+template <auto Member, typename V>
+constexpr bool type_entry_v<dsl::value_component<dsl::aspect::defaulted, Member, V>> = true;
+
+template <typename Pred>
+constexpr bool type_entry_v<dsl::type_component<dsl::aspect::skip_if, Pred>> = true;
 
 template <typename... Cs>
 consteval bool type_entries(std::type_identity<std::tuple<Cs...>>) {
     return (type_entry_v<Cs> && ...);
 }
 
+/// The behavior attr of an entry that carries a type; none for an entry that carries a value.
+template <typename C>
+constexpr auto type_component_attr(const C&) {
+    return std::tuple<>{};
+}
+
+template <dsl::aspect A, typename T>
+constexpr auto type_component_attr(const dsl::type_component<A, T>&) {
+    if constexpr(A == dsl::aspect::as) {
+        return std::tuple<behavior::as<T>>{};
+    } else if constexpr(A == dsl::aspect::with) {
+        return std::tuple<behavior::with<T>>{};
+    } else if constexpr(A == dsl::aspect::skip_if) {
+        return std::tuple<behavior::skip_if<T>>{};
+    } else {
+        return std::tuple<behavior::enum_string<T>>{};
+    }
+}
+
+/// The attrs the entries `Cs` of the annotation `Tag` make: attrs::spec for its field and
+/// extension entries, attrs::struct_spec for its struct entries, and the behavior attr of
+/// each entry that carries a type.
+template <typename Tag, typename... Cs>
+constexpr auto tag_attrs(std::type_identity<std::tuple<Cs...>>) {
+    constexpr bool field = (!dsl::spec_component<Cs, struct_spec> || ...);
+    constexpr bool structure = (dsl::spec_component<Cs, struct_spec> || ...);
+    using attrs_t = decltype(std::tuple_cat(
+        std::conditional_t<field, std::tuple<attrs::spec<Tag>>, std::tuple<>>{},
+        std::conditional_t<structure, std::tuple<attrs::struct_spec<Tag>>, std::tuple<>>{},
+        decltype(type_component_attr(std::declval<const Cs&>())){}...));
+    static_assert(validate_attrs<attrs_t>(), "Invalid attribute combination");
+    return attrs_t{};
+}
+
+/// The attrs of the annotation `Tag` keeps in its static `entries`.
+template <typename Tag>
+using tag_attrs_t =
+    decltype(tag_attrs<Tag>(std::type_identity<std::remove_const_t<decltype(Tag::entries)>>{}));
+
 /// The annotation of type `T` itself, as a tag.
 template <typename T>
 struct type_annotation {
-    constexpr static auto entries = kotatsu_type_annotation(std::type_identity<T>{});
+    constexpr static auto entries = __kotatsu__type_annotation(std::type_identity<T>{});
     static_assert(type_entries(std::type_identity<std::remove_const_t<decltype(entries)>>{}),
-                  "a type annotation takes description and extension entries");
+                  "a type annotation takes a description, skip_if and defaulted, struct and "
+                  "variant entries, and extension entries");
 };
 
 template <typename T>
 constexpr auto type_attrs() {
     if constexpr(has_type_annotation<T>) {
-        return std::tuple<attrs::spec<type_annotation<T>>>{};
-    } else {
-        return std::tuple<>{};
-    }
-}
-
-template <typename T>
-constexpr auto own_attrs() {
-    if constexpr(annotated_type<T>) {
-        return typename T::attrs{};
+        return tag_attrs_t<type_annotation<T>>{};
     } else {
         return std::tuple<>{};
     }
@@ -567,30 +605,9 @@ constexpr auto own_attrs() {
 template <typename T>
 using type_attrs_t = decltype(detail::type_attrs<T>());
 
-namespace detail {
-
+/// The attrs a value of type `T` carries wherever it is: its type's annotation.
 template <typename T>
-struct raw_type {
-    using type = T;
-};
-
-template <annotated_type T>
-struct raw_type<T> {
-    using type = typename T::annotated_type;
-};
-
-}  // namespace detail
-
-/// The type an annotated `T` annotates, through every annotation around it; `T` itself when
-/// it is not one.
-template <typename T>
-using raw_type_t = typename detail::raw_type<T>::type;
-
-/// The attrs a field of type `T` carries: the annotation of the type it annotates, under the
-/// annotations written around it, an outer one's entries overriding an inner one's.
-template <typename T>
-using attrs_of_t = compose_attrs_t<type_attrs_t<std::remove_cv_t<raw_type_t<T>>>,
-                                   decltype(detail::own_attrs<T>())>;
+using attrs_of_t = type_attrs_t<std::remove_cv_t<T>>;
 
 /// The spec of type `Spec` an extension attached through `AttrsTuple`; null when none did.
 template <typename Spec, typename AttrsTuple>

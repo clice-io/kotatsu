@@ -6,6 +6,7 @@
 #include "kotatsu/support/naming.h"
 #include "kotatsu/meta/annotation.h"
 #include "kotatsu/codec/format.h"
+#include "kotatsu/codec/macro.h"
 #include "kotatsu/codec/type_info.h"
 
 namespace kotatsu::codec {
@@ -16,12 +17,9 @@ struct Shape {
     int sides = 0;
 };
 
-struct LegacyAlias {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::alias = {"corners"});
-};
-
 struct Polygon {
-    meta::annotate<LegacyAlias>::type<int> vertex_count;
+    KANNOTATE(vertex_count, alias = {"corners"})
+    int vertex_count;
 };
 
 struct CamelConfig {
