@@ -48,23 +48,13 @@ struct struct_spec {
 
 }  // namespace attrs
 
-template <typename T>
-struct is_spec_attr {
-    constexpr static bool value = false;
-};
-
-template <typename Tag>
-struct is_spec_attr<attrs::spec<Tag>> {
-    constexpr static bool value = true;
-};
-
 [[maybe_unused]] constexpr inline field_spec empty_field_spec{};
 
 /// The value spec inside an attrs tuple; the empty spec when absent.
 template <typename AttrsTuple>
 constexpr const inline field_spec& spec_of = [] -> const field_spec& {
-    if constexpr(tuple_any_of_v<AttrsTuple, is_spec_attr>) {
-        return tuple_find_t<AttrsTuple, is_spec_attr>::value;
+    if constexpr(tuple_has_spec_v<AttrsTuple, attrs::spec>) {
+        return tuple_find_spec_t<AttrsTuple, attrs::spec>::value;
     } else {
         return empty_field_spec;
     }
@@ -108,7 +98,7 @@ namespace detail {
 /// The extensions an attrs tuple carries, each beside its key.
 template <typename AttrsTuple>
 constexpr inline auto extension_values = [] {
-    if constexpr(tuple_any_of_v<AttrsTuple, is_spec_attr>) {
+    if constexpr(tuple_has_spec_v<AttrsTuple, attrs::spec>) {
         return std::apply(
             []<typename... Specs>(const Specs&... spec) {
                 return std::tuple<extension_value<Specs>...>{
@@ -116,23 +106,18 @@ constexpr inline auto extension_values = [] {
                     ...
                 };
             },
-            tuple_find_t<AttrsTuple, is_spec_attr>::extensions);
+            tuple_find_spec_t<AttrsTuple, attrs::spec>::extensions);
     } else {
         return std::tuple<>{};
     }
 }();
 
 template <typename AttrsTuple>
-constexpr auto extension_refs_of() {
-    return std::apply(
-        [](const auto&... value) {
-            return std::array<extension_ref, sizeof...(value)>{extension_ref{&value}...};
-        },
-        extension_values<AttrsTuple>);
-}
-
-template <typename AttrsTuple>
-constexpr inline auto extension_refs = extension_refs_of<AttrsTuple>();
+constexpr inline auto extension_refs = std::apply(
+    [](const auto&... value) {
+        return std::array<extension_ref, sizeof...(value)>{extension_ref{&value}...};
+    },
+    extension_values<AttrsTuple>);
 
 }  // namespace detail
 
@@ -140,23 +125,13 @@ constexpr inline auto extension_refs = extension_refs_of<AttrsTuple>();
 template <typename AttrsTuple>
 constexpr std::span<const extension_ref> extensions_of = detail::extension_refs<AttrsTuple>;
 
-template <typename T>
-struct is_struct_spec_attr {
-    constexpr static bool value = false;
-};
-
-template <typename Tag>
-struct is_struct_spec_attr<attrs::struct_spec<Tag>> {
-    constexpr static bool value = true;
-};
-
 [[maybe_unused]] constexpr inline struct_spec empty_struct_spec{};
 
 /// The struct-level spec inside an attrs tuple; the empty spec when absent.
 template <typename AttrsTuple>
 constexpr const inline struct_spec& struct_spec_of = [] -> const struct_spec& {
-    if constexpr(tuple_any_of_v<AttrsTuple, is_struct_spec_attr>) {
-        return tuple_find_t<AttrsTuple, is_struct_spec_attr>::value;
+    if constexpr(tuple_has_spec_v<AttrsTuple, attrs::struct_spec>) {
+        return tuple_find_spec_t<AttrsTuple, attrs::struct_spec>::value;
     } else {
         return empty_struct_spec;
     }
@@ -385,13 +360,18 @@ struct is_behavior_provider {
 
 namespace detail {
 
+template <template <typename> typename Attr, typename... As>
+consteval std::size_t count_attrs(std::type_identity<std::tuple<As...>>) {
+    return (std::size_t{is_specialization_of<Attr, As>} + ... + 0);
+}
+
 template <typename AttrsTuple>
 constexpr bool validate_attrs() {
     static_assert(tuple_count_of_v<AttrsTuple, is_behavior_provider> <= 1,
                   "At most one behavior provider (with/as/enum_string) allowed per field");
-    static_assert(tuple_count_of_v<AttrsTuple, is_spec_attr> <= 1,
+    static_assert(count_attrs<attrs::spec>(std::type_identity<AttrsTuple>{}) <= 1,
                   "At most one annotation spec allowed per field");
-    static_assert(tuple_count_of_v<AttrsTuple, is_struct_spec_attr> <= 1,
+    static_assert(count_attrs<attrs::struct_spec>(std::type_identity<AttrsTuple>{}) <= 1,
                   "At most one struct annotation spec allowed per type");
     static_assert(!(spec_of<AttrsTuple>.skip_if != skip_when::never &&
                     tuple_has_spec_v<AttrsTuple, behavior::skip_if>),
@@ -424,30 +404,27 @@ struct without_skip_if {
         Tag::entries);
 };
 
-/// The attr of the kind `Is` finds (attrs::spec, attrs::struct_spec) that inner attrs and
-/// outer ones make together: both tags composed, or the one either has. An inner field spec
-/// loses its skip_if to a bare skip_if predicate around it, which no outer tag carries.
-template <typename Inner,
-          typename Outer,
-          template <typename> typename Is,
-          template <typename> typename Attr>
+/// The `Attr` (attrs::spec, attrs::struct_spec) inner attrs and outer ones make together:
+/// both tags composed, or the one either has. An inner field spec loses its skip_if to a bare
+/// skip_if predicate around it, which no outer tag carries.
+template <typename Inner, typename Outer, template <typename> typename Attr>
 constexpr auto composed_spec_attr() {
-    constexpr bool inner = tuple_any_of_v<Inner, Is>;
-    constexpr bool outer = tuple_any_of_v<Outer, Is>;
+    constexpr bool inner = tuple_has_spec_v<Inner, Attr>;
+    constexpr bool outer = tuple_has_spec_v<Outer, Attr>;
     if constexpr(inner) {
-        using inner_tag = typename tuple_find_t<Inner, Is>::tag;
+        using inner_tag = typename tuple_find_spec_t<Inner, Attr>::tag;
         using kept_tag = std::conditional_t<std::same_as<Attr<inner_tag>, attrs::spec<inner_tag>> &&
                                                 tuple_has_spec_v<Outer, behavior::skip_if>,
                                             without_skip_if<inner_tag>,
                                             inner_tag>;
         if constexpr(outer) {
-            return std::tuple<
-                Attr<composed_tag<kept_tag, typename tuple_find_t<Outer, Is>::tag>>>{};
+            using outer_tag = typename tuple_find_spec_t<Outer, Attr>::tag;
+            return std::tuple<Attr<composed_tag<kept_tag, outer_tag>>>{};
         } else {
             return std::tuple<Attr<kept_tag>>{};
         }
     } else if constexpr(outer) {
-        return std::tuple<tuple_find_t<Outer, Is>>{};
+        return std::tuple<tuple_find_spec_t<Outer, Attr>>{};
     } else {
         return std::tuple<>{};
     }
@@ -459,8 +436,8 @@ template <typename AttrsTuple>
 consteval bool sets_skip_if() {
     if constexpr(tuple_has_spec_v<AttrsTuple, behavior::skip_if>) {
         return true;
-    } else if constexpr(tuple_any_of_v<AttrsTuple, is_spec_attr>) {
-        using tag = typename tuple_find_t<AttrsTuple, is_spec_attr>::tag;
+    } else if constexpr(tuple_has_spec_v<AttrsTuple, attrs::spec>) {
+        using tag = typename tuple_find_spec_t<AttrsTuple, attrs::spec>::tag;
         return has_skip_if_entry(std::type_identity<std::remove_const_t<decltype(tag::entries)>>{});
     } else {
         return false;
@@ -502,11 +479,10 @@ template <typename... Is, typename... Os>
 struct compose_attrs<std::tuple<Is...>, std::tuple<Os...>> {
     using inner = std::tuple<Is...>;
     using outer = std::tuple<Os...>;
-    using type = decltype(std::tuple_cat(
-        composed_spec_attr<inner, outer, is_spec_attr, attrs::spec>(),
-        composed_spec_attr<inner, outer, is_struct_spec_attr, attrs::struct_spec>(),
-        kept_behavior<outer, Is>()...,
-        behavior_attr<Os>()...));
+    using type = decltype(std::tuple_cat(composed_spec_attr<inner, outer, attrs::spec>(),
+                                         composed_spec_attr<inner, outer, attrs::struct_spec>(),
+                                         kept_behavior<outer, Is>()...,
+                                         behavior_attr<Os>()...));
 };
 
 // An annotation over none, or none over an annotation, keeps its attrs as they are, in their
@@ -625,8 +601,8 @@ constexpr const inline field_spec& field_spec_of = spec_of<attrs_of_t<T>>;
 template <typename Spec, typename T>
 constexpr const Spec* extension_of = [] -> const Spec* {
     using attrs_t = attrs_of_t<T>;
-    if constexpr(tuple_any_of_v<attrs_t, is_spec_attr>) {
-        const auto& extensions = tuple_find_t<attrs_t, is_spec_attr>::extensions;
+    if constexpr(tuple_has_spec_v<attrs_t, attrs::spec>) {
+        const auto& extensions = tuple_find_spec_t<attrs_t, attrs::spec>::extensions;
         if constexpr(tuple_has_v<std::remove_cvref_t<decltype(extensions)>, Spec>) {
             return &std::get<Spec>(extensions);
         }

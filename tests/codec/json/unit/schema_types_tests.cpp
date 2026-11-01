@@ -549,7 +549,7 @@ ZEST_CASE(variant_external_tag) {
     };
     const static std::string_view ext_names[] = {"num", "text"};
     const static variant_type_info ext_var = {
-        {type_kind::variant, "ext_var", {}},
+        {type_kind::variant, "ext_var"},
         {ext_alts, 2},
         tag_mode::external,
         {},
@@ -563,17 +563,14 @@ ZEST_CASE(variant_external_tag) {
         "v",
         {},
         0,
-        0,
         ext_var_ref,
-        false,
         false,
         false,
     };
     const static struct_type_info ext_wrap = {
-        {type_kind::structure, "ext_wrap", {}},
+        {type_kind::structure, "ext_wrap"},
         false,
-        false,
-        {&ext_field, 1},
+        {&ext_field,           1         },
     };
     const auto result = json::schema_string(ext_wrap).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -602,7 +599,7 @@ ZEST_CASE(variant_internal_tag) {
     };
     const static std::string_view int_names[] = {"point", "inner"};
     const static variant_type_info int_var = {
-        {type_kind::variant, "int_var", {}},
+        {type_kind::variant, "int_var"},
         {int_alts, 2},
         tag_mode::internal,
         "type",
@@ -616,17 +613,14 @@ ZEST_CASE(variant_internal_tag) {
         "v",
         {},
         0,
-        0,
         int_var_ref,
-        false,
         false,
         false,
     };
     const static struct_type_info int_wrap = {
-        {type_kind::structure, "int_wrap", {}},
+        {type_kind::structure, "int_wrap"},
         false,
-        false,
-        {&int_field, 1},
+        {&int_field,           1         },
     };
     const auto result = json::schema_string(int_wrap).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -654,12 +648,12 @@ ZEST_CASE(variant_adjacent_tag) {
     };
     const static std::string_view adj_names[] = {"num", "text"};
     const static variant_type_info adj_var = {
-        {type_kind::variant, "adj_var", {}},
-        {adj_alts, 2},
+        {type_kind::variant, "adj_var"},
+        {adj_alts,           2        },
         tag_mode::adjacent,
         "t",
         "c",
-        {adj_names, 2},
+        {adj_names,          2        },
     };
     const static type_info_fn adj_var_ref = []() -> const type_info& {
         return adj_var;
@@ -668,17 +662,14 @@ ZEST_CASE(variant_adjacent_tag) {
         "v",
         {},
         0,
-        0,
         adj_var_ref,
-        false,
         false,
         false,
     };
     const static struct_type_info adj_wrap = {
-        {type_kind::structure, "adj_wrap", {}},
+        {type_kind::structure, "adj_wrap"},
         false,
-        false,
-        {&adj_field, 1},
+        {&adj_field,           1         },
     };
     const auto result = json::schema_string(adj_wrap).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -781,21 +772,20 @@ ZEST_CASE(opaque_root_returns_error) {
 }
 
 ZEST_CASE(any_type_root) {
-    const static type_info any_ti = {type_kind::any, "any", {}};
+    const static type_info any_ti = {type_kind::any, "any"};
     const auto result = json::schema_string(any_ti).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema"})");
 }
 
 ZEST_CASE(any_type_field) {
-    const static type_info any_ti = {type_kind::any, "any", {}};
+    const static type_info any_ti = {type_kind::any, "any"};
     const static field_info any_fields[] = {
-        {"data", {}, 0, 0, []() -> const type_info& { return any_ti; }, false, false, false},
+        {"data", {}, 0, []() -> const type_info& { return any_ti; }, false, false},
     };
     const static struct_type_info any_struct = {
-        {type_kind::structure, "with_any", {}},
+        {type_kind::structure, "with_any"},
         false,
-        false,
-        {any_fields, 1},
+        {any_fields,           1         },
     };
     const auto result = json::schema_string(any_struct).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -993,9 +983,8 @@ ZEST_CASE(vec_of_variant) {
 
 ZEST_CASE(empty_enum) {
     const static enum_type_info empty_ei = {
-        {type_kind::enumeration, "empty_enum", {}},
+        {type_kind::enumeration, "empty_enum"},
         {},
-        nullptr,
         type_kind::int32,
     };
     const auto result = json::schema_string(empty_ei).value();
@@ -1009,7 +998,7 @@ ZEST_CASE(variant_of_variant) {
         type_info_of<bool>,
     };
     const static variant_type_info inner_var = {
-        {type_kind::variant, "inner_variant", {}},
+        {type_kind::variant, "inner_variant"},
         {inner_alts, 2},
         tag_mode::none,
         {},
@@ -1022,7 +1011,7 @@ ZEST_CASE(variant_of_variant) {
         []() -> const type_info& { return inner_var; },
     };
     const static variant_type_info outer_var = {
-        {type_kind::variant, "outer_variant", {}},
+        {type_kind::variant, "outer_variant"},
         {outer_alts, 2},
         tag_mode::none,
         {},
@@ -1058,15 +1047,14 @@ ZEST_CASE(variant_with_monostate) {
 }
 
 ZEST_CASE(bytes_field) {
-    const static type_info bytes_ti = {type_kind::bytes, "bytes", {}};
+    const static type_info bytes_ti = {type_kind::bytes, "bytes"};
     const static field_info bytes_fields[] = {
-        {"data", {}, 0, 0, []() -> const type_info& { return bytes_ti; }, false, false, false},
+        {"data", {}, 0, []() -> const type_info& { return bytes_ti; }, false, false},
     };
     const static struct_type_info bytes_struct = {
-        {type_kind::structure, "with_bytes", {}},
+        {type_kind::structure, "with_bytes"},
         false,
-        false,
-        {bytes_fields, 1},
+        {bytes_fields,         1           },
     };
     const auto result = json::schema_string(bytes_struct).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"

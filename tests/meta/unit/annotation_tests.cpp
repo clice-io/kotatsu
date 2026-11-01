@@ -253,13 +253,6 @@ ZEST_CASE(type_annotation_reaches_a_plain_field) {
     ZEXPECT(info.fields[0].extension<Probe>()->weight == 1);
 }
 
-ZEST_CASE(type_info_carries_its_type_s_extensions) {
-    const auto* probe = type_info_of<Weighed>().extension<Probe>();
-    ZASSERT(probe != nullptr);
-    ZEXPECT(probe->label == "type");
-    ZEXPECT(!type_info_of<int>().has_extension<Probe>());
-}
-
 ZEST_CASE(outer_never_overrides_inner_skip_predicate) {
     using twice = annotate<never_skipped_tag>::type<annotate<skip_negative_tag>::type<int>>;
     ZSTATIC_EXPECT(!(tuple_has_v<typename twice::attrs, behavior::skip_if<Negative>>));

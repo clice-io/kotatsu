@@ -102,8 +102,7 @@ struct annotation<T, Attrs...> : T {
 
 template <annotated_type Value>
 constexpr decltype(auto) annotated_value(Value&& value) {
-    using annotation_t = std::remove_cvref_t<Value>;
-    using underlying_t = typename annotation_t::annotated_type;
+    using underlying_t = raw_type_t<std::remove_cvref_t<Value>>;
     if constexpr(std::is_const_v<std::remove_reference_t<Value>>) {
         return static_cast<const underlying_t&>(value);
     } else {
@@ -111,11 +110,8 @@ constexpr decltype(auto) annotated_value(Value&& value) {
     }
 }
 
-template <typename T>
-using annotated_underlying_t = typename std::remove_cvref_t<T>::annotated_type;
-
 template <annotated_type L, annotated_type R>
-    requires requires(const annotated_underlying_t<L>& lhs, const annotated_underlying_t<R>& rhs) {
+    requires requires(const raw_type_t<L>& lhs, const raw_type_t<R>& rhs) {
         { lhs == rhs } -> std::convertible_to<bool>;
     }
 constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
@@ -124,7 +120,7 @@ constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
 
 template <annotated_type L, typename R>
     requires (!annotated_type<R> &&
-              requires(const annotated_underlying_t<L>& lhs, const R& rhs) {
+              requires(const raw_type_t<L>& lhs, const R& rhs) {
                   { lhs == rhs } -> std::convertible_to<bool>;
               })
 constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
@@ -133,7 +129,7 @@ constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
 
 template <typename L, annotated_type R>
     requires (!annotated_type<L> &&
-              requires(const L& lhs, const annotated_underlying_t<R>& rhs) {
+              requires(const L& lhs, const raw_type_t<R>& rhs) {
                   { lhs == rhs } -> std::convertible_to<bool>;
               })
 constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
@@ -142,36 +138,22 @@ constexpr auto operator==(const L& lhs, const R& rhs) -> bool {
 
 namespace detail {
 
-/// Maps a DSL type component to the equivalent behavior attr.
-template <typename Component>
-struct component_attr;
-
-template <typename Target>
-struct component_attr<dsl::type_component<dsl::aspect::as, Target>> {
-    using type = behavior::as<Target>;
-};
-
-template <typename Adapter>
-struct component_attr<dsl::type_component<dsl::aspect::with, Adapter>> {
-    using type = behavior::with<Adapter>;
-};
-
-template <typename Pred>
-struct component_attr<dsl::type_component<dsl::aspect::skip_if, Pred>> {
-    using type = behavior::skip_if<Pred>;
-};
-
-template <typename Policy>
-struct component_attr<dsl::type_component<dsl::aspect::enum_string, Policy>> {
-    using type = behavior::enum_string<Policy>;
-};
-
+/// The behavior attr of an entry that carries a type; none for an entry that carries a value.
 template <typename C>
-constexpr auto type_component_attr() {
-    if constexpr(dsl::is_type_component_v<C>) {
-        return std::tuple<typename component_attr<C>::type>{};
+constexpr auto type_component_attr(const C&) {
+    return std::tuple<>{};
+}
+
+template <dsl::aspect A, typename T>
+constexpr auto type_component_attr(const dsl::type_component<A, T>&) {
+    if constexpr(A == dsl::aspect::as) {
+        return std::tuple<behavior::as<T>>{};
+    } else if constexpr(A == dsl::aspect::with) {
+        return std::tuple<behavior::with<T>>{};
+    } else if constexpr(A == dsl::aspect::skip_if) {
+        return std::tuple<behavior::skip_if<T>>{};
     } else {
-        return std::tuple<>{};
+        return std::tuple<behavior::enum_string<T>>{};
     }
 }
 
@@ -185,7 +167,7 @@ constexpr auto tag_attrs(std::type_identity<std::tuple<Cs...>>) {
     return std::tuple_cat(
         std::conditional_t<field, std::tuple<attrs::spec<Tag>>, std::tuple<>>{},
         std::conditional_t<structure, std::tuple<attrs::struct_spec<Tag>>, std::tuple<>>{},
-        type_component_attr<Cs>()...);
+        decltype(type_component_attr(std::declval<const Cs&>())){}...);
 }
 
 template <typename T, typename Attrs, typename... Extra>

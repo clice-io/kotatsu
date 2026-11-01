@@ -72,8 +72,8 @@ ZEST_CASE(explicit_rename_overrides_rename_all) {
 }
 
 ZEST_CASE(field_count_unchanged) {
-    ZSTATIC_EXPECT((virtual_schema<fx::RenameAllTarget, fx::CamelConfig>::count) == 3U);
-    ZSTATIC_EXPECT((virtual_schema<fx::MixedRenameStruct, fx::CamelConfig>::count) == 3U);
+    ZSTATIC_EXPECT((virtual_schema<fx::RenameAllTarget, fx::CamelConfig>::fields.size()) == 3U);
+    ZSTATIC_EXPECT((virtual_schema<fx::MixedRenameStruct, fx::CamelConfig>::fields.size()) == 3U);
 }
 
 ZEST_CASE(alias_unaffected_by_rename_all) {

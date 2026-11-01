@@ -15,8 +15,7 @@ namespace {
 struct full_tag {
     constexpr static auto entries = make_annotation(dsl::rename = "userId",
                                                     dsl::alias = {"user_id", "uid"},
-                                                    dsl::description = "User identifier.",
-                                                    dsl::idx = 7u);
+                                                    dsl::description = "User identifier.");
 };
 
 /// A member whose default constructor is explicit.
@@ -149,7 +148,6 @@ ZEST_CASE(entries_fold_into_values) {
     constexpr const field_spec& spec = attrs::spec<full_tag>::value;
     ZSTATIC_EXPECT(spec.rename == "userId");
     ZSTATIC_EXPECT(spec.description == "User identifier.");
-    ZSTATIC_EXPECT(spec.idx == 7u);
     ZSTATIC_EXPECT(spec.alias.size() == 2u);
     ZSTATIC_EXPECT(spec.alias[0] == "user_id");
     ZSTATIC_EXPECT(spec.alias[1] == "uid");
@@ -268,13 +266,12 @@ ZEST_CASE(spec_of_reads_annotation_and_defaults_to_empty) {
 ZEST_CASE(field_info_carries_spec_values) {
     using schema = virtual_schema<spec_struct>;
     // internal is skipped; pair flattens to two fields.
-    ZSTATIC_EXPECT(schema::count == 4u);
+    ZSTATIC_EXPECT(schema::fields.size() == 4u);
 
     constexpr auto& fields = schema::fields;
     ZSTATIC_EXPECT(fields[0].name == "userId");
     ZSTATIC_EXPECT(fields[0].aliases.size() == 2u);
     ZSTATIC_EXPECT(fields[0].aliases[1] == "uid");
-    ZSTATIC_EXPECT(fields[0].idx == 7u);
     ZSTATIC_EXPECT(fields[0].description == "User identifier.");
     ZSTATIC_EXPECT(!fields[0].has_default);
 
@@ -283,7 +280,6 @@ ZEST_CASE(field_info_carries_spec_values) {
 
     ZSTATIC_EXPECT(fields[3].name == "retries");
     ZSTATIC_EXPECT(fields[3].has_default);
-    ZSTATIC_EXPECT(fields[3].idx == field_spec::no_idx);
     ZSTATIC_EXPECT(fields[3].description == "");
 }
 

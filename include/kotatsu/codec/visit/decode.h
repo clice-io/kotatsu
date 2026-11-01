@@ -226,7 +226,7 @@ bool decode_with_attrs(Vis& vis, T& out) {
         static_assert(taggable<T>, "a tagging attribute requires a std::variant");
         // decode_variant reads the variant as itself, tagged or not; a repr
         // of its type does not apply.
-        using spec_attr = tuple_find_t<Attrs, meta::is_struct_spec_attr>;
+        using spec_attr = tuple_find_spec_t<Attrs, meta::attrs::struct_spec>;
         return decode_variant<Config, spec_attr>(vis, out);
     } else {
         return decode_value<meta::node_config_t<Config, T, Attrs>>(vis, out);

@@ -64,50 +64,13 @@ ZEST_CASE(enum_annotated_after_its_definition_is_found) {
     ZSTATIC_EXPECT(spec_of<type_attrs_t<Lamp>>.description == "A lamp");
 }
 
-ZEST_CASE(scalar_helpers) {
-    // int32: signed integer, numeric, scalar
-    constexpr auto int_info = type_info_of<int, default_config>();
-    ZSTATIC_EXPECT(int_info.kind == type_kind::int32);
-    ZSTATIC_EXPECT(int_info.is_integer());
-    ZSTATIC_EXPECT(int_info.is_signed_integer());
-    ZSTATIC_EXPECT(!int_info.is_unsigned_integer());
-    ZSTATIC_EXPECT(!int_info.is_floating());
-    ZSTATIC_EXPECT(int_info.is_numeric());
-    ZSTATIC_EXPECT(int_info.is_scalar());
-
-    // uint64: unsigned integer, numeric, scalar
-    constexpr auto u64_info = type_info_of<std::uint64_t, default_config>();
-    ZSTATIC_EXPECT(u64_info.is_integer());
-    ZSTATIC_EXPECT(!u64_info.is_signed_integer());
-    ZSTATIC_EXPECT(u64_info.is_unsigned_integer());
-    ZSTATIC_EXPECT(u64_info.is_numeric());
-    ZSTATIC_EXPECT(u64_info.is_scalar());
-
-    // double: floating, numeric, scalar
-    constexpr auto dbl_info = type_info_of<double, default_config>();
-    ZSTATIC_EXPECT(!dbl_info.is_integer());
-    ZSTATIC_EXPECT(dbl_info.is_floating());
-    ZSTATIC_EXPECT(dbl_info.is_numeric());
-    ZSTATIC_EXPECT(dbl_info.is_scalar());
-
-    // bool: scalar but not numeric
-    constexpr auto bool_info = type_info_of<bool, default_config>();
-    ZSTATIC_EXPECT(bool_info.is_scalar());
-    ZSTATIC_EXPECT(!bool_info.is_numeric());
-    ZSTATIC_EXPECT(!bool_info.is_integer());
-    ZSTATIC_EXPECT(!bool_info.is_floating());
-
-    // string: scalar but not numeric
-    constexpr auto str_info = type_info_of<std::string, default_config>();
-    ZSTATIC_EXPECT(str_info.kind == type_kind::string);
-    ZSTATIC_EXPECT(str_info.is_scalar());
-    ZSTATIC_EXPECT(!str_info.is_numeric());
-
-    // enum: scalar but not numeric
-    constexpr auto enum_info = type_info_of<fx::Color, default_config>();
-    ZSTATIC_EXPECT(enum_info.kind == type_kind::enumeration);
-    ZSTATIC_EXPECT(enum_info.is_scalar());
-    ZSTATIC_EXPECT(!enum_info.is_numeric());
+ZEST_CASE(scalars_have_their_kind) {
+    ZSTATIC_EXPECT(type_info_of<int, default_config>().kind == type_kind::int32);
+    ZSTATIC_EXPECT(type_info_of<std::uint64_t, default_config>().kind == type_kind::uint64);
+    ZSTATIC_EXPECT(type_info_of<double, default_config>().kind == type_kind::float64);
+    ZSTATIC_EXPECT(type_info_of<bool, default_config>().kind == type_kind::boolean);
+    ZSTATIC_EXPECT(type_info_of<std::string, default_config>().kind == type_kind::string);
+    ZSTATIC_EXPECT(type_info_of<fx::Color, default_config>().kind == type_kind::enumeration);
 }
 
 ZEST_CASE(compound_types) {
@@ -116,7 +79,6 @@ ZEST_CASE(compound_types) {
         constexpr auto arr =
             static_cast<const array_type_info&>(type_info_of<std::vector<int>, default_config>());
         ZSTATIC_EXPECT(arr.kind == type_kind::array);
-        ZSTATIC_EXPECT(!arr.is_scalar());
         constexpr auto elem = arr.element();
         ZSTATIC_EXPECT(elem.kind == type_kind::int32);
     }
@@ -126,7 +88,6 @@ ZEST_CASE(compound_types) {
         constexpr auto s =
             static_cast<const array_type_info&>(type_info_of<std::set<int>, default_config>());
         ZSTATIC_EXPECT(s.kind == type_kind::set);
-        ZSTATIC_EXPECT(!s.is_scalar());
         constexpr auto elem = s.element();
         ZSTATIC_EXPECT(elem.kind == type_kind::int32);
     }
@@ -136,7 +97,6 @@ ZEST_CASE(compound_types) {
         constexpr auto m = static_cast<const map_type_info&>(
             type_info_of<std::map<std::string, int>, default_config>());
         ZSTATIC_EXPECT(m.kind == type_kind::map);
-        ZSTATIC_EXPECT(!m.is_scalar());
         constexpr auto k = m.key();
         constexpr auto v = m.value();
         ZSTATIC_EXPECT(k.kind == type_kind::string);
@@ -212,7 +172,6 @@ ZEST_CASE(compound_types) {
     {
         constexpr auto info = type_info_of<fx::SimpleStruct, default_config>();
         ZSTATIC_EXPECT(info.kind == type_kind::structure);
-        ZSTATIC_EXPECT(!info.is_scalar());
     }
 }
 
@@ -310,10 +269,6 @@ ZEST_CASE(annotated_type_info) {
         ZSTATIC_EXPECT(ei.kind == type_kind::enumeration);
         ZSTATIC_EXPECT(ei.underlying_kind == type_kind::uint64);
         ZSTATIC_EXPECT(ei.member_names.size() == 2U);
-        const auto* u64_vals = static_cast<const std::uint64_t*>(ei.member_values);
-        const std::span<const std::uint64_t> values{u64_vals, ei.member_names.size()};
-        ZEXPECT(values[0] == 0U);
-        ZEXPECT(values[1] == std::numeric_limits<std::uint64_t>::max());
         ZSTATIC_EXPECT(ei.member_names[0] == "zero");
         ZSTATIC_EXPECT(ei.member_names[1] == "max");
     }
@@ -690,20 +645,20 @@ ZEST_CASE(virtual_schema_recursive_fields_are_usable) {
     // previously routed through struct_info_node. Verifies fields/count are
     // instantiable and consistent for recursive types.
     using TS = virtual_schema<fx::TreeNode>;
-    ZSTATIC_EXPECT(TS::count == 2U);
+    ZSTATIC_EXPECT(TS::fields.size() == 2U);
     ZSTATIC_EXPECT(TS::fields.size() == 2U);
     ZSTATIC_EXPECT(TS::fields[0].name == "value");
     ZSTATIC_EXPECT(TS::fields[1].name == "children");
 
     using MX = virtual_schema<fx::MixedRecursive>;
-    ZSTATIC_EXPECT(MX::count == 3U);
+    ZSTATIC_EXPECT(MX::fields.size() == 3U);
     ZSTATIC_EXPECT(MX::fields.size() == 3U);
     ZSTATIC_EXPECT(MX::fields[0].name == "tag");
     ZSTATIC_EXPECT(MX::fields[1].name == "deep");
     ZSTATIC_EXPECT(MX::fields[2].name == "grouped");
 
     using VB = virtual_schema<fx::VariantBranch>;
-    ZSTATIC_EXPECT(VB::count == 1U);
+    ZSTATIC_EXPECT(VB::fields.size() == 1U);
     ZSTATIC_EXPECT(VB::fields[0].name == "nodes");
 }
 

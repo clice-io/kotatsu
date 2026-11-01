@@ -133,9 +133,6 @@ ZEST_CASE(annotate_type_carries_extension_entries_to_plain_fields) {
         static_cast<const meta::struct_type_info&>(meta::type_info_of<downstream::HoldsWeighed>());
     ZSTATIC_EXPECT(info.fields[0].has_extension<downstream::Probe>());
     ZEXPECT(info.fields[0].extension<downstream::Probe>()->weight == 2);
-    const auto* own = meta::type_info_of<downstream::Weighed>().extension<downstream::Probe>();
-    ZASSERT(own != nullptr);
-    ZEXPECT(own->weight == 2);
 }
 
 ZEST_CASE(annotate_works_in_a_class_template) {

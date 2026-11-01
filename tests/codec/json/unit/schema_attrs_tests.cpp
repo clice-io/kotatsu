@@ -302,14 +302,13 @@ ZEST_CASE(all_default_fields) {
 
 ZEST_CASE(deny_unknown_struct) {
     const static field_info deny_fields[] = {
-        {"name",  {}, 0, 0, type_info_of<std::string>,  false, false, false},
-        {"count", {}, 0, 1, type_info_of<std::int32_t>, false, false, false},
+        {"name",  {}, 0, type_info_of<std::string>,  false, false},
+        {"count", {}, 0, type_info_of<std::int32_t>, false, false},
     };
     const static struct_type_info deny_info = {
-        {type_kind::structure, "deny_struct", {}},
+        {type_kind::structure, "deny_struct"},
         true, // deny_unknown
-        false, // is_trivial_layout
-        {deny_fields, 2},
+        {deny_fields,          2            },
     };
     const auto result = json::schema_string(deny_info).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"

@@ -72,18 +72,12 @@ constexpr std::partial_ordering compare_numbers(const schema_number& a, const sc
 /// field_spec_of so mangled names never contain the string payloads. Designed
 /// to be attachable verbatim as a C++26 [[=...]] annotation object later.
 struct field_spec {
-    constexpr static std::uint32_t no_idx = 0xFFFF'FFFF;
-
     /// Serialized name replacing the reflected field name; empty means unset.
     std::string_view rename = {};
     /// Documentation exported by schema backends; transparent in serialized output.
     std::string_view description = {};
     /// Extra accepted names during deserialization.
     name_list alias = {};
-    /// Field ordinal for index-addressed formats (flatbuffers/protobuf).
-    /// Metadata only for now: exposed through field_info, no backend consumes
-    /// it yet.
-    std::uint32_t idx = no_idx;
     /// Built-in serialization-skip condition.
     skip_when skip_if = skip_when::never;
     /// Exclude the field from (de)serialization entirely.
@@ -143,10 +137,6 @@ struct struct_spec {
     name_list tag_names = {};
 };
 
-/// Carries a type into the annotation DSL: `as = type<Target>`.
-template <typename T>
-struct type_tag {};
-
 namespace dsl {
 
 /// Which spec aspect a component sets; used to reject duplicates.
@@ -155,7 +145,6 @@ enum class aspect : std::uint8_t {
     rename,
     description,
     alias,
-    idx,
     skip,
     flatten,
     defaulted,
@@ -219,12 +208,6 @@ struct type_component {
 
     constexpr void apply(field_spec&) const {}
 };
-
-template <typename T>
-constexpr bool is_type_component_v = false;
-
-template <aspect A, typename T>
-constexpr bool is_type_component_v<type_component<A, T>> = true;
 
 /// A DSL component: it applies to its spec_type and says which entry it is.
 template <typename T>
@@ -310,7 +293,7 @@ struct skip_if_proxy {
     }
 
     template <typename Pred>
-    constexpr auto operator=(type_tag<Pred>) const {
+    constexpr auto operator=(std::type_identity<Pred>) const {
         return type_component<aspect::skip_if, Pred>{};
     }
 };
@@ -318,7 +301,7 @@ struct skip_if_proxy {
 template <aspect A>
 struct type_proxy {
     template <typename T>
-    constexpr auto operator=(type_tag<T>) const {
+    constexpr auto operator=(std::type_identity<T>) const {
         return type_component<A, T>{};
     }
 };
@@ -328,7 +311,6 @@ struct type_proxy {
 [[maybe_unused]] constexpr inline value_proxy<aspect::description,
                                               &field_spec::description,
                                               std::string_view> description{};
-[[maybe_unused]] constexpr inline value_proxy<aspect::idx, &field_spec::idx, std::uint32_t> idx{};
 [[maybe_unused]] constexpr inline value_proxy<aspect::skip, &field_spec::skip, bool> skip{};
 [[maybe_unused]] constexpr inline value_proxy<aspect::flatten, &field_spec::flatten, bool>
     flatten{};
@@ -364,8 +346,9 @@ struct type_proxy {
 [[maybe_unused]] constexpr inline name_list_proxy<aspect::tag_names, &struct_spec::tag_names>
     tag_names{};
 
+/// Carries a type into the annotation DSL: `as = type<Target>`.
 template <typename T>
-[[maybe_unused]] constexpr inline type_tag<T> type{};
+[[maybe_unused]] constexpr inline std::type_identity<T> type{};
 
 }  // namespace dsl
 
@@ -411,11 +394,32 @@ struct extension_specs<std::tuple<Specs...>, C, Rest...> {
         Rest...>::type;
 };
 
-constexpr void validate_spec(const field_spec& spec) {
+/// The spec of type `Spec` the entries an annotation keeps set.
+template <typename Spec, typename... Cs>
+constexpr Spec fold_entries(const std::tuple<Cs...>& entries) {
+    Spec spec{};
+    std::apply(
+        [&]([[maybe_unused]] const Cs&... component) {
+            (
+                [&] {
+                    if constexpr(dsl::spec_component<Cs, Spec>) {
+                        component.apply(spec);
+                    }
+                }(),
+                ...);
+        },
+        entries);
+    return spec;
+}
+
+/// The field spec the entries set, checked.
+template <typename... Cs>
+constexpr field_spec field_spec_from(const std::tuple<Cs...>& entries) {
+    const auto spec = fold_entries<field_spec>(entries);
     if(spec.skip && spec.flatten) {
         KOTATSU_THROW("annotation: skip and flatten conflict");
     }
-    auto aliases = spec.alias;
+    const auto aliases = spec.alias;
     for(std::size_t i = 0; i < aliases.size(); ++i) {
         if(aliases[i].empty()) {
             KOTATSU_THROW("annotation: empty alias name");
@@ -449,11 +453,14 @@ constexpr void validate_spec(const field_spec& spec) {
             }
         }
     }
+    return spec;
 }
 
-/// Derive the tagging mode from the tag/content field names and check the
-/// combination for consistency.
-constexpr struct_spec finalize_struct_spec(struct_spec spec) {
+/// The struct spec the entries set, its tagging mode derived from the tag and content field
+/// names, the combination checked.
+template <typename... Cs>
+constexpr struct_spec struct_spec_from(const std::tuple<Cs...>& entries) {
+    auto spec = fold_entries<struct_spec>(entries);
     if(spec.tagging == tag_mode::external && !spec.tag.empty()) {
         KOTATSU_THROW("annotation: tagged = true conflicts with a tag field name");
     }
@@ -484,36 +491,6 @@ constexpr struct_spec finalize_struct_spec(struct_spec spec) {
         }
     }
     return spec;
-}
-
-/// The spec of type `Spec` the entries an annotation keeps set.
-template <typename Spec, typename... Cs>
-constexpr Spec fold_entries(const std::tuple<Cs...>& entries) {
-    Spec spec{};
-    std::apply(
-        [&](const Cs&... component) {
-            (
-                [&] {
-                    if constexpr(dsl::spec_component<Cs, Spec>) {
-                        component.apply(spec);
-                    }
-                }(),
-                ...);
-        },
-        entries);
-    return spec;
-}
-
-template <typename... Cs>
-constexpr field_spec field_spec_from(const std::tuple<Cs...>& entries) {
-    auto spec = fold_entries<field_spec>(entries);
-    validate_spec(spec);
-    return spec;
-}
-
-template <typename... Cs>
-constexpr struct_spec struct_spec_from(const std::tuple<Cs...>& entries) {
-    return finalize_struct_spec(fold_entries<struct_spec>(entries));
 }
 
 /// The specs of the extensions the entries set, one of each spec type, each checked by a

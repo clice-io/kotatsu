@@ -146,24 +146,8 @@ constexpr bool is_integer_kind(type_kind k) noexcept {
     return k >= type_kind::int8 && k <= type_kind::uint64;
 }
 
-constexpr bool is_signed_integer_kind(type_kind k) noexcept {
-    return k >= type_kind::int8 && k <= type_kind::int64;
-}
-
-constexpr bool is_unsigned_integer_kind(type_kind k) noexcept {
-    return k >= type_kind::uint8 && k <= type_kind::uint64;
-}
-
 constexpr bool is_floating_kind(type_kind k) noexcept {
     return k == type_kind::float32 || k == type_kind::float64;
-}
-
-constexpr bool is_object_kind(type_kind k) noexcept {
-    return k == type_kind::structure || k == type_kind::map;
-}
-
-constexpr bool is_sequence_kind(type_kind k) noexcept {
-    return k == type_kind::array || k == type_kind::set || k == type_kind::tuple;
 }
 
 template <typename T>

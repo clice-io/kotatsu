@@ -24,7 +24,6 @@
         using ::kotatsu::meta::dsl::rename;                                                        \
         using ::kotatsu::meta::dsl::description;                                                   \
         using ::kotatsu::meta::dsl::alias;                                                         \
-        using ::kotatsu::meta::dsl::idx;                                                           \
         using ::kotatsu::meta::dsl::skip;                                                          \
         using ::kotatsu::meta::dsl::flatten;                                                       \
         using ::kotatsu::meta::dsl::defaulted;                                                     \

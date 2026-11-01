@@ -601,23 +601,17 @@ ZEST_CASE(combo_trivial_nested) {
 
 ZEST_CASE(self_referential_struct) {
     static struct_type_info self_info = {
-        {type_kind::structure, "self_ref", {}},
-        false,
+        {type_kind::structure, "self_ref"},
         false,
         {},
     };
     const static optional_type_info opt_self = {
-        {type_kind::optional, "optional<self_ref>", {}},
+        {type_kind::optional, "optional<self_ref>"},
         []() -> const type_info& { return self_info; },
     };
     const static field_info self_fields[] = {
-        {"value", {}, 0, 0, type_info_of<std::int32_t>, false, false, false},
-        {"next",
-         {},
-         0, 1,
-         []() -> const type_info& { return opt_self; },
-         false, false,
-         false, true},
+        {"value", {}, 0, type_info_of<std::int32_t>, false, false},
+        {"next", {}, 0, []() -> const type_info& { return opt_self; }, false, false, true},
     };
     self_info.fields = {self_fields, 2};
 
@@ -632,16 +626,15 @@ ZEST_CASE(self_referential_struct) {
 
 ZEST_CASE(field_ordering_stability) {
     const static field_info ordered_fields[] = {
-        {"zebra",  {}, 0, 0, type_info_of<std::string>,  false, false, false},
-        {"alpha",  {}, 0, 1, type_info_of<std::int32_t>, false, false, false},
-        {"middle", {}, 0, 2, type_info_of<bool>,         false, false, false},
-        {"beta",   {}, 0, 3, type_info_of<double>,       false, false, false},
+        {"zebra",  {}, 0, type_info_of<std::string>,  false, false},
+        {"alpha",  {}, 0, type_info_of<std::int32_t>, false, false},
+        {"middle", {}, 0, type_info_of<bool>,         false, false},
+        {"beta",   {}, 0, type_info_of<double>,       false, false},
     };
     const static struct_type_info ordered_info = {
-        {type_kind::structure, "ordered_struct", {}},
+        {type_kind::structure, "ordered_struct"},
         false,
-        false,
-        {ordered_fields, 4},
+        {ordered_fields,       4               },
     };
     const auto result = json::schema_string(ordered_info).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -656,34 +649,32 @@ ZEST_CASE(field_ordering_stability) {
 
 ZEST_CASE(mutual_recursion) {
     static struct_type_info info_a = {
-        {type_kind::structure, "node_a", {}},
-        false,
+        {type_kind::structure, "node_a"},
         false,
         {}
     };
     static struct_type_info info_b = {
-        {type_kind::structure, "node_b", {}},
-        false,
+        {type_kind::structure, "node_b"},
         false,
         {}
     };
 
     const static optional_type_info opt_b = {
-        {type_kind::optional, "optional<node_b>", {}},
+        {type_kind::optional, "optional<node_b>"},
         []() -> const type_info& { return info_b; },
     };
     const static optional_type_info opt_a = {
-        {type_kind::optional, "optional<node_a>", {}},
+        {type_kind::optional, "optional<node_a>"},
         []() -> const type_info& { return info_a; },
     };
 
     const static field_info fields_a[] = {
-        {"value", {}, 0, 0, type_info_of<std::int32_t>, false, false, false},
-        {"b", {}, 0, 1, []() -> const type_info& { return opt_b; }, false, false, false, true},
+        {"value", {}, 0, type_info_of<std::int32_t>, false, false},
+        {"b", {}, 0, []() -> const type_info& { return opt_b; }, false, false, true},
     };
     const static field_info fields_b[] = {
-        {"name", {}, 0, 0, type_info_of<std::string>, false, false, false},
-        {"a", {}, 0, 1, []() -> const type_info& { return opt_a; }, false, false, false, true},
+        {"name", {}, 0, type_info_of<std::string>, false, false},
+        {"a", {}, 0, []() -> const type_info& { return opt_a; }, false, false, true},
     };
     info_a.fields = {fields_a, 2};
     info_b.fields = {fields_b, 2};

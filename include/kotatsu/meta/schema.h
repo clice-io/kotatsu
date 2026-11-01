@@ -8,7 +8,7 @@
 
 namespace kotatsu::meta {
 
-template <typename RawType, typename BehaviorAttrs = std::tuple<>>
+template <typename RawType, typename BehaviorAttrs>
 struct field_slot {
     using raw_type = RawType;
     using attrs = BehaviorAttrs;
@@ -18,8 +18,8 @@ namespace detail {
 
 template <typename T,
           std::size_t I,
-          bool Skipped = field_attr_flags<T, I>::skipped,
-          bool Flattened = field_attr_flags<T, I>::flattened>
+          bool Skipped = field_spec_of<meta::field_type<T, I>>.skip,
+          bool Flattened = field_spec_of<meta::field_type<T, I>>.flatten>
 struct single_field_slots {
     using field_t = std::remove_cv_t<meta::field_type<T, I>>;
     using raw_type = raw_type_t<field_t>;
@@ -42,11 +42,6 @@ struct build_slots_from_seq<T, std::index_sequence<Is...>> {
 };
 
 template <typename T>
-struct build_slots_from_seq<T, std::index_sequence<>> {
-    using type = type_list<>;
-};
-
-template <typename T>
 using build_slots_t =
     typename build_slots_from_seq<T, std::make_index_sequence<meta::field_count<T>()>>::type;
 
@@ -62,8 +57,6 @@ struct single_field_slots<T, I, /*Skipped=*/false, /*Flattened=*/true> {
 template <typename T, typename Config = default_config>
     requires meta::reflectable_class<T>
 struct virtual_schema {
-    constexpr static std::size_t count = detail::type_instance<T, Config>::count;
-
     // Obtain fields from type_info_of<T>().fields (the span inside struct_type_info::value)
     // rather than referencing type_instance<T>::fields directly.  This matters for recursive
     // types: build_fields<T>() stores type_info_of<child> function pointers which
@@ -76,8 +69,6 @@ struct virtual_schema {
         static_cast<const struct_type_info&>(type_info_of<T, Config>()).fields;
 
     using slots = detail::build_slots_t<T>;
-    constexpr static bool is_trivially_copyable =
-        detail::type_instance<T, Config>::is_trivially_copyable;
     constexpr static bool deny_unknown = detail::type_instance<T, Config>::deny_unknown;
 };
 
