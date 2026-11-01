@@ -1,8 +1,7 @@
 #pragma once
 
-// Settings fixtures: one rename_all per built-in policy, plus identity. Read
-// by type_info::of as the knobs of a format, and by the kit through
-// kit_format_t.
+// Settings fixtures: one rename_all per built-in policy, plus identity. Not
+// formats themselves: the kit makes a format of them through kit_format_t.
 
 #include "kotatsu/support/naming.h"
 
