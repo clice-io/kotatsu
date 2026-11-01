@@ -21,7 +21,7 @@ enum class KVStyle : std::uint8_t {
 
 /// How many arguments a positional list takes when it is given: `min` to `max`. A number is
 /// exactly that many; the default is one or more. Whether it may be left out altogether is
-/// `required`'s to say.
+/// its field's presence's to say.
 struct ArgNum {
     constexpr static std::uint32_t unbounded = std::numeric_limits<std::uint32_t>::max();
 
@@ -66,10 +66,6 @@ struct ArgSpec {
     bool rest = false;
     /// Whether a flag counts how often it is given (`-v -v -v`) rather than whether it is.
     bool count = false;
-    /// Whether it must be given: the field's presence is required (`presence = required`; a
-    /// field is optional otherwise, under cli::format). A positional scalar must be, unless it
-    /// is a std::optional.
-    bool required = false;
     /// Whether giving it ends the parse: nothing after it is read, and nothing required is
     /// checked. The help option's does.
     bool stop = false;

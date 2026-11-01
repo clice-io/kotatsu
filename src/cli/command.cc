@@ -243,7 +243,7 @@ class Builder {
                       const std::string& path) {
         Subcommands subcommands{.keys = keys,
                                 .path = path,
-                                .optional = !use.spec.required,
+                                .optional = !use.required,
                                 .group = group};
         for(const auto& entry: use.spec.commands.registry().entries) {
             subcommands.names.push_back(entry.name);
@@ -266,7 +266,7 @@ class Builder {
         command.exclusives.push_back(Exclusive{
             .keys = keys,
             .group = group,
-            .required = use.spec.required,
+            .required = use.required,
             .first_args = std::vector<std::uint32_t>(variant.alternatives.size(), no_arg),
         });
         const auto title = field.description.empty() ? std::string(field.declared_name)
@@ -333,7 +333,6 @@ class Builder {
                     arg.alternative = current_alternative;
                     arg.keys = std::move(field_keys);
                     arg.path = field_path;
-                    arg.help = field.description;
                     add_arg(std::move(arg));
                     break;
                 }

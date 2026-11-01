@@ -48,15 +48,9 @@ struct Arg : FieldUse {
     std::string path = {};
     /// How a usage writes it: "-o|--output <FILE>".
     std::string usage = {};
-    /// Its help, the field's description.
-    std::string_view help = {};
     /// The name to_argv() writes it with, and how it writes a value.
     std::string write_name = {};
     Form form = Form::Separate;
-
-    bool required() const {
-        return spec.required || (spec.positional && !list && !optional);
-    }
 };
 
 /// A struct inside a command: a group of its arguments.

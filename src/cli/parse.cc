@@ -459,7 +459,7 @@ public:
                     return error(Error::Kind::InvalidValue, std::move(*message), at_end, at_end);
                 }
             }
-            if(given != 0 || !arg.required() || !present(arg.group)) {
+            if(given != 0 || !arg.required || !present(arg.group)) {
                 continue;
             }
             if(arg.spec.positional) {

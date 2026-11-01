@@ -71,6 +71,10 @@ struct FieldUse {
 
     Kind kind = Kind::Arg;
     ArgSpec spec = {};
+    /// Whether the argv must give it: its presence is required (`presence = required`; a field
+    /// may be left out otherwise, under cli::format). A positional argument of one value must be
+    /// given too, unless it is a std::optional.
+    bool required = false;
     /// Whether the field is a std::optional, the type below it `type`.
     bool optional = false;
     const codec::type_info* type = nullptr;
@@ -87,7 +91,7 @@ constexpr FieldUse use_of(const codec::field_info& field) {
     if(field.has_extension<ArgSpec>()) {
         use.spec = *field.extension<ArgSpec>();
     }
-    use.spec.required = field.presence == codec::presence_kind::required;
+    use.required = field.presence == codec::presence_kind::required;
     use.type = &field.type();
     if(use.type->kind == meta::type_kind::optional) {
         use.optional = true;
@@ -100,30 +104,32 @@ constexpr FieldUse use_of(const codec::field_info& field) {
     }
     if(!use.spec.forward.empty()) {
         use.shape = Shape::Alias;
-        return use;
+    } else {
+        switch(use.type->kind) {
+            case meta::type_kind::structure: use.kind = FieldUse::Kind::Group; return use;
+            case meta::type_kind::variant:
+                use.kind =
+                    use.spec.exclusive ? FieldUse::Kind::Exclusive : FieldUse::Kind::Subcommands;
+                return use;
+            case meta::type_kind::array:
+            case meta::type_kind::set:
+                use.list = true;
+                use.value_type = &static_cast<const codec::array_type_info&>(*use.type).element();
+                break;
+            default: break;
+        }
+        if(use.value_type->kind == meta::type_kind::tuple) {
+            use.shape = Shape::Tuple;
+            use.tuple_size = static_cast<std::uint32_t>(
+                static_cast<const codec::tuple_type_info&>(*use.value_type).elements.size());
+        } else if(use.value_type->kind == meta::type_kind::boolean && !use.list &&
+                  !use.spec.positional && !use.spec.rest) {
+            use.shape = Shape::Flag;
+        } else if(use.spec.count) {
+            use.shape = Shape::Count;
+        }
     }
-    switch(use.type->kind) {
-        case meta::type_kind::structure: use.kind = FieldUse::Kind::Group; return use;
-        case meta::type_kind::variant:
-            use.kind = use.spec.exclusive ? FieldUse::Kind::Exclusive : FieldUse::Kind::Subcommands;
-            return use;
-        case meta::type_kind::array:
-        case meta::type_kind::set:
-            use.list = true;
-            use.value_type = &static_cast<const codec::array_type_info&>(*use.type).element();
-            break;
-        default: break;
-    }
-    if(use.value_type->kind == meta::type_kind::tuple) {
-        use.shape = Shape::Tuple;
-        use.tuple_size = static_cast<std::uint32_t>(
-            static_cast<const codec::tuple_type_info&>(*use.value_type).elements.size());
-    } else if(use.value_type->kind == meta::type_kind::boolean && !use.list &&
-              !use.spec.positional && !use.spec.rest) {
-        use.shape = Shape::Flag;
-    } else if(use.spec.count) {
-        use.shape = Shape::Count;
-    }
+    use.required = use.required || (use.spec.positional && !use.list && !use.optional);
     return use;
 }
 

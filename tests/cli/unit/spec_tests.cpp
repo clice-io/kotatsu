@@ -1,4 +1,4 @@
-// What a field's cli:: entries declare.
+// What a field's cli:: attributes declare.
 
 #include <string_view>
 
@@ -26,7 +26,7 @@ struct Helped {
 
 ZEST_SUITE(cli_spec) {
 
-ZEST_CASE(entries_fold_into_the_spec) {
+ZEST_CASE(attributes_fold_into_the_spec) {
     constexpr const auto* spec = meta::spec_in<ArgSpec, meta::field_attrs_t<Fields, 0>>;
     ZSTATIC_EXPECT(spec->names.size() == 2U);
     ZSTATIC_EXPECT(spec->names[1] == "--out");
@@ -40,7 +40,7 @@ ZEST_CASE(positional_takes_its_count) {
     ZSTATIC_EXPECT(spec->arg_num == ArgNum(1, 2));
 }
 
-ZEST_CASE(field_without_entries_has_no_spec) {
+ZEST_CASE(field_without_attributes_has_no_spec) {
     ZSTATIC_EXPECT(meta::spec_in<ArgSpec, meta::field_attrs_t<Fields, 2>> == nullptr);
 }
 
