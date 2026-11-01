@@ -343,8 +343,8 @@ void reserve_for(Container& out, const Access& access) {
 }
 
 /// Whether the input must carry a slot: its type is not nullable (seen
-/// through annotations), and neither its attrs nor, for an annotated type,
-/// that annotation give it a default or a skip condition.
+/// through annotations), and its attrs, those of every annotation around it
+/// composed, give it no default or skip condition.
 template <typename Slot>
 constexpr bool slot_required = [] {
     using raw_t = std::remove_cv_t<typename Slot::raw_type>;
@@ -354,16 +354,9 @@ constexpr bool slot_required = [] {
        kind == meta::type_kind::null) {
         return false;
     }
-    if(tuple_has_spec_v<attrs_t, meta::behavior::skip_if> ||
-       meta::spec_of<attrs_t>.skip_if != meta::skip_when::never ||
-       meta::spec_of<attrs_t>.defaulted) {
-        return false;
-    }
-    if constexpr(meta::annotated_type<raw_t>) {
-        return !meta::spec_of<typename raw_t::attrs>.defaulted;
-    } else {
-        return true;
-    }
+    return !(tuple_has_spec_v<attrs_t, meta::behavior::skip_if> ||
+             meta::spec_of<attrs_t>.skip_if != meta::skip_when::never ||
+             meta::spec_of<attrs_t>.defaulted);
 }();
 
 /// Bit I set when slot I of T under Config is required; none is under

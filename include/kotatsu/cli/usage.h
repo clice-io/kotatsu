@@ -73,8 +73,8 @@ std::vector<UsageEntry> usage_entries() {
     return detail::usage_entries(detail::command_of<T>(), detail::defaults_of<T>(texts));
 }
 
-/// The usage of a program taking the options `T` declares: what `T` is (its static
-/// `description`), `usage: <usage_line>`, its options, by group, and its subcommands.
+/// The usage of a program taking the options `T` declares: what `T` is (the description its
+/// KANNOTATE_TYPE gives), `usage: <usage_line>`, its options, by group, and its subcommands.
 template <typename T>
 std::string usage(std::string_view usage_line, const Style& style = {}) {
     std::deque<std::string> texts;

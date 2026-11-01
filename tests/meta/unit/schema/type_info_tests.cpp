@@ -26,19 +26,15 @@ namespace {
 
 namespace fx = ::kotatsu::test;
 
-/// Annotated above it, as KANNOTATE_TYPE (in codec's macro sheet) writes it, which
-/// declares the struct.
-constexpr auto kotatsu_type_annotation(std::type_identity<struct Described>) {
+/// Annotated above it, as KANNOTATE_TYPE (in codec's macro sheet) writes it.
+struct Described;
+
+constexpr auto kotatsu_type_annotation(std::type_identity<Described>) {
     return make_annotation(dsl::description = "A described struct");
 }
 
 struct Described {
     int value = 0;
-};
-
-/// A field named `description`, which is no description of the struct.
-struct Noted {
-    std::string_view description;
 };
 
 /// Takes no annotation from the struct it derives from.
@@ -54,12 +50,10 @@ constexpr auto kotatsu_type_annotation(std::type_identity<Lamp>) {
 
 ZEST_SUITE(meta_schema_type_info) {
 
-ZEST_CASE(struct_description_is_its_annotations) {
+ZEST_CASE(struct_description_comes_from_its_annotation) {
     const auto& described =
         static_cast<const struct_type_info&>(type_info_of<Described, default_config>());
     ZEXPECT(described.description == "A described struct");
-    const auto& noted = static_cast<const struct_type_info&>(type_info_of<Noted, default_config>());
-    ZEXPECT(noted.description.empty());
 }
 
 ZEST_CASE(derived_struct_takes_no_annotation_of_its_base) {

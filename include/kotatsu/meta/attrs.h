@@ -32,6 +32,7 @@ namespace attrs {
 /// returned; only the short tag name appears in template arguments.
 template <typename Tag>
 struct spec {
+    using tag = Tag;
     constexpr static field_spec value = detail::field_spec_from(Tag::entries);
     constexpr static auto extensions = detail::extensions_from(Tag::entries);
 };
@@ -41,6 +42,7 @@ struct spec {
 /// have different serialized schemas.
 template <typename Tag>
 struct struct_spec {
+    using tag = Tag;
     constexpr static meta::struct_spec value = detail::struct_spec_from(Tag::entries);
 };
 
@@ -137,28 +139,6 @@ constexpr inline auto extension_refs = extension_refs_of<AttrsTuple>();
 /// The specs of the extensions an attrs tuple carries.
 template <typename AttrsTuple>
 constexpr std::span<const extension_ref> extensions_of = detail::extension_refs<AttrsTuple>;
-
-namespace detail {
-
-template <typename Spec, typename... Extensions>
-constexpr const Spec* find_extension(const std::tuple<Extensions...>& extensions) {
-    if constexpr(is_one_of<Spec, Extensions...>) {
-        return &std::get<Spec>(extensions);
-    } else {
-        return nullptr;
-    }
-}
-
-template <typename Spec, typename AttrsTuple>
-constexpr const Spec* extension_in() {
-    if constexpr(tuple_any_of_v<AttrsTuple, is_spec_attr>) {
-        return find_extension<Spec>(tuple_find_t<AttrsTuple, is_spec_attr>::extensions);
-    } else {
-        return nullptr;
-    }
-}
-
-}  // namespace detail
 
 template <typename T>
 struct is_struct_spec_attr {
@@ -426,21 +406,27 @@ struct composed_tag {
     constexpr static auto entries = compose_entries(Inner::entries, Outer::entries);
 };
 
-template <typename Attr>
-struct tag_of;
+using skip_if_entry = dsl::type_component<dsl::aspect::skip_if, void>;
 
-template <typename Tag>
-struct tag_of<attrs::spec<Tag>> {
-    using type = Tag;
-};
+template <typename... Cs>
+consteval bool has_skip_if_entry(std::type_identity<std::tuple<Cs...>>) {
+    return (same_entry<Cs, skip_if_entry>() || ...);
+}
 
+/// The entries of `Tag` but its skip_if, which the predicate of an annotation around it
+/// replaces.
 template <typename Tag>
-struct tag_of<attrs::struct_spec<Tag>> {
-    using type = Tag;
+struct without_skip_if {
+    constexpr static auto entries = std::apply(
+        [](const auto&... component) {
+            return std::tuple_cat(kept_entry<skip_if_entry>(component)...);
+        },
+        Tag::entries);
 };
 
 /// The attr of the kind `Is` finds (attrs::spec, attrs::struct_spec) that inner attrs and
-/// outer ones make together: both tags composed, or the one either has.
+/// outer ones make together: both tags composed, or the one either has. An inner field spec
+/// loses its skip_if to a bare skip_if predicate around it, which no outer tag carries.
 template <typename Inner,
           typename Outer,
           template <typename> typename Is,
@@ -448,16 +434,36 @@ template <typename Inner,
 constexpr auto composed_spec_attr() {
     constexpr bool inner = tuple_any_of_v<Inner, Is>;
     constexpr bool outer = tuple_any_of_v<Outer, Is>;
-    if constexpr(inner && outer) {
-        using tag = composed_tag<typename tag_of<tuple_find_t<Inner, Is>>::type,
-                                 typename tag_of<tuple_find_t<Outer, Is>>::type>;
-        return std::tuple<Attr<tag>>{};
-    } else if constexpr(inner) {
-        return std::tuple<tuple_find_t<Inner, Is>>{};
+    if constexpr(inner) {
+        using inner_tag = typename tuple_find_t<Inner, Is>::tag;
+        using kept_tag = std::conditional_t<std::same_as<Attr<inner_tag>, attrs::spec<inner_tag>> &&
+                                                tuple_has_spec_v<Outer, behavior::skip_if>,
+                                            without_skip_if<inner_tag>,
+                                            inner_tag>;
+        if constexpr(outer) {
+            return std::tuple<
+                Attr<composed_tag<kept_tag, typename tuple_find_t<Outer, Is>::tag>>>{};
+        } else {
+            return std::tuple<Attr<kept_tag>>{};
+        }
     } else if constexpr(outer) {
         return std::tuple<tuple_find_t<Outer, Is>>{};
     } else {
         return std::tuple<>{};
+    }
+}
+
+/// Whether attrs say when the value is skipped: a skip_if entry of either form, `never`
+/// included, or a skip_if predicate attr.
+template <typename AttrsTuple>
+consteval bool sets_skip_if() {
+    if constexpr(tuple_has_spec_v<AttrsTuple, behavior::skip_if>) {
+        return true;
+    } else if constexpr(tuple_any_of_v<AttrsTuple, is_spec_attr>) {
+        using tag = typename tuple_find_t<AttrsTuple, is_spec_attr>::tag;
+        return has_skip_if_entry(std::type_identity<std::remove_const_t<decltype(tag::entries)>>{});
+    } else {
+        return false;
     }
 }
 
@@ -468,8 +474,7 @@ constexpr auto kept_behavior() {
     if constexpr(!is_behavior_attr_v<Attr>) {
         return std::tuple<>{};
     } else if constexpr(is_specialization_of<behavior::skip_if, Attr>) {
-        if constexpr(tuple_has_spec_v<Outer, behavior::skip_if> ||
-                     spec_of<Outer>.skip_if != skip_when::never) {
+        if constexpr(sets_skip_if<Outer>()) {
             return std::tuple<>{};
         } else {
             return std::tuple<Attr>{};
@@ -503,6 +508,10 @@ struct compose_attrs<std::tuple<Is...>, std::tuple<Os...>> {
         kept_behavior<outer, Is>()...,
         behavior_attr<Os>()...));
 };
+
+// An annotation over none, or none over an annotation, keeps its attrs as they are, in their
+// order: the slots and type_info of an annotation that composes with nothing stay the ones
+// it had alone.
 
 template <typename... Os>
 struct compose_attrs<std::tuple<>, std::tuple<Os...>> {
@@ -604,15 +613,25 @@ using raw_type_t = typename detail::raw_type<T>::type;
 /// The attrs a field of type `T` carries: the annotation of the type it annotates, under the
 /// annotations written around it, an outer one's entries overriding an inner one's.
 template <typename T>
-using attrs_of_t = compose_attrs_t<type_attrs_t<raw_type_t<T>>, decltype(detail::own_attrs<T>())>;
+using attrs_of_t = compose_attrs_t<type_attrs_t<std::remove_cv_t<raw_type_t<T>>>,
+                                   decltype(detail::own_attrs<T>())>;
 
 /// The value spec a field of type `T` carries (attrs_of_t).
 template <typename T>
-constexpr const inline field_spec& field_spec_of = spec_of<attrs_of_t<std::remove_cv_t<T>>>;
+constexpr const inline field_spec& field_spec_of = spec_of<attrs_of_t<T>>;
 
 /// The spec of type `Spec` an extension attached to a field of type `T`, its type's own
 /// annotation included (attrs_of_t); null when it has none.
 template <typename Spec, typename T>
-constexpr const Spec* extension_of = detail::extension_in<Spec, attrs_of_t<std::remove_cv_t<T>>>();
+constexpr const Spec* extension_of = [] -> const Spec* {
+    using attrs_t = attrs_of_t<T>;
+    if constexpr(tuple_any_of_v<attrs_t, is_spec_attr>) {
+        const auto& extensions = tuple_find_t<attrs_t, is_spec_attr>::extensions;
+        if constexpr(tuple_has_v<std::remove_cvref_t<decltype(extensions)>, Spec>) {
+            return &std::get<Spec>(extensions);
+        }
+    }
+    return nullptr;
+}();
 
 }  // namespace kotatsu::meta

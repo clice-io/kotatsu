@@ -306,14 +306,15 @@ class Builder {
             switch(use.kind) {
                 case FieldUse::Kind::Group: {
                     const auto inner = static_cast<std::uint32_t>(command.groups.size());
+                    const auto& members = static_cast<const meta::struct_type_info&>(*use.type);
+                    // The struct's own, which a std::optional of it does not pass on.
+                    const auto description =
+                        field.description.empty() ? members.description : field.description;
                     command.groups.push_back(Group{.parent = group,
                                                    .optional = use.optional,
                                                    .keys = field_keys,
-                                                   .description = std::string(field.description)});
-                    add_struct(static_cast<const meta::struct_type_info&>(*use.type),
-                               inner,
-                               field_keys,
-                               field_path);
+                                                   .description = std::string(description)});
+                    add_struct(members, inner, field_keys, field_path);
                     break;
                 }
                 case FieldUse::Kind::Subcommands:

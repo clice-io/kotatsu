@@ -84,6 +84,13 @@ struct Unnamed {
     int jobs = 2;
 };
 
+/// The help option, kept out of the usage.
+struct QuietHelp {
+    KANNOTATE(cli::hidden = true)
+    <cli::Help> help;
+    int jobs = 0;
+};
+
 struct Run {
     KANNOTATE(cli::rest = true, cli::meta_var = "<ARG>")
     <std::vector<std::string>> command;
@@ -207,6 +214,13 @@ ZEST_CASE(value_that_does_not_write_has_no_default) {
     ZASSERT(entries.size() == 2U);
     ZEXPECT(entries[0].default_value.empty());
     ZEXPECT(entries[1].default_value == "2");
+}
+
+ZEST_CASE(annotated_help_option_still_stops_and_is_left_out) {
+    auto quiet = cli::parse<QuietHelp>(std::vector<std::string>{"--help", "--jobs", "x"});
+    ZASSERT(quiet.has_value());
+    ZEXPECT(quiet->help);
+    ZEXPECT(!cli::usage<QuietHelp>("quiet").contains("--help"));
 }
 
 };  // ZEST_SUITE(cli_usage)

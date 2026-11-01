@@ -5,6 +5,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <span>
 #include <string_view>
@@ -35,12 +36,18 @@ enum class skip_when : std::uint8_t {
 
 /// The names an entry lists, such as a field's aliases: a view of the ones its annotation
 /// keeps, as many as it wrote.
-struct name_list {
-    std::span<const std::string_view> items = {};
+class name_list {
+public:
+    constexpr name_list() = default;
+
+    constexpr explicit name_list(std::span<const std::string_view> names) : list(names) {}
 
     constexpr std::span<const std::string_view> names() const {
-        return items;
+        return list;
     }
+
+private:
+    std::span<const std::string_view> list;
 };
 
 /// A number a schema states, exact whatever its type: an integer of either
@@ -134,8 +141,7 @@ struct struct_spec {
     /// Reject unknown keys during deserialization.
     bool deny_unknown_fields = false;
     /// Allow every field to be absent during deserialization, as if each
-    /// were `defaulted`. An entry of its own, since `defaulted` alone makes a
-    /// field annotation.
+    /// were `defaulted`.
     bool defaulted_fields = false;
     /// Variant tagging mode; derived from tagged/tag/content when the spec is built.
     tag_mode tagging = tag_mode::none;
@@ -230,14 +236,6 @@ constexpr bool is_type_component_v = false;
 
 template <aspect A, typename T>
 constexpr bool is_type_component_v<type_component<A, T>> = true;
-
-/// Whether component T picks how the value is represented: as, with or enum_string.
-template <typename T>
-constexpr bool is_provider_v = false;
-
-template <aspect A, typename T>
-constexpr bool is_provider_v<type_component<A, T>> =
-    A == aspect::as || A == aspect::with || A == aspect::enum_string;
 
 /// A DSL component: it applies to its spec_type and says which entry it is.
 template <typename T>
@@ -499,8 +497,7 @@ constexpr struct_spec finalize_struct_spec(struct_spec spec) {
     return spec;
 }
 
-/// The spec of type `Spec` the entries an annotation keeps set, folded in order: a later
-/// entry overrides an earlier one of the same member, as an outer annotation's do an inner's.
+/// The spec of type `Spec` the entries an annotation keeps set.
 template <typename Spec, typename... Cs>
 constexpr Spec fold_entries(const std::tuple<Cs...>& entries) {
     Spec spec{};
@@ -546,12 +543,24 @@ constexpr auto extensions_from(const std::tuple<Cs...>& entries) {
     }(std::type_identity<extensions_t>{});
 }
 
-/// Whether components `I`, of an inner annotation, and `O`, of an outer one, set one thing:
-/// the same entry, or how the value is represented (as, with, enum_string), which one
-/// annotation picks once.
+/// Whether a component sets how a variant is tagged: tagged, tag or content, which together
+/// pick one mode.
+template <typename C>
+consteval bool sets_tagging() {
+    if constexpr(std::same_as<std::remove_const_t<decltype(C::kind)>, dsl::aspect>) {
+        return C::kind == dsl::aspect::tagged || C::kind == dsl::aspect::tag ||
+               C::kind == dsl::aspect::content;
+    } else {
+        return false;
+    }
+}
+
+/// Whether component `O`, of an outer annotation, overrides `I`, of an inner one: they set the
+/// same entry, or both how a variant is tagged. The representation (as, with, enum_string) an
+/// outer annotation picks replaces the inner one's among the attrs (kept_behavior in attrs.h).
 template <typename I, typename O>
 consteval bool overrides() {
-    return same_entry<I, O>() || (dsl::is_provider_v<I> && dsl::is_provider_v<O>);
+    return same_entry<I, O>() || (sets_tagging<I>() && sets_tagging<O>());
 }
 
 template <typename... Os, typename I>

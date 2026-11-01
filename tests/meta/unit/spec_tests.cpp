@@ -194,7 +194,7 @@ ZEST_CASE(entries_keep_type_components) {
                                    dsl::type_component<dsl::aspect::as, std::int64_t>>));
 }
 
-ZEST_CASE(entries_keep_extension_specs_beside_meta_s) {
+ZEST_CASE(entries_keep_extension_specs_beside_field_spec) {
     using spec = attrs::spec<extension_tag>;
     ZSTATIC_EXPECT(spec::value.description == "Weighed.");
     ZSTATIC_EXPECT(std::get<probe_extension>(spec::extensions).label == "probe");

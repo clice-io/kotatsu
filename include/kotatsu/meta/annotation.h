@@ -59,8 +59,9 @@ struct annotation<T, Attrs...> {
         return *this;
     }
 
-    using annotated_type = raw_type_t<T>;
-    using attrs = detail::layered_attrs_t<T, Attrs...>;
+    // A wrapped type is no class to inherit from, so never an annotation itself.
+    using annotated_type = T;
+    using attrs = std::tuple<Attrs...>;
     static_assert(detail::validate_attrs<attrs>(), "Invalid attribute combination");
 };
 
@@ -68,7 +69,8 @@ template <inherit_type T, typename... Attrs>
 struct annotation<T, Attrs...> : T {
     using annotated_type = raw_type_t<T>;
     using attrs = detail::layered_attrs_t<T, Attrs...>;
-    static_assert(detail::validate_attrs<attrs>(), "Invalid attribute combination");
+    static_assert(detail::validate_attrs<std::tuple<Attrs...>>() && detail::validate_attrs<attrs>(),
+                  "Invalid attribute combination");
 };
 
 template <inherit_use_type T, typename... Attrs>
@@ -94,7 +96,8 @@ struct annotation<T, Attrs...> : T {
 
     using annotated_type = raw_type_t<T>;
     using attrs = detail::layered_attrs_t<T, Attrs...>;
-    static_assert(detail::validate_attrs<attrs>(), "Invalid attribute combination");
+    static_assert(detail::validate_attrs<std::tuple<Attrs...>>() && detail::validate_attrs<attrs>(),
+                  "Invalid attribute combination");
 };
 
 template <annotated_type Value>
@@ -210,15 +213,19 @@ struct annotate {
 
 }  // namespace kotatsu::meta
 
-/// An annotated value formats as the value it annotates, with that value's
-/// format spec. std::format looks for an exact specialization, which neither
-/// a wrapped value nor a class it inherits from has; an annotated string
-/// would otherwise take the range formatter, or none.
+/// An annotated value formats as the value it annotates, through every
+/// annotation around it, with that value's format spec. std::format looks for
+/// an exact specialization, which neither a wrapped value nor a class it
+/// inherits from has; an annotated string would otherwise take the range
+/// formatter, or none.
 template <typename T, typename... Attrs, typename Char>
-    requires std::formattable<T, Char>
-struct std::formatter<kotatsu::meta::annotation<T, Attrs...>, Char> : std::formatter<T, Char> {
+    requires std::formattable<kotatsu::meta::raw_type_t<T>, Char>
+struct std::formatter<kotatsu::meta::annotation<T, Attrs...>, Char> :
+    std::formatter<kotatsu::meta::raw_type_t<T>, Char> {
     template <typename Context>
     auto format(const kotatsu::meta::annotation<T, Attrs...>& value, Context& ctx) const {
-        return std::formatter<T, Char>::format(kotatsu::meta::annotated_value(value), ctx);
+        return std::formatter<kotatsu::meta::raw_type_t<T>, Char>::format(
+            kotatsu::meta::annotated_value(value),
+            ctx);
     }
 };

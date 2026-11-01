@@ -333,14 +333,6 @@ struct filter_runtime_attrs<std::tuple<First, Rest...>> {
 template <typename Tuple>
 using filter_runtime_attrs_t = typename filter_runtime_attrs<Tuple>::type;
 
-/// A field's type as its raw type, through every annotation around it, and the attrs it
-/// carries, its type's own annotation's included (attrs_of_t).
-template <typename T>
-struct unwrap_annotated {
-    using raw_type = raw_type_t<T>;
-    using attrs = attrs_of_t<T>;
-};
-
 /// The kind and name of type `T`, and the extensions its own annotation carries: the part
 /// every type_info has.
 template <typename T>
@@ -437,9 +429,7 @@ constexpr auto resolve_node() {
 
 template <typename T, typename Config>
 constexpr auto resolve_repr() {
-    return resolve_node<typename unwrap_annotated<T>::raw_type,
-                        typename unwrap_annotated<T>::attrs,
-                        Config>();
+    return resolve_node<raw_type_t<T>, attrs_of_t<T>, Config>();
 }
 
 template <typename T, typename AttrsT, typename Config, type_kind Kind = kind_of<T>()>
@@ -486,7 +476,7 @@ constexpr std::size_t single_field_count() {
     if constexpr(spec.skip) {
         return 0;
     } else if constexpr(spec.flatten) {
-        using inner_t = std::remove_cvref_t<typename unwrap_annotated<field_t>::raw_type>;
+        using inner_t = std::remove_cvref_t<raw_type_t<field_t>>;
         static_assert(meta::reflectable_class<inner_t>,
                       "flatten requires the field type to be a reflectable struct");
         return effective_field_count<inner_t>();
@@ -672,9 +662,9 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 template <typename T, typename Config, std::size_t I>
 constexpr field_info make_field_info(std::size_t base_offset) {
     using field_t = meta::field_type<T, I>;
-    using attrs_t = typename unwrap_annotated<field_t>::attrs;
+    using attrs_t = attrs_of_t<field_t>;
     constexpr const field_spec& spec = field_spec_of<field_t>;
-    constexpr type_kind raw_kind = kind_of<typename unwrap_annotated<field_t>::raw_type>();
+    constexpr type_kind raw_kind = kind_of<raw_type_t<field_t>>();
 
     return field_info{
         .name = resolve_field_name<T, I, Config>(),
@@ -721,7 +711,7 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 
     if constexpr(spec.skip) {
     } else if constexpr(spec.flatten) {
-        using inner_t = typename unwrap_annotated<field_t>::raw_type;
+        using inner_t = raw_type_t<field_t>;
         std::size_t inner_offset = base_offset + meta::field_offset<T>(I);
         auto inner = build_fields<inner_t, Config>(inner_offset);
         for(std::size_t i = 0; i < inner.size(); ++i) {

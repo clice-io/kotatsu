@@ -299,6 +299,21 @@ struct DecimalText {
     }
 };
 
+struct amount_tag {
+    constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "amount");
+};
+
+/// An annotation of an annotation: renamed by the outer one, and travelling as decimal text
+/// by the inner one.
+struct RenamedDecimal {
+    meta::annotate<amount_tag>::type<meta::annotation<int, meta::behavior::with<DecimalText>>>
+        value;
+};
+
+struct RenamedDecimalPlain {
+    std::string amount;
+};
+
 /// Classes that travel as another type (behavior::as): converting both ways.
 struct UserId {
     std::string raw;

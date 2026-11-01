@@ -10,6 +10,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/schema.h"
 #include "kotatsu/codec/json/schema.h"
+#include "kotatsu/codec/macro.h"
 
 namespace kotatsu::meta {
 
@@ -21,6 +22,18 @@ using test::inner;
 using test::with_enum;
 
 struct empty_struct {};
+
+KANNOTATE_TYPE(struct described_inner, description = "An inner thing");
+
+struct described_inner {
+    std::int32_t x;
+};
+
+KANNOTATE_TYPE(struct described_outer, description = "An outer thing");
+
+struct described_outer {
+    described_inner inner;
+};
 
 struct single_field {
     std::int32_t x;
@@ -154,6 +167,14 @@ ZEST_CASE(struct_empty) {
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("type":"object",)"
                       R"("properties":{}})");
+}
+
+ZEST_CASE(struct_states_its_description) {
+    const auto result = json::schema_string<described_outer>().value();
+    ZEXPECT(zest::contains(result, R"("type":"object","description":"An outer thing")"));
+    // Its own definition, and the field of its type, which says nothing of its own.
+    ZEXPECT(zest::contains(result, R"("type":"object","description":"An inner thing")"));
+    ZEXPECT(zest::contains(result, R"(,"description":"An inner thing"})"));
 }
 
 ZEST_CASE(struct_single_field) {

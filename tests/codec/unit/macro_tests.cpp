@@ -28,6 +28,42 @@ struct DownstreamBox {
     <T> value;
 };
 
+/// Named like the struct the namespace below annotates.
+struct Options {};
+
+namespace downstream {
+
+// Declares the struct in this namespace, though ::Options is in scope.
+KANNOTATE_TYPE(struct Options, description = "Downstream options");
+
+struct Options {
+    int jobs = 0;
+};
+
+enum class Level : std::uint8_t;
+KANNOTATE_TYPE(Level, description = "How loud");
+
+enum class Level : std::uint8_t { Quiet, Loud };
+
+/// The spec of an extension of this namespace's own.
+struct Probe {
+    int weight = 0;
+};
+
+[[maybe_unused]] constexpr inline kotatsu::meta::dsl::member_proxy<&Probe::weight> weight{};
+
+KANNOTATE_TYPE(struct Weighed, weight = 2);
+
+struct Weighed {
+    int value = 0;
+};
+
+struct HoldsWeighed {
+    Weighed plain;
+};
+
+}  // namespace downstream
+
 }  // namespace
 
 namespace kotatsu::codec {
@@ -79,6 +115,27 @@ ZEST_SUITE(codec_macro) {
 ZEST_CASE(annotate_works_outside_kotatsu) {
     constexpr const auto& spec = meta::field_spec_of<decltype(DownstreamConfig::compile_commands)>;
     ZSTATIC_EXPECT(spec.rename == std::string_view("compileCommands"));
+}
+
+ZEST_CASE(annotate_type_declares_the_struct_where_it_is_written) {
+    ZSTATIC_EXPECT(meta::field_spec_of<downstream::Options>.description ==
+                   std::string_view("Downstream options"));
+    ZSTATIC_EXPECT(meta::field_spec_of<::Options>.description.empty());
+}
+
+ZEST_CASE(annotate_type_follows_an_opaque_enum_declaration) {
+    ZSTATIC_EXPECT(meta::field_spec_of<downstream::Level>.description ==
+                   std::string_view("How loud"));
+}
+
+ZEST_CASE(annotate_type_carries_extension_entries_to_plain_fields) {
+    constexpr const auto& info =
+        static_cast<const meta::struct_type_info&>(meta::type_info_of<downstream::HoldsWeighed>());
+    ZSTATIC_EXPECT(info.fields[0].has_extension<downstream::Probe>());
+    ZEXPECT(info.fields[0].extension<downstream::Probe>()->weight == 2);
+    const auto* own = meta::type_info_of<downstream::Weighed>().extension<downstream::Probe>();
+    ZASSERT(own != nullptr);
+    ZEXPECT(own->weight == 2);
 }
 
 ZEST_CASE(annotate_works_in_a_class_template) {

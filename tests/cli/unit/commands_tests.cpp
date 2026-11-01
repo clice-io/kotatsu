@@ -104,7 +104,7 @@ int again(Again&) {
 
 [[maybe_unused]] const bool again_added = cli::add_command<Loop>(again);
 
-/// Annotated beside the annotation cli::Commands is.
+/// A cli::Commands field, an annotation itself, annotated again.
 struct MustPick {
     KANNOTATE(cli::required = true)
     <cli::Commands<Top>> command;

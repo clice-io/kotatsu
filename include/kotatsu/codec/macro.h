@@ -19,7 +19,7 @@
 
 /// The entries of one annotation, checked, with the DSL names in scope: what
 /// each macro below keeps.
-#define KOTATSU_ANNOTATION_ENTRIES(...)                                                            \
+#define KANNOTATION_ENTRIES(...)                                                                   \
     [] {                                                                                           \
         using ::kotatsu::meta::dsl::rename;                                                        \
         using ::kotatsu::meta::dsl::description;                                                   \
@@ -53,24 +53,23 @@
 /// (rename, skip, ...), struct or variant entries (rename_all, tagged, ...) or
 /// both; attach it with kotatsu::meta::annotate:
 ///
-///     KANNOTATION(shape_annotation, tag = "kind",
-///                        tag_names = {"circle", "rect"});
+///     KANNOTATION(shape_annotation, tag = "kind", tag_names = {"circle", "rect"});
 ///     using shape = kotatsu::meta::annotate<shape_annotation>::type<
 ///         std::variant<circle, rect>>;
 #define KANNOTATION(name, ...)                                                                     \
     struct name {                                                                                  \
-        constexpr static auto entries = KOTATSU_ANNOTATION_ENTRIES(__VA_ARGS__);                   \
+        constexpr static auto entries = KANNOTATION_ENTRIES(__VA_ARGS__);                          \
     }
 
-#define KOTATSU_ANNOTATE_IMPL(tag, ...)                                                            \
+#define KANNOTATE_IMPL(tag, ...)                                                                   \
     KANNOTATION(tag, __VA_ARGS__);                                                                 \
     typename ::kotatsu::meta::annotate<tag>::template type
 
 /// Annotates the next field declaration with serde attributes:
 ///
 ///     KANNOTATE(rename = "compileCommands",
-///                      alias = {"compile_commands"},
-///                      description = "Path to the compilation database.")
+///               alias = {"compile_commands"},
+///               description = "Path to the compilation database.")
 ///     <std::string> compile_commands;
 ///
 /// The entries live in one constexpr object per annotation; only the short
@@ -81,27 +80,42 @@
 /// after the field type. Annotating a type that is an annotation already
 /// (cli::Help, a meta::annotate alias) adds to it: an entry given here
 /// overrides the inner one, and the rest of both apply.
-#define KANNOTATE(...)                                                                             \
-    KOTATSU_ANNOTATE_IMPL(KOTATSU_CONCAT(kotatsu_annotation_, __LINE__), __VA_ARGS__)
+#define KANNOTATE(...) KANNOTATE_IMPL(KOTATSU_CONCAT(kotatsu_annotation_, __LINE__), __VA_ARGS__)
+
+// Whether the first token of a KANNOTATE_TYPE argument is `struct` or `class`:
+// pasted onto KOTATSU_CLASS_KEY_, it makes a macro that puts 1 second, and any
+// other first token leaves an identifier that puts 0 second.
+#define KOTATSU_CLASS_KEY_struct ~, 1,
+#define KOTATSU_CLASS_KEY_class ~, 1,
+#define KOTATSU_SECOND_IMPL(first, second, ...) second
+#define KOTATSU_SECOND(...) KOTATSU_SECOND_IMPL(__VA_ARGS__)
+#define KOTATSU_DECLARES(annotated)                                                                \
+    KOTATSU_SECOND(KOTATSU_CONCAT(KOTATSU_CLASS_KEY_, annotated), 0, ~)
+#define KOTATSU_WHEN_0(...)
+#define KOTATSU_WHEN_1(...) __VA_ARGS__
+#define KOTATSU_WHEN(condition) KOTATSU_CONCAT(KOTATSU_WHEN_, condition)
 
 /// Annotates a type for every field of that type: its description, and
 /// extension entries; a field's own annotation overrides it entry by entry.
-/// Written above the type, `struct X` (or `class X`) declares it there, as a
-/// forward declaration would:
+/// Written above the type, `struct X` (or `class X`) declares X in the
+/// namespace it is written in, as `struct X;` would:
 ///
 ///     KANNOTATE_TYPE(struct Endpoint, description = "A server address");
 ///     struct Endpoint {
 ///         std::string host;
 ///     };
 ///
-/// A type declared already is named plainly: an enum after its opaque
-/// declaration (`enum class Mode : std::uint8_t;`) or its definition, a class
-/// of another library inside that library's namespace. It is written in the
-/// type's namespace, where argument-dependent lookup finds it, and before the
-/// type is first reflected. A class derived from the type does not take the
-/// annotation.
+/// A type declared already is named plainly, without `::` in front: an enum
+/// after its opaque declaration (`enum class Mode : std::uint8_t;`) or its
+/// definition. It is written in the type's namespace, where
+/// argument-dependent lookup finds it, which a static_assert checks, and next
+/// to the type's definition: wherever the type is reflected, its annotation
+/// must be seen, as a template specialization must. A class derived from the
+/// type does not take the annotation.
 #define KANNOTATE_TYPE(annotated, ...)                                                             \
-    [[maybe_unused]] constexpr auto kotatsu_type_annotation(::std::type_identity<annotated>) {     \
-        return KOTATSU_ANNOTATION_ENTRIES(__VA_ARGS__);                                            \
+    KOTATSU_WHEN(KOTATSU_DECLARES(annotated))(annotated;) [[maybe_unused]] constexpr auto          \
+        kotatsu_type_annotation(::std::type_identity<annotated>) {                                 \
+        return KANNOTATION_ENTRIES(__VA_ARGS__);                                                   \
     }                                                                                              \
-    static_assert(true)
+    static_assert(::kotatsu::meta::detail::has_type_annotation<annotated>,                         \
+                  "KANNOTATE_TYPE: write it in the namespace of the type it annotates")

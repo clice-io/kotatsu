@@ -185,6 +185,13 @@ void attrs(const Kit<B>& kit) {
     };
     encodes_as(kit, "with_encodes_as_plain", decimal, [] { return Field<std::string>{"42"}; });
     roundtrip(kit, "with_roundtrip", decimal);
+    auto renamed_decimal = [] {
+        return RenamedDecimal{.value = 42};
+    };
+    encodes_as(kit, "annotation_of_an_annotation_encodes_as_both_say", renamed_decimal, [] {
+        return RenamedDecimalPlain{.amount = "42"};
+    });
+    roundtrip(kit, "annotation_of_an_annotation_roundtrip", renamed_decimal);
     auto maybe_decimal = [] {
         return Field<std::optional<Decimal>>{Decimal{42}};
     };
