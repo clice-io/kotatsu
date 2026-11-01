@@ -177,6 +177,8 @@ ZEST_SUITE(meta_name) {
 
 ZEST_CASE(type_name) {
     ZEXPECT(type_name<int>() == "int");
+    // A name of more than one word keeps every word.
+    ZEXPECT(type_name<unsigned int>() == "unsigned int");
 
     ZEXPECT(type_name<struct_x>() == "struct_x");
     ZEXPECT(type_name<class_x>() == "class_x");

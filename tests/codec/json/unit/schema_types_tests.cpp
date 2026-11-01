@@ -152,6 +152,12 @@ struct root_internal_variant : std::variant<tagged_circle, tagged_rect> {
     using variant::variant;
 };
 
+KANNOTATE_TYPE(struct internal_unit_variant, tag = "kind", tag_names = {"none", "circle"});
+
+struct internal_unit_variant : std::variant<std::monostate, tagged_circle> {
+    using variant::variant;
+};
+
 KANNOTATE_TYPE(struct root_adjacent_variant,
                tag = "type",
                content = "value",
@@ -731,6 +737,20 @@ ZEST_CASE(root_internal_variant) {
                       R"("height":{"type":"number"},)"
                       R"("kind":{"const":"rect"}},)"
                       R"("required":["width","height","kind"]}]})");
+}
+
+ZEST_CASE(internal_monostate_is_the_tag_alone) {
+    const auto result = json::schema_string<internal_unit_variant>().value();
+    ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                      R"("oneOf":[)"
+                      R"({"type":"object",)"
+                      R"("properties":{"kind":{"const":"none"}},)"
+                      R"("required":["kind"]},)"
+                      R"({"type":"object",)"
+                      R"("properties":{)"
+                      R"("radius":{"type":"number"},)"
+                      R"("kind":{"const":"circle"}},)"
+                      R"("required":["radius","kind"]}]})");
 }
 
 ZEST_CASE(root_adjacent_variant) {

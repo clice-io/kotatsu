@@ -157,7 +157,8 @@ bool encode_untagged_variant(Vis& vis, const std::variant<Ts...>& var) {
 /// spec's codec::tag_mode (tag names resolve through resolve_tag_names):
 /// - external:  { "TagName": payload }
 /// - internal:  { "<tag>": "TagName", ...payload fields } — requires every
-///   alternative to be a struct, whose fields are spliced in after the tag
+///   alternative to be a struct, whose fields are spliced in after the tag,
+///   or std::monostate, which writes the tag alone
 /// - adjacent:  { "<tag>": "TagName", "<content>": payload }
 /// Tagging only applies on human-readable backends; elsewhere the variant is
 /// encoded untagged (a binary backend writes the alternative index). Either
@@ -186,14 +187,24 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
                 return std::visit(
                     [&](const auto& alt) -> bool {
                         using alt_t = std::remove_cvref_t<decltype(alt)>;
-                        static_assert(meta::reflectable_class<alt_t>,
-                                      "internally tagged requires struct alternatives");
+                        assert_internal_alternative<Format, alt_t>();
+                        static_assert(
+                            !requires(Vis& v, const alt_t& value) {
+                                serialize_visit<Vis, alt_t>::visit(v, value);
+                            },
+                            "internally tagged: an alternative the visitor writes with a "
+                            "serialize_visit has no fields to write beside the tag");
                         assert_internal_tag_fits<Format, SpecAttr, alt_t>();
                         return vis.visit_struct(alt, [&](auto& sv) -> bool {
                             KOTATSU_CODEC_TRY(sv.visit_field(
                                 named_field{0, SpecAttr::value.tag},
                                 [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
-                            return encode_struct_fields<Format>(sv, alt);
+                            // A monostate is a unit variant: the tag alone.
+                            if constexpr(std::is_same_v<alt_t, std::monostate>) {
+                                return true;
+                            } else {
+                                return encode_struct_fields<Format>(sv, alt);
+                            }
                         });
                     },
                     var);

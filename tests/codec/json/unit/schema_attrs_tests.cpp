@@ -190,20 +190,6 @@ struct unstated_required {
     std::uint32_t seed = 1;
 };
 
-/// Two fields answering to "dup", and an alias taking another field's name.
-struct shared_alias {
-    KANNOTATE(&left, alias = {"dup"})
-    std::int32_t left;
-    KANNOTATE(&right, alias = {"dup"})
-    std::int32_t right;
-};
-
-struct alias_on_a_name {
-    KANNOTATE(&left, alias = {"right"})
-    std::int32_t left;
-    std::int32_t right;
-};
-
 struct enum_names_field {
     KANNOTATE(&level, with = type<enum_names<naming::rename_policy::lower_camel>>)
     level_kind level;
@@ -534,16 +520,6 @@ ZEST_CASE(unstated_default_on_a_required_field_fails) {
     auto result = json::schema_string<unstated_required>();
     ZASSERT(!result);
     ZEXPECT(result.error().message == "schema_default = false on field 'seed', which is required");
-}
-
-ZEST_CASE(a_name_two_fields_answer_to_fails) {
-    // The decoder gives the key to the first field answering to it.
-    auto shared = json::schema_string<shared_alias>();
-    ZASSERT(!shared);
-    ZEXPECT(shared.error().message == "field 'right' answers to 'dup', as another field does");
-    auto taken = json::schema_string<alias_on_a_name>();
-    ZASSERT(!taken);
-    ZEXPECT(taken.error().message == "field 'right' answers to 'right', as another field does");
 }
 
 ZEST_CASE(alias_is_allowed_where_unknown_fields_are_denied) {

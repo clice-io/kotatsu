@@ -396,24 +396,6 @@ void attrs(const Kit<B>& kit) {
             "alias_reads",
             [] { return AliasPlain{.userId = 7, .name = "ada"}; },
             [] { return AliasStruct{.id = 7, .name = "ada"}; });
-        // The first field takes the value; the second is left missing.
-        read_fails<SharedAlias>(kit,
-                                "alias_shared_by_two_fields_fails",
-                                [] {
-                                    return Ints{
-                                        {"dup", 1}
-                                    };
-                                },
-                                {.message = "missing required field 'right'", .path = ""});
-        read_fails<CamelCollision, CamelConfig>(
-            kit,
-            "rename_collision_fails",
-            [] {
-                return Ints{
-                    {"userId", 1}
-                };
-            },
-            {.message = "missing required field 'userId'", .path = ""});
         reads<DefaultStruct>(
             kit,
             "optional_absent_keeps_its_value",

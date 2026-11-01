@@ -430,18 +430,6 @@ private:
 
     result_t make_properties(const codec::struct_type_info* si) {
         dyn::Object props;
-        // A key the decoder gives the first field answering to it: a second
-        // field's property under the same name would claim it too.
-        auto claim = [&](std::string_view name,
-                         const codec::field_info& f) -> std::expected<void, rich_error> {
-            if(props.find(name) != nullptr) {
-                return std::unexpected(
-                    rich_error(std::format("field '{}' answers to '{}', as another field does",
-                                           f.name,
-                                           name)));
-            }
-            return {};
-        };
         for(const auto& f: si->fields) {
             // A required field is in every document, so a default holding
             // it cannot leave it out; it has no default of its own to hide.
@@ -457,10 +445,9 @@ private:
             if(!f.description.empty()) {
                 schema.get_object()->insert("description", f.description);
             }
-            KOTATSU_EXPECTED_TRY(claim(f.name, f));
+            // No two fields answer to one name, which type_info checks.
             props.insert(std::string(f.name), std::move(schema));
             for(auto alias: f.aliases) {
-                KOTATSU_EXPECTED_TRY(claim(alias, f));
                 props.insert(std::string(alias), aliased);
             }
         }
@@ -590,6 +577,14 @@ private:
                                   std::string_view tag_field,
                                   std::string_view alt_name) {
         ti = unwrap(ti);
+        if(ti->kind == tk::null) {
+            // A std::monostate is a unit variant: the tag alone.
+            return dyn::Value{
+                {"type",       "object"                                         },
+                {"properties", {{std::string(tag_field), {{"const", alt_name}}}}},
+                {"required",   dyn::Array{dyn::Value(tag_field)}                },
+            };
+        }
         if(ti->kind != tk::structure) {
             KOTATSU_EXPECTED_TRY_V(auto schema, make_schema(ti));
             return dyn::Value{

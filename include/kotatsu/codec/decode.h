@@ -443,13 +443,19 @@ std::size_t peek_tag_index(Vis& vis,
     return idx;
 }
 
-/// Internal tagged: { "tag": "TagName", ...fields... }
-/// The tag is looked up before any field is placed, so it may follow them.
+/// Internal tagged: { "tag": "TagName", ...fields... }, the tag alone for a
+/// std::monostate alternative. The tag is looked up before any field is
+/// placed, so it may follow them.
 template <typename Format, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     static_assert(data_driven<Vis> && has_try_read<Vis>,
                   "a tagged variant decodes through a data-driven visitor with try_read");
     constexpr std::string_view tag_key = SpecAttr::value.tag;
+    (assert_internal_alternative<Format, Ts>(), ...);
+    static_assert(
+        (!requires(Vis& v, Ts& value) { deserialize_visit<Vis, Ts>::visit(v, value); } && ...),
+        "internally tagged: an alternative the visitor reads with a deserialize_visit has no "
+        "fields to read beside the tag");
     assert_internal_tag_fits<Format, SpecAttr, Ts...>();
     constexpr auto names = codec::resolve_tag_names<SpecAttr, Format, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
@@ -478,12 +484,16 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
         }
         return with_index<sizeof...(Ts)>(idx, [&](auto i) {
             constexpr std::size_t I = decltype(i)::value;
-            return match_field<Format, std::variant_alternative_t<I, std::variant<Ts...>>>(
-                key,
-                fv,
-                std::get<I>(var),
-                field_mask,
-                sink);
+            using alt_t = std::variant_alternative_t<I, std::variant<Ts...>>;
+            if constexpr(std::is_same_v<alt_t, std::monostate>) {
+                // A unit variant has no fields: any key but the tag is unknown.
+                return pass_unknown_field(current_decode_options().deny_unknown_fields,
+                                          key,
+                                          fv,
+                                          sink);
+            } else {
+                return match_field<Format, alt_t>(key, fv, std::get<I>(var), field_mask, sink);
+            }
         });
     });
 
@@ -500,8 +510,12 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     }
     return with_index<sizeof...(Ts)>(idx, [&](auto i) {
         constexpr std::size_t I = decltype(i)::value;
-        return check_required_fields<Format, std::variant_alternative_t<I, std::variant<Ts...>>>(
-            field_mask);
+        using alt_t = std::variant_alternative_t<I, std::variant<Ts...>>;
+        if constexpr(std::is_same_v<alt_t, std::monostate>) {
+            return true;
+        } else {
+            return check_required_fields<Format, alt_t>(field_mask);
+        }
     });
 }
 

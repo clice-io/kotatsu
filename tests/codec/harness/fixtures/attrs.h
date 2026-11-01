@@ -240,22 +240,6 @@ struct TunablesHolder {
     int count;
 };
 
-/// Two fields answering to one name.
-KANNOTATION(AliasDup, alias = {"dup"});
-
-struct SharedAlias {
-    KANNOTATE(&left, AliasDup)
-    int left;
-    KANNOTATE(&right, AliasDup)
-    int right;
-};
-
-/// Two fields that lower_camel renames to one name.
-struct CamelCollision {
-    int user_id;
-    int userId;
-};
-
 struct Documented {
     KANNOTATE(&id, description = "Numeric identifier.")
     int id;

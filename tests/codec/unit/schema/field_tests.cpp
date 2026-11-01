@@ -1,4 +1,6 @@
+#include <array>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -48,6 +50,17 @@ struct Defaults {
 
     int count = 4;
 };
+
+constexpr std::array<std::string_view, 1> dup_alias{"dup"};
+constexpr std::array<std::string_view, 1> right_alias{"right"};
+
+constexpr field_info named(std::string_view name, std::span<const std::string_view> aliases = {}) {
+    return {.name = name,
+            .aliases = aliases,
+            .offset = 0,
+            .type = nullptr,
+            .presence = presence_kind::required};
+}
 
 struct Shouting : extend<format> {
     using rename_all = naming::rename_policy::upper_snake;
@@ -112,6 +125,19 @@ ZEST_CASE(omitted_follows_presence) {
 
     // A field without a predicate or omit_if_default is always written.
     ZEXPECT(!field<fx::DefaultStruct, 0>::omitted(fx::DefaultStruct{}));
+}
+
+ZEST_CASE(no_two_fields_answer_to_one_name) {
+    // A document's key would go to the first field answering to it, so a
+    // struct whose fields share a name, or an alias, does not build.
+    constexpr std::array distinct{named("left", dup_alias), named("right")};
+    ZSTATIC_EXPECT(fields_distinct(distinct));
+    constexpr std::array shared{named("left", dup_alias), named("right", dup_alias)};
+    ZSTATIC_EXPECT(!fields_distinct(shared));
+    constexpr std::array taken{named("left", right_alias), named("right")};
+    ZSTATIC_EXPECT(!fields_distinct(taken));
+    constexpr std::array renamed{named("same"), named("same")};
+    ZSTATIC_EXPECT(!fields_distinct(renamed));
 }
 
 };  // ZEST_SUITE(codec_schema_field)

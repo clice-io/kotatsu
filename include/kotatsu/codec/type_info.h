@@ -139,6 +139,25 @@ struct struct_type_info : type_info {
     std::string_view description = {};
 };
 
+/// Whether no two of fields answer to one name: as they are named, renamed or
+/// flattened in, or an alias.
+constexpr bool fields_distinct(std::span<const field_info> fields) {
+    auto answers = [](const field_info& field, std::string_view name) {
+        return field.name == name || std::ranges::find(field.aliases, name) != field.aliases.end();
+    };
+    for(std::size_t i = 0; i < fields.size(); ++i) {
+        for(std::size_t j = i + 1; j < fields.size(); ++j) {
+            if(answers(fields[j], fields[i].name) ||
+               std::ranges::any_of(fields[i].aliases, [&](std::string_view alias) {
+                   return answers(fields[j], alias);
+               })) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 namespace detail {
 
 template <typename T, std::size_t I, typename Policy>
@@ -468,6 +487,21 @@ constexpr bool format_denies_unknown() {
     }
 }
 
+/// Rejects an alternative of an internally tagged variant whose fields
+/// cannot sit beside the tag: one that is not a struct, or a struct that
+/// travels as another type, through a codec::repr. A std::monostate is a unit
+/// variant, the tag alone.
+template <typename Format, typename T>
+consteval void assert_internal_alternative() {
+    if constexpr(!std::is_same_v<T, std::monostate>) {
+        static_assert(meta::reflectable_class<T> && !meta::derived_variant<T>,
+                      "internally tagged: an alternative is a struct or std::monostate");
+        static_assert(!has_repr<T, Format>,
+                      "internally tagged: an alternative with a codec::repr has no fields to "
+                      "write beside the tag; tag the variant externally or adjacently");
+    }
+}
+
 template <typename Variant, typename Format, typename AttrsTuple>
 struct variant_info_node;
 
@@ -484,6 +518,9 @@ struct variant_info_node<std::variant<Ts...>, Format, AttrsTuple> {
     // for non-tagged variants the elements stay default-constructed and the consumer
     // span below is explicitly given size 0, so no element is ever read.
     constexpr static auto alt_names = [] {
+        if constexpr(spec.tagging == tag_mode::internal) {
+            (assert_internal_alternative<Format, Ts>(), ...);
+        }
         if constexpr(has_tag) {
             return resolve_tag_names<struct_spec_attr_t<AttrsTuple>, Format, Ts...>();
         } else {
@@ -586,11 +623,21 @@ struct type_instance_impl<T, AttrsT, Format, meta::type_kind::array> {
     };
 };
 
+/// fields, which a build fails on when two of them answer to one name (see
+/// fields_distinct): a document's key would go to the first.
+template <std::size_t N>
+consteval std::array<field_info, N> distinct_fields(std::array<field_info, N> fields) {
+    if(!fields_distinct(fields)) {
+        KOTATSU_THROW("codec: two fields of a struct answer to one name");
+    }
+    return fields;
+}
+
 template <typename T, typename AttrsT, typename Format>
 struct type_instance_impl<T, AttrsT, Format, meta::type_kind::structure> {
     constexpr static bool deny_unknown = format_denies_unknown<Format>();
 
-    constexpr inline static built_fields_t<T> fields = build_fields<T, Format>();
+    constexpr inline static built_fields_t<T> fields = distinct_fields(build_fields<T, Format>());
 
     constexpr inline static struct_type_info value = {
         {meta::type_kind::structure, meta::type_name<T>()},
@@ -747,6 +794,9 @@ struct single_field_slots<T, I, /*Skipped=*/false, /*Flattened=*/true> {
 template <typename T, typename Format = format>
     requires meta::reflectable_class<T>
 struct virtual_schema {
+    static_assert(std::is_same_v<resolved_repr_t<T, Format>, T>,
+                  "virtual_schema: the struct travels as another type, through a codec::repr");
+
     // Obtain fields from type_info::of<T>().fields (the span inside struct_type_info::value)
     // rather than referencing type_instance<T>::fields directly.  This matters for recursive
     // types: build_fields<T>() stores type_info::of<child> function pointers which
@@ -765,12 +815,17 @@ struct virtual_schema {
 namespace detail {
 
 /// Whether a field of struct T under Format answers to name, by its own name
-/// or an alias.
+/// or an alias; a monostate has no fields.
 template <typename Format, typename T>
 consteval bool has_field_named(std::string_view name) {
-    return std::ranges::any_of(virtual_schema<T, Format>::fields, [&](const field_info& field) {
-        return field.name == name || std::ranges::find(field.aliases, name) != field.aliases.end();
-    });
+    if constexpr(std::is_same_v<T, std::monostate>) {
+        return false;
+    } else {
+        return std::ranges::any_of(virtual_schema<T, Format>::fields, [&](const field_info& field) {
+            return field.name == name ||
+                   std::ranges::find(field.aliases, name) != field.aliases.end();
+        });
+    }
 }
 
 /// Rejects an internally tagged variant one of whose alternatives has a

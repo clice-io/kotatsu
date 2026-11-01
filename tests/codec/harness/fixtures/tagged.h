@@ -45,6 +45,14 @@ struct InternalShape : std::variant<Circle, Rect, Segment> {
     using variant::variant;
 };
 
+/// A monostate alternative under an internal tag is a unit variant: the tag
+/// alone.
+KANNOTATE_TYPE(struct InternalUnit, tag = "kind", tag_names = {"none", "circle"});
+
+struct InternalUnit : std::variant<std::monostate, Circle> {
+    using variant::variant;
+};
+
 /// The untagged variants the tagged ones become where tags do not apply.
 using BareShape = std::variant<std::monostate, int, std::string, Point>;
 using BareFigure = std::variant<Circle, Rect, Segment>;
@@ -98,6 +106,10 @@ struct CircleWithExtraPlain {
     std::string kind;
     double radius;
     std::string extra;
+};
+
+struct KindPlain {
+    std::string kind;
 };
 
 struct RectPlain {

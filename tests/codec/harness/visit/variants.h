@@ -110,6 +110,11 @@ void variants(const Kit<B>& kit) {
                     {.kind = "rect", .width = 2, .height = 3}
                 };
             });
+        encodes_as(
+            kit,
+            "internal_monostate_encodes_as_the_tag",
+            [] { return Field<InternalUnit>{InternalUnit{std::monostate{}}}; },
+            [] { return Field<KindPlain>{{.kind = "none"}}; });
         encodes_as(kit, "tagged_in_struct_encodes_as_plain", holder, [] {
             return TaggedHolderPlain{
                 .name = "h",
@@ -207,6 +212,9 @@ void variants(const Kit<B>& kit) {
             }
             return start;
         });
+    roundtrip(kit, "internal_monostate_roundtrip", [] {
+        return std::vector<InternalUnit>{InternalUnit{std::monostate{}}, Circle{.radius = 2}};
+    });
     roundtrip(kit, "tagged_nested_roundtrip", [] {
         return NestedTagged{
             TaggedWrapper{.id = "w", .inner = Point{.x = 1, .y = 2}}
@@ -426,6 +434,16 @@ void variants(const Kit<B>& kit) {
                                                };
                                            },
                                            {.message = "", .path = "value"});
+        reads_in_field<InternalUnit>(
+            kit,
+            "internal_monostate_reads_the_tag",
+            [] { return KindPlain{.kind = "none"}; },
+            [] { return InternalUnit{std::monostate{}}; });
+        reads_in_field<InternalUnit>(
+            kit,
+            "internal_monostate_ignores_extra_fields",
+            [] { return CircleWithExtraPlain{.kind = "none", .radius = 1, .extra = "x"}; },
+            [] { return InternalUnit{std::monostate{}}; });
         reads_in_field<InternalShape>(
             kit,
             "internal_extra_field_ignored",
