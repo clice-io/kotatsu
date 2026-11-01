@@ -356,7 +356,7 @@ std::expected<void, Error> parse_into(T& options, string_list_ref argv, Visit vi
     codec::rich_error error;
     codec::scoped_context<codec::rich_error> guard(error);
     detail::Reader reader{reading.root, &last};
-    if(!codec::decode_value<cli::format>(reader, options)) {
+    if(!codec::decode_value(reader, options)) {
         return std::unexpected(detail::decode_error(reading, argv, last, error));
     }
     for(const auto& given: reading.given) {

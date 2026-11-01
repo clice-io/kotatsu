@@ -71,7 +71,7 @@ IncomingMessage BincodeCodec::parse_message(std::string payload) {
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(payload.data()),
                                    payload.size())};
     message_envelope envelope;
-    if(!codec::decode_value<codec::bincode::format>(reader, envelope)) {
+    if(!codec::decode_value(reader, envelope)) {
         return IncomingParseError{
             .id = std::nullopt,
             .error = codec_error(protocol::ErrorCode::ParseError, error),
@@ -122,7 +122,7 @@ MessageHead BincodeCodec::peek(std::string_view prefix) {
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(prefix.data()),
                                    prefix.size())};
     envelope_head head;
-    if(!codec::decode_value<codec::bincode::format>(reader, head)) {
+    if(!codec::decode_value(reader, head)) {
         return {};
     }
     return std::visit(

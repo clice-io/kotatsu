@@ -156,7 +156,7 @@ Node write_options(const T& options, std::deque<std::string>& texts, bool lenien
     Writer writer{root, texts, lenient};
     codec::rich_error error;
     codec::scoped_context<codec::rich_error> guard(error);
-    [[maybe_unused]] const bool written = codec::encode_value<cli::format>(writer, options);
+    [[maybe_unused]] const bool written = codec::encode_value(writer, options);
     assert(written);
     return root;
 }

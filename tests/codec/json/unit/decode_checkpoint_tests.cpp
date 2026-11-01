@@ -72,7 +72,7 @@ ZEST_CASE(string_buffer_reclaimed) {
 
     bool ok = r.try_read([&](Reader& sub) -> bool {
         SimpleA a;
-        return decode_value<json::format>(sub, a);
+        return decode_value(sub, a);
     });
     ZEXPECT(!ok);
     ZEXPECT(ji.string_buf_loc() == buf_before);
@@ -90,7 +90,7 @@ ZEST_CASE(depth_restored) {
 
     bool ok = r.try_read([&](Reader& sub) -> bool {
         SimpleA a;
-        return decode_value<json::format>(sub, a);
+        return decode_value(sub, a);
     });
     ZEXPECT(!ok);
     ZEXPECT(ji.depth() == depth_before);
@@ -108,7 +108,7 @@ ZEST_CASE(token_position_restored) {
 
     bool ok = r.try_read([&](Reader& sub) -> bool {
         SimpleA a;
-        return decode_value<json::format>(sub, a);
+        return decode_value(sub, a);
     });
     ZEXPECT(!ok);
     ZEXPECT(ji.position() == pos_before);
@@ -131,7 +131,7 @@ ZEST_CASE(all_state_with_large_string) {
 
     bool ok = r.try_read([&](Reader& sub) -> bool {
         HasRequired h;
-        return decode_value<codec::format>(sub, h);
+        return decode_value(sub, h);
     });
     ZEXPECT(!ok);
 
@@ -154,7 +154,7 @@ ZEST_CASE(success_advances_state) {
 
     bool ok = r.try_read([&](Reader& sub) -> bool {
         SimpleB b;
-        return decode_value<codec::format>(sub, b);
+        return decode_value(sub, b);
     });
     ZEXPECT(ok);
     ZEXPECT(ji.position() != pos_before);
@@ -177,7 +177,7 @@ ZEST_CASE(multiple_failures_no_drift) {
     for(int i = 0; i < 5; ++i) {
         bool ok = r.try_read([&](Reader& sub) -> bool {
             SimpleA a;
-            return decode_value<json::format>(sub, a);
+            return decode_value(sub, a);
         });
         ZEXPECT(!ok);
     }

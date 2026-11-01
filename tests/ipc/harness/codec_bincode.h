@@ -114,7 +114,7 @@ struct BincodeAdapter {
         codec::scoped_context<codec::rich_error> guard(error);
         codec::bincode::Reader<codec::bincode::format> reader{as_bytes(payload)};
         BincodeEnvelope envelope;
-        if(!codec::decode_value<codec::bincode::format>(reader, envelope)) {
+        if(!codec::decode_value(reader, envelope)) {
             return std::unexpected("not an envelope: " + error.to_string());
         }
         const auto rest = std::string(payload.substr(reader.pos));

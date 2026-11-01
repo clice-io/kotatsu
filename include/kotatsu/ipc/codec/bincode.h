@@ -146,11 +146,11 @@ private:
         codec::scoped_context<codec::rich_error> guard(error);
         std::vector<std::byte> bytes;
         codec::bincode::Writer<codec::bincode::format> writer{bytes};
-        bool written = codec::encode_value<codec::bincode::format>(writer, prefix);
+        bool written = codec::encode_value(writer, prefix);
         if constexpr(std::is_same_v<T, codec::raw_value>) {
             std::memcpy(writer.claim(value->data.size()), value->data.data(), value->data.size());
         } else if constexpr(!std::is_void_v<T>) {
-            written = written && codec::encode_value<codec::bincode::format>(writer, *value);
+            written = written && codec::encode_value(writer, *value);
         }
         if(!written) {
             return outcome_error(codec_error(protocol::ErrorCode::InternalError, error));

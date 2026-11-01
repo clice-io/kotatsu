@@ -98,7 +98,7 @@ private:
 
         template <typename T>
         MessageWriter& value(const T& member) {
-            written = written && codec::encode_value<lsp_format>(values, member);
+            written = written && codec::encode_value(values, member);
             return *this;
         }
 

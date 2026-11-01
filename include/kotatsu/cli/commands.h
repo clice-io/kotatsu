@@ -174,13 +174,11 @@ bool add_command(R (*run)(T&, Args...), CommandInfo info = {}) {
         .type = &type,
         .make = []() -> void* { return new T(); },
         .destroy = [](void* value) { delete static_cast<T*>(value); },
-        .decode =
-            [](detail::Reader& reader, void* value) {
-                return codec::decode_value<cli::format>(reader, *static_cast<T*>(value));
-            },
+        .decode = [](detail::Reader& reader,
+                     void* value) { return codec::decode_value(reader, *static_cast<T*>(value)); },
         .encode =
             [](detail::Writer& writer, const void* value) {
-                return codec::encode_value<cli::format>(writer, *static_cast<const T*>(value));
+                return codec::encode_value(writer, *static_cast<const T*>(value));
             },
         .callback = reinterpret_cast<void (*)()>(run),
         .invoke =

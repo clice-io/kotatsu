@@ -1,21 +1,18 @@
 #pragma once
 
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <memory>
 #include <ranges>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
 
-#include "context.h"
-#include "format.h"
-#include "repr.h"
-#include "type_info.h"
 #include "kotatsu/support/type_list.h"
 #include "kotatsu/support/utf8.h"
 #include "kotatsu/meta/annotation.h"
@@ -23,6 +20,8 @@
 #include "kotatsu/meta/struct.h"
 #include "kotatsu/meta/type_kind.h"
 #include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/format.h"
 #include "kotatsu/codec/repr.h"
 #include "kotatsu/codec/type_info.h"
 
@@ -36,19 +35,18 @@ namespace kotatsu::codec {
 /// Error and Literal). A specialization is consulted before everything
 /// else, annotations and codec::repr included, and a type may not have both
 /// a specialization and a codec::repr for the visitor's format. To say how a
-/// type of your own is represented, prefer codec::repr (or behavior::with on
-/// a field): those are visible to schema consumers (type_info, the JSON
+/// type of your own is represented, prefer codec::repr (or `with` on a
+/// field): those are visible to schema consumers (type_info, the JSON
 /// schema, the fbs views), a specialization is not.
 template <typename Vis, typename T>
 struct serialize_visit {};
 
-template <typename Format, typename Vis, typename T>
-bool encode_value(Vis& vis, const T& value);
-
-template <typename Format, typename Vis, typename T>
-bool encode_struct_fields(Vis& vis, const T& value);
-
 namespace detail {
+
+/// Encodes a value under Format, the format in effect where it stands: under
+/// its type's annotation, else as its type writes it.
+template <typename Format, typename Vis, typename T>
+bool encode_under(Vis& vis, const T& value);
 
 /// Encodes a value as its type writes it, its type's annotation aside: a
 /// codec::repr, or what its kind is.
@@ -57,10 +55,20 @@ bool encode_plain(Vis& vis, const T& value);
 
 }  // namespace detail
 
-/// True when the visitor writes UTF-8 text (json, toml), which its format tag
-/// says, so its value and map key writers alike.
+/// Encodes `value` through `vis` under the format the visitor carries: what a
+/// repr's encode() or a serialize_visit specialization calls to write the
+/// values it is made of.
+template <typename Vis, typename T>
+bool encode_value(Vis& vis, const T& value) {
+    static_assert(!std::is_void_v<format_of_t<Vis>>,
+                  "a visitor carries the format it writes under: using format = F");
+    return detail::encode_under<format_of_t<Vis>>(vis, value);
+}
+
+/// True when the visitor writes UTF-8 text (json, toml), as its format says:
+/// its value and map key writers alike.
 template <typename Vis>
-concept writes_utf8 = requires { requires codec::format_of_t<Vis>::utf8; };
+concept writes_utf8 = requires { requires format_of_t<Vis>::utf8; };
 
 namespace detail {
 
@@ -68,7 +76,7 @@ namespace detail {
 /// it checked first: one that is not UTF-8 fails, or is replaced as a decoder
 /// reads it, as the encode's options say. Names the program declares (field
 /// and tag names, enumerator spellings) are written as they are.
-template <typename Format, typename Vis, typename Text>
+template <typename Vis, typename Text>
 bool encode_text(Vis& vis, const Text& text) {
     if constexpr(writes_utf8<Vis>) {
         std::string_view view(text);
@@ -97,8 +105,8 @@ bool fail_unnamed_enum(E value) {
 template <typename Repr, typename Format, typename Vis, typename E>
 bool encode_enum_name(Vis& vis, const E& value) {
     static_assert(std::is_enum_v<E>, "codec::enum_names is the repr of an enum");
-    using policy = codec::detail::enum_names_policy_t<Repr, Format>;
-    const auto& names = codec::detail::enum_names_of<E, policy>;
+    using policy = enum_names_policy_t<Repr, Format>;
+    const auto& names = enum_names_of<E, policy>;
     const auto index = meta::enum_index(value);
     if(index == names.size()) {
         return fail_unnamed_enum(value);
@@ -107,17 +115,17 @@ bool encode_enum_name(Vis& vis, const E& value) {
 }
 
 /// Encode a value through a representation declaration (a codec::repr
-/// specialization or a behavior::with adapter): declarative to() when
-/// present, the imperative encode() body otherwise.
+/// specialization or a `with` adapter): declarative to() when present, the
+/// imperative encode() body otherwise.
 template <typename Repr, typename Format, typename Vis, typename V>
 bool repr_encode(Vis& vis, const V& value) {
-    using declared_t = codec::declared_repr_t<Repr>;
-    if constexpr(std::is_same_v<declared_t, codec::dynamic>) {
+    using declared_t = declared_repr_t<Repr>;
+    if constexpr(std::is_same_v<declared_t, dynamic>) {
         static_assert(!layout_computed<Vis>,
                       "this backend computes the output layout statically and cannot encode a "
                       "codec::dynamic repr");
     }
-    if constexpr(codec::names_enum<Repr>) {
+    if constexpr(names_enum<Repr>) {
         return encode_enum_name<Repr, Format>(vis, value);
     } else if constexpr(requires { Repr::to(value); }) {
         static_assert(
@@ -125,7 +133,7 @@ bool repr_encode(Vis& vis, const V& value) {
             "repr protocol: define to() or encode() for encoding, not both");
         static_assert(std::is_same_v<std::remove_cvref_t<decltype(Repr::to(value))>, declared_t>,
                       "repr protocol: to() must return the declared representation type");
-        return encode_value<Format>(vis, Repr::to(value));
+        return encode_under<Format>(vis, Repr::to(value));
     } else if constexpr(requires { Repr::encode(vis, value); }) {
         return Repr::encode(vis, value);
     } else {
@@ -144,17 +152,21 @@ bool encode_untagged_variant(Vis& vis, const std::variant<Ts...>& var) {
                  }) {
         return vis.visit_variant(var.index(), [&](auto& pv) -> bool {
             return std::visit(
-                [&](const auto& alt) -> bool { return encode_value<Format>(pv, alt); },
+                [&](const auto& alt) -> bool { return encode_under<Format>(pv, alt); },
                 var);
         });
     } else {
-        return std::visit([&](const auto& alt) -> bool { return encode_value<Format>(vis, alt); },
+        return std::visit([&](const auto& alt) -> bool { return encode_under<Format>(vis, alt); },
                           var);
     }
 }
 
-/// Encodes a variant in one of the three tagged shapes selected by the
-/// spec's codec::tag_mode (tag names resolve through resolve_tag_names):
+template <typename Format, typename Vis, typename T>
+bool encode_struct_fields(Vis& vis, const T& value);
+
+/// Encodes a variant, or a class derived from one, in one of the three
+/// tagged shapes selected by the spec's codec::tag_mode (tag names resolve
+/// through resolve_tag_names):
 /// - external:  { "TagName": payload }
 /// - internal:  { "<tag>": "TagName", ...payload fields } — requires every
 ///   alternative to be a struct, whose fields are spliced in after the tag,
@@ -163,106 +175,94 @@ bool encode_untagged_variant(Vis& vis, const std::variant<Ts...>& var) {
 /// Tagging only applies on human-readable backends; elsewhere the variant is
 /// encoded untagged (a binary backend writes the alternative index). Either
 /// way the variant is written as itself: a repr of its type does not apply.
-template <typename Format, typename SpecAttr, typename Vis, typename Var>
-bool encode_tagged_variant(Vis& vis, const Var& var) {
+template <typename Format, typename SpecAttr, typename Vis, typename... Ts>
+bool encode_tagged_variant(Vis& vis, const std::variant<Ts...>& var) {
     if constexpr(!Format::human_readable) {
         return encode_untagged_variant<Format>(vis, var);
     } else {
         // MSVC mis-handles uncaptured constexpr locals inside the nested
         // generic lambdas below (C3861/ICE), so the spec is read via SpecAttr
         // each time.
-        return [&]<typename... Ts>(const std::variant<Ts...>&) -> bool {
-            constexpr auto names = codec::resolve_tag_names<SpecAttr, Format, Ts...>();
-            std::string_view tag_name = names[var.index()];
+        constexpr auto names = resolve_tag_names<SpecAttr, Format, Ts...>();
+        std::string_view tag_name = names[var.index()];
 
-            if constexpr(SpecAttr::value.tagging == codec::tag_mode::external) {
-                return vis.visit_struct(var, [&](auto& sv) -> bool {
-                    return sv.visit_field(named_field{0, tag_name}, [&](auto& pv) -> bool {
+        if constexpr(SpecAttr::value.tagging == tag_mode::external) {
+            return vis.visit_struct(var, [&](auto& sv) -> bool {
+                return sv.visit_field(named_field{0, tag_name}, [&](auto& pv) -> bool {
+                    return std::visit(
+                        [&](const auto& alt) -> bool { return encode_under<Format>(pv, alt); },
+                        var);
+                });
+            });
+        } else if constexpr(SpecAttr::value.tagging == tag_mode::internal) {
+            return std::visit(
+                [&](const auto& alt) -> bool {
+                    using alt_t = std::remove_cvref_t<decltype(alt)>;
+                    assert_internal_alternative<Format, alt_t>();
+                    static_assert(
+                        !requires(Vis& v, const alt_t& value) {
+                            serialize_visit<Vis, alt_t>::visit(v, value);
+                        },
+                        "internally tagged: an alternative the visitor writes with a "
+                        "serialize_visit has no fields to write beside the tag");
+                    assert_internal_tag_fits<Format, SpecAttr, alt_t>();
+                    return vis.visit_struct(alt, [&](auto& sv) -> bool {
+                        KOTATSU_CODEC_TRY(sv.visit_field(
+                            named_field{0, SpecAttr::value.tag},
+                            [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
+                        // A monostate is a unit variant: the tag alone.
+                        if constexpr(std::is_same_v<alt_t, std::monostate>) {
+                            return true;
+                        } else {
+                            // Under the alternative's own scope, as it would
+                            // be written alone.
+                            using scope = node_format_t<Format, alt_t, meta::attrs_of_t<alt_t>>;
+                            return encode_struct_fields<scope>(sv, alt);
+                        }
+                    });
+                },
+                var);
+        } else {
+            static_assert(SpecAttr::value.tagging == tag_mode::adjacent);
+            return vis.visit_struct(var, [&](auto& sv) -> bool {
+                KOTATSU_CODEC_TRY(
+                    sv.visit_field(named_field{0, SpecAttr::value.tag},
+                                   [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
+                return sv.visit_field(
+                    named_field{1, SpecAttr::value.content},
+                    [&](auto& cv) -> bool {
                         return std::visit(
-                            [&](const auto& alt) -> bool { return encode_value<Format>(pv, alt); },
+                            [&](const auto& alt) -> bool { return encode_under<Format>(cv, alt); },
                             var);
                     });
-                });
-            } else if constexpr(SpecAttr::value.tagging == codec::tag_mode::internal) {
-                return std::visit(
-                    [&](const auto& alt) -> bool {
-                        using alt_t = std::remove_cvref_t<decltype(alt)>;
-                        assert_internal_alternative<Format, alt_t>();
-                        static_assert(
-                            !requires(Vis& v, const alt_t& value) {
-                                serialize_visit<Vis, alt_t>::visit(v, value);
-                            },
-                            "internally tagged: an alternative the visitor writes with a "
-                            "serialize_visit has no fields to write beside the tag");
-                        assert_internal_tag_fits<Format, SpecAttr, alt_t>();
-                        return vis.visit_struct(alt, [&](auto& sv) -> bool {
-                            KOTATSU_CODEC_TRY(sv.visit_field(
-                                named_field{0, SpecAttr::value.tag},
-                                [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
-                            // A monostate is a unit variant: the tag alone.
-                            if constexpr(std::is_same_v<alt_t, std::monostate>) {
-                                return true;
-                            } else {
-                                // Under the alternative's own scope, as it
-                                // would be written alone.
-                                using scope =
-                                    codec::node_format_t<Format, alt_t, meta::attrs_of_t<alt_t>>;
-                                return encode_struct_fields<scope>(sv, alt);
-                            }
-                        });
-                    },
-                    var);
-            } else {
-                static_assert(SpecAttr::value.tagging == codec::tag_mode::adjacent);
-                return vis.visit_struct(var, [&](auto& sv) -> bool {
-                    KOTATSU_CODEC_TRY(
-                        sv.visit_field(named_field{0, SpecAttr::value.tag},
-                                       [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
-                    return sv.visit_field(named_field{1, SpecAttr::value.content},
-                                          [&](auto& cv) -> bool {
-                                              return std::visit(
-                                                  [&](const auto& alt) -> bool {
-                                                      return encode_value<Format>(cv, alt);
-                                                  },
-                                                  var);
-                                          });
-                });
-            }
-        }(var);
+            });
+        }
     }
 }
 
-/// Encodes a value under a node's attributes (a struct field's, or an
-/// annotation's): behavior::with > behavior::as > variant tagging > the struct-level policy merge
-/// (node_format_t), the precedence the repr resolver replays. A class
+/// Encodes a value under a node's attributes (a struct field's, or its type
+/// annotation's): `with` > `as` > variant tagging > the struct-level policy
+/// merge (node_format_t), the precedence the repr resolver replays. A class
 /// derived from a std::variant is tagged as that variant; untagged, it is
 /// written as its type writes it, its repr first.
 template <typename Format, typename Attrs, typename Vis, typename T>
 bool encode_with_attrs(Vis& vis, const T& value) {
-    if constexpr(tuple_has_spec_v<Attrs, codec::behavior::with>) {
-        using adapter = typename tuple_find_spec_t<Attrs, codec::behavior::with>::adapter;
+    if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
+        using adapter = typename tuple_find_spec_t<Attrs, behavior::with>::adapter;
         if constexpr(names_enum<adapter>) {
-            return repr_encode<adapter, codec::node_format_t<Format, T, Attrs>>(vis, value);
+            return repr_encode<adapter, node_format_t<Format, T, Attrs>>(vis, value);
         } else {
             return repr_encode<adapter, Format>(vis, value);
         }
-    } else if constexpr(tuple_has_spec_v<Attrs, codec::behavior::as>) {
-        using target = typename tuple_find_spec_t<Attrs, codec::behavior::as>::target;
+    } else if constexpr(tuple_has_spec_v<Attrs, behavior::as>) {
+        using target = typename tuple_find_spec_t<Attrs, behavior::as>::target;
         target converted(value);
-        return encode_value<Format>(vis, converted);
-    } else if constexpr(codec::spec_of<codec::struct_spec, Attrs>.tagging !=
-                        codec::tag_mode::none) {
+        return encode_under<Format>(vis, converted);
+    } else if constexpr(spec_of<struct_spec, Attrs>.tagging != tag_mode::none) {
         static_assert(taggable<T>, "a tagging attribute requires a std::variant");
-        using spec_attr = meta::spec_attr_t<codec::struct_spec, Attrs>;
-        if constexpr(meta::derived_variant<T>) {
-            return encode_tagged_variant<Format, spec_attr>(
-                vis,
-                static_cast<const meta::variant_base_t<T>&>(value));
-        } else {
-            return encode_tagged_variant<Format, spec_attr>(vis, value);
-        }
+        return encode_tagged_variant<Format, meta::spec_attr_t<struct_spec, Attrs>>(vis, value);
     } else {
-        return encode_plain<codec::node_format_t<Format, T, Attrs>>(vis, value);
+        return encode_plain<node_format_t<Format, T, Attrs>>(vis, value);
     }
 }
 
@@ -285,7 +285,7 @@ bool encode_one_field(Vis& vis, const T& value) {
         const auto& field_ref = descriptor::of(value);
 
         bool ok = vis.visit_field(descriptor{}, [&](auto& fv) -> bool {
-            return encode_with_attrs<codec::members_format_t<Format>, typename descriptor::attrs>(
+            return encode_with_attrs<members_format_t<Format>, typename descriptor::attrs>(
                 fv,
                 field_ref);
         });
@@ -293,37 +293,33 @@ bool encode_one_field(Vis& vis, const T& value) {
     }
 }
 
-}  // namespace detail
+/// Encodes the fields of a struct under Format, its scope.
+template <typename Format, typename Vis, typename T>
+bool encode_struct_fields(Vis& vis, const T& value) {
+    constexpr std::size_t N = type_list_size_v<typename virtual_schema<T, Format>::slots>;
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        return (encode_one_field<Format, Is>(vis, value) && ...);
+    }(std::make_index_sequence<N>{});
+}
 
 template <typename Format, typename Vis, typename T>
-bool encode_value(Vis& vis, const T& value) {
+bool encode_under(Vis& vis, const T& value) {
     if constexpr(!std::is_same_v<meta::attrs_of_t<T>, std::tuple<>>) {
-        return detail::encode_with_attrs<Format, meta::attrs_of_t<T>>(vis, value);
+        return encode_with_attrs<Format, meta::attrs_of_t<T>>(vis, value);
     } else {
-        return detail::encode_plain<Format>(vis, value);
+        return encode_plain<Format>(vis, value);
     }
 }
-
-/// Encodes `value` through `vis` under the format the visitor carries: what a
-/// repr's encode() or a serialize_visit specialization calls to write the
-/// values it is made of.
-template <typename Vis, typename T>
-    requires (!std::is_void_v<format_of_t<Vis>>)
-bool encode_value(Vis& vis, const T& value) {
-    return encode_value<format_of_t<Vis>>(vis, value);
-}
-
-namespace detail {
 
 template <typename Format, typename Vis, typename T>
 bool encode_plain(Vis& vis, const T& value) {
     if constexpr(requires(Vis& v, const T& val) { serialize_visit<Vis, T>::visit(v, val); }) {
-        static_assert(!codec::has_repr<T, Format>,
+        static_assert(!has_repr<T, Format>,
                       "type has both a serialize_visit specialization and a codec::repr; "
                       "keep exactly one");
         return serialize_visit<Vis, T>::visit(vis, value);
-    } else if constexpr(codec::has_repr<T, Format>) {
-        return repr_encode<codec::repr_for<T, Format>, Format>(vis, value);
+    } else if constexpr(has_repr<T, Format>) {
+        return repr_encode<repr_for<T, Format>, Format>(vis, value);
     } else if constexpr(meta::derived_variant<T>) {
         return encode_plain<Format>(vis, static_cast<const meta::variant_base_t<T>&>(value));
     } else {
@@ -342,7 +338,7 @@ bool encode_plain(Vis& vis, const T& value) {
             // A char array need not end in a null character, so its text
             // stops at the array's end.
             std::string_view text(value, std::extent_v<T>);
-            return detail::encode_text<Format>(vis, text.substr(0, text.find('\0')));
+            return encode_text(vis, text.substr(0, text.find('\0')));
         } else if constexpr(meta::str_like<T> && std::is_pointer_v<T>) {
             // A null C string holds no text at all: it writes null, where
             // the visitor can write one; a map key writer cannot.
@@ -353,9 +349,9 @@ bool encode_plain(Vis& vis, const T& value) {
                     return scoped_context<rich_error>::fail(rich_error("null C string map key"));
                 }
             }
-            return detail::encode_text<Format>(vis, value);
+            return encode_text(vis, value);
         } else if constexpr(meta::str_like<T>) {
-            return detail::encode_text<Format>(vis, value);
+            return encode_text(vis, value);
         } else if constexpr(kind == character) {
             return vis.visit_char(value);
         } else if constexpr(kind == bytes) {
@@ -366,7 +362,7 @@ bool encode_plain(Vis& vis, const T& value) {
             if constexpr(is_specialization_of<std::weak_ptr, T>) {
                 // A weak pointer writes what the shared pointer it locks to
                 // would, presence marker included.
-                return encode_value<Format>(vis, value.lock());
+                return encode_under<Format>(vis, value.lock());
             } else if constexpr(kind == pointer &&
                                 requires(Vis& v, const T& p) { v.visit_pointer(p); }) {
                 return vis.visit_pointer(value);
@@ -376,10 +372,10 @@ bool encode_plain(Vis& vis, const T& value) {
                                      v.visit_some(x, [](auto&) -> bool { return true; });
                                  }) {
                         return vis.visit_some(*value, [&](auto& sv) -> bool {
-                            return encode_value<Format>(sv, *value);
+                            return encode_under<Format>(sv, *value);
                         });
                     } else {
-                        return encode_value<Format>(vis, *value);
+                        return encode_under<Format>(vis, *value);
                     }
                 }
                 return vis.visit_null();
@@ -406,12 +402,12 @@ bool encode_plain(Vis& vis, const T& value) {
                         // dispatch, mirroring the decode path.
                         if constexpr(std::is_same_v<std::remove_cvref_t<decltype(elem)>,
                                                     element_t>) {
-                            return encode_value<Format>(ev, elem);
+                            return encode_under<Format>(ev, elem);
                         } else {
-                            return encode_value<Format>(ev, static_cast<element_t>(elem));
+                            return encode_under<Format>(ev, static_cast<element_t>(elem));
                         }
                     });
-                    KOTATSU_CODEC_TRY(detail::trace_path(ok, idx));
+                    KOTATSU_CODEC_TRY(trace_path(ok, idx));
                     ++idx;
                 }
                 return true;
@@ -419,10 +415,10 @@ bool encode_plain(Vis& vis, const T& value) {
         } else if constexpr(kind == tuple) {
             return vis.visit_tuple(value, [&](auto& sv) -> bool {
                 return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                    return (detail::trace_path(sv.visit_element([&](auto& ev) -> bool {
-                                return encode_value<Format>(ev, std::get<Is>(value));
+                    return (trace_path(sv.visit_element([&](auto& ev) -> bool {
+                                return encode_under<Format>(ev, std::get<Is>(value));
                             }),
-                                               Is) &&
+                                       Is) &&
                             ...);
                 }(std::make_index_sequence<std::tuple_size_v<T>>{});
             });
@@ -431,9 +427,9 @@ bool encode_plain(Vis& vis, const T& value) {
                 std::size_t idx = 0;
                 for(const auto& [k, v]: value) {
                     bool ok = mv.visit_entry(
-                        [&](auto& kv) -> bool { return encode_value<Format>(kv, k); },
-                        [&](auto& vv) -> bool { return encode_value<Format>(vv, v); });
-                    KOTATSU_CODEC_TRY(detail::trace_path(ok, idx));
+                        [&](auto& kv) -> bool { return encode_under<Format>(kv, k); },
+                        [&](auto& vv) -> bool { return encode_under<Format>(vv, v); });
+                    KOTATSU_CODEC_TRY(trace_path(ok, idx));
                     ++idx;
                 }
                 return true;
@@ -446,7 +442,7 @@ bool encode_plain(Vis& vis, const T& value) {
             if constexpr(is_expected_v<T>) {
                 if(value.has_value()) {
                     if constexpr(!std::is_void_v<typename T::value_type>) {
-                        return encode_value<Format>(vis, *value);
+                        return encode_under<Format>(vis, *value);
                     } else {
                         return vis.visit_null();
                     }
@@ -456,13 +452,13 @@ bool encode_plain(Vis& vis, const T& value) {
                     // a backend that shows any value.
                     if constexpr(meta::kind_of<E>() != meta::type_kind::unknown ||
                                  requires(Vis& v, const E& e) { v.visit_opaque(e); }) {
-                        return encode_value<Format>(vis, value.error());
+                        return encode_under<Format>(vis, value.error());
                     } else {
                         return vis.visit_null();
                     }
                 }
             } else {
-                return detail::encode_untagged_variant<Format>(vis, value);
+                return encode_untagged_variant<Format>(vis, value);
             }
         } else if constexpr(std::is_pointer_v<T> &&
                             requires(Vis& v, const T& p) { v.visit_pointer(p); }) {
@@ -479,24 +475,9 @@ bool encode_plain(Vis& vis, const T& value) {
     }
 }
 
-}  // namespace detail
-
-template <typename Format, typename Vis, typename T>
-bool encode_struct_fields(Vis& vis, const T& value) {
-    using schema = codec::virtual_schema<T, Format>;
-    using slots = typename schema::slots;
-    constexpr std::size_t N = type_list_size_v<slots>;
-
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return (detail::encode_one_field<Format, Is>(vis, value) && ...);
-    }(std::make_index_sequence<N>{});
-}
-
-namespace detail {
-
-/// A backend's encode entry point, bar building its visitor and output:
-/// encode_value under the format F, with the options given, inside a fresh
-/// error context.
+/// A backend's encode entry point, bar building its visitor and output: the
+/// value under the format F, with the options given, inside a fresh error
+/// context.
 template <typename F, typename Vis, typename T>
 std::expected<void, rich_error> run_encode(Vis& vis,
                                            const T& value,
@@ -505,7 +486,7 @@ std::expected<void, rich_error> run_encode(Vis& vis,
     rich_error err;
     scoped_context<rich_error> guard(err);
     scoped_context<const encode_options> given(options);
-    if(!encode_value<F>(vis, value)) {
+    if(!encode_under<F>(vis, value)) {
         return std::unexpected(std::move(err));
     }
     return {};
@@ -513,15 +494,12 @@ std::expected<void, rich_error> run_encode(Vis& vis,
 
 }  // namespace detail
 
-// Map keys for backends whose native maps take only string keys (json, toml,
-// dyn): integer keys are rendered as their decimal string on encode and
-// parsed back on decode. Format is the backend's format tag — void for a
-// format-agnostic backend — so format-scoped codec::repr specializations
-// resolve for key types the same way they do for values.
-
-/// Encodes a map key into its string form, handing the result to Sink::emit
-/// as a string_view that is only valid for the duration of that call.
-template <typename Sink, typename Format = void>
+/// Writes a map key for a backend whose maps take only string keys (json,
+/// toml, dyn): a string as it is, an integer as its decimal text, handed to
+/// Sink::emit as a string_view valid for that call alone. It carries the
+/// backend's Format, so that the reprs scoped to it apply to keys as to
+/// values; MapKeyReader reads the keys back.
+template <typename Sink, typename Format>
 struct MapKeyWriter {
     Sink sink;
     using format = Format;
@@ -545,7 +523,7 @@ struct MapKeyWriter {
     }
 };
 
-/// Sink for backends whose native map type is keyed by std::string.
+/// A MapKeyWriter sink for a backend whose maps are keyed by std::string.
 struct StringKeySink {
     std::string& output;
 

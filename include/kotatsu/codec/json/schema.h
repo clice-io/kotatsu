@@ -40,8 +40,8 @@ struct schema_options {
     /// Indented, rather than compact, text.
     bool pretty = false;
     /// Whether the documents carry variant tags: a format that is not human
-    /// readable encodes a tagged variant as its bare alternative (the
-    /// human_readable gate in encode_tagged_variant). The typed entry
+    /// readable encodes a tagged variant as its bare alternative (see
+    /// encode_tagged_variant). The typed entry
     /// points take it from the format.
     bool human_readable = true;
 };
