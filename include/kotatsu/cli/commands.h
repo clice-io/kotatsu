@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <memory>
@@ -48,7 +47,7 @@ struct CommandEntry {
 struct CommandRegistry {
     std::vector<CommandEntry> entries;
     /// Whether a command was built from it, after which the subcommands' places are fixed.
-    std::atomic<bool> sealed = false;
+    bool sealed = false;
 
     /// Adds `entry` where its name sorts. A name taken already, which no compiler sees as the
     /// files adding both are apart, and an entry after the set was read end the program.
@@ -66,7 +65,7 @@ CommandRegistry& registry() {
 template <typename Tag>
 const CommandRegistry& sealed_registry() {
     auto& commands = registry<Tag>();
-    commands.sealed.store(true, std::memory_order_relaxed);
+    commands.sealed = true;
     return commands;
 }
 

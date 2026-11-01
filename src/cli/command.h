@@ -99,7 +99,7 @@ struct Subcommands {
     std::vector<std::string> names = {};
     std::vector<std::string_view> descriptions = {};
     std::vector<bool> hidden = {};
-    std::vector<std::unique_ptr<Command>> commands = {};
+    std::vector<CommandPtr> commands = {};
 };
 
 /// What a struct takes from an argv, and the table it reads options with.
@@ -124,9 +124,6 @@ struct Command {
     std::unique_ptr<OptTable> table;
     ParseOptions parse_options;
 };
-
-/// Builds the command `type`, a struct, describes.
-std::unique_ptr<Command> build_command(const meta::type_info& type);
 
 /// The alternative exclusive field `exclusive` holds in the options `root`, or no_alternative.
 std::uint32_t held(const Command& command, const Node& root, std::uint32_t exclusive);

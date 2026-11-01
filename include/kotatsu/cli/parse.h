@@ -5,6 +5,7 @@
 #include <deque>
 #include <expected>
 #include <format>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -73,15 +74,24 @@ using decode_config = codec::default_config<DecodeConfig>;
 
 struct Command;
 
-/// The command `type`, a struct, describes: its options, positional arguments, groups and
-/// subcommands, and their option table. Built on first use.
-const Command& command_of(const meta::type_info& type);
+/// Frees a command, a type complete only where it is built.
+struct CommandDeleter {
+    void operator()(Command* command) const;
+};
 
-/// The command of options `T`, which a mistake in them keeps from compiling.
+using CommandPtr = std::unique_ptr<Command, CommandDeleter>;
+
+/// Builds the command `type`, a struct, describes: its options, positional arguments, groups
+/// and subcommands, and their option table.
+CommandPtr build_command(const meta::type_info& type);
+
+/// The command of options `T`, which a mistake in them keeps from compiling. Built on first
+/// use.
 template <typename T>
 const Command& command_of() {
     static_assert(check_declaration(meta::type_info_of<T, decode_config>()));
-    return command_of(meta::type_info_of<T, decode_config>());
+    const static CommandPtr command = build_command(meta::type_info_of<T, decode_config>());
+    return *command;
 }
 
 /// What an argv gives a command: the tree its decode reads, and where the nodes come from.

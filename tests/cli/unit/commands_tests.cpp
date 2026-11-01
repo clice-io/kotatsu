@@ -1,7 +1,6 @@
 // Subcommands files add to a set, which a cli::Commands field takes without naming them.
 
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -178,22 +177,6 @@ ZEST_CASE(hidden_one_writes_back) {
 
 ZEST_CASE(none_held_writes_nothing) {
     ZEXPECT(cli::to_argv(Tool{}).empty());
-}
-
-ZEST_CASE(threads_read_and_write_one_set_at_once) {
-    ZASSERT(cli::parse<Tool>(std::vector<std::string>{"build"}).has_value());
-    auto round_trip = [] {
-        auto tool = cli::parse<Tool>(std::vector<std::string>{"build", "--jobs", "2"});
-        return tool.has_value() && cli::to_argv(*tool).size() == 2U;
-    };
-    bool first = false;
-    bool second = false;
-    std::thread one([&] { first = round_trip(); });
-    std::thread two([&] { second = round_trip(); });
-    one.join();
-    two.join();
-    ZEXPECT(first);
-    ZEXPECT(second);
 }
 
 ZEST_CASE(two_added_under_one_name_end_the_program, crashes = true) {

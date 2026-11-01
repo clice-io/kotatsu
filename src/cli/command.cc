@@ -4,8 +4,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <format>
-#include <map>
-#include <mutex>
 #include <ranges>
 #include <set>
 #include <string>
@@ -359,14 +357,18 @@ public:
 
 }  // namespace
 
-std::unique_ptr<Command> build_command(const meta::type_info& type) {
-    auto command = std::make_unique<Command>();
+void CommandDeleter::operator()(Command* command) const {
+    delete command;
+}
+
+CommandPtr build_command(const meta::type_info& type) {
+    CommandPtr command(new Command());
     Builder(*command).build(static_cast<const meta::struct_type_info&>(type));
     return command;
 }
 
 void CommandRegistry::add(CommandEntry entry) {
-    if(sealed.load(std::memory_order_relaxed)) {
+    if(sealed) {
         std::fprintf(stderr,
                      "cli: subcommand %s added after its set was read\n",
                      entry.name.c_str());
@@ -448,17 +450,6 @@ Node& make_node(Node& root, std::span<const std::string_view> keys, Node::Kind k
             Node{.kind = i + 1 == keys.size() ? kind : Node::Kind::Object});
     }
     return *node;
-}
-
-const Command& command_of(const meta::type_info& type) {
-    static std::mutex mutex;
-    static std::map<const meta::type_info*, std::unique_ptr<Command>> commands;
-    const std::lock_guard lock(mutex);
-    auto& command = commands[&type];
-    if(!command) {
-        command = build_command(type);
-    }
-    return *command;
 }
 
 }  // namespace kotatsu::cli::detail
