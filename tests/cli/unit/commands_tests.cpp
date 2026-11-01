@@ -106,8 +106,8 @@ int again(Again&) {
 
 /// A cli::Commands field, an annotation itself, annotated again.
 struct MustPick {
-    KANNOTATE(cli::required = true)
-    <cli::Commands<Top>> command;
+    KANNOTATE(command, cli::required = true)
+    cli::Commands<Top> command;
 };
 
 ZEST_SUITE(cli_commands) {

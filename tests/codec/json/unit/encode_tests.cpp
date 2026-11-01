@@ -41,23 +41,23 @@ struct OtherFormat {};
 
 /// Keys JSON escapes, which encode spells out as it compiles.
 struct OddlyNamed {
-    KANNOTATE(rename = R"(say "hi")")
-    <int> quoted = 1;
-    KANNOTATE(rename = R"(back\slash)")
-    <int> backslashed = 2;
-    KANNOTATE(rename = "tab\tand\x01")
-    <int> controlled = 3;
-    KANNOTATE(rename = "\b\f\n\r\x1f")
-    <int> shortened = 4;
-    KANNOTATE(rename = "del\x7f/caf\xC3\xA9")
-    <int> kept = 5;
+    KANNOTATE(quoted, rename = R"(say "hi")")
+    int quoted = 1;
+    KANNOTATE(backslashed, rename = R"(back\slash)")
+    int backslashed = 2;
+    KANNOTATE(controlled, rename = "tab\tand\x01")
+    int controlled = 3;
+    KANNOTATE(shortened, rename = "\b\f\n\r\x1f")
+    int shortened = 4;
+    KANNOTATE(kept, rename = "del\x7f/caf\xC3\xA9")
+    int kept = 5;
 };
 
 /// Its first field is left out when empty, and the next one's key then
 /// opens the object.
 struct NoteFirst {
-    KANNOTATE(skip_if = skip_when::empty)
-    <std::string> note;
+    KANNOTATE(note, skip_if = skip_when::empty)
+    std::string note;
     int id = 1;
 };
 

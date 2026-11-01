@@ -17,14 +17,14 @@ namespace {
 
 struct Optimize {
     int level = 0;
-    KANNOTATE(cli::names = {"-O2"}, cli::forward = {"--level", "2"}, description = "--level 2")
-    <cli::Alias> o2;
+    KANNOTATE(o2, cli::names = {"-O2"}, cli::forward = {"--level", "2"}, description = "--level 2")
+    cli::Alias o2;
 };
 
 struct Strict {
     unsigned level = 0;
-    KANNOTATE(cli::names = {"-Oneg"}, cli::forward = {"--level", "-1"})
-    <cli::Alias> neg;
+    KANNOTATE(neg, cli::names = {"-Oneg"}, cli::forward = {"--level", "-1"})
+    cli::Alias neg;
 };
 
 struct Session {
@@ -53,8 +53,8 @@ struct Port {
 struct Server {
     Port port;
     cli::Help help;
-    KANNOTATE(cli::required = true)
-    <std::string> host;
+    KANNOTATE(host, cli::required = true)
+    std::string host;
 };
 
 /// What a visit sees of `given`: "session.handler=a", its values joined by ','.

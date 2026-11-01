@@ -170,14 +170,14 @@ ZEST_CASE(annotation_of_an_annotation_annotates_the_type_inside) {
 
 ZEST_CASE(outer_entries_override_inner_ones) {
     using twice = annotate<outer_tag>::type<annotate<inner_tag>::type<int>>;
-    constexpr const field_spec& spec = field_spec_of<twice>;
+    constexpr const field_spec& spec = spec_of<attrs_of_t<twice>>;
     ZSTATIC_EXPECT(spec.description == "outer");
     // What only one of them says stays.
     ZSTATIC_EXPECT(spec.rename == "renamed");
     ZSTATIC_EXPECT(spec.alias.size() == 1u);
     ZSTATIC_EXPECT(spec.alias[0] == "in");
-    ZSTATIC_EXPECT(extension_of<Probe, twice>->label == "probe");
-    ZSTATIC_EXPECT(extension_of<Probe, twice>->weight == 5);
+    ZSTATIC_EXPECT(extension_in<Probe, attrs_of_t<twice>>->label == "probe");
+    ZSTATIC_EXPECT(extension_in<Probe, attrs_of_t<twice>>->weight == 5);
     ZSTATIC_EXPECT((tuple_has_v<typename twice::attrs, behavior::as<std::int64_t>>));
 }
 
@@ -191,13 +191,13 @@ ZEST_CASE(outer_representation_overrides_inner_one) {
 ZEST_CASE(outer_skip_condition_overrides_inner_one) {
     using predicate_over_value =
         annotate<skip_negative_tag>::type<annotate<skip_empty_tag>::type<int>>;
-    ZSTATIC_EXPECT(field_spec_of<predicate_over_value>.skip_if == skip_when::never);
+    ZSTATIC_EXPECT(spec_of<attrs_of_t<predicate_over_value>>.skip_if == skip_when::never);
     ZSTATIC_EXPECT(
         (tuple_has_v<typename predicate_over_value::attrs, behavior::skip_if<Negative>>));
 
     using value_over_predicate =
         annotate<skip_empty_tag>::type<annotate<skip_negative_tag>::type<int>>;
-    ZSTATIC_EXPECT(field_spec_of<value_over_predicate>.skip_if == skip_when::empty);
+    ZSTATIC_EXPECT(spec_of<attrs_of_t<value_over_predicate>>.skip_if == skip_when::empty);
     ZSTATIC_EXPECT(
         !(tuple_has_v<typename value_over_predicate::attrs, behavior::skip_if<Negative>>));
 }
@@ -205,7 +205,7 @@ ZEST_CASE(outer_skip_condition_overrides_inner_one) {
 ZEST_CASE(annotation_of_a_bare_annotation_keeps_its_behavior) {
     using twice = annotate<outer_tag>::type<annotation<int, behavior::as<std::int64_t>>>;
     ZSTATIC_EXPECT((tuple_has_v<typename twice::attrs, behavior::as<std::int64_t>>));
-    ZSTATIC_EXPECT(field_spec_of<twice>.rename == "renamed");
+    ZSTATIC_EXPECT(spec_of<attrs_of_t<twice>>.rename == "renamed");
 }
 
 ZEST_CASE(annotation_of_an_annotation_reads_the_value_inside) {
@@ -234,17 +234,17 @@ ZEST_CASE(name_lists_take_any_number_of_names) {
 
 ZEST_CASE(one_annotation_takes_field_and_struct_entries) {
     using shape = annotate<mixed_tag>::type<std::variant<Alt<0>, Alt<1>>>;
-    ZSTATIC_EXPECT(field_spec_of<shape>.rename == "shape");
+    ZSTATIC_EXPECT(spec_of<attrs_of_t<shape>>.rename == "shape");
     ZSTATIC_EXPECT(struct_spec_of<typename shape::attrs>.tagging == tag_mode::internal);
 }
 
 ZEST_CASE(field_annotation_overrides_its_type_annotation) {
-    ZSTATIC_EXPECT(field_spec_of<Weighed>.description == "weighed");
-    ZSTATIC_EXPECT(extension_of<Probe, Weighed>->weight == 1);
+    ZSTATIC_EXPECT(spec_of<attrs_of_t<Weighed>>.description == "weighed");
+    ZSTATIC_EXPECT(extension_in<Probe, attrs_of_t<Weighed>>->weight == 1);
     using heavier = annotate<heavier_tag>::type<Weighed>;
-    ZSTATIC_EXPECT(field_spec_of<heavier>.description == "heavier");
-    ZSTATIC_EXPECT(extension_of<Probe, heavier>->label == "type");
-    ZSTATIC_EXPECT(extension_of<Probe, heavier>->weight == 9);
+    ZSTATIC_EXPECT(spec_of<attrs_of_t<heavier>>.description == "heavier");
+    ZSTATIC_EXPECT(extension_in<Probe, attrs_of_t<heavier>>->label == "type");
+    ZSTATIC_EXPECT(extension_in<Probe, attrs_of_t<heavier>>->weight == 9);
 }
 
 ZEST_CASE(type_annotation_reaches_a_plain_field) {
@@ -256,13 +256,13 @@ ZEST_CASE(type_annotation_reaches_a_plain_field) {
 ZEST_CASE(outer_never_overrides_inner_skip_predicate) {
     using twice = annotate<never_skipped_tag>::type<annotate<skip_negative_tag>::type<int>>;
     ZSTATIC_EXPECT(!(tuple_has_v<typename twice::attrs, behavior::skip_if<Negative>>));
-    ZSTATIC_EXPECT(field_spec_of<twice>.skip_if == skip_when::never);
+    ZSTATIC_EXPECT(spec_of<attrs_of_t<twice>>.skip_if == skip_when::never);
 }
 
 ZEST_CASE(bare_skip_predicate_overrides_inner_skip_condition) {
     using twice = annotation<annotate<skip_empty_tag>::type<int>, behavior::skip_if<Negative>>;
     ZSTATIC_EXPECT((tuple_has_v<typename twice::attrs, behavior::skip_if<Negative>>));
-    ZSTATIC_EXPECT(field_spec_of<twice>.skip_if == skip_when::never);
+    ZSTATIC_EXPECT(spec_of<attrs_of_t<twice>>.skip_if == skip_when::never);
 }
 
 ZEST_CASE(outer_tagging_overrides_inner_one) {

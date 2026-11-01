@@ -36,8 +36,8 @@ private:
 };
 
 struct json_schema_reprd_repr {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> total = 5;
+    KANNOTATE(total, defaulted = true)
+    std::int32_t total = 5;
 };
 
 /// A declarative repr whose to() disagrees with a fresh representation
@@ -58,8 +58,8 @@ private:
 };
 
 struct json_schema_reprd_shifted_repr {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> n = 4;
+    KANNOTATE(n, defaulted = true)
+    std::int32_t n = 4;
 };
 
 /// An imperative repr with a struct representation: repr_decode's imperative
@@ -81,8 +81,8 @@ private:
 };
 
 struct json_schema_imperative_repr {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> n = 4;
+    KANNOTATE(n, defaulted = true)
+    std::int32_t n = 4;
 };
 
 }  // namespace
@@ -134,11 +134,11 @@ struct repr<json_schema_imperative_root> {
 namespace {
 
 struct defaults_leaf {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> threads = 4;
+    KANNOTATE(threads, defaulted = true)
+    std::int32_t threads = 4;
 
-    KANNOTATE(defaulted = true)
-    <std::string> name = "worker";
+    KANNOTATE(name, defaulted = true)
+    std::string name = "worker";
 };
 
 /// A member only value-initialization makes, beside one with a default.
@@ -152,28 +152,28 @@ struct defaults_explicit_holder {
 };
 
 struct defaults_root {
-    KANNOTATE(defaulted = true)
-    <bool> enabled = true;
+    KANNOTATE(enabled, defaulted = true)
+    bool enabled = true;
 
     defaults_leaf pool;
     defaults_leaf mirror;
 
     std::optional<std::int32_t> limit;
 
-    KANNOTATE(defaulted = true)
-    <std::vector<std::int32_t>> ids;
+    KANNOTATE(ids, defaulted = true)
+    std::vector<std::int32_t> ids;
 };
 
 struct defaults_skipped {
-    KANNOTATE(skip_if = skip_when::empty)
-    <std::vector<std::int32_t>> tags;
+    KANNOTATE(tags, skip_if = skip_when::empty)
+    std::vector<std::int32_t> tags;
 };
 
 enum class defaults_level : std::uint8_t { Low = 0, High = 1 };
 
 struct defaults_with_enum {
-    KANNOTATE(defaulted = true)
-    <defaults_level> log_level = defaults_level::High;
+    KANNOTATE(log_level, defaulted = true)
+    defaults_level log_level = defaults_level::High;
 };
 
 struct defaults_shared_override {
@@ -187,30 +187,30 @@ struct defaults_engaged {
 };
 
 struct defaults_node {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> depth = 1;
+    KANNOTATE(depth, defaulted = true)
+    std::int32_t depth = 1;
 
     std::unique_ptr<defaults_node> next;
 };
 
 struct defaults_ref_sites {
-    KANNOTATE(defaulted = true)
-    <defaults_leaf> pool;
+    KANNOTATE(pool, defaulted = true)
+    defaults_leaf pool;
 
-    KANNOTATE(defaulted = true)
-    <defaults_leaf> mirror = {defaults_leaf{.threads = 9}};
+    KANNOTATE(mirror, defaulted = true)
+    defaults_leaf mirror = {defaults_leaf{.threads = 9}};
 };
 
 struct defaults_alt_a {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> depth = 3;
+    KANNOTATE(depth, defaulted = true)
+    std::int32_t depth = 3;
 
     std::string name;
 };
 
 struct defaults_alt_b {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> other = 9;
+    KANNOTATE(other, defaulted = true)
+    std::int32_t other = 9;
 };
 
 KANNOTATION(defaults_internal_annotation, tag = "kind", tag_names = {"a", "b"});
@@ -230,18 +230,18 @@ using defaults_external_variant =
     annotate<defaults_external_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
 
 struct defaults_elem_a {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> alpha = 7;
+    KANNOTATE(alpha, defaulted = true)
+    std::int32_t alpha = 7;
 };
 
 struct defaults_elem_b {
-    KANNOTATE(defaulted = true)
-    <std::string> beta = "cell";
+    KANNOTATE(beta, defaulted = true)
+    std::string beta = "cell";
 };
 
 struct defaults_elem_c {
-    KANNOTATE(defaulted = true)
-    <bool> gamma = true;
+    KANNOTATE(gamma, defaulted = true)
+    bool gamma = true;
 };
 
 struct defaults_containers {
@@ -263,8 +263,8 @@ struct defaults_variant_override {
 };
 
 struct defaults_cyclic {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> depth = 1;
+    KANNOTATE(depth, defaulted = true)
+    std::int32_t depth = 1;
 
     std::vector<defaults_cyclic> kids = {
         {.depth = 2, .kids = {}}
@@ -288,13 +288,13 @@ struct defaults_tuple_override {
 };
 
 struct renamed_defaults_child {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> first_value = 4;
+    KANNOTATE(first_value, defaulted = true)
+    std::int32_t first_value = 4;
 };
 
 struct renamed_defaults_holder {
-    KANNOTATE(rename_all = Casing::LowerCamel)
-    <renamed_defaults_child> child;
+    KANNOTATE(child, rename_all = Casing::LowerCamel)
+    renamed_defaults_child child;
 };
 
 KANNOTATION(renamed_defaults_root_annotation, rename_all = Casing::LowerCamel);

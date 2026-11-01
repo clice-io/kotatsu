@@ -59,10 +59,11 @@ struct CliOptions {
 
     cli::Help help;
 
-    KANNOTATE(cli::positional = true,
+    KANNOTATE(test_filter_input,
+              cli::positional = true,
               cli::meta_var = "<PATTERN>",
               description = "positional fallback for test name filter")
-    <std::optional<std::string>> test_filter_input;
+    std::optional<std::string> test_filter_input;
 };
 
 struct FilterPatternSet {

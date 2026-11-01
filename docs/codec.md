@@ -31,8 +31,8 @@ codecs are [ipc](ipc.md)'s.
 namespace json = kotatsu::codec::json;
 
 struct Project {
-    KANNOTATE(rename = "compileCommands")
-    <std::string> compile_commands;
+    KANNOTATE(compile_commands, rename = "compileCommands")
+    std::string compile_commands;
     std::vector<int> ports;
 };
 
@@ -52,20 +52,20 @@ Adapted from `tests/codec/unit/macro_tests.cpp` and `tests/codec/json/unit/decod
 
 ## Overview
 
-| Header                                                                                       | Contents                                                                                                                                  |
-| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| [macro.h](../include/kotatsu/codec/macro.h)                                                  | `KANNOTATE(...)` on a field, `KANNOTATION(name, ...)` for a reusable tag, `KANNOTATE_TYPE(struct X, ...)` above a type                    |
-| [encode.h](../include/kotatsu/codec/encode.h), [decode.h](../include/kotatsu/codec/decode.h) | The protocol: `encode_value` / `decode_value`, overridden per visitor by `serialize_visit` / `deserialize_visit`                          |
-| [format.h](../include/kotatsu/codec/format.h)                                                | `default_config<UserConfig>`, which fills in the knobs a config leaves out (`enum_repr`, `nan_repr`, `deny_unknown_fields`, ...)          |
-| [context.h](../include/kotatsu/codec/context.h)                                              | `rich_error`, and `scoped_context<T>` for context a visitor or repr reads                                                                 |
-| [json/json.h](../include/kotatsu/codec/json/json.h)                                          | JSON over simdjson: `to_string`, `from_string`, `prettify`; a `codec::RawValue` is spliced in verbatim                                    |
-| [json/schema.h](../include/kotatsu/codec/json/schema.h)                                      | The JSON Schema of a type: `schema<T>()`, `schema_string<T>()`                                                                            |
-| [toml/toml.h](../include/kotatsu/codec/toml/toml.h)                                          | TOML over toml++: `to_string` / `from_string`, `to_toml` / `from_toml` on a `toml::Table`                                                 |
-| [dyn/dyn.h](../include/kotatsu/codec/dyn/dyn.h)                                              | `dyn::Value`, an ordered DOM with `Cursor` navigation; `to_dyn` / `from_dyn`                                                              |
-| [bincode/bincode.h](../include/kotatsu/codec/bincode/bincode.h)                              | `to_bytes` / `from_bytes`, not self-describing: decode with the type and config that encoded                                              |
-| [blob/blob.h](../include/kotatsu/codec/blob/blob.h)                                          | Zero-copy blobs read in place as the struct: `to_bytes`, `view`, `view_verified`, `from_bytes`, `measure`; no config, no schema evolution |
-| [fbs/fbs.h](../include/kotatsu/codec/fbs/fbs.h)                                              | FlatBuffers laid out from the type: `to_bytes` / `from_bytes`, and zero-copy views over a verified buffer                                 |
-| [debug/debug.h](../include/kotatsu/codec/debug/debug.h)                                      | `to_string` in Rust's Debug style, for logs; encode-only                                                                                  |
+| Header                                                                                       | Contents                                                                                                                                                                             |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [macro.h](../include/kotatsu/codec/macro.h)                                                  | `KANNOTATE(field, ...)` above a field, `KANNOTATE_FIELD(T, field, ...)` outside its class, `KANNOTATION(name, ...)` for a reusable tag, `KANNOTATE_TYPE(struct X, ...)` above a type |
+| [encode.h](../include/kotatsu/codec/encode.h), [decode.h](../include/kotatsu/codec/decode.h) | The protocol: `encode_value` / `decode_value`, overridden per visitor by `serialize_visit` / `deserialize_visit`                                                                     |
+| [format.h](../include/kotatsu/codec/format.h)                                                | `default_config<UserConfig>`, which fills in the knobs a config leaves out (`enum_repr`, `nan_repr`, `deny_unknown_fields`, ...)                                                     |
+| [context.h](../include/kotatsu/codec/context.h)                                              | `rich_error`, and `scoped_context<T>` for context a visitor or repr reads                                                                                                            |
+| [json/json.h](../include/kotatsu/codec/json/json.h)                                          | JSON over simdjson: `to_string`, `from_string`, `prettify`; a `codec::RawValue` is spliced in verbatim                                                                               |
+| [json/schema.h](../include/kotatsu/codec/json/schema.h)                                      | The JSON Schema of a type: `schema<T>()`, `schema_string<T>()`                                                                                                                       |
+| [toml/toml.h](../include/kotatsu/codec/toml/toml.h)                                          | TOML over toml++: `to_string` / `from_string`, `to_toml` / `from_toml` on a `toml::Table`                                                                                            |
+| [dyn/dyn.h](../include/kotatsu/codec/dyn/dyn.h)                                              | `dyn::Value`, an ordered DOM with `Cursor` navigation; `to_dyn` / `from_dyn`                                                                                                         |
+| [bincode/bincode.h](../include/kotatsu/codec/bincode/bincode.h)                              | `to_bytes` / `from_bytes`, not self-describing: decode with the type and config that encoded                                                                                         |
+| [blob/blob.h](../include/kotatsu/codec/blob/blob.h)                                          | Zero-copy blobs read in place as the struct: `to_bytes`, `view`, `view_verified`, `from_bytes`, `measure`; no config, no schema evolution                                            |
+| [fbs/fbs.h](../include/kotatsu/codec/fbs/fbs.h)                                              | FlatBuffers laid out from the type: `to_bytes` / `from_bytes`, and zero-copy views over a verified buffer                                                                            |
+| [debug/debug.h](../include/kotatsu/codec/debug/debug.h)                                      | `to_string` in Rust's Debug style, for logs; encode-only                                                                                                                             |
 
 ## Platform notes
 

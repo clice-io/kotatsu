@@ -60,10 +60,10 @@ struct CallParams {
 
 // Exactly one of the two, the other left out.
 struct CallOutcome {
-    KANNOTATE(skip_if = skip_when::none)
-    <std::optional<Value>> result;
-    KANNOTATE(skip_if = skip_when::none)
-    <std::optional<Error>> error;
+    KANNOTATE(result, skip_if = skip_when::none)
+    std::optional<Value> result;
+    KANNOTATE(error, skip_if = skip_when::none)
+    std::optional<Error> error;
 };
 
 struct CloseOutputParams {};

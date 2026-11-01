@@ -210,9 +210,10 @@ ZEST_CASE(extension_entries_are_told_apart_by_their_member) {
 
 ZEST_CASE(extension_of_finds_a_field_s_extension) {
     using weighed_t = annotate<extension_tag>::type<int>;
-    ZSTATIC_EXPECT(extension_of<probe_extension, weighed_t>->weight == 3);
-    ZSTATIC_EXPECT(extension_of<probe_extension, annotate<full_tag>::type<int>> == nullptr);
-    ZSTATIC_EXPECT(extension_of<probe_extension, int> == nullptr);
+    ZSTATIC_EXPECT(extension_in<probe_extension, attrs_of_t<weighed_t>>->weight == 3);
+    ZSTATIC_EXPECT(extension_in<probe_extension, attrs_of_t<annotate<full_tag>::type<int>>> ==
+                   nullptr);
+    ZSTATIC_EXPECT(extension_in<probe_extension, attrs_of_t<int>> == nullptr);
 }
 
 ZEST_CASE(field_info_carries_extensions_and_declared_names) {
@@ -258,9 +259,9 @@ ZEST_CASE(skip_predicate_decides_by_direction) {
 
 ZEST_CASE(spec_of_reads_annotation_and_defaults_to_empty) {
     using annotated = annotate<full_tag>::type<int>;
-    ZSTATIC_EXPECT(field_spec_of<annotated>.rename == "userId");
-    ZSTATIC_EXPECT(field_spec_of<int>.rename == "");
-    ZSTATIC_EXPECT((&field_spec_of<int> == &empty_field_spec));
+    ZSTATIC_EXPECT(spec_of<attrs_of_t<annotated>>.rename == "userId");
+    ZSTATIC_EXPECT(spec_of<attrs_of_t<int>>.rename == "");
+    ZSTATIC_EXPECT((&spec_of<attrs_of_t<int>> == &empty_field_spec));
 }
 
 ZEST_CASE(field_info_carries_spec_values) {

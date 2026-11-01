@@ -18,12 +18,12 @@ namespace detail {
 
 template <typename T,
           std::size_t I,
-          bool Skipped = field_spec_of<meta::field_type<T, I>>.skip,
-          bool Flattened = field_spec_of<meta::field_type<T, I>>.flatten>
+          bool Skipped = field_spec_of<T, I>.skip,
+          bool Flattened = field_spec_of<T, I>.flatten>
 struct single_field_slots {
     using field_t = std::remove_cv_t<meta::field_type<T, I>>;
     using raw_type = raw_type_t<field_t>;
-    using attrs_t = attrs_of_t<field_t>;
+    using attrs_t = field_attrs_t<T, I>;
 
     using type = type_list<field_slot<raw_type, filter_runtime_attrs_t<attrs_t>>>;
 };

@@ -210,7 +210,7 @@ using effective_field_rename_t = typename effective_field_rename<Config>::type;
 template <typename T, std::size_t I, typename Config>
 constexpr std::string_view resolve_field_name() {
     using policy = effective_field_rename_t<Config>;
-    constexpr const field_spec& spec = field_spec_of<meta::field_type<T, I>>;
+    constexpr const field_spec& spec = field_spec_of<T, I>;
     if constexpr(!spec.rename.empty()) {
         return spec.rename;
     } else if constexpr(std::is_same_v<policy, naming::rename_policy::identity>) {
@@ -364,15 +364,22 @@ struct type_instance_impl;
 /// schema output. Tagged variant specs keep their own tag (the string
 /// payloads are not structural); schema backends emit variants inline rather
 /// than as shared defs, so distinct instances are harmless there.
-template <typename T,
-          typename Config = default_config,
-          typename Resolved = decltype(resolve_repr<std::remove_cv_t<T>, Config>())>
-struct type_instance :
+template <typename Resolved>
+struct resolved_instance :
     std::conditional_t<std::is_void_v<typename Resolved::spelled_enum>,
                        type_instance_impl<typename Resolved::type,
                                           typename Resolved::tag_attrs,
                                           typename Resolved::config>,
                        typename Resolved::spelled_enum> {};
+
+template <typename T, typename Config = default_config>
+struct type_instance : resolved_instance<decltype(resolve_repr<std::remove_cv_t<T>, Config>())> {};
+
+/// The info of a node resolved as Resolved, as a type_info_fn.
+template <typename Resolved>
+constexpr const type_info& resolved_info() {
+    return resolved_instance<Resolved>::value;
+}
 
 template <typename T, std::size_t I>
 constexpr std::size_t single_field_count();
@@ -393,7 +400,7 @@ constexpr std::size_t effective_field_count() {
 template <typename T, std::size_t I>
 constexpr std::size_t single_field_count() {
     using field_t = meta::field_type<T, I>;
-    constexpr const field_spec& spec = field_spec_of<field_t>;
+    constexpr const field_spec& spec = field_spec_of<T, I>;
 
     if constexpr(spec.skip) {
         return 0;
@@ -575,15 +582,16 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 template <typename T, typename Config, std::size_t I>
 constexpr field_info make_field_info(std::size_t base_offset) {
     using field_t = meta::field_type<T, I>;
-    using attrs_t = attrs_of_t<field_t>;
-    constexpr const field_spec& spec = field_spec_of<field_t>;
-    constexpr type_kind raw_kind = kind_of<raw_type_t<field_t>>();
+    using raw_t = std::remove_cv_t<raw_type_t<field_t>>;
+    using attrs_t = field_attrs_t<T, I>;
+    constexpr const field_spec& spec = field_spec_of<T, I>;
+    constexpr type_kind raw_kind = kind_of<raw_t>();
 
     return field_info{
         .name = resolve_field_name<T, I, Config>(),
         .aliases = spec.alias,
         .offset = base_offset + meta::field_offset<T>(I),
-        .type = type_info_of<field_t, Config>,
+        .type = resolved_info<decltype(resolve_node<raw_t, attrs_t, Config>())>,
         .has_default = spec.defaulted || config_defaults_fields<Config>(),
         .has_skip_if =
             spec.skip_if != skip_when::never || tuple_has_spec_v<attrs_t, behavior::skip_if>,
@@ -617,7 +625,7 @@ constexpr built_fields_t<T> build_fields(std::size_t base_offset) {
 template <typename T, typename Config, std::size_t I>
 constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offset) {
     using field_t = meta::field_type<T, I>;
-    constexpr const field_spec& spec = field_spec_of<field_t>;
+    constexpr const field_spec& spec = field_spec_of<T, I>;
 
     if constexpr(spec.skip) {
     } else if constexpr(spec.flatten) {

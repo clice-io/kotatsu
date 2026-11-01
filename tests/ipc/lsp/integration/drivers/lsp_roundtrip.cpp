@@ -40,10 +40,10 @@ struct Input {
 
 /// The value encoded again, or why it did not decode.
 struct Output {
-    KANNOTATE(skip_if = skip_when::none)
-    <std::optional<codec::RawValue>> value;
-    KANNOTATE(skip_if = skip_when::none)
-    <std::optional<std::string>> error;
+    KANNOTATE(value, skip_if = skip_when::none)
+    std::optional<codec::RawValue> value;
+    KANNOTATE(error, skip_if = skip_when::none)
+    std::optional<std::string> error;
 };
 
 template <typename T>

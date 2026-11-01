@@ -50,8 +50,8 @@ std::string captured(Write write) {
 KANNOTATE_TYPE(struct Options, description = "A tool");
 
 struct Options {
-    KANNOTATE(description = "Workers")
-    <int> jobs = 2;
+    KANNOTATE(jobs, description = "Workers")
+    int jobs = 2;
 };
 
 ZEST_SUITE(cli_report) {

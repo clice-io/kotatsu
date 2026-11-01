@@ -320,8 +320,8 @@ using field_value_t = std::remove_cv_t<meta::field_type<Object, I>>;
 /// enclosing table's slots. Both are attrs of the field's type, so either
 /// every member of a type is addressable or none is.
 template <typename Object, std::size_t I>
-constexpr bool addressable_field_v = !meta::field_spec_of<meta::field_type<Object, I>>.skip &&
-                                     !meta::field_spec_of<meta::field_type<Object, I>>.flatten;
+constexpr bool addressable_field_v =
+    !meta::field_spec_of<Object, I>.skip && !meta::field_spec_of<Object, I>.flatten;
 
 /// The types of Object's addressable members, each once.
 template <typename Object, typename Seq = std::make_index_sequence<meta::field_count<Object>()>>

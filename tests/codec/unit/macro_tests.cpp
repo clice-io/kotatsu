@@ -18,14 +18,14 @@
 namespace {
 
 struct DownstreamConfig {
-    KANNOTATE(rename = "compileCommands")
-    <int> compile_commands = 0;
+    KANNOTATE(compile_commands, rename = "compileCommands")
+    int compile_commands = 0;
 };
 
 template <typename T>
 struct DownstreamBox {
-    KANNOTATE(alias = {"v"})
-    <T> value;
+    KANNOTATE(value, alias = {"v"})
+    T value;
 };
 
 /// Named like the struct the namespace below annotates.
@@ -78,53 +78,58 @@ struct Profile {
 };
 
 struct Entries {
-    KANNOTATE(rename = "id", alias = {"uid"}, description = "Identifier.")
-    <int> user_id;
-    KANNOTATE(skip = true)
-    <int> internal;
-    KANNOTATE(flatten = true)
-    <Profile> profile;
-    KANNOTATE(defaulted = true, skip_if = skip_when::none)
-    <std::optional<int>> note;
+    KANNOTATE(user_id, rename = "id", alias = {"uid"}, description = "Identifier.")
+    int user_id;
+    KANNOTATE(internal, skip = true)
+    int internal;
+    KANNOTATE(profile, flatten = true)
+    Profile profile;
+    KANNOTATE(note, defaulted = true, skip_if = skip_when::none)
+    std::optional<int> note;
 };
 
 struct Behaviors {
-    KANNOTATE(as = type<std::string>)
-    <int> as_text;
-    KANNOTATE(with = type<test::DecimalText>)
-    <int> with_adapter;
-    KANNOTATE(skip_if = type<test::IsNegative>)
-    <int> skip_negative;
-    KANNOTATE(enum_string = type<naming::rename_policy::lower_camel>)
-    <Level> level;
+    KANNOTATE(as_text, as = type<std::string>)
+    int as_text;
+    KANNOTATE(with_adapter, with = type<test::DecimalText>)
+    int with_adapter;
+    KANNOTATE(skip_negative, skip_if = type<test::IsNegative>)
+    int skip_negative;
+    KANNOTATE(level, enum_string = type<naming::rename_policy::lower_camel>)
+    Level level;
 };
 
 KANNOTATION(ShapeTag, tag = "kind", tag_names = {"circle", "rect"});
 KANNOTATION(StrictCamel, rename_all = Casing::LowerCamel, deny_unknown_fields = true);
 KANNOTATION(AllDefaulted, defaulted_fields = true);
 
+struct DescribedProfile {
+    KANNOTATE(profile, description = "Whose profile.")
+    Profile profile;
+};
+
 struct StructEntriesOnFields {
-    KANNOTATE(tag = "kind", tag_names = {"circle", "rect"})
-    <std::variant<test::Circle, test::Rect>> shape;
-    KANNOTATE(rename_all = Casing::UpperSnake, deny_unknown_fields = true)
-    <Profile> inner;
+    KANNOTATE(shape, tag = "kind", tag_names = {"circle", "rect"})
+    std::variant<test::Circle, test::Rect> shape;
+    KANNOTATE(inner, rename_all = Casing::UpperSnake, deny_unknown_fields = true)
+    Profile inner;
 };
 
 ZEST_SUITE(codec_macro) {
 
 ZEST_CASE(annotate_works_outside_kotatsu) {
-    constexpr const auto& spec = meta::field_spec_of<decltype(DownstreamConfig::compile_commands)>;
+    constexpr const auto& spec = meta::field_spec_of<DownstreamConfig, 0>;
     ZSTATIC_EXPECT(spec.rename == std::string_view("compileCommands"));
 }
 
 ZEST_CASE(annotate_type_declares_the_struct_where_it_is_written) {
-    ZSTATIC_EXPECT(meta::field_spec_of<downstream::Options>.description ==
+    ZSTATIC_EXPECT(meta::spec_of<meta::type_attrs_t<downstream::Options>>.description ==
                    std::string_view("Downstream options"));
-    ZSTATIC_EXPECT(meta::field_spec_of<::Options>.description.empty());
+    ZSTATIC_EXPECT(meta::spec_of<meta::type_attrs_t<::Options>>.description.empty());
 }
 
 ZEST_CASE(annotate_type_follows_an_opaque_enum_declaration) {
-    ZSTATIC_EXPECT(meta::field_spec_of<downstream::Level>.description ==
+    ZSTATIC_EXPECT(meta::spec_of<meta::type_attrs_t<downstream::Level>>.description ==
                    std::string_view("How loud"));
 }
 
@@ -136,31 +141,31 @@ ZEST_CASE(annotate_type_carries_extension_entries_to_plain_fields) {
 }
 
 ZEST_CASE(annotate_works_in_a_class_template) {
-    constexpr const auto& spec = meta::field_spec_of<decltype(DownstreamBox<int>::value)>;
+    constexpr const auto& spec = meta::field_spec_of<DownstreamBox<int>, 0>;
     ZSTATIC_EXPECT(spec.alias.size() == 1U);
     ZSTATIC_EXPECT(spec.alias[0] == std::string_view("v"));
 }
 
 ZEST_CASE(annotate_field_entries_make_a_field_spec) {
-    constexpr const auto& id = meta::field_spec_of<decltype(Entries::user_id)>;
+    constexpr const auto& id = meta::field_spec_of<Entries, 0>;
     ZSTATIC_EXPECT(id.rename == std::string_view("id"));
     ZSTATIC_EXPECT(id.alias[0] == std::string_view("uid"));
     ZSTATIC_EXPECT(id.description == std::string_view("Identifier."));
-    ZSTATIC_EXPECT(meta::field_spec_of<decltype(Entries::internal)>.skip);
-    ZSTATIC_EXPECT(meta::field_spec_of<decltype(Entries::profile)>.flatten);
-    constexpr const auto& note = meta::field_spec_of<decltype(Entries::note)>;
+    ZSTATIC_EXPECT(meta::field_spec_of<Entries, 1>.skip);
+    ZSTATIC_EXPECT(meta::field_spec_of<Entries, 2>.flatten);
+    constexpr const auto& note = meta::field_spec_of<Entries, 3>;
     ZSTATIC_EXPECT(note.defaulted);
     ZSTATIC_EXPECT(note.skip_if == meta::skip_when::none);
 }
 
 ZEST_CASE(annotate_type_entries_become_behavior_attrs) {
-    using as_attrs = decltype(Behaviors::as_text)::attrs;
+    using as_attrs = meta::field_attrs_t<Behaviors, 0>;
     ZSTATIC_EXPECT(tuple_has_v<as_attrs, meta::behavior::as<std::string>>);
-    using with_attrs = decltype(Behaviors::with_adapter)::attrs;
+    using with_attrs = meta::field_attrs_t<Behaviors, 1>;
     ZSTATIC_EXPECT(tuple_has_v<with_attrs, meta::behavior::with<test::DecimalText>>);
-    using skip_attrs = decltype(Behaviors::skip_negative)::attrs;
+    using skip_attrs = meta::field_attrs_t<Behaviors, 2>;
     ZSTATIC_EXPECT(tuple_has_v<skip_attrs, meta::behavior::skip_if<test::IsNegative>>);
-    using level_attrs = decltype(Behaviors::level)::attrs;
+    using level_attrs = meta::field_attrs_t<Behaviors, 3>;
     ZSTATIC_EXPECT(
         tuple_has_v<level_attrs, meta::behavior::enum_string<naming::rename_policy::lower_camel>>);
 }
@@ -181,11 +186,11 @@ ZEST_CASE(annotation_struct_entries_make_a_struct_spec) {
 
 ZEST_CASE(annotate_takes_struct_entries_on_a_field) {
     constexpr const auto& shape =
-        meta::struct_spec_of<decltype(StructEntriesOnFields::shape)::attrs>;
+        meta::struct_spec_of<meta::field_attrs_t<StructEntriesOnFields, 0>>;
     ZSTATIC_EXPECT(shape.tagging == meta::tag_mode::internal);
     ZSTATIC_EXPECT(shape.tag == std::string_view("kind"));
     constexpr const auto& inner =
-        meta::struct_spec_of<decltype(StructEntriesOnFields::inner)::attrs>;
+        meta::struct_spec_of<meta::field_attrs_t<StructEntriesOnFields, 1>>;
     ZSTATIC_EXPECT(inner.rename_all == naming::Casing::UpperSnake);
     ZSTATIC_EXPECT(inner.deny_unknown_fields);
 }
@@ -193,8 +198,9 @@ ZEST_CASE(annotate_takes_struct_entries_on_a_field) {
 ZEST_CASE(field_annotation_shares_type_info) {
     // A field spec is local to its field: it does not fork the type_info of
     // the type it annotates.
-    using annotated = decltype(Entries::profile);
-    ZEXPECT(&meta::type_info_of<annotated>() == &meta::type_info_of<Profile>());
+    const auto& info =
+        static_cast<const meta::struct_type_info&>(meta::type_info_of<DescribedProfile>());
+    ZEXPECT(&info.fields[0].type() == &meta::type_info_of<Profile>());
 }
 
 };  // ZEST_SUITE(codec_macro)

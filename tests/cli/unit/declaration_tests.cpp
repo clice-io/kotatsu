@@ -28,20 +28,20 @@ struct Serve {
 
 struct Fine {
     bool verbose = false;
-    KANNOTATE(cli::names = {"--x"})
-    <std::string> separate;
-    KANNOTATE(cli::names = {"--x="})
-    <std::string> joined;
-    KANNOTATE(cli::positional = true)
-    <std::vector<std::string>> paths;
+    KANNOTATE(separate, cli::names = {"--x"})
+    std::string separate;
+    KANNOTATE(joined, cli::names = {"--x="})
+    std::string joined;
+    KANNOTATE(paths, cli::positional = true)
+    std::vector<std::string> paths;
     std::optional<std::variant<Serve>> command;
 };
 
 struct Twice {
-    KANNOTATE(cli::names = {"-o"})
-    <std::string> first;
-    KANNOTATE(cli::names = {"-o"})
-    <std::string> second;
+    KANNOTATE(first, cli::names = {"-o"})
+    std::string first;
+    KANNOTATE(second, cli::names = {"-o"})
+    std::string second;
 };
 
 struct Inner {
@@ -56,39 +56,39 @@ struct TwiceInAGroup {
 
 /// A Joined option of a generated name, whose only form another field names.
 struct EqualsTaken {
-    KANNOTATE(cli::style = KVStyle::Joined)
-    <std::string> level;
-    KANNOTATE(cli::names = {"--level="})
-    <std::string> other;
+    KANNOTATE(level, cli::style = KVStyle::Joined)
+    std::string level;
+    KANNOTATE(other, cli::names = {"--level="})
+    std::string other;
 };
 
 struct Unprefixed {
-    KANNOTATE(cli::names = {"out"})
-    <std::string> out;
+    KANNOTATE(out, cli::names = {"out"})
+    std::string out;
 };
 
 struct CommaScalar {
-    KANNOTATE(cli::comma = true)
-    <std::string> t;
+    KANNOTATE(t, cli::comma = true)
+    std::string t;
 };
 
 struct Loop {
-    KANNOTATE(cli::names = {"-a"}, cli::forward = {"-b"})
-    <cli::Alias> a;
-    KANNOTATE(cli::names = {"-b"}, cli::forward = {"-a"})
-    <cli::Alias> b;
+    KANNOTATE(a, cli::names = {"-a"}, cli::forward = {"-b"})
+    cli::Alias a;
+    KANNOTATE(b, cli::names = {"-b"}, cli::forward = {"-a"})
+    cli::Alias b;
 };
 
 struct TwoRests {
-    KANNOTATE(cli::rest = true)
-    <std::vector<std::string>> first;
-    KANNOTATE(cli::rest = true)
-    <std::vector<std::string>> second;
+    KANNOTATE(first, cli::rest = true)
+    std::vector<std::string> first;
+    KANNOTATE(second, cli::rest = true)
+    std::vector<std::string> second;
 };
 
 struct ScalarRest {
-    KANNOTATE(cli::rest = true)
-    <std::string> rest;
+    KANNOTATE(rest, cli::rest = true)
+    std::string rest;
 };
 
 struct TwoSubcommandFields {
@@ -111,8 +111,8 @@ struct SameWords {
 };
 
 struct HiddenUnknown {
-    KANNOTATE(cli::hidden_sub = {"worker"})
-    <std::variant<Serve>> command;
+    KANNOTATE(command, cli::hidden_sub = {"worker"})
+    std::variant<Serve> command;
 };
 
 struct InnerTwice {
@@ -124,27 +124,27 @@ struct Choice {
 };
 
 struct Nested {
-    KANNOTATE(cli::exclusive = true)
-    <std::variant<Choice, Serve>> inner;
+    KANNOTATE(inner, cli::exclusive = true)
+    std::variant<Choice, Serve> inner;
 };
 
 /// An exclusive field inside an alternative of another.
 struct NestedExclusive {
-    KANNOTATE(cli::exclusive = true)
-    <std::variant<Nested, Choice>> outer;
+    KANNOTATE(outer, cli::exclusive = true)
+    std::variant<Nested, Choice> outer;
 };
 
 struct ExclusiveScalar {
-    KANNOTATE(cli::exclusive = true)
-    <int> value;
+    KANNOTATE(value, cli::exclusive = true)
+    int value;
 };
 
 /// Two alternatives naming an option the same.
 struct ExclusiveTwice {
-    KANNOTATE(cli::exclusive = true)
-    <std::variant<Choice, Inner>> one;
-    KANNOTATE(cli::exclusive = true)
-    <std::variant<Inner, Serve>> two;
+    KANNOTATE(one, cli::exclusive = true)
+    std::variant<Choice, Inner> one;
+    KANNOTATE(two, cli::exclusive = true)
+    std::variant<Inner, Serve> two;
 };
 
 struct AlsoVerbose {
@@ -153,18 +153,18 @@ struct AlsoVerbose {
 
 /// One exclusive field whose two alternatives name an option the same.
 struct OneFieldTwice {
-    KANNOTATE(cli::exclusive = true)
-    <std::variant<Inner, AlsoVerbose>> field;
+    KANNOTATE(field, cli::exclusive = true)
+    std::variant<Inner, AlsoVerbose> field;
 };
 
 struct ExclusiveOfAScalar {
-    KANNOTATE(cli::exclusive = true)
-    <std::variant<Choice, int>> field;
+    KANNOTATE(field, cli::exclusive = true)
+    std::variant<Choice, int> field;
 };
 
 struct ExclusiveStruct {
-    KANNOTATE(cli::exclusive = true)
-    <Choice> field;
+    KANNOTATE(field, cli::exclusive = true)
+    Choice field;
 };
 
 struct Top {
@@ -181,23 +181,23 @@ struct WithCommands {
 };
 
 struct CommandsInAnAlternative {
-    KANNOTATE(cli::exclusive = true)
-    <std::variant<WithCommands, Choice>> field;
+    KANNOTATE(field, cli::exclusive = true)
+    std::variant<WithCommands, Choice> field;
 };
 
 struct First {
-    KANNOTATE(cli::positional = true)
-    <std::string> a;
+    KANNOTATE(a, cli::positional = true)
+    std::string a;
 };
 
 struct Second {
-    KANNOTATE(cli::positional = true)
-    <std::string> b;
+    KANNOTATE(b, cli::positional = true)
+    std::string b;
 };
 
 struct PositionalsInTwoAlternatives {
-    KANNOTATE(cli::exclusive = true)
-    <std::variant<First, Second>> field;
+    KANNOTATE(field, cli::exclusive = true)
+    std::variant<First, Second> field;
 };
 
 ZEST_SUITE(cli_declaration) {

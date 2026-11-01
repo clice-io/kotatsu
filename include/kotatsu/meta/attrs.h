@@ -592,17 +592,11 @@ template <typename T>
 using attrs_of_t = compose_attrs_t<type_attrs_t<std::remove_cv_t<raw_type_t<T>>>,
                                    decltype(detail::own_attrs<T>())>;
 
-/// The value spec a field of type `T` carries (attrs_of_t).
-template <typename T>
-constexpr const inline field_spec& field_spec_of = spec_of<attrs_of_t<T>>;
-
-/// The spec of type `Spec` an extension attached to a field of type `T`, its type's own
-/// annotation included (attrs_of_t); null when it has none.
-template <typename Spec, typename T>
-constexpr const Spec* extension_of = [] -> const Spec* {
-    using attrs_t = attrs_of_t<T>;
-    if constexpr(tuple_has_spec_v<attrs_t, attrs::spec>) {
-        using spec_attr = tuple_find_spec_t<attrs_t, attrs::spec>;
+/// The spec of type `Spec` an extension attached through `AttrsTuple`; null when none did.
+template <typename Spec, typename AttrsTuple>
+constexpr const Spec* extension_in = [] -> const Spec* {
+    if constexpr(tuple_has_spec_v<AttrsTuple, attrs::spec>) {
+        using spec_attr = tuple_find_spec_t<AttrsTuple, attrs::spec>;
         if constexpr(tuple_has_v<std::remove_cvref_t<decltype(spec_attr::extensions)>, Spec>) {
             return &std::get<Spec>(spec_attr::extensions);
         }

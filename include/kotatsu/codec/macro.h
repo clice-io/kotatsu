@@ -60,26 +60,44 @@
         constexpr static auto entries = KANNOTATION_ENTRIES(__VA_ARGS__);                          \
     }
 
-#define KANNOTATE_IMPL(tag, ...)                                                                   \
-    KANNOTATION(tag, __VA_ARGS__);                                                                 \
-    typename ::kotatsu::meta::annotate<tag>::template type
-
-/// Annotates the next field declaration with serde attributes:
+/// Annotates field `field` of the class it is written in, above the field:
 ///
-///     KANNOTATE(rename = "compileCommands",
+///     KANNOTATE(compile_commands,
+///               rename = "compileCommands",
 ///               alias = {"compile_commands"},
 ///               description = "Path to the compilation database.")
-///     <std::string> compile_commands;
+///     std::string compile_commands;
 ///
-/// The entries live in one constexpr object per annotation; only the short
-/// generated tag type appears in template arguments, so mangled names stay
-/// small no matter how long the strings are. Type-valued attributes ride along
-/// as `as = type<Target>`, `with = type<Adapter>`, `skip_if = type<Pred>`,
-/// `enum_string = type<Policy>`, or as explicit trailing template arguments
-/// after the field type. Annotating a type that is an annotation already
-/// (cli::Help, a meta::annotate alias) adds to it: an entry given here
-/// overrides the inner one, and the rest of both apply.
-#define KANNOTATE(...) KANNOTATE_IMPL(KOTATSU_CONCAT(kotatsu_annotation_, __LINE__), __VA_ARGS__)
+/// The field keeps the type it is declared with. The annotation is filed under
+/// the field's name, by a consteval function that is neither emitted nor
+/// mangled; a name no field of the class has fails to compile, and so does a
+/// second annotation of one field. Type-valued attributes ride along as
+/// `as = type<Target>`, `with = type<Adapter>`, `skip_if = type<Pred>` and
+/// `enum_string = type<Policy>`. A field whose type is an annotation already
+/// (cli::Help, a meta::annotate alias) keeps it: an entry given here overrides
+/// the type's, and the rest of both apply.
+#define KANNOTATE(field, ...)                                                                      \
+    [[maybe_unused]] static consteval auto __kotatsu__annotation(                                  \
+        ::kotatsu::meta::name_key<#field>) {                                                       \
+        [[maybe_unused]] ::std::type_identity<decltype(field)> annotated;                          \
+        return KANNOTATION_ENTRIES(__VA_ARGS__);                                                   \
+    }
+
+/// Annotates field `field` of class `type` from outside the class, for a class
+/// whose definition cannot be changed. Written in the namespace of `type`,
+/// where argument-dependent lookup finds it; `type` must be complete there:
+///
+///     KANNOTATE_FIELD(third_party::Point, y, rename = "Y");
+///
+/// A field annotated both here and in its class fails to compile.
+#define KANNOTATE_FIELD(type, field, ...)                                                          \
+    [[maybe_unused]] consteval auto __kotatsu__field_annotation(                                   \
+        ::std::type_identity<type>,                                                                \
+        ::kotatsu::meta::name_key<#field>) {                                                       \
+        [[maybe_unused]] ::std::type_identity<decltype(type::field)> annotated;                    \
+        return KANNOTATION_ENTRIES(__VA_ARGS__);                                                   \
+    }                                                                                              \
+    static_assert(true)
 
 // Whether the first token of a KANNOTATE_TYPE argument is `struct` or `class`:
 // pasted onto KOTATSU_CLASS_KEY_, it makes a macro that puts 1 second, and any

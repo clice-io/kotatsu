@@ -22,14 +22,14 @@ using test::casing_child;
 
 struct with_default {
     std::string name;
-    KANNOTATE(defaulted = true)
-    <std::int32_t> count;
+    KANNOTATE(count, defaulted = true)
+    std::int32_t count;
 };
 
 struct with_skip {
     std::string visible;
-    KANNOTATE(skip = true)
-    <std::int32_t> hidden;
+    KANNOTATE(hidden, skip = true)
+    std::int32_t hidden;
 };
 
 struct base_fields {
@@ -38,47 +38,47 @@ struct base_fields {
 };
 
 struct with_flatten {
-    KANNOTATE(flatten = true)
-    <base_fields> base;
+    KANNOTATE(base, flatten = true)
+    base_fields base;
     std::string extra;
 };
 
 struct with_rename {
-    KANNOTATE(rename = "my_field")
-    <std::int32_t> x;
+    KANNOTATE(x, rename = "my_field")
+    std::int32_t x;
     std::string y;
 };
 
 struct with_skip_when {
     std::string name;
-    KANNOTATE(skip_if = skip_when::empty)
-    <std::vector<std::int32_t>> tags;
-    KANNOTATE(skip_if = skip_when::default_value)
-    <std::int32_t> count;
-    KANNOTATE(skip_if = type<pred::empty>)
-    <std::string> note;
+    KANNOTATE(tags, skip_if = skip_when::empty)
+    std::vector<std::int32_t> tags;
+    KANNOTATE(count, skip_if = skip_when::default_value)
+    std::int32_t count;
+    KANNOTATE(note, skip_if = type<pred::empty>)
+    std::string note;
 };
 
 struct repeated_child_annotation {
-    KANNOTATE(rename_all = Casing::LowerCamel)
-    <casing_child> left;
-    KANNOTATE(rename_all = Casing::LowerCamel)
-    <casing_child> right;
+    KANNOTATE(left, rename_all = Casing::LowerCamel)
+    casing_child left;
+    KANNOTATE(right, rename_all = Casing::LowerCamel)
+    casing_child right;
 };
 
 struct all_default {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> x;
-    KANNOTATE(defaulted = true)
-    <std::string> y;
+    KANNOTATE(x, defaulted = true)
+    std::int32_t x;
+    KANNOTATE(y, defaulted = true)
+    std::string y;
 };
 
 struct skip_default {
     std::string name;
-    KANNOTATE(skip = true)
-    <std::int32_t> hidden;
-    KANNOTATE(defaulted = true)
-    <std::int32_t> count;
+    KANNOTATE(hidden, skip = true)
+    std::int32_t hidden;
+    KANNOTATE(count, defaulted = true)
+    std::int32_t count;
 };
 
 struct base_with_opt {
@@ -87,72 +87,72 @@ struct base_with_opt {
 };
 
 struct flatten_opt {
-    KANNOTATE(flatten = true)
-    <base_with_opt> base;
+    KANNOTATE(base, flatten = true)
+    base_with_opt base;
     std::string tag;
 };
 
 struct rename_base {
-    KANNOTATE(rename = "alpha")
-    <std::int32_t> a;
+    KANNOTATE(a, rename = "alpha")
+    std::int32_t a;
     std::int32_t b;
 };
 
 struct flatten_rename {
-    KANNOTATE(flatten = true)
-    <rename_base> inner;
+    KANNOTATE(inner, flatten = true)
+    rename_base inner;
     std::string extra;
 };
 
 struct bounded_fields {
-    KANNOTATE(minimum = 1, maximum = 64)
-    <std::uint32_t> workers;
+    KANNOTATE(workers, minimum = 1, maximum = 64)
+    std::uint32_t workers;
     /// Looser than its type, whose bound stays.
-    KANNOTATE(minimum = -1000)
-    <std::int8_t> offset;
-    KANNOTATE(minimum = 0.5)
-    <double> ratio;
-    KANNOTATE(maximum = 10)
-    <std::optional<std::int32_t>> limit;
+    KANNOTATE(offset, minimum = -1000)
+    std::int8_t offset;
+    KANNOTATE(ratio, minimum = 0.5)
+    double ratio;
+    KANNOTATE(limit, maximum = 10)
+    std::optional<std::int32_t> limit;
     /// Nullable twice over: its own null, and nan_repr's.
-    KANNOTATE(minimum = 0.25)
-    <std::optional<double>> share;
+    KANNOTATE(share, minimum = 0.25)
+    std::optional<double> share;
 };
 
 struct bounded_text {
-    KANNOTATE(minimum = 1)
-    <std::string> name;
+    KANNOTATE(name, minimum = 1)
+    std::string name;
 };
 
 struct fractional_bound_on_integer {
-    KANNOTATE(maximum = 2.5)
-    <std::int32_t> count;
+    KANNOTATE(count, maximum = 2.5)
+    std::int32_t count;
 };
 
 struct chosen_fields {
-    KANNOTATE(choices = {"off", "on", "auto"})
-    <std::string> readonly;
-    KANNOTATE(choices = {"a", "b"})
-    <std::optional<std::string>> mode;
+    KANNOTATE(readonly, choices = {"off", "on", "auto"})
+    std::string readonly;
+    KANNOTATE(mode, choices = {"a", "b"})
+    std::optional<std::string> mode;
 };
 
 struct chosen_number {
-    KANNOTATE(choices = {"1"})
-    <std::int32_t> count;
+    KANNOTATE(count, choices = {"1"})
+    std::int32_t count;
 };
 
 struct machine_section {
-    KANNOTATE(defaulted = true, schema_default = false)
-    <std::uint32_t> workers = 8;
-    KANNOTATE(defaulted = true)
-    <std::uint32_t> retries = 3;
+    KANNOTATE(workers, defaulted = true, schema_default = false)
+    std::uint32_t workers = 8;
+    KANNOTATE(retries, defaulted = true)
+    std::uint32_t retries = 3;
 };
 
 struct machine_root {
-    KANNOTATE(defaulted = true)
-    <machine_section> section;
-    KANNOTATE(defaulted = true, schema_default = false)
-    <std::uint32_t> jobs = 8;
+    KANNOTATE(section, defaulted = true)
+    machine_section section;
+    KANNOTATE(jobs, defaulted = true, schema_default = false)
+    std::uint32_t jobs = 8;
 };
 
 enum class level_kind : std::uint8_t {
@@ -162,48 +162,48 @@ enum class level_kind : std::uint8_t {
 
 /// Sections in an array, which carries their encoded objects as its default.
 struct machine_sections {
-    KANNOTATE(defaulted = true)
-    <std::vector<machine_section>> sections = {machine_section{}};
+    KANNOTATE(sections, defaulted = true)
+    std::vector<machine_section> sections = {machine_section{}};
 };
 
 struct bounded_enum {
-    KANNOTATE(maximum = 1)
-    <level_kind> level;
+    KANNOTATE(level, maximum = 1)
+    level_kind level;
 };
 
 struct wide_bounds {
-    KANNOTATE(minimum = -1, maximum = ~0ULL)
-    <std::uint64_t> count;
+    KANNOTATE(count, minimum = -1, maximum = ~0ULL)
+    std::uint64_t count;
 };
 
 struct aliased_required {
-    KANNOTATE(alias = {"legacy"})
-    <std::int32_t> value;
+    KANNOTATE(value, alias = {"legacy"})
+    std::int32_t value;
 };
 
 /// A required field whose default a schema would leave unstated.
 struct unstated_required {
-    KANNOTATE(schema_default = false)
-    <std::uint32_t> seed = 1;
+    KANNOTATE(seed, schema_default = false)
+    std::uint32_t seed = 1;
 };
 
 /// Two fields answering to "dup", and an alias taking another field's name.
 struct shared_alias {
-    KANNOTATE(alias = {"dup"})
-    <std::int32_t> left;
-    KANNOTATE(alias = {"dup"})
-    <std::int32_t> right;
+    KANNOTATE(left, alias = {"dup"})
+    std::int32_t left;
+    KANNOTATE(right, alias = {"dup"})
+    std::int32_t right;
 };
 
 struct alias_on_a_name {
-    KANNOTATE(alias = {"right"})
-    <std::int32_t> left;
+    KANNOTATE(left, alias = {"right"})
+    std::int32_t left;
     std::int32_t right;
 };
 
 struct enum_string_field {
-    KANNOTATE(enum_string = type<naming::rename_policy::lower_camel>)
-    <level_kind> level;
+    KANNOTATE(level, enum_string = type<naming::rename_policy::lower_camel>)
+    level_kind level;
 };
 
 struct keyed_maps {
@@ -217,51 +217,51 @@ struct char_field {
 };
 
 struct desc_scalar {
-    KANNOTATE(description = "Number of worker threads.")
-    <std::int32_t> threads;
+    KANNOTATE(threads, description = "Number of worker threads.")
+    std::int32_t threads;
     std::string name;
 };
 
 struct desc_optional {
-    KANNOTATE(description = "Optional display label.")
-    <std::optional<std::string>> label;
+    KANNOTATE(label, description = "Optional display label.")
+    std::optional<std::string> label;
 };
 
 struct desc_struct_ref {
-    KANNOTATE(description = "Anchor position.")
-    <point2d> anchor;
+    KANNOTATE(anchor, description = "Anchor position.")
+    point2d anchor;
 };
 
 struct desc_base {
-    KANNOTATE(description = "Inherited counter.")
-    <std::int32_t> count;
+    KANNOTATE(count, description = "Inherited counter.")
+    std::int32_t count;
 };
 
 struct desc_flatten {
-    KANNOTATE(flatten = true)
-    <desc_base> base;
+    KANNOTATE(base, flatten = true)
+    desc_base base;
     std::string tag;
 };
 
 struct desc_rename {
-    KANNOTATE(rename = "max_size", description = "Maximum size in bytes.")
-    <std::int32_t> size;
+    KANNOTATE(size, rename = "max_size", description = "Maximum size in bytes.")
+    std::int32_t size;
 };
 
 struct desc_default {
-    KANNOTATE(defaulted = true, description = "Retry limit.")
-    <std::int32_t> retries;
+    KANNOTATE(retries, defaulted = true, description = "Retry limit.")
+    std::int32_t retries;
 };
 
 struct desc_shared_ref {
     point2d origin;
-    KANNOTATE(description = "Anchor position.")
-    <point2d> anchor;
+    KANNOTATE(anchor, description = "Anchor position.")
+    point2d anchor;
 };
 
 struct desc_tagged_circle {
-    KANNOTATE(description = "Radius in meters.")
-    <double> radius;
+    KANNOTATE(radius, description = "Radius in meters.")
+    double radius;
 };
 
 struct desc_tagged_rect {

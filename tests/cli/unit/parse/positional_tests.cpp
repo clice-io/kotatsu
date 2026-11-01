@@ -14,43 +14,43 @@ namespace kotatsu::cli {
 namespace {
 
 struct Copy {
-    KANNOTATE(cli::positional = true, cli::meta_var = "<FROM>")
-    <std::string> from;
-    KANNOTATE(cli::positional = true, cli::meta_var = "<TO>")
-    <std::string> to;
+    KANNOTATE(from, cli::positional = true, cli::meta_var = "<FROM>")
+    std::string from;
+    KANNOTATE(to, cli::positional = true, cli::meta_var = "<TO>")
+    std::string to;
     bool force = false;
 };
 
 struct Format {
-    KANNOTATE(cli::positional = true)
-    <std::vector<std::string>> paths;
+    KANNOTATE(paths, cli::positional = true)
+    std::vector<std::string> paths;
 };
 
 struct Pair {
-    KANNOTATE(cli::positional = true, cli::arg_num = 2)
-    <std::vector<std::string>> pair;
+    KANNOTATE(pair, cli::positional = true, cli::arg_num = 2)
+    std::vector<std::string> pair;
 };
 
 struct Search {
-    KANNOTATE(cli::positional = true)
-    <std::optional<std::string>> locator;
+    KANNOTATE(locator, cli::positional = true)
+    std::optional<std::string> locator;
 };
 
 struct Few {
     bool k = false;
-    KANNOTATE(cli::positional = true, cli::required = true, cli::arg_num = ArgNum(1, 3))
-    <std::vector<std::string>> words;
+    KANNOTATE(words, cli::positional = true, cli::required = true, cli::arg_num = ArgNum(1, 3))
+    std::vector<std::string> words;
 };
 
 struct Toggle {
-    KANNOTATE(cli::positional = true)
-    <bool> on = true;
+    KANNOTATE(on, cli::positional = true)
+    bool on = true;
 };
 
 struct Run {
     std::optional<std::string> from;
-    KANNOTATE(cli::rest = true)
-    <std::vector<std::string>> command;
+    KANNOTATE(command, cli::rest = true)
+    std::vector<std::string> command;
 };
 
 template <typename T>
