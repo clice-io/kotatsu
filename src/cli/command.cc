@@ -78,10 +78,20 @@ std::string numbered(std::string_view token, std::uint32_t count) {
     return numbered_tokens;
 }
 
+/// A command being built, and the one it is a subcommand of: what finds a set of subcommands
+/// holding one that holds the set again, which no argv could end.
+struct Building {
+    const meta::type_info* type = nullptr;
+    const Building* parent = nullptr;
+};
+
+CommandPtr make_command(const meta::type_info& type, const Building* parent);
+
 /// Builds a command by the rules declaration.h states, which check_declaration() has held its
 /// struct to.
 class Builder {
     Command& command;
+    const Building& building;
     /// The group of the alternative of an exclusive field whose fields are being added.
     std::uint32_t current_alternative = no_group;
     /// The '=' forms of the names, named once every field has named its own.
@@ -220,7 +230,7 @@ class Builder {
             subcommands.names.push_back(std::move(word));
             subcommands.descriptions.push_back(
                 static_cast<const meta::struct_type_info&>(alternative).description);
-            subcommands.commands.push_back(build_command(alternative));
+            subcommands.commands.push_back(make_command(alternative, &building));
         }
         command.subcommands = std::move(subcommands);
     }
@@ -236,7 +246,7 @@ class Builder {
             subcommands.names.push_back(entry.name);
             subcommands.descriptions.push_back(entry.description);
             subcommands.hidden.push_back(entry.hidden);
-            subcommands.commands.push_back(build_command(*entry.type));
+            subcommands.commands.push_back(make_command(*entry.type, &building));
         }
         command.subcommands = std::move(subcommands);
     }
@@ -328,7 +338,7 @@ class Builder {
     }
 
 public:
-    explicit Builder(Command& command) : command(command) {}
+    Builder(Command& command, const Building& building) : command(command), building(building) {}
 
     void build(const meta::struct_type_info& type) {
         command.type = &type;
@@ -355,6 +365,22 @@ public:
     }
 };
 
+CommandPtr make_command(const meta::type_info& type, const Building* parent) {
+    for(const Building* outer = parent; outer != nullptr; outer = outer->parent) {
+        if(outer->type == &type) {
+            std::fprintf(stderr,
+                         "cli: subcommand %.*s holds itself\n",
+                         static_cast<int>(type.type_name.size()),
+                         type.type_name.data());
+            std::abort();
+        }
+    }
+    const Building building{.type = &type, .parent = parent};
+    CommandPtr command(new Command());
+    Builder(*command, building).build(static_cast<const meta::struct_type_info&>(type));
+    return command;
+}
+
 }  // namespace
 
 void CommandDeleter::operator()(Command* command) const {
@@ -362,9 +388,7 @@ void CommandDeleter::operator()(Command* command) const {
 }
 
 CommandPtr build_command(const meta::type_info& type) {
-    CommandPtr command(new Command());
-    Builder(*command).build(static_cast<const meta::struct_type_info&>(type));
-    return command;
+    return make_command(type, nullptr);
 }
 
 void CommandRegistry::add(CommandEntry entry) {

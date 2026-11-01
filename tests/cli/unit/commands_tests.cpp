@@ -83,6 +83,25 @@ struct LateOptions {
     cli::Commands<Late> command;
 };
 
+/// A set one of whose subcommands holds the set again.
+struct Loop {
+    using signature = int();
+};
+
+struct Again {
+    cli::Commands<Loop> command;
+};
+
+struct LoopOptions {
+    cli::Commands<Loop> command;
+};
+
+int again(Again&) {
+    return 0;
+}
+
+[[maybe_unused]] const bool again_added = cli::add_command<Loop>(again);
+
 ZEST_SUITE(cli_commands) {
 
 ZEST_CASE(word_picks_an_added_subcommand) {
@@ -187,6 +206,10 @@ ZEST_CASE(two_added_under_one_name_end_the_program, crashes = true) {
 ZEST_CASE(added_after_the_set_was_read_ends_the_program, crashes = true) {
     static_cast<void>(cli::parse<LateOptions>(std::vector<std::string>{}));
     cli::add_command<Late>(+[](Service&) { return 0; }, {.name = "late"});
+}
+
+ZEST_CASE(subcommand_holding_its_own_set_ends_the_program, crashes = true) {
+    static_cast<void>(cli::parse<LoopOptions>(std::vector<std::string>{}));
 }
 
 };  // ZEST_SUITE(cli_commands)
