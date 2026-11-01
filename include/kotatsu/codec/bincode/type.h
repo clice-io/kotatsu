@@ -41,7 +41,12 @@ namespace kotatsu::codec::bincode {
 /// A length or count below 251 is one byte. A larger one is a marker byte,
 /// 251, 252 or 253, and the value as a u16, u32 or u64 LE; decode rejects
 /// the bytes 254 and 255 in its place.
-struct format {};
+struct format : codec::extend<codec::format> {
+    constexpr static bool human_readable = false;
+    /// Struct fields are concatenated with no marker, so presence never omits
+    /// one: decode reads every field in order.
+    constexpr static bool writes_every_field = true;
+};
 
 namespace detail {
 

@@ -13,8 +13,7 @@ namespace kotatsu::test {
 /// The dyn backend for the protocol kit. Its document is the tree itself.
 struct Dyn {
     constexpr static std::string_view name = "dyn";
-    /// Not non_finite: the writer stores null for NaN and the infinities
-    /// even under nan_repr::Passthrough, as json writes them. Not
+    /// non_finite: the tree holds a double as it is. Not
     /// untrusted_input: a tree is built in memory,
     /// by the program or by a reader that has checked its own input, so
     /// there is no text or byte sequence to garble. Not format_tag: the tree
@@ -25,17 +24,23 @@ struct Dyn {
         .absent_fields = true,
         .full_uint64 = true,
         .nested_nulls = true,
+        .non_finite = true,
     };
     using Encoded = codec::dyn::Value;
 
     template <typename Config = void, typename T>
     static auto encode(const T& value) {
-        return codec::dyn::to_dyn<Config>(value);
+        return codec::dyn::to_dyn<kit_format_t<codec::format, Config>>(
+            value,
+            kit_encode_options<Config>());
     }
 
     template <typename Config = void, typename T>
     static auto decode(const Encoded& tree, T& out) {
-        return codec::dyn::from_dyn<Config>(tree, out);
+        return codec::dyn::from_dyn<kit_format_t<codec::format, Config>>(
+            tree,
+            out,
+            kit_decode_options<Config>());
     }
 
     /// The debug codec's indented text, which every tree has. It shows no

@@ -32,15 +32,17 @@
 
 namespace kotatsu::codec::json {
 
-/// The config knobs that shape the documents the encoder emits — and thus the
-/// schema. The typed entry points derive them from the codec config; the
-/// type-erased ones default to the codec defaults.
+/// How a schema is written.
 struct schema_options {
-    codec::nan_repr nan = default_config<>::nan_repr;
-    /// A non-human-readable config bypasses variant tagging and encodes the
-    /// underlying untagged variant (the is_human_readable gate in
-    /// encode_tagged_variant), so the schema must drop the tag shape the same
-    /// way.
+    /// Deny the keys no field answers to in every object, as a decode under
+    /// decode_options::deny_unknown_fields does.
+    bool deny_unknown_fields = false;
+    /// Indented, rather than compact, text.
+    bool pretty = false;
+    /// Whether the documents carry variant tags: a format that is not human
+    /// readable encodes a tagged variant as its bare alternative (the
+    /// is_human_readable gate in encode_tagged_variant). The typed entry
+    /// points take it from the format.
     bool human_readable = true;
 };
 
@@ -251,7 +253,7 @@ private:
         if(!named_once.empty()) {
             target.insert("allOf", std::move(named_once));
         }
-        if(si->deny_unknown) {
+        if(si->deny_unknown || opts.deny_unknown_fields) {
             target.insert("additionalProperties", false);
         }
         return {};
@@ -300,30 +302,12 @@ private:
         }
     }
 
-    /// The encoder's non-finite handling is part of the document contract:
-    /// nan_repr::Null encodes NaN/Infinity as null — and so does Passthrough,
-    /// which forwards the value to the JSON writer, whose only spelling for a
-    /// non-finite number is null. nan_repr::String encodes one of three fixed
-    /// strings. Only Error never emits a non-finite value, so it alone keeps
-    /// the plain number.
+    /// A number: the encoder fails on a float that is not finite, which
+    /// JSON has no number for.
     result_t make_float() const {
-        dyn::Value number{
+        return dyn::Value{
             {"type", "number"}
         };
-        switch(opts.nan) {
-            case nan_repr::Passthrough:
-            case nan_repr::Null:
-                return dyn::Value{
-                    {"anyOf", dyn::Array{std::move(number), dyn::Value{{"type", "null"}}}},
-                };
-            case nan_repr::String:
-                return dyn::Value{
-                    {"anyOf",
-                     dyn::Array{std::move(number),
-                                dyn::Value{{"enum", dyn::Array{"NaN", "Infinity", "-Infinity"}}}}},
-                };
-            default: return number;  // Error: no non-finite document exists.
-        }
     }
 
     result_t make_enum(const codec::type_info* ti) const {
@@ -484,8 +468,8 @@ private:
     }
 
     /// The branches of a schema whose `type` is one of types: the schema
-    /// itself, or, through the anyOf a nullable, a nan_repr or an untagged
-    /// variant makes, nested as deep as they nest, its branches.
+    /// itself, or, through the anyOf a nullable or an untagged variant
+    /// makes, nested as deep as they nest, its branches.
     static void typed_branches(dyn::Value& schema,
                                std::initializer_list<std::string_view> types,
                                std::vector<dyn::Object*>& branches) {
@@ -680,7 +664,7 @@ private:
                          }                     },
                     };
                     // Other keys are passed over unless unknown fields are denied.
-                    if(vi->deny_unknown) {
+                    if(vi->deny_unknown || opts.deny_unknown_fields) {
                         branch.insert("additionalProperties", false);
                     }
                     alts.push_back(std::move(branch));
@@ -718,7 +702,7 @@ private:
 /// schema), tuple elements, variant alternatives. A repr-routed type is
 /// skipped, subtree included, field-level behavior attrs (`with`, `as`) are
 /// not followed, and a fresh instance the encoder rejects (a NaN member
-/// under nan_repr::Error, an unnamed enum value through codec::enum_names)
+/// that is not finite, an unnamed enum value through codec::enum_names)
 /// records no document: all three leave their bodies unannotated rather
 /// than annotated wrongly.
 struct FreshDefaults {
@@ -859,34 +843,20 @@ private:
     FreshDefaults fresh;
 };
 
-/// Metadata resolution config for schema generation: the user's config
-/// (field_rename, deny_unknown_fields, ...) merged over defaults — the same
-/// merge the codec dispatch applies — tagged with the JSON format so
-/// format-scoped codec::repr specializations resolve the way to_string does.
-template <typename Config>
-struct schema_config : default_config<Config> {
-    using format = json::format;
-};
-
-/// The config the documents the defaults come from are encoded under:
-/// Config, leaving out the fields whose default the schema does not state
+/// The format the documents the defaults come from are encoded under: F,
+/// leaving out the fields whose default the schema does not state
 /// (schema_default = false), wherever they sit, so that neither their own
 /// property nor the whole-object default of one holding them states it.
-template <typename Config>
-struct default_document_config : default_config<Config> {
+template <typename F>
+struct default_document_format : codec::extend<F> {
     constexpr static bool omit_unstated_defaults = true;
 };
 
-/// schema_options as a codec config declares them. No visitor participates
-/// here, so is_human_readable sees only the config override — matching
-/// to_string, whose ValueWriter is human-readable.
-template <typename Config>
-schema_options options_of() {
-    using merged = default_config<Config>;
-    return {
-        .nan = merged::nan_repr,
-        .human_readable = is_human_readable<merged, void>(),
-    };
+/// The options as the format F has them.
+template <typename F>
+schema_options options_of(schema_options options) {
+    options.human_readable = F::human_readable;
+    return options;
 }
 
 /// True when decode reads a T value directly: T resolves to itself, or is a
@@ -894,9 +864,9 @@ schema_options options_of() {
 /// through a codec::repr makes decode read the repr's value instead, whose
 /// relationship to a fresh T is the repr's business; the defaults pass covers
 /// only the direct kind and leaves the rest honestly unannotated.
-template <typename T>
+template <typename T, typename F>
 constexpr bool decoder_reads_directly() {
-    using resolved = codec::resolved_repr_t<T, format>;
+    using resolved = codec::resolved_repr_t<T, F>;
     if constexpr(meta::derived_variant<T>) {
         return std::same_as<resolved, meta::variant_base_t<T>>;
     } else {
@@ -925,9 +895,9 @@ template <typename T, typename Config>
 void collect_fresh(FreshDefaults& out) {
     // A repr-routed type is skipped, subtree included: decode reads the
     // repr's value, not a T, so no honest fresh document exists here.
-    if constexpr(decoder_reads_directly<T>()) {
+    if constexpr(decoder_reads_directly<T, codec::members_config_t<Config>>()) {
         using tk = meta::type_kind;
-        using resolved = codec::resolved_repr_t<T, format>;
+        using resolved = codec::resolved_repr_t<T, codec::members_config_t<Config>>;
         constexpr tk kind = meta::kind_of<resolved>();
         if constexpr(kind == tk::structure) {
             const codec::type_info& ti = codec::type_info_of<T, Config>();
@@ -948,7 +918,7 @@ void collect_fresh(FreshDefaults& out) {
                 // document.
                 out.docs.erase(name);
             } else if constexpr(std::is_default_constructible_v<T>) {
-                if(auto text = to_string<default_document_config<cfg>>(T())) {
+                if(auto text = to_string<default_document_format<cfg>>(T())) {
                     if(auto doc = from_string<dyn::Value>(*text)) {
                         out.docs.emplace(name, std::move(*doc));
                     }
@@ -996,15 +966,15 @@ inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool p
 /// When T is default-constructible and the decoder reads it directly — T
 /// resolves to itself, or is a class derived from the std::variant it
 /// resolves to — the schema also carries `default` annotations: fresh
-/// instances are encoded through the real JSON encoder under Config and
+/// instances are encoded through the real JSON encoder under F and
 /// parsed back into documents, so the values match what to_string emits byte
-/// for byte (enum renames, nan handling, structural annotations on the root
+/// for byte (enum renames, structural annotations on the root
 /// itself included). Root properties take the values of T(); each $def and
 /// inlined variant branch takes the values of a freshly constructed instance
 /// of its own type, with non-required sites layering their whole-object
 /// defaults on top (see DefaultAnnotator). Two consequences of riding the
-/// real encoder: T() must encode under Config — an instance the encoder
-/// rejects (a NaN member under nan_repr::Error, an enum value without a
+/// real encoder: T() must encode under F — an instance the encoder
+/// rejects (a member that is NaN or an infinity, an enum value without a
 /// reflected name through codec::enum_names) fails schema generation with that
 /// error — and a T whose fields the codec cannot serialize fails to compile,
 /// exactly like to_string itself. A repr-routed root gets an honestly
@@ -1019,37 +989,37 @@ inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool p
 /// (`minimum`, `maximum`) and the values (`choices`) a field annotation
 /// states join its schema for the schema's readers; the decoder checks none
 /// of them.
-template <typename T, typename Config = void>
-std::expected<dyn::Value, rich_error> schema() {
-    using resolved = codec::resolved_repr_t<T, format>;
+template <typename T, typename F = json::format>
+std::expected<dyn::Value, rich_error> schema(const schema_options& options = {}) {
+    static_assert(std::derived_from<F, json::format>, "a JSON format extends json::format");
+    using resolved = codec::resolved_repr_t<T, F>;
     constexpr bool annotate_defaults = std::is_default_constructible_v<T> &&
                                        meta::kind_of<resolved>() != meta::type_kind::unknown &&
-                                       detail::decoder_reads_directly<T>();
+                                       detail::decoder_reads_directly<T, F>();
     KOTATSU_EXPECTED_TRY_V(
         auto result,
-        (detail::SchemaEmitter{detail::options_of<Config>(), annotate_defaults}.emit(
-            codec::type_info_of<T, detail::schema_config<Config>>())));
+        (detail::SchemaEmitter{detail::options_of<F>(options), annotate_defaults}.emit(
+            codec::type_info_of<T, F>())));
     if constexpr(annotate_defaults) {
-        KOTATSU_EXPECTED_TRY_V(auto text, to_string<detail::default_document_config<Config>>(T()));
+        KOTATSU_EXPECTED_TRY_V(auto text, to_string<detail::default_document_format<F>>(T()));
         KOTATSU_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));
         detail::FreshDefaults fresh;
-        detail::collect_fresh<T, detail::schema_config<Config>>(fresh);
+        detail::collect_fresh<T, F>(fresh);
         detail::DefaultAnnotator{std::move(fresh)}.run(*result.get_object(), doc);
     }
     return result;
 }
 
 inline std::expected<std::string, rich_error> schema_string(const codec::type_info& root,
-                                                            bool pretty = false,
                                                             const schema_options& options = {}) {
     KOTATSU_EXPECTED_TRY_V(auto value, schema(root, options));
-    return detail::stringify(std::move(value), pretty);
+    return detail::stringify(std::move(value), options.pretty);
 }
 
-template <typename T, typename Config = void>
-std::expected<std::string, rich_error> schema_string(bool pretty = false) {
-    KOTATSU_EXPECTED_TRY_V(auto value, (schema<T, Config>()));
-    return detail::stringify(std::move(value), pretty);
+template <typename T, typename F = json::format>
+std::expected<std::string, rich_error> schema_string(const schema_options& options = {}) {
+    KOTATSU_EXPECTED_TRY_V(auto value, (schema<T, F>(options)));
+    return detail::stringify(std::move(value), options.pretty);
 }
 
 }  // namespace kotatsu::codec::json

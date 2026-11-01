@@ -28,9 +28,9 @@ inline std::expected<std::string, rich_error> prettify(std::string_view json) {
 
 namespace kotatsu::codec {
 
-template <typename Config>
-struct serialize_visit<json::ValueWriter, raw_value, Config> {
-    static bool visit(json::ValueWriter& vis, const raw_value& value) {
+template <typename Format>
+struct serialize_visit<json::ValueWriter<Format>, raw_value> {
+    static bool visit(json::ValueWriter<Format>& vis, const raw_value& value) {
         if(value.empty()) {
             return vis.visit_null();
         }
@@ -39,9 +39,9 @@ struct serialize_visit<json::ValueWriter, raw_value, Config> {
     }
 };
 
-template <typename Config>
-struct deserialize_visit<json::Reader, raw_value, Config> {
-    static bool visit(json::Reader& vis, raw_value& value) {
+template <typename Format>
+struct deserialize_visit<json::Reader<Format>, raw_value> {
+    static bool visit(json::Reader<Format>& vis, raw_value& value) {
         simdjson::ondemand::json_type t;
         if(vis.apply([&](auto& s) { return s.type().get(t); }) != simdjson::SUCCESS)
             return scoped_context<rich_error>::fail(rich_error("failed to read JSON value type"));

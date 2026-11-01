@@ -58,11 +58,11 @@ struct Output {
 
 template <typename T>
 Output roundtrip(std::string_view json) {
-    auto decoded = codec::json::from_string<T, ipc::lsp_config>(json);
+    auto decoded = codec::json::from_string<T, ipc::lsp_format>(json);
     if(!decoded) {
         return {.value = std::nullopt, .error = decoded.error().to_string()};
     }
-    auto encoded = codec::json::to_string<ipc::lsp_config>(*decoded);
+    auto encoded = codec::json::to_string<ipc::lsp_format>(*decoded);
     if(!encoded) {
         return {.value = std::nullopt, .error = encoded.error().to_string()};
     }

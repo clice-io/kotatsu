@@ -39,21 +39,22 @@ struct dynamic {};
 ///     template <>
 ///     struct kotatsu::codec::repr<Weird> {
 ///         using type = std::string;  // still required: schema stays honest
-///         template <typename Config>
-///         static bool serialize(auto& vis, const Weird& w);
-///         template <typename Config>
-///         static bool deserialize(auto& vis, Weird& w);
+///         static bool encode(auto& vis, const Weird& w);
+///         static bool decode(auto& vis, Weird& w);
 ///     };
+///
+/// The visitor carries the format the value is read or written under, which
+/// codec::encode_value(vis, part) and codec::decode_value(vis, part) apply
+/// to the values the body is made of.
 ///
 /// Use `using type = dynamic;` when the shape is only known at runtime:
 /// schema output degrades to "any", and layout-computed backends
 /// (flatbuffers) reject the type at compile time.
 ///
-/// The second parameter scopes a specialization to one serialization format:
-/// each backend declares a `format` tag type and exposes it on its visitors,
-/// and a `repr<T, Format>` specialization wins over the format-agnostic
-/// `repr<T>` on that backend only. Backends without a tag — and every schema
-/// consumer entered without one — see the format-agnostic repr.
+/// The second parameter scopes a specialization to a format: `repr<T, F>`
+/// applies under F and under every format that extends it (codec::extend), the
+/// nearest along the chain first, and wins over `repr<T>`, which applies under
+/// every format.
 ///
 ///     template <>
 ///     struct kotatsu::codec::repr<Roaring, codec::fbs::format> {
@@ -66,29 +67,32 @@ struct dynamic {};
 template <typename T, typename Format = void>
 struct repr;
 
-/// True when a repr applies to T under Format: a format-scoped
-/// specialization, or the format-agnostic one as fallback.
-template <typename T, typename Format = void>
-concept has_repr = requires { sizeof(repr<T, Format>); } || requires { sizeof(repr<T>); };
-
 namespace detail {
 
-template <typename T, typename Format>
-constexpr auto repr_for_impl() {
-    if constexpr(requires { sizeof(repr<T, Format>); }) {
-        return std::type_identity<repr<T, Format>>{};
-    } else {
+template <typename T, typename F>
+constexpr auto repr_lookup() {
+    if constexpr(!std::is_void_v<F> && requires { sizeof(repr<T, F>); }) {
+        return std::type_identity<repr<T, F>>{};
+    } else if constexpr(!std::is_void_v<F> && requires { typename F::base; }) {
+        return repr_lookup<T, typename F::base>();
+    } else if constexpr(requires { sizeof(repr<T>); }) {
         return std::type_identity<repr<T>>{};
+    } else {
+        return std::type_identity<void>{};
     }
 }
 
 }  // namespace detail
 
-/// The repr specialization selected for T under Format: the format-scoped one
-/// when present, the format-agnostic one otherwise.
-template <typename T, typename Format>
-    requires has_repr<T, Format>
-using repr_for = typename decltype(detail::repr_for_impl<T, Format>())::type;
+/// True when a repr applies to T under the format F: one for F or a format it extends, the
+/// nearest first, else the one for every format.
+template <typename T, typename F = void>
+concept has_repr = !std::is_void_v<typename decltype(detail::repr_lookup<T, F>())::type>;
+
+/// The repr that applies to T under the format F.
+template <typename T, typename F>
+    requires has_repr<T, F>
+using repr_for = typename decltype(detail::repr_lookup<T, F>())::type;
 
 /// The repr of an enum that travels as the names of its enumerators, spelled by Policy (a
 /// naming::rename_policy); without one, by the rename_all of the enum's own annotation, else

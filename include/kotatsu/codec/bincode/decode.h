@@ -38,10 +38,12 @@ constexpr inline std::string_view invalid_length = "invalid length";
 
 }  // namespace detail
 
+template <typename Format>
 struct Reader;
 
+template <typename Format>
 struct SeqAccess {
-    Reader& r;
+    Reader<Format>& r;
     std::uint64_t count;
     std::uint64_t idx = 0;
 
@@ -55,8 +57,9 @@ struct SeqAccess {
     bool visit_element(F&& f);
 };
 
+template <typename Format>
 struct MapAccess {
-    Reader& r;
+    Reader<Format>& r;
     std::uint64_t count;
     std::uint64_t idx = 0;
 
@@ -77,11 +80,11 @@ struct MapAccess {
 /// back into the target type with a range check. from_bytes additionally
 /// rejects buffers with bytes left over after the root value ("trailing
 /// bytes").
+template <typename Format>
 struct Reader {
     std::span<const std::byte> data;
     std::size_t pos = 0;
-    using format = bincode::format;
-    constexpr static bool human_readable = false;
+    using format = Format;
 
     bool check_remaining(std::uint64_t n) {
         assert(pos <= data.size());
@@ -244,7 +247,7 @@ struct Reader {
     bool visit_seq(T&, Body&& body) {
         std::uint64_t count = 0;
         KOTATSU_CODEC_TRY(read_length(count));
-        SeqAccess ctx{*this, count};
+        SeqAccess<Format> ctx{*this, count};
         return body(ctx);
     }
 
@@ -262,7 +265,7 @@ struct Reader {
     bool visit_map(T&, Body&& body) {
         std::uint64_t count = 0;
         KOTATSU_CODEC_TRY(read_length(count));
-        MapAccess ctx{*this, count};
+        MapAccess<Format> ctx{*this, count};
         return body(ctx);
     }
 
@@ -294,67 +297,77 @@ private:
     }
 };
 
-inline bool SeqAccess::has_element() {
+template <typename Format>
+bool SeqAccess<Format>::has_element() {
     return idx < count;
 }
 
-inline std::size_t SeqAccess::size_hint() const {
+template <typename Format>
+std::size_t SeqAccess<Format>::size_hint() const {
     return r.size_hint(count);
 }
 
+template <typename Format>
 template <typename F>
-bool SeqAccess::visit_element(F&& f) {
+bool SeqAccess<Format>::visit_element(F&& f) {
     KOTATSU_CODEC_TRY(f(r));
     ++idx;
     return true;
 }
 
-inline bool MapAccess::has_entry() {
+template <typename Format>
+bool MapAccess<Format>::has_entry() {
     return idx < count;
 }
 
-inline std::size_t MapAccess::size_hint() const {
+template <typename Format>
+std::size_t MapAccess<Format>::size_hint() const {
     return r.size_hint(count);
 }
 
+template <typename Format>
 template <typename KF, typename VF>
-bool MapAccess::visit_entry(KF&& key_reader, VF&& value_reader) {
+bool MapAccess<Format>::visit_entry(KF&& key_reader, VF&& value_reader) {
     KOTATSU_CODEC_TRY(key_reader(r));
     KOTATSU_CODEC_TRY(value_reader(r));
     ++idx;
     return true;
 }
 
-/// Decodes a bincode buffer produced by to_bytes with the same T and Config.
+/// Decodes a bincode buffer produced by to_bytes with the same T and format F.
 /// The whole buffer must be consumed; leftover bytes are an error.
 /// Overloads: std::byte / uint8_t spans, into an out-param or returning T.
-template <typename Config = void, typename T>
+template <typename F = bincode::format, typename T>
 auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, rich_error> {
-    Reader r{data};
-    KOTATSU_EXPECTED_TRY(codec::detail::run_decode<Config>(r, out));
+    static_assert(std::derived_from<F, bincode::format>,
+                  "a bincode format extends bincode::format");
+    static_assert(!F::human_readable,
+                  "a binary backend writes no names: its format cannot be human readable");
+    Reader<F> r{data};
+    KOTATSU_EXPECTED_TRY(codec::detail::run_decode<F>(r, out));
     if(r.pos != data.size()) {
         return std::unexpected(rich_error(std::string(detail::trailing_bytes)));
     }
     return {};
 }
 
-template <typename Config = void, typename T>
+template <typename F = bincode::format, typename T>
 auto from_bytes(std::span<const std::uint8_t> data, T& out) -> std::expected<void, rich_error> {
-    return from_bytes<Config>(std::as_bytes(data), out);
+    return from_bytes<F>(std::as_bytes(data), out);
 }
 
-template <typename T, typename Config = void>
+template <typename T, typename F = bincode::format>
     requires std::is_default_constructible_v<T>
 auto from_bytes(std::span<const std::byte> data) -> std::expected<T, rich_error> {
     auto value = T();
-    KOTATSU_EXPECTED_TRY(from_bytes<Config>(data, value));
+    KOTATSU_EXPECTED_TRY(from_bytes<F>(data, value));
     return value;
 }
 
-template <typename T, typename Config = void>
+template <typename T, typename F = bincode::format>
     requires std::is_default_constructible_v<T>
 auto from_bytes(std::span<const std::uint8_t> data) -> std::expected<T, rich_error> {
-    return from_bytes<T, Config>(std::as_bytes(data));
+    return from_bytes<T, F>(std::as_bytes(data));
 }
 
 }  // namespace kotatsu::codec::bincode
@@ -362,9 +375,9 @@ auto from_bytes(std::span<const std::uint8_t> data) -> std::expected<T, rich_err
 namespace kotatsu::codec {
 
 // std::monostate reads no byte, since the encoder writes none for it.
-template <typename Config>
-struct deserialize_visit<bincode::Reader, std::monostate, Config> {
-    static bool visit(bincode::Reader& /*vis*/, std::monostate& /*value*/) {
+template <typename Format>
+struct deserialize_visit<bincode::Reader<Format>, std::monostate> {
+    static bool visit(bincode::Reader<Format>& /*vis*/, std::monostate& /*value*/) {
         return true;
     }
 };
@@ -374,11 +387,11 @@ struct deserialize_visit<bincode::Reader, std::monostate, Config> {
 /// rather than by recursion, and a failed read releases what it built the
 /// same way, so no input can run the call stack out; nesting is still
 /// bounded, as simdjson bounds JSON's.
-template <typename Config>
-struct deserialize_visit<bincode::Reader, dyn::Value, Config> {
+template <typename Format>
+struct deserialize_visit<bincode::Reader<Format>, dyn::Value> {
     constexpr static std::size_t max_depth = 1024;
 
-    static bool visit(bincode::Reader& vis, dyn::Value& root) {
+    static bool visit(bincode::Reader<Format>& vis, dyn::Value& root) {
         if(fill(vis, root)) {
             return true;
         }
@@ -387,7 +400,7 @@ struct deserialize_visit<bincode::Reader, dyn::Value, Config> {
     }
 
 private:
-    static bool fill(bincode::Reader& vis, dyn::Value& root) {
+    static bool fill(bincode::Reader<Format>& vis, dyn::Value& root) {
         /// A container still being filled: the next child's index, and how
         /// many children are left to read.
         struct Open {
@@ -427,7 +440,7 @@ private:
                 target = &array->emplace_back();
             } else {
                 std::string key;
-                if(!decode_value<Config>(vis, key)) {
+                if(!decode_value(vis, key)) {
                     return fail_inside(open);
                 }
                 auto* object = parent.node->get_object();
@@ -439,7 +452,7 @@ private:
 
     /// Reads one value: a scalar or string whole, an array or object as an
     /// empty container whose child count is returned.
-    static bool read_node(bincode::Reader& vis, dyn::Value& out, std::uint64_t& children) {
+    static bool read_node(bincode::Reader<Format>& vis, dyn::Value& out, std::uint64_t& children) {
         KOTATSU_CODEC_TRY(vis.check_remaining(1));
         switch(const auto kind = vis.read_u8(); static_cast<dyn::ValueKind>(kind)) {
             case dyn::ValueKind::null_value: out = dyn::Value(nullptr); return true;
@@ -463,9 +476,9 @@ private:
     }
 
     template <typename T>
-    static bool read_as(bincode::Reader& vis, dyn::Value& out) {
+    static bool read_as(bincode::Reader<Format>& vis, dyn::Value& out) {
         T held{};
-        KOTATSU_CODEC_TRY(decode_value<Config>(vis, held));
+        KOTATSU_CODEC_TRY(decode_value(vis, held));
         out = dyn::Value(std::move(held));
         return true;
     }
@@ -500,7 +513,7 @@ private:
             scoped_context<rich_error>::fail(std::move(*error));
         }
         for(auto frame = open.rbegin(); frame != open.rend(); ++frame) {
-            detail::trace_path<Config>(false, frame->index - 1);
+            detail::trace_path(false, frame->index - 1);
         }
         return false;
     }
@@ -509,19 +522,19 @@ private:
 /// A bare object: its entry count, then each key and Value, the way the
 /// generic map encoding writes it. Object keeps its entries in order with
 /// insert(), which the generic map decoding does not know.
-template <typename Config>
-struct deserialize_visit<bincode::Reader, dyn::Object, Config> {
-    static bool visit(bincode::Reader& vis, dyn::Object& object) {
+template <typename Format>
+struct deserialize_visit<bincode::Reader<Format>, dyn::Object> {
+    static bool visit(bincode::Reader<Format>& vis, dyn::Object& object) {
         object.clear();
         return vis.visit_map(object, [&](auto& entries) -> bool {
             std::size_t idx = 0;
             while(entries.has_entry()) {
                 std::string key;
                 dyn::Value item;
-                bool ok = entries.visit_entry(
-                    [&](auto& kr) -> bool { return decode_value<Config>(kr, key); },
-                    [&](auto& vr) -> bool { return decode_value<Config>(vr, item); });
-                KOTATSU_CODEC_TRY(detail::trace_path<Config>(ok, idx));
+                bool ok =
+                    entries.visit_entry([&](auto& kr) -> bool { return decode_value(kr, key); },
+                                        [&](auto& vr) -> bool { return decode_value(vr, item); });
+                KOTATSU_CODEC_TRY(detail::trace_path(ok, idx));
                 object.insert(std::move(key), std::move(item));
                 ++idx;
             }

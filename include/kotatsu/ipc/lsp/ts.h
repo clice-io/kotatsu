@@ -280,19 +280,19 @@ struct repr<ipc::protocol::detail::present_optional<T>, codec::bincode::format> 
 
 namespace kotatsu::codec {
 
-template <typename Vis, auto Text, typename Config>
-struct serialize_visit<Vis, ipc::protocol::Literal<Text>, Config> {
+template <typename Vis, auto Text>
+struct serialize_visit<Vis, ipc::protocol::Literal<Text>> {
     static bool visit(Vis& vis, const ipc::protocol::Literal<Text>&) {
-        return encode_value<Config>(vis, ipc::protocol::Literal<Text>::value);
+        return encode_value(vis, ipc::protocol::Literal<Text>::value);
     }
 };
 
-template <typename Vis, auto Text, typename Config>
-struct deserialize_visit<Vis, ipc::protocol::Literal<Text>, Config> {
+template <typename Vis, auto Text>
+struct deserialize_visit<Vis, ipc::protocol::Literal<Text>> {
     static bool visit(Vis& vis, ipc::protocol::Literal<Text>&) {
         constexpr auto expected = ipc::protocol::Literal<Text>::value;
         std::string text;
-        KOTATSU_CODEC_TRY(decode_value<Config>(vis, text));
+        KOTATSU_CODEC_TRY(decode_value(vis, text));
         if(text == expected) {
             return true;
         }

@@ -36,14 +36,16 @@ struct Fbs {
     };
     using Encoded = std::vector<std::uint8_t>;
 
+    /// The settings are ignored: fbs takes no format, its layout being the
+    /// type's alone, and no option bears on it.
     template <typename Config = void, typename T>
     static auto encode(const T& value) {
-        return codec::fbs::to_bytes<Config>(value);
+        return codec::fbs::to_bytes(value);
     }
 
     template <typename Config = void, typename T>
     static auto decode(const Encoded& bytes, T& out) {
-        return codec::fbs::from_bytes<Config>(bytes, out);
+        return codec::fbs::from_bytes(bytes, out);
     }
 
     static std::string render(const Encoded& bytes) {

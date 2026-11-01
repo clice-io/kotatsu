@@ -67,17 +67,15 @@ template <>
 struct repr<codec::Framed> {
     using type = dynamic;
 
-    template <typename Config>
-    static bool serialize(auto& vis, const codec::Framed& framed) {
-        return codec::encode_value<Config>(vis, codec::framed_magic) &&
-               codec::encode_value<Config>(vis, framed.bytes);
+    static bool encode(auto& vis, const codec::Framed& framed) {
+        return codec::encode_value(vis, codec::framed_magic) &&
+               codec::encode_value(vis, framed.bytes);
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, codec::Framed& framed) {
+    static bool decode(auto& vis, codec::Framed& framed) {
         std::uint8_t magic = 0;
-        return codec::decode_value<Config>(vis, magic) && magic == codec::framed_magic &&
-               codec::decode_value<Config>(vis, framed.bytes);
+        return codec::decode_value(vis, magic) && magic == codec::framed_magic &&
+               codec::decode_value(vis, framed.bytes);
     }
 };
 

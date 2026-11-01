@@ -636,7 +636,7 @@ Result<std::string> JSONCodec::encode_notification(std::string_view method) {
 
 Result<std::string> JSONCodec::encode_error_response(const std::optional<protocol::RequestID>& id,
                                                      const Error& error) {
-    return unwrap(codec::json::to_string<lsp_config>(outgoing_error_response_message{
+    return unwrap(codec::json::to_string<lsp_format>(outgoing_error_response_message{
                       .id = id,
                       .error = error,
                   }),

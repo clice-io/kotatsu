@@ -92,8 +92,8 @@ struct CamelChoice : std::variant<test::RenameTarget, int> {
     using variant::variant;
 };
 
-/// A format tag no backend declares.
-struct TestFormat {};
+/// A format no backend declares.
+struct TestFormat : codec::extend<codec::format> {};
 
 }  // namespace
 

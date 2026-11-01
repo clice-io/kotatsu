@@ -561,7 +561,7 @@ ZEST_CASE(combo_many_fields) {
                       R"("maximum":2147483647},)"
                       R"("d":{"type":"string"},)"
                       R"("e":{"type":"boolean"},)"
-                      R"("f":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
+                      R"("f":{"type":"number"}},)"
                       R"("required":["a","b","c","d","e","f"]})");
 }
 
@@ -645,7 +645,7 @@ ZEST_CASE(field_ordering_stability) {
                       R"("zebra":{"type":"string"},)"
                       R"("alpha":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
                       R"("middle":{"type":"boolean"},)"
-                      R"("beta":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
+                      R"("beta":{"type":"number"}},)"
                       R"("required":["zebra","alpha","middle","beta"]})");
 }
 

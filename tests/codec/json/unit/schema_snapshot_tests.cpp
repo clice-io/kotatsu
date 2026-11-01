@@ -29,40 +29,41 @@ struct NestedContainers {
 ZEST_SUITE(codec_json_schema_snapshot) {
 
 ZEST_CASE(person) {
-    ZEXPECT(zest::snapshot(json::schema_string<test::Person>(true).value(), "person"));
+    ZEXPECT(zest::snapshot(json::schema_string<test::Person>({.pretty = true}).value(), "person"));
 }
 
 ZEST_CASE(person_with_scores) {
-    ZEXPECT(zest::snapshot(json::schema_string<test::PersonWithScores>(true).value(),
+    ZEXPECT(zest::snapshot(json::schema_string<test::PersonWithScores>({.pretty = true}).value(),
                            "person_with_scores"));
 }
 
 ZEST_CASE(combo_struct) {
-    ZEXPECT(zest::snapshot(json::schema_string<ComboStruct>(true).value(), "combo_struct"));
+    ZEXPECT(
+        zest::snapshot(json::schema_string<ComboStruct>({.pretty = true}).value(), "combo_struct"));
 }
 
 ZEST_CASE(nested_containers) {
-    ZASSERT(
-        zest::snapshot(json::schema_string<NestedContainers>(true).value(), "nested_containers"));
+    ZASSERT(zest::snapshot(json::schema_string<NestedContainers>({.pretty = true}).value(),
+                           "nested_containers"));
 }
 
 ZEST_CASE(external_tagged) {
-    ZASSERT(
-        zest::snapshot(json::schema_string<test::ExternalTagged>(true).value(), "external_tagged"));
+    ZASSERT(zest::snapshot(json::schema_string<test::ExternalTagged>({.pretty = true}).value(),
+                           "external_tagged"));
 }
 
 ZEST_CASE(internal_tagged) {
-    ZASSERT(
-        zest::snapshot(json::schema_string<test::InternalTagged>(true).value(), "internal_tagged"));
+    ZASSERT(zest::snapshot(json::schema_string<test::InternalTagged>({.pretty = true}).value(),
+                           "internal_tagged"));
 }
 
 ZEST_CASE(adjacent_tagged) {
-    ZASSERT(
-        zest::snapshot(json::schema_string<test::AdjacentTagged>(true).value(), "adjacent_tagged"));
+    ZASSERT(zest::snapshot(json::schema_string<test::AdjacentTagged>({.pretty = true}).value(),
+                           "adjacent_tagged"));
 }
 
 ZEST_CASE(tagged_field_struct) {
-    ZEXPECT(zest::snapshot(json::schema_string<test::TaggedFieldStruct>(true).value(),
+    ZEXPECT(zest::snapshot(json::schema_string<test::TaggedFieldStruct>({.pretty = true}).value(),
                            "tagged_field_struct"));
 }
 

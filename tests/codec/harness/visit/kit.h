@@ -17,8 +17,10 @@
 //
 // Each primitive below registers one case. Values come from factories,
 // `[] { return ...; }`: a case body must be copyable, and some values are
-// move-only. A plain value always encodes under the default config; Config
-// applies to the value under test only.
+// move-only. A plain value always encodes under the backend's format; the
+// settings a case names (Config) apply to the value under test only: the
+// format knobs they declare, through kit_format_t, and the options, through
+// kit_encode_options and kit_decode_options.
 
 #include <algorithm>
 #include <concepts>
@@ -36,8 +38,76 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/compare.h"
 #include "kotatsu/codec/context.h"
+#include "kotatsu/codec/format.h"
 
 namespace kotatsu::test {
+
+namespace detail {
+
+template <typename Base, typename S>
+struct with_rename_all : Base {};
+
+template <typename Base, typename S>
+    requires requires { typename S::rename_all; }
+struct with_rename_all<Base, S> : Base {
+    using rename_all = typename S::rename_all;
+};
+
+template <typename Base, typename S>
+struct with_presence_all : Base {};
+
+template <typename Base, typename S>
+    requires requires { S::presence_all; }
+struct with_presence_all<Base, S> : Base {
+    constexpr static std::optional<codec::presence_kind> presence_all = S::presence_all;
+};
+
+template <typename Base, typename S>
+struct with_human_readable : Base {};
+
+template <typename Base, typename S>
+    requires requires { S::human_readable; }
+struct with_human_readable<Base, S> : Base {
+    constexpr static bool human_readable = S::human_readable;
+};
+
+template <typename Base, typename S>
+struct kit_format {
+    using type =
+        with_human_readable<with_presence_all<with_rename_all<codec::extend<Base>, S>, S>, S>;
+};
+
+template <typename Base>
+struct kit_format<Base, void> {
+    using type = Base;
+};
+
+}  // namespace detail
+
+/// The format a case runs under on the backend whose format is Base: Base, with
+/// the knobs the settings S declare (rename_all, presence_all, human_readable).
+template <typename Base, typename S>
+using kit_format_t = typename detail::kit_format<Base, S>::type;
+
+/// The encode options the settings S declare: invalid_utf8.
+template <typename S>
+codec::encode_options kit_encode_options() {
+    codec::encode_options options;
+    if constexpr(requires { S::invalid_utf8; }) {
+        options.invalid_utf8 = S::invalid_utf8;
+    }
+    return options;
+}
+
+/// The decode options the settings S declare: deny_unknown_fields.
+template <typename S>
+codec::decode_options kit_decode_options() {
+    codec::decode_options options;
+    if constexpr(requires { S::deny_unknown_fields; }) {
+        options.deny_unknown_fields = S::deny_unknown_fields;
+    }
+    return options;
+}
 
 /// What a backend's documents can carry. Declared by the adapter rather than
 /// derived from the library's traits, so the library does not judge itself.
@@ -59,11 +129,11 @@ struct Caps {
     /// map value or a field's value, rather than failing or reading as
     /// absent.
     bool nested_nulls = false;
-    /// NaN and infinities survive nan_repr::Passthrough.
+    /// NaN and the infinities encode, and read back; otherwise they fail to
+    /// encode.
     bool non_finite = false;
     /// The layout is a function of the type alone (fbs), so nothing that
-    /// shapes a document by the value or the config compiles:
-    /// nan_repr::String and codec::dynamic reprs.
+    /// shapes a document by the value compiles: codec::dynamic reprs.
     bool layout_computed = false;
     /// Documents come from outside the program, so decoding garbage is in
     /// scope: the hostile sweep applies.

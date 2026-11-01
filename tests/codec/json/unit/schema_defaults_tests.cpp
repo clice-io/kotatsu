@@ -113,17 +113,15 @@ template <>
 struct repr<json_schema_imperative_root> {
     using type = json_schema_imperative_repr;
 
-    template <typename Config>
-    static bool serialize(auto& vis, const json_schema_imperative_root& v) {
-        return codec::encode_value<Config>(vis, type{.n = v.n()});
+    static bool encode(auto& vis, const json_schema_imperative_root& v) {
+        return codec::encode_value(vis, type{.n = v.n()});
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, json_schema_imperative_root& v) {
+    static bool decode(auto& vis, json_schema_imperative_root& v) {
         // Seed the representation from the in-place value: an absent
         // property keeps it.
         type d{.n = v.n()};
-        if(!codec::decode_value<Config>(vis, d)) {
+        if(!codec::decode_value(vis, d)) {
             return false;
         }
         v.set_n(d.n);
@@ -346,9 +344,14 @@ ZEST_CASE(defaults_value_initialize) {
     ZEXPECT(zest::contains(nested, R"({"type":"null"}],"default":3})"));
 }
 
+/// A format whose every field may be absent.
+struct all_optional_format : codec::extend<json::format> {
+    constexpr static std::optional<presence_kind> presence_all = presence_kind::optional;
+};
+
 ZEST_CASE(presence_all_requires_nothing) {
     // Every property may be absent and carries its default, nested ones too.
-    const auto result = json::schema_string<test::Tunables, test::AllOptionalConfig>().value();
+    const auto result = json::schema_string<test::Tunables, all_optional_format>().value();
     ZEXPECT(!zest::contains(result, R"("required")"));
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":9})"));
@@ -606,14 +609,14 @@ ZEST_CASE(defaults_imperative_repr_unannotated) {
                       R"("maximum":2147483647}}})");
 }
 
-struct defaults_enum_config {
-    using field_rename = naming::rename_policy::lower_camel;
+struct defaults_enum_format : codec::extend<json::format> {
+    using rename_all = naming::rename_policy::lower_camel;
 };
 
-ZEST_CASE(defaults_enum_and_rename_with_config) {
-    // The default rides through the real encoder: the config's rename spells
+ZEST_CASE(defaults_enum_and_rename_with_format) {
+    // The default rides through the real encoder: the format's rename spells
     // both the enumerators' names and the property's.
-    const auto result = json::schema_string<defaults_with_enum, defaults_enum_config>().value();
+    const auto result = json::schema_string<defaults_with_enum, defaults_enum_format>().value();
     ZEXPECT(zest::contains(result, R"("logLevel":{"enum":["low","high"],"default":"high"})"));
 }
 

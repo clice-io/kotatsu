@@ -18,8 +18,7 @@ namespace {
 /// Whether options `T` declare what cli takes, so that parse<T>() compiles.
 template <typename T>
 concept declared = requires {
-    typename std::bool_constant<detail::check_declaration(
-        codec::type_info_of<T, detail::decode_config>())>;
+    typename std::bool_constant<detail::check_declaration(codec::type_info_of<T, cli::format>())>;
 };
 
 struct Serve {

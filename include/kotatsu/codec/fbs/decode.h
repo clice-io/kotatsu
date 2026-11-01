@@ -489,7 +489,7 @@ bool MapReader::visit_entry(KF&& key_fn, VF&& val_fn) {
 
 }  // namespace decode_detail
 
-/// Decodes a buffer produced by to_bytes with the same T and Config, after
+/// Decodes a buffer produced by to_bytes with the same T, after
 /// checking the "EVTO" identifier. The buffer is fully verified while it is
 /// read: every scalar, offset, string, vector, and nested table access is
 /// bounds-checked before it happens, so corrupt, truncated, or malicious
@@ -498,35 +498,33 @@ bool MapReader::visit_entry(KF&& key_fn, VF&& val_fn) {
 /// terminates cyclic offsets), as are buffers at or above flatbuffers'
 /// maximum buffer size (just under 2 GiB).
 /// Overloads: std::byte / uint8_t spans, into an out-param or returning T.
-template <typename Config = void, typename T>
+template <typename T>
 auto from_bytes(std::span<const std::byte> buf, T& out) -> std::expected<void, rich_error> {
-    detail::assert_config_layout_stable<Config>();
-
     KOTATSU_EXPECTED_TRY_V(auto opened, detail::open_root(buf));
     if(!opened.root->VerifyTableStart(opened.verifier)) {
         return std::unexpected(rich_error("buffer verification failed: root table"));
     }
     decode_detail::RootReader vis(opened.root, &opened.verifier);
-    return codec::detail::run_decode<Config>(vis, out);
+    return codec::detail::run_decode<fbs::format>(vis, out);
 }
 
-template <typename Config = void, typename T>
+template <typename T>
 auto from_bytes(std::span<const std::uint8_t> buf, T& out) -> std::expected<void, rich_error> {
-    return from_bytes<Config>(std::as_bytes(buf), out);
+    return from_bytes(std::as_bytes(buf), out);
 }
 
-template <typename T, typename Config = void>
+template <typename T>
     requires std::is_default_constructible_v<T>
 auto from_bytes(std::span<const std::byte> buf) -> std::expected<T, rich_error> {
     auto value = T();
-    KOTATSU_EXPECTED_TRY(from_bytes<Config>(buf, value));
+    KOTATSU_EXPECTED_TRY(from_bytes(buf, value));
     return value;
 }
 
-template <typename T, typename Config = void>
+template <typename T>
     requires std::is_default_constructible_v<T>
 auto from_bytes(std::span<const std::uint8_t> buf) -> std::expected<T, rich_error> {
-    return from_bytes<T, Config>(std::as_bytes(buf));
+    return from_bytes<T>(std::as_bytes(buf));
 }
 
 }  // namespace kotatsu::codec::fbs

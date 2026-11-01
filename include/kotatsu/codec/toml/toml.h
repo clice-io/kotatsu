@@ -7,23 +7,23 @@
 
 namespace kotatsu::codec {
 
-template <typename Sink, typename Config>
-struct serialize_visit<toml::ValueWriter<Sink>, toml::Table, Config> {
-    static bool visit(toml::ValueWriter<Sink>& vis, const toml::Table& value) {
+template <typename Format, typename Sink>
+struct serialize_visit<toml::ValueWriter<Format, Sink>, toml::Table> {
+    static bool visit(toml::ValueWriter<Format, Sink>& vis, const toml::Table& value) {
         return vis.sink.emit(value);
     }
 };
 
-template <typename Sink, typename Config>
-struct serialize_visit<toml::ValueWriter<Sink>, toml::Array, Config> {
-    static bool visit(toml::ValueWriter<Sink>& vis, const toml::Array& value) {
+template <typename Format, typename Sink>
+struct serialize_visit<toml::ValueWriter<Format, Sink>, toml::Array> {
+    static bool visit(toml::ValueWriter<Format, Sink>& vis, const toml::Array& value) {
         return vis.sink.emit(value);
     }
 };
 
-template <typename Config>
-struct deserialize_visit<toml::ValueReader, toml::Table, Config> {
-    static bool visit(toml::ValueReader& vis, toml::Table& value) {
+template <typename Format>
+struct deserialize_visit<toml::ValueReader<Format>, toml::Table> {
+    static bool visit(toml::ValueReader<Format>& vis, toml::Table& value) {
         if(!vis.node) {
             return scoped_context<rich_error>::fail(rich_error::invalid_type("table", "null"));
         }
@@ -37,9 +37,9 @@ struct deserialize_visit<toml::ValueReader, toml::Table, Config> {
     }
 };
 
-template <typename Config>
-struct deserialize_visit<toml::ValueReader, toml::Array, Config> {
-    static bool visit(toml::ValueReader& vis, toml::Array& value) {
+template <typename Format>
+struct deserialize_visit<toml::ValueReader<Format>, toml::Array> {
+    static bool visit(toml::ValueReader<Format>& vis, toml::Array& value) {
         if(!vis.node) {
             return scoped_context<rich_error>::fail(rich_error::invalid_type("array", "null"));
         }

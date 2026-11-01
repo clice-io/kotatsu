@@ -36,12 +36,12 @@ struct Bincode {
 
     template <typename Config = void, typename T>
     static auto encode(const T& value) {
-        return codec::bincode::to_bytes<Config>(value);
+        return codec::bincode::to_bytes<kit_format_t<codec::bincode::format, Config>>(value);
     }
 
     template <typename Config = void, typename T>
     static auto decode(const Encoded& bytes, T& out) {
-        return codec::bincode::from_bytes<Config>(bytes, out);
+        return codec::bincode::from_bytes<kit_format_t<codec::bincode::format, Config>>(bytes, out);
     }
 
     static std::string render(const Encoded& bytes) {

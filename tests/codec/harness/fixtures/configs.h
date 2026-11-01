@@ -1,7 +1,8 @@
 #pragma once
 
-// Config fixtures for the codec's own knobs. The field_rename configs meta
-// reads live in tests/fixtures/configs.h.
+// Settings fixtures for the codec's own knobs and options, which the kit
+// applies through kit_format_t and kit_encode_options / kit_decode_options.
+// The rename_all settings live in tests/fixtures/configs.h.
 
 #include <optional>
 
@@ -10,18 +11,6 @@
 #include "kotatsu/codec/format.h"
 
 namespace kotatsu::test {
-
-struct NanNullConfig {
-    constexpr static auto nan_repr = codec::nan_repr::Null;
-};
-
-struct NanStringConfig {
-    constexpr static auto nan_repr = codec::nan_repr::String;
-};
-
-struct NanErrorConfig {
-    constexpr static auto nan_repr = codec::nan_repr::Error;
-};
 
 struct StrictConfig {
     constexpr static bool deny_unknown_fields = true;
@@ -34,14 +23,6 @@ struct AllOptionalConfig {
 
 struct ReplaceUTF8Config {
     constexpr static auto invalid_utf8 = codec::invalid_utf8::Replace;
-};
-
-struct OmitUnstatedConfig {
-    constexpr static bool omit_unstated_defaults = true;
-};
-
-struct NoPathConfig {
-    constexpr static bool detailed_error = false;
 };
 
 struct NotHumanReadableConfig {

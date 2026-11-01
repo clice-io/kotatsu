@@ -118,9 +118,10 @@ struct Formatter {
     }
 };
 
+template <typename Format>
 struct ValueWriter {
     Formatter& fmt;
-    constexpr static bool human_readable = true;
+    using format = Format;
 
     bool visit_bool(bool v) {
         fmt.out += v ? "true" : "false";
@@ -236,6 +237,7 @@ struct ValueWriter {
     bool visit_tuple(const T&, Body&& body);
 };
 
+template <typename Format>
 struct StructWriter {
     Formatter& fmt;
     bool first = true;
@@ -244,6 +246,7 @@ struct StructWriter {
     bool visit_field(std::size_t index, std::string_view name, F&& writer);
 };
 
+template <typename Format>
 struct SeqWriter {
     Formatter& fmt;
     bool first = true;
@@ -252,6 +255,7 @@ struct SeqWriter {
     bool visit_element(F&& writer);
 };
 
+template <typename Format>
 struct TupleWriter {
     Formatter& fmt;
     bool first = true;
@@ -261,6 +265,7 @@ struct TupleWriter {
     bool visit_element(F&& writer);
 };
 
+template <typename Format>
 struct MapWriter {
     Formatter& fmt;
     bool first = true;
@@ -269,15 +274,16 @@ struct MapWriter {
     bool visit_entry(KF&& key_fn, VF&& value_fn);
 };
 
+template <typename Format>
 template <typename T, typename Body>
-bool ValueWriter::visit_struct(const T&, Body&& body) {
+bool ValueWriter<Format>::visit_struct(const T&, Body&& body) {
     fmt.out += meta::type_name<T>();
     fmt.out += ' ';
     if(fmt.pretty) {
-        return fmt.write_block<StructWriter>('{', '}', std::forward<Body>(body));
+        return fmt.write_block<StructWriter<Format>>('{', '}', std::forward<Body>(body));
     }
     fmt.out += "{ ";
-    StructWriter sw{fmt};
+    StructWriter<Format> sw{fmt};
     KOTATSU_CODEC_TRY(body(sw));
     if(!sw.first)
         fmt.out += ' ';
@@ -285,27 +291,30 @@ bool ValueWriter::visit_struct(const T&, Body&& body) {
     return true;
 }
 
+template <typename Format>
 template <typename Container, typename Body>
-bool ValueWriter::visit_seq(const Container&, Body&& body) {
+bool ValueWriter<Format>::visit_seq(const Container&, Body&& body) {
     if constexpr(meta::kind_of<Container>() == meta::type_kind::set) {
-        return fmt.write_block<SeqWriter>('{', '}', std::forward<Body>(body));
+        return fmt.write_block<SeqWriter<Format>>('{', '}', std::forward<Body>(body));
     } else {
-        return fmt.write_block<SeqWriter>('[', ']', std::forward<Body>(body));
+        return fmt.write_block<SeqWriter<Format>>('[', ']', std::forward<Body>(body));
     }
 }
 
+template <typename Format>
 template <typename Container, typename Body>
-bool ValueWriter::visit_map(const Container&, Body&& body) {
-    return fmt.write_block<MapWriter>('{', '}', std::forward<Body>(body));
+bool ValueWriter<Format>::visit_map(const Container&, Body&& body) {
+    return fmt.write_block<MapWriter<Format>>('{', '}', std::forward<Body>(body));
 }
 
+template <typename Format>
 template <typename T, typename Body>
-bool ValueWriter::visit_tuple(const T&, Body&& body) {
+bool ValueWriter<Format>::visit_tuple(const T&, Body&& body) {
     if(fmt.pretty) {
-        return fmt.write_block<TupleWriter>('(', ')', std::forward<Body>(body));
+        return fmt.write_block<TupleWriter<Format>>('(', ')', std::forward<Body>(body));
     }
     fmt.out += '(';
-    TupleWriter tw{fmt};
+    TupleWriter<Format> tw{fmt};
     KOTATSU_CODEC_TRY(body(tw));
     if(tw.count == 1)
         fmt.out += ',';
@@ -313,48 +322,52 @@ bool ValueWriter::visit_tuple(const T&, Body&& body) {
     return true;
 }
 
+template <typename Format>
 template <typename F>
-bool StructWriter::visit_field(std::size_t, std::string_view name, F&& writer) {
+bool StructWriter<Format>::visit_field(std::size_t, std::string_view name, F&& writer) {
     fmt.write_separator(first);
     fmt.out += name;
     fmt.out += ": ";
-    ValueWriter vw{fmt};
+    ValueWriter<Format> vw{fmt};
     return writer(vw);
 }
 
+template <typename Format>
 template <typename F>
-bool TupleWriter::visit_element(F&& writer) {
+bool TupleWriter<Format>::visit_element(F&& writer) {
     fmt.write_separator(first);
     ++count;
-    ValueWriter vw{fmt};
+    ValueWriter<Format> vw{fmt};
     return writer(vw);
 }
 
+template <typename Format>
 template <typename F>
-bool SeqWriter::visit_element(F&& writer) {
+bool SeqWriter<Format>::visit_element(F&& writer) {
     fmt.write_separator(first);
-    ValueWriter vw{fmt};
+    ValueWriter<Format> vw{fmt};
     return writer(vw);
 }
 
+template <typename Format>
 template <typename KF, typename VF>
-bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
+bool MapWriter<Format>::visit_entry(KF&& key_fn, VF&& value_fn) {
     fmt.write_separator(first);
-    ValueWriter kw{fmt};
+    ValueWriter<Format> kw{fmt};
     KOTATSU_CODEC_TRY(key_fn(kw));
     fmt.out += ": ";
-    ValueWriter vw{fmt};
+    ValueWriter<Format> vw{fmt};
     return value_fn(vw);
 }
 
-/// Renders `value` as Rust-Debug-style text; `pretty` switches from
-/// single-line output to 4-space-indented multiline.
-template <typename Config = void, typename T>
+/// Renders `value` as Rust-Debug-style text under the format F; `pretty`
+/// switches from single-line output to 4-space-indented multiline.
+template <typename F = codec::format, typename T>
 auto to_string(const T& value, bool pretty = false) -> std::expected<std::string, rich_error> {
     std::string result;
     Formatter fmt{result, pretty};
-    ValueWriter vis{fmt};
-    KOTATSU_EXPECTED_TRY(detail::run_encode<Config>(vis, value));
+    ValueWriter<F> vis{fmt};
+    KOTATSU_EXPECTED_TRY(detail::run_encode<F>(vis, value));
     return result;
 }
 

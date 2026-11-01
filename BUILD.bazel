@@ -74,6 +74,9 @@ kotatsu_library(
         "include/kotatsu/codec/debug/**",
         "include/kotatsu/codec/dyn/**",
         "include/kotatsu/codec/*.h",
+        # The JSON format alone, without simdjson: other modules' formats
+        # extend it.
+        "include/kotatsu/codec/json/format.h",
     ]),
     deps = [
         ":meta",
@@ -83,7 +86,10 @@ kotatsu_library(
 
 kotatsu_library(
     name = "codec_json",
-    hdrs = glob(["include/kotatsu/codec/json/**"]),
+    hdrs = glob(
+        ["include/kotatsu/codec/json/**"],
+        exclude = ["include/kotatsu/codec/json/format.h"],
+    ),
     deps = [
         ":codec",
         "@simdjson",

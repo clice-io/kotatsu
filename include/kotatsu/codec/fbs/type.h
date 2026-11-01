@@ -82,7 +82,16 @@ using verifier_t = ::flatbuffers::Verifier;
 ///   as vector elements they degrade to boxed tables. A null payload leaves
 ///   the slot absent too, so an engaged optional<std::monostate> reads back
 ///   disengaged
-struct format {};
+struct format : codec::extend<codec::format> {
+    constexpr static bool human_readable = false;
+    /// The output layout is computed from the type at compile time, so a
+    /// codec::dynamic repr has no layout and is rejected.
+    constexpr static bool layout_computed = true;
+    /// An absent slot is how a null travels, and reads back as null, empty or
+    /// zero: a field a write left out at a default that is none of those
+    /// would not read back, so every field is written, whatever its presence.
+    constexpr static bool writes_every_field = true;
+};
 
 /// Whether reflection sees a nonempty struct's fields: past the reflection
 /// field limit meta::field_count() collapses to zero, indistinguishable from
@@ -93,34 +102,15 @@ constexpr bool fields_reflected_v = std::is_empty_v<T> || meta::field_count<T>()
 
 namespace detail {
 
-/// Static visitor traits shared by the fbs visitors the codec dispatch
-/// drives: a binary backend whose output layout is computed statically (so
-/// codec::dynamic reprs are rejected at compile time). An absent slot is how a
-/// null travels, and reads back as null, empty or zero: a field a write left
-/// out at a default that is none of those would not read back, so every field
-/// is written, whatever its presence.
+/// What the fbs visitors the codec dispatch drives share: they carry
+/// fbs::format, which says what the backend can do.
 struct VisitorBase {
     using format = fbs::format;
-    constexpr static bool human_readable = false;
-    constexpr static bool layout_computed = true;
-    constexpr static bool writes_every_field = true;
 };
 
 constexpr inline char buffer_identifier[] = "EVTO";
 constexpr voffset_t first_field = 4;
 constexpr voffset_t field_step = 2;
-
-/// FlatBuffers computes every slot's layout statically from the type, so a
-/// config knob that re-routes values to a different layout cannot apply.
-/// Rejecting them here keeps the layout a pure function of the type — which
-/// is also what lets the config-less zero-copy views and their verifier read
-/// any buffer this backend produced.
-template <typename Config>
-consteval void assert_config_layout_stable() {
-    static_assert(default_config<Config>::nan_repr != nan_repr::String,
-                  "the fbs backend cannot honor nan_repr::String: a float slot's shape would "
-                  "depend on the value it holds");
-}
 
 /// Table lowerings walk a struct's reflected fields, so a nonempty struct
 /// past the reflection field limit would encode as an empty table and decode

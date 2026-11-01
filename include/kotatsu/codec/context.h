@@ -158,15 +158,12 @@ void prepend_step(rich_error& error, const Step& at) {
 }
 
 /// When a step fails, prepends where it was, a key or an element index, to
-/// the active error's path; returns ok. Config::detailed_error turns the
-/// tracking off.
-template <typename Config, typename Step>
+/// the active error's path; returns ok.
+template <typename Step>
 bool trace_path(bool ok, const Step& at) {
-    if constexpr(Config::detailed_error) {
-        if(!ok) {
-            if(auto* e = scoped_context<rich_error>::try_current()) {
-                prepend_step(*e, at);
-            }
+    if(!ok) {
+        if(auto* e = scoped_context<rich_error>::try_current()) {
+            prepend_step(*e, at);
         }
     }
     return ok;

@@ -11,8 +11,7 @@ namespace kotatsu::test {
 /// The json backend for the protocol kit.
 struct Json {
     constexpr static std::string_view name = "json";
-    /// Not non_finite: JSON has no literal for NaN or the infinities, so the
-    /// writer emits null for them even under nan_repr::Passthrough.
+    /// Not non_finite: JSON has no number for NaN or the infinities.
     constexpr static Caps caps{
         .self_describing = true,
         .absent_fields = true,
@@ -26,12 +25,17 @@ struct Json {
 
     template <typename Config = void, typename T>
     static auto encode(const T& value) {
-        return codec::json::to_string<Config>(value);
+        codec::json::encode_options options;
+        static_cast<codec::encode_options&>(options) = kit_encode_options<Config>();
+        return codec::json::to_string<kit_format_t<codec::json::format, Config>>(value, options);
     }
 
     template <typename Config = void, typename T>
     static auto decode(const Encoded& text, T& out) {
-        return codec::json::from_string<Config>(text, out);
+        return codec::json::from_string<kit_format_t<codec::json::format, Config>>(
+            text,
+            out,
+            kit_decode_options<Config>());
     }
 
     /// Indented; text that does not parse, which only a broken encoder

@@ -433,7 +433,7 @@ void variants(const Kit<B>& kit) {
             [] { return InternalShape(Circle{.radius = 1}); });
         reads_in_field<InternalShape, CamelConfig>(
             kit,
-            "internal_alternatives_follow_field_rename",
+            "internal_alternatives_follow_rename_all",
             [] { return SegmentCamelPlain{.kind = "segment", .lineWidth = 7}; },
             [] { return InternalShape(Segment{.line_width = 7}); });
     }

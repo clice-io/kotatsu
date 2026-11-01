@@ -23,9 +23,10 @@
 
 namespace kotatsu::codec::dyn {
 
+template <typename Format>
 struct ValueWriter {
     dyn::Value& output;
-    constexpr static bool human_readable = true;
+    using format = Format;
 
     bool visit_bool(bool v) {
         output = dyn::Value(v);
@@ -46,12 +47,7 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_float(T v) {
-        double d = static_cast<double>(v);
-        if(std::isfinite(d)) {
-            output = dyn::Value(d);
-        } else {
-            output = dyn::Value(nullptr);
-        }
+        output = dyn::Value(static_cast<double>(v));
         return true;
     }
 
@@ -97,6 +93,7 @@ struct ValueWriter {
     bool visit_tuple(const T&, Body&& body);
 };
 
+template <typename Format>
 struct StructWriter {
     dyn::Object& obj;
 
@@ -104,6 +101,7 @@ struct StructWriter {
     bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
 };
 
+template <typename Format>
 struct SeqWriter {
     dyn::Array& arr;
 
@@ -111,6 +109,7 @@ struct SeqWriter {
     bool visit_element(F&& writer);
 };
 
+template <typename Format>
 struct MapWriter {
     dyn::Object& obj;
 
@@ -118,75 +117,83 @@ struct MapWriter {
     bool visit_entry(KF&& key_fn, VF&& value_fn);
 };
 
+template <typename Format>
 template <typename T, typename Body>
-bool ValueWriter::visit_struct(const T&, Body&& body) {
+bool ValueWriter<Format>::visit_struct(const T&, Body&& body) {
     dyn::Object obj;
-    StructWriter sw{obj};
+    StructWriter<Format> sw{obj};
     KOTATSU_CODEC_TRY(body(sw));
     output = dyn::Value(std::move(obj));
     return true;
 }
 
+template <typename Format>
 template <typename Container, typename Body>
-bool ValueWriter::visit_seq(const Container&, Body&& body) {
+bool ValueWriter<Format>::visit_seq(const Container&, Body&& body) {
     dyn::Array arr;
-    SeqWriter sw{arr};
+    SeqWriter<Format> sw{arr};
     KOTATSU_CODEC_TRY(body(sw));
     output = dyn::Value(std::move(arr));
     return true;
 }
 
+template <typename Format>
 template <typename Container, typename Body>
-bool ValueWriter::visit_map(const Container&, Body&& body) {
+bool ValueWriter<Format>::visit_map(const Container&, Body&& body) {
     dyn::Object obj;
-    MapWriter mw{obj};
+    MapWriter<Format> mw{obj};
     KOTATSU_CODEC_TRY(body(mw));
     output = dyn::Value(std::move(obj));
     return true;
 }
 
+template <typename Format>
 template <typename T, typename Body>
-bool ValueWriter::visit_tuple(const T& value, Body&& body) {
+bool ValueWriter<Format>::visit_tuple(const T& value, Body&& body) {
     return visit_seq(value, std::forward<Body>(body));
 }
 
+template <typename Format>
 template <typename F>
-bool StructWriter::visit_field(std::size_t /*index*/, std::string_view name, F&& writer) {
+bool StructWriter<Format>::visit_field(std::size_t /*index*/, std::string_view name, F&& writer) {
     dyn::Value field_val;
-    ValueWriter vw{field_val};
+    ValueWriter<Format> vw{field_val};
     KOTATSU_CODEC_TRY(writer(vw));
     obj.insert(std::string(name), std::move(field_val));
     return true;
 }
 
+template <typename Format>
 template <typename F>
-bool SeqWriter::visit_element(F&& writer) {
+bool SeqWriter<Format>::visit_element(F&& writer) {
     dyn::Value elem_val;
-    ValueWriter vw{elem_val};
+    ValueWriter<Format> vw{elem_val};
     KOTATSU_CODEC_TRY(writer(vw));
     arr.push_back(std::move(elem_val));
     return true;
 }
 
+template <typename Format>
 template <typename KF, typename VF>
-bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
+bool MapWriter<Format>::visit_entry(KF&& key_fn, VF&& value_fn) {
     std::string key;
-    MapKeyWriter<StringKeySink> kw{{key}};
+    MapKeyWriter<StringKeySink, Format> kw{{key}};
     KOTATSU_CODEC_TRY(key_fn(kw));
     dyn::Value val;
-    ValueWriter vw{val};
+    ValueWriter<Format> vw{val};
     KOTATSU_CODEC_TRY(value_fn(vw));
     obj.insert(std::move(key), std::move(val));
     return true;
 }
 
 /// Encodes `value` as a dyn::Value DOM tree (the format-neutral
-/// interchange representation; see the header comment).
-template <typename Config = void, typename T>
-auto to_dyn(const T& value) -> std::expected<dyn::Value, rich_error> {
+/// interchange representation; see the header comment) under the format F.
+template <typename F = codec::format, typename T>
+auto to_dyn(const T& value, const encode_options& options = {})
+    -> std::expected<dyn::Value, rich_error> {
     dyn::Value result;
-    ValueWriter vis{result};
-    KOTATSU_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
+    ValueWriter<F> vis{result};
+    KOTATSU_EXPECTED_TRY(codec::detail::run_encode<F>(vis, value, options));
     return result;
 }
 
@@ -194,25 +201,25 @@ auto to_dyn(const T& value) -> std::expected<dyn::Value, rich_error> {
 
 namespace kotatsu::codec {
 
-template <typename Config>
-struct serialize_visit<dyn::ValueWriter, dyn::Value, Config> {
-    static bool visit(dyn::ValueWriter& vis, const dyn::Value& value) {
+template <typename Format>
+struct serialize_visit<dyn::ValueWriter<Format>, dyn::Value> {
+    static bool visit(dyn::ValueWriter<Format>& vis, const dyn::Value& value) {
         vis.output = value;
         return true;
     }
 };
 
-template <typename Config>
-struct serialize_visit<dyn::ValueWriter, dyn::Array, Config> {
-    static bool visit(dyn::ValueWriter& vis, const dyn::Array& value) {
+template <typename Format>
+struct serialize_visit<dyn::ValueWriter<Format>, dyn::Array> {
+    static bool visit(dyn::ValueWriter<Format>& vis, const dyn::Array& value) {
         vis.output = dyn::Value(value);
         return true;
     }
 };
 
-template <typename Config>
-struct serialize_visit<dyn::ValueWriter, dyn::Object, Config> {
-    static bool visit(dyn::ValueWriter& vis, const dyn::Object& value) {
+template <typename Format>
+struct serialize_visit<dyn::ValueWriter<Format>, dyn::Object> {
+    static bool visit(dyn::ValueWriter<Format>& vis, const dyn::Object& value) {
         vis.output = dyn::Value(value);
         return true;
     }

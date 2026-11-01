@@ -80,8 +80,7 @@ struct repr<codec::GreedySeq> {
         return g.nums;
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, codec::GreedySeq& g) {
+    static bool decode(auto& vis, codec::GreedySeq& g) {
         g.nums.clear();
         return vis.visit_seq(g.nums, [&](auto& sv) -> bool {
             for(std::size_t i = 0; i < 4; ++i) {
@@ -104,8 +103,7 @@ struct repr<codec::GreedyMap> {
         return g.entries;
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, codec::GreedyMap& g) {
+    static bool decode(auto& vis, codec::GreedyMap& g) {
         g.entries.clear();
         return vis.visit_map(g.entries, [&](auto& mv) -> bool {
             for(std::size_t i = 0; i < 4; ++i) {
@@ -130,8 +128,7 @@ struct repr<codec::LabeledCount> {
         return {c.count, c.label};
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, codec::LabeledCount& c) {
+    static bool decode(auto& vis, codec::LabeledCount& c) {
         return vis.visit_tuple(c, [&](auto& sv) -> bool {
             return sv.visit_element([&](auto& ev) -> bool { return ev.visit_int(c.count); }) &&
                    sv.visit_element([&](auto& ev) -> bool { return ev.visit_str(c.label); });

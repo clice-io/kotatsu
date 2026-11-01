@@ -243,13 +243,15 @@ ZEST_CASE(long_documents_grow_their_buffer) {
     }
     expected += "]";
     ZEXPECT(json::to_string(items) == expected);
-    ZEXPECT(json::to_string(items, 0) == expected);
+    ZEXPECT(json::to_string(items, {.initial_capacity = 0}) == expected);
 }
 
-ZEST_CASE(non_finite_writes_null) {
-    // JSON has no literal for them, so even nan_repr::Passthrough writes null.
-    ZEXPECT(json::to_string(test::NonFinite::typical()) ==
-            R"({"nan":null,"inf":null,"neg_inf":null})");
+ZEST_CASE(non_finite_fails) {
+    // JSON has no number for them.
+    auto encoded = json::to_string(test::NonFinite::typical());
+    ZASSERT(!encoded);
+    ZEXPECT(encoded.error().message == "JSON has no number for NaN or an infinity");
+    ZEXPECT(encoded.error().format_path() == "nan");
 }
 
 ZEST_CASE(byte_span_writes_numbers) {
@@ -265,7 +267,7 @@ ZEST_CASE(raw_value_splices_its_text) {
 
 ZEST_CASE(initial_capacity_does_not_change_output) {
     std::vector<int> values{7, 9};
-    ZEXPECT(json::to_string(values, 1) == "[7,9]");
+    ZEXPECT(json::to_string(values, {.initial_capacity = 1}) == "[7,9]");
 }
 
 ZEST_CASE(prettify_indents) {

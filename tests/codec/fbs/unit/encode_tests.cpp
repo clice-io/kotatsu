@@ -1,4 +1,5 @@
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -446,9 +447,13 @@ struct OccurrenceKeyHash {
 };
 
 /// A string keeps it a table, whose fields the protocol visits one by one.
+enum class Unit : std::uint8_t { celsius, kelvin };
+
+/// Its unit travels as a name, which a value no enumerator has does not have.
 struct LabelledReading {
     double value = 0;
-    std::string unit;
+    KANNOTATE(&unit, with = type<codec::enum_names<>>)
+    Unit unit = Unit::celsius;
 };
 
 using NumberedReading = std::tuple<int, LabelledReading>;
@@ -1057,62 +1062,58 @@ ZEST_CASE(format_scoped_repr_elements_are_scalars) {
 ZEST_CASE(nested_table_encode_error_fails) {
     // An error inside a nested table fails the encode instead of leaving a
     // null offset for the builder to trip over.
-    const LabelledReading bad{.value = std::numeric_limits<double>::quiet_NaN(), .unit = "c"};
+    const LabelledReading bad{.value = 1, .unit = static_cast<Unit>(9)};
 
     ReadingLog element;
     element.readings = {{}, bad};
-    auto in_element = fbs::to_bytes<test::NanErrorConfig>(element);
+    auto in_element = fbs::to_bytes(element);
     ZASSERT(!in_element);
-    ZEXPECT(in_element.error().message == "NaN or Infinity is not allowed");
-    ZEXPECT(in_element.error().format_path() == "readings[1].value");
+    ZEXPECT(in_element.error().message == "enum value 9 has no reflected name");
+    ZEXPECT(in_element.error().format_path() == "readings[1].unit");
 
     ReadingLog map_value;
     map_value.by_name = {
         {"a", bad}
     };
-    auto in_map_value = fbs::to_bytes<test::NanErrorConfig>(map_value);
+    auto in_map_value = fbs::to_bytes(map_value);
     ZASSERT(!in_map_value);
-    ZEXPECT(in_map_value.error().message == "NaN or Infinity is not allowed");
+    ZEXPECT(in_map_value.error().message == "enum value 9 has no reflected name");
 
     ReadingLog tuple_field;
     tuple_field.numbered = {1, bad};
-    auto in_tuple_field = fbs::to_bytes<test::NanErrorConfig>(tuple_field);
+    auto in_tuple_field = fbs::to_bytes(tuple_field);
     ZASSERT(!in_tuple_field);
-    ZEXPECT(in_tuple_field.error().message == "NaN or Infinity is not allowed");
-    ZEXPECT(in_tuple_field.error().format_path() == "numbered[1].value");
+    ZEXPECT(in_tuple_field.error().message == "enum value 9 has no reflected name");
+    ZEXPECT(in_tuple_field.error().format_path() == "numbered[1].unit");
 
     ReadingLog tuple_element;
     tuple_element.numbered_list = {
         NumberedReading{1, {} },
         NumberedReading{2, bad}
     };
-    auto in_tuple_element = fbs::to_bytes<test::NanErrorConfig>(tuple_element);
+    auto in_tuple_element = fbs::to_bytes(tuple_element);
     ZASSERT(!in_tuple_element);
-    ZEXPECT(in_tuple_element.error().message == "NaN or Infinity is not allowed");
-    ZEXPECT(in_tuple_element.error().format_path() == "numbered_list[1][1].value");
+    ZEXPECT(in_tuple_element.error().message == "enum value 9 has no reflected name");
+    ZEXPECT(in_tuple_element.error().format_path() == "numbered_list[1][1].unit");
 
-    auto in_root_tuple =
-        fbs::to_bytes<test::NanErrorConfig>(std::tuple<int, LabelledReading>{1, bad});
+    auto in_root_tuple = fbs::to_bytes(std::tuple<int, LabelledReading>{1, bad});
     ZASSERT(!in_root_tuple);
-    ZEXPECT(in_root_tuple.error().format_path() == "[1].value");
+    ZEXPECT(in_root_tuple.error().format_path() == "[1].unit");
 }
 
-ZEST_CASE(nan_repr_does_not_reach_inline_structs) {
-    // Known gap: an inline struct travels as its image, so the protocol never
-    // sees its floats, and nan_repr::Error and nan_repr::Null do not apply to
-    // them. The layout depends on the type alone, so the struct cannot turn
-    // into a table under a config; whether such configs should be rejected
-    // for types holding inline floats, or checked against the image, is open.
-    // The case pins today's behaviour.
-    ZSTATIC_EXPECT(fbs::can_inline_struct_v<Reading>);
+ZEST_CASE(non_finite_floats_travel_as_they_are) {
+    // A float cell holds NaN and the infinities, loose or in an inline
+    // struct's image.
     const double nan = std::numeric_limits<double>::quiet_NaN();
-    auto inline_error = fbs::to_bytes<test::NanErrorConfig>(test::Field<Reading>{
-        {.value = nan, .error = 0}
-    });
-    ZEXPECT(inline_error.has_value());
-    auto loose_error = fbs::to_bytes<test::NanErrorConfig>(test::Field<double>{nan});
-    ZASSERT(!loose_error);
-    ZEXPECT(loose_error.error().message == "NaN or Infinity is not allowed");
+    ZEXPECT(fbs::to_bytes(test::Field<Reading>{
+                              {.value = nan, .error = 0}
+    })
+                .has_value());
+    auto loose = fbs::to_bytes(test::Field<double>{nan});
+    ZASSERT(loose);
+    test::Field<double> back{};
+    ZASSERT(fbs::from_bytes(*loose, back));
+    ZEXPECT(std::isnan(back.value));
 }
 
 };  // ZEST_SUITE(codec_fbs_encode)

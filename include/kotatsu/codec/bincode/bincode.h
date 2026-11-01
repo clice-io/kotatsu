@@ -8,16 +8,16 @@
 
 namespace kotatsu::codec {
 
-template <typename Config>
-struct serialize_visit<bincode::Writer, raw_value, Config> {
-    static bool visit(bincode::Writer& vis, const raw_value& value) {
+template <typename Format>
+struct serialize_visit<bincode::Writer<Format>, raw_value> {
+    static bool visit(bincode::Writer<Format>& vis, const raw_value& value) {
         return vis.visit_str(value.data);
     }
 };
 
-template <typename Config>
-struct deserialize_visit<bincode::Reader, raw_value, Config> {
-    static bool visit(bincode::Reader& vis, raw_value& value) {
+template <typename Format>
+struct deserialize_visit<bincode::Reader<Format>, raw_value> {
+    static bool visit(bincode::Reader<Format>& vis, raw_value& value) {
         return vis.visit_str(value.data);
     }
 };

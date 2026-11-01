@@ -117,7 +117,7 @@ struct bounded_fields {
     double ratio;
     KANNOTATE(&limit, maximum = 10)
     std::optional<std::int32_t> limit;
-    /// Nullable twice over: its own null, and nan_repr's.
+    /// Nullable through its own null.
     KANNOTATE(&share, minimum = 0.25)
     std::optional<double> share;
 };
@@ -458,11 +458,11 @@ ZEST_CASE(bounds_join_the_number_schema) {
     // Looser, they leave them.
     ZEXPECT(zest::contains(result, R"("offset":{"type":"integer","minimum":-128,"maximum":127})"));
     // A float or a nullable takes them in its number branch.
-    ZEXPECT(zest::contains(result, R"("ratio":{"anyOf":[{"type":"number","minimum":0.5},)"));
+    ZEXPECT(zest::contains(result, R"("ratio":{"type":"number","minimum":0.5})"));
     ZEXPECT(zest::contains(result, R"("minimum":-2147483648,"maximum":10},{"type":"null"}])"));
-    ZEXPECT(zest::contains(
-        result,
-        R"("share":{"anyOf":[{"anyOf":[{"type":"number","minimum":0.25},{"type":"null"}]},)"));
+    ZEXPECT(
+        zest::contains(result,
+                       R"("share":{"anyOf":[{"type":"number","minimum":0.25},{"type":"null"}],)"));
 }
 
 ZEST_CASE(bound_on_a_field_that_is_no_number_fails) {
@@ -547,7 +547,8 @@ ZEST_CASE(a_name_two_fields_answer_to_fails) {
 }
 
 ZEST_CASE(alias_is_allowed_where_unknown_fields_are_denied) {
-    const auto result = json::schema_string<aliased_required, test::StrictConfig>().value();
+    const auto result =
+        json::schema_string<aliased_required>({.deny_unknown_fields = true}).value();
     ZEXPECT(zest::contains(result, R"("legacy":{"type":"integer")"));
     ZEXPECT(zest::contains(result, R"("additionalProperties":false)"));
 }
@@ -694,14 +695,14 @@ ZEST_CASE(description_in_internal_tagged_alternative) {
                       R"("oneOf":[)"
                       R"({"type":"object",)"
                       R"("properties":{)"
-                      R"("radius":{"anyOf":[{"type":"number"},{"type":"null"}],)"
+                      R"("radius":{"type":"number",)"
                       R"("description":"Radius in meters."},)"
                       R"("kind":{"const":"circle"}},)"
                       R"("required":["radius","kind"]},)"
                       R"({"type":"object",)"
                       R"("properties":{)"
-                      R"("width":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
-                      R"("height":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+                      R"("width":{"type":"number"},)"
+                      R"("height":{"type":"number"},)"
                       R"("kind":{"const":"rect"}},)"
                       R"("required":["width","height","kind"]}]})");
 }

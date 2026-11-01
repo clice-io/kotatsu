@@ -31,7 +31,7 @@ struct JSONAdapter {
 
     template <typename T>
     static std::string encode(const T& value) {
-        auto text = codec::json::to_string<ipc::lsp_config>(value);
+        auto text = codec::json::to_string<ipc::lsp_format>(value);
         ZEST_CONTEXT("JSONAdapter::encode");
         ZASSERT(text.has_value());
         return std::move(*text);
@@ -39,7 +39,7 @@ struct JSONAdapter {
 
     template <typename T>
     static std::optional<T> decode(std::string_view body) {
-        auto value = codec::json::from_string<T, ipc::lsp_config>(body);
+        auto value = codec::json::from_string<T, ipc::lsp_format>(body);
         if(!value) {
             return std::nullopt;
         }

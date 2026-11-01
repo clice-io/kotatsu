@@ -26,7 +26,7 @@ struct Writer {
     /// usage collecting the defaults does: it shows none for a value no argument names.
     bool lenient = false;
 
-    constexpr static bool human_readable = true;
+    using format = cli::format;
 
     bool text(std::string value) {
         node = Node{.kind = Node::Kind::Text, .text = texts.emplace_back(std::move(value))};
@@ -156,7 +156,7 @@ Node write_options(const T& options, std::deque<std::string>& texts, bool lenien
     Writer writer{root, texts, lenient};
     codec::rich_error error;
     codec::scoped_context<codec::rich_error> guard(error);
-    [[maybe_unused]] const bool written = codec::encode_value<decode_config>(writer, options);
+    [[maybe_unused]] const bool written = codec::encode_value<cli::format>(writer, options);
     assert(written);
     return root;
 }
@@ -176,9 +176,9 @@ std::vector<std::string> to_argv(const T& options) {
 namespace kotatsu::codec {
 
 /// An enum writes as its name (cli::detail::enum_text); a value without one fails.
-template <typename E, typename Config>
-    requires (std::is_enum_v<E> && !codec::has_repr<E, codec::format_of_t<cli::detail::Writer>>)
-struct serialize_visit<cli::detail::Writer, E, Config> {
+template <typename E>
+    requires (std::is_enum_v<E> && !codec::has_repr<E, cli::format>)
+struct serialize_visit<cli::detail::Writer, E> {
     static bool visit(cli::detail::Writer& writer, const E& value) {
         auto name = meta::enum_name(value);
         if(name.empty()) {

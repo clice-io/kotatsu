@@ -72,12 +72,12 @@ struct JSONCodec {
         if(raw.size == 0) {
             constexpr bool null =
                 std::is_same_v<T, protocol::null> || std::is_same_v<T, codec::dyn::Value>;
-            return unwrap(codec::json::from_string<T, lsp_config>(null ? "null" : "{}"), code);
+            return unwrap(codec::json::from_string<T, lsp_format>(null ? "null" : "{}"), code);
         }
         if constexpr(std::is_same_v<T, codec::raw_value>) {
             return codec::raw_value{std::string(raw.text())};
         } else {
-            return unwrap(codec::json::from_padded_string<T, lsp_config>(pad(raw)), code);
+            return unwrap(codec::json::from_padded_string<T, lsp_format>(pad(raw)), code);
         }
     }
 
@@ -88,7 +88,7 @@ private:
         codec::rich_error error;
         codec::scoped_context<codec::rich_error> guard{error};
         codec::json::StringBuilder builder{codec::json::default_capacity};
-        codec::json::ValueWriter values{builder};
+        codec::json::ValueWriter<lsp_format> values{builder};
         bool written = true;
 
         MessageWriter& text(std::string_view raw) {
@@ -98,8 +98,7 @@ private:
 
         template <typename T>
         MessageWriter& value(const T& member) {
-            written =
-                written && codec::encode_value<codec::default_config<lsp_config>>(values, member);
+            written = written && codec::encode_value<lsp_format>(values, member);
             return *this;
         }
 

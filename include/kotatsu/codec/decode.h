@@ -42,7 +42,7 @@ namespace kotatsu::codec {
 /// visit(Vis&, T&) returning bool. It is consulted before annotations and
 /// codec::repr, and untagged variant probing always tries an alternative that
 /// has one, whatever its declared shape.
-template <typename Vis, typename T, typename Config>
+template <typename Vis, typename T>
 struct deserialize_visit {};
 
 template <typename Config, typename Vis, typename T>
@@ -86,7 +86,7 @@ bool decode_enum_name(Vis& vis, E& out) {
 
 /// Decode a value through a representation declaration (a codec::repr
 /// specialization or a behavior::with adapter): declarative from() when
-/// present, the imperative deserialize<Config>() body otherwise.
+/// present, the imperative decode() body otherwise.
 template <typename Repr, typename Config, typename Vis, typename V>
 bool repr_decode(Vis& vis, V& out) {
     using declared_t = codec::declared_repr_t<Repr>;
@@ -99,8 +99,8 @@ bool repr_decode(Vis& vis, V& out) {
         return decode_enum_name<Repr, Config>(vis, out);
     } else if constexpr(requires { Repr::from(std::declval<declared_t>()); }) {
         static_assert(
-            !requires { Repr::template deserialize<Config>(vis, out); },
-            "repr protocol: define from() or deserialize() for decoding, not both");
+            !requires { Repr::decode(vis, out); },
+            "repr protocol: define from() or decode() for decoding, not both");
         static_assert(
             requires(declared_t&& d) { out = Repr::from(std::move(d)); },
             "repr protocol: from() must accept the declared representation type and return "
@@ -109,11 +109,11 @@ bool repr_decode(Vis& vis, V& out) {
         KOTATSU_CODEC_TRY(decode_value<Config>(vis, declared));
         out = Repr::from(std::move(declared));
         return true;
-    } else if constexpr(requires { Repr::template deserialize<Config>(vis, out); }) {
-        return Repr::template deserialize<Config>(vis, out);
+    } else if constexpr(requires { Repr::decode(vis, out); }) {
+        return Repr::decode(vis, out);
     } else {
         static_assert(dependent_false<Repr>,
-                      "repr protocol: no decode path — define from() or deserialize()");
+                      "repr protocol: no decode path — define from() or decode()");
         return false;
     }
 }
@@ -256,14 +256,12 @@ bool decode_with_attrs(Vis& vis, T& out) {
 template <typename Config, typename Step, typename F>
 bool decode_step(UnknownFields* sink, const Step& at, F&& step) {
     if(!sink) {
-        return trace_path<Config>(step(), at);
+        return trace_path(step(), at);
     }
     auto reported = sink->entries.size();
-    bool ok = trace_path<Config>(step(), at);
-    if constexpr(Config::detailed_error) {
-        for(auto& entry: std::span(sink->entries).subspan(reported)) {
-            prepend_step(entry, at);
-        }
+    bool ok = trace_path(step(), at);
+    for(auto& entry: std::span(sink->entries).subspan(reported)) {
+        prepend_step(entry, at);
     }
     return ok;
 }
@@ -271,8 +269,9 @@ bool decode_step(UnknownFields* sink, const Step& at, F&& step) {
 /// An unknown key, whose value reader reads: fails under Deny, and is
 /// otherwise reported to sink. The error is located at the key when the
 /// reader knows where it is.
-template <bool Deny, typename Reader>
-bool pass_unknown_field(std::string_view key, const Reader& reader, UnknownFields* sink) {
+template <typename Reader>
+bool
+    pass_unknown_field(bool deny, std::string_view key, const Reader& reader, UnknownFields* sink) {
     constexpr bool located = requires(const Reader& r) { r.key_location(); };
     auto unknown = [&] {
         auto error = rich_error::unknown_field(key);
@@ -281,14 +280,13 @@ bool pass_unknown_field(std::string_view key, const Reader& reader, UnknownField
         }
         return error;
     };
-    if constexpr(Deny) {
+    if(deny) {
         return scoped_context<rich_error>::fail(unknown());
-    } else {
-        if(sink) {
-            sink->entries.push_back(unknown());
-        }
-        return true;
     }
+    if(sink) {
+        sink->entries.push_back(unknown());
+    }
+    return true;
 }
 
 /// Decode a field's value applying behavior transforms, without visit_field
@@ -332,8 +330,8 @@ bool match_field(std::string_view key,
     if(slot == N) {
         // The data-driven readers move to the next entry whether or not the
         // callback read this one.
-        constexpr bool deny = Config::deny_unknown_fields || schema::deny_unknown;
-        return pass_unknown_field<deny>(key, reader, sink);
+        const bool deny = schema::deny_unknown || current_decode_options().deny_unknown_fields;
+        return pass_unknown_field(deny, key, reader, sink);
     }
 
     field_mask |= std::uint64_t{1} << slot;
@@ -529,7 +527,9 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
             return idx != npos || fail_unusable_tag(fv);
         }
         if(key != content_key) {
-            return pass_unknown_field<Config::deny_unknown_fields>(key, fv, sink);
+            const bool deny =
+                config_denies_unknown<Config>() || current_decode_options().deny_unknown_fields;
+            return pass_unknown_field(deny, key, fv, sink);
         }
         // Without a usable tag the content cannot be placed: the tag's own
         // entry reports why, and an absent tag is reported after the pass.
@@ -622,8 +622,7 @@ constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
 
 template <typename Config, typename Vis, typename T>
 constexpr bool kind_compatible(meta::type_kind src, bool widen) {
-    using format = codec::format_of_t<Vis>;
-    if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T, Config>::visit(v, out); }) {
+    if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T>::visit(v, out); }) {
         // A backend dispatch override decodes however it likes — raw_value's
         // JSON specialization accepts any value — so the type's declared
         // shape says nothing about what it accepts; always probe it.
@@ -633,10 +632,10 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
         // attrs on an annotation first, then (chained) reprs under the
         // visitor's format — so compatibility is judged against that; a
         // dynamic representation can be anything.
-        using resolved_t = codec::resolved_repr_t<T, format>;
+        using resolved_t = codec::resolved_repr_t<T, codec::members_config_t<Config>>;
         if constexpr(std::is_same_v<resolved_t, codec::dynamic>) {
             return true;
-        } else if constexpr(codec::resolves_to_tagged_variant<T, format> &&
+        } else if constexpr(codec::resolves_to_tagged_variant<T, codec::members_config_t<Config>> &&
                             is_human_readable<Config, Vis>()) {
             // A tagging spec survived resolution: the tagged decoders read an
             // object ({tag: value}, {tag, content}, or tag-in-fields), so the
@@ -660,10 +659,10 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
 /// instead, so its inner behavior is opaque to the pass structure.
 template <typename Config, typename Vis, typename T>
 constexpr bool probes_as_untagged_variant() {
-    if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T, Config>::visit(v, out); })
+    if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T>::visit(v, out); })
         return false;
-    else if constexpr(codec::has_repr<T, codec::format_of_t<Vis>>) {
-        using chosen = codec::repr_for<T, codec::format_of_t<Vis>>;
+    else if constexpr(codec::has_repr<T, Config>) {
+        using chosen = codec::repr_for<T, Config>;
         if constexpr(
             requires { chosen::from(std::declval<codec::declared_repr_t<chosen>>()); } &&
             !requires(Vis& v, T& out) { chosen::template deserialize<Config>(v, out); })
@@ -692,8 +691,8 @@ bool
 /// link here always has the declarative from() decode path.
 template <typename Config, typename Vis, typename T>
 bool nested_alternative_pass(Vis& vis, T& out, meta::type_kind src_kind, bool widen) {
-    if constexpr(codec::has_repr<T, codec::format_of_t<Vis>>) {
-        using chosen = codec::repr_for<T, codec::format_of_t<Vis>>;
+    if constexpr(codec::has_repr<T, Config>) {
+        using chosen = codec::repr_for<T, Config>;
         auto declared = codec::declared_repr_t<chosen>();
         KOTATSU_CODEC_TRY(nested_alternative_pass<Config>(vis, declared, src_kind, widen));
         out = chosen::from(std::move(declared));
@@ -787,7 +786,7 @@ bool decode_one_field(Vis& vis, T& out) {
                 fv,
                 field_ref);
         });
-    return trace_path<Config>(ok, field::name);
+    return trace_path(ok, field::name);
 }
 
 }  // namespace detail
@@ -831,19 +830,28 @@ bool decode_value(Vis& vis, T& out) {
     }
 }
 
+/// Decodes `out` through `vis` under the format the visitor carries: what a
+/// repr's decode() or a deserialize_visit specialization calls to read the
+/// values it is made of.
+template <typename Vis, typename T>
+    requires (!std::is_void_v<format_of_t<Vis>>)
+bool decode_value(Vis& vis, T& out) {
+    return decode_value<format_of_t<Vis>>(vis, out);
+}
+
 namespace detail {
 
 template <typename Config, typename Vis, typename T>
 bool decode_plain(Vis& vis, T& out) {
     using V = std::remove_const_t<T>;
 
-    if constexpr(requires(Vis& v, V& val) { deserialize_visit<Vis, V, Config>::visit(v, val); }) {
-        static_assert(!codec::has_repr<V, codec::format_of_t<Vis>>,
+    if constexpr(requires(Vis& v, V& val) { deserialize_visit<Vis, V>::visit(v, val); }) {
+        static_assert(!codec::has_repr<V, Config>,
                       "type has both a deserialize_visit specialization and a codec::repr; "
                       "keep exactly one");
-        return deserialize_visit<Vis, V, Config>::visit(vis, out);
-    } else if constexpr(codec::has_repr<V, codec::format_of_t<Vis>>) {
-        return repr_decode<codec::repr_for<V, codec::format_of_t<Vis>>, Config>(vis, out);
+        return deserialize_visit<Vis, V>::visit(vis, out);
+    } else if constexpr(codec::has_repr<V, Config>) {
+        return repr_decode<codec::repr_for<V, Config>, Config>(vis, out);
     } else if constexpr(meta::derived_variant<V>) {
         return decode_plain<Config>(vis, static_cast<meta::variant_base_t<V>&>(out));
     } else {
@@ -962,7 +970,7 @@ bool decode_plain(Vis& vis, T& out) {
                         auto item = element_t();
                         bool ok = sv.visit_element(
                             [&](auto& ev) -> bool { return decode_value<Config>(ev, item); });
-                        KOTATSU_CODEC_TRY(detail::trace_path<Config>(ok, idx));
+                        KOTATSU_CODEC_TRY(detail::trace_path(ok, idx));
                         kotatsu::detail::append_sequence_element(out, std::move(item));
                         ++idx;
                     }
@@ -999,10 +1007,10 @@ bool decode_plain(Vis& vis, T& out) {
             } else {
                 return vis.visit_tuple(out, [&](auto& sv) -> bool {
                     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                        return (detail::trace_path<Config>(sv.visit_element([&](auto& ev) -> bool {
+                        return (detail::trace_path(sv.visit_element([&](auto& ev) -> bool {
                                     return decode_value<Config>(ev, std::get<Is>(out));
                                 }),
-                                                           Is) &&
+                                                   Is) &&
                                 ...);
                     }(std::make_index_sequence<std::tuple_size_v<V>>{});
                 });
@@ -1020,8 +1028,7 @@ bool decode_plain(Vis& vis, T& out) {
                 return vis.visit_map([&](auto& kv, auto& vv) -> bool {
                     const std::string_view text = kv.str;
                     auto key = key_t();
-                    KOTATSU_CODEC_TRY(
-                        detail::trace_path<Config>(decode_value<Config>(kv, key), text));
+                    KOTATSU_CODEC_TRY(detail::trace_path(decode_value<Config>(kv, key), text));
                     auto val = mapped_t();
                     KOTATSU_CODEC_TRY(detail::decode_step<Config>(sink, text, [&] {
                         return decode_value<Config>(vv, val);
@@ -1042,7 +1049,7 @@ bool decode_plain(Vis& vis, T& out) {
                         bool ok = sv.visit_entry(
                             [&](auto& kv) -> bool { return decode_value<Config>(kv, key); },
                             [&](auto& vv) -> bool { return decode_value<Config>(vv, val); });
-                        KOTATSU_CODEC_TRY(detail::trace_path<Config>(ok, idx));
+                        KOTATSU_CODEC_TRY(detail::trace_path(ok, idx));
                         kotatsu::detail::insert_map_entry(out, std::move(key), std::move(val));
                         ++idx;
                     }
@@ -1076,13 +1083,14 @@ bool decode_struct_fields(Vis& vis, T& out) {
 namespace detail {
 
 /// A backend's decode entry point, bar building its visitor: decode_value
-/// under default_config<Config> inside a fresh error context.
-template <typename Config, typename Vis, typename T>
-std::expected<void, rich_error> run_decode(Vis& vis, T& out) {
-    detail::assert_human_readable_allowed<default_config<Config>, Vis>();
+/// under the format F, with the options given, inside a fresh error context.
+template <typename F, typename Vis, typename T>
+std::expected<void, rich_error> run_decode(Vis& vis, T& out, const decode_options& options = {}) {
+    static_assert(std::derived_from<F, format>, "a format extends codec::format");
     rich_error err;
     scoped_context<rich_error> guard(err);
-    if(!decode_value<default_config<Config>>(vis, out)) {
+    scoped_context<const decode_options> given(options);
+    if(!decode_value<F>(vis, out)) {
         return std::unexpected(std::move(err));
     }
     return {};

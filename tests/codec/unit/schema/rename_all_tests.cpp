@@ -57,9 +57,9 @@ ZEST_CASE(rename_policies) {
         ZSTATIC_EXPECT(fields[2].name == "item_id");
     }
 
-    // default_config<> preserves names
+    // codec::format preserves names
     {
-        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, default_config<>>::fields;
+        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, codec::format>::fields;
         ZSTATIC_EXPECT(fields[0].name == "user_name");
         ZSTATIC_EXPECT(fields[1].name == "total_score");
         ZSTATIC_EXPECT(fields[2].name == "item_id");

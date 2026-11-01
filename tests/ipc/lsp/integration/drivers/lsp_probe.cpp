@@ -108,12 +108,12 @@ int main() {
     using namespace kotatsu;
     std::string line;
     while(std::getline(std::cin, line)) {
-        auto question = codec::json::from_string<test::Question, ipc::lsp_config>(line);
+        auto question = codec::json::from_string<test::Question, ipc::lsp_format>(line);
         if(!question) {
             std::println(stderr, "[error] not a question: {}", question.error().to_string());
             return 1;
         }
-        auto answer = codec::json::to_string<ipc::lsp_config>(test::answer(*question));
+        auto answer = codec::json::to_string<ipc::lsp_format>(test::answer(*question));
         if(!answer) {
             std::println(stderr, "[error] {}", answer.error().to_string());
             return 1;

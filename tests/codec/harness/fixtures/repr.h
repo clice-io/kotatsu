@@ -140,8 +140,7 @@ struct VersionAsNumber {
 struct Shout {
     using type = std::string;
 
-    template <typename Config>
-    static bool serialize(auto& vis, const std::string& text) {
+    static bool encode(auto& vis, const std::string& text) {
         std::string encoded = text;
         for(char& c: encoded) {
             c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -149,8 +148,7 @@ struct Shout {
         return vis.visit_str(encoded);
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, std::string& text) {
+    static bool decode(auto& vis, std::string& text) {
         std::string encoded;
         if(!vis.visit_str(encoded)) {
             return false;
@@ -305,13 +303,11 @@ template <>
 struct repr<test::HexId> {
     using type = std::string;
 
-    template <typename Config>
-    static bool serialize(auto& vis, const test::HexId& h) {
+    static bool encode(auto& vis, const test::HexId& h) {
         return vis.visit_str(std::format("{:08x}", h.v));
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, test::HexId& h) {
+    static bool decode(auto& vis, test::HexId& h) {
         std::string text;
         if(!vis.visit_str(text)) {
             return false;
@@ -325,14 +321,11 @@ template <>
 struct repr<test::DynamicBox> {
     using type = dynamic;
 
-    template <typename Config>
-    static bool serialize(auto& vis, const test::DynamicBox& box) {
-        return std::visit([&](const auto& alt) { return codec::encode_value<Config>(vis, alt); },
-                          box.v);
+    static bool encode(auto& vis, const test::DynamicBox& box) {
+        return std::visit([&](const auto& alt) { return codec::encode_value(vis, alt); }, box.v);
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, test::DynamicBox& box) {
+    static bool decode(auto& vis, test::DynamicBox& box) {
         if(vis.peek_kind() == meta::type_kind::string) {
             std::string text;
             if(!vis.visit_str(text)) {

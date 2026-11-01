@@ -9,7 +9,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
 
-// JSONCodec writes and reads params and results under lsp_config, which
+// JSONCodec writes and reads params and results under lsp_format, which
 // names fields in lowerCamelCase.
 
 namespace kotatsu::ipc {

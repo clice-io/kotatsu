@@ -32,16 +32,13 @@ namespace kotatsu::codec::bincode {
 /// width; Reader narrows back with range checks. Containers write only their
 /// element count and structs write nothing at all, which is what makes the
 /// format non-self-describing.
+template <typename Format>
 struct Writer {
     std::vector<std::byte>& buf;
     /// The end of what is written: buf grows ahead of it, its bytes past it
     /// zero, and to_bytes cuts it back to it.
     std::size_t size = buf.size();
-    using format = bincode::format;
-    constexpr static bool human_readable = false;
-    /// Struct fields are concatenated with no marker, so presence never omits
-    /// one: decode reads every field in order.
-    constexpr static bool writes_every_field = true;
+    using format = Format;
 
     /// Where the next n bytes go.
     std::byte* claim(std::size_t n) {
@@ -197,13 +194,17 @@ struct Writer {
     }
 };
 
-/// Encodes `value` as a bincode byte buffer. Decode requires the same T and
-/// Config — the format carries no self-description.
-template <typename Config = void, typename T>
+/// Encodes `value` as a bincode byte buffer under the format F. Decode requires
+/// the same T and F: the bytes describe nothing of themselves.
+template <typename F = bincode::format, typename T>
 auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, rich_error> {
+    static_assert(std::derived_from<F, bincode::format>,
+                  "a bincode format extends bincode::format");
+    static_assert(!F::human_readable,
+                  "a binary backend writes no names: its format cannot be human readable");
     std::vector<std::byte> buf;
-    Writer vis{buf};
-    KOTATSU_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
+    Writer<F> vis{buf};
+    KOTATSU_EXPECTED_TRY(codec::detail::run_encode<F>(vis, value));
     buf.resize(vis.size);
     return buf;
 }
@@ -214,9 +215,9 @@ namespace kotatsu::codec {
 
 // std::monostate has a single value, so unlike other null-like types it
 // writes no byte at all, wherever it appears.
-template <typename Config>
-struct serialize_visit<bincode::Writer, std::monostate, Config> {
-    static bool visit(bincode::Writer& /*vis*/, const std::monostate& /*value*/) {
+template <typename Format>
+struct serialize_visit<bincode::Writer<Format>, std::monostate> {
+    static bool visit(bincode::Writer<Format>& /*vis*/, const std::monostate& /*value*/) {
         return true;
     }
 };
@@ -226,13 +227,12 @@ struct serialize_visit<bincode::Writer, std::monostate, Config> {
 /// Declared in bincode's own header, which includes the type, so every
 /// translation unit that can write bincode sees it rather than dyn's
 /// untagged form, whose bytes cannot be read back.
-template <typename Config>
-struct serialize_visit<bincode::Writer, dyn::Value, Config> {
-    static bool visit(bincode::Writer& vis, const dyn::Value& value) {
+template <typename Format>
+struct serialize_visit<bincode::Writer<Format>, dyn::Value> {
+    static bool visit(bincode::Writer<Format>& vis, const dyn::Value& value) {
         vis.write_u8(static_cast<std::uint8_t>(value.kind()));
-        return std::visit(
-            [&](const auto& stored) -> bool { return encode_value<Config>(vis, stored); },
-            value.variant());
+        return std::visit([&](const auto& stored) -> bool { return encode_value(vis, stored); },
+                          value.variant());
     }
 };
 

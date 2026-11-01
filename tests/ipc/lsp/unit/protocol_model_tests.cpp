@@ -36,7 +36,7 @@ ZEST_CASE(methods_without_params_say_so) {
 }
 
 ZEST_CASE(literal_encodes_its_text) {
-    auto serialized = to_string<lsp_config>(protocol::CreateFile{.uri = "file:///a"});
+    auto serialized = to_string<lsp_format>(protocol::CreateFile{.uri = "file:///a"});
     ZASSERT(serialized);
     ZEXPECT(*serialized == R"({"kind":"create","uri":"file:///a"})");
 }
@@ -45,13 +45,13 @@ ZEST_CASE(literal_of_other_text_fails) {
     for(auto payload: {R"({"kind":"delete","uri":"file:///a"})",
                        R"({"kind":1,"uri":"file:///a"})",
                        R"({"uri":"file:///a"})"}) {
-        ZEXPECT(!(from_string<protocol::CreateFile, lsp_config>(payload).has_value()));
+        ZEXPECT(!(from_string<protocol::CreateFile, lsp_format>(payload).has_value()));
     }
 }
 
 ZEST_CASE(literal_selects_variant_alternative) {
     // CreateFile and DeleteFile have the same shape; only `kind` tells them apart.
-    auto edit = from_string<protocol::WorkspaceEdit, lsp_config>(R"({"documentChanges":[
+    auto edit = from_string<protocol::WorkspaceEdit, lsp_format>(R"({"documentChanges":[
         {"kind":"create","uri":"file:///a"},
         {"kind":"rename","oldUri":"file:///a","newUri":"file:///b"},
         {"kind":"delete","uri":"file:///b"}
@@ -66,25 +66,25 @@ ZEST_CASE(literal_selects_variant_alternative) {
 }
 
 ZEST_CASE(variant_alternatives_by_required_members) {
-    auto unchanged = from_string<protocol::DocumentDiagnosticReport, lsp_config>(
+    auto unchanged = from_string<protocol::DocumentDiagnosticReport, lsp_format>(
         R"({"kind":"unchanged","resultId":"1"})");
     ZASSERT(unchanged);
     ZEXPECT(std::holds_alternative<protocol::RelatedUnchangedDocumentDiagnosticReport>(*unchanged));
 
     using Change = protocol::TextDocumentContentChangeEvent;
-    auto whole = from_string<Change, lsp_config>(R"({"text":"x"})");
+    auto whole = from_string<Change, lsp_format>(R"({"text":"x"})");
     ZASSERT(whole);
     ZEXPECT(std::holds_alternative<protocol::TextDocumentContentChangeWholeDocument>(*whole));
 
     auto partial =
-        from_string<Change, lsp_config>(std::format(R"({{"range":{},"text":"x"}})", range_json));
+        from_string<Change, lsp_format>(std::format(R"({{"range":{},"text":"x"}})", range_json));
     ZASSERT(partial);
     ZEXPECT(std::holds_alternative<protocol::TextDocumentContentChangePartial>(*partial));
 }
 
 ZEST_CASE(empty_object_alternative) {
     constexpr std::string_view legend = R"("legend":{"tokenTypes":[],"tokenModifiers":[]})";
-    auto options = from_string<protocol::SemanticTokensOptions, lsp_config>(
+    auto options = from_string<protocol::SemanticTokensOptions, lsp_format>(
         std::format(R"({{{},"range":{{}},"full":true}})", legend));
     ZASSERT(options);
     ZASSERT(options->range);
@@ -92,35 +92,35 @@ ZEST_CASE(empty_object_alternative) {
     ZASSERT(options->full);
     ZEXPECT(std::holds_alternative<protocol::boolean>(*options->full));
 
-    auto serialized = to_string<lsp_config>(
+    auto serialized = to_string<lsp_format>(
         protocol::SemanticTokensOptions{.legend = {}, .range = protocol::EmptyObject{}});
     ZASSERT(serialized);
     ZEXPECT(*serialized == std::format(R"({{{},"range":{{}}}})", legend));
 }
 
 ZEST_CASE(optional_bool_reads_absence_as_false) {
-    auto item = from_string<protocol::CompletionItem, lsp_config>(R"({"label":"a"})");
+    auto item = from_string<protocol::CompletionItem, lsp_format>(R"({"label":"a"})");
     ZASSERT(item);
     ZEXPECT(!item->preselect);
 
     auto preselected =
-        to_string<lsp_config>(protocol::CompletionItem{.label = "a", .preselect = true});
+        to_string<lsp_format>(protocol::CompletionItem{.label = "a", .preselect = true});
     ZASSERT(preselected);
     ZEXPECT(*preselected == R"({"label":"a","preselect":true})");
 
-    auto plain = to_string<lsp_config>(protocol::CompletionItem{.label = "a", .preselect = false});
+    auto plain = to_string<lsp_format>(protocol::CompletionItem{.label = "a", .preselect = false});
     ZASSERT(plain);
     ZEXPECT(*plain == R"({"label":"a"})");
 }
 
 ZEST_CASE(nullable_member_encodes_null) {
-    auto serialized = to_string<lsp_config>(protocol::InitializeParams{});
+    auto serialized = to_string<lsp_format>(protocol::InitializeParams{});
     ZASSERT(serialized);
     ZEXPECT(*serialized == R"({"processId":null,"rootUri":null,"capabilities":{}})");
 }
 
 ZEST_CASE(inherited_properties_are_members) {
-    auto params = from_string<protocol::HoverParams, lsp_config>(
+    auto params = from_string<protocol::HoverParams, lsp_format>(
         R"({"textDocument":{"uri":"file:///a"},"position":{"line":1,"character":2},"workDoneToken":"t"})");
     ZASSERT(params);
     ZEXPECT(params->text_document.uri == "file:///a");
@@ -140,11 +140,11 @@ ZEST_CASE(self_containing_structure_roundtrip) {
             std::make_unique<protocol::SelectionRange>(protocol::SelectionRange{.range = range}),
     };
     auto payload = std::format(R"({{"range":{0},"parent":{{"range":{0}}}}})", range_json);
-    auto serialized = to_string<lsp_config>(selection);
+    auto serialized = to_string<lsp_format>(selection);
     ZASSERT(serialized);
     ZEXPECT(*serialized == payload);
 
-    auto decoded = from_string<protocol::SelectionRange, lsp_config>(payload);
+    auto decoded = from_string<protocol::SelectionRange, lsp_format>(payload);
     ZASSERT(decoded);
     ZASSERT(decoded->parent != nullptr);
     ZEXPECT(decoded->parent->parent == nullptr);
@@ -155,13 +155,13 @@ ZEST_CASE(nested_structure_roundtrip) {
     auto payload = std::format(
         R"({{"name":"outer","kind":5,"range":{0},"selectionRange":{0},"children":[{{"name":"inner","kind":6,"range":{0},"selectionRange":{0}}}]}})",
         range_json);
-    auto symbol = from_string<protocol::DocumentSymbol, lsp_config>(payload);
+    auto symbol = from_string<protocol::DocumentSymbol, lsp_format>(payload);
     ZASSERT(symbol);
     ZASSERT(symbol->children);
     ZASSERT(symbol->children->size() == 1U);
     ZEXPECT((*symbol->children)[0].name == "inner");
 
-    auto serialized = to_string<lsp_config>(*symbol);
+    auto serialized = to_string<lsp_format>(*symbol);
     ZASSERT(serialized);
     ZEXPECT(*serialized == payload);
 }
@@ -169,7 +169,7 @@ ZEST_CASE(nested_structure_roundtrip) {
 ZEST_CASE(lsp_any_is_a_dynamic_value) {
     constexpr std::string_view payload =
         R"({"title":"t","command":"c","arguments":[1,"two",{"three":3.5},null,true]})";
-    auto command = from_string<protocol::Command, lsp_config>(payload);
+    auto command = from_string<protocol::Command, lsp_format>(payload);
     ZASSERT(command);
     ZASSERT(command->arguments);
     auto& arguments = *command->arguments;
@@ -180,18 +180,18 @@ ZEST_CASE(lsp_any_is_a_dynamic_value) {
     ZEXPECT(arguments[3].is_null());
     ZEXPECT(arguments[4].get_bool() == true);
 
-    auto serialized = to_string<lsp_config>(*command);
+    auto serialized = to_string<lsp_format>(*command);
     ZASSERT(serialized);
     ZEXPECT(*serialized == payload);
 }
 
 ZEST_CASE(lsp_any_keys_are_not_renamed) {
-    // lsp_config renames members to lowerCamel; dynamic object keys are data.
+    // lsp_format renames members to lowerCamel; dynamic object keys are data.
     constexpr std::string_view payload =
         R"({"title":"t","command":"c","arguments":[{"snake_key":1,"PascalKey":2}]})";
-    auto command = from_string<protocol::Command, lsp_config>(payload);
+    auto command = from_string<protocol::Command, lsp_format>(payload);
     ZASSERT(command);
-    auto serialized = to_string<lsp_config>(*command);
+    auto serialized = to_string<lsp_format>(*command);
     ZASSERT(serialized);
     ZEXPECT(*serialized == payload);
 }
@@ -199,11 +199,11 @@ ZEST_CASE(lsp_any_keys_are_not_renamed) {
 ZEST_CASE(nullable_result) {
     using Result = protocol::RequestTraits<protocol::CompletionParams>::Result;
 
-    auto none = from_string<Result, lsp_config>("null");
+    auto none = from_string<Result, lsp_format>("null");
     ZASSERT(none);
     ZEXPECT(!none->has_value());
 
-    auto list = from_string<Result, lsp_config>(R"({"isIncomplete":true,"items":[]})");
+    auto list = from_string<Result, lsp_format>(R"({"isIncomplete":true,"items":[]})");
     ZASSERT(list);
     ZASSERT(list->has_value());
     ZEXPECT(std::holds_alternative<protocol::CompletionList>(**list));
@@ -239,7 +239,7 @@ ZEST_CASE(parameterless_methods_read_null_params) {
 // an edit with an annotationId reads as the AnnotatedTextEdit it is, not as a
 // TextEdit that drops the id.
 ZEST_CASE(untagged_variant_takes_the_alternative_the_input_fills) {
-    auto edit = from_string<protocol::TextDocumentEdit, lsp_config>(std::format(
+    auto edit = from_string<protocol::TextDocumentEdit, lsp_format>(std::format(
         R"({{"textDocument":{{"uri":"file:///a","version":null}},"edits":[{{"range":{},"newText":"x","annotationId":"a"}}]}})",
         range_json));
     ZASSERT(edit);
@@ -250,14 +250,14 @@ ZEST_CASE(untagged_variant_takes_the_alternative_the_input_fills) {
 // In a report, `cancellable: false` disables the cancel button, where leaving
 // it out keeps the button as it is, so false is written.
 ZEST_CASE(tri_state_bool_writes_false) {
-    auto serialized = to_string<lsp_config>(protocol::WorkDoneProgressReport{.cancellable = false});
+    auto serialized = to_string<lsp_format>(protocol::WorkDoneProgressReport{.cancellable = false});
     ZASSERT(serialized);
     ZEXPECT(zest::contains(*serialized, R"("cancellable":false)"));
 }
 
 // An optional member whose type admits null reads null as present.
 ZEST_CASE(optional_nullable_member_reads_null_as_present) {
-    auto params = from_string<protocol::InitializeParams, lsp_config>(
+    auto params = from_string<protocol::InitializeParams, lsp_format>(
         R"({"processId":null,"rootUri":null,"capabilities":{},"workspaceFolders":null})");
     ZASSERT(params);
     ZASSERT(params->workspace_folders.has_value());
@@ -267,18 +267,18 @@ ZEST_CASE(optional_nullable_member_reads_null_as_present) {
 // So is an optional LSPAny, such as `data`: an item carries its null back
 // to the server.
 ZEST_CASE(optional_any_member_reads_null_as_present) {
-    auto item = from_string<protocol::CompletionItem, lsp_config>(R"({"label":"a","data":null})");
+    auto item = from_string<protocol::CompletionItem, lsp_format>(R"({"label":"a","data":null})");
     ZASSERT(item);
     ZASSERT(item->data.has_value());
     ZEXPECT(item->data->is_null());
-    auto written = to_string<lsp_config>(*item);
+    auto written = to_string<lsp_format>(*item);
     ZASSERT(written);
     ZEXPECT(*written == R"({"label":"a","data":null})");
 }
 
 // A required `T | null` must be present: null is a value, absent is not.
 ZEST_CASE(required_nullable_member_absent_fails) {
-    auto params = from_string<protocol::InitializeParams, lsp_config>(
+    auto params = from_string<protocol::InitializeParams, lsp_format>(
         R"({"rootUri":null,"capabilities":{}})");
     ZASSERT(!params);
     ZEXPECT(zest::contains(params.error().to_string(), "processId"));

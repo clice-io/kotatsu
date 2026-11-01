@@ -27,6 +27,13 @@
 
 namespace kotatsu::cli {
 
+/// How options are read from and written to an argv: a field the argv does not give keeps the
+/// value it has.
+struct format : codec::extend<codec::format> {
+    constexpr static std::optional<codec::presence_kind> presence_all =
+        codec::presence_kind::optional;
+};
+
 /// An argument parse() read, as its visit sees it once the options are decoded.
 struct Given {
     /// The field it went into, by declared name from the options struct down: "session.handler".
@@ -65,14 +72,6 @@ struct Node {
     std::vector<Node> items = {};
 };
 
-/// How the options are decoded: a field the argv does not give keeps the value it has.
-struct DecodeConfig {
-    constexpr static std::optional<codec::presence_kind> presence_all =
-        codec::presence_kind::optional;
-};
-
-using decode_config = codec::default_config<DecodeConfig>;
-
 struct Command;
 
 /// Frees a command, a type complete only where it is built.
@@ -90,8 +89,8 @@ CommandPtr build_command(const codec::type_info& type);
 /// use.
 template <typename T>
 const Command& command_of() {
-    static_assert(check_declaration(codec::type_info_of<T, decode_config>()));
-    const static CommandPtr command = build_command(codec::type_info_of<T, decode_config>());
+    static_assert(check_declaration(codec::type_info_of<T, cli::format>()));
+    const static CommandPtr command = build_command(codec::type_info_of<T, cli::format>());
     return *command;
 }
 
@@ -132,7 +131,7 @@ struct Reader {
     const Node** last;
 
     constexpr static bool data_driven = true;
-    constexpr static bool human_readable = true;
+    using format = cli::format;
     /// The parse checks the required arguments itself, and a help option skips the check.
     constexpr static bool presence_checked = true;
 
@@ -357,7 +356,7 @@ std::expected<void, Error> parse_into(T& options, string_list_ref argv, Visit vi
     codec::rich_error error;
     codec::scoped_context<codec::rich_error> guard(error);
     detail::Reader reader{reading.root, &last};
-    if(!codec::decode_value<detail::decode_config>(reader, options)) {
+    if(!codec::decode_value<cli::format>(reader, options)) {
         return std::unexpected(detail::decode_error(reading, argv, last, error));
     }
     for(const auto& given: reading.given) {
@@ -413,9 +412,9 @@ std::expected<T, Error> parse(R&& argv) {
 namespace kotatsu::codec {
 
 /// An enum reads from any spelling of its name: `info`, `Info`, `INFO`.
-template <typename E, typename Config>
-    requires (std::is_enum_v<E> && !codec::has_repr<E, codec::format_of_t<cli::detail::Reader>>)
-struct deserialize_visit<cli::detail::Reader, E, Config> {
+template <typename E>
+    requires (std::is_enum_v<E> && !codec::has_repr<E, cli::format>)
+struct deserialize_visit<cli::detail::Reader, E> {
     static bool visit(cli::detail::Reader& reader, E& out) {
         if(reader.node.kind != cli::detail::Node::Kind::Text) {
             return reader.fail_shape("a name");

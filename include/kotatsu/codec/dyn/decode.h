@@ -29,10 +29,11 @@ inline bool fail_type(const Value& node, std::string_view expected) {
 
 }  // namespace detail
 
+template <typename Format>
 struct ValueReader {
     const Value& node;
     constexpr static bool data_driven = true;
-    constexpr static bool human_readable = true;
+    using format = Format;
 
     bool visit_bool(bool& out) {
         auto val = node.get_bool();
@@ -150,7 +151,7 @@ struct ValueReader {
     bool try_read(F&& fn) {
         rich_error discard_err;
         scoped_context<rich_error> guard(discard_err);
-        ValueReader fork{node};
+        ValueReader<Format> fork{node};
         return fn(fork);
     }
 
@@ -161,7 +162,7 @@ struct ValueReader {
             return fail_type("object");
         }
         for(const auto& [k, v]: *obj) {
-            ValueReader sub{v};
+            ValueReader<Format> sub{v};
             KOTATSU_CODEC_TRY(cb(std::string_view(k), sub));
         }
         return true;
@@ -174,7 +175,7 @@ struct ValueReader {
             return fail_type("array");
         }
         for(const auto& element: *arr) {
-            ValueReader sub{element};
+            ValueReader<Format> sub{element};
             KOTATSU_CODEC_TRY(cb(sub));
         }
         return true;
@@ -193,8 +194,8 @@ struct ValueReader {
             return fail_type("object");
         }
         for(const auto& [k, v]: *obj) {
-            MapKeyReader<> kr{std::string_view(k)};
-            ValueReader vr{v};
+            MapKeyReader<Format> kr{std::string_view(k)};
+            ValueReader<Format> vr{v};
             KOTATSU_CODEC_TRY(cb(kr, vr));
         }
         return true;
@@ -207,18 +208,20 @@ private:
 };
 
 /// Decodes a dyn::Value DOM tree into `out` (or, in the value-returning
-/// overload, into a value-initialized T).
-template <typename Config = void, typename T>
-auto from_dyn(const Value& value, T& out) -> std::expected<void, rich_error> {
-    ValueReader vis{value};
-    return codec::detail::run_decode<Config>(vis, out);
+/// overload, into a value-initialized T) under the format F.
+template <typename F = codec::format, typename T>
+auto from_dyn(const Value& value, T& out, const decode_options& options = {})
+    -> std::expected<void, rich_error> {
+    ValueReader<F> vis{value};
+    return codec::detail::run_decode<F>(vis, out, options);
 }
 
-template <typename T, typename Config = void>
+template <typename T, typename F = codec::format>
     requires std::is_default_constructible_v<T>
-auto from_dyn(const Value& value) -> std::expected<T, rich_error> {
+auto from_dyn(const Value& value, const decode_options& options = {})
+    -> std::expected<T, rich_error> {
     auto out = T();
-    KOTATSU_EXPECTED_TRY(from_dyn<Config>(value, out));
+    KOTATSU_EXPECTED_TRY(from_dyn<F>(value, out, options));
     return out;
 }
 
@@ -226,17 +229,17 @@ auto from_dyn(const Value& value) -> std::expected<T, rich_error> {
 
 namespace kotatsu::codec {
 
-template <typename Config>
-struct deserialize_visit<dyn::ValueReader, dyn::Value, Config> {
-    static bool visit(dyn::ValueReader& vis, dyn::Value& value) {
+template <typename Format>
+struct deserialize_visit<dyn::ValueReader<Format>, dyn::Value> {
+    static bool visit(dyn::ValueReader<Format>& vis, dyn::Value& value) {
         value = vis.node;
         return true;
     }
 };
 
-template <typename Config>
-struct deserialize_visit<dyn::ValueReader, dyn::Array, Config> {
-    static bool visit(dyn::ValueReader& vis, dyn::Array& value) {
+template <typename Format>
+struct deserialize_visit<dyn::ValueReader<Format>, dyn::Array> {
+    static bool visit(dyn::ValueReader<Format>& vis, dyn::Array& value) {
         const auto* arr = vis.node.get_array();
         if(!arr) {
             return dyn::detail::fail_type(vis.node, "array");
@@ -246,9 +249,9 @@ struct deserialize_visit<dyn::ValueReader, dyn::Array, Config> {
     }
 };
 
-template <typename Config>
-struct deserialize_visit<dyn::ValueReader, dyn::Object, Config> {
-    static bool visit(dyn::ValueReader& vis, dyn::Object& value) {
+template <typename Format>
+struct deserialize_visit<dyn::ValueReader<Format>, dyn::Object> {
+    static bool visit(dyn::ValueReader<Format>& vis, dyn::Object& value) {
         const auto* obj = vis.node.get_object();
         if(!obj) {
             return dyn::detail::fail_type(vis.node, "object");
@@ -258,9 +261,9 @@ struct deserialize_visit<dyn::ValueReader, dyn::Object, Config> {
     }
 };
 
-template <typename Vis, typename Config>
+template <typename Vis>
     requires detail::has_peek_kind<Vis>
-struct deserialize_visit<Vis, dyn::Value, Config> {
+struct deserialize_visit<Vis, dyn::Value> {
     static bool visit(Vis& vis, dyn::Value& value) {
         auto kind = vis.peek_kind();
         switch(kind) {
@@ -301,13 +304,13 @@ struct deserialize_visit<Vis, dyn::Value, Config> {
             }
             case meta::type_kind::array: {
                 dyn::Array arr;
-                KOTATSU_CODEC_TRY((deserialize_visit<Vis, dyn::Array, Config>::visit(vis, arr)));
+                KOTATSU_CODEC_TRY((deserialize_visit<Vis, dyn::Array>::visit(vis, arr)));
                 value = dyn::Value(std::move(arr));
                 return true;
             }
             case meta::type_kind::structure: {
                 dyn::Object obj;
-                KOTATSU_CODEC_TRY((deserialize_visit<Vis, dyn::Object, Config>::visit(vis, obj)));
+                KOTATSU_CODEC_TRY((deserialize_visit<Vis, dyn::Object>::visit(vis, obj)));
                 value = dyn::Value(std::move(obj));
                 return true;
             }
@@ -319,28 +322,28 @@ struct deserialize_visit<Vis, dyn::Value, Config> {
     }
 };
 
-template <typename Vis, typename Config>
+template <typename Vis>
     requires detail::has_peek_kind<Vis>
-struct deserialize_visit<Vis, dyn::Array, Config> {
+struct deserialize_visit<Vis, dyn::Array> {
     static bool visit(Vis& vis, dyn::Array& value) {
         value = dyn::Array{};
         return vis.visit_seq([&](auto& ev) -> bool {
             dyn::Value elem;
-            KOTATSU_CODEC_TRY(decode_value<Config>(ev, elem));
+            KOTATSU_CODEC_TRY(decode_value(ev, elem));
             value.push_back(std::move(elem));
             return true;
         });
     }
 };
 
-template <typename Vis, typename Config>
+template <typename Vis>
     requires detail::has_peek_kind<Vis>
-struct deserialize_visit<Vis, dyn::Object, Config> {
+struct deserialize_visit<Vis, dyn::Object> {
     static bool visit(Vis& vis, dyn::Object& value) {
         value = dyn::Object{};
         return vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
             dyn::Value field_val;
-            KOTATSU_CODEC_TRY(decode_value<Config>(fv, field_val));
+            KOTATSU_CODEC_TRY(decode_value(fv, field_val));
             value.insert(std::string(key), std::move(field_val));
             return true;
         });

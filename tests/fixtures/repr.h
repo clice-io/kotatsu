@@ -16,6 +16,7 @@
 
 #include "kotatsu/meta/annotation.h"
 #include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/format.h"
 #include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
@@ -197,8 +198,10 @@ struct repr<test::Journal> {
     }
 };
 
+/// Under a backend's format, not under the root format dyn reads and writes
+/// trees with.
 template <typename Format>
-    requires (!std::is_void_v<Format>)
+    requires (!std::is_void_v<Format> && !std::same_as<Format, codec::format>)
 struct repr<test::Journal, Format> {
     using type = std::int64_t;
 

@@ -168,8 +168,10 @@ enum class tag_mode : std::uint8_t {
 /// the type_info identity of the annotated type (a renamed struct and its bare form have
 /// different serialized schemas).
 struct struct_spec {
-    /// Naming policy applied to every serialized field name.
-    naming::Casing rename_all = naming::Casing::Identity;
+    /// How the struct's fields, the enum's enumerators or the variant's default tags are
+    /// spelled; unset, as the format says, so that Identity keeps them as declared under a
+    /// format that renames.
+    std::optional<naming::Casing> rename_all = {};
     /// Reject unknown keys during deserialization.
     bool deny_unknown_fields = false;
     /// The presence of every field the field's own annotation leaves unset.
@@ -431,7 +433,7 @@ struct representation_proxy {
 
 [[maybe_unused]] constexpr inline value_proxy<attribute::rename_all,
                                               &struct_spec::rename_all,
-                                              naming::Casing> rename_all{};
+                                              std::optional<naming::Casing>> rename_all{};
 [[maybe_unused]] constexpr inline value_proxy<attribute::deny_unknown_fields,
                                               &struct_spec::deny_unknown_fields,
                                               bool> deny_unknown_fields{};
@@ -504,13 +506,19 @@ namespace detail {
 /// The layers of a merged config, one per policy: each declares its member
 /// only when its policy is set, so an untouched policy keeps shining through
 /// from Base.
-template <typename Base, naming::Casing RenameAll>
+/// An optional value as a template argument: 0 when unset, else the value plus one.
+template <typename E>
+constexpr std::uint8_t optional_code(std::optional<E> value) {
+    return value ? static_cast<std::uint8_t>(static_cast<std::uint8_t>(*value) + 1) : 0;
+}
+
+template <typename Base, std::uint8_t RenameAll>
 struct rename_layer : Base {
-    using field_rename = naming::rename_policy_t<RenameAll>;
+    using rename_all = naming::rename_policy_t<static_cast<naming::Casing>(RenameAll - 1)>;
 };
 
 template <typename Base>
-struct rename_layer<Base, naming::Casing::Identity> : Base {};
+struct rename_layer<Base, 0> : Base {};
 
 template <typename Base, bool DenyUnknown>
 struct deny_layer : Base {
@@ -519,11 +527,6 @@ struct deny_layer : Base {
 
 template <typename Base>
 struct deny_layer<Base, false> : Base {};
-
-/// A struct spec's presence_all as a template argument: 0 when unset, else the kind plus one.
-constexpr std::uint8_t presence_code(std::optional<presence_kind> presence) {
-    return presence ? static_cast<std::uint8_t>(static_cast<std::uint8_t>(*presence) + 1) : 0;
-}
 
 template <typename Base, std::uint8_t Presence>
 struct presence_layer : Base {
@@ -535,19 +538,21 @@ template <typename Base>
 struct presence_layer<Base, 0> : Base {};
 
 /// Base under every policy layer: the one config type a merge makes.
-template <typename Base, naming::Casing RenameAll, bool DenyUnknown, std::uint8_t Presence>
+template <typename Base, std::uint8_t RenameAll, bool DenyUnknown, std::uint8_t Presence>
 struct merged_config :
     presence_layer<deny_layer<rename_layer<Base, RenameAll>, DenyUnknown>, Presence> {
     using members_of = Base;
+    /// A struct's scope extends the format it was entered under, whose reprs apply in it.
+    using base = Base;
 };
 
-template <typename Base, naming::Casing RenameAll, bool DenyUnknown, std::uint8_t Presence>
+template <typename Base, std::uint8_t RenameAll, bool DenyUnknown, std::uint8_t Presence>
 struct merge_config_impl {
     using type = merged_config<Base, RenameAll, DenyUnknown, Presence>;
 };
 
 template <typename Base>
-struct merge_config_impl<Base, naming::Casing::Identity, false, 0> {
+struct merge_config_impl<Base, 0, false, 0> {
     using type = Base;
 };
 
@@ -557,21 +562,21 @@ struct merge_config_impl<Base, naming::Casing::Identity, false, 0> {
 /// type_info instance sharing (and thus one $defs entry per struct) depends
 /// on that.
 template <typename Base,
-          naming::Casing R0,
+          std::uint8_t R0,
           bool D0,
           std::uint8_t P0,
-          naming::Casing RenameAll,
+          std::uint8_t RenameAll,
           bool DenyUnknown,
           std::uint8_t Presence>
 struct merge_config_impl<merged_config<Base, R0, D0, P0>, RenameAll, DenyUnknown, Presence> {
     using type = merged_config<Base,
-                               RenameAll != naming::Casing::Identity ? RenameAll : R0,
+                               RenameAll != 0 ? RenameAll : R0,
                                D0 || DenyUnknown,
                                Presence != 0 ? Presence : P0>;
 };
 
-template <typename Base, naming::Casing R0, bool D0, std::uint8_t P0>
-struct merge_config_impl<merged_config<Base, R0, D0, P0>, naming::Casing::Identity, false, 0> {
+template <typename Base, std::uint8_t R0, bool D0, std::uint8_t P0>
+struct merge_config_impl<merged_config<Base, R0, D0, P0>, 0, false, 0> {
     using type = merged_config<Base, R0, D0, P0>;
 };
 
@@ -588,9 +593,9 @@ struct merge_config_impl<merged_config<Base, R0, D0, P0>, naming::Casing::Identi
 template <typename Base, typename AttrsTuple>
 using merged_config_t =
     typename detail::merge_config_impl<Base,
-                                       struct_spec_of<AttrsTuple>.rename_all,
+                                       detail::optional_code(struct_spec_of<AttrsTuple>.rename_all),
                                        struct_spec_of<AttrsTuple>.deny_unknown_fields,
-                                       detail::presence_code(
+                                       detail::optional_code(
                                            struct_spec_of<AttrsTuple>.presence_all)>::type;
 
 /// The config a node of type T carrying AttrsTuple (a field's attrs, or an

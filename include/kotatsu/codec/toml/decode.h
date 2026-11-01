@@ -44,18 +44,18 @@ inline std::string_view node_type_name(const Node* node) {
 /// The node from_toml reads a T from, routed as to_toml wrote it. Empty
 /// always means null for a nullable root: to_toml rejects an engaged value
 /// whose serialization would be the empty document.
-template <typename T>
+template <typename T, typename F>
 auto select_root_node(const Table& tbl) -> const Node* {
-    if constexpr(nullable_root_v<T>) {
+    if constexpr(nullable_root_v<T, F>) {
         if(tbl.empty()) {
             return nullptr;
         }
-        if constexpr(root_table_v<std::remove_cvref_t<decltype(*std::declval<T&>())>>) {
+        if constexpr(root_table_v<std::remove_cvref_t<decltype(*std::declval<T&>())>, F>) {
             return std::addressof(static_cast<const Node&>(tbl));
         } else {
             return tbl.get(boxed_root_key);
         }
-    } else if constexpr(root_table_v<T>) {
+    } else if constexpr(root_table_v<T, F>) {
         return std::addressof(static_cast<const Node&>(tbl));
     } else {
         return tbl.get(boxed_root_key);
@@ -64,14 +64,14 @@ auto select_root_node(const Table& tbl) -> const Node* {
 
 }  // namespace detail
 
+template <typename Format>
 struct ValueReader {
     const Node* node;
     /// The key a table member's reader reads the value of; null for any
     /// other reader.
     const ::toml::key* key = nullptr;
     constexpr static bool data_driven = true;
-    constexpr static bool human_readable = true;
-    using format = toml::format;
+    using format = Format;
 
     template <typename F>
     bool try_read(F&& fn) {
@@ -155,7 +155,7 @@ struct ValueReader {
         out.reserve(size);
         for(std::size_t i = 0; i < size; ++i) {
             const auto& elem = (*arr)[i];
-            auto val = elem.value<std::int64_t>();
+            auto val = elem.template value<std::int64_t>();
             if(!val || *val < 0 || *val > 255) {
                 return fail_with_location("byte array element out of range [0, 255]");
             }
@@ -200,7 +200,7 @@ struct ValueReader {
             return fail_type("table");
         }
         for(const auto& [k, v]: *tbl) {
-            ValueReader sub{.node = &v, .key = &k};
+            ValueReader<Format> sub{.node = &v, .key = &k};
             KOTATSU_CODEC_TRY(cb(std::string_view(k), sub));
         }
         return true;
@@ -213,7 +213,7 @@ struct ValueReader {
             return fail_type("array");
         }
         for(std::size_t i = 0; i < arr->size(); ++i) {
-            ValueReader sub{arr->get(i)};
+            ValueReader<Format> sub{arr->get(i)};
             KOTATSU_CODEC_TRY(cb(sub));
         }
         return true;
@@ -287,27 +287,31 @@ inline auto parse_table(std::string_view text) -> std::expected<Table, rich_erro
     return std::move(parsed).table();
 }
 
-/// Decodes a toml::Table DOM into `out`, routing the root the same way
-/// to_toml produced it (root table vs boxed `__value` key).
-template <typename Config = void, typename T>
-auto from_toml(const Table& tbl, T& out) -> std::expected<void, rich_error> {
-    ValueReader reader{detail::select_root_node<T>(tbl)};
-    return codec::detail::run_decode<Config>(reader, out);
+/// Decodes a toml::Table DOM into `out` under the format F, routing the root
+/// the same way to_toml produced it (root table vs boxed `__value` key).
+template <typename F = toml::format, typename T>
+auto from_toml(const Table& tbl, T& out, const decode_options& options = {})
+    -> std::expected<void, rich_error> {
+    static_assert(std::derived_from<F, toml::format>, "a TOML format extends toml::format");
+    ValueReader<F> reader{detail::select_root_node<T, F>(tbl)};
+    return codec::detail::run_decode<F>(reader, out, options);
 }
 
 /// Decodes TOML text into `out` (or, in the value-returning overload, into a
 /// value-initialized T): parse_table followed by from_toml.
-template <typename Config = void, typename T>
-auto from_string(std::string_view text, T& out) -> std::expected<void, rich_error> {
+template <typename F = toml::format, typename T>
+auto from_string(std::string_view text, T& out, const decode_options& options = {})
+    -> std::expected<void, rich_error> {
     KOTATSU_EXPECTED_TRY_V(auto table, parse_table(text));
-    return from_toml<Config>(table, out);
+    return from_toml<F>(table, out, options);
 }
 
-template <typename T, typename Config = void>
+template <typename T, typename F = toml::format>
     requires std::is_default_constructible_v<T>
-auto from_string(std::string_view text) -> std::expected<T, rich_error> {
+auto from_string(std::string_view text, const decode_options& options = {})
+    -> std::expected<T, rich_error> {
     auto value = T();
-    KOTATSU_EXPECTED_TRY(from_string<Config>(text, value));
+    KOTATSU_EXPECTED_TRY(from_string<F>(text, value, options));
     return value;
 }
 

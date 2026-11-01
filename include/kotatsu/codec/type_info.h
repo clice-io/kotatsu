@@ -34,32 +34,6 @@
 /// dispatch share.
 namespace kotatsu::codec {
 
-/// Carries a backend's format tag into type resolution: passed as the Config
-/// of type_info_of / virtual_schema, it makes format-scoped codec::repr
-/// specializations resolve the way that backend's codec dispatch does.
-template <typename Format>
-struct format_config {
-    using format = Format;
-};
-
-namespace detail {
-
-template <typename Config>
-constexpr auto format_of_impl() {
-    if constexpr(requires { typename Config::format; }) {
-        return std::type_identity<typename Config::format>{};
-    } else {
-        return std::type_identity<void>{};
-    }
-}
-
-}  // namespace detail
-
-/// The format tag a config or visitor carries; void — the format-agnostic
-/// slot — when it carries none.
-template <typename Config>
-using format_of_t = typename decltype(detail::format_of_impl<Config>())::type;
-
 struct type_info {
     meta::type_kind kind;
     std::string_view type_name;
@@ -160,7 +134,7 @@ struct struct_type_info : type_info {
     std::string_view description = {};
 };
 
-template <typename T, typename Config = default_config<>>
+template <typename T, typename Config = format>
 constexpr const type_info& type_info_of();
 
 namespace detail {
@@ -186,9 +160,9 @@ struct effective_field_rename {
 };
 
 template <typename Config>
-    requires requires { typename Config::field_rename; }
+    requires requires { typename Config::rename_all; }
 struct effective_field_rename<Config> {
-    using type = typename Config::field_rename;
+    using type = typename Config::rename_all;
 };
 
 template <typename Config>
@@ -198,11 +172,11 @@ using effective_field_rename_t = typename effective_field_rename<Config>::type;
 /// rename_all of E's own annotation, else Config's.
 template <typename Repr, typename E, typename Config>
 consteval auto enum_names_policy() {
-    constexpr naming::Casing own = struct_spec_of<meta::attrs_of_t<E>>.rename_all;
+    constexpr std::optional<naming::Casing> own = struct_spec_of<meta::attrs_of_t<E>>.rename_all;
     if constexpr(!std::is_void_v<typename Repr::policy>) {
         return std::type_identity<typename Repr::policy>{};
-    } else if constexpr(own != naming::Casing::Identity) {
-        return std::type_identity<naming::rename_policy_t<own>>{};
+    } else if constexpr(own.has_value()) {
+        return std::type_identity<naming::rename_policy_t<*own>>{};
     } else {
         return std::type_identity<effective_field_rename_t<Config>>{};
     }
@@ -232,9 +206,13 @@ constexpr auto resolve_tag_names() {
         static_assert(naming::distinct(spec.tag_names), "tagged: two tag_names are alike");
         return names;
     } else {
-        using policy = std::conditional_t<spec.rename_all != naming::Casing::Identity,
-                                          naming::rename_policy_t<spec.rename_all>,
-                                          detail::effective_field_rename_t<Config>>;
+        using policy = typename decltype([] {
+            if constexpr(spec.rename_all.has_value()) {
+                return std::type_identity<naming::rename_policy_t<*spec.rename_all>>{};
+            } else {
+                return std::type_identity<detail::effective_field_rename_t<Config>>{};
+            }
+        }())::type;
         constexpr const auto& names = naming::renamed<policy, detail::type_names<Ts...>::value>;
         static_assert(naming::distinct(names),
                       "tagged: two alternatives' types have the same name; give the tags with "
@@ -287,7 +265,7 @@ constexpr bool is_runtime_struct_spec_attr_v = false;
 template <typename Tag>
 constexpr bool is_runtime_struct_spec_attr_v<meta::spec_attr<Tag, struct_spec>> =
     meta::spec_attr<Tag, struct_spec>::value.tagging != tag_mode::none ||
-    meta::spec_attr<Tag, struct_spec>::value.rename_all != naming::Casing::Identity ||
+    meta::spec_attr<Tag, struct_spec>::value.rename_all.has_value() ||
     meta::spec_attr<Tag, struct_spec>::value.deny_unknown_fields ||
     meta::spec_attr<Tag, struct_spec>::value.presence_all.has_value();
 
@@ -365,12 +343,12 @@ struct resolved_repr {
 /// reads and writes. A tagged variant keeps its tagging spec attr; the spec's
 /// own policies stay inert for the alternatives, as in the codec, where the
 /// tagging branch is taken before the config merge.
-template <typename T, typename Config = default_config<>>
+template <typename T, typename Config = format>
 constexpr auto resolve_repr();
 
 /// resolve_repr over a type given as its raw type and attrs, as a struct
 /// field's slot holds it.
-template <typename Raw, typename Attrs, typename Config = default_config<>>
+template <typename Raw, typename Attrs, typename Config = format>
 constexpr auto resolve_node() {
     if constexpr(meta::derived_variant<Raw>) {
         // Read and written as the variant it is, under its own annotation.
@@ -391,8 +369,8 @@ constexpr auto resolve_node() {
     } else if constexpr(is_specialization_of<std::variant, Raw> &&
                         struct_spec_of<Attrs>.tagging != tag_mode::none) {
         return resolved_repr<Raw, std::tuple<struct_spec_attr_t<Attrs>>, Config>{};
-    } else if constexpr(has_repr<Raw, format_of_t<Config>>) {
-        using chosen = repr_for<Raw, format_of_t<Config>>;
+    } else if constexpr(has_repr<Raw, Config>) {
+        using chosen = repr_for<Raw, Config>;
         if constexpr(names_enum<chosen>) {
             return resolved_repr<std::string_view,
                                  std::tuple<>,
@@ -429,7 +407,7 @@ struct resolved_instance :
                                           typename Resolved::config>,
                        typename Resolved::spelled_enum> {};
 
-template <typename T, typename Config = default_config<>>
+template <typename T, typename Config = format>
 struct type_instance : resolved_instance<decltype(resolve_repr<std::remove_cv_t<T>, Config>())> {};
 
 /// The info of a node resolved as Resolved, as a type_info_fn.
@@ -688,11 +666,9 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 /// The representation of T as the codec dispatch resolves it: behavior attrs
 /// on an annotation take precedence over the underlying type's codec::repr,
 /// and chained reprs and annotations nested inside representation types are
-/// followed to their final type. Format selects format-scoped repr
-/// specializations; void resolves the format-agnostic view.
-template <typename T, typename Format = void>
-using resolved_repr_t =
-    typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, format_config<Format>>())::type;
+/// followed to their final type. F selects the reprs of its format chain.
+template <typename T, typename F = format>
+using resolved_repr_t = typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, F>())::type;
 
 /// The config T's resolution ends with: every rename_all /
 /// deny_unknown_fields / presence_all spec crossed on the way — a
@@ -707,10 +683,9 @@ using resolved_config_t =
 /// resolution: external, internal, and adjacent tagging all give the value an
 /// object document shape in the human-readable codecs, regardless of the
 /// alternatives behind it.
-template <typename T, typename Format = void>
+template <typename T, typename F = format>
 constexpr bool resolves_to_tagged_variant =
-    !std::is_same_v<typename decltype(detail::resolve_repr<std::remove_cvref_t<T>,
-                                                           format_config<Format>>())::tag_attrs,
+    !std::is_same_v<typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, F>())::tag_attrs,
                     std::tuple<>>;
 
 template <typename T, typename Config>
@@ -764,7 +739,7 @@ struct single_field_slots<T, I, /*Skipped=*/false, /*Flattened=*/true> {
 
 }  // namespace detail
 
-template <typename T, typename Config = default_config<>>
+template <typename T, typename Config = format>
     requires meta::reflectable_class<T>
 struct virtual_schema {
     // Obtain fields from type_info_of<T>().fields (the span inside struct_type_info::value)

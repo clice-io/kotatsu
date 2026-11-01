@@ -32,6 +32,11 @@ constexpr std::string_view bom = "\xEF\xBB\xBF";
 template <typename T>
 concept decodes_by_value = requires(std::string_view text) { json::from_string<T>(text); };
 
+/// Field names in lower camel case.
+struct camel_format : codec::extend<json::format> {
+    using rename_all = naming::rename_policy::lower_camel;
+};
+
 ZEST_SUITE(codec_json_decode) {
 
 ZEST_CASE(value_overload_value_initializes) {
@@ -48,8 +53,8 @@ ZEST_CASE(value_overload_value_initializes) {
     ZSTATIC_EXPECT(!decodes_by_value<test::NoDefault>);
 }
 
-ZEST_CASE(value_overload_takes_config) {
-    auto result = json::from_string<test::RenameAllTarget, test::CamelConfig>(
+ZEST_CASE(value_overload_takes_format) {
+    auto result = json::from_string<test::RenameAllTarget, camel_format>(
         R"({"userName":2,"totalScore":1.5,"itemId":"abc"})");
     ZASSERT(result);
     ZEXPECT(result->user_name == 2);
@@ -392,12 +397,13 @@ ZEST_CASE(located_type_mismatch_fails) {
 
 ZEST_CASE(unknown_field_fails_at_its_key) {
     test::Point out{};
-    auto status = json::from_string<test::StrictConfig>(R"({
+    auto status = json::from_string(R"({
   "x": 1,
   "extra": true,
   "y": 2
 })",
-                                                        out);
+                                    out,
+                                    {.deny_unknown_fields = true});
     ZASSERT(!status);
     ZEXPECT(status.error().message == "unknown field 'extra'");
     ZASSERT(status.error().location);

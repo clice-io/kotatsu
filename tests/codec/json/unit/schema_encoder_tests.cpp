@@ -39,7 +39,7 @@ ZEST_CASE(unnamed_enum_value_rejected_by_enum_names) {
 }
 
 ZEST_CASE(schema_agrees_with_encoder_on_enums) {
-    // Under the default config the encoder emits the numeric value, so the
+    // Under the default format the encoder emits the numeric value, so the
     // schema constrains the same numeric form.
     const auto encoded = json::to_string(with_enum{.c = color_i8::green, .name = "g"});
     ZASSERT(encoded);
@@ -61,84 +61,42 @@ ZEST_CASE(schema_agrees_with_encoder_on_enum_rename) {
                       R"("enum":["RED","GREEN","BLUE"]})");
 }
 
-struct nan_null_config {
-    [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::Null;
-};
-
-struct nan_string_config {
-    [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::String;
-};
-
-ZEST_CASE(schema_agrees_with_encoder_on_nan_passthrough) {
-    // The default Passthrough forwards the non-finite value to the writer,
-    // whose only JSON spelling for it is null — the schema must admit that.
-    const auto encoded = json::to_string(std::numeric_limits<double>::quiet_NaN());
-    ZASSERT(encoded);
-    ZEXPECT(*encoded == "null");
+ZEST_CASE(schema_agrees_with_encoder_on_non_finite_floats) {
+    // JSON has no number for NaN or an infinity: the encoder fails on one,
+    // and the schema admits only numbers.
+    ZEXPECT(!json::to_string(std::numeric_limits<double>::quiet_NaN()).has_value());
+    ZEXPECT(!json::to_string(std::numeric_limits<float>::infinity()).has_value());
 
     const auto result = json::schema_string<double>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-                      R"("anyOf":[{"type":"number"},{"type":"null"}]})");
+                      R"("type":"number"})");
 }
 
-ZEST_CASE(schema_agrees_with_encoder_on_nan_null) {
-    const auto encoded = json::to_string<nan_null_config>(std::numeric_limits<double>::quiet_NaN());
-    ZASSERT(encoded);
-    ZEXPECT(*encoded == "null");
-
-    const auto result = json::schema_string<double, nan_null_config>().value();
-    ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-                      R"("anyOf":[{"type":"number"},{"type":"null"}]})");
-}
-
-ZEST_CASE(schema_agrees_with_encoder_on_nan_string) {
-    const auto encoded = json::to_string<nan_string_config>(std::numeric_limits<float>::infinity());
-    ZASSERT(encoded);
-    ZEXPECT(*encoded == R"("Infinity")");
-
-    const auto result = json::schema_string<float, nan_string_config>().value();
-    ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
-                      R"("anyOf":[{"type":"number"},)"
-                      R"({"enum":["NaN","Infinity","-Infinity"]}]})");
-}
-
-struct nan_error_config {
-    [[maybe_unused]] constexpr static auto nan_repr = codec::nan_repr::Error;
-};
-
-ZEST_CASE(schema_agrees_with_encoder_on_long_double_overflow) {
-    // A finite long double beyond double's range narrows to infinity in the
-    // document, so the nan_repr policy judges the narrowed value: String
-    // spells it, Error rejects it — never a null the schema does not admit.
+ZEST_CASE(long_double_beyond_double_fails_as_infinity) {
+    // A finite long double beyond double's range narrows to an infinity in
+    // the document, which the encoder rejects as it does any.
     constexpr long double big = std::numeric_limits<long double>::max();
     if constexpr(big > static_cast<long double>(std::numeric_limits<double>::max())) {
-        const auto spelled = json::to_string<nan_string_config>(big);
-        ZASSERT(spelled);
-        ZEXPECT(*spelled == R"("Infinity")");
-
-        const auto negative = json::to_string<nan_string_config>(-big);
-        ZASSERT(negative);
-        ZEXPECT(*negative == R"("-Infinity")");
-
-        ZEXPECT(!json::to_string<nan_error_config>(big).has_value());
+        ZEXPECT(!json::to_string(big).has_value());
+        ZEXPECT(!json::to_string(-big).has_value());
     } else {
         // long double is double: the value stays a finite number.
-        ZEXPECT(json::to_string<nan_error_config>(big).has_value());
+        ZEXPECT(json::to_string(big).has_value());
     }
 }
 
-struct non_hr_config {
-    [[maybe_unused]] constexpr static bool human_readable = false;
+struct non_hr_format : codec::extend<json::format> {
+    constexpr static bool human_readable = false;
 };
 
 ZEST_CASE(schema_agrees_with_encoder_on_non_human_readable) {
-    // A non-human-readable config bypasses tagging and encodes the underlying
-    // variant, so the schema describes the untagged alternatives.
-    const auto encoded = json::to_string<non_hr_config>(root_external_variant{7});
+    // A format that is not human readable bypasses tagging and encodes the
+    // underlying variant, so the schema describes the untagged alternatives.
+    const auto encoded = json::to_string<non_hr_format>(root_external_variant{7});
     ZASSERT(encoded);
     ZEXPECT(*encoded == "7");
 
-    const auto result = json::schema_string<root_external_variant, non_hr_config>().value();
+    const auto result = json::schema_string<root_external_variant, non_hr_format>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("anyOf":[)"
                       R"({"type":"integer",)"
@@ -161,19 +119,19 @@ ZEST_CASE(untagged_overlap_validates_as_any_of) {
                       R"("maximum":2147483647}]})");
 }
 
-struct camel_deny_config {
-    using field_rename = naming::rename_policy::lower_camel;
-    [[maybe_unused]] constexpr static bool deny_unknown_fields = true;
+struct camel_format : codec::extend<json::format> {
+    using rename_all = naming::rename_policy::lower_camel;
 };
 
-ZEST_CASE(schema_agrees_with_encoder_on_config) {
-    // The schema must accept what to_string under the same config emits:
-    // renamed field names and the unknown-field policy.
-    const auto encoded = json::to_string<camel_deny_config>(casing_child{.first_value = 7});
+ZEST_CASE(schema_agrees_with_encoder_on_format) {
+    // The schema must accept what to_string under the same format emits:
+    // renamed field names; and deny the unknown fields a decode denies.
+    const auto encoded = json::to_string<camel_format>(casing_child{.first_value = 7});
     ZASSERT(encoded);
     ZEXPECT(*encoded == R"({"firstValue":7})");
 
-    const auto result = json::schema_string<casing_child, camel_deny_config>().value();
+    const auto result =
+        json::schema_string<casing_child, camel_format>({.deny_unknown_fields = true}).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("type":"object",)"
                       R"("properties":{)"

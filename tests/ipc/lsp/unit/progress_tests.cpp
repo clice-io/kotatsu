@@ -139,7 +139,7 @@ ZEST_CASE(progress_reads_as_progress_params) {
     auto params = test::BincodeAdapter::decode<protocol::ProgressParams>(written[0].body);
     ZASSERT(params.has_value());
     ZEXPECT(params->token == protocol::ProgressToken(7));
-    auto begin = codec::dyn::from_dyn<protocol::WorkDoneProgressBegin, lsp_config>(params->value);
+    auto begin = codec::dyn::from_dyn<protocol::WorkDoneProgressBegin, lsp_format>(params->value);
     ZASSERT(begin.has_value());
     ZEXPECT(begin->title == "Indexing");
     ZEXPECT(begin->percentage == std::optional<protocol::uinteger>(10U));

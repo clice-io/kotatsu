@@ -1,8 +1,12 @@
 #pragma once
 
+#include <cstddef>
+#include <optional>
 #include <string>
 
 #include "kotatsu/codec/context.h"
+#include "kotatsu/codec/format.h"
+#include "kotatsu/codec/json/format.h"
 
 #if __has_include(<simdjson.h>)
 #include "simdjson.h"
@@ -11,43 +15,6 @@
 #endif
 
 namespace kotatsu::codec::json {
-
-/// Format tag: scopes a codec::repr specialization to the JSON backend
-/// (codec::repr<T, codec::json::format>).
-///
-/// # Lowerings
-///
-/// Human-readable text backend (simdjson ondemand parse, StringBuilder
-/// write). How each meta::type_kind lands in JSON:
-/// - null, empty optional, null pointer → `null`; engaged optional/pointer →
-///   the payload itself, no wrapper
-/// - boolean → `true` / `false`
-/// - integers → JSON numbers; uint64 is emitted full-range, beyond 2^53,
-///   which JavaScript's JSON.parse rounds to the nearest double: a reader in
-///   JavaScript needs a lossless parser (BigInt) for such values. Decode
-///   reads integer tokens only: `1.0`, an integer to JSON Schema, does not
-///   read into an integer
-/// - float32/float64 → JSON numbers; non-finite values follow Config's
-///   nan_repr, except that JSON has no non-finite literal, so Passthrough
-///   also emits `null`
-/// - character → single-codepoint string (the char's value 0-255 encoded as
-///   UTF-8); decode accepts exactly one codepoint ≤ 255
-/// - string → quoted, escaped string; one that is not UTF-8 follows Config's
-///   invalid_utf8
-/// - bytes → array of octet numbers
-/// - enumeration → underlying integer; through codec::enum_names, the
-///   enumerator's name
-/// - array/set/tuple → `[...]`
-/// - map → object; non-string keys go through MapKeyWriter/MapKeyReader as
-///   their decimal string form
-/// - structure → object keyed by (renamed) field names
-/// - variant → shaped by the spec's tag_mode (see encode_tagged_variant in
-///   visit/encode.h); untagged variants emit the bare payload
-/// - raw_value → spliced into the output verbatim; an empty raw_value is `null`
-struct format {
-    /// Its documents are UTF-8 text.
-    constexpr static bool utf8 = true;
-};
 
 namespace ondemand {
 

@@ -23,7 +23,7 @@ struct Polygon {
 };
 
 struct CamelConfig {
-    using field_rename = naming::rename_policy::lower_camel;
+    using rename_all = naming::rename_policy::lower_camel;
 };
 
 ZEST_SUITE(codec_visit_dispatch) {
@@ -37,12 +37,12 @@ ZEST_CASE(only_a_variant_takes_a_tagging_spec) {
 }
 
 ZEST_CASE(field_named_by_name_alias_or_rename) {
-    ZSTATIC_EXPECT(detail::has_field_named<default_config<>, Shape>("sides"));
-    ZSTATIC_EXPECT(!detail::has_field_named<default_config<>, Shape>("kind"));
-    ZSTATIC_EXPECT(detail::has_field_named<default_config<>, Polygon>("corners"));
-    // Under the config's renaming, not the declared name.
-    ZSTATIC_EXPECT(detail::has_field_named<default_config<CamelConfig>, Polygon>("vertexCount"));
-    ZSTATIC_EXPECT(!detail::has_field_named<default_config<CamelConfig>, Polygon>("vertex_count"));
+    ZSTATIC_EXPECT(detail::has_field_named<codec::format, Shape>("sides"));
+    ZSTATIC_EXPECT(!detail::has_field_named<codec::format, Shape>("kind"));
+    ZSTATIC_EXPECT(detail::has_field_named<codec::format, Polygon>("corners"));
+    // Under the format's renaming, not the declared name.
+    ZSTATIC_EXPECT(detail::has_field_named<CamelConfig, Polygon>("vertexCount"));
+    ZSTATIC_EXPECT(!detail::has_field_named<CamelConfig, Polygon>("vertex_count"));
 }
 
 };  // ZEST_SUITE(codec_visit_dispatch)

@@ -100,7 +100,7 @@ public:
     /// The struct held, if it is a `T`; null when it is another, or none.
     template <typename T>
     T* get_if() const {
-        return entry != nullptr && entry->type == &codec::type_info_of<T, decode_config>()
+        return entry != nullptr && entry->type == &codec::type_info_of<T, cli::format>()
                    ? static_cast<T*>(value.get())
                    : nullptr;
     }
@@ -119,9 +119,9 @@ private:
         return call(entry->callback, value.get(), std::forward<CallArgs>(args)...);
     }
 
-    template <typename, typename, typename>
+    template <typename, typename>
     friend struct codec::deserialize_visit;
-    template <typename, typename, typename>
+    template <typename, typename>
     friend struct codec::serialize_visit;
 
     const CommandEntry* entry = nullptr;
@@ -164,9 +164,9 @@ template <typename Tag, typename T, typename R, typename... Args>
 bool add_command(R (*run)(T&, Args...), CommandInfo info = {}) {
     static_assert(std::is_same_v<typename Tag::signature, R(Args...)>,
                   "cli: a subcommand's callback takes its struct, then the set's signature");
-    static_assert(detail::check_declaration(codec::type_info_of<T, detail::decode_config>()));
+    static_assert(detail::check_declaration(codec::type_info_of<T, cli::format>()));
     using callback_t = R (*)(T&, Args...);
-    const auto& type = codec::type_info_of<T, detail::decode_config>();
+    const auto& type = codec::type_info_of<T, cli::format>();
     detail::registry<Tag>().add(detail::CommandEntry{
         .name = info.name.empty() ? detail::kebab(type.type_name) : std::string(info.name),
         .description = static_cast<const codec::struct_type_info&>(type).description,
@@ -176,12 +176,11 @@ bool add_command(R (*run)(T&, Args...), CommandInfo info = {}) {
         .destroy = [](void* value) { delete static_cast<T*>(value); },
         .decode =
             [](detail::Reader& reader, void* value) {
-                return codec::decode_value<detail::decode_config>(reader, *static_cast<T*>(value));
+                return codec::decode_value<cli::format>(reader, *static_cast<T*>(value));
             },
         .encode =
             [](detail::Writer& writer, const void* value) {
-                return codec::encode_value<detail::decode_config>(writer,
-                                                                  *static_cast<const T*>(value));
+                return codec::encode_value<cli::format>(writer, *static_cast<const T*>(value));
             },
         .callback = reinterpret_cast<void (*)()>(run),
         .invoke =
@@ -198,8 +197,8 @@ bool add_command(R (*run)(T&, Args...), CommandInfo info = {}) {
 namespace kotatsu::codec {
 
 /// A set of subcommands reads the one the argv names, into a value of its struct.
-template <typename Tag, typename Config>
-struct deserialize_visit<cli::detail::Reader, cli::detail::ErasedCommand<Tag>, Config> {
+template <typename Tag>
+struct deserialize_visit<cli::detail::Reader, cli::detail::ErasedCommand<Tag>> {
     static bool visit(cli::detail::Reader& reader, cli::detail::ErasedCommand<Tag>& out) {
         if(reader.node.kind != cli::detail::Node::Kind::Variant) {
             return reader.fail_shape("a subcommand");
@@ -213,8 +212,8 @@ struct deserialize_visit<cli::detail::Reader, cli::detail::ErasedCommand<Tag>, C
 };
 
 /// A set of subcommands writes the one it holds, as a subcommand of a variant.
-template <typename Tag, typename Config>
-struct serialize_visit<cli::detail::Writer, cli::detail::ErasedCommand<Tag>, Config> {
+template <typename Tag>
+struct serialize_visit<cli::detail::Writer, cli::detail::ErasedCommand<Tag>> {
     static bool visit(cli::detail::Writer& writer, const cli::detail::ErasedCommand<Tag>& value) {
         if(!value) {
             return writer.visit_null();

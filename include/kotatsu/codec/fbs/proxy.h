@@ -289,7 +289,7 @@ consteval field_layout field_layout_of() {
 }
 
 template <typename Object>
-using object_schema = codec::virtual_schema<Object, codec::format_config<format>>;
+using object_schema = codec::virtual_schema<Object, fbs::format>;
 
 /// The view type of a struct field slot: the type meta's resolver gives its
 /// raw type and attrs, the type the dispatch wrote. A tagged variant is that
@@ -298,7 +298,7 @@ template <typename Slot>
 consteval auto slot_view_impl() {
     using resolved = decltype(codec::detail::resolve_node<std::remove_cv_t<typename Slot::raw_type>,
                                                           typename Slot::attrs,
-                                                          codec::format_config<format>>());
+                                                          fbs::format>());
     if constexpr(std::is_same_v<typename resolved::tag_attrs, std::tuple<>>) {
         return std::type_identity<deep_clean_t<typename resolved::type>>{};
     } else {

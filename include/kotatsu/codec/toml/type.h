@@ -49,11 +49,10 @@ namespace kotatsu::codec::toml {
 /// - null: inside a table the key is omitted; inside an array it fails
 ///   (TOML arrays cannot hold null)
 /// - integers → TOML integer (int64); a uint64 above int64::max fails
-/// - float32/float64 → TOML float; nan_repr::Passthrough hands the raw
-///   value to toml++ (TOML has nan/inf literals)
+/// - float32/float64 → TOML float, NaN and the infinities as TOML's nan and inf
 /// - character → single-codepoint string (the char's value 0-255 encoded as
 ///   UTF-8); decode accepts exactly one codepoint ≤ 255
-/// - string → TOML string; one that is not UTF-8 follows Config's invalid_utf8
+/// - string → TOML string; one that is not UTF-8 follows the encode's invalid_utf8
 /// - bytes → array of integer octets; decode range-checks each into [0, 255]
 /// - enumeration → underlying integer; through codec::enum_names, the
 ///   enumerator's name
@@ -63,7 +62,7 @@ namespace kotatsu::codec::toml {
 /// - structure → table keyed by (renamed) field names
 /// - variant → shaped by the spec's tag_mode (see encode_tagged_variant in
 ///   visit/encode.h); untagged variants emit the bare payload
-struct format {
+struct format : codec::extend<codec::format> {
     /// Its documents are UTF-8 text.
     constexpr static bool utf8 = true;
 };
@@ -81,9 +80,9 @@ constexpr inline std::string_view boxed_root_key = "__value";
 /// resolves (annotations and toml-scoped reprs included), with kind_of's
 /// test, where str-like or tuple-like wins over reflection. A raw Table is
 /// its own root even though its range kind would box it.
-template <typename T>
+template <typename T, typename F = toml::format>
 constexpr bool root_table_v = [] {
-    using R = codec::resolved_repr_t<T, format>;
+    using R = codec::resolved_repr_t<T, F>;
     constexpr auto kind = meta::kind_of<R>();
     return kind == meta::type_kind::structure || kind == meta::type_kind::map ||
            std::is_same_v<R, Table>;
@@ -92,8 +91,8 @@ constexpr bool root_table_v = [] {
 /// Whether T is a nullable root (an optional or pointer with no repr of its
 /// own): absent, it is the empty document; present, the root is routed by
 /// the value it wraps.
-template <typename T>
-constexpr bool nullable_root_v = std::is_same_v<codec::resolved_repr_t<T, format>, T> &&
+template <typename T, typename F = toml::format>
+constexpr bool nullable_root_v = std::is_same_v<codec::resolved_repr_t<T, F>, T> &&
                                  (meta::kind_of<T>() == meta::type_kind::optional ||
                                   meta::kind_of<T>() == meta::type_kind::pointer);
 

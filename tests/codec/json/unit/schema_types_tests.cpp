@@ -287,10 +287,9 @@ ZEST_CASE(root_integers) {
 }
 
 ZEST_CASE(root_floats) {
-    // The default nan_repr (Passthrough) hands non-finite values to the
-    // writer, which emits null — so even the default schema admits null.
+    // The encoder fails on a float that is not finite: a number it is.
     const auto schema =
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","anyOf":[{"type":"number"},{"type":"null"}]})";
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"number"})";
     ZEXPECT(json::schema_string<float>().value() == schema);
     ZEXPECT(json::schema_string<double>().value() == schema);
 }
@@ -329,7 +328,7 @@ ZEST_CASE(scalar_wrapper_integers) {
 
 ZEST_CASE(scalar_wrapper_floats) {
     const auto schema =
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"v":{"anyOf":[{"type":"number"},{"type":"null"}]}},"required":["v"]})";
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"v":{"type":"number"}},"required":["v"]})";
     ZEXPECT(json::schema_string<s_f32>().value() == schema);
     ZEXPECT(json::schema_string<s_f64>().value() == schema);
 }
@@ -723,13 +722,13 @@ ZEST_CASE(root_internal_variant) {
                       R"("oneOf":[)"
                       R"({"type":"object",)"
                       R"("properties":{)"
-                      R"("radius":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+                      R"("radius":{"type":"number"},)"
                       R"("kind":{"const":"circle"}},)"
                       R"("required":["radius","kind"]},)"
                       R"({"type":"object",)"
                       R"("properties":{)"
-                      R"("width":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
-                      R"("height":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+                      R"("width":{"type":"number"},)"
+                      R"("height":{"type":"number"},)"
                       R"("kind":{"const":"rect"}},)"
                       R"("required":["width","height","kind"]}]})");
 }
@@ -755,7 +754,8 @@ ZEST_CASE(root_adjacent_variant) {
 
 ZEST_CASE(root_adjacent_variant_denies_other_keys) {
     // ...unless unknown fields are denied, as the decoder then does.
-    const auto result = json::schema_string<root_adjacent_variant, test::StrictConfig>().value();
+    const auto result =
+        json::schema_string<root_adjacent_variant>({.deny_unknown_fields = true}).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("oneOf":[)"
                       R"({"type":"object",)"

@@ -67,11 +67,11 @@ Error BincodeCodec::codec_error(protocol::ErrorCode code, const codec::rich_erro
 IncomingMessage BincodeCodec::parse_message(std::string payload) {
     codec::rich_error error;
     codec::scoped_context<codec::rich_error> guard(error);
-    codec::bincode::Reader reader{
+    codec::bincode::Reader<codec::bincode::format> reader{
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(payload.data()),
                                    payload.size())};
     message_envelope envelope;
-    if(!codec::decode_value<codec::default_config<>>(reader, envelope)) {
+    if(!codec::decode_value<codec::bincode::format>(reader, envelope)) {
         return IncomingParseError{
             .id = std::nullopt,
             .error = codec_error(protocol::ErrorCode::ParseError, error),
@@ -118,11 +118,11 @@ IncomingMessage BincodeCodec::parse_message(std::string payload) {
 MessageHead BincodeCodec::peek(std::string_view prefix) {
     codec::rich_error error;
     codec::scoped_context<codec::rich_error> guard(error);
-    codec::bincode::Reader reader{
+    codec::bincode::Reader<codec::bincode::format> reader{
         std::span<const std::byte>(reinterpret_cast<const std::byte*>(prefix.data()),
                                    prefix.size())};
     envelope_head head;
-    if(!codec::decode_value<codec::default_config<>>(reader, head)) {
+    if(!codec::decode_value<codec::bincode::format>(reader, head)) {
         return {};
     }
     return std::visit(

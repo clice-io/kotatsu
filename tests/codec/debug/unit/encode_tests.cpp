@@ -111,13 +111,6 @@ ZEST_CASE(float_special) {
     ZEXPECT(to_string(-std::numeric_limits<double>::infinity()) == "-inf");
 }
 
-ZEST_CASE(float_special_with_config) {
-    ZEXPECT(to_string<test::NanStringConfig>(std::numeric_limits<double>::quiet_NaN()) ==
-            R"("NaN")");
-    ZEXPECT(to_string<test::NanStringConfig>(std::numeric_limits<double>::infinity()) ==
-            R"("Infinity")");
-}
-
 ZEST_CASE(string_values) {
     ZEXPECT(to_string(std::string("hello")) == R"("hello")");
     ZEXPECT(to_string(std::string("")) == R"("")");

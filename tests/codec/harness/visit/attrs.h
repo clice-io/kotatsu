@@ -4,6 +4,7 @@
 // the config knobs shape the document, and the protocol's errors for keyed
 // documents.
 
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <map>
@@ -63,7 +64,7 @@ void attrs(const Kit<B>& kit) {
             .nested_info = {.user_name = 7, .total_score = 1.5F, .item_id = "abc"},
         };
     };
-    roundtrip<CamelConfig>(kit, "field_rename_roundtrip", nested_rename);
+    roundtrip<CamelConfig>(kit, "format_rename_all_roundtrip", nested_rename);
     auto documented = [] {
         return Documented{.id = 7, .name = "ada"};
     };
@@ -79,12 +80,12 @@ void attrs(const Kit<B>& kit) {
         });
         encodes_as<CamelConfig>(
             kit,
-            "field_rename_encodes_as_plain",
+            "format_rename_all_encodes_as_plain",
             [] { return RenameAllTarget{.user_name = 7, .total_score = 1.5F, .item_id = "abc"}; },
             [] {
                 return RenameAllTargetCamel{.userName = 7, .totalScore = 1.5F, .itemId = "abc"};
             });
-        encodes_as<CamelConfig>(kit, "field_rename_reaches_nested_structs", nested_rename, [] {
+        encodes_as<CamelConfig>(kit, "format_rename_all_reaches_nested_structs", nested_rename, [] {
             return NestedRenameTargetCamel{
                 .requestId = 1,
                 .nestedInfo = {.userName = 7, .totalScore = 1.5F, .itemId = "abc"},
@@ -96,9 +97,12 @@ void attrs(const Kit<B>& kit) {
         auto mixed_rename_plain = [] {
             return MixedRenameStructCamel{.ID = 7, .totalScore = 1.5F, .itemName = "x"};
         };
-        encodes_as<CamelConfig>(kit, "rename_beats_field_rename", mixed_rename, mixed_rename_plain);
+        encodes_as<CamelConfig>(kit,
+                                "rename_beats_format_rename_all",
+                                mixed_rename,
+                                mixed_rename_plain);
         reads<MixedRenameStruct, CamelConfig>(kit,
-                                              "rename_beats_field_rename_reads",
+                                              "rename_beats_format_rename_all_reads",
                                               mixed_rename_plain,
                                               mixed_rename);
         encodes_as(kit, "description_is_transparent", documented, [] {
@@ -361,49 +365,30 @@ void attrs(const Kit<B>& kit) {
         roundtrip(kit, "presence_matching_fields_roundtrip", matching);
     }
 
-    // omit_unstated_defaults leaves out a schema_default = false field where
-    // a field can be absent, and writes it where every field is written.
-    auto unstated = [] {
-        return WithUnstated{.id = 1, .seed = 7};
-    };
-    if constexpr(B::caps.absent_fields) {
-        encodes_as<OmitUnstatedConfig>(kit,
-                                       "omit_unstated_defaults_leaves_out_unstated_fields",
-                                       unstated,
-                                       [] { return IdOnly{.id = 1}; });
-    } else {
-        roundtrip<OmitUnstatedConfig>(kit, "omit_unstated_defaults_writes_every_field", unstated);
-    }
-
-    if constexpr(!B::caps.layout_computed) {
-        encodes_as<NanStringConfig>(
-            kit,
-            "nan_string_encodes_as_names",
-            [] { return NonFinite::typical(); },
-            [] { return NonFiniteNames{.nan = "NaN", .inf = "Infinity", .neg_inf = "-Infinity"}; });
-    }
-    // nan_repr::Null shows only where Passthrough keeps the values; where
-    // Passthrough already writes null, the two configs write alike.
+    // A float that is not finite travels where the document has room for it,
+    // and fails to encode where it does not, rather than being written as
+    // something it does not read back as.
     if constexpr(B::caps.non_finite) {
         // In fields rather than an array: toml++ 3.4.0 lays an array out by
         // the log10 of each float, which is undefined for an infinity.
         roundtrip(kit, "infinity_roundtrip", [] { return Infinities::typical(); });
-        encodes_as<NanNullConfig>(
-            kit,
-            "nan_null_encodes_as_null",
-            [] { return NonFinite::typical(); },
-            [] { return NonFiniteNulls{}; });
+        // NaN equals nothing, so the case checks each value itself.
+        kit.add("nan_roundtrip", [] {
+            auto encoded = B::encode(NonFinite::typical());
+            ZASSERT(succeeds(encoded));
+            ZEST_CONTEXT("{}: {}", B::name, B::render(*encoded));
+            NonFinite decoded{};
+            ZASSERT(succeeds(B::decode(*encoded, decoded)));
+            ZEXPECT(std::isnan(decoded.nan));
+            ZEXPECT(decoded.inf == NonFinite::typical().inf);
+            ZEXPECT(decoded.neg_inf == NonFinite::typical().neg_inf);
+        });
     } else {
-        encodes_as(
-            kit,
-            "non_finite_encodes_as_null",
-            [] { return NonFinite::typical(); },
-            [] { return NonFiniteNulls{}; });
+        write_fails(kit,
+                    "non_finite_fails",
+                    [] { return NonFinite::typical(); },
+                    {.message = "", .path = "nan"});
     }
-    write_fails<NanErrorConfig>(kit,
-                                "nan_error_fails",
-                                [] { return NonFinite::typical(); },
-                                {.message = "NaN or Infinity is not allowed", .path = "nan"});
 
     if constexpr(B::caps.self_describing) {
         reads<AliasStruct>(
@@ -547,28 +532,6 @@ void attrs(const Kit<B>& kit) {
             [] { return Point{.x = 1, .y = 2}; },
             [] { return Point{.x = 1, .y = 2}; },
             {});
-        // With detailed_error off, the unknown fields have no paths either.
-        reads_reporting<Layout, NoPathConfig>(
-            kit,
-            "unknown_fields_reported_without_path_when_detail_is_off",
-            [] {
-                return LayoutWithExtrasPlain{
-                    .id = 1,
-                    .origin = {.x = 1, .y = 2, .extra = true},
-                    .points = {{.x = 3, .y = 4, .extra = true}},
-                    .named = {},
-                    .stray = true,
-                };
-            },
-            [] {
-                return Layout{
-                    .id = 1,
-                    .origin = {.x = 1, .y = 2},
-                    .points = {{.x = 3, .y = 4}},
-                    .named = {},
-                };
-            },
-            {"unknown field 'stray'", "unknown field 'extra'", "unknown field 'extra'"});
         // A decode that fails keeps what it reported before.
         read_fails_reporting<Point>(
             kit,
@@ -669,14 +632,6 @@ void attrs(const Kit<B>& kit) {
             [] { return std::string("ReadOnly"); },
             [] { return CamelAccess::full_control; },
             {.message = "unknown enum value 'ReadOnly'", .path = "value"});
-        if constexpr(!B::caps.layout_computed) {
-            // nan_repr::String only encodes: the names do not read back. One
-            // name, so the path does not depend on the order of the keys.
-            read_in_field_fails<double, NanStringConfig>(kit,
-                                                         "nan_string_read_fails",
-                                                         [] { return std::string("NaN"); },
-                                                         {.message = "", .path = "value"});
-        }
         // A name that does not read leaves the enum as it was. `count` starts
         // as the document has it, which toml reads before `level`.
         read_fails_over(
@@ -698,10 +653,6 @@ void attrs(const Kit<B>& kit) {
                                    "nested_field_mismatch_fails",
                                    texts_for_point,
                                    {.message = "", .path = "value.x"});
-        read_in_field_fails<Point, NoPathConfig>(kit,
-                                                 "detailed_error_off_fails_without_path",
-                                                 texts_for_point,
-                                                 {.message = "", .path = ""});
         using IntOrText = std::variant<int, std::string>;
         read_in_field_fails<std::vector<int>>(kit,
                                               "element_mismatch_fails",

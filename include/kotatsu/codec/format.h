@@ -1,26 +1,43 @@
 #pragma once
 
+#include <concepts>
 #include <optional>
 #include <type_traits>
 
+#include "kotatsu/support/naming.h"
 #include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/context.h"
 
 namespace kotatsu::codec {
 
-/// How non-finite floats (NaN, ±Infinity) are serialized. The check runs
-/// after narrowing to double, upstream of the backend visitor.
-enum class nan_repr {
-    /// Hand the raw value to the backend. Binary backends store the bit
-    /// pattern and TOML has non-finite literals, but JSON does not — its
-    /// writer emits `null` for non-finite values even in this mode.
-    Passthrough,
-    /// Encode as null.
-    Null,
-    /// Encode as the strings "NaN" / "Infinity" / "-Infinity". Encode-side
-    /// only: decoding those strings back into a float is not implemented.
-    String,
-    /// Fail encoding with an error.
-    Error,
+/// How the codec maps values to a backend's documents, decided at compile time: the root of
+/// every format. A backend's format (json::format, bincode::format, ...) adds what the backend
+/// can do; a format of your own extends one and says what it changes:
+///
+///     struct lsp_format : codec::extend<json::format> {
+///         using rename_all = naming::rename_policy::lower_camel;
+///     };
+///
+/// and travels as the first template argument of the backend's entry points
+/// (`json::to_string<lsp_format>(value)`). A repr<T, F> specialization applies under F and
+/// every format that extends it.
+struct format {
+    /// How the names a type declares are spelled in a document: struct fields, enumerators
+    /// that travel as names (enum_names) and the default tags of variant alternatives. A rename
+    /// policy (naming::rename_policy); a type's own rename_all overrides it.
+    using rename_all = naming::rename_policy::identity;
+    /// The presence of every struct field nothing else gives one; unset, its kind decides.
+    constexpr static std::optional<presence_kind> presence_all = std::nullopt;
+    /// Whether documents carry names, a struct's fields and a variant's tags: true but for a
+    /// binary backend's format. A format may turn it off, never on.
+    constexpr static bool human_readable = true;
+};
+
+/// A format extending Base: what it declares hides Base's, the rest it inherits. The repr
+/// specializations of each format along the chain apply under it.
+template <typename Base>
+struct extend : Base {
+    using base = Base;
 };
 
 /// What a backend whose documents are UTF-8 text (json, toml) does with a
@@ -34,66 +51,73 @@ enum class invalid_utf8 {
     Replace,
 };
 
+/// How one encode goes, decided at run time.
+struct encode_options {
+    /// What a backend whose documents are UTF-8 text does with a string that is not UTF-8.
+    codec::invalid_utf8 invalid_utf8 = codec::invalid_utf8::Error;
+};
+
+/// How one decode goes, decided at run time.
+struct decode_options {
+    /// Fail on a key no field of the struct answers to, in every struct, as a struct's own
+    /// deny_unknown_fields does in that struct.
+    bool deny_unknown_fields = false;
+};
+
 namespace detail {
 
-struct empty_config_base {};
+const inline encode_options default_encode_options{};
+const inline decode_options default_decode_options{};
+
+/// The options of the encode under way: those its entry point was given, else the defaults.
+const inline encode_options& current_encode_options() {
+    auto* options = scoped_context<const encode_options>::try_current();
+    return options ? *options : default_encode_options;
+}
+
+/// The options of the decode under way: those its entry point was given, else the defaults.
+const inline decode_options& current_decode_options() {
+    auto* options = scoped_context<const decode_options>::try_current();
+    return options ? *options : default_decode_options;
+}
 
 }  // namespace detail
 
-// clang-format off
-#define KOTATSU_CFG_FIELD_(name, default_val)                                                      \
-    constexpr static auto name = [] {                                                              \
-        if constexpr(std::is_void_v<UserConfig>)                                                   \
-            return (default_val);                                                                   \
-        else if constexpr(requires { UserConfig::name; })                                          \
-            return UserConfig::name;                                                               \
-        else                                                                                       \
-            return (default_val);                                                                   \
-    }()
-// clang-format on
+namespace detail {
 
-/// Config template that resolves missing fields from defaults.
-/// `default_config<>` gives all defaults. `default_config<MyConfig>` fills in
-/// any fields that MyConfig does not provide.  Inherits from UserConfig so that
-/// type aliases (field_rename) are forwarded transparently.
-template <typename UserConfig = void>
-struct default_config :
-    std::conditional_t<std::is_void_v<UserConfig>, detail::empty_config_base, UserConfig> {
-    /// NaN/Infinity handling.
-    KOTATSU_CFG_FIELD_(nan_repr, kotatsu::codec::nan_repr::Passthrough);
-
-    /// Handling of a string that is not UTF-8, in a UTF-8 text document.
-    KOTATSU_CFG_FIELD_(invalid_utf8, kotatsu::codec::invalid_utf8::Error);
-
-    /// Encode: leave out the fields annotated `schema_default = false`, as
-    /// json::schema does for the documents it takes defaults from. A format
-    /// that writes every field (bincode) writes them still.
-    KOTATSU_CFG_FIELD_(omit_unstated_defaults, false);
-
-    /// Deserialize: reject unknown fields in data-driven mode.
-    KOTATSU_CFG_FIELD_(deny_unknown_fields, false);
-
-    /// The presence of every struct field its annotation leaves unset;
-    /// unset, a field's kind decides.
-    KOTATSU_CFG_FIELD_(presence_all, std::optional<codec::presence_kind>{});
-
-    /// Generate error path tracking code (prepend_field/prepend_index).
-    KOTATSU_CFG_FIELD_(detailed_error, true);
-};
-
-#undef KOTATSU_CFG_FIELD_
-
-/// True when the visitor computes the output layout statically (flatbuffers).
-/// Such backends cannot carry a codec::dynamic repr: there is no layout to
-/// compute.
 template <typename Vis>
-concept layout_computed = requires { requires Vis::layout_computed; };
+constexpr auto format_of_impl() {
+    if constexpr(requires { typename Vis::format; }) {
+        return std::type_identity<typename Vis::format>{};
+    } else {
+        return std::type_identity<void>{};
+    }
+}
 
-/// True when the visitor writes every field of a struct, whatever its
-/// presence: bincode writes the fields back to back with nothing marking
+}  // namespace detail
+
+/// The format a visitor carries, which the entry point that made it was given;
+/// void when it carries none.
+template <typename Vis>
+using format_of_t = typename decltype(detail::format_of_impl<Vis>())::type;
+
+/// True when the visitor's format computes the output layout statically
+/// (flatbuffers). Such backends cannot carry a codec::dynamic repr: there is
+/// no layout to compute.
+template <typename Vis>
+concept layout_computed = requires { requires format_of_t<Vis>::layout_computed; };
+
+/// True when the visitor's format writes every field of a struct, whatever
+/// its presence: bincode writes the fields back to back with nothing marking
 /// which are present, and fbs reads an absent slot as null, empty or zero.
 template <typename Vis>
-concept writes_every_field = requires { requires Vis::writes_every_field; };
+concept writes_every_field = requires { requires format_of_t<Vis>::writes_every_field; };
+
+/// True for the format json::schema writes the documents it takes defaults
+/// from under: it leaves out the fields annotated `schema_default = false`,
+/// wherever they sit, where a field can be absent.
+template <typename F>
+concept omits_unstated_defaults = requires { requires F::omit_unstated_defaults; };
 
 /// True when whoever drives the visitor has checked which fields the document
 /// carries (cli, which reports a missing argument itself, and whose help
@@ -102,35 +126,12 @@ concept writes_every_field = requires { requires Vis::writes_every_field; };
 template <typename Vis>
 concept presence_checked = requires { requires Vis::presence_checked; };
 
-/// Config > Vis > true. Determines text vs binary serialization strategy for user-defined types.
+/// Whether documents carry names, as the format says: a struct's fields and a
+/// variant's tags. Determines text vs binary serialization strategy for
+/// user-defined types.
 template <typename Config, typename Vis>
 constexpr bool is_human_readable() {
-    if constexpr(requires { Config::human_readable; }) {
-        return Config::human_readable;
-    } else if constexpr(requires { Vis::human_readable; }) {
-        return Vis::human_readable;
-    } else {
-        return true;
-    }
+    return Config::human_readable;
 }
-
-namespace detail {
-
-/// Whether Config's human_readable fits the visitor: a config may turn a
-/// human-readable backend's name tags off, never a binary backend's on, since
-/// a binary visitor writes no field names and a tagged variant would encode
-/// as a struct its decoder does not read.
-template <typename Config, typename Vis>
-concept human_readable_allowed =
-    !requires { Vis::human_readable; } || Vis::human_readable || !is_human_readable<Config, Vis>();
-
-template <typename Config, typename Vis>
-consteval void assert_human_readable_allowed() {
-    static_assert(human_readable_allowed<Config, Vis>,
-                  "Config::human_readable = true on a binary backend: only a human-readable "
-                  "backend's tagging can be configured, and only off");
-}
-
-}  // namespace detail
 
 }  // namespace kotatsu::codec

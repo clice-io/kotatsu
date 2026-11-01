@@ -240,13 +240,6 @@ struct TunablesHolder {
     int count;
 };
 
-/// A field whose default a schema leaves unstated.
-struct WithUnstated {
-    int id;
-    KANNOTATE(&seed, schema_default = false)
-    int seed;
-};
-
 /// Two fields answering to one name.
 KANNOTATION(AliasDup, alias = {"dup"});
 

@@ -124,6 +124,7 @@ private:
     constexpr static std::uintptr_t tag = 1;
 };
 
+template <typename Format>
 struct Reader {
     Source src;
     const char* buf_base;
@@ -132,8 +133,7 @@ struct Reader {
     /// value of; null for any other reader.
     const char* key_at = nullptr;
     constexpr static bool data_driven = true;
-    constexpr static bool human_readable = true;
-    using format = json::format;
+    using format = Format;
 
     Reader(ondemand::Document& d, const char* base, std::size_t size) :
         src(d), buf_base(base), buf_size(size) {}
@@ -414,7 +414,7 @@ struct Reader {
         }
         bool ok = true;
         while(ok && next(cursor)) {
-            Reader sub{cursor.value, buf_base, buf_size};
+            Reader<Format> sub{cursor.value, buf_base, buf_size};
             sub.key_at = cursor.key_at;
             ok = cb(cursor.key, sub);
         }
@@ -429,7 +429,7 @@ struct Reader {
         }
         bool ok = true;
         while(ok && next(cursor)) {
-            Reader sub{cursor.value, buf_base, buf_size};
+            Reader<Format> sub{cursor.value, buf_base, buf_size};
             ok = cb(sub);
         }
         return ok && !cursor.failed;
@@ -439,7 +439,7 @@ struct Reader {
     template <typename Callback>
     bool visit_map(Callback&& cb) {
         return visit_struct([&](std::string_view key, Reader& value) {
-            MapKeyReader<format> kr{key};
+            MapKeyReader<Format> kr{key};
             return cb(kr, value);
         });
     }
@@ -464,8 +464,9 @@ struct Reader {
 /// Note: json_iterator's copy constructor is explicit (to prevent accidental copies in
 /// simdjson internals), so we use direct-initialization. The copy assignment operator
 /// is defaulted and safe — unlike the move assignment which nulls the parser pointer.
+template <typename Format>
 template <typename F>
-bool Reader::try_read(F&& fn) {
+bool Reader<Format>::try_read(F&& fn) {
     rich_error discard_err;
     scoped_context<rich_error> guard(discard_err);
 
@@ -538,37 +539,42 @@ struct ParsedDocument {
 /// Decodes JSON text that has SIMDJSON_PADDING readable bytes past its end
 /// into `out`, without a copy of the text (or, in the value-returning
 /// overload, into a value-initialized T).
-template <typename Config = void, typename T>
-auto from_padded_string(padded_string_view json, T& out) -> std::expected<void, rich_error> {
+template <typename F = json::format, typename T>
+auto from_padded_string(padded_string_view json, T& out, const decode_options& options = {})
+    -> std::expected<void, rich_error> {
+    static_assert(std::derived_from<F, json::format>, "a JSON format extends json::format");
     detail::ParsedDocument document;
     KOTATSU_EXPECTED_TRY(document.parse(json));
-    Reader r{document.doc, json.data(), json.size()};
-    auto result = codec::detail::run_decode<Config>(r, out);
+    Reader<F> r{document.doc, json.data(), json.size()};
+    auto result = codec::detail::run_decode<F>(r, out, options);
     document.locate(json, result);
     return result;
 }
 
-template <typename T, typename Config = void>
+template <typename T, typename F = json::format>
     requires std::is_default_constructible_v<T>
-auto from_padded_string(padded_string_view json) -> std::expected<T, rich_error> {
+auto from_padded_string(padded_string_view json, const decode_options& options = {})
+    -> std::expected<T, rich_error> {
     auto value = T();
-    KOTATSU_EXPECTED_TRY(from_padded_string<Config>(json, value));
+    KOTATSU_EXPECTED_TRY(from_padded_string<F>(json, value, options));
     return value;
 }
 
 /// Decodes JSON text into `out` (or, in the value-returning overload, into a
-/// value-initialized T).
-template <typename Config = void, typename T>
-auto from_string(std::string_view json, T& out) -> std::expected<void, rich_error> {
+/// value-initialized T) under the format F.
+template <typename F = json::format, typename T>
+auto from_string(std::string_view json, T& out, const decode_options& options = {})
+    -> std::expected<void, rich_error> {
     padded_string padded(json);
-    return from_padded_string<Config>(padded, out);
+    return from_padded_string<F>(padded, out, options);
 }
 
-template <typename T, typename Config = void>
+template <typename T, typename F = json::format>
     requires std::is_default_constructible_v<T>
-auto from_string(std::string_view json) -> std::expected<T, rich_error> {
+auto from_string(std::string_view json, const decode_options& options = {})
+    -> std::expected<T, rich_error> {
     auto value = T();
-    KOTATSU_EXPECTED_TRY(from_string<Config>(json, value));
+    KOTATSU_EXPECTED_TRY(from_string<F>(json, value, options));
     return value;
 }
 

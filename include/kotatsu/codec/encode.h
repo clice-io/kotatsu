@@ -39,7 +39,7 @@ namespace kotatsu::codec {
 /// type of your own is represented, prefer codec::repr (or behavior::with on
 /// a field): those are visible to schema consumers (type_info, the JSON
 /// schema, the fbs views), a specialization is not.
-template <typename Vis, typename T, typename Config>
+template <typename Vis, typename T>
 struct serialize_visit {};
 
 template <typename Config, typename Vis, typename T>
@@ -78,14 +78,14 @@ namespace detail {
 
 /// Writes text, a string the value holds. A visitor writing UTF-8 text gets
 /// it checked first: one that is not UTF-8 fails, or is replaced as a decoder
-/// reads it, as Config::invalid_utf8 says. Names the program declares (field
+/// reads it, as the encode's options say. Names the program declares (field
 /// and tag names, enumerator spellings) are written as they are.
 template <typename Config, typename Vis, typename Text>
 bool encode_text(Vis& vis, const Text& text) {
     if constexpr(writes_utf8<Vis>) {
         std::string_view view(text);
         if(!is_utf8(view)) {
-            if constexpr(Config::invalid_utf8 == invalid_utf8::Replace) {
+            if(current_encode_options().invalid_utf8 == invalid_utf8::Replace) {
                 return vis.visit_str(replace_invalid_utf8(view));
             } else {
                 return scoped_context<rich_error>::fail(rich_error("invalid UTF-8 in a string"));
@@ -120,7 +120,7 @@ bool encode_enum_name(Vis& vis, const E& value) {
 
 /// Encode a value through a representation declaration (a codec::repr
 /// specialization or a behavior::with adapter): declarative to() when
-/// present, the imperative serialize<Config>() body otherwise.
+/// present, the imperative encode() body otherwise.
 template <typename Repr, typename Config, typename Vis, typename V>
 bool repr_encode(Vis& vis, const V& value) {
     using declared_t = codec::declared_repr_t<Repr>;
@@ -133,16 +133,16 @@ bool repr_encode(Vis& vis, const V& value) {
         return encode_enum_name<Repr, Config>(vis, value);
     } else if constexpr(requires { Repr::to(value); }) {
         static_assert(
-            !requires { Repr::template serialize<Config>(vis, value); },
-            "repr protocol: define to() or serialize() for encoding, not both");
+            !requires { Repr::encode(vis, value); },
+            "repr protocol: define to() or encode() for encoding, not both");
         static_assert(std::is_same_v<std::remove_cvref_t<decltype(Repr::to(value))>, declared_t>,
                       "repr protocol: to() must return the declared representation type");
         return encode_value<Config>(vis, Repr::to(value));
-    } else if constexpr(requires { Repr::template serialize<Config>(vis, value); }) {
-        return Repr::template serialize<Config>(vis, value);
+    } else if constexpr(requires { Repr::encode(vis, value); }) {
+        return Repr::encode(vis, value);
     } else {
         static_assert(dependent_false<Repr>,
-                      "repr protocol: no encode path — define to() or serialize()");
+                      "repr protocol: no encode path — define to() or encode()");
         return false;
     }
 }
@@ -262,28 +262,26 @@ bool encode_one_field(Vis& vis, const T& value) {
     using field = FieldAt<Config, I, T>;
 
     // A visitor that writes every field has nothing to mark one absent, so
-    // presence and omit_unstated_defaults omit fields only elsewhere.
-    if constexpr(!writes_every_field<Vis> && Config::omit_unstated_defaults &&
-                 !field::schema::fields[I].schema_default) {
-        return true;
-    } else {
-        if constexpr(!writes_every_field<Vis>) {
-            if(omitted<Config, I>(value)) {
-                return true;
-            }
+    // presence omits fields only elsewhere.
+    if constexpr(!writes_every_field<Vis>) {
+        if constexpr(omits_unstated_defaults<Config> && !field::schema::fields[I].schema_default) {
+            return true;
         }
-        const auto& field_ref = field::of(value);
-
-        bool ok = vis.visit_field(
-            std::integral_constant<std::size_t, I>{},
-            FieldName<field>{},
-            [&](auto& fv) -> bool {
-                return encode_with_attrs<codec::members_config_t<Config>, typename field::attrs>(
-                    fv,
-                    field_ref);
-            });
-        return trace_path<Config>(ok, field::name);
+        if(omitted<Config, I>(value)) {
+            return true;
+        }
     }
+    const auto& field_ref = field::of(value);
+
+    bool ok = vis.visit_field(
+        std::integral_constant<std::size_t, I>{},
+        FieldName<field>{},
+        [&](auto& fv) -> bool {
+            return encode_with_attrs<codec::members_config_t<Config>, typename field::attrs>(
+                fv,
+                field_ref);
+        });
+    return trace_path(ok, field::name);
 }
 
 }  // namespace detail
@@ -297,19 +295,26 @@ bool encode_value(Vis& vis, const T& value) {
     }
 }
 
+/// Encodes `value` through `vis` under the format the visitor carries: what a
+/// repr's encode() or a serialize_visit specialization calls to write the
+/// values it is made of.
+template <typename Vis, typename T>
+    requires (!std::is_void_v<format_of_t<Vis>>)
+bool encode_value(Vis& vis, const T& value) {
+    return encode_value<format_of_t<Vis>>(vis, value);
+}
+
 namespace detail {
 
 template <typename Config, typename Vis, typename T>
 bool encode_plain(Vis& vis, const T& value) {
-    if constexpr(requires(Vis& v, const T& val) {
-                     serialize_visit<Vis, T, Config>::visit(v, val);
-                 }) {
-        static_assert(!codec::has_repr<T, codec::format_of_t<Vis>>,
+    if constexpr(requires(Vis& v, const T& val) { serialize_visit<Vis, T>::visit(v, val); }) {
+        static_assert(!codec::has_repr<T, Config>,
                       "type has both a serialize_visit specialization and a codec::repr; "
                       "keep exactly one");
-        return serialize_visit<Vis, T, Config>::visit(vis, value);
-    } else if constexpr(codec::has_repr<T, codec::format_of_t<Vis>>) {
-        return repr_encode<codec::repr_for<T, codec::format_of_t<Vis>>, Config>(vis, value);
+        return serialize_visit<Vis, T>::visit(vis, value);
+    } else if constexpr(codec::has_repr<T, Config>) {
+        return repr_encode<codec::repr_for<T, Config>, Config>(vis, value);
     } else if constexpr(meta::derived_variant<T>) {
         return encode_plain<Config>(vis, static_cast<const meta::variant_base_t<T>&>(value));
     } else {
@@ -323,25 +328,6 @@ bool encode_plain(Vis& vis, const T& value) {
         } else if constexpr(meta::uint_like<T>) {
             return vis.visit_uint(value);
         } else if constexpr(kind == float32 || kind == float64) {
-            if constexpr(Config::nan_repr != nan_repr::Passthrough) {
-                // Judge the document's value, not the in-memory one: every
-                // writer narrows to double, so a finite long double beyond
-                // double's range lands in the document as infinity and must
-                // take the non-finite path here.
-                double narrowed = static_cast<double>(value);
-                if(!std::isfinite(narrowed)) {
-                    if constexpr(Config::nan_repr == nan_repr::Null) {
-                        return vis.visit_null();
-                    } else if constexpr(Config::nan_repr == nan_repr::String) {
-                        return vis.visit_str(std::isnan(narrowed) ? "NaN"
-                                             : narrowed > 0       ? "Infinity"
-                                                                  : "-Infinity");
-                    } else {
-                        return scoped_context<rich_error>::fail(
-                            rich_error("NaN or Infinity is not allowed"));
-                    }
-                }
-            }
             return vis.visit_float(value);
         } else if constexpr(meta::str_like<T> && std::is_array_v<T>) {
             // A char array need not end in a null character, so its text
@@ -416,7 +402,7 @@ bool encode_plain(Vis& vis, const T& value) {
                             return encode_value<Config>(ev, static_cast<element_t>(elem));
                         }
                     });
-                    KOTATSU_CODEC_TRY(detail::trace_path<Config>(ok, idx));
+                    KOTATSU_CODEC_TRY(detail::trace_path(ok, idx));
                     ++idx;
                 }
                 return true;
@@ -424,10 +410,10 @@ bool encode_plain(Vis& vis, const T& value) {
         } else if constexpr(kind == tuple) {
             return vis.visit_tuple(value, [&](auto& sv) -> bool {
                 return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                    return (detail::trace_path<Config>(sv.visit_element([&](auto& ev) -> bool {
+                    return (detail::trace_path(sv.visit_element([&](auto& ev) -> bool {
                                 return encode_value<Config>(ev, std::get<Is>(value));
                             }),
-                                                       Is) &&
+                                               Is) &&
                             ...);
                 }(std::make_index_sequence<std::tuple_size_v<T>>{});
             });
@@ -438,7 +424,7 @@ bool encode_plain(Vis& vis, const T& value) {
                     bool ok = mv.visit_entry(
                         [&](auto& kv) -> bool { return encode_value<Config>(kv, k); },
                         [&](auto& vv) -> bool { return encode_value<Config>(vv, v); });
-                    KOTATSU_CODEC_TRY(detail::trace_path<Config>(ok, idx));
+                    KOTATSU_CODEC_TRY(detail::trace_path(ok, idx));
                     ++idx;
                 }
                 return true;
@@ -500,13 +486,17 @@ bool encode_struct_fields(Vis& vis, const T& value) {
 namespace detail {
 
 /// A backend's encode entry point, bar building its visitor and output:
-/// encode_value under default_config<Config> inside a fresh error context.
-template <typename Config, typename Vis, typename T>
-std::expected<void, rich_error> run_encode(Vis& vis, const T& value) {
-    detail::assert_human_readable_allowed<default_config<Config>, Vis>();
+/// encode_value under the format F, with the options given, inside a fresh
+/// error context.
+template <typename F, typename Vis, typename T>
+std::expected<void, rich_error> run_encode(Vis& vis,
+                                           const T& value,
+                                           const encode_options& options = {}) {
+    static_assert(std::derived_from<F, format>, "a format extends codec::format");
     rich_error err;
     scoped_context<rich_error> guard(err);
-    if(!encode_value<default_config<Config>>(vis, value)) {
+    scoped_context<const encode_options> given(options);
+    if(!encode_value<F>(vis, value)) {
         return std::unexpected(std::move(err));
     }
     return {};
