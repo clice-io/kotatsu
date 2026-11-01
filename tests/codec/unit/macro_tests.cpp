@@ -140,14 +140,14 @@ ZEST_CASE(annotate_type_carries_extension_entries_to_plain_fields) {
 
 ZEST_CASE(annotate_works_in_a_class_template) {
     constexpr const auto& spec = meta::field_spec_of<decltype(DownstreamBox<int>::value)>;
-    ZSTATIC_EXPECT(spec.alias.names().size() == 1U);
-    ZSTATIC_EXPECT(spec.alias.names()[0] == std::string_view("v"));
+    ZSTATIC_EXPECT(spec.alias.size() == 1U);
+    ZSTATIC_EXPECT(spec.alias[0] == std::string_view("v"));
 }
 
 ZEST_CASE(annotate_field_entries_make_a_field_spec) {
     constexpr const auto& id = meta::field_spec_of<decltype(Entries::user_id)>;
     ZSTATIC_EXPECT(id.rename == std::string_view("id"));
-    ZSTATIC_EXPECT(id.alias.names()[0] == std::string_view("uid"));
+    ZSTATIC_EXPECT(id.alias[0] == std::string_view("uid"));
     ZSTATIC_EXPECT(id.description == std::string_view("Identifier."));
     ZSTATIC_EXPECT(meta::field_spec_of<decltype(Entries::internal)>.skip);
     ZSTATIC_EXPECT(meta::field_spec_of<decltype(Entries::profile)>.flatten);
@@ -172,7 +172,7 @@ ZEST_CASE(annotation_struct_entries_make_a_struct_spec) {
     constexpr const auto& shape = meta::attrs::struct_spec<ShapeTag>::value;
     ZSTATIC_EXPECT(shape.tagging == meta::tag_mode::internal);
     ZSTATIC_EXPECT(shape.tag == std::string_view("kind"));
-    ZSTATIC_EXPECT(shape.tag_names.names()[1] == std::string_view("rect"));
+    ZSTATIC_EXPECT(shape.tag_names[1] == std::string_view("rect"));
 
     constexpr const auto& strict = meta::attrs::struct_spec<StrictCamel>::value;
     ZSTATIC_EXPECT(strict.rename_all == naming::Casing::LowerCamel);

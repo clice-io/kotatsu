@@ -174,8 +174,8 @@ ZEST_CASE(outer_entries_override_inner_ones) {
     ZSTATIC_EXPECT(spec.description == "outer");
     // What only one of them says stays.
     ZSTATIC_EXPECT(spec.rename == "renamed");
-    ZSTATIC_EXPECT(spec.alias.names().size() == 1u);
-    ZSTATIC_EXPECT(spec.alias.names()[0] == "in");
+    ZSTATIC_EXPECT(spec.alias.size() == 1u);
+    ZSTATIC_EXPECT(spec.alias[0] == "in");
     ZSTATIC_EXPECT(extension_of<Probe, twice>->label == "probe");
     ZSTATIC_EXPECT(extension_of<Probe, twice>->weight == 5);
     ZSTATIC_EXPECT((tuple_has_v<typename twice::attrs, behavior::as<std::int64_t>>));
@@ -217,8 +217,8 @@ ZEST_CASE(annotation_of_an_annotation_reads_the_value_inside) {
 
 ZEST_CASE(name_lists_take_any_number_of_names) {
     constexpr const field_spec& spec = attrs::spec<ten_aliases_tag>::value;
-    ZSTATIC_EXPECT(spec.alias.names().size() == 10u);
-    ZSTATIC_EXPECT(spec.alias.names()[9] == "j");
+    ZSTATIC_EXPECT(spec.alias.size() == 10u);
+    ZSTATIC_EXPECT(spec.alias[9] == "j");
     constexpr auto names = resolve_tag_names<attrs::struct_spec<nine_names_tag>,
                                              Alt<0>,
                                              Alt<1>,

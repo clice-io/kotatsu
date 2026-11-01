@@ -262,11 +262,11 @@ using node_config_t =
 template <typename SpecAttr, typename... Ts>
 constexpr auto resolve_tag_names() {
     constexpr const struct_spec& spec = SpecAttr::value;
-    if constexpr(!spec.tag_names.names().empty()) {
-        static_assert(spec.tag_names.names().size() == sizeof...(Ts),
+    if constexpr(!spec.tag_names.empty()) {
+        static_assert(spec.tag_names.size() == sizeof...(Ts),
                       "tagged: number of custom names must match variant alternatives");
         std::array<std::string_view, sizeof...(Ts)> names{};
-        std::ranges::copy_n(spec.tag_names.names().begin(), sizeof...(Ts), names.begin());
+        std::ranges::copy_n(spec.tag_names.begin(), sizeof...(Ts), names.begin());
         return names;
     } else {
         return std::array<std::string_view, sizeof...(Ts)>{type_name<Ts>()...};

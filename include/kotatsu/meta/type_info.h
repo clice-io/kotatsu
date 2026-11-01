@@ -668,7 +668,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
 
     return field_info{
         .name = resolve_field_name<T, I, Config>(),
-        .aliases = spec.alias.names(),
+        .aliases = spec.alias,
         .offset = base_offset + meta::field_offset<T>(I),
         .physical_index = I,
         .type = type_info_of<field_t, Config>,
@@ -683,7 +683,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
         .schema_default = spec.schema_default,
         .minimum = spec.minimum,
         .maximum = spec.maximum,
-        .choices = spec.choices.names(),
+        .choices = spec.choices,
         .declared_name = meta::field_name<I, T>(),
         .extensions = extensions_of<attrs_t>,
     };

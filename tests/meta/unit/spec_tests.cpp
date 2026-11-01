@@ -150,9 +150,9 @@ ZEST_CASE(entries_fold_into_values) {
     ZSTATIC_EXPECT(spec.rename == "userId");
     ZSTATIC_EXPECT(spec.description == "User identifier.");
     ZSTATIC_EXPECT(spec.idx == 7u);
-    ZSTATIC_EXPECT(spec.alias.names().size() == 2u);
-    ZSTATIC_EXPECT(spec.alias.names()[0] == "user_id");
-    ZSTATIC_EXPECT(spec.alias.names()[1] == "uid");
+    ZSTATIC_EXPECT(spec.alias.size() == 2u);
+    ZSTATIC_EXPECT(spec.alias[0] == "user_id");
+    ZSTATIC_EXPECT(spec.alias[1] == "uid");
     ZSTATIC_EXPECT(!spec.skip);
     ZSTATIC_EXPECT(!spec.flatten);
     ZSTATIC_EXPECT(!spec.defaulted);
@@ -164,7 +164,7 @@ ZEST_CASE(entries_fold_into_what_a_schema_states) {
     constexpr const field_spec& spec = attrs::spec<schema_tag>::value;
     ZSTATIC_EXPECT(std::get<std::int64_t>(spec.minimum) == 1);
     ZSTATIC_EXPECT(std::get<double>(spec.maximum) == 2.5);
-    ZSTATIC_EXPECT(spec.choices.names()[1] == "on");
+    ZSTATIC_EXPECT(spec.choices[1] == "on");
     ZSTATIC_EXPECT(!spec.schema_default);
     // Unset, a field states its default and no bounds.
     ZSTATIC_EXPECT(attrs::spec<full_tag>::value.schema_default);
@@ -303,8 +303,8 @@ ZEST_CASE(struct_entries_fold_into_values_and_derive_tagging) {
     constexpr const struct_spec& internal = attrs::struct_spec<internal_struct_tag>::value;
     ZSTATIC_EXPECT(internal.tagging == tag_mode::internal);
     ZSTATIC_EXPECT(internal.tag == "kind");
-    ZSTATIC_EXPECT(internal.tag_names.names().size() == 2u);
-    ZSTATIC_EXPECT(internal.tag_names.names()[1] == "rect");
+    ZSTATIC_EXPECT(internal.tag_names.size() == 2u);
+    ZSTATIC_EXPECT(internal.tag_names[1] == "rect");
 
     constexpr const struct_spec& adjacent = attrs::struct_spec<adjacent_struct_tag>::value;
     ZSTATIC_EXPECT(adjacent.tagging == tag_mode::adjacent);

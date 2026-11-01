@@ -420,7 +420,7 @@ public:
         std::vector<std::string_view> active(reading.active.begin(),
                                              reading.active.begin() + index);
         std::vector<std::uint32_t> origin(reading.origin.begin(), reading.origin.begin() + index);
-        for(auto token: arg.spec.forward.names()) {
+        for(auto token: arg.spec.forward) {
             active.push_back(reading.expansions.emplace_back(token));
             origin.push_back(reading.origin[index]);
         }

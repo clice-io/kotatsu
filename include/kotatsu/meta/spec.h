@@ -35,20 +35,9 @@ enum class skip_when : std::uint8_t {
 };
 
 /// The names an entry lists, such as a field's aliases: a view of the ones its annotation
-/// keeps, as many as it wrote.
-class name_list {
-public:
-    constexpr name_list() = default;
-
-    constexpr explicit name_list(std::span<const std::string_view> names) : list(names) {}
-
-    constexpr std::span<const std::string_view> names() const {
-        return list;
-    }
-
-private:
-    std::span<const std::string_view> list;
-};
+/// keeps, as many as it wrote. A member of this type in an extension's spec takes them as
+/// `entry = {"a", "b"}` (member_proxy).
+using name_list = std::span<const std::string_view>;
 
 /// A number a schema states, exact whatever its type: an integer of either
 /// sign, or a floating-point value; monostate when unset.
@@ -426,7 +415,7 @@ constexpr void validate_spec(const field_spec& spec) {
     if(spec.skip && spec.flatten) {
         KOTATSU_THROW("annotation: skip and flatten conflict");
     }
-    auto aliases = spec.alias.names();
+    auto aliases = spec.alias;
     for(std::size_t i = 0; i < aliases.size(); ++i) {
         if(aliases[i].empty()) {
             KOTATSU_THROW("annotation: empty alias name");
@@ -452,7 +441,7 @@ constexpr void validate_spec(const field_spec& spec) {
             KOTATSU_THROW("annotation: a bound that is not finite");
         }
     }
-    auto choices = spec.choices.names();
+    auto choices = spec.choices;
     for(std::size_t i = 0; i < choices.size(); ++i) {
         for(std::size_t j = i + 1; j < choices.size(); ++j) {
             if(choices[i] == choices[j]) {
@@ -480,7 +469,7 @@ constexpr struct_spec finalize_struct_spec(struct_spec spec) {
         spec.tagging = tag_mode::internal;
     }
 
-    auto names = spec.tag_names.names();
+    auto names = spec.tag_names;
     if(!names.empty() && spec.tagging == tag_mode::none) {
         KOTATSU_THROW("annotation: tag_names requires a tagging mode");
     }
