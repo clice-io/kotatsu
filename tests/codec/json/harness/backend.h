@@ -23,19 +23,19 @@ struct Json {
     };
     using Encoded = std::string;
 
-    template <typename Config = void, typename T>
+    template <typename Settings = void, typename T>
     static auto encode(const T& value) {
         codec::json::encode_options options;
-        static_cast<codec::encode_options&>(options) = kit_encode_options<Config>();
-        return codec::json::to_string<kit_format_t<codec::json::format, Config>>(value, options);
+        static_cast<codec::encode_options&>(options) = kit_encode_options<Settings>();
+        return codec::json::to_string<kit_format_t<codec::json::format, Settings>>(value, options);
     }
 
-    template <typename Config = void, typename T>
+    template <typename Settings = void, typename T>
     static auto decode(const Encoded& text, T& out) {
-        return codec::json::from_string<kit_format_t<codec::json::format, Config>>(
+        return codec::json::from_string<kit_format_t<codec::json::format, Settings>>(
             text,
             out,
-            kit_decode_options<Config>());
+            kit_decode_options<Settings>());
     }
 
     /// Indented; text that does not parse, which only a broken encoder

@@ -33,19 +33,19 @@ struct Toml {
     };
     using Encoded = std::string;
 
-    template <typename Config = void, typename T>
+    template <typename Settings = void, typename T>
     static auto encode(const T& value) {
-        return codec::toml::to_string<kit_format_t<codec::toml::format, Config>>(
+        return codec::toml::to_string<kit_format_t<codec::toml::format, Settings>>(
             value,
-            kit_encode_options<Config>());
+            kit_encode_options<Settings>());
     }
 
-    template <typename Config = void, typename T>
+    template <typename Settings = void, typename T>
     static auto decode(const Encoded& text, T& out) {
-        return codec::toml::from_string<kit_format_t<codec::toml::format, Config>>(
+        return codec::toml::from_string<kit_format_t<codec::toml::format, Settings>>(
             text,
             out,
-            kit_decode_options<Config>());
+            kit_decode_options<Settings>());
     }
 
     /// The text as it is: toml++ already writes one key per line.

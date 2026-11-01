@@ -28,19 +28,19 @@ struct Dyn {
     };
     using Encoded = codec::dyn::Value;
 
-    template <typename Config = void, typename T>
+    template <typename Settings = void, typename T>
     static auto encode(const T& value) {
-        return codec::dyn::to_dyn<kit_format_t<codec::format, Config>>(
+        return codec::dyn::to_dyn<kit_format_t<codec::format, Settings>>(
             value,
-            kit_encode_options<Config>());
+            kit_encode_options<Settings>());
     }
 
-    template <typename Config = void, typename T>
+    template <typename Settings = void, typename T>
     static auto decode(const Encoded& tree, T& out) {
-        return codec::dyn::from_dyn<kit_format_t<codec::format, Config>>(
+        return codec::dyn::from_dyn<kit_format_t<codec::format, Settings>>(
             tree,
             out,
-            kit_decode_options<Config>());
+            kit_decode_options<Settings>());
     }
 
     /// The debug codec's indented text, which every tree has. It shows no

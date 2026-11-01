@@ -2,7 +2,7 @@
 
 // Settings fixtures for the codec's own knobs and options, which the kit
 // applies through kit_format_t and kit_encode_options / kit_decode_options.
-// The rename_all settings live in tests/fixtures/configs.h.
+// The rename_all settings live in tests/fixtures/settings.h.
 
 #include <optional>
 
@@ -12,20 +12,20 @@
 
 namespace kotatsu::test {
 
-struct StrictConfig {
+struct StrictSettings {
     constexpr static bool deny_unknown_fields = true;
 };
 
-struct AllOptionalConfig {
+struct AllOptionalSettings {
     constexpr static std::optional<codec::presence_kind> presence_all =
         codec::presence_kind::optional;
 };
 
-struct ReplaceUTF8Config {
+struct ReplaceUTF8Settings {
     constexpr static auto invalid_utf8 = codec::invalid_utf8::Replace;
 };
 
-struct NotHumanReadableConfig {
+struct NotHumanReadableSettings {
     constexpr static bool human_readable = false;
 };
 

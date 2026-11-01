@@ -34,14 +34,15 @@ struct Bincode {
     };
     using Encoded = std::vector<std::byte>;
 
-    template <typename Config = void, typename T>
+    template <typename Settings = void, typename T>
     static auto encode(const T& value) {
-        return codec::bincode::to_bytes<kit_format_t<codec::bincode::format, Config>>(value);
+        return codec::bincode::to_bytes<kit_format_t<codec::bincode::format, Settings>>(value);
     }
 
-    template <typename Config = void, typename T>
+    template <typename Settings = void, typename T>
     static auto decode(const Encoded& bytes, T& out) {
-        return codec::bincode::from_bytes<kit_format_t<codec::bincode::format, Config>>(bytes, out);
+        return codec::bincode::from_bytes<kit_format_t<codec::bincode::format, Settings>>(bytes,
+                                                                                          out);
     }
 
     static std::string render(const Encoded& bytes) {

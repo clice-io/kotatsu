@@ -11,7 +11,7 @@
 #include <variant>
 #include <vector>
 
-#include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/json/harness/schema.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/codec/attribute.h"

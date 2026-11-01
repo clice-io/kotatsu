@@ -15,14 +15,14 @@
 #include <vector>
 
 #include "codec/harness/fixtures/attrs.h"
-#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/scalars.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/visit/kit.h"
 #include "fixtures/attrs.h"
-#include "fixtures/configs.h"
+#include "fixtures/settings.h"
 
 namespace kotatsu::test {
 
@@ -64,7 +64,7 @@ void attrs(const Kit<B>& kit) {
             .nested_info = {.user_name = 7, .total_score = 1.5F, .item_id = "abc"},
         };
     };
-    roundtrip<CamelConfig>(kit, "format_rename_all_roundtrip", nested_rename);
+    roundtrip<CamelSettings>(kit, "format_rename_all_roundtrip", nested_rename);
     auto documented = [] {
         return Documented{.id = 7, .name = "ada"};
     };
@@ -78,33 +78,37 @@ void attrs(const Kit<B>& kit) {
                 {.USER_NAME = 7, .DISPLAY_NAME = "ada"}
             };
         });
-        encodes_as<CamelConfig>(
+        encodes_as<CamelSettings>(
             kit,
             "format_rename_all_encodes_as_plain",
             [] { return RenameAllTarget{.user_name = 7, .total_score = 1.5F, .item_id = "abc"}; },
             [] {
                 return RenameAllTargetCamel{.userName = 7, .totalScore = 1.5F, .itemId = "abc"};
             });
-        encodes_as<CamelConfig>(kit, "format_rename_all_reaches_nested_structs", nested_rename, [] {
-            return NestedRenameTargetCamel{
-                .requestId = 1,
-                .nestedInfo = {.userName = 7, .totalScore = 1.5F, .itemId = "abc"},
-            };
-        });
+        encodes_as<CamelSettings>(
+            kit,
+            "format_rename_all_reaches_nested_structs",
+            nested_rename,
+            [] {
+                return NestedRenameTargetCamel{
+                    .requestId = 1,
+                    .nestedInfo = {.userName = 7, .totalScore = 1.5F, .itemId = "abc"},
+                };
+            });
         auto mixed_rename = [] {
             return MixedRenameStruct{.user_id = 7, .total_score = 1.5F, .item_name = "x"};
         };
         auto mixed_rename_plain = [] {
             return MixedRenameStructCamel{.ID = 7, .totalScore = 1.5F, .itemName = "x"};
         };
-        encodes_as<CamelConfig>(kit,
-                                "rename_beats_format_rename_all",
-                                mixed_rename,
-                                mixed_rename_plain);
-        reads<MixedRenameStruct, CamelConfig>(kit,
-                                              "rename_beats_format_rename_all_reads",
-                                              mixed_rename_plain,
-                                              mixed_rename);
+        encodes_as<CamelSettings>(kit,
+                                  "rename_beats_format_rename_all",
+                                  mixed_rename,
+                                  mixed_rename_plain);
+        reads<MixedRenameStruct, CamelSettings>(kit,
+                                                "rename_beats_format_rename_all_reads",
+                                                mixed_rename_plain,
+                                                mixed_rename);
         encodes_as(kit, "description_is_transparent", documented, [] {
             return StrictIdName{.id = 7, .name = "ada"};
         });
@@ -409,7 +413,7 @@ void attrs(const Kit<B>& kit) {
         // Under presence_all = optional every field may be absent, in the
         // structs nested inside too, and keeps its value.
         using Sections = std::map<std::string, Ints>;
-        reads<Tunables, AllOptionalConfig>(
+        reads<Tunables, AllOptionalSettings>(
             kit,
             "presence_all_config_reads_what_is_there",
             [] {
@@ -569,10 +573,10 @@ void attrs(const Kit<B>& kit) {
             "unknown_field_fails",
             [] { return RenameTargetWithExtra{.user_name = 7, .display_name = "ada", .extra = 1}; },
             {.message = "unknown field 'extra'", .path = ""});
-        read_fails<Point, StrictConfig>(kit,
-                                        "unknown_field_under_config_fails",
-                                        with_extra,
-                                        {.message = "unknown field 'extra'", .path = ""});
+        read_fails<Point, StrictSettings>(kit,
+                                          "unknown_field_under_config_fails",
+                                          with_extra,
+                                          {.message = "unknown field 'extra'", .path = ""});
         read_fails<SnakeStrict>(kit,
                                 "rename_all_on_field_denies_unknown_fails",
                                 [] {

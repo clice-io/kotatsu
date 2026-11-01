@@ -8,23 +8,23 @@
 
 namespace kotatsu::test {
 
-struct CamelConfig {
+struct CamelSettings {
     using rename_all = naming::rename_policy::lower_camel;
 };
 
-struct PascalConfig {
+struct PascalSettings {
     using rename_all = naming::rename_policy::upper_camel;
 };
 
-struct UpperSnakeConfig {
+struct UpperSnakeSettings {
     using rename_all = naming::rename_policy::upper_snake;
 };
 
-struct LowerSnakeConfig {
+struct LowerSnakeSettings {
     using rename_all = naming::rename_policy::lower_snake;
 };
 
-struct IdentityConfig {
+struct IdentitySettings {
     using rename_all = naming::rename_policy::identity;
 };
 

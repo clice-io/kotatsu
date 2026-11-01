@@ -3,7 +3,7 @@
 #include <variant>
 
 #include "fixtures/attrs.h"
-#include "fixtures/configs.h"
+#include "fixtures/settings.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/type_info.h"
@@ -78,7 +78,7 @@ ZEST_SUITE(codec_schema_rename_all) {
 ZEST_CASE(rename_policies) {
     // lower_camel
     {
-        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::CamelConfig>::fields;
+        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::CamelSettings>::fields;
         ZSTATIC_EXPECT(fields[0].name == "userName");
         ZSTATIC_EXPECT(fields[1].name == "totalScore");
         ZSTATIC_EXPECT(fields[2].name == "itemId");
@@ -86,7 +86,7 @@ ZEST_CASE(rename_policies) {
 
     // upper_camel (PascalCase)
     {
-        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::PascalConfig>::fields;
+        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::PascalSettings>::fields;
         ZSTATIC_EXPECT(fields[0].name == "UserName");
         ZSTATIC_EXPECT(fields[1].name == "TotalScore");
         ZSTATIC_EXPECT(fields[2].name == "ItemId");
@@ -94,7 +94,8 @@ ZEST_CASE(rename_policies) {
 
     // UPPER_SNAKE
     {
-        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::UpperSnakeConfig>::fields;
+        constexpr auto& fields =
+            virtual_schema<fx::RenameAllTarget, fx::UpperSnakeSettings>::fields;
         ZSTATIC_EXPECT(fields[0].name == "USER_NAME");
         ZSTATIC_EXPECT(fields[1].name == "TOTAL_SCORE");
         ZSTATIC_EXPECT(fields[2].name == "ITEM_ID");
@@ -102,7 +103,8 @@ ZEST_CASE(rename_policies) {
 
     // lower_snake (identity for already-snake_case)
     {
-        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::LowerSnakeConfig>::fields;
+        constexpr auto& fields =
+            virtual_schema<fx::RenameAllTarget, fx::LowerSnakeSettings>::fields;
         ZSTATIC_EXPECT(fields[0].name == "user_name");
         ZSTATIC_EXPECT(fields[1].name == "total_score");
         ZSTATIC_EXPECT(fields[2].name == "item_id");
@@ -110,7 +112,7 @@ ZEST_CASE(rename_policies) {
 
     // identity
     {
-        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::IdentityConfig>::fields;
+        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::IdentitySettings>::fields;
         ZSTATIC_EXPECT(fields[0].name == "user_name");
         ZSTATIC_EXPECT(fields[1].name == "total_score");
         ZSTATIC_EXPECT(fields[2].name == "item_id");
@@ -126,20 +128,20 @@ ZEST_CASE(rename_policies) {
 }
 
 ZEST_CASE(explicit_rename_overrides_rename_all) {
-    constexpr auto& fields = virtual_schema<fx::MixedRenameStruct, fx::CamelConfig>::fields;
+    constexpr auto& fields = virtual_schema<fx::MixedRenameStruct, fx::CamelSettings>::fields;
     ZSTATIC_EXPECT(fields[0].name == "ID");          // explicit rename wins
     ZSTATIC_EXPECT(fields[1].name == "totalScore");  // rename_all applied
     ZSTATIC_EXPECT(fields[2].name == "itemName");    // rename_all applied
 }
 
 ZEST_CASE(field_count_unchanged) {
-    ZSTATIC_EXPECT((virtual_schema<fx::RenameAllTarget, fx::CamelConfig>::fields.size()) == 3U);
-    ZSTATIC_EXPECT((virtual_schema<fx::MixedRenameStruct, fx::CamelConfig>::fields.size()) == 3U);
+    ZSTATIC_EXPECT((virtual_schema<fx::RenameAllTarget, fx::CamelSettings>::fields.size()) == 3U);
+    ZSTATIC_EXPECT((virtual_schema<fx::MixedRenameStruct, fx::CamelSettings>::fields.size()) == 3U);
 }
 
 ZEST_CASE(alias_unaffected_by_rename_all) {
     // Under camelCase rename_all, the canonical name changes but alias stays fixed
-    constexpr auto& fields = virtual_schema<fx::AliasRenameAllStruct, fx::CamelConfig>::fields;
+    constexpr auto& fields = virtual_schema<fx::AliasRenameAllStruct, fx::CamelSettings>::fields;
 
     // canonical name: "id" (reflection name, not renamed) -> camelCase -> "id" (single word)
     ZSTATIC_EXPECT(fields[0].name == "id");
@@ -157,7 +159,7 @@ ZEST_CASE(rename_all_takes_a_policy_type) {
     ZSTATIC_EXPECT(fields[0].name == "user-name");
     ZSTATIC_EXPECT(fields[1].name == "item-id");
     // The annotation's policy stands over the format's.
-    ZSTATIC_EXPECT(virtual_schema<DashedFields, fx::CamelConfig>::fields[1].name == "item-id");
+    ZSTATIC_EXPECT(virtual_schema<DashedFields, fx::CamelSettings>::fields[1].name == "item-id");
 }
 
 ZEST_CASE(policy_type_spells_enumerators_and_tags) {

@@ -17,9 +17,9 @@
 #include <variant>
 #include <vector>
 
-#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "codec/harness/visit/kit.h"
@@ -431,7 +431,7 @@ void probing(const Kit<B>& kit) {
         "object_input_reaches_adjacent_nested_variant",
         [] { return AdjacentPlain<int>{.t = "number", .c = 1}; },
         [] { return std::variant<AdjacentShape, std::string>{AdjacentShape{1}}; });
-    reads_in_field<std::variant<ExternalShape, bool>, NotHumanReadableConfig>(
+    reads_in_field<std::variant<ExternalShape, bool>, NotHumanReadableSettings>(
         kit,
         "not_human_readable_probes_tagged_by_alternatives",
         [] { return 1; },

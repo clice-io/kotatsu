@@ -7,13 +7,13 @@
 #include <vector>
 
 #include "codec/harness/fixtures/attrs.h"
-#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "fixtures/attrs.h"
-#include "fixtures/configs.h"
+#include "fixtures/settings.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/compare.h"
 #include "kotatsu/codec/toml/toml.h"

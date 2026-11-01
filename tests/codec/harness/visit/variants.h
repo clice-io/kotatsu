@@ -13,11 +13,11 @@
 #include <vector>
 
 #include "codec/harness/fixtures/attrs.h"
-#include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "codec/harness/visit/kit.h"
-#include "fixtures/configs.h"
+#include "fixtures/settings.h"
 #include "fixtures/structs.h"
 
 namespace kotatsu::test {
@@ -140,12 +140,12 @@ void variants(const Kit<B>& kit) {
             [] {
                 return Field<std::map<std::string, Rect>>{{{"RECT", {.width = 2, .height = 3}}}};
             });
-        encodes_as<CamelConfig>(
+        encodes_as<CamelSettings>(
             kit,
             "default_tag_names_follow_the_config_rename",
             [] { return DefaultNamed{Circle{.radius = 1.5}}; },
             [] { return Field<std::map<std::string, Circle>>{{{"circle", {.radius = 1.5}}}}; });
-        roundtrip<CamelConfig>(kit, "renamed_default_tag_names_roundtrip", [] {
+        roundtrip<CamelSettings>(kit, "renamed_default_tag_names_roundtrip", [] {
             return DefaultNamed{
                 Rect{.width = 2, .height = 3}
             };
@@ -163,7 +163,7 @@ void variants(const Kit<B>& kit) {
         };
     };
     if constexpr(B::caps.self_describing) {
-        encodes_as<NotHumanReadableConfig>(kit, "not_human_readable_ignores_tags", holder, bare);
+        encodes_as<NotHumanReadableSettings>(kit, "not_human_readable_ignores_tags", holder, bare);
     } else {
         encodes_as(kit, "tags_ignored_encodes_as_bare", holder, bare);
     }
@@ -318,7 +318,7 @@ void variants(const Kit<B>& kit) {
             },
             [] { return Field<AdjacentShape>{AdjacentShape(Point{.x = 1, .y = 2})}; },
             {"unknown field 'extra' at value.c"});
-        read_in_field_fails<AdjacentShape, StrictConfig>(
+        read_in_field_fails<AdjacentShape, StrictSettings>(
             kit,
             "adjacent_extra_field_denied_fails",
             [] { return AdjacentWithExtraPlain{.t = "number", .extra = true, .c = 5}; },
@@ -449,7 +449,7 @@ void variants(const Kit<B>& kit) {
             "internal_extra_field_ignored",
             [] { return CircleWithExtraPlain{.kind = "circle", .radius = 1, .extra = "x"}; },
             [] { return InternalShape(Circle{.radius = 1}); });
-        reads_in_field<InternalShape, CamelConfig>(
+        reads_in_field<InternalShape, CamelSettings>(
             kit,
             "internal_alternatives_follow_rename_all",
             [] { return SegmentCamelPlain{.kind = "segment", .lineWidth = 7}; },

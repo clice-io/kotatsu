@@ -14,7 +14,7 @@
 #include <variant>
 #include <vector>
 
-#include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/enums.h"
 #include "kotatsu/zest/zest.h"

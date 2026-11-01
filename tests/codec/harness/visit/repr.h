@@ -11,8 +11,8 @@
 #include <variant>
 #include <vector>
 
-#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/repr.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/visit/kit.h"
 #include "fixtures/repr.h"

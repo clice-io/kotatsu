@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "codec/harness/fixtures/attrs.h"
-#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
+#include "codec/harness/fixtures/settings.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/json/schema.h"
