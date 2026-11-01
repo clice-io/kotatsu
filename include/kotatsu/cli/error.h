@@ -33,6 +33,8 @@ struct Error {
         UnexpectedArgument,
         /// A required option or positional argument left out.
         MissingRequired,
+        /// Arguments of two alternatives of a cli::exclusive field: `--spec` beside `<LOCATOR>`.
+        Conflict,
         /// A word where a subcommand goes that names none.
         UnknownSubcommand,
         /// No subcommand where one is required.
@@ -50,6 +52,9 @@ struct Error {
     /// The subcommands the argv names before the elements at fault, outermost first:
     /// {"index", "stats"}; empty for an error in the options' own arguments.
     std::vector<std::string> subcommands = {};
+    /// For an unknown option or subcommand, the name of the command's closest to it, which a
+    /// rendering offers: "--verbose" for "--verbos"; empty when none is close.
+    std::string suggestion = {};
 
     /// `message` under the argv, the elements at fault marked, as a program reports it:
     ///
@@ -58,7 +63,8 @@ struct Error {
     ///              ^~~~
     ///       invalid integer value: many
     ///
-    /// `message` alone for an empty argv. In color, it reads "error [argv[1]]" and draws the
+    /// The suggestion follows the message: "...; did you mean '--verbose'?". `message` alone
+    /// for an empty argv. In color, it reads "error [argv[1]]" and draws the
     /// mark.
     std::string render(const Style& style = {}) const;
 };

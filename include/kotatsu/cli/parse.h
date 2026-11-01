@@ -299,16 +299,15 @@ std::string invalid_enum_value(std::string_view text) {
 
 }  // namespace detail
 
-/// parse(), then `visit(options, given)` for each argument it read, in order: what the options
-/// alone do not keep, such as the order of the occurrences of two options.
+/// parse_into(), then `visit(options, given)` for each argument it read, in order: what the
+/// options alone do not keep, such as the order of the occurrences of two options.
 template <typename T, typename Visit>
     requires std::invocable<Visit&, T&, const Given&>
-std::expected<T, Error> parse(string_list_ref argv, Visit visit) {
+std::expected<void, Error> parse_into(T& options, string_list_ref argv, Visit visit) {
     detail::Reading reading;
     if(auto err = detail::read(detail::command_of<T>(), argv, reading)) {
         return std::unexpected(std::move(*err));
     }
-    T options{};
     const detail::Node* last = nullptr;
     codec::rich_error error;
     codec::scoped_context<codec::rich_error> guard(error);
@@ -318,6 +317,25 @@ std::expected<T, Error> parse(string_list_ref argv, Visit visit) {
     }
     for(const auto& given: reading.given) {
         visit(options, given);
+    }
+    return {};
+}
+
+/// Parses `argv` onto `options`, which keep what the argv does not give: options read from a
+/// config file first, say, that the command line then overrides. A list the argv gives is
+/// replaced, not added to. On an error, `options` may hold part of what was read.
+template <typename T>
+std::expected<void, Error> parse_into(T& options, string_list_ref argv) {
+    return parse_into(options, argv, [](T&, const Given&) {});
+}
+
+/// parse(), then `visit(options, given)` for each argument it read, in order.
+template <typename T, typename Visit>
+    requires std::invocable<Visit&, T&, const Given&>
+std::expected<T, Error> parse(string_list_ref argv, Visit visit) {
+    T options{};
+    if(auto read = parse_into(options, argv, std::move(visit)); !read) {
+        return std::unexpected(std::move(read.error()));
     }
     return options;
 }

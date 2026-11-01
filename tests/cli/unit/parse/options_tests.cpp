@@ -63,6 +63,15 @@ struct Files {
     <std::vector<std::string>> files;
 };
 
+struct Tuned {
+    KOTATSU_ANNOTATE(minimum = 1, maximum = 64, description = "Workers")
+    <int> jobs = 4;
+    KOTATSU_ANNOTATE(choices = {"fast", "slow"})
+    <std::string> mode = "fast";
+    std::vector<std::string> include;
+    std::string name;
+};
+
 template <typename T = Options>
 std::expected<T, Error> parse_line(std::string_view line) {
     return cli::parse<T>(test::split(line));
@@ -256,6 +265,76 @@ ZEST_CASE(dash_word_in_a_command_without_options_fails) {
     auto files = parse_line<Files>("--force a");
     ZASSERT(!files.has_value());
     ZEXPECT(files.error().kind == Error::Kind::UnknownOption);
+}
+
+ZEST_CASE(parse_into_keeps_what_the_argv_leaves_out) {
+    Tuned tuned;
+    tuned.jobs = 8;
+    tuned.name = std::string("from-config");
+    tuned.include = std::vector<std::string>{"a"};
+    ZASSERT(cli::parse_into(tuned, test::split("--include b --mode slow")).has_value());
+    ZEXPECT(tuned.jobs == 8);
+    ZEXPECT(std::string(tuned.name) == "from-config");
+    ZEXPECT(std::string(tuned.mode) == "slow");
+    // A list given replaces the one there.
+    ZEXPECT(tuned.include == (std::vector<std::string>{"b"}));
+}
+
+ZEST_CASE(value_below_the_minimum_fails) {
+    auto tuned = parse_line<Tuned>("--jobs 0");
+    ZASSERT(!tuned.has_value());
+    ZEXPECT(tuned.error().kind == Error::Kind::InvalidValue);
+    ZEXPECT(tuned.error().message == "value 0 is below the minimum 1");
+    ZEXPECT(tuned.error().begin == 1U);
+}
+
+ZEST_CASE(value_above_the_maximum_fails) {
+    auto tuned = parse_line<Tuned>("--jobs=65");
+    ZASSERT(!tuned.has_value());
+    ZEXPECT(tuned.error().message == "value 65 is above the maximum 64");
+}
+
+ZEST_CASE(value_of_no_choice_fails) {
+    auto tuned = parse_line<Tuned>("--mode medium");
+    ZASSERT(!tuned.has_value());
+    ZEXPECT(tuned.error().message == "invalid value 'medium' (supported: fast, slow)");
+}
+
+ZEST_CASE(bounded_value_of_no_number_fails_as_its_type) {
+    auto tuned = parse_line<Tuned>("--jobs many");
+    ZASSERT(!tuned.has_value());
+    ZEXPECT(tuned.error().message == "invalid integer value: many");
+}
+
+ZEST_CASE(unknown_option_suggests_the_closest) {
+    auto options = parse_line("--must y --verbos");
+    ZASSERT(!options.has_value());
+    ZEXPECT(options.error().suggestion == "--verbose");
+    ZEXPECT(
+        options.error().render().ends_with("unknown option '--verbos'; did you mean '--verbose'?"));
+}
+
+ZEST_CASE(unknown_option_with_a_value_suggests_by_its_name) {
+    auto options = parse_line("--must y --jbos=3");
+    ZASSERT(!options.has_value());
+    ZEXPECT(options.error().suggestion == "--jobs");
+}
+
+ZEST_CASE(unknown_option_far_from_all_suggests_none) {
+    auto options = parse_line("--must y --zzzzzzzz");
+    ZASSERT(!options.has_value());
+    ZEXPECT(options.error().suggestion.empty());
+}
+
+ZEST_CASE(usage_says_defaults_choices_and_ranges) {
+    const auto entries = cli::usage_entries<Tuned>();
+    ZASSERT(entries.size() == 4U);
+    ZEXPECT(entries[0].default_value == "4");
+    ZEXPECT(entries[0].range == "1..64");
+    ZEXPECT(entries[1].usage == "--mode <fast|slow>");
+    ZEXPECT(entries[1].default_value == "fast");
+    ZEXPECT(entries[2].default_value.empty());
+    ZEXPECT(cli::usage<Tuned>("tuned").contains("Workers [default: 4] [range: 1..64]"));
 }
 
 };  // ZEST_SUITE(cli_parse_options)

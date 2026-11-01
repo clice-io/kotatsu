@@ -74,8 +74,8 @@ ZEST_CASE(usage_lists_options_with_their_help) {
             "\n"
             "Options:\n"
             "  -h|--help                       display this help and exit\n"
-            "  --mode <pipe|socket>            Server mode\n"
-            "  -j|--jobs <N>                   Workers\n"
+            "  --mode <pipe|socket>            Server mode [default: pipe]\n"
+            "  -j|--jobs <N>                   Workers [default: 0]\n"
             "  --scope <value>                 Scopes to look in (may be repeated)\n"
             "  --record <value>                no description provided\n"
             "  --workspace <value>             Project root directory\n"
@@ -101,7 +101,7 @@ ZEST_CASE(usage_lists_subcommands_with_their_descriptions) {
 
 ZEST_CASE(long_usage_puts_its_help_below) {
     const auto usage = cli::usage<Serve>("serve", Style{.help_column = 10});
-    ZEXPECT(usage.contains("  --mode <pipe|socket>\n            Server mode\n"));
+    ZEXPECT(usage.contains("  --mode <pipe|socket>\n            Server mode [default: pipe]\n"));
 }
 
 ZEST_CASE(color_look_paints_headings) {

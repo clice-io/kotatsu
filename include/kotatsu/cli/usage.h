@@ -1,12 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "kotatsu/cli/error.h"
 #include "kotatsu/cli/parse.h"
+#include "kotatsu/cli/to_argv.h"
 
 namespace kotatsu::cli {
 
@@ -29,13 +31,36 @@ struct UsageEntry {
     std::string group = {};
     /// Whether every occurrence of it counts, which its help then says.
     bool repeatable = false;
+    /// The value it has when the argv leaves it out, as an argv writes it: "0", "a, b"; empty
+    /// for none, a flag, an empty list or an empty optional.
+    std::string default_value = {};
+    /// The numbers it takes, from its field's minimum and maximum: "1..64", "1..", "..64";
+    /// empty when unbounded.
+    std::string range = {};
 };
 
 namespace detail {
 
-std::vector<UsageEntry> usage_entries(const Command& command);
+/// The options `T` declares as a default-constructed `T` holds them, written as to_argv() writes
+/// them, their texts kept in `texts`.
+template <typename T>
+Node defaults_of(std::deque<std::string>& texts) {
+    Node root;
+    Writer writer{root, texts};
+    codec::rich_error error;
+    codec::scoped_context<codec::rich_error> guard(error);
+    if(!codec::encode_value<decode_config>(writer, T{})) {
+        return Node{};
+    }
+    return root;
+}
 
-std::string usage(const Command& command, std::string_view usage_line, const Style& style);
+std::vector<UsageEntry> usage_entries(const Command& command, const Node& defaults);
+
+std::string usage(const Command& command,
+                  const Node& defaults,
+                  std::string_view usage_line,
+                  const Style& style);
 
 }  // namespace detail
 
@@ -43,14 +68,16 @@ std::string usage(const Command& command, std::string_view usage_line, const Sty
 /// lays out its own help from.
 template <typename T>
 std::vector<UsageEntry> usage_entries() {
-    return detail::usage_entries(detail::command_of<T>());
+    std::deque<std::string> texts;
+    return detail::usage_entries(detail::command_of<T>(), detail::defaults_of<T>(texts));
 }
 
 /// The usage of a program taking the options `T` declares: what `T` is (its static
 /// `description`), `usage: <usage_line>`, its options, by group, and its subcommands.
 template <typename T>
 std::string usage(std::string_view usage_line, const Style& style = {}) {
-    return detail::usage(detail::command_of<T>(), usage_line, style);
+    std::deque<std::string> texts;
+    return detail::usage(detail::command_of<T>(), detail::defaults_of<T>(texts), usage_line, style);
 }
 
 }  // namespace kotatsu::cli

@@ -37,6 +37,12 @@ struct ArgNum {
     constexpr bool operator==(const ArgNum&) const = default;
 };
 
+namespace detail {
+
+struct CommandRegistry;
+
+}  // namespace detail
+
 /// What a field's `cli::` annotation entries say about it on a command line, beside the
 /// `description` its help is. A field without them is an option all the same, named after it.
 struct ArgSpec {
@@ -67,6 +73,12 @@ struct ArgSpec {
     meta::name_list forward = {};
     /// Whether a usage leaves it out: an option or argument for other programs, not people.
     bool hidden = false;
+    /// For a std::variant of structs, whether its alternatives are groups of the command's own
+    /// arguments of which the argv gives one, rather than subcommands: the argv picks the one
+    /// whose argument it gives first, and an argument of another then conflicts.
+    bool exclusive = false;
+    /// For a cli::Commands field, which sets it, the subcommands files added to its set.
+    const detail::CommandRegistry& (*commands)() = nullptr;
     /// For a field of subcommands, the words of those a usage leaves out.
     meta::name_list hidden_sub = {};
 
@@ -93,6 +105,7 @@ struct ArgSpec {
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::arg_num> arg_num{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::forward> forward{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::hidden> hidden{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::exclusive> exclusive{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::hidden_sub> hidden_sub{};
 
 /// A field that stands for other arguments: its names, given, are read as `cli::forward`.

@@ -119,6 +119,34 @@ struct InnerTwice {
     std::variant<Twice> command;
 };
 
+struct Choice {
+    int a = 0;
+};
+
+struct Nested {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<Choice, Serve>> inner;
+};
+
+/// An exclusive field inside an alternative of another.
+struct NestedExclusive {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<Nested, Choice>> outer;
+};
+
+struct ExclusiveScalar {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <int> value;
+};
+
+/// Two alternatives naming an option the same.
+struct ExclusiveTwice {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<Choice, Inner>> one;
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<Inner, Serve>> two;
+};
+
 ZEST_SUITE(cli_declaration) {
 
 ZEST_CASE(sound_options_compile) {
@@ -179,6 +207,19 @@ ZEST_CASE(mistake_in_a_subcommand_does_not_compile) {
 
 ZEST_CASE(options_of_no_struct_do_not_compile) {
     ZSTATIC_EXPECT(!declared<std::tuple<int>>);
+}
+
+ZEST_CASE(nested_exclusive_fields_do_not_compile) {
+    ZSTATIC_EXPECT(declared<Nested>);
+    ZSTATIC_EXPECT(!declared<NestedExclusive>);
+}
+
+ZEST_CASE(exclusive_scalar_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<ExclusiveScalar>);
+}
+
+ZEST_CASE(alternatives_naming_an_option_the_same_do_not_compile) {
+    ZSTATIC_EXPECT(!declared<ExclusiveTwice>);
 }
 
 };  // ZEST_SUITE(cli_declaration)

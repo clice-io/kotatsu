@@ -131,15 +131,19 @@ kotatsu_library(
         "src/cli/ansi.h",
         "src/cli/command.cc",
         "src/cli/command.h",
+        "src/cli/commands.cc",
         "src/cli/error_at.h",
         "src/cli/parse.cc",
+        "src/cli/report.cc",
         "src/cli/to_argv.cc",
         "src/cli/usage.cc",
     ],
     hdrs = [
         "include/kotatsu/cli/cli.h",
+        "include/kotatsu/cli/commands.h",
         "include/kotatsu/cli/detail/declaration.h",
         "include/kotatsu/cli/parse.h",
+        "include/kotatsu/cli/report.h",
         "include/kotatsu/cli/spec.h",
         "include/kotatsu/cli/to_argv.h",
         "include/kotatsu/cli/usage.h",
@@ -149,6 +153,7 @@ kotatsu_library(
         ":codec",
         ":meta",
         ":support",
+        ":sys",
     ],
 )
 

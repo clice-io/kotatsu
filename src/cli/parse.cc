@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cerrno>
 #include <charconv>
+#include <compare>
 #include <cstdlib>
 #include <format>
 #include <optional>
@@ -11,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "command.h"
@@ -39,6 +41,102 @@ std::string input_args_text(ArgNum num) {
         return std::format("at least {} {}", num.min, noun);
     }
     return std::format("{} to {} input arguments", num.min, num.max);
+}
+
+/// `names` joined by ", ".
+std::string join_names(std::span<const std::string_view> names) {
+    std::string joined;
+    for(auto name: names) {
+        joined += joined.empty() ? "" : ", ";
+        joined += name;
+    }
+    return joined;
+}
+
+/// `text` as the number it reads as, exactly; monostate when it reads as none.
+meta::schema_number number_of(std::string_view text) {
+    if(std::int64_t value = 0; !read_number(text, value)) {
+        return value;
+    }
+    if(std::uint64_t value = 0; !read_number(text, value)) {
+        return value;
+    }
+    if(double value = 0; !read_number(text, value)) {
+        return value;
+    }
+    return std::monostate{};
+}
+
+/// Edits from `a` to `b`: insertions, deletions, substitutions and swaps of two neighbours.
+std::size_t edit_distance(std::string_view a, std::string_view b) {
+    std::vector<std::vector<std::size_t>> d(a.size() + 1, std::vector<std::size_t>(b.size() + 1));
+    for(std::size_t i = 0; i <= a.size(); ++i) {
+        d[i][0] = i;
+    }
+    for(std::size_t j = 0; j <= b.size(); ++j) {
+        d[0][j] = j;
+    }
+    for(std::size_t i = 1; i <= a.size(); ++i) {
+        for(std::size_t j = 1; j <= b.size(); ++j) {
+            const std::size_t cost = a[i - 1] == b[j - 1] ? 0 : 1;
+            d[i][j] = std::min({d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost});
+            if(i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) {
+                d[i][j] = std::min(d[i][j], d[i - 2][j - 2] + 1);
+            }
+        }
+    }
+    return d[a.size()][b.size()];
+}
+
+/// The name of `names` closest to `word`, without the '=' or ',' a name takes its value after,
+/// when it is a third of `word` or fewer edits away; empty when none is.
+template <typename Names>
+std::string closest(std::string_view word, const Names& names) {
+    std::string best;
+    std::size_t best_distance = std::max<std::size_t>(1, word.size() / 3) + 1;
+    for(const auto& spelling: names) {
+        std::string_view name = spelling;
+        if(name.ends_with('=') || name.ends_with(',')) {
+            name.remove_suffix(1);
+        }
+        const auto distance = edit_distance(word, name);
+        if(distance < best_distance) {
+            best_distance = distance;
+            best = name;
+        }
+    }
+    return best;
+}
+
+/// The alternatives of `exclusive`, each by the usage of its first argument: "<LOCATOR> or
+/// --spec <value>".
+std::string alternatives_text(const Command& command, const Exclusive& exclusive) {
+    std::string text;
+    for(const auto alternative: exclusive.alternatives) {
+        for(const auto& arg: command.args) {
+            auto group = arg.group;
+            while(group != no_group && group != alternative) {
+                group = command.groups[group].parent;
+            }
+            if(group == alternative) {
+                text += text.empty() ? "" : " or ";
+                text += arg.usage;
+                break;
+            }
+        }
+    }
+    return text;
+}
+
+/// The words of the subcommands a usage lists, which a suggestion may name.
+std::vector<std::string_view> shown_names(const Subcommands& subcommands) {
+    std::vector<std::string_view> names;
+    for(std::size_t i = 0; i < subcommands.names.size(); ++i) {
+        if(!subcommands.hidden[i]) {
+            names.push_back(subcommands.names[i]);
+        }
+    }
+    return names;
 }
 
 /// An error at the elements of `argv` that [begin, end) of `reading.active` come from: the
@@ -93,6 +191,8 @@ public:
         std::string prefix;
         /// The occurrences of each argument of the command so far.
         std::vector<std::uint32_t> occurrences;
+        /// For each exclusive field, the argument that chose the alternative it holds.
+        std::vector<std::uint32_t> chosen_by;
         /// The positional argument the next input goes to.
         std::size_t positional = 0;
         /// Where the last argument read ended, in `reading.active`.
@@ -110,13 +210,16 @@ public:
     }
 
     /// Stores `values`, read from [begin, end) of `reading.active`, into argument `arg_index`
-    /// of `level`.
-    void store(Level& level,
-               std::uint32_t arg_index,
-               std::span<const std::string_view> values,
-               std::uint32_t begin,
-               std::uint32_t end) {
+    /// of `level`, or says why its field's constraints refuse one.
+    std::optional<Error> store(Level& level,
+                               std::uint32_t arg_index,
+                               std::span<const std::string_view> values,
+                               std::uint32_t begin,
+                               std::uint32_t end) {
         const auto& arg = level.command->args[arg_index];
+        if(auto err = choose(level, arg_index, begin, end)) {
+            return err;
+        }
         ++level.occurrences[arg_index];
         Node& node = node_of(level, arg);
         // A value marks its own element when it is one, else the whole argument: "-Ia" or
@@ -137,12 +240,16 @@ public:
             case Shape::Flag: break;
             case Shape::Count: ++node.count; break;
             case Shape::Value:
-                if(arg.list) {
-                    for(auto value: values) {
-                        node.items.push_back(text(value));
+                for(auto value: values) {
+                    auto read = text(value);
+                    if(auto err = check_constraints(*arg.field, read)) {
+                        return err;
                     }
-                } else {
-                    node = text(values.front());
+                    if(arg.list) {
+                        node.items.push_back(std::move(read));
+                    } else {
+                        node = std::move(read);
+                    }
                 }
                 break;
             case Shape::Tuple: {
@@ -168,21 +275,128 @@ public:
         }
         reading.given.push_back(Given{.path = level.prefix + arg.path,
                                       .values = std::vector(values.begin(), values.end())});
+        return std::nullopt;
+    }
+
+    /// The error of `value`, a Text node, when the minimum, maximum or choices of `field`
+    /// refuse it. A value that is no number is left to the decode, which says so.
+    std::optional<Error> check_constraints(const meta::field_info& field, const Node& value) const {
+        if(!field.choices.empty() &&
+           std::ranges::find(field.choices, value.text) == field.choices.end()) {
+            return error(Error::Kind::InvalidValue,
+                         std::format("invalid value '{}' (supported: {})",
+                                     value.text,
+                                     join_names(field.choices)),
+                         value.begin,
+                         value.end);
+        }
+        const bool bounded = !std::holds_alternative<std::monostate>(field.minimum) ||
+                             !std::holds_alternative<std::monostate>(field.maximum);
+        if(!bounded) {
+            return std::nullopt;
+        }
+        const auto number = number_of(value.text);
+        if(meta::compare_numbers(number, field.minimum) == std::partial_ordering::less) {
+            return error(Error::Kind::InvalidValue,
+                         std::format("value {} is below the minimum {}",
+                                     value.text,
+                                     number_text(field.minimum)),
+                         value.begin,
+                         value.end);
+        }
+        if(meta::compare_numbers(number, field.maximum) == std::partial_ordering::greater) {
+            return error(Error::Kind::InvalidValue,
+                         std::format("value {} is above the maximum {}",
+                                     value.text,
+                                     number_text(field.maximum)),
+                         value.begin,
+                         value.end);
+        }
+        return std::nullopt;
+    }
+
+    /// The exclusive field whose alternative other than the one `arg` is in `level` holds, or
+    /// no_exclusive.
+    static std::uint32_t excluding(const Level& level, const Arg& arg) {
+        const auto& command = *level.command;
+        for(auto group = arg.group; group != no_group; group = command.groups[group].parent) {
+            const auto& g = command.groups[group];
+            if(g.exclusive == no_exclusive) {
+                continue;
+            }
+            const Node* node = find_node(*level.root, command.exclusives[g.exclusive].keys);
+            if(node != nullptr && node->count != g.alternative) {
+                return g.exclusive;
+            }
+        }
+        return no_exclusive;
+    }
+
+    /// The error of argument `arg_index`, read from [begin, end), given beside the argument
+    /// that chose another alternative of exclusive field `exclusive`.
+    Error conflict(const Level& level,
+                   std::uint32_t arg_index,
+                   std::uint32_t exclusive,
+                   std::uint32_t begin,
+                   std::uint32_t end) const {
+        const auto& args = level.command->args;
+        return error(Error::Kind::Conflict,
+                     std::format("{} cannot be used with {}",
+                                 args[arg_index].usage,
+                                 args[level.chosen_by[exclusive]].usage),
+                     begin,
+                     end);
+    }
+
+    /// Makes the alternatives argument `arg_index` is in held by their exclusive fields, or says
+    /// which argument of another alternative it conflicts with.
+    std::optional<Error>
+        choose(Level& level, std::uint32_t arg_index, std::uint32_t begin, std::uint32_t end) {
+        const auto& command = *level.command;
+        if(const auto other = excluding(level, command.args[arg_index]); other != no_exclusive) {
+            return conflict(level, arg_index, other, begin, end);
+        }
+        for(auto group = command.args[arg_index].group; group != no_group;
+            group = command.groups[group].parent) {
+            const auto& g = command.groups[group];
+            if(g.exclusive == no_exclusive) {
+                continue;
+            }
+            Node& variant =
+                make_node(*level.root, command.exclusives[g.exclusive].keys, Node::Kind::Variant);
+            if(variant.items.empty()) {
+                variant.count = g.alternative;
+                variant.begin = begin;
+                variant.end = end;
+                variant.items.push_back(Node{.kind = Node::Kind::Object});
+                level.chosen_by[g.exclusive] = arg_index;
+            }
+        }
+        return std::nullopt;
     }
 
     /// Stores element `index` of `reading.active`, a positional argument, into `level`.
     std::optional<Error> store_input(Level& level, std::uint32_t index) {
         const auto& command = *level.command;
         const auto& spelling = reading.active[index];
+        // The first positional argument of an alternative its exclusive field does not hold.
+        std::optional<std::pair<std::uint32_t, std::uint32_t>> excluded;
         while(level.positional < command.positionals.size()) {
             const auto arg_index = command.positionals[level.positional];
             const auto& arg = command.args[arg_index];
+            if(const auto other = excluding(level, arg); other != no_exclusive) {
+                excluded = excluded.value_or(std::pair{arg_index, other});
+                ++level.positional;
+                continue;
+            }
             if(!arg.list || level.occurrences[arg_index] < arg.spec.arg_num.max) {
                 level.positional += arg.list ? 0 : 1;
-                store(level, arg_index, std::span(&spelling, 1), index, index + 1);
-                return std::nullopt;
+                return store(level, arg_index, std::span(&spelling, 1), index, index + 1);
             }
             ++level.positional;
+        }
+        if(excluded) {
+            return conflict(level, excluded->first, excluded->second, index, index + 1);
         }
         if(command.positionals.empty()) {
             return error(Error::Kind::UnexpectedArgument,
@@ -224,16 +438,7 @@ public:
         const auto& command = *level.command;
         const auto at_end = level.cursor;
         auto present = [&](std::uint32_t group) {
-            // A group is there when the argv gives it something, or when it is no optional
-            // and the group around it is there.
-            while(group != no_group) {
-                const auto& g = command.groups[group];
-                if(g.optional) {
-                    return find_node(*level.root, g.keys) != nullptr;
-                }
-                group = g.parent;
-            }
-            return true;
+            return detail::present(command, *level.root, group);
         };
         for(std::uint32_t i = 0; i < command.args.size(); ++i) {
             const auto& arg = command.args[i];
@@ -260,6 +465,16 @@ public:
                          at_end,
                          at_end);
         }
+        for(const auto& exclusive: command.exclusives) {
+            if(exclusive.required && present(exclusive.group) &&
+               find_node(*level.root, exclusive.keys) == nullptr) {
+                return error(
+                    Error::Kind::MissingRequired,
+                    std::format("one of {} is required", alternatives_text(command, exclusive)),
+                    at_end,
+                    at_end);
+            }
+        }
         if(command.subcommands && !command.subcommands->optional &&
            !given_subcommand(level, *command.subcommands) && present(command.subcommands->group)) {
             return error(Error::Kind::MissingSubcommand, "subcommand is required", at_end, at_end);
@@ -274,6 +489,7 @@ public:
                     .root = &root,
                     .prefix = std::move(prefix),
                     .occurrences = std::vector<std::uint32_t>(command.args.size()),
+                    .chosen_by = std::vector<std::uint32_t>(command.exclusives.size(), no_arg),
                     .cursor = start};
         std::uint32_t base = start;
         while(true) {
@@ -289,14 +505,21 @@ public:
                 const auto next = base + parsed.next_index;
                 const auto span_end = std::max(next, index + 1);
                 if(parsed.id == command.table->unknown_option_id) {
-                    return error(Error::Kind::UnknownOption,
-                                 std::format("unknown option '{}'", parsed.spelling),
-                                 index,
-                                 span_end);
+                    auto err = error(Error::Kind::UnknownOption,
+                                     std::format("unknown option '{}'", parsed.spelling),
+                                     index,
+                                     span_end);
+                    // What precedes '=' is the name: "--verbos=1".
+                    const auto name = std::string_view(parsed.spelling)
+                                          .substr(0, std::string_view(parsed.spelling).find('='));
+                    err.suggestion = closest(name, command.spellings);
+                    return err;
                 }
                 if(parsed.id == command.table->input_option_id) {
                     if(parsed.spelling == "--" && command.parse_options.dash_dash_packing) {
-                        store(level, *command.rest, parsed.values, index, span_end);
+                        if(auto err = store(level, *command.rest, parsed.values, index, span_end)) {
+                            return err;
+                        }
                         level.cursor = span_end;
                         continue;
                     }
@@ -329,10 +552,13 @@ public:
                         // A word no positional argument takes names a subcommand, even
                         // where one may be left out.
                         if(command.positionals.empty()) {
-                            return error(Error::Kind::UnknownSubcommand,
-                                         std::format("unknown subcommand '{}'", parsed.spelling),
-                                         index,
-                                         index + 1);
+                            auto err =
+                                error(Error::Kind::UnknownSubcommand,
+                                      std::format("unknown subcommand '{}'", parsed.spelling),
+                                      index,
+                                      index + 1);
+                            err.suggestion = closest(parsed.spelling, shown_names(subcommands));
+                            return err;
                         }
                     }
                     if(auto err = store_input(level, index)) {
@@ -350,7 +576,9 @@ public:
                     expanded = true;
                     break;
                 }
-                store(level, arg_index, parsed.values, index, span_end);
+                if(auto err = store(level, arg_index, parsed.values, index, span_end)) {
+                    return err;
+                }
                 level.cursor = span_end;
                 if(arg.spec.stop) {
                     stopped = true;

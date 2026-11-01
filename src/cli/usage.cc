@@ -4,6 +4,7 @@
 #include <format>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include "ansi.h"
@@ -42,12 +43,60 @@ std::string help_of(const UsageEntry& entry) {
     if(entry.repeatable) {
         help += " (may be repeated)";
     }
+    if(!entry.default_value.empty()) {
+        help += std::format(" [default: {}]", entry.default_value);
+    }
+    if(!entry.range.empty()) {
+        help += std::format(" [range: {}]", entry.range);
+    }
     return help;
+}
+
+/// The numbers `field` takes: "1..64", "1..", "..64"; empty when unbounded.
+std::string range_of(const meta::field_info& field) {
+    const auto minimum = number_text(field.minimum);
+    const auto maximum = number_text(field.maximum);
+    return minimum.empty() && maximum.empty() ? "" : std::format("{}..{}", minimum, maximum);
+}
+
+/// The text of a value node as an argv gives it: a tuple's elements joined by ' '.
+std::string text_of(const Node& node) {
+    if(node.kind != Node::Kind::List) {
+        return std::string(node.text);
+    }
+    std::string text;
+    for(const auto& item: node.items) {
+        text += text.empty() ? "" : " ";
+        text += item.text;
+    }
+    return text;
+}
+
+/// The default of `arg` as `defaults` holds it: empty for a flag, a count, an alias, an empty
+/// list, an empty optional and an alternative the default does not hold.
+std::string default_of(const Command& command, const Arg& arg, const Node& defaults) {
+    if(arg.shape == Shape::Flag || arg.shape == Shape::Count || arg.shape == Shape::Alias ||
+       !present(command, defaults, arg.group)) {
+        return {};
+    }
+    const Node* node = find_node(defaults, arg.keys);
+    if(node == nullptr || node->kind == Node::Kind::Flag) {
+        return {};
+    }
+    if(!arg.list) {
+        return text_of(*node);
+    }
+    std::string text;
+    for(const auto& item: node->items) {
+        text += text.empty() ? "" : ", ";
+        text += text_of(item);
+    }
+    return text;
 }
 
 }  // namespace
 
-std::vector<UsageEntry> usage_entries(const Command& command) {
+std::vector<UsageEntry> usage_entries(const Command& command, const Node& defaults) {
     std::vector<UsageEntry> entries;
     for(const auto& arg: command.args) {
         if(arg.spec.hidden) {
@@ -61,6 +110,8 @@ std::vector<UsageEntry> usage_entries(const Command& command) {
             .group = std::string(heading(command, arg.group)),
             .repeatable =
                 !arg.spec.positional && !arg.spec.rest && (arg.list || arg.shape == Shape::Count),
+            .default_value = default_of(command, arg, defaults),
+            .range = range_of(*arg.field),
         });
     }
     if(command.subcommands) {
@@ -79,8 +130,11 @@ std::vector<UsageEntry> usage_entries(const Command& command) {
     return entries;
 }
 
-std::string usage(const Command& command, std::string_view usage_line, const Style& style) {
-    const auto entries = usage_entries(command);
+std::string usage(const Command& command,
+                  const Node& defaults,
+                  std::string_view usage_line,
+                  const Style& style) {
+    const auto entries = usage_entries(command, defaults);
     std::string out;
     if(!command.type->description.empty()) {
         out += style.color ? paint(ansi_bold, command.type->description)

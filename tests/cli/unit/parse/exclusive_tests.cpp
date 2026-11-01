@@ -1,0 +1,132 @@
+// Exclusive fields: a variant of groups of the command's own arguments, the one the argv gives
+// an argument of first held, and an argument of another a conflict.
+
+#include <expected>
+#include <optional>
+#include <string>
+#include <variant>
+#include <vector>
+
+#include "cli/harness/argv.h"
+#include "kotatsu/cli/cli.h"
+#include "kotatsu/zest/zest.h"
+
+namespace kotatsu::cli {
+
+namespace {
+
+struct ByLocator {
+    constexpr static std::string_view description = "by locator";
+    KOTATSU_ANNOTATE(cli::positional = true, cli::meta_var = "<LOCATOR>")
+    <std::string> locator;
+    KOTATSU_ANNOTATE(cli::positional = true, cli::meta_var = "<NEW-NAME>")
+    <std::string> new_name;
+};
+
+struct BySpec {
+    constexpr static std::string_view description = "by spec";
+    KOTATSU_ANNOTATE(cli::required = true)
+    <std::string> spec;
+    bool dry = false;
+};
+
+struct Rename {
+    bool verbose = false;
+    KOTATSU_ANNOTATE(cli::exclusive = true, description = "Target")
+    <std::variant<ByLocator, BySpec>> target;
+};
+
+struct Pick {
+    KOTATSU_ANNOTATE(cli::exclusive = true, cli::required = true)
+    <std::variant<BySpec, ByLocator>> target;
+};
+
+struct Maybe {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::optional<std::variant<BySpec, ByLocator>>> target;
+};
+
+template <typename T>
+std::expected<T, Error> parse_line(std::string_view line) {
+    return cli::parse<T>(line.empty() ? std::vector<std::string>{} : test::split(line));
+}
+
+ZEST_SUITE(cli_parse_exclusive) {
+
+ZEST_CASE(option_picks_its_alternative) {
+    auto rename = parse_line<Rename>("--spec s --dry");
+    ZASSERT(rename.has_value());
+    ZASSERT(rename->target.index() == 1U);
+    ZEXPECT(std::string(std::get<BySpec>(rename->target).spec) == "s");
+    ZEXPECT(std::get<BySpec>(rename->target).dry);
+}
+
+ZEST_CASE(positional_picks_its_alternative) {
+    auto rename = parse_line<Rename>("old new --verbose");
+    ZASSERT(rename.has_value());
+    ZASSERT(rename->target.index() == 0U);
+    ZEXPECT(std::string(std::get<ByLocator>(rename->target).new_name) == "new");
+    ZEXPECT(rename->verbose);
+}
+
+ZEST_CASE(option_of_another_alternative_fails) {
+    auto rename = parse_line<Rename>("old new --spec s");
+    ZASSERT(!rename.has_value());
+    ZEXPECT(rename.error().kind == Error::Kind::Conflict);
+    ZEXPECT(rename.error().message == "--spec <value> cannot be used with <LOCATOR>");
+    ZEXPECT(rename.error().begin == 2U);
+}
+
+ZEST_CASE(positional_of_another_alternative_fails) {
+    auto rename = parse_line<Rename>("--spec s old");
+    ZASSERT(!rename.has_value());
+    ZEXPECT(rename.error().kind == Error::Kind::Conflict);
+    ZEXPECT(rename.error().message == "<LOCATOR> cannot be used with --spec <value>");
+    ZEXPECT(rename.error().begin == 2U);
+}
+
+ZEST_CASE(required_option_of_the_held_alternative_left_out_fails) {
+    auto rename = parse_line<Rename>("--dry");
+    ZASSERT(!rename.has_value());
+    ZEXPECT(rename.error().message == "required option --spec <value> is missing");
+}
+
+ZEST_CASE(nothing_given_keeps_the_initial_alternative) {
+    auto rename = parse_line<Rename>("--verbose");
+    ZASSERT(rename.has_value());
+    ZEXPECT(rename->target.index() == 0U);
+}
+
+ZEST_CASE(required_field_left_out_fails) {
+    auto pick = parse_line<Pick>("");
+    ZASSERT(!pick.has_value());
+    ZEXPECT(pick.error().kind == Error::Kind::MissingRequired);
+    ZEXPECT(pick.error().message == "one of --spec <value> or <LOCATOR> is required");
+}
+
+ZEST_CASE(optional_field_left_out_is_empty) {
+    auto maybe = parse_line<Maybe>("");
+    ZASSERT(maybe.has_value());
+    ZEXPECT(!maybe->target.has_value());
+}
+
+ZEST_CASE(held_alternative_writes_alone) {
+    Rename rename;
+    rename.target = BySpec{.spec = std::string("s"), .dry = true};
+    ZEXPECT(cli::to_argv(rename) == (std::vector<std::string>{"--spec=s", "--dry"}));
+    auto back = cli::parse<Rename>(cli::to_argv(rename));
+    ZASSERT(back.has_value());
+    ZEXPECT(back->target.index() == 1U);
+}
+
+ZEST_CASE(usage_heads_each_alternative) {
+    const auto usage = cli::usage<Rename>("rename");
+    ZEXPECT(usage.contains("Target, one of: by locator:\n  <LOCATOR>"));
+    ZEXPECT(usage.contains("Target, one of: by spec:\n  --spec <value>"));
+}
+
+};  // ZEST_SUITE(cli_parse_exclusive)
+
+}  // namespace
+
+}  // namespace kotatsu::cli
