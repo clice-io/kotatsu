@@ -2,7 +2,7 @@
 
 `kotatsu::cli` reads a command line into a plain struct: every field is an
 option named after it, its type says what it takes, and the `cli::` entries of
-a `KOTATSU_ANNOTATE`, the macro [codec](codec.md) uses, say anything more. A
+a `KANNOTATE`, the macro [codec](codec.md) uses, say anything more. A
 nested struct is a group of options, a `std::optional` of one is given all or
 nothing, and a `std::variant` of structs is a set of subcommands. `cli::parse`
 is a [codec](codec.md) decoder over the argv, so a type with a
@@ -34,13 +34,12 @@ usable alone. cli reads argv only; config files are [codec](codec.md)'s.
 
 namespace cli = kotatsu::cli;
 
+KANNOTATE_TYPE(struct Clone, description = "Clone a repository");
 struct Clone {
-    constexpr static std::string_view description = "Clone a repository";
-
     cli::Help help;
-    KOTATSU_ANNOTATE(cli::positional = true, cli::meta_var = "<REPO>", description = "Repository URL")
+    KANNOTATE(cli::positional = true, cli::meta_var = "<REPO>", description = "Repository URL")
     <std::string> repo;
-    KOTATSU_ANNOTATE(cli::names = {"-b", "--branch"}, cli::meta_var = "<BRANCH>")
+    KANNOTATE(cli::names = {"-b", "--branch"}, cli::meta_var = "<BRANCH>")
     <std::optional<std::string>> branch;
     std::uint32_t depth = 0;
 };
@@ -65,7 +64,7 @@ Adapted from `tests/cli/unit/parse/positional_tests.cpp` and `tests/cli/unit/usa
 
 | Header                                          | Contents                                                                                                                                                            |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [cli.h](../include/kotatsu/cli/cli.h)           | The headers below but the table, and `KOTATSU_ANNOTATE`                                                                                                             |
+| [cli.h](../include/kotatsu/cli/cli.h)           | The headers below but the table, `KANNOTATE` and `KANNOTATE_TYPE`                                                                                                   |
 | [spec.h](../include/kotatsu/cli/spec.h)         | `ArgSpec`, what a field's `cli::` entries say (`names`, `positional`, `rest`, `count`, `required`, `hidden`, `exclusive`, ...), `Help`, `Alias`                     |
 | [parse.h](../include/kotatsu/cli/parse.h)       | `parse<T>`, from a `string_list_ref` or any range of strings, and `parse_into`, onto options already held, each with a visit of the arguments it reads, and `Given` |
 | [commands.h](../include/kotatsu/cli/commands.h) | `Commands<Tag>`, a field of subcommands files add with `add_command`, which calling runs                                                                            |

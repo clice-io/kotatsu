@@ -10,6 +10,7 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/schema.h"
 #include "kotatsu/codec/json/schema.h"
+#include "kotatsu/codec/macro.h"
 
 namespace kotatsu::meta {
 
@@ -21,6 +22,18 @@ using test::inner;
 using test::with_enum;
 
 struct empty_struct {};
+
+KANNOTATE_TYPE(struct described_inner, description = "An inner thing");
+
+struct described_inner {
+    std::int32_t x;
+};
+
+KANNOTATE_TYPE(struct described_outer, description = "An outer thing");
+
+struct described_outer {
+    described_inner inner;
+};
 
 struct single_field {
     std::int32_t x;
@@ -154,6 +167,14 @@ ZEST_CASE(struct_empty) {
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("type":"object",)"
                       R"("properties":{}})");
+}
+
+ZEST_CASE(struct_states_its_description) {
+    const auto result = json::schema_string<described_outer>().value();
+    ZEXPECT(zest::contains(result, R"("type":"object","description":"An outer thing")"));
+    // Its own definition, and the field of its type, which says nothing of its own.
+    ZEXPECT(zest::contains(result, R"("type":"object","description":"An inner thing")"));
+    ZEXPECT(zest::contains(result, R"(,"description":"An inner thing"})"));
 }
 
 ZEST_CASE(struct_single_field) {
@@ -582,7 +603,6 @@ ZEST_CASE(self_referential_struct) {
     static struct_type_info self_info = {
         {type_kind::structure, "self_ref"},
         false,
-        false,
         {},
     };
     const static optional_type_info opt_self = {
@@ -590,13 +610,8 @@ ZEST_CASE(self_referential_struct) {
         []() -> const type_info& { return self_info; },
     };
     const static field_info self_fields[] = {
-        {"value", {}, 0, 0, type_info_of<std::int32_t>, false, false, false},
-        {"next",
-         {},
-         0, 1,
-         []() -> const type_info& { return opt_self; },
-         false, false,
-         false, true},
+        {"value", {}, 0, type_info_of<std::int32_t>, false, false},
+        {"next", {}, 0, []() -> const type_info& { return opt_self; }, false, false, true},
     };
     self_info.fields = {self_fields, 2};
 
@@ -611,14 +626,13 @@ ZEST_CASE(self_referential_struct) {
 
 ZEST_CASE(field_ordering_stability) {
     const static field_info ordered_fields[] = {
-        {"zebra",  {}, 0, 0, type_info_of<std::string>,  false, false, false},
-        {"alpha",  {}, 0, 1, type_info_of<std::int32_t>, false, false, false},
-        {"middle", {}, 0, 2, type_info_of<bool>,         false, false, false},
-        {"beta",   {}, 0, 3, type_info_of<double>,       false, false, false},
+        {"zebra",  {}, 0, type_info_of<std::string>,  false, false},
+        {"alpha",  {}, 0, type_info_of<std::int32_t>, false, false},
+        {"middle", {}, 0, type_info_of<bool>,         false, false},
+        {"beta",   {}, 0, type_info_of<double>,       false, false},
     };
     const static struct_type_info ordered_info = {
         {type_kind::structure, "ordered_struct"},
-        false,
         false,
         {ordered_fields,       4               },
     };
@@ -637,12 +651,10 @@ ZEST_CASE(mutual_recursion) {
     static struct_type_info info_a = {
         {type_kind::structure, "node_a"},
         false,
-        false,
         {}
     };
     static struct_type_info info_b = {
         {type_kind::structure, "node_b"},
-        false,
         false,
         {}
     };
@@ -657,12 +669,12 @@ ZEST_CASE(mutual_recursion) {
     };
 
     const static field_info fields_a[] = {
-        {"value", {}, 0, 0, type_info_of<std::int32_t>, false, false, false},
-        {"b", {}, 0, 1, []() -> const type_info& { return opt_b; }, false, false, false, true},
+        {"value", {}, 0, type_info_of<std::int32_t>, false, false},
+        {"b", {}, 0, []() -> const type_info& { return opt_b; }, false, false, true},
     };
     const static field_info fields_b[] = {
-        {"name", {}, 0, 0, type_info_of<std::string>, false, false, false},
-        {"a", {}, 0, 1, []() -> const type_info& { return opt_a; }, false, false, false, true},
+        {"name", {}, 0, type_info_of<std::string>, false, false},
+        {"a", {}, 0, []() -> const type_info& { return opt_a; }, false, false, true},
     };
     info_a.fields = {fields_a, 2};
     info_b.fields = {fields_b, 2};

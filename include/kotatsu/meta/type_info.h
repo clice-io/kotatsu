@@ -51,35 +51,9 @@ constexpr auto format_of_impl() {
 template <typename Config>
 using format_of_t = typename decltype(detail::format_of_impl<Config>())::type;
 
-struct field_info;
-
 struct type_info {
     type_kind kind;
     std::string_view type_name;
-
-    constexpr bool is_integer() const {
-        return kind >= type_kind::int8 && kind <= type_kind::uint64;
-    }
-
-    constexpr bool is_signed_integer() const {
-        return kind >= type_kind::int8 && kind <= type_kind::int64;
-    }
-
-    constexpr bool is_unsigned_integer() const {
-        return kind >= type_kind::uint8 && kind <= type_kind::uint64;
-    }
-
-    constexpr bool is_floating() const {
-        return kind == type_kind::float32 || kind == type_kind::float64;
-    }
-
-    constexpr bool is_numeric() const {
-        return is_integer() || is_floating();
-    }
-
-    constexpr bool is_scalar() const {
-        return kind <= type_kind::enumeration;
-    }
 };
 
 using type_info_fn = const type_info& (*)();
@@ -95,7 +69,6 @@ struct map_type_info : type_info {
 
 struct enum_type_info : type_info {
     std::span<const std::string_view> member_names;
-    const void* member_values;
     type_kind underlying_kind;
     /// The policy of the behavior::enum_string an annotated enum travels
     /// through: its members are strings, spelled as it says, whatever the
@@ -127,22 +100,16 @@ struct field_info {
     std::string_view name;
     std::span<const std::string_view> aliases;
     std::size_t offset;
-    std::size_t physical_index;
     type_info_fn type;
 
     bool has_default;
     bool has_skip_if;
-    bool has_behavior;
 
     /// True when the declared (pre-repr-substitution) field type is nullable
     /// (optional/pointer/null). Decode accepts absence only for these, so
     /// schema requiredness follows the raw type even when a repr or behavior
     /// attr gives the field a nullable representation.
     bool nullable = false;
-
-    /// Field ordinal for index-addressed formats; field_spec::no_idx when
-    /// absent. Metadata only for now: no backend consumes it yet.
-    std::uint32_t idx = field_spec::no_idx;
 
     /// Documentation text from the annotation, empty when absent.
     std::string_view description = {};
@@ -183,26 +150,10 @@ struct field_info {
 
 struct struct_type_info : type_info {
     bool deny_unknown;
-    bool is_trivial_layout;
     std::span<const field_info> fields;
-    /// What the struct is, from its `constexpr static std::string_view description`; empty
-    /// when it declares none.
+    /// What the struct is, the `description` of its own annotation; empty when it has none.
     std::string_view description = {};
 };
-
-/// The description struct `T` declares: a static member `description` a string_view takes,
-/// such as `constexpr static std::string_view description = "...";`.
-template <typename T>
-constexpr std::string_view struct_description() {
-    if constexpr(requires {
-                     requires !std::is_member_pointer_v<decltype(&T::description)>;
-                     std::string_view(T::description);
-                 }) {
-        return T::description;
-    } else {
-        return {};
-    }
-}
 
 template <typename T, typename Config = default_config>
 constexpr const type_info& type_info_of();
@@ -316,29 +267,15 @@ struct filter_runtime_attrs<std::tuple<First, Rest...>> {
 template <typename Tuple>
 using filter_runtime_attrs_t = typename filter_runtime_attrs<Tuple>::type;
 
-template <typename T>
-struct unwrap_annotated {
-    using raw_type = T;
-    using attrs = std::tuple<>;
-};
-
-template <annotated_type T>
-struct unwrap_annotated<T> {
-    using raw_type = typename T::annotated_type;
-    using attrs = typename T::attrs;
-};
-
 /// The info of enum E, its members spelled through Rename when it travels as
 /// a behavior::enum_string's names.
 template <typename E, std::string (*Rename)(bool, std::string_view) = nullptr>
 struct enum_info_node {
     constexpr static auto& names = meta::reflection<E>::member_names;
-    constexpr static auto& values = meta::reflection<E>::member_values;
 
     constexpr inline static enum_type_info value = {
         {type_kind::enumeration, meta::type_name<E>()},
         {names.data(),           names.size()        },
-        static_cast<const void*>(values.data()),
         kind_of<std::underlying_type_t<E>>(),
         Rename,
     };
@@ -387,46 +324,41 @@ constexpr auto resolve_repr();
 /// field's slot holds it.
 template <typename Raw, typename Attrs, typename Config = default_config>
 constexpr auto resolve_node() {
-    using raw_t = Raw;
-    using attrs_t = Attrs;
-
-    if constexpr(tuple_has_spec_v<attrs_t, behavior::with>) {
-        using adapter = typename tuple_find_spec_t<attrs_t, behavior::with>::adapter;
+    if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
+        using adapter = typename tuple_find_spec_t<Attrs, behavior::with>::adapter;
         return resolve_repr<declared_repr_t<adapter>, Config>();
-    } else if constexpr(tuple_has_spec_v<attrs_t, behavior::as>) {
-        using target = typename tuple_find_spec_t<attrs_t, behavior::as>::target;
+    } else if constexpr(tuple_has_spec_v<Attrs, behavior::as>) {
+        using target = typename tuple_find_spec_t<Attrs, behavior::as>::target;
         return resolve_repr<target, Config>();
-    } else if constexpr(tuple_has_spec_v<attrs_t, behavior::enum_string>) {
-        using policy = typename tuple_find_spec_t<attrs_t, behavior::enum_string>::policy;
+    } else if constexpr(tuple_has_spec_v<Attrs, behavior::enum_string>) {
+        using policy = typename tuple_find_spec_t<Attrs, behavior::enum_string>::policy;
         return resolved_repr<std::string_view,
                              std::tuple<>,
                              Config,
-                             enum_info_node<raw_t, &rename_with<policy>>>{};
-    } else if constexpr(is_specialization_of<std::variant, raw_t> &&
-                        struct_spec_of<attrs_t>.tagging != tag_mode::none) {
-        return resolved_repr<raw_t,
-                             std::tuple<tuple_find_t<attrs_t, is_struct_spec_attr>>,
+                             enum_info_node<Raw, &rename_with<policy>>>{};
+    } else if constexpr(is_specialization_of<std::variant, Raw> &&
+                        struct_spec_of<Attrs>.tagging != tag_mode::none) {
+        return resolved_repr<Raw,
+                             std::tuple<tuple_find_spec_t<Attrs, attrs::struct_spec>>,
                              Config>{};
-    } else if constexpr(has_repr<raw_t, format_of_t<Config>>) {
-        using chosen = repr_for<raw_t, format_of_t<Config>>;
-        return resolve_repr<declared_repr_t<chosen>, node_config_t<Config, raw_t, attrs_t>>();
+    } else if constexpr(has_repr<Raw, format_of_t<Config>>) {
+        using chosen = repr_for<Raw, format_of_t<Config>>;
+        return resolve_repr<declared_repr_t<chosen>, node_config_t<Config, Raw, Attrs>>();
     } else {
-        return resolved_repr<raw_t, std::tuple<>, node_config_t<Config, raw_t, attrs_t>>{};
+        return resolved_repr<Raw, std::tuple<>, node_config_t<Config, Raw, Attrs>>{};
     }
 }
 
 template <typename T, typename Config>
 constexpr auto resolve_repr() {
-    return resolve_node<typename unwrap_annotated<T>::raw_type,
-                        typename unwrap_annotated<T>::attrs,
-                        Config>();
+    return resolve_node<raw_type_t<T>, attrs_of_t<T>, Config>();
 }
 
 template <typename T, typename AttrsT, typename Config, type_kind Kind = kind_of<T>()>
 struct type_instance_impl;
 
 /// The instance key is the resolution result, not the annotated input: two
-/// textually identical annotations (KOTATSU_ANNOTATE mints a fresh tag per
+/// textually identical annotations (KANNOTATE mints a fresh tag per
 /// use) resolve to the same type and the same value-parameterized merged
 /// config, so they share one type_info instance — and thus one $defs entry in
 /// schema output. Tagged variant specs keep their own tag (the string
@@ -466,7 +398,7 @@ constexpr std::size_t single_field_count() {
     if constexpr(spec.skip) {
         return 0;
     } else if constexpr(spec.flatten) {
-        using inner_t = std::remove_cvref_t<typename unwrap_annotated<field_t>::raw_type>;
+        using inner_t = std::remove_cvref_t<raw_type_t<field_t>>;
         static_assert(meta::reflectable_class<inner_t>,
                       "flatten requires the field type to be a reflectable struct");
         return effective_field_count<inner_t>();
@@ -474,12 +406,6 @@ constexpr std::size_t single_field_count() {
         return 1;
     }
 }
-
-template <typename T, std::size_t I>
-struct field_attr_flags {
-    constexpr static bool skipped = field_spec_of<meta::field_type<T, I>>.skip;
-    constexpr static bool flattened = field_spec_of<meta::field_type<T, I>>.flatten;
-};
 
 template <typename T>
 using built_fields_t = std::array<field_info, effective_field_count<T>()>;
@@ -525,7 +451,7 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     // span below is explicitly given size 0, so no element is ever read.
     constexpr static auto alt_names = [] {
         if constexpr(has_tag) {
-            return resolve_tag_names<tuple_find_t<AttrsTuple, is_struct_spec_attr>, Ts...>();
+            return resolve_tag_names<tuple_find_spec_t<AttrsTuple, attrs::struct_spec>, Ts...>();
         } else {
             return std::array<std::string_view, sizeof...(Ts)>{};
         }
@@ -560,10 +486,7 @@ struct tuple_info_node<Tuple, Config, std::index_sequence<Is...>> {
 
 template <typename T, typename AttrsT, typename Config, type_kind Kind>
 struct type_instance_impl {
-    constexpr inline static type_info value = {
-        kind_of<T>(),
-        meta::type_name<T>(),
-    };
+    constexpr inline static type_info value = {kind_of<T>(), meta::type_name<T>()};
 };
 
 template <typename T, typename AttrsT, typename Config>
@@ -631,18 +554,15 @@ struct type_instance_impl<T, AttrsT, Config, type_kind::array> {
 
 template <typename T, typename AttrsT, typename Config>
 struct type_instance_impl<T, AttrsT, Config, type_kind::structure> {
-    constexpr static std::size_t count = effective_field_count<T>();
     constexpr static bool deny_unknown = config_denies_unknown<Config>();
-    constexpr static bool is_trivially_copyable = std::is_trivially_copyable_v<T>;
 
     constexpr inline static built_fields_t<T> fields = build_fields<T, Config>();
 
     constexpr inline static struct_type_info value = {
         {type_kind::structure, meta::type_name<T>()},
         deny_unknown,
-        is_trivially_copyable,
-        {fields.data(),        count               },
-        struct_description<T>(),
+        fields,
+        spec_of<type_attrs_t<T>>.description,
     };
 };
 
@@ -655,28 +575,25 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 template <typename T, typename Config, std::size_t I>
 constexpr field_info make_field_info(std::size_t base_offset) {
     using field_t = meta::field_type<T, I>;
-    using attrs_t = typename unwrap_annotated<field_t>::attrs;
+    using attrs_t = attrs_of_t<field_t>;
     constexpr const field_spec& spec = field_spec_of<field_t>;
-    constexpr type_kind raw_kind = kind_of<typename unwrap_annotated<field_t>::raw_type>();
+    constexpr type_kind raw_kind = kind_of<raw_type_t<field_t>>();
 
     return field_info{
         .name = resolve_field_name<T, I, Config>(),
-        .aliases = spec.alias.names(),
+        .aliases = spec.alias,
         .offset = base_offset + meta::field_offset<T>(I),
-        .physical_index = I,
         .type = type_info_of<field_t, Config>,
         .has_default = spec.defaulted || config_defaults_fields<Config>(),
         .has_skip_if =
             spec.skip_if != skip_when::never || tuple_has_spec_v<attrs_t, behavior::skip_if>,
-        .has_behavior = tuple_any_of_v<attrs_t, is_behavior_provider>,
         .nullable = raw_kind == type_kind::optional || raw_kind == type_kind::pointer ||
                     raw_kind == type_kind::null,
-        .idx = spec.idx,
         .description = spec.description,
         .schema_default = spec.schema_default,
         .minimum = spec.minimum,
         .maximum = spec.maximum,
-        .choices = spec.choices.names(),
+        .choices = spec.choices,
         .declared_name = meta::field_name<I, T>(),
         .extensions = extensions_of<attrs_t>,
     };
@@ -704,7 +621,7 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 
     if constexpr(spec.skip) {
     } else if constexpr(spec.flatten) {
-        using inner_t = typename unwrap_annotated<field_t>::raw_type;
+        using inner_t = raw_type_t<field_t>;
         std::size_t inner_offset = base_offset + meta::field_offset<T>(I);
         auto inner = build_fields<inner_t, Config>(inner_offset);
         for(std::size_t i = 0; i < inner.size(); ++i) {

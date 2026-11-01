@@ -28,19 +28,19 @@ struct Serve {
 
 struct Fine {
     bool verbose = false;
-    KOTATSU_ANNOTATE(cli::names = {"--x"})
+    KANNOTATE(cli::names = {"--x"})
     <std::string> separate;
-    KOTATSU_ANNOTATE(cli::names = {"--x="})
+    KANNOTATE(cli::names = {"--x="})
     <std::string> joined;
-    KOTATSU_ANNOTATE(cli::positional = true)
+    KANNOTATE(cli::positional = true)
     <std::vector<std::string>> paths;
     std::optional<std::variant<Serve>> command;
 };
 
 struct Twice {
-    KOTATSU_ANNOTATE(cli::names = {"-o"})
+    KANNOTATE(cli::names = {"-o"})
     <std::string> first;
-    KOTATSU_ANNOTATE(cli::names = {"-o"})
+    KANNOTATE(cli::names = {"-o"})
     <std::string> second;
 };
 
@@ -56,38 +56,38 @@ struct TwiceInAGroup {
 
 /// A Joined option of a generated name, whose only form another field names.
 struct EqualsTaken {
-    KOTATSU_ANNOTATE(cli::style = KVStyle::Joined)
+    KANNOTATE(cli::style = KVStyle::Joined)
     <std::string> level;
-    KOTATSU_ANNOTATE(cli::names = {"--level="})
+    KANNOTATE(cli::names = {"--level="})
     <std::string> other;
 };
 
 struct Unprefixed {
-    KOTATSU_ANNOTATE(cli::names = {"out"})
+    KANNOTATE(cli::names = {"out"})
     <std::string> out;
 };
 
 struct CommaScalar {
-    KOTATSU_ANNOTATE(cli::comma = true)
+    KANNOTATE(cli::comma = true)
     <std::string> t;
 };
 
 struct Loop {
-    KOTATSU_ANNOTATE(cli::names = {"-a"}, cli::forward = {"-b"})
+    KANNOTATE(cli::names = {"-a"}, cli::forward = {"-b"})
     <cli::Alias> a;
-    KOTATSU_ANNOTATE(cli::names = {"-b"}, cli::forward = {"-a"})
+    KANNOTATE(cli::names = {"-b"}, cli::forward = {"-a"})
     <cli::Alias> b;
 };
 
 struct TwoRests {
-    KOTATSU_ANNOTATE(cli::rest = true)
+    KANNOTATE(cli::rest = true)
     <std::vector<std::string>> first;
-    KOTATSU_ANNOTATE(cli::rest = true)
+    KANNOTATE(cli::rest = true)
     <std::vector<std::string>> second;
 };
 
 struct ScalarRest {
-    KOTATSU_ANNOTATE(cli::rest = true)
+    KANNOTATE(cli::rest = true)
     <std::string> rest;
 };
 
@@ -111,7 +111,7 @@ struct SameWords {
 };
 
 struct HiddenUnknown {
-    KOTATSU_ANNOTATE(cli::hidden_sub = {"worker"})
+    KANNOTATE(cli::hidden_sub = {"worker"})
     <std::variant<Serve>> command;
 };
 
@@ -124,26 +124,26 @@ struct Choice {
 };
 
 struct Nested {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <std::variant<Choice, Serve>> inner;
 };
 
 /// An exclusive field inside an alternative of another.
 struct NestedExclusive {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <std::variant<Nested, Choice>> outer;
 };
 
 struct ExclusiveScalar {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <int> value;
 };
 
 /// Two alternatives naming an option the same.
 struct ExclusiveTwice {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <std::variant<Choice, Inner>> one;
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <std::variant<Inner, Serve>> two;
 };
 
@@ -153,17 +153,17 @@ struct AlsoVerbose {
 
 /// One exclusive field whose two alternatives name an option the same.
 struct OneFieldTwice {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <std::variant<Inner, AlsoVerbose>> field;
 };
 
 struct ExclusiveOfAScalar {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <std::variant<Choice, int>> field;
 };
 
 struct ExclusiveStruct {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <Choice> field;
 };
 
@@ -181,22 +181,22 @@ struct WithCommands {
 };
 
 struct CommandsInAnAlternative {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <std::variant<WithCommands, Choice>> field;
 };
 
 struct First {
-    KOTATSU_ANNOTATE(cli::positional = true)
+    KANNOTATE(cli::positional = true)
     <std::string> a;
 };
 
 struct Second {
-    KOTATSU_ANNOTATE(cli::positional = true)
+    KANNOTATE(cli::positional = true)
     <std::string> b;
 };
 
 struct PositionalsInTwoAlternatives {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <std::variant<First, Second>> field;
 };
 

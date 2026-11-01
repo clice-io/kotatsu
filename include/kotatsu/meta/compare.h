@@ -28,38 +28,20 @@ concept standard_integer =
 template <typename L, typename R>
 concept reflectable_pair = reflectable_class<L> && reflectable_class<R>;
 
+/// A std::variant, or an annotation of one.
 template <typename T>
-struct variant_of {
-    using type = void;
-};
-
-template <typename... Ts>
-struct variant_of<std::variant<Ts...>> {
-    using type = std::variant<Ts...>;
-};
-
-template <typename T>
-    requires annotated_type<T>
-struct variant_of<T> {
-    using type = typename variant_of<typename T::annotated_type>::type;
-};
-
-template <typename T>
-using variant_of_t = typename variant_of<std::remove_cvref_t<T>>::type;
-
-template <typename T>
-concept variant_like = !std::is_void_v<variant_of_t<T>>;
+concept variant_like = is_specialization_of<std::variant, raw_type_t<std::remove_cvref_t<T>>>;
 
 template <typename L, typename R>
 concept variant_pair = variant_like<L> && variant_like<R>;
 
 template <typename T>
     requires variant_like<T>
-constexpr auto as_variant(const T& v) -> const variant_of_t<T>& {
-    if constexpr(is_specialization_of<std::variant, T>) {
-        return v;
+constexpr auto as_variant(const T& v) -> const raw_type_t<T>& {
+    if constexpr(annotated_type<T>) {
+        return annotated_value(v);
     } else {
-        return as_variant(annotated_value(v));
+        return v;
     }
 }
 

@@ -47,9 +47,10 @@ std::string captured(Write write) {
     return text;
 }
 
+KANNOTATE_TYPE(struct Options, description = "A tool");
+
 struct Options {
-    constexpr static std::string_view description = "A tool";
-    KOTATSU_ANNOTATE(description = "Workers")
+    KANNOTATE(description = "Workers")
     <int> jobs = 2;
 };
 

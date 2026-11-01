@@ -97,7 +97,7 @@ constexpr FieldUse use_of(const meta::field_info& field) {
         use.kind = FieldUse::Kind::Commands;
         return use;
     }
-    if(!use.spec.forward.names().empty()) {
+    if(!use.spec.forward.empty()) {
         use.shape = Shape::Alias;
         return use;
     }
@@ -144,7 +144,7 @@ struct NameForm {
 /// after "-" when one letter long and "--" otherwise.
 constexpr std::vector<std::string> names_of(const ArgSpec& spec, std::string_view declared) {
     std::vector<std::string> names;
-    for(auto name: spec.names.names()) {
+    for(auto name: spec.names) {
         names.emplace_back(name);
     }
     if(names.empty()) {
@@ -184,7 +184,7 @@ constexpr std::vector<NameForm> name_forms(const FieldUse& use, std::string_view
         return forms;
     }
     const auto style = use.spec.style;
-    const bool generated = use.spec.names.names().empty();
+    const bool generated = use.spec.names.empty();
     for(const auto& name: names) {
         // A generated name of a Joined option takes its value after '='.
         const bool joins =
@@ -259,7 +259,7 @@ class DeclarationCheck {
             DeclarationCheck inner;
             inner.check(static_cast<const meta::struct_type_info&>(alternative));
         }
-        for(auto hidden: use.spec.hidden_sub.names()) {
+        for(auto hidden: use.spec.hidden_sub) {
             if(std::ranges::find(words, hidden) == words.end()) {
                 KOTATSU_THROW("cli: a hidden subcommand is one of the field's");
             }
@@ -323,9 +323,7 @@ class DeclarationCheck {
             }
         }
         if(use.shape == Shape::Alias) {
-            forwards.insert(forwards.end(),
-                            use.spec.forward.names().begin(),
-                            use.spec.forward.names().end());
+            forwards.insert(forwards.end(), use.spec.forward.begin(), use.spec.forward.end());
         }
     }
 

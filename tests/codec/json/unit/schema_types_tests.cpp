@@ -139,14 +139,14 @@ struct tagged_rect {
     double height;
 };
 
-KOTATSU_ANNOTATION(root_internal_annotation, tag = "kind", tag_names = {"circle", "rect"});
+KANNOTATION(root_internal_annotation, tag = "kind", tag_names = {"circle", "rect"});
 using root_internal_variant =
     annotate<root_internal_annotation>::type<std::variant<tagged_circle, tagged_rect>>;
 
-KOTATSU_ANNOTATION(root_adjacent_annotation,
-                   tag = "type",
-                   content = "value",
-                   tag_names = {"integer", "text"});
+KANNOTATION(root_adjacent_annotation,
+            tag = "type",
+            content = "value",
+            tag_names = {"integer", "text"});
 using root_adjacent_variant =
     annotate<root_adjacent_annotation>::type<std::variant<std::int32_t, std::string>>;
 
@@ -563,15 +563,12 @@ ZEST_CASE(variant_external_tag) {
         "v",
         {},
         0,
-        0,
         ext_var_ref,
-        false,
         false,
         false,
     };
     const static struct_type_info ext_wrap = {
         {type_kind::structure, "ext_wrap"},
-        false,
         false,
         {&ext_field,           1         },
     };
@@ -616,15 +613,12 @@ ZEST_CASE(variant_internal_tag) {
         "v",
         {},
         0,
-        0,
         int_var_ref,
-        false,
         false,
         false,
     };
     const static struct_type_info int_wrap = {
         {type_kind::structure, "int_wrap"},
-        false,
         false,
         {&int_field,           1         },
     };
@@ -668,15 +662,12 @@ ZEST_CASE(variant_adjacent_tag) {
         "v",
         {},
         0,
-        0,
         adj_var_ref,
-        false,
         false,
         false,
     };
     const static struct_type_info adj_wrap = {
         {type_kind::structure, "adj_wrap"},
-        false,
         false,
         {&adj_field,           1         },
     };
@@ -789,11 +780,10 @@ ZEST_CASE(any_type_root) {
 ZEST_CASE(any_type_field) {
     const static type_info any_ti = {type_kind::any, "any"};
     const static field_info any_fields[] = {
-        {"data", {}, 0, 0, []() -> const type_info& { return any_ti; }, false, false, false},
+        {"data", {}, 0, []() -> const type_info& { return any_ti; }, false, false},
     };
     const static struct_type_info any_struct = {
         {type_kind::structure, "with_any"},
-        false,
         false,
         {any_fields,           1         },
     };
@@ -995,7 +985,6 @@ ZEST_CASE(empty_enum) {
     const static enum_type_info empty_ei = {
         {type_kind::enumeration, "empty_enum"},
         {},
-        nullptr,
         type_kind::int32,
     };
     const auto result = json::schema_string(empty_ei).value();
@@ -1060,11 +1049,10 @@ ZEST_CASE(variant_with_monostate) {
 ZEST_CASE(bytes_field) {
     const static type_info bytes_ti = {type_kind::bytes, "bytes"};
     const static field_info bytes_fields[] = {
-        {"data", {}, 0, 0, []() -> const type_info& { return bytes_ti; }, false, false, false},
+        {"data", {}, 0, []() -> const type_info& { return bytes_ti; }, false, false},
     };
     const static struct_type_info bytes_struct = {
         {type_kind::structure, "with_bytes"},
-        false,
         false,
         {bytes_fields,         1           },
     };

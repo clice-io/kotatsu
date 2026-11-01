@@ -14,42 +14,42 @@ namespace kotatsu::cli {
 namespace {
 
 struct Copy {
-    KOTATSU_ANNOTATE(cli::positional = true, cli::meta_var = "<FROM>")
+    KANNOTATE(cli::positional = true, cli::meta_var = "<FROM>")
     <std::string> from;
-    KOTATSU_ANNOTATE(cli::positional = true, cli::meta_var = "<TO>")
+    KANNOTATE(cli::positional = true, cli::meta_var = "<TO>")
     <std::string> to;
     bool force = false;
 };
 
 struct Format {
-    KOTATSU_ANNOTATE(cli::positional = true)
+    KANNOTATE(cli::positional = true)
     <std::vector<std::string>> paths;
 };
 
 struct Pair {
-    KOTATSU_ANNOTATE(cli::positional = true, cli::arg_num = 2)
+    KANNOTATE(cli::positional = true, cli::arg_num = 2)
     <std::vector<std::string>> pair;
 };
 
 struct Search {
-    KOTATSU_ANNOTATE(cli::positional = true)
+    KANNOTATE(cli::positional = true)
     <std::optional<std::string>> locator;
 };
 
 struct Few {
     bool k = false;
-    KOTATSU_ANNOTATE(cli::positional = true, cli::required = true, cli::arg_num = ArgNum(1, 3))
+    KANNOTATE(cli::positional = true, cli::required = true, cli::arg_num = ArgNum(1, 3))
     <std::vector<std::string>> words;
 };
 
 struct Toggle {
-    KOTATSU_ANNOTATE(cli::positional = true)
+    KANNOTATE(cli::positional = true)
     <bool> on = true;
 };
 
 struct Run {
     std::optional<std::string> from;
-    KOTATSU_ANNOTATE(cli::rest = true)
+    KANNOTATE(cli::rest = true)
     <std::vector<std::string>> command;
 };
 

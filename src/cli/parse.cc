@@ -52,7 +52,7 @@ meta::schema_number number_of(std::string_view text, const meta::type_info& type
     if(std::uint64_t value = 0; !read_number(text, value)) {
         return value;
     }
-    if(double value = 0; !type.is_integer() && !read_number(text, value)) {
+    if(double value = 0; !meta::is_integer_kind(type.kind) && !read_number(text, value)) {
         return value;
     }
     return std::monostate{};
@@ -420,7 +420,7 @@ public:
         std::vector<std::string_view> active(reading.active.begin(),
                                              reading.active.begin() + index);
         std::vector<std::uint32_t> origin(reading.origin.begin(), reading.origin.begin() + index);
-        for(auto token: arg.spec.forward.names()) {
+        for(auto token: arg.spec.forward) {
             active.push_back(reading.expansions.emplace_back(token));
             origin.push_back(reading.origin[index]);
         }

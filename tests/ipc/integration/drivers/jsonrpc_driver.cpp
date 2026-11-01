@@ -60,9 +60,9 @@ struct CallParams {
 
 // Exactly one of the two, the other left out.
 struct CallOutcome {
-    KOTATSU_ANNOTATE(skip_if = skip_when::none)
+    KANNOTATE(skip_if = skip_when::none)
     <std::optional<Value>> result;
-    KOTATSU_ANNOTATE(skip_if = skip_when::none)
+    KANNOTATE(skip_if = skip_when::none)
     <std::optional<Error>> error;
 };
 

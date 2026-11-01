@@ -16,7 +16,7 @@ namespace kotatsu::zest {
 ///
 ///     struct MyTestOptions {
 ///         kotatsu::zest::Options zest;
-///         KOTATSU_ANNOTATE(cli::meta_var = "<DIR>", description = "corpus directory")
+///         KANNOTATE(cli::meta_var = "<DIR>", description = "corpus directory")
 ///         <std::string> corpus_dir;
 ///     };
 ///
@@ -27,46 +27,45 @@ namespace kotatsu::zest {
 /// Tests run in worker processes that re-execute the program with the original
 /// arguments, so the embedding `main` sees its own flags there too.
 struct Options {
-    KOTATSU_ANNOTATE(cli::meta_var = "<PATTERN>",
-                     description = "test name filter: SUITE or SUITE.TEST or SUITE.* or *")
+    KANNOTATE(cli::meta_var = "<PATTERN>",
+              description = "test name filter: SUITE or SUITE.TEST or SUITE.* or *")
     <std::string> test_filter;
 
-    KOTATSU_ANNOTATE(description = "print all test results, not just failures")
+    KANNOTATE(description = "print all test results, not just failures")
     <bool> verbose = false;
 
-    KOTATSU_ANNOTATE(description = "list all registered test cases and exit")
+    KANNOTATE(description = "list all registered test cases and exit")
     <bool> list_tests = false;
 
-    KOTATSU_ANNOTATE(
-        cli::meta_var = "<N>",
-        description = "worker processes running tests at once (0 = one per available CPU)")
+    KANNOTATE(cli::meta_var = "<N>",
+              description = "worker processes running tests at once (0 = one per available CPU)")
     <unsigned> jobs = 0;
 
-    KOTATSU_ANNOTATE(cli::meta_var = "<SECONDS>",
-                     description =
-                         "kill a test, or a worker starting or exiting, that takes longer "
-                         "than this (0 = no limit)")
+    KANNOTATE(cli::meta_var = "<SECONDS>",
+              description =
+                  "kill a test, or a worker starting or exiting, that takes longer "
+                  "than this (0 = no limit)")
     <unsigned> timeout = 60;
 
-    KOTATSU_ANNOTATE(description =
-                         "run tests one after another in this process, for debuggers: a crash "
-                         "or a failed ZASSERT ends the run, crash tests are skipped and "
-                         "--timeout does not apply")
+    KANNOTATE(description =
+                  "run tests one after another in this process, for debuggers: a crash "
+                  "or a failed ZASSERT ends the run, crash tests are skipped and "
+                  "--timeout does not apply")
     <bool> no_isolation = false;
 
-    KOTATSU_ANNOTATE(description = "update snapshot files instead of comparing")
+    KANNOTATE(description = "update snapshot files instead of comparing")
     <bool> update_snapshots = false;
 
-    KOTATSU_ANNOTATE(description = "remove orphaned snapshot files not used in this run")
+    KANNOTATE(description = "remove orphaned snapshot files not used in this run")
     <bool> cleanup_snapshots = false;
 
-    KOTATSU_ANNOTATE(cli::meta_var = "<DIR>", description = "directory for snapshot files")
+    KANNOTATE(cli::meta_var = "<DIR>", description = "directory for snapshot files")
     <std::string> snapshot_dir;
 
     // run_tests reads this from argv itself; it is declared so that a worker's
     // command line parses, and left out of the usage.
-    KOTATSU_ANNOTATE(cli::hidden = true,
-                     description = "serve tests to the runner that started this process")
+    KANNOTATE(cli::hidden = true,
+              description = "serve tests to the runner that started this process")
     <bool> zest_worker = false;
 };
 

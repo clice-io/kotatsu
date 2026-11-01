@@ -20,13 +20,15 @@ struct Tool {
     cli::Commands<Top> command;
 };
 
+KANNOTATE_TYPE(struct Build, description = "Build the project");
+
 struct Build {
-    constexpr static std::string_view description = "Build the project";
     int jobs = 1;
 };
 
+KANNOTATE_TYPE(struct ServeIt, description = "Serve the project");
+
 struct ServeIt {
-    constexpr static std::string_view description = "Serve the project";
     int port = 0;
 };
 
@@ -101,6 +103,12 @@ int again(Again&) {
 }
 
 [[maybe_unused]] const bool again_added = cli::add_command<Loop>(again);
+
+/// A cli::Commands field, an annotation itself, annotated again.
+struct MustPick {
+    KANNOTATE(cli::required = true)
+    <cli::Commands<Top>> command;
+};
 
 ZEST_SUITE(cli_commands) {
 
@@ -196,6 +204,20 @@ ZEST_CASE(hidden_one_writes_back) {
 
 ZEST_CASE(none_held_writes_nothing) {
     ZEXPECT(cli::to_argv(Tool{}).empty());
+}
+
+ZEST_CASE(annotated_field_keeps_its_subcommands) {
+    auto picked = cli::parse<MustPick>(std::vector<std::string>{"build", "--jobs", "2"});
+    ZASSERT(picked.has_value());
+    const auto* build = picked->command.get_if<Build>();
+    ZASSERT(build != nullptr);
+    ZEXPECT(build->jobs == 2);
+}
+
+ZEST_CASE(required_field_without_a_word_fails) {
+    auto picked = cli::parse<MustPick>(std::vector<std::string>{});
+    ZASSERT(!picked.has_value());
+    ZEXPECT(picked.error().kind == Error::Kind::MissingSubcommand);
 }
 
 ZEST_CASE(two_added_under_one_name_end_the_program, crashes = true) {

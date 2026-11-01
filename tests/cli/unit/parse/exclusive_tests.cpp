@@ -15,40 +15,42 @@ namespace kotatsu::cli {
 
 namespace {
 
+KANNOTATE_TYPE(struct ByLocator, description = "by locator");
+
 struct ByLocator {
-    constexpr static std::string_view description = "by locator";
-    KOTATSU_ANNOTATE(cli::positional = true, cli::meta_var = "<LOCATOR>")
+    KANNOTATE(cli::positional = true, cli::meta_var = "<LOCATOR>")
     <std::string> locator;
-    KOTATSU_ANNOTATE(cli::positional = true, cli::meta_var = "<NEW-NAME>")
+    KANNOTATE(cli::positional = true, cli::meta_var = "<NEW-NAME>")
     <std::string> new_name;
 };
 
+KANNOTATE_TYPE(struct BySpec, description = "by spec");
+
 struct BySpec {
-    constexpr static std::string_view description = "by spec";
-    KOTATSU_ANNOTATE(cli::required = true)
+    KANNOTATE(cli::required = true)
     <std::string> spec;
     bool dry = false;
 };
 
 struct Rename {
     bool verbose = false;
-    KOTATSU_ANNOTATE(cli::exclusive = true, description = "Target")
+    KANNOTATE(cli::exclusive = true, description = "Target")
     <std::variant<ByLocator, BySpec>> target;
 };
 
 struct Pick {
-    KOTATSU_ANNOTATE(cli::exclusive = true, cli::required = true)
+    KANNOTATE(cli::exclusive = true, cli::required = true)
     <std::variant<BySpec, ByLocator>> target;
 };
 
 struct Maybe {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <std::optional<std::variant<BySpec, ByLocator>>> target;
 };
 
 struct Wrapped {
     int level = 0;
-    KOTATSU_ANNOTATE(cli::exclusive = true, cli::required = true)
+    KANNOTATE(cli::exclusive = true, cli::required = true)
     <std::variant<BySpec, ByLocator>> target;
 };
 
@@ -57,18 +59,18 @@ struct Outer {
 };
 
 struct WithRest {
-    KOTATSU_ANNOTATE(cli::rest = true)
+    KANNOTATE(cli::rest = true)
     <std::vector<std::string>> command;
 };
 
 struct Pass {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <std::variant<WithRest, BySpec>> how;
 };
 
 /// The rest in an alternative other than the first, which "--" alone picks.
 struct RestLast {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <std::variant<BySpec, WithRest>> how;
 };
 
@@ -81,7 +83,7 @@ struct ById {
 };
 
 struct Plain {
-    KOTATSU_ANNOTATE(cli::exclusive = true)
+    KANNOTATE(cli::exclusive = true)
     <std::variant<ByName, ById>> choice;
 };
 

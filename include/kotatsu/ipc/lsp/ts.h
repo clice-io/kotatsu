@@ -27,18 +27,20 @@ namespace kotatsu::ipc::protocol {
 namespace detail {
 
 struct skip_default_tag {
-    constexpr static auto spec =
-        meta::make_spec(meta::dsl::skip_if = meta::skip_when::default_value,
-                        meta::dsl::defaulted = true);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::skip_if = meta::skip_when::default_value,
+                              meta::dsl::defaulted = true);
 };
 
 struct skip_none_tag {
-    constexpr static auto spec = meta::make_spec(meta::dsl::skip_if = meta::skip_when::none);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::skip_if = meta::skip_when::none);
 };
 
 struct skip_none_defaulted_tag {
-    constexpr static auto spec =
-        meta::make_spec(meta::dsl::skip_if = meta::skip_when::none, meta::dsl::defaulted = true);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::skip_if = meta::skip_when::none,
+                              meta::dsl::defaulted = true);
 };
 
 template <std::size_t N>

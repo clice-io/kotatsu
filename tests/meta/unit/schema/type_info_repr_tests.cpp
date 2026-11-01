@@ -20,15 +20,16 @@ struct MergePoint {
 };
 
 struct CamelOnly {
-    constexpr static auto spec = make_struct_spec(dsl::rename_all = naming::Casing::LowerCamel);
+    constexpr static auto entries =
+        meta::make_annotation(dsl::rename_all = naming::Casing::LowerCamel);
 };
 
 struct DenyOnly {
-    constexpr static auto spec = make_struct_spec(dsl::deny_unknown_fields = true);
+    constexpr static auto entries = meta::make_annotation(dsl::deny_unknown_fields = true);
 };
 
 struct DefaultedOnly {
-    constexpr static auto spec = make_struct_spec(dsl::defaulted_fields = true);
+    constexpr static auto entries = meta::make_annotation(dsl::defaulted_fields = true);
 };
 
 /// A struct whose field merges a policy of its own below a defaulted one.

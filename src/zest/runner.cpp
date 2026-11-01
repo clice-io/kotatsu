@@ -59,9 +59,9 @@ struct CliOptions {
 
     cli::Help help;
 
-    KOTATSU_ANNOTATE(cli::positional = true,
-                     cli::meta_var = "<PATTERN>",
-                     description = "positional fallback for test name filter")
+    KANNOTATE(cli::positional = true,
+              cli::meta_var = "<PATTERN>",
+              description = "positional fallback for test name filter")
     <std::optional<std::string>> test_filter_input;
 };
 

@@ -18,15 +18,51 @@
 namespace {
 
 struct DownstreamConfig {
-    KOTATSU_ANNOTATE(rename = "compileCommands")
+    KANNOTATE(rename = "compileCommands")
     <int> compile_commands = 0;
 };
 
 template <typename T>
 struct DownstreamBox {
-    KOTATSU_ANNOTATE(alias = {"v"})
+    KANNOTATE(alias = {"v"})
     <T> value;
 };
+
+/// Named like the struct the namespace below annotates.
+struct Options {};
+
+namespace downstream {
+
+// Declares the struct in this namespace, though ::Options is in scope.
+KANNOTATE_TYPE(struct Options, description = "Downstream options");
+
+struct Options {
+    int jobs = 0;
+};
+
+enum class Level : std::uint8_t;
+KANNOTATE_TYPE(Level, description = "How loud");
+
+enum class Level : std::uint8_t { Quiet, Loud };
+
+/// The spec of an extension of this namespace's own.
+struct Probe {
+    int weight = 0;
+};
+
+[[maybe_unused]] constexpr inline kotatsu::meta::dsl::member_proxy<&Probe::weight> weight{};
+
+KANNOTATE_TYPE(struct Weighed, weight = 2);
+
+struct Weighed {
+    int value = 0;
+};
+
+struct HoldsWeighed {
+    Weighed plain;
+};
+
+}  // namespace downstream
 
 }  // namespace
 
@@ -42,35 +78,35 @@ struct Profile {
 };
 
 struct Entries {
-    KOTATSU_ANNOTATE(rename = "id", alias = {"uid"}, description = "Identifier.")
+    KANNOTATE(rename = "id", alias = {"uid"}, description = "Identifier.")
     <int> user_id;
-    KOTATSU_ANNOTATE(skip = true)
+    KANNOTATE(skip = true)
     <int> internal;
-    KOTATSU_ANNOTATE(flatten = true)
+    KANNOTATE(flatten = true)
     <Profile> profile;
-    KOTATSU_ANNOTATE(defaulted = true, skip_if = skip_when::none)
+    KANNOTATE(defaulted = true, skip_if = skip_when::none)
     <std::optional<int>> note;
 };
 
 struct Behaviors {
-    KOTATSU_ANNOTATE(as = type<std::string>)
+    KANNOTATE(as = type<std::string>)
     <int> as_text;
-    KOTATSU_ANNOTATE(with = type<test::DecimalText>)
+    KANNOTATE(with = type<test::DecimalText>)
     <int> with_adapter;
-    KOTATSU_ANNOTATE(skip_if = type<test::IsNegative>)
+    KANNOTATE(skip_if = type<test::IsNegative>)
     <int> skip_negative;
-    KOTATSU_ANNOTATE(enum_string = type<naming::rename_policy::lower_camel>)
+    KANNOTATE(enum_string = type<naming::rename_policy::lower_camel>)
     <Level> level;
 };
 
-KOTATSU_ANNOTATION(ShapeTag, tag = "kind", tag_names = {"circle", "rect"});
-KOTATSU_ANNOTATION(StrictCamel, rename_all = Casing::LowerCamel, deny_unknown_fields = true);
-KOTATSU_ANNOTATION(AllDefaulted, defaulted_fields = true);
+KANNOTATION(ShapeTag, tag = "kind", tag_names = {"circle", "rect"});
+KANNOTATION(StrictCamel, rename_all = Casing::LowerCamel, deny_unknown_fields = true);
+KANNOTATION(AllDefaulted, defaulted_fields = true);
 
 struct StructEntriesOnFields {
-    KOTATSU_ANNOTATE(tag = "kind", tag_names = {"circle", "rect"})
+    KANNOTATE(tag = "kind", tag_names = {"circle", "rect"})
     <std::variant<test::Circle, test::Rect>> shape;
-    KOTATSU_ANNOTATE(rename_all = Casing::UpperSnake, deny_unknown_fields = true)
+    KANNOTATE(rename_all = Casing::UpperSnake, deny_unknown_fields = true)
     <Profile> inner;
 };
 
@@ -81,16 +117,34 @@ ZEST_CASE(annotate_works_outside_kotatsu) {
     ZSTATIC_EXPECT(spec.rename == std::string_view("compileCommands"));
 }
 
+ZEST_CASE(annotate_type_declares_the_struct_where_it_is_written) {
+    ZSTATIC_EXPECT(meta::field_spec_of<downstream::Options>.description ==
+                   std::string_view("Downstream options"));
+    ZSTATIC_EXPECT(meta::field_spec_of<::Options>.description.empty());
+}
+
+ZEST_CASE(annotate_type_follows_an_opaque_enum_declaration) {
+    ZSTATIC_EXPECT(meta::field_spec_of<downstream::Level>.description ==
+                   std::string_view("How loud"));
+}
+
+ZEST_CASE(annotate_type_carries_extension_entries_to_plain_fields) {
+    constexpr const auto& info =
+        static_cast<const meta::struct_type_info&>(meta::type_info_of<downstream::HoldsWeighed>());
+    ZSTATIC_EXPECT(info.fields[0].has_extension<downstream::Probe>());
+    ZEXPECT(info.fields[0].extension<downstream::Probe>()->weight == 2);
+}
+
 ZEST_CASE(annotate_works_in_a_class_template) {
     constexpr const auto& spec = meta::field_spec_of<decltype(DownstreamBox<int>::value)>;
-    ZSTATIC_EXPECT(spec.alias.count == 1U);
-    ZSTATIC_EXPECT(spec.alias.names()[0] == std::string_view("v"));
+    ZSTATIC_EXPECT(spec.alias.size() == 1U);
+    ZSTATIC_EXPECT(spec.alias[0] == std::string_view("v"));
 }
 
 ZEST_CASE(annotate_field_entries_make_a_field_spec) {
     constexpr const auto& id = meta::field_spec_of<decltype(Entries::user_id)>;
     ZSTATIC_EXPECT(id.rename == std::string_view("id"));
-    ZSTATIC_EXPECT(id.alias.names()[0] == std::string_view("uid"));
+    ZSTATIC_EXPECT(id.alias[0] == std::string_view("uid"));
     ZSTATIC_EXPECT(id.description == std::string_view("Identifier."));
     ZSTATIC_EXPECT(meta::field_spec_of<decltype(Entries::internal)>.skip);
     ZSTATIC_EXPECT(meta::field_spec_of<decltype(Entries::profile)>.flatten);
@@ -112,15 +166,15 @@ ZEST_CASE(annotate_type_entries_become_behavior_attrs) {
 }
 
 ZEST_CASE(annotation_struct_entries_make_a_struct_spec) {
-    constexpr const auto& shape = ShapeTag::spec;
+    constexpr const auto& shape = meta::attrs::struct_spec<ShapeTag>::value;
     ZSTATIC_EXPECT(shape.tagging == meta::tag_mode::internal);
     ZSTATIC_EXPECT(shape.tag == std::string_view("kind"));
-    ZSTATIC_EXPECT(shape.tag_names.names()[1] == std::string_view("rect"));
+    ZSTATIC_EXPECT(shape.tag_names[1] == std::string_view("rect"));
 
-    constexpr const auto& strict = StrictCamel::spec;
+    constexpr const auto& strict = meta::attrs::struct_spec<StrictCamel>::value;
     ZSTATIC_EXPECT(strict.rename_all == naming::Casing::LowerCamel);
     ZSTATIC_EXPECT(strict.deny_unknown_fields);
-    ZSTATIC_EXPECT(AllDefaulted::spec.defaulted_fields);
+    ZSTATIC_EXPECT(meta::attrs::struct_spec<AllDefaulted>::value.defaulted_fields);
     ZEXPECT(zest::type_eq<meta::annotate<StrictCamel>::type<Profile>,
                           meta::annotation<Profile, meta::attrs::struct_spec<StrictCamel>>>());
 }

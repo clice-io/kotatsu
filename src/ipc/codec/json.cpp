@@ -41,13 +41,13 @@ struct json_rpc_incoming {
     std::optional<std::string> jsonrpc;
     // RawValue, not optional<RequestID>, so that a null id stays apart from
     // a missing one: absent → empty(), null → "null" text.
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <codec::RawValue> id;
     std::optional<std::string> method;
     std::optional<codec::RawValue> params;
     // Not optional<RawValue> because "result": null is a valid success
     // response — optional would lose it as nullopt.
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <codec::RawValue> result;
     std::optional<Error> error;
 };

@@ -219,6 +219,9 @@ private:
                                                     const meta::struct_type_info* si,
                                                     const InternalTag* tag = nullptr) {
         target.insert("type", "object");
+        if(!si->description.empty()) {
+            target.insert("description", si->description);
+        }
         KOTATSU_EXPECTED_TRY_V(auto props, make_properties(si));
         dyn::Array required;
         // A required field the document may name by an alias is present under

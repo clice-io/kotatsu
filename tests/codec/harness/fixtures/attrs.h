@@ -75,7 +75,7 @@ struct FlattenOuterWithChildSkipPlain {
 };
 
 struct RenameToRenamedA {
-    constexpr static auto spec = meta::make_spec(meta::dsl::rename = "renamed_a");
+    constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "renamed_a");
 };
 
 struct FlattenInnerWithRename {
@@ -118,9 +118,9 @@ struct RenameTargetWithExtra {
 
 /// On a field, a struct-level annotation's policies apply inside it.
 struct UpperSnakeStrictTag {
-    constexpr static auto spec =
-        meta::make_struct_spec(meta::dsl::rename_all = naming::Casing::UpperSnake,
-                               meta::dsl::deny_unknown_fields = true);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::rename_all = naming::Casing::UpperSnake,
+                              meta::dsl::deny_unknown_fields = true);
 };
 
 struct RenameTargetUpperSnake {
@@ -193,7 +193,7 @@ struct ExtraBeforeTextPlain {
 };
 
 struct AliasAnchor {
-    constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"anchor"});
+    constexpr static auto entries = meta::make_annotation(meta::dsl::alias = {"anchor"});
 };
 
 /// A field the document may name by an alias.
@@ -232,7 +232,7 @@ struct Tunables {
 };
 
 struct DefaultedFieldsTag {
-    constexpr static auto spec = meta::make_struct_spec(meta::dsl::defaulted_fields = true);
+    constexpr static auto entries = meta::make_annotation(meta::dsl::defaulted_fields = true);
 };
 
 /// defaulted_fields on a field reaches the struct below it, not the one
@@ -244,7 +244,7 @@ struct TunablesHolder {
 
 /// A field whose default a schema leaves unstated.
 struct UnstatedDefault {
-    constexpr static auto spec = meta::make_spec(meta::dsl::schema_default = false);
+    constexpr static auto entries = meta::make_annotation(meta::dsl::schema_default = false);
 };
 
 struct WithUnstated {
@@ -254,7 +254,7 @@ struct WithUnstated {
 
 /// Two fields answering to one name.
 struct AliasDup {
-    constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"dup"});
+    constexpr static auto entries = meta::make_annotation(meta::dsl::alias = {"dup"});
 };
 
 struct SharedAlias {
@@ -269,7 +269,8 @@ struct CamelCollision {
 };
 
 struct DescribeId {
-    constexpr static auto spec = meta::make_spec(meta::dsl::description = "Numeric identifier.");
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::description = "Numeric identifier.");
 };
 
 struct Documented {
@@ -296,6 +297,21 @@ struct DecimalText {
         std::from_chars(text.data(), text.data() + text.size(), value);
         return value;
     }
+};
+
+struct amount_tag {
+    constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "amount");
+};
+
+/// An annotation of an annotation: renamed by the outer one, and travelling as decimal text
+/// by the inner one.
+struct RenamedDecimal {
+    meta::annotate<amount_tag>::type<meta::annotation<int, meta::behavior::with<DecimalText>>>
+        value;
+};
+
+struct RenamedDecimalPlain {
+    std::string amount;
 };
 
 /// Classes that travel as another type (behavior::as): converting both ways.
@@ -451,20 +467,23 @@ struct IsNegative {
 };
 
 struct SkipWhenNone {
-    constexpr static auto spec = meta::make_spec(meta::dsl::skip_if = meta::skip_when::none);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::skip_if = meta::skip_when::none);
 };
 
 struct SkipWhenEmpty {
-    constexpr static auto spec = meta::make_spec(meta::dsl::skip_if = meta::skip_when::empty);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::skip_if = meta::skip_when::empty);
 };
 
 struct SkipWhenDefault {
-    constexpr static auto spec =
-        meta::make_spec(meta::dsl::skip_if = meta::skip_when::default_value);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::skip_if = meta::skip_when::default_value);
 };
 
 struct SkipIfNegative {
-    constexpr static auto spec = meta::make_spec(meta::dsl::skip_if = meta::dsl::type<IsNegative>);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::skip_if = meta::dsl::type<IsNegative>);
 };
 
 /// Every skip condition: the built-in ones and a predicate. The initializers

@@ -231,7 +231,7 @@ bool encode_with_attrs(Vis& vis, const T& value) {
         return vis.visit_str(std::string_view(renamed));
     } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
         static_assert(taggable<T>, "a tagging attribute requires a std::variant");
-        using spec_attr = tuple_find_t<Attrs, meta::is_struct_spec_attr>;
+        using spec_attr = tuple_find_spec_t<Attrs, meta::attrs::struct_spec>;
         return encode_tagged_variant<Config, spec_attr>(vis, value);
     } else {
         return encode_value<meta::node_config_t<Config, T, Attrs>>(vis, value);

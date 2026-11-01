@@ -18,7 +18,7 @@ struct DefaultedPolicy {
 ZEST_SUITE(meta_schema_attrs) {
 
 ZEST_CASE(simple_struct_fields) {
-    ZSTATIC_EXPECT(virtual_schema<fx::SimpleStruct>::count == 3U);
+    ZSTATIC_EXPECT(virtual_schema<fx::SimpleStruct>::fields.size() == 3U);
 
     constexpr auto& fields = virtual_schema<fx::SimpleStruct>::fields;
 
@@ -30,10 +30,6 @@ ZEST_CASE(simple_struct_fields) {
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::string);
     ZSTATIC_EXPECT(fields[2].type().kind == type_kind::float32);
 
-    ZSTATIC_EXPECT(fields[0].physical_index == 0U);
-    ZSTATIC_EXPECT(fields[1].physical_index == 1U);
-    ZSTATIC_EXPECT(fields[2].physical_index == 2U);
-
     // Offsets: first at 0, strictly increasing
     ZSTATIC_EXPECT(fields[0].offset == 0U);
     ZSTATIC_EXPECT(fields[1].offset > fields[0].offset);
@@ -42,31 +38,26 @@ ZEST_CASE(simple_struct_fields) {
     // All flags false for plain struct
     ZSTATIC_EXPECT(!fields[0].has_default);
     ZSTATIC_EXPECT(!fields[0].has_skip_if);
-    ZSTATIC_EXPECT(!fields[0].has_behavior);
     ZSTATIC_EXPECT(fields[0].aliases.size() == 0U);
     ZSTATIC_EXPECT(!fields[1].has_default);
     ZSTATIC_EXPECT(!fields[1].has_skip_if);
-    ZSTATIC_EXPECT(!fields[1].has_behavior);
     ZSTATIC_EXPECT(fields[1].aliases.size() == 0U);
     ZSTATIC_EXPECT(!fields[2].has_default);
     ZSTATIC_EXPECT(!fields[2].has_skip_if);
-    ZSTATIC_EXPECT(!fields[2].has_behavior);
     ZSTATIC_EXPECT(fields[2].aliases.size() == 0U);
 }
 
 ZEST_CASE(rename_and_skip) {
     // AnnotatedStruct: user_id(rename<"id">), internal(skip), value
-    ZSTATIC_EXPECT(virtual_schema<fx::AnnotatedStruct>::count == 2U);
+    ZSTATIC_EXPECT(virtual_schema<fx::AnnotatedStruct>::fields.size() == 2U);
 
     constexpr auto& fields = virtual_schema<fx::AnnotatedStruct>::fields;
 
     ZSTATIC_EXPECT(fields[0].name == "id");
     ZSTATIC_EXPECT(fields[0].type().kind == type_kind::int32);
-    ZSTATIC_EXPECT(fields[0].physical_index == 0U);
 
     ZSTATIC_EXPECT(fields[1].name == "value");
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::float32);
-    ZSTATIC_EXPECT(fields[1].physical_index == 2U);
 }
 
 ZEST_CASE(alias) {
@@ -82,7 +73,7 @@ ZEST_CASE(alias) {
 
 ZEST_CASE(flatten) {
     // Outer: x(1) + Inner{a,b}(2) + y(1) = 4 fields
-    ZSTATIC_EXPECT(virtual_schema<fx::Outer>::count == 4U);
+    ZSTATIC_EXPECT(virtual_schema<fx::Outer>::fields.size() == 4U);
 
     constexpr auto& fields = virtual_schema<fx::Outer>::fields;
 
@@ -111,7 +102,7 @@ ZEST_CASE(flatten) {
 
 ZEST_CASE(deep_flatten) {
     // DeepOuter: head + Middle{m, DeepInner{p,q}} + tail = 5 fields
-    ZSTATIC_EXPECT(virtual_schema<fx::DeepOuter>::count == 5U);
+    ZSTATIC_EXPECT(virtual_schema<fx::DeepOuter>::fields.size() == 5U);
 
     constexpr auto& fields = virtual_schema<fx::DeepOuter>::fields;
 
@@ -135,7 +126,7 @@ ZEST_CASE(deep_flatten) {
 }
 
 ZEST_CASE(default_value) {
-    ZSTATIC_EXPECT(virtual_schema<fx::DefaultStruct>::count == 3U);
+    ZSTATIC_EXPECT(virtual_schema<fx::DefaultStruct>::fields.size() == 3U);
 
     constexpr auto& fields = virtual_schema<fx::DefaultStruct>::fields;
 
@@ -166,7 +157,7 @@ ZEST_CASE(deny_unknown_default_false) {
 
 ZEST_CASE(nested_field_type_info) {
     // NestedStruct: items is vector<SimpleStruct>
-    ZSTATIC_EXPECT(virtual_schema<fx::NestedStruct>::count == 1U);
+    ZSTATIC_EXPECT(virtual_schema<fx::NestedStruct>::fields.size() == 1U);
 
     constexpr auto& fields = virtual_schema<fx::NestedStruct>::fields;
     ZSTATIC_EXPECT(fields[0].name == "items");

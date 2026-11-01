@@ -10,19 +10,21 @@ namespace kotatsu::cli {
 namespace {
 
 struct Fields {
-    KOTATSU_ANNOTATE(cli::names = {"-o", "--out"}, cli::meta_var = "<FILE>", description = "Out")
+    KANNOTATE(cli::names = {"-o", "--out"}, cli::meta_var = "<FILE>", description = "Out")
     <std::string> out;
-    KOTATSU_ANNOTATE(cli::positional = true, cli::arg_num = ArgNum(1, 2))
+    KANNOTATE(cli::positional = true, cli::arg_num = ArgNum(1, 2))
     <std::vector<int>> input;
     std::string plain;
+    KANNOTATE(cli::hidden = true)
+    <Help> help;
 };
 
 ZEST_SUITE(cli_spec) {
 
 ZEST_CASE(entries_fold_into_the_spec) {
     constexpr const auto* spec = meta::extension_of<ArgSpec, meta::field_type<Fields, 0>>;
-    ZSTATIC_EXPECT(spec->names.names().size() == 2U);
-    ZSTATIC_EXPECT(spec->names.names()[1] == "--out");
+    ZSTATIC_EXPECT(spec->names.size() == 2U);
+    ZSTATIC_EXPECT(spec->names[1] == "--out");
     ZSTATIC_EXPECT(spec->meta_var == "<FILE>");
     ZSTATIC_EXPECT(!spec->positional);
 }
@@ -41,7 +43,14 @@ ZEST_CASE(help_option_stops_and_is_not_required) {
     constexpr const auto* spec = meta::extension_of<ArgSpec, Help>;
     ZSTATIC_EXPECT(spec->stop);
     ZSTATIC_EXPECT(!spec->required);
-    ZSTATIC_EXPECT(spec->names.names()[0] == "-h");
+    ZSTATIC_EXPECT(spec->names[0] == "-h");
+}
+
+ZEST_CASE(annotated_help_option_keeps_its_names_and_stop) {
+    constexpr const auto* spec = meta::extension_of<ArgSpec, meta::field_type<Fields, 3>>;
+    ZSTATIC_EXPECT(spec->hidden);
+    ZSTATIC_EXPECT(spec->stop);
+    ZSTATIC_EXPECT(spec->names[1] == "--help");
 }
 
 };  // ZEST_SUITE(cli_spec)

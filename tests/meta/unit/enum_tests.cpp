@@ -57,6 +57,11 @@ enum class Byte : char {
     High = '\xE9',
 };
 
+enum class Toggle : bool {
+    Off,
+    On,
+};
+
 static_assert(reflection<Color>::member_count == 3);
 static_assert(reflection<Color>::member_names.size() == 3);
 static_assert(reflection<Color>::member_names[0] == "Red");
@@ -135,6 +140,12 @@ ZEST_CASE(unsigned_members_above_127_ascend) {
     ZSTATIC_EXPECT(reflection<Byte>::member_values[0] < reflection<Byte>::member_values[1]);
     ZEXPECT(enum_name(Byte::Letter) == "Letter");
     ZEXPECT(enum_name(Byte::High) == "High");
+}
+
+ZEST_CASE(bool_members_are_named_once) {
+    ZSTATIC_EXPECT(reflection<Toggle>::member_count == 2);
+    ZEXPECT(enum_name(Toggle::Off) == "Off");
+    ZEXPECT(enum_name(Toggle::On) == "On");
 }
 
 };  // ZEST_SUITE(meta_enum)

@@ -99,7 +99,7 @@ struct ArgSpec {
     }
 };
 
-/// The entries of ArgSpec in a KOTATSU_ANNOTATE: `cli::names = {"-o", "--output"}`.
+/// The entries of ArgSpec in a KANNOTATE: `cli::names = {"-o", "--output"}`.
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::names> names{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::meta_var> meta_var{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::positional> positional{};
@@ -124,10 +124,10 @@ struct Alias {
 namespace detail {
 
 struct help_tag {
-    constexpr static auto spec =
-        meta::make_spec(meta::dsl::description = "display this help and exit",
-                        names = {"-h", "--help"},
-                        stop = true);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::description = "display this help and exit",
+                              names = {"-h", "--help"},
+                              stop = true);
 };
 
 }  // namespace detail

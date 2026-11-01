@@ -225,8 +225,8 @@ class Builder {
         for(std::size_t i = 0; i < variant.alternatives.size(); ++i) {
             const auto& alternative = variant.alternatives[i]();
             auto word = subcommand_name(variant, i);
-            subcommands.hidden.push_back(std::ranges::find(use.spec.hidden_sub.names(), word) !=
-                                         use.spec.hidden_sub.names().end());
+            subcommands.hidden.push_back(std::ranges::find(use.spec.hidden_sub, word) !=
+                                         use.spec.hidden_sub.end());
             subcommands.names.push_back(std::move(word));
             subcommands.descriptions.push_back(
                 static_cast<const meta::struct_type_info&>(alternative).description);
@@ -236,12 +236,15 @@ class Builder {
     }
 
     /// Adds the subcommands files added to the set of a cli::Commands field, which may be left
-    /// out: the field is empty then.
+    /// out unless the field is required: the field is empty then.
     void add_commands(const FieldUse& use,
                       std::uint32_t group,
                       const std::vector<std::string_view>& keys,
                       const std::string& path) {
-        Subcommands subcommands{.keys = keys, .path = path, .optional = true, .group = group};
+        Subcommands subcommands{.keys = keys,
+                                .path = path,
+                                .optional = !use.spec.required,
+                                .group = group};
         for(const auto& entry: use.spec.commands.registry().entries) {
             subcommands.names.push_back(entry.name);
             subcommands.descriptions.push_back(entry.description);
@@ -303,14 +306,15 @@ class Builder {
             switch(use.kind) {
                 case FieldUse::Kind::Group: {
                     const auto inner = static_cast<std::uint32_t>(command.groups.size());
+                    const auto& members = static_cast<const meta::struct_type_info&>(*use.type);
+                    // The struct's own, which a std::optional of it does not pass on.
+                    const auto description =
+                        field.description.empty() ? members.description : field.description;
                     command.groups.push_back(Group{.parent = group,
                                                    .optional = use.optional,
                                                    .keys = field_keys,
-                                                   .description = std::string(field.description)});
-                    add_struct(static_cast<const meta::struct_type_info&>(*use.type),
-                               inner,
-                               field_keys,
-                               field_path);
+                                                   .description = std::string(description)});
+                    add_struct(members, inner, field_keys, field_path);
                     break;
                 }
                 case FieldUse::Kind::Subcommands:

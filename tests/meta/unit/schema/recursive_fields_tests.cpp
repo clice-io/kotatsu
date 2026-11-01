@@ -32,7 +32,7 @@ ZEST_SUITE(meta_schema_recursive_fields) {
 
 ZEST_CASE(tree_node_fields_without_prior_type_info) {
     using S = virtual_schema<fx::TreeNode>;
-    ZSTATIC_EXPECT(S::count == 2U);
+    ZSTATIC_EXPECT(S::fields.size() == 2U);
     ZSTATIC_EXPECT(S::fields.size() == 2U);
     ZSTATIC_EXPECT(S::fields[0].name == "value");
     ZSTATIC_EXPECT(S::fields[1].name == "children");
@@ -40,7 +40,7 @@ ZEST_CASE(tree_node_fields_without_prior_type_info) {
 
 ZEST_CASE(shared_node_fields_without_prior_type_info) {
     using S = virtual_schema<fx::SharedNode>;
-    ZSTATIC_EXPECT(S::count == 3U);
+    ZSTATIC_EXPECT(S::fields.size() == 3U);
     ZSTATIC_EXPECT(S::fields[0].name == "label");
     ZSTATIC_EXPECT(S::fields[1].name == "parent");
     ZSTATIC_EXPECT(S::fields[2].name == "children");
@@ -48,28 +48,28 @@ ZEST_CASE(shared_node_fields_without_prior_type_info) {
 
 ZEST_CASE(linked_node_fields_without_prior_type_info) {
     using S = virtual_schema<fx::LinkedNode>;
-    ZSTATIC_EXPECT(S::count == 2U);
+    ZSTATIC_EXPECT(S::fields.size() == 2U);
     ZSTATIC_EXPECT(S::fields[0].name == "data");
     ZSTATIC_EXPECT(S::fields[1].name == "next");
 }
 
 ZEST_CASE(optional_recursive_fields_without_prior_type_info) {
     using S = virtual_schema<fx::OptionalRecursive>;
-    ZSTATIC_EXPECT(S::count == 2U);
+    ZSTATIC_EXPECT(S::fields.size() == 2U);
     ZSTATIC_EXPECT(S::fields[0].name == "id");
     ZSTATIC_EXPECT(S::fields[1].name == "sub_items");
 }
 
 ZEST_CASE(map_recursive_fields_without_prior_type_info) {
     using S = virtual_schema<fx::MapRecursive>;
-    ZSTATIC_EXPECT(S::count == 2U);
+    ZSTATIC_EXPECT(S::fields.size() == 2U);
     ZSTATIC_EXPECT(S::fields[0].name == "name");
     ZSTATIC_EXPECT(S::fields[1].name == "nested");
 }
 
 ZEST_CASE(mixed_recursive_fields_without_prior_type_info) {
     using S = virtual_schema<fx::MixedRecursive>;
-    ZSTATIC_EXPECT(S::count == 3U);
+    ZSTATIC_EXPECT(S::fields.size() == 3U);
     ZSTATIC_EXPECT(S::fields[0].name == "tag");
     ZSTATIC_EXPECT(S::fields[1].name == "deep");
     ZSTATIC_EXPECT(S::fields[2].name == "grouped");
@@ -77,7 +77,7 @@ ZEST_CASE(mixed_recursive_fields_without_prior_type_info) {
 
 ZEST_CASE(variant_branch_mutual_recursion_without_prior_type_info) {
     using S = virtual_schema<fx::VariantBranch>;
-    ZSTATIC_EXPECT(S::count == 1U);
+    ZSTATIC_EXPECT(S::fields.size() == 1U);
     ZSTATIC_EXPECT(S::fields[0].name == "nodes");
 }
 

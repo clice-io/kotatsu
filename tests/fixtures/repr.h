@@ -27,9 +27,9 @@ struct BasisPoints {
 };
 
 struct StrictCamelTag {
-    constexpr static auto spec =
-        meta::make_struct_spec(meta::dsl::rename_all = naming::Casing::LowerCamel,
-                               meta::dsl::deny_unknown_fields = true);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::rename_all = naming::Casing::LowerCamel,
+                              meta::dsl::deny_unknown_fields = true);
 };
 
 /// A repr whose declared type is an adjacently tagged variant.
@@ -46,9 +46,9 @@ struct LoadErr {
 };
 
 struct LoadTag {
-    constexpr static auto spec = meta::make_struct_spec(meta::dsl::tag = "status",
-                                                        meta::dsl::content = "value",
-                                                        meta::dsl::tag_names = {"ok", "err"});
+    constexpr static auto entries = meta::make_annotation(meta::dsl::tag = "status",
+                                                          meta::dsl::content = "value",
+                                                          meta::dsl::tag_names = {"ok", "err"});
 };
 
 using TaggedLoad = meta::annotate<LoadTag>::type<std::variant<LoadOk, LoadErr>>;
@@ -91,9 +91,9 @@ struct ChoiceText {
 };
 
 struct ChoiceTag {
-    constexpr static auto spec = meta::make_struct_spec(meta::dsl::tag = "t",
-                                                        meta::dsl::content = "c",
-                                                        meta::dsl::tag_names = {"num", "text"});
+    constexpr static auto entries = meta::make_annotation(meta::dsl::tag = "t",
+                                                          meta::dsl::content = "c",
+                                                          meta::dsl::tag_names = {"num", "text"});
 };
 
 /// A tagging spec and a with-adapter on one annotation: the adapter decides.
@@ -111,9 +111,9 @@ struct Stamp {
 using StampOrNote = std::variant<Stamp, std::string>;
 
 struct StampTag {
-    constexpr static auto spec = meta::make_struct_spec(meta::dsl::tag = "t",
-                                                        meta::dsl::content = "c",
-                                                        meta::dsl::tag_names = {"stamp", "note"});
+    constexpr static auto entries = meta::make_annotation(meta::dsl::tag = "t",
+                                                          meta::dsl::content = "c",
+                                                          meta::dsl::tag_names = {"stamp", "note"});
 };
 
 using TaggedStampOrNote = meta::annotate<StampTag>::type<StampOrNote>;

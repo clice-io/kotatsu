@@ -16,60 +16,62 @@ namespace {
 enum class Mode : std::uint8_t { Pipe, Socket };
 
 struct Where {
-    KOTATSU_ANNOTATE(description = "Project root directory")
+    KANNOTATE(description = "Project root directory")
     <std::optional<std::string>> workspace;
 };
 
 struct Remote {
-    KOTATSU_ANNOTATE(description = "Host to connect to")
+    KANNOTATE(description = "Host to connect to")
     <std::string> host;
 };
 
+KANNOTATE_TYPE(struct Serve, description = "Start the server");
+
 struct Serve {
-    constexpr static std::string_view description = "Start the server";
     cli::Help help;
-    KOTATSU_ANNOTATE(description = "Server mode")
+    KANNOTATE(description = "Server mode")
     <Mode> mode = Mode::Pipe;
-    KOTATSU_ANNOTATE(cli::names = {"-j", "--jobs"}, cli::meta_var = "<N>", description = "Workers")
+    KANNOTATE(cli::names = {"-j", "--jobs"}, cli::meta_var = "<N>", description = "Workers")
     <unsigned> jobs = 0;
-    KOTATSU_ANNOTATE(description = "Scopes to look in")
+    KANNOTATE(description = "Scopes to look in")
     <std::vector<std::string>> scope;
     std::optional<std::string> record;
     Where where;
-    KOTATSU_ANNOTATE(description = "Remote")
+    KANNOTATE(description = "Remote")
     <std::optional<Remote>> remote;
-    KOTATSU_ANNOTATE(cli::positional = true, cli::meta_var = "<PATH>", description = "Files")
+    KANNOTATE(cli::positional = true, cli::meta_var = "<PATH>", description = "Files")
     <std::vector<std::string>> paths;
 };
 
-struct Query {
-    constexpr static std::string_view description = "Ask the index";
-};
+KANNOTATE_TYPE(struct Query, description = "Ask the index");
+
+struct Query {};
+
+KANNOTATE_TYPE(struct Tool, description = "A tool");
 
 struct Tool {
-    constexpr static std::string_view description = "A tool";
     cli::Help help;
     std::variant<Serve, Query> command;
 };
 
 struct Internal {
-    KOTATSU_ANNOTATE(cli::hidden = true)
+    KANNOTATE(cli::hidden = true)
     <bool> trace = false;
-    KOTATSU_ANNOTATE(cli::hidden_sub = {"serve"})
+    KANNOTATE(cli::hidden_sub = {"serve"})
     <std::variant<Serve, Query>> command;
 };
 
 struct Tuned {
-    KOTATSU_ANNOTATE(minimum = 1, maximum = 64, description = "Workers")
+    KANNOTATE(minimum = 1, maximum = 64, description = "Workers")
     <int> jobs = 4;
-    KOTATSU_ANNOTATE(choices = {"fast", "slow"})
+    KANNOTATE(choices = {"fast", "slow"})
     <std::string> mode = "fast";
     std::vector<std::string> include = {"a", "b"};
     std::string name;
 };
 
 struct Must {
-    KOTATSU_ANNOTATE(cli::required = true)
+    KANNOTATE(cli::required = true)
     <std::string> must = "x";
 };
 
@@ -77,13 +79,20 @@ enum class Level : std::uint8_t { Low = 1, High };
 
 /// A field whose default value has no name, which no argument writes.
 struct Unnamed {
-    KOTATSU_ANNOTATE(cli::required = true, enum_string = type<naming::rename_policy::identity>)
+    KANNOTATE(cli::required = true, enum_string = type<naming::rename_policy::identity>)
     <Level> level;
     int jobs = 2;
 };
 
+/// The help option, kept out of the usage.
+struct QuietHelp {
+    KANNOTATE(cli::hidden = true)
+    <cli::Help> help;
+    int jobs = 0;
+};
+
 struct Run {
-    KOTATSU_ANNOTATE(cli::rest = true, cli::meta_var = "<ARG>")
+    KANNOTATE(cli::rest = true, cli::meta_var = "<ARG>")
     <std::vector<std::string>> command;
 };
 
@@ -205,6 +214,13 @@ ZEST_CASE(value_that_does_not_write_has_no_default) {
     ZASSERT(entries.size() == 2U);
     ZEXPECT(entries[0].default_value.empty());
     ZEXPECT(entries[1].default_value == "2");
+}
+
+ZEST_CASE(annotated_help_option_still_stops_and_is_left_out) {
+    auto quiet = cli::parse<QuietHelp>(std::vector<std::string>{"--help", "--jobs", "x"});
+    ZASSERT(quiet.has_value());
+    ZEXPECT(quiet->help);
+    ZEXPECT(!cli::usage<QuietHelp>("quiet").contains("--help"));
 }
 
 };  // ZEST_SUITE(cli_usage)

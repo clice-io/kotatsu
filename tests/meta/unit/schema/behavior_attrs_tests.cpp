@@ -21,7 +21,7 @@ namespace fx = ::kotatsu::test;
 ZEST_SUITE(meta_schema_behavior_attrs) {
 
 ZEST_CASE(skip_if_and_as) {
-    ZSTATIC_EXPECT(virtual_schema<fx::BehaviorStruct>::count == 3U);
+    ZSTATIC_EXPECT(virtual_schema<fx::BehaviorStruct>::fields.size() == 3U);
 
     constexpr auto& fields = virtual_schema<fx::BehaviorStruct>::fields;
 
@@ -31,16 +31,13 @@ ZEST_CASE(skip_if_and_as) {
 
     // skip_if is not a behavior provider
     ZSTATIC_EXPECT(fields[0].has_skip_if);
-    ZSTATIC_EXPECT(!fields[0].has_behavior);
 
     // as<string> is a behavior provider; encoded type becomes string
-    ZSTATIC_EXPECT(fields[1].has_behavior);
     ZSTATIC_EXPECT(!fields[1].has_skip_if);
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::string);
 
     // plain field: no behavior flags
     ZSTATIC_EXPECT(!fields[2].has_skip_if);
-    ZSTATIC_EXPECT(!fields[2].has_behavior);
 }
 
 ZEST_CASE(with_adapter_type_info) {
@@ -48,7 +45,6 @@ ZEST_CASE(with_adapter_type_info) {
 
     // Adapter declares type = std::string
     ZSTATIC_EXPECT(fields[0].type().kind == type_kind::string);
-    ZSTATIC_EXPECT(fields[0].has_behavior);
 
     // The slot keeps the raw field type; repr resolution is pinned by the
     // field's type_info kind above.
@@ -58,7 +54,6 @@ ZEST_CASE(with_adapter_type_info) {
 
     // plain float is unaffected
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::float32);
-    ZSTATIC_EXPECT(!fields[1].has_behavior);
 }
 
 ZEST_CASE(enum_string) {
@@ -68,7 +63,6 @@ ZEST_CASE(enum_string) {
     // keeps the members, spelled through the policy.
     ZSTATIC_EXPECT(fields[0].type().kind == type_kind::enumeration);
     ZEXPECT(static_cast<const enum_type_info&>(fields[0].type()).rename != nullptr);
-    ZSTATIC_EXPECT(fields[0].has_behavior);
     ZEXPECT(zest::type_eq<resolved_repr_t<decltype(fx::EnumStringStruct::color_field)>,
                           std::string_view>());
 
@@ -79,7 +73,6 @@ ZEST_CASE(enum_string) {
 
     // plain int is unaffected
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::int32);
-    ZSTATIC_EXPECT(!fields[1].has_behavior);
 }
 
 ZEST_CASE(enum_string_through_a_chain) {
@@ -103,14 +96,12 @@ ZEST_CASE(tagged_variant) {
 ZEST_CASE(multi_attr_combination) {
     constexpr auto& fields = virtual_schema<fx::MultiAttrStruct>::fields;
 
-    // opt_with_default: has_default=true, has_skip_if=true, has_behavior=false
+    // opt_with_default: has_default=true, has_skip_if=true
     ZSTATIC_EXPECT(fields[0].has_default);
     ZSTATIC_EXPECT(fields[0].has_skip_if);
-    ZSTATIC_EXPECT(!fields[0].has_behavior);
 
-    // renamed_as: name="score", has_behavior=true, type->kind=string
+    // renamed_as: name="score", type->kind=string
     ZSTATIC_EXPECT(fields[1].name == "score");
-    ZSTATIC_EXPECT(fields[1].has_behavior);
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::string);
 }
 
@@ -119,7 +110,6 @@ ZEST_CASE(skip_if_combined_with_behavior) {
     {
         constexpr auto& fields = virtual_schema<fx::SkipIfAsStruct>::fields;
         ZSTATIC_EXPECT(fields[0].has_skip_if);
-        ZSTATIC_EXPECT(fields[0].has_behavior);
         ZSTATIC_EXPECT(fields[0].type().kind == type_kind::string);
     }
 
@@ -127,7 +117,6 @@ ZEST_CASE(skip_if_combined_with_behavior) {
     {
         constexpr auto& fields = virtual_schema<fx::SkipIfWithStruct>::fields;
         ZSTATIC_EXPECT(fields[0].has_skip_if);
-        ZSTATIC_EXPECT(fields[0].has_behavior);
         ZSTATIC_EXPECT(fields[0].type().kind == type_kind::string);
     }
 }

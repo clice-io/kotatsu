@@ -17,12 +17,12 @@ namespace {
 
 struct Project {
     std::optional<std::string> workspace;
-    KOTATSU_ANNOTATE(cli::names = {"-j", "--jobs"})
+    KANNOTATE(cli::names = {"-j", "--jobs"})
     <unsigned> jobs = 0;
 };
 
 struct Remote {
-    KOTATSU_ANNOTATE(cli::required = true)
+    KANNOTATE(cli::required = true)
     <std::string> host;
     int port = 0;
 };
@@ -32,14 +32,15 @@ struct Index {
     std::optional<Remote> remote;
 };
 
+KANNOTATE_TYPE(struct Serve, description = "Start the server");
+
 struct Serve {
-    constexpr static std::string_view description = "Start the server";
     cli::Help help;
     int port = 0;
 };
 
 struct ProjectFiles {
-    KOTATSU_ANNOTATE(cli::positional = true)
+    KANNOTATE(cli::positional = true)
     <std::string> path;
 };
 
@@ -49,7 +50,7 @@ struct Tool {
 };
 
 struct Main {
-    KOTATSU_ANNOTATE(cli::positional = true)
+    KANNOTATE(cli::positional = true)
     <std::optional<std::string>> path;
     std::optional<std::variant<Serve>> operation;
 };
@@ -60,13 +61,13 @@ struct Query {
 };
 
 struct Daemon {
-    KOTATSU_ANNOTATE(cli::required = true)
+    KANNOTATE(cli::required = true)
     <std::string> config;
     std::variant<Serve> command;
 };
 
 struct Service {
-    KOTATSU_ANNOTATE(tagged = true, tag_names = {"up", "index"})
+    KANNOTATE(tagged = true, tag_names = {"up", "index"})
     <std::variant<Serve, Index>> command;
 };
 

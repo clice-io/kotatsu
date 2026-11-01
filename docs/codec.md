@@ -31,7 +31,7 @@ codecs are [ipc](ipc.md)'s.
 namespace json = kotatsu::codec::json;
 
 struct Project {
-    KOTATSU_ANNOTATE(rename = "compileCommands")
+    KANNOTATE(rename = "compileCommands")
     <std::string> compile_commands;
     std::vector<int> ports;
 };
@@ -54,7 +54,7 @@ Adapted from `tests/codec/unit/macro_tests.cpp` and `tests/codec/json/unit/decod
 
 | Header                                                                                                               | Contents                                                                                                                                  |
 | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| [macro.h](../include/kotatsu/codec/macro.h)                                                                          | `KOTATSU_ANNOTATE(...)` on a field, `KOTATSU_ANNOTATION(name, ...)` for a reusable tag                                                    |
+| [macro.h](../include/kotatsu/codec/macro.h)                                                                          | `KANNOTATE(...)` on a field, `KANNOTATION(name, ...)` for a reusable tag, `KANNOTATE_TYPE(struct X, ...)` above a type                    |
 | [visit/encode.h](../include/kotatsu/codec/visit/encode.h), [visit/decode.h](../include/kotatsu/codec/visit/decode.h) | The protocol: `encode_value` / `decode_value`, overridden per visitor by `serialize_visit` / `deserialize_visit`                          |
 | [visit/config.h](../include/kotatsu/codec/visit/config.h)                                                            | `default_config<UserConfig>`, which fills in the knobs a config leaves out (`enum_repr`, `nan_repr`, `deny_unknown_fields`, ...)          |
 | [visit/context.h](../include/kotatsu/codec/visit/context.h)                                                          | `rich_error`, and `scoped_context<T>` for context a visitor or repr reads                                                                 |
