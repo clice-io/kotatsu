@@ -66,6 +66,25 @@ bool decode_variant(Vis& vis, Var& var);
 
 namespace detail {
 
+/// Decodes an enum through an enum_names repr: the enumerator whose name, as
+/// it is spelled, the document holds exactly.
+template <typename Repr, typename Config, typename Vis, typename E>
+bool decode_enum_name(Vis& vis, E& out) {
+    static_assert(std::is_enum_v<E>, "meta::enum_names is the repr of an enum");
+    using policy = meta::detail::enum_names_policy_t<Repr, E, Config>;
+    const auto& names = meta::detail::enum_names_of<E, policy>;
+    std::string name;
+    KOTATSU_CODEC_TRY(vis.visit_str(name));
+    for(std::size_t i = 0; i < names.size(); ++i) {
+        if(names[i] == name) {
+            out = meta::reflection<E>::member_values[i];
+            return true;
+        }
+    }
+    return scoped_context<rich_error>::fail(
+        rich_error(std::format("unknown enum value '{}'", name)));
+}
+
 /// Decode a value through a representation declaration (a meta::repr
 /// specialization or a behavior::with adapter): declarative from() when
 /// present, the imperative deserialize<Config>() body otherwise.
@@ -77,7 +96,9 @@ bool repr_decode(Vis& vis, V& out) {
                       "this backend computes the output layout statically and cannot decode a "
                       "meta::dynamic repr");
     }
-    if constexpr(requires { Repr::from(std::declval<declared_t>()); }) {
+    if constexpr(meta::names_enum<Repr>) {
+        return decode_enum_name<Repr, Config>(vis, out);
+    } else if constexpr(requires { Repr::from(std::declval<declared_t>()); }) {
         static_assert(
             !requires { Repr::template deserialize<Config>(vis, out); },
             "repr protocol: define from() or deserialize() for decoding, not both");
@@ -201,22 +222,9 @@ inline bool fail_unknown_tag(std::string_view name) {
         rich_error(std::format("unknown variant tag '{}'", name)));
 }
 
-/// Reads an enum as its name, rename(name) spelling the enumerator.
-template <typename E, typename Vis, typename Rename>
-bool decode_enum_name(Vis& vis, E& out, Rename rename) {
-    std::string name;
-    KOTATSU_CODEC_TRY(vis.visit_str(name));
-    if(auto value = meta::enum_value<E>(rename(name))) {
-        out = *value;
-        return true;
-    }
-    return scoped_context<rich_error>::fail(
-        rich_error(std::format("unknown enum value '{}'", name)));
-}
-
 /// Decodes a value under a node's attributes (a struct field's, or an
 /// annotation's), mirroring encode_with_attrs: behavior::with >
-/// behavior::as > behavior::enum_string > variant tagging > the rename_all /
+/// behavior::as > variant tagging > the rename_all /
 /// deny_unknown_fields / presence_all merge.
 template <typename Config, typename Attrs, typename Vis, typename T>
 bool decode_with_attrs(Vis& vis, T& out) {
@@ -231,12 +239,6 @@ bool decode_with_attrs(Vis& vis, T& out) {
         KOTATSU_CODEC_TRY(decode_value<Config>(vis, converted));
         out = T(std::move(converted));
         return true;
-    } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
-        using policy = typename tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
-        static_assert(std::is_enum_v<T>, "behavior::enum_string requires an enum type");
-        return decode_enum_name(vis, out, [](std::string_view name) {
-            return policy{}(false, name);
-        });
     } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
         static_assert(taggable<T>, "a tagging attribute requires a std::variant");
         // decode_variant reads the variant as itself, tagged or not; a repr
@@ -384,7 +386,7 @@ bool check_required_fields(std::uint64_t field_mask) {
 /// External tagged: { "TagName": value }, the value below its tag.
 template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_externally_tagged(Vis& vis, std::variant<Ts...>& var) {
-    constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
+    constexpr auto names = meta::resolve_tag_names<SpecAttr, Config, Ts...>();
     bool found = false;
     auto* sink = scoped_context<UnknownFields>::try_current();
     bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
@@ -449,7 +451,7 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
                   "a tagged variant decodes through a data-driven visitor with try_read");
     constexpr std::string_view tag_key = SpecAttr::value.tag;
     assert_internal_tag_fits<Config, SpecAttr, Ts...>();
-    constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
+    constexpr auto names = meta::resolve_tag_names<SpecAttr, Config, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
 
     std::size_t idx = peek_tag_index(vis, tag_key, names);
@@ -511,7 +513,7 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
                   "a tagged variant decodes through a data-driven visitor with try_read");
     constexpr std::string_view tag_key = SpecAttr::value.tag;
     constexpr std::string_view content_key = SpecAttr::value.content;
-    constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
+    constexpr auto names = meta::resolve_tag_names<SpecAttr, Config, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
 
     std::size_t idx = peek_tag_index(vis, tag_key, names);
@@ -876,11 +878,7 @@ bool decode_plain(Vis& vis, T& out) {
                 return decode_value<Config>(vis, *out);
             }
         } else if constexpr(kind == enumeration) {
-            if constexpr(Config::enum_repr == enum_repr::String) {
-                return detail::decode_enum_name(vis, out, [](std::string_view name) {
-                    return apply_enum_rename<Config>(false, name);
-                });
-            } else if constexpr(requires { vis.visit_enum(out); }) {
+            if constexpr(requires { vis.visit_enum(out); }) {
                 return vis.visit_enum(out);
             } else {
                 using U = std::underlying_type_t<V>;

@@ -172,7 +172,7 @@ struct defaults_omitted {
 enum class defaults_level : std::uint8_t { Low = 0, High = 1 };
 
 struct defaults_with_enum {
-    KANNOTATE(&log_level, presence = optional)
+    KANNOTATE(&log_level, presence = optional, with = type<meta::enum_names<>>)
     defaults_level log_level = defaults_level::High;
 };
 
@@ -607,15 +607,14 @@ ZEST_CASE(defaults_imperative_repr_unannotated) {
 }
 
 struct defaults_enum_config {
-    [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
     using field_rename = naming::rename_policy::lower_camel;
 };
 
 ZEST_CASE(defaults_enum_and_rename_with_config) {
-    // The default rides through the real encoder: the enum's String repr and
-    // the field rename both shape the annotated value and its property name.
+    // The default rides through the real encoder: the config's rename spells
+    // both the enumerators' names and the property's.
     const auto result = json::schema_string<defaults_with_enum, defaults_enum_config>().value();
-    ZEXPECT(zest::contains(result, R"("logLevel":{"enum":["Low","High"],"default":"High"})"));
+    ZEXPECT(zest::contains(result, R"("logLevel":{"enum":["low","high"],"default":"high"})"));
 }
 
 ZEST_CASE(defaults_type_erased_absent) {

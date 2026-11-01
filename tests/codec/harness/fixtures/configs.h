@@ -11,15 +11,6 @@
 
 namespace kotatsu::test {
 
-struct EnumStringConfig {
-    constexpr static auto enum_repr = codec::enum_repr::String;
-};
-
-struct EnumRenameConfig {
-    constexpr static auto enum_repr = codec::enum_repr::String;
-    using enum_rename = naming::rename_policy::lower_camel;
-};
-
 struct NanNullConfig {
     constexpr static auto nan_repr = codec::nan_repr::Null;
 };

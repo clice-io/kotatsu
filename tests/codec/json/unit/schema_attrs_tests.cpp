@@ -202,8 +202,14 @@ struct alias_on_a_name {
     std::int32_t right;
 };
 
-struct enum_string_field {
-    KANNOTATE(&level, enum_string = type<naming::rename_policy::lower_camel>)
+struct enum_names_field {
+    KANNOTATE(&level, with = type<enum_names<naming::rename_policy::lower_camel>>)
+    level_kind level;
+};
+
+/// Bounds on an enum spelled by name.
+struct bounded_named_enum {
+    KANNOTATE(&level, maximum = 1, with = type<enum_names<>>)
     level_kind level;
 };
 
@@ -211,6 +217,7 @@ struct keyed_maps {
     std::map<std::int32_t, std::int32_t> by_id;
     std::map<std::uint8_t, std::int32_t> by_byte;
     std::map<level_kind, std::int32_t> by_level;
+    std::map<test::named_color, std::int32_t> by_color;
 };
 
 struct char_field {
@@ -496,7 +503,7 @@ ZEST_CASE(bounds_on_an_enum_join_its_integer) {
     const auto result = json::schema_string<bounded_enum>().value();
     ZEXPECT(zest::contains(result, R"("level":{"type":"integer","minimum":0,"maximum":1})"));
     // Spelled by name, it is not a number.
-    auto named = json::schema_string<bounded_enum, test::EnumStringConfig>();
+    auto named = json::schema_string<bounded_named_enum>();
     ZASSERT(!named);
     ZEXPECT(named.error().message == "minimum or maximum on field 'level', which is not a number");
 }
@@ -553,8 +560,8 @@ ZEST_CASE(alias_is_a_property_and_satisfies_required) {
                       R"("allOf":[{"anyOf":[{"required":["value"]},{"required":["legacy"]}]}]})");
 }
 
-ZEST_CASE(field_enum_string_lists_its_members) {
-    const auto result = json::schema_string<enum_string_field>().value();
+ZEST_CASE(field_enum_names_lists_its_members) {
+    const auto result = json::schema_string<enum_names_field>().value();
     ZEXPECT(zest::contains(result, R"("level":{"enum":["lowLevel","highLevel"]})"));
 }
 
@@ -566,12 +573,11 @@ ZEST_CASE(map_keys_spell_what_they_decode_from) {
     ZEXPECT(zest::contains(
         result,
         R"("by_byte":{"type":"object","additionalProperties":{"type":"integer","minimum":-2147483648,"maximum":2147483647},"propertyNames":{"pattern":"^[0-9]+$"}})"));
-    // An enum key spells its number, or its name under enum_repr::String.
+    // An enum key spells its number, or its name through enum_names.
     ZEXPECT(zest::contains(
         result,
         R"("by_level":{"type":"object","additionalProperties":{"type":"integer","minimum":-2147483648,"maximum":2147483647},"propertyNames":{"pattern":"^[0-9]+$"}})"));
-    const auto named = json::schema_string<keyed_maps, test::EnumStringConfig>().value();
-    ZEXPECT(zest::contains(named, R"("propertyNames":{"enum":["low_level","high_level"]})"));
+    ZEXPECT(zest::contains(result, R"("propertyNames":{"enum":["red","green","blue"]})"));
 }
 
 ZEST_CASE(char_is_one_code_point_up_to_ff) {

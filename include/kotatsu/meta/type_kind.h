@@ -113,7 +113,7 @@ enum class type_kind : std::uint8_t {
     string,
     /// Anything convertible to std::span<const std::byte>.
     bytes,
-    /// enum / enum class; serialized form follows Config's enum_repr.
+    /// enum / enum class: its underlying integer, or a name through meta::enum_names.
     enumeration,
 
     /// Homogeneous sequence ranges (vector, span, list, ...). std::array is

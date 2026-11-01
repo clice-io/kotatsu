@@ -159,4 +159,10 @@ struct DefaultNamed {
     std::variant<Circle, Rect> value;
 };
 
+/// DefaultNamed, its tags spelled by the rename_all of its annotation.
+struct DefaultNamedShouting {
+    KANNOTATE(&value, tagged = true, rename_all = Casing::UpperSnake)
+    std::variant<Circle, Rect> value;
+};
+
 }  // namespace kotatsu::test

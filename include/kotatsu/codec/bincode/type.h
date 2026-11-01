@@ -25,8 +25,8 @@ namespace kotatsu::codec::bincode {
 ///   LE bit pattern
 /// - character → one byte
 /// - string / bytes → byte length (see below) + raw bytes
-/// - enumeration → underlying integer (8 bytes), or a length-prefixed name
-///   string under enum_repr::String
+/// - enumeration → underlying integer (8 bytes); through meta::enum_names, a
+///   length-prefixed name string
 /// - array/set/map → element count (see below), then elements back to back
 ///   (maps: key, value, key, value, ...)
 /// - tuple/structure → fields concatenated in declaration order, no prefix;

@@ -252,29 +252,7 @@ constexpr presence_kind effective_presence(const field_spec& spec, type_kind kin
                : presence_kind::required;
 }
 
-/// Resolve serialized names for variant alternatives: the annotation's
-/// tag_names when provided (count must match), meta::type_name of each
-/// alternative otherwise.
-template <typename SpecAttr, typename... Ts>
-constexpr auto resolve_tag_names() {
-    constexpr const struct_spec& spec = SpecAttr::value;
-    if constexpr(!spec.tag_names.empty()) {
-        static_assert(spec.tag_names.size() == sizeof...(Ts),
-                      "tagged: number of custom names must match variant alternatives");
-        std::array<std::string_view, sizeof...(Ts)> names{};
-        std::ranges::copy_n(spec.tag_names.begin(), sizeof...(Ts), names.begin());
-        return names;
-    } else {
-        return std::array<std::string_view, sizeof...(Ts)>{type_name<Ts>()...};
-    }
-}
-
 namespace behavior {
-
-template <typename Policy>
-struct enum_string {
-    using policy = Policy;
-};
 
 /// Leaves a field out of what a write produces when Pred, called with the
 /// field's value, returns true (`presence = type<Pred>`).
@@ -302,15 +280,14 @@ struct as {
 /// True for the closed set of behavior attributes.
 template <typename T>
 constexpr bool is_behavior_attr_v =
-    is_specialization_of<behavior::enum_string, T> || is_specialization_of<behavior::omit_if, T> ||
-    is_specialization_of<behavior::with, T> || is_specialization_of<behavior::as, T>;
+    is_specialization_of<behavior::omit_if, T> || is_specialization_of<behavior::with, T> ||
+    is_specialization_of<behavior::as, T>;
 
-/// True for behavior providers (with/as/enum_string) — at most one per field.
+/// True for behavior providers (with/as) — at most one per field.
 template <typename T>
 struct is_behavior_provider {
-    constexpr static bool value = is_specialization_of<behavior::with, T> ||
-                                  is_specialization_of<behavior::as, T> ||
-                                  is_specialization_of<behavior::enum_string, T>;
+    constexpr static bool value =
+        is_specialization_of<behavior::with, T> || is_specialization_of<behavior::as, T>;
 };
 
 namespace detail {
@@ -323,7 +300,7 @@ consteval std::size_t count_attrs(std::type_identity<std::tuple<As...>>) {
 template <typename AttrsTuple>
 constexpr bool validate_attrs() {
     static_assert(tuple_count_of_v<AttrsTuple, is_behavior_provider> <= 1,
-                  "At most one behavior provider (with/as/enum_string) allowed per field");
+                  "At most one behavior provider (with/as) allowed per field");
     static_assert(count_attrs<attrs::spec>(std::type_identity<AttrsTuple>{}) <= 1,
                   "At most one annotation spec allowed per field");
     static_assert(count_attrs<attrs::struct_spec>(std::type_identity<AttrsTuple>{}) <= 1,
@@ -477,10 +454,9 @@ constexpr auto type_component_attr(const dsl::type_component<A, T>&) {
         return std::tuple<behavior::as<T>>{};
     } else if constexpr(A == dsl::aspect::with) {
         return std::tuple<behavior::with<T>>{};
-    } else if constexpr(A == dsl::aspect::presence) {
-        return std::tuple<behavior::omit_if<T>>{};
     } else {
-        return std::tuple<behavior::enum_string<T>>{};
+        static_assert(A == dsl::aspect::presence);
+        return std::tuple<behavior::omit_if<T>>{};
     }
 }
 

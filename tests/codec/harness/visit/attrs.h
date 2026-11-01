@@ -201,14 +201,55 @@ void attrs(const Kit<B>& kit) {
     auto grant = [] {
         return AccessGrant{.level = Access::read_only, .count = 2};
     };
-    encodes_as(kit, "enum_string_encodes_as_plain", grant, [] {
+    encodes_as(kit, "enum_names_with_encodes_as_plain", grant, [] {
         return AccessGrantPlain{.level = "readOnly", .count = 2};
     });
-    roundtrip(kit, "enum_string_roundtrip", grant);
+    roundtrip(kit, "enum_names_with_roundtrip", grant);
     write_fails(kit,
-                "enum_string_unnamed_value_fails",
+                "enum_names_unnamed_value_fails",
                 [] { return AccessName{static_cast<Access>(9)}; },
                 {.message = "enum value 9 has no reflected name", .path = "value"});
+    // A name is read back by matching it as spelled, whatever case the
+    // enumerator is declared in.
+    encodes_as(
+        kit,
+        "enum_names_spell_every_enumerator",
+        [] {
+            return std::vector<MixedName>{{Mixed::FullControl},
+                                          {Mixed::readOnly},
+                                          {Mixed::HTTPServer},
+                                          {Mixed::no_access}};
+        },
+        [] {
+            return std::vector<Field<std::string>>{{"fullControl"},
+                                                   {"readOnly"},
+                                                   {"httpServer"},
+                                                   {"noAccess"}};
+        });
+    roundtrip(kit, "enum_names_read_every_enumerator_back", [] {
+        return std::vector<MixedName>{{Mixed::FullControl},
+                                      {Mixed::readOnly},
+                                      {Mixed::HTTPServer},
+                                      {Mixed::no_access}};
+    });
+    // A repr names the enum wherever it stands, spelled by the rename_all of
+    // its own annotation when it has one.
+    encodes_as(
+        kit,
+        "enum_names_repr_encodes_as_plain",
+        [] { return Field<NamedAccess>{NamedAccess::read_only}; },
+        [] { return Field<std::string>{"read_only"}; });
+    roundtrip(kit, "enum_names_repr_roundtrip", [] {
+        return Field<NamedAccess>{NamedAccess::full_control};
+    });
+    encodes_as(
+        kit,
+        "enum_names_follow_the_enum_rename_all",
+        [] { return Field<CamelAccess>{CamelAccess::read_only}; },
+        [] { return Field<std::string>{"readOnly"}; });
+    roundtrip(kit, "enum_names_rename_all_roundtrip", [] {
+        return Field<CamelAccess>{CamelAccess::full_control};
+    });
     // The values a write leaves out: each field at its default, but the
     // score, which its predicate judges.
     auto matching = [] {
@@ -335,27 +376,6 @@ void attrs(const Kit<B>& kit) {
     }
 
     if constexpr(!B::caps.layout_computed) {
-        encodes_as<EnumStringConfig>(
-            kit,
-            "enum_repr_string_encodes_as_plain",
-            [] { return Access::read_only; },
-            [] { return std::string("read_only"); });
-        roundtrip<EnumStringConfig>(kit, "enum_repr_string_roundtrip", [] {
-            return Access::full_control;
-        });
-        encodes_as<EnumRenameConfig>(
-            kit,
-            "enum_rename_encodes_as_plain",
-            [] { return Access::read_only; },
-            [] { return std::string("readOnly"); });
-        roundtrip<EnumRenameConfig>(kit, "enum_rename_roundtrip", [] {
-            return Access::full_control;
-        });
-        write_fails<EnumStringConfig>(
-            kit,
-            "enum_repr_string_unnamed_value_fails",
-            [] { return Field<Access>{static_cast<Access>(9)}; },
-            {.message = "enum value 9 has no reflected name", .path = "value"});
         encodes_as<NanStringConfig>(
             kit,
             "nan_string_encodes_as_names",
@@ -625,13 +645,20 @@ void attrs(const Kit<B>& kit) {
             [] { return AnnotatedWithInternal{.id = 7, .internal = "input", .value = 2.5F}; },
             [] { return AnnotatedStruct{.user_id = 7, .internal = "kept", .value = 2.5F}; });
 
+        read_in_field_fails_over(
+            kit,
+            "enum_names_repr_unknown_name_fails",
+            [] { return std::string("nope"); },
+            [] { return NamedAccess::full_control; },
+            {.message = "unknown enum value 'nope'", .path = "value"});
+        // A name matches only as it is spelled.
+        read_in_field_fails_over(
+            kit,
+            "enum_names_other_spelling_fails",
+            [] { return std::string("ReadOnly"); },
+            [] { return CamelAccess::full_control; },
+            {.message = "unknown enum value 'ReadOnly'", .path = "value"});
         if constexpr(!B::caps.layout_computed) {
-            read_in_field_fails_over<EnumStringConfig>(
-                kit,
-                "enum_repr_string_unknown_name_fails",
-                [] { return std::string("nope"); },
-                [] { return Access::full_control; },
-                {.message = "unknown enum value 'nope'", .path = "value"});
             // nan_repr::String only encodes: the names do not read back. One
             // name, so the path does not depend on the order of the keys.
             read_in_field_fails<double, NanStringConfig>(kit,
@@ -643,7 +670,7 @@ void attrs(const Kit<B>& kit) {
         // as the document has it, which toml reads before `level`.
         read_fails_over(
             kit,
-            "enum_string_unknown_name_fails",
+            "enum_names_unknown_name_fails",
             [] { return AccessGrantPlain{.level = "super_admin", .count = 1}; },
             [] { return AccessGrant{.level = Access::full_control, .count = 1}; },
             {.message = "unknown enum value 'super_admin'", .path = "level"});

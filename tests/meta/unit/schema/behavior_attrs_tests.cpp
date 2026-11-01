@@ -56,19 +56,21 @@ ZEST_CASE(with_adapter_type_info) {
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::float32);
 }
 
-ZEST_CASE(enum_string) {
-    constexpr auto& fields = virtual_schema<fx::EnumStringStruct>::fields;
+ZEST_CASE(enum_names) {
+    constexpr auto& fields = virtual_schema<fx::EnumNamesStruct>::fields;
 
-    // enum_string encodes through a non-owning view; the field's type_info
-    // keeps the members, spelled through the policy.
+    // enum_names encodes through a non-owning view; the field's type_info
+    // keeps the members, as they are spelled.
     ZSTATIC_EXPECT(fields[0].type().kind == type_kind::enumeration);
-    ZEXPECT(static_cast<const enum_type_info&>(fields[0].type()).rename != nullptr);
+    const auto& info = static_cast<const enum_type_info&>(fields[0].type());
+    ZEXPECT(info.named);
+    ZEXPECT(info.member_names[0] == "red");
     using resolved =
-        decltype(detail::resolve_node<fx::Color, field_attrs_t<fx::EnumStringStruct, 0>>());
+        decltype(detail::resolve_node<fx::Color, field_attrs_t<fx::EnumNamesStruct, 0>>());
     ZEXPECT(zest::type_eq<typename resolved::type, std::string_view>());
 
     // Verify slot types
-    using slots = virtual_schema<fx::EnumStringStruct>::slots;
+    using slots = virtual_schema<fx::EnumNamesStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
     ZEXPECT(zest::type_eq<slot0::raw_type, fx::Color>());
 

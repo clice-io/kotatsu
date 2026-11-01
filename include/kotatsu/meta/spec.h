@@ -159,7 +159,6 @@ enum class aspect : std::uint8_t {
     presence,
     as,
     with,
-    enum_string,
     schema_default,
     minimum,
     maximum,
@@ -206,8 +205,8 @@ struct tagged_component {
     }
 };
 
-/// A component that carries a type instead of a value (as/with/enum_string,
-/// and the predicate of `presence = type<Pred>`), which attrs.h maps to the
+/// A component that carries a type instead of a value (as/with, and the
+/// predicate of `presence = type<Pred>`), which attrs.h maps to the
 /// equivalent behavior attr. A predicate also sets the presence it decides.
 template <aspect A, typename T>
 struct type_component {
@@ -332,7 +331,6 @@ struct type_proxy {
 [[maybe_unused]] constexpr inline presence_proxy presence{};
 [[maybe_unused]] constexpr inline type_proxy<aspect::as> as{};
 [[maybe_unused]] constexpr inline type_proxy<aspect::with> with{};
-[[maybe_unused]] constexpr inline type_proxy<aspect::enum_string> enum_string{};
 [[maybe_unused]] constexpr inline value_proxy<aspect::schema_default,
                                               &field_spec::schema_default,
                                               bool> schema_default{};
@@ -538,7 +536,7 @@ consteval bool sets_tagging() {
 }
 
 /// Whether component `O`, of an outer annotation, overrides `I`, of an inner one: they set the
-/// same entry, or both how a variant is tagged. The representation (as, with, enum_string) an
+/// same entry, or both how a variant is tagged. The representation (as, with) an
 /// outer annotation picks replaces the inner one's among the attrs (kept_behavior in attrs.h).
 template <typename I, typename O>
 consteval bool overrides() {

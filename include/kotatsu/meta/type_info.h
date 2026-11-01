@@ -68,12 +68,13 @@ struct map_type_info : type_info {
 };
 
 struct enum_type_info : type_info {
+    /// The names of its enumerators, in ascending order of value: as an enum_names repr spells
+    /// them when it travels through one, as declared otherwise.
     std::span<const std::string_view> member_names;
     type_kind underlying_kind;
-    /// The policy of the behavior::enum_string an annotated enum travels
-    /// through: its members are strings, spelled as it says, whatever the
-    /// config's enum_repr. Null for a plain enum.
-    std::string (*rename)(bool is_serialize, std::string_view name) = nullptr;
+    /// Whether it travels as the names above, through an enum_names repr, rather than as its
+    /// underlying integer.
+    bool named = false;
 };
 
 struct tuple_type_info : type_info {
@@ -155,30 +156,12 @@ constexpr const type_info& type_info_of();
 
 namespace detail {
 
-template <typename Policy>
-constexpr std::string apply_rename_cx(std::string_view input) {
-    using namespace naming::rename_policy;
-    if constexpr(std::is_same_v<Policy, identity>) {
-        return std::string(input);
-    } else if constexpr(std::is_same_v<Policy, lower_snake>) {
-        return naming::normalize_to_lower_snake(input);
-    } else if constexpr(std::is_same_v<Policy, lower_camel>) {
-        return naming::snake_to_camel(input, false);
-    } else if constexpr(std::is_same_v<Policy, upper_camel>) {
-        return naming::snake_to_camel(input, true);
-    } else if constexpr(std::is_same_v<Policy, upper_snake>) {
-        return naming::snake_to_upper(input);
-    } else {
-        static_assert(sizeof(Policy) == 0, "Unknown rename policy");
-    }
-}
-
 template <typename T, std::size_t I, typename Policy>
 struct renamed_name_static {
-    constexpr static std::size_t len = apply_rename_cx<Policy>(meta::field_name<I, T>()).size();
+    constexpr static std::size_t len = std::string(Policy{}(meta::field_name<I, T>())).size();
 
     constexpr static auto chars = [] {
-        auto renamed = apply_rename_cx<Policy>(meta::field_name<I, T>());
+        std::string renamed(Policy{}(meta::field_name<I, T>()));
         std::array<char, len> arr{};
         for(std::size_t i = 0; i < len; ++i)
             arr[i] = renamed[i];
@@ -201,6 +184,66 @@ struct effective_field_rename<Config> {
 
 template <typename Config>
 using effective_field_rename_t = typename effective_field_rename<Config>::type;
+
+/// The policy an enum_names repr spells E's enumerators with under Config: its own, else the
+/// rename_all of E's own annotation, else Config's.
+template <typename Repr, typename E, typename Config>
+consteval auto enum_names_policy() {
+    constexpr naming::Casing own = struct_spec_of<attrs_of_t<E>>.rename_all;
+    if constexpr(!std::is_void_v<typename Repr::policy>) {
+        return std::type_identity<typename Repr::policy>{};
+    } else if constexpr(own != naming::Casing::Identity) {
+        return std::type_identity<naming::rename_policy_t<own>>{};
+    } else {
+        return std::type_identity<effective_field_rename_t<Config>>{};
+    }
+}
+
+template <typename Repr, typename E, typename Config>
+using enum_names_policy_t = typename decltype(enum_names_policy<Repr, E, Config>())::type;
+
+template <typename... Ts>
+struct type_names {
+    constexpr static std::array<std::string_view, sizeof...(Ts)> value{type_name<Ts>()...};
+};
+
+}  // namespace detail
+
+/// The names a tagged variant's alternatives travel under: the annotation's tag_names when it
+/// gives them, one per alternative, else the names of the alternatives' types, spelled by the
+/// annotation's rename_all, else by Config's. No two may be alike.
+template <typename SpecAttr, typename Config, typename... Ts>
+constexpr auto resolve_tag_names() {
+    constexpr const struct_spec& spec = SpecAttr::value;
+    if constexpr(!spec.tag_names.empty()) {
+        static_assert(spec.tag_names.size() == sizeof...(Ts),
+                      "tagged: number of custom names must match variant alternatives");
+        std::array<std::string_view, sizeof...(Ts)> names{};
+        std::ranges::copy_n(spec.tag_names.begin(), sizeof...(Ts), names.begin());
+        static_assert(naming::distinct(spec.tag_names), "tagged: two tag_names are alike");
+        return names;
+    } else {
+        using policy = std::conditional_t<spec.rename_all != naming::Casing::Identity,
+                                          naming::rename_policy_t<spec.rename_all>,
+                                          detail::effective_field_rename_t<Config>>;
+        constexpr const auto& names = naming::renamed<policy, detail::type_names<Ts...>::value>;
+        static_assert(naming::distinct(names),
+                      "tagged: two alternatives' types have the same name; give the tags with "
+                      "tag_names");
+        return names;
+    }
+}
+
+namespace detail {
+
+/// The names of E's enumerators spelled by Policy, in ascending order of value.
+template <typename E, typename Policy>
+constexpr const inline auto& enum_names_of = []() -> const auto& {
+    constexpr const auto& names = naming::renamed<Policy, reflection<E>::member_names>;
+    static_assert(naming::distinct(names),
+                  "enum_names: two enumerators of the enum are spelled alike");
+    return names;
+}();
 
 template <typename T, std::size_t I, typename Config>
 constexpr std::string_view resolve_field_name() {
@@ -262,31 +305,32 @@ struct filter_runtime_attrs<std::tuple<First, Rest...>> {
 template <typename Tuple>
 using filter_runtime_attrs_t = typename filter_runtime_attrs<Tuple>::type;
 
-/// The info of enum E, its members spelled through Rename when it travels as
-/// a behavior::enum_string's names.
-template <typename E, std::string (*Rename)(bool, std::string_view) = nullptr>
+/// The info of enum E: as it travels as the names Policy spells, through an enum_names repr,
+/// or, without a Policy, as its underlying integer.
+template <typename E, typename Policy = void>
 struct enum_info_node {
-    constexpr static auto& names = meta::reflection<E>::member_names;
+    constexpr static bool named = !std::is_void_v<Policy>;
+    constexpr const static auto& names = []() -> const auto& {
+        if constexpr(named) {
+            return enum_names_of<E, Policy>;
+        } else {
+            return meta::reflection<E>::member_names;
+        }
+    }();
 
     constexpr inline static enum_type_info value = {
         {type_kind::enumeration, meta::type_name<E>()},
         {names.data(),           names.size()        },
         kind_of<std::underlying_type_t<E>>(),
-        Rename,
+        named,
     };
 };
-
-/// Policy's spelling of an enumerator's name, as a plain function.
-template <typename Policy>
-std::string rename_with(bool is_serialize, std::string_view name) {
-    return Policy{}(is_serialize, name);
-}
 
 /// A resolved representation: the type the codec ultimately reads and writes
 /// for T, the tagging spec attr accompanying a tagged variant (an empty tuple
 /// otherwise), the config after merging every rename_all /
 /// deny_unknown_fields / presence_all crossed on the way, and, for an enum
-/// a behavior::enum_string turned into text, the info of its members (void
+/// an enum_names repr turns into text, the info of its members (void
 /// otherwise), which a schema lists.
 template <typename T, typename TagAttrs, typename Config, typename SpelledEnum = void>
 struct resolved_repr {
@@ -298,7 +342,7 @@ struct resolved_repr {
 
 /// Precedence mirrors the codec dispatch (encode_with_attrs /
 /// decode_with_attrs): behavior::with wins over behavior::as, which wins over
-/// behavior::enum_string, which wins over a tagging spec on a std::variant (a
+/// a tagging spec on a std::variant (a
 /// tagged variant is read and written as that variant, whatever repr its
 /// type has). The type's repr applies only when none of these does, and the
 /// config's format tag selects a format-scoped specialization over the
@@ -324,16 +368,17 @@ constexpr auto resolve_node() {
         return resolve_node<variant_base_t<Raw>, Attrs, Config>();
     } else if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
         using adapter = typename tuple_find_spec_t<Attrs, behavior::with>::adapter;
-        return resolve_repr<declared_repr_t<adapter>, Config>();
+        if constexpr(names_enum<adapter>) {
+            return resolved_repr<std::string_view,
+                                 std::tuple<>,
+                                 Config,
+                                 enum_info_node<Raw, enum_names_policy_t<adapter, Raw, Config>>>{};
+        } else {
+            return resolve_repr<declared_repr_t<adapter>, Config>();
+        }
     } else if constexpr(tuple_has_spec_v<Attrs, behavior::as>) {
         using target = typename tuple_find_spec_t<Attrs, behavior::as>::target;
         return resolve_repr<target, Config>();
-    } else if constexpr(tuple_has_spec_v<Attrs, behavior::enum_string>) {
-        using policy = typename tuple_find_spec_t<Attrs, behavior::enum_string>::policy;
-        return resolved_repr<std::string_view,
-                             std::tuple<>,
-                             Config,
-                             enum_info_node<Raw, &rename_with<policy>>>{};
     } else if constexpr(is_specialization_of<std::variant, Raw> &&
                         struct_spec_of<Attrs>.tagging != tag_mode::none) {
         return resolved_repr<Raw,
@@ -341,7 +386,14 @@ constexpr auto resolve_node() {
                              Config>{};
     } else if constexpr(has_repr<Raw, format_of_t<Config>>) {
         using chosen = repr_for<Raw, format_of_t<Config>>;
-        return resolve_repr<declared_repr_t<chosen>, node_config_t<Config, Raw, Attrs>>();
+        if constexpr(names_enum<chosen>) {
+            return resolved_repr<std::string_view,
+                                 std::tuple<>,
+                                 Config,
+                                 enum_info_node<Raw, enum_names_policy_t<chosen, Raw, Config>>>{};
+        } else {
+            return resolve_repr<declared_repr_t<chosen>, node_config_t<Config, Raw, Attrs>>();
+        }
     } else {
         return resolved_repr<Raw, std::tuple<>, node_config_t<Config, Raw, Attrs>>{};
     }
@@ -446,7 +498,9 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     // span below is explicitly given size 0, so no element is ever read.
     constexpr static auto alt_names = [] {
         if constexpr(has_tag) {
-            return resolve_tag_names<tuple_find_spec_t<AttrsTuple, attrs::struct_spec>, Ts...>();
+            return resolve_tag_names<tuple_find_spec_t<AttrsTuple, attrs::struct_spec>,
+                                     Config,
+                                     Ts...>();
         } else {
             return std::array<std::string_view, sizeof...(Ts)>{};
         }

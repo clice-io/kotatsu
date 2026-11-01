@@ -858,7 +858,7 @@ ZEST_CASE(map_view_looks_up_struct_keys) {
 ZEST_CASE(views_read_what_reprs_and_attrs_carry) {
     // A view reads the representation the buffer holds: the repr's, a
     // format-scoped repr's, a field adapter's over the type's own repr, and
-    // as<> and enum_string rerouting.
+    // as<> and enum_names rerouting.
     Reprs input{
         .relation = test::Relation::references,
         .hex = {.v = 0xBEEF},

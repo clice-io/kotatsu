@@ -408,14 +408,20 @@ struct TextPlain {
 
 /// Travels as its enumerator's name, in lowerCamel, in a field.
 struct AccessName {
-    KANNOTATE(&value, enum_string = type<naming::rename_policy::lower_camel>)
+    KANNOTATE(&value, with = type<meta::enum_names<naming::rename_policy::lower_camel>>)
     Access value;
 };
 
 struct AccessGrant {
-    KANNOTATE(&level, enum_string = type<naming::rename_policy::lower_camel>)
+    KANNOTATE(&level, with = type<meta::enum_names<naming::rename_policy::lower_camel>>)
     Access level;
     int count;
+};
+
+/// Mixed's enumerators in lower camel case.
+struct MixedName {
+    KANNOTATE(&value, with = type<meta::enum_names<naming::rename_policy::lower_camel>>)
+    Mixed value;
 };
 
 struct AccessGrantPlain {

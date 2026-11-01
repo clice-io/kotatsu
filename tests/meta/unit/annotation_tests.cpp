@@ -151,6 +151,7 @@ ZEST_CASE(name_lists_take_any_number_of_names) {
     ZSTATIC_EXPECT(spec.alias.size() == 10u);
     ZSTATIC_EXPECT(spec.alias[9] == "j");
     constexpr auto names = resolve_tag_names<attrs::struct_spec<nine_names_tag>,
+                                             void,
                                              Alt<0>,
                                              Alt<1>,
                                              Alt<2>,

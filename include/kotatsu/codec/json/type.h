@@ -35,8 +35,8 @@ namespace kotatsu::codec::json {
 /// - string → quoted, escaped string; one that is not UTF-8 follows Config's
 ///   invalid_utf8
 /// - bytes → array of octet numbers
-/// - enumeration → underlying integer, or the renamed enumerator name under
-///   enum_repr::String
+/// - enumeration → underlying integer; through meta::enum_names, the
+///   enumerator's name
 /// - array/set/tuple → `[...]`
 /// - map → object; non-string keys go through MapKeyWriter/MapKeyReader as
 ///   their decimal string form

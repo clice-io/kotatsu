@@ -117,10 +117,6 @@ constexpr voffset_t field_step = 2;
 /// any buffer this backend produced.
 template <typename Config>
 consteval void assert_config_layout_stable() {
-    static_assert(default_config<Config>::enum_repr == enum_repr::Integer,
-                  "the fbs backend cannot honor enum_repr::String: it would change every enum "
-                  "slot from an integer cell to a string offset; annotate individual fields "
-                  "with behavior::enum_string instead");
     static_assert(default_config<Config>::nan_repr != nan_repr::String,
                   "the fbs backend cannot honor nan_repr::String: a float slot's shape would "
                   "depend on the value it holds");

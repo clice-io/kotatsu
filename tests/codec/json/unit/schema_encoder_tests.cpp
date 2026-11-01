@@ -24,21 +24,17 @@ namespace json = kotatsu::codec::json;
 
 ZEST_SUITE(codec_json_schema_encoder) {
 
-struct string_enum_config {
-    [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
-};
-
-ZEST_CASE(enum_names_under_string_config) {
-    const auto result = json::schema_string<color_i8, string_enum_config>().value();
+ZEST_CASE(enum_names_list_the_names) {
+    const auto result = json::schema_string<test::named_color>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("enum":["red","green","blue"]})");
 }
 
-ZEST_CASE(unnamed_enum_value_rejected_under_string_config) {
+ZEST_CASE(unnamed_enum_value_rejected_by_enum_names) {
     // A representable value without a reflected member name has no string
     // spelling: the encoder rejects it, so the schema's enum list of
     // reflected names stays exhaustive.
-    const auto encoded = json::to_string<string_enum_config>(static_cast<color_i8>(42));
+    const auto encoded = json::to_string(static_cast<test::named_color>(42));
     ZEXPECT(!encoded);
 }
 
@@ -53,19 +49,14 @@ ZEST_CASE(schema_agrees_with_encoder_on_enums) {
     ZEXPECT(zest::contains(schema, R"("c":{"type":"integer","minimum":-128,"maximum":127})"));
 }
 
-struct renamed_enum_config {
-    [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
-    using enum_rename = naming::rename_policy::upper_snake;
-};
-
 ZEST_CASE(schema_agrees_with_encoder_on_enum_rename) {
-    // The schema lists the spellings the encoder writes under the same
-    // config, not the raw reflected names.
-    const auto encoded = json::to_string<renamed_enum_config>(color_i8::green);
+    // The schema lists the spellings the encoder writes, not the raw
+    // reflected names.
+    const auto encoded = json::to_string(test::shouting_color::green);
     ZASSERT(encoded);
     ZEXPECT(*encoded == R"("GREEN")");
 
-    const auto result = json::schema_string<color_i8, renamed_enum_config>().value();
+    const auto result = json::schema_string<test::shouting_color>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("enum":["RED","GREEN","BLUE"]})");
 }

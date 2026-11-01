@@ -55,8 +55,8 @@ namespace kotatsu::codec::toml {
 ///   UTF-8); decode accepts exactly one codepoint ≤ 255
 /// - string → TOML string; one that is not UTF-8 follows Config's invalid_utf8
 /// - bytes → array of integer octets; decode range-checks each into [0, 255]
-/// - enumeration → underlying integer, or the renamed name under
-///   enum_repr::String
+/// - enumeration → underlying integer; through meta::enum_names, the
+///   enumerator's name
 /// - array/set/tuple → TOML array
 /// - map → table; non-string keys go through MapKeyWriter/MapKeyReader as
 ///   their decimal string form

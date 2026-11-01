@@ -105,6 +105,20 @@ bool fail_unnamed_enum(E value) {
         rich_error(std::format("enum value {} has no reflected name", +std::to_underlying(value))));
 }
 
+/// Encodes an enum through an enum_names repr: the name its enumerator is
+/// spelled with.
+template <typename Repr, typename Config, typename Vis, typename E>
+bool encode_enum_name(Vis& vis, const E& value) {
+    static_assert(std::is_enum_v<E>, "meta::enum_names is the repr of an enum");
+    using policy = meta::detail::enum_names_policy_t<Repr, E, Config>;
+    const auto& names = meta::detail::enum_names_of<E, policy>;
+    const auto index = meta::enum_index(value);
+    if(index == names.size()) {
+        return fail_unnamed_enum(value);
+    }
+    return vis.visit_str(names[index]);
+}
+
 /// Encode a value through a representation declaration (a meta::repr
 /// specialization or a behavior::with adapter): declarative to() when
 /// present, the imperative serialize<Config>() body otherwise.
@@ -116,7 +130,9 @@ bool repr_encode(Vis& vis, const V& value) {
                       "this backend computes the output layout statically and cannot encode a "
                       "meta::dynamic repr");
     }
-    if constexpr(requires { Repr::to(value); }) {
+    if constexpr(meta::names_enum<Repr>) {
+        return encode_enum_name<Repr, Config>(vis, value);
+    } else if constexpr(requires { Repr::to(value); }) {
         static_assert(
             !requires { Repr::template serialize<Config>(vis, value); },
             "repr protocol: define to() or serialize() for encoding, not both");
@@ -168,7 +184,7 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
         // generic lambdas below (C3861/ICE), so the spec is read via SpecAttr
         // each time.
         return [&]<typename... Ts>(const std::variant<Ts...>&) -> bool {
-            constexpr auto names = meta::resolve_tag_names<SpecAttr, Ts...>();
+            constexpr auto names = meta::resolve_tag_names<SpecAttr, Config, Ts...>();
             std::string_view tag_name = names[var.index()];
 
             if constexpr(SpecAttr::value.tagging == meta::tag_mode::external) {
@@ -218,9 +234,8 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
 }
 
 /// Encodes a value under a node's attributes (a struct field's, or an
-/// annotation's): behavior::with > behavior::as > behavior::enum_string >
-/// variant tagging > the struct-level policy merge (merged_config_t), the
-/// precedence meta's repr resolver replays.
+/// annotation's): behavior::with > behavior::as > variant tagging > the struct-level policy merge
+/// (merged_config_t), the precedence meta's repr resolver replays.
 template <typename Config, typename Attrs, typename Vis, typename T>
 bool encode_with_attrs(Vis& vis, const T& value) {
     if constexpr(meta::derived_variant<T>) {
@@ -233,15 +248,6 @@ bool encode_with_attrs(Vis& vis, const T& value) {
         using target = typename tuple_find_spec_t<Attrs, meta::behavior::as>::target;
         target converted(value);
         return encode_value<Config>(vis, converted);
-    } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::enum_string>) {
-        using policy = typename tuple_find_spec_t<Attrs, meta::behavior::enum_string>::policy;
-        static_assert(std::is_enum_v<T>, "behavior::enum_string requires an enum type");
-        auto raw = meta::enum_name(value);
-        if(raw.empty()) {
-            return fail_unnamed_enum(value);
-        }
-        auto renamed = policy{}(true, raw);
-        return vis.visit_str(std::string_view(renamed));
     } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
         static_assert(taggable<T>, "a tagging attribute requires a std::variant");
         using spec_attr = tuple_find_spec_t<Attrs, meta::attrs::struct_spec>;
@@ -383,15 +389,7 @@ bool encode_plain(Vis& vis, const T& value) {
                 return vis.visit_null();
             }
         } else if constexpr(kind == enumeration) {
-            if constexpr(Config::enum_repr == enum_repr::String) {
-                auto raw = meta::enum_name(value);
-                if(raw.empty()) {
-                    return detail::fail_unnamed_enum(value);
-                }
-                auto name = apply_enum_rename<Config>(true, raw);
-                std::string_view sv(name);
-                return vis.visit_str(sv);
-            } else if constexpr(requires { vis.visit_enum(value); }) {
+            if constexpr(requires { vis.visit_enum(value); }) {
                 return vis.visit_enum(value);
             } else {
                 using U = std::underlying_type_t<T>;

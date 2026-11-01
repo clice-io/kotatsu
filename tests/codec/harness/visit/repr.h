@@ -227,14 +227,6 @@ void repr(const Kit<B>& kit) {
             roundtrip(kit, "dynamic_roundtrip", dynamic);
         }
     }
-    if constexpr(!B::caps.layout_computed) {
-        encodes_as<EnumStringConfig>(
-            kit,
-            "repr_beats_enum_string_config",
-            [] { return Relation::references; },
-            [] { return std::uint32_t{102}; });
-    }
-
     if constexpr(B::caps.self_describing) {
         // The encoded value may be null, but the field itself must be there.
         read_fails<Stamped>(kit,

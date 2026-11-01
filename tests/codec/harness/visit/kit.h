@@ -63,7 +63,7 @@ struct Caps {
     bool non_finite = false;
     /// The layout is a function of the type alone (fbs), so nothing that
     /// shapes a document by the value or the config compiles:
-    /// enum_repr::String, nan_repr::String and meta::dynamic reprs.
+    /// nan_repr::String and meta::dynamic reprs.
     bool layout_computed = false;
     /// Documents come from outside the program, so decoding garbage is in
     /// scope: the hostile sweep applies.

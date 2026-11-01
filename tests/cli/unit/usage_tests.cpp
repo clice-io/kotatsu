@@ -81,7 +81,7 @@ enum class Level : std::uint8_t { Low = 1, High };
 
 /// A field whose default value has no name, which no argument writes.
 struct Unnamed {
-    KANNOTATE(&level, presence = required, enum_string = type<naming::rename_policy::identity>)
+    KANNOTATE(&level, presence = required)
     Level level;
     int jobs = 2;
 };

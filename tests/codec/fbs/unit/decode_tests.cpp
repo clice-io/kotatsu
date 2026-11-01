@@ -194,7 +194,7 @@ struct Rich {
     std::tuple<std::int32_t, std::array<std::int32_t, 3>> mixed;
     KANNOTATE(&widened, as = type<std::int64_t>)
     std::int32_t widened = 0;
-    KANNOTATE(&level_name, enum_string = type<naming::rename_policy::identity>)
+    KANNOTATE(&level_name, with = type<meta::enum_names<>>)
     Grade level_name = Grade::low;
 
     auto operator==(const Rich&) const -> bool = default;

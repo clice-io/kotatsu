@@ -1,5 +1,8 @@
 #pragma once
 
+#include <concepts>
+#include <string>
+
 #include "type_kind.h"
 #include "kotatsu/support/type_traits.h"
 
@@ -79,6 +82,27 @@ constexpr auto repr_for_impl() {
 template <typename T, typename Format>
     requires has_repr<T, Format>
 using repr_for = typename decltype(detail::repr_for_impl<T, Format>())::type;
+
+/// The repr of an enum that travels as the names of its enumerators, spelled by Policy (a
+/// naming::rename_policy); without one, by the rename_all of the enum's own annotation, else
+/// the config's. The names are computed at compile time and must be distinct; a document is
+/// read by matching them exactly, and a value no enumerator has fails to write.
+///
+///     template <>
+///     struct kotatsu::meta::repr<Level> : meta::enum_names<> {};
+///
+///     KANNOTATE(&level, with = type<meta::enum_names<naming::rename_policy::lower_camel>>)
+///     Level level;
+template <typename Policy = void>
+struct enum_names {
+    using type = std::string;
+    using policy = Policy;
+};
+
+/// Whether Repr is enum_names, or a class derived from it, such as a repr specialization.
+template <typename Repr>
+concept names_enum = requires { typename Repr::policy; } &&
+                     std::derived_from<Repr, enum_names<typename Repr::policy>>;
 
 namespace detail {
 

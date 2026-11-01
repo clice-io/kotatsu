@@ -3,9 +3,11 @@
 
 #include <cstdint>
 #include <expected>
+#include <format>
 #include <optional>
 #include <ranges>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -19,6 +21,14 @@ namespace kotatsu::cli {
 namespace {
 
 enum class Level : std::uint8_t { Trace, Debug, Info, Warn };
+
+/// Enumerators in several cases, and as generated code names them: with the `_` of a
+/// keyword-like name, and the `_` or `V` before a leading digit.
+enum class Hue : std::uint8_t { light_blue, GreenLight, Delete_, _2d, V3, HTTPServer };
+
+struct Hues {
+    Hue color = Hue::light_blue;
+};
 
 struct Options {
     bool verbose = false;
@@ -139,6 +149,21 @@ ZEST_CASE(numbers_read_in_their_type) {
 ZEST_CASE(enum_reads_any_spelling_of_its_names) {
     ZEXPECT(parsed("--must y --level info").level == Level::Info);
     ZEXPECT(parsed("--must y --level Debug").level == Level::Debug);
+    auto color = [](std::string_view text) {
+        auto options = parse_line<Hues>(std::format("--color {}", text));
+        ZEXPECT(options.has_value());
+        return options.value_or(Hues{.color = static_cast<Hue>(255)}).color;
+    };
+    ZEXPECT(color("light-blue") == Hue::light_blue);
+    ZEXPECT(color("lightBlue") == Hue::light_blue);
+    ZEXPECT(color("LIGHT_BLUE") == Hue::light_blue);
+    ZEXPECT(color("greenLight") == Hue::GreenLight);
+    ZEXPECT(color("delete") == Hue::Delete_);
+    ZEXPECT(color("2d") == Hue::_2d);
+    ZEXPECT(color("3") == Hue::V3);
+    ZEXPECT(color("v3") == Hue::V3);
+    ZEXPECT(color("httpServer") == Hue::HTTPServer);
+    ZEXPECT(color("http-server") == Hue::HTTPServer);
 }
 
 ZEST_CASE(optional_given_holds_its_value) {

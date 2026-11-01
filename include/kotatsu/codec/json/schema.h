@@ -33,17 +33,10 @@
 
 namespace kotatsu::codec::json {
 
-/// Config::enum_rename as a plain function: the schema emitter runs
-/// type-erased, so the typed entry points pass apply_enum_rename<Config> down
-/// as a pointer and the emitter applies it the way the encoder does.
-using enum_rename_fn = std::string (*)(bool is_serialize, std::string_view name);
-
 /// The config knobs that shape the documents the encoder emits — and thus the
 /// schema. The typed entry points derive them from the codec config; the
 /// type-erased ones default to the codec defaults.
 struct schema_options {
-    codec::enum_repr enums = default_config<>::enum_repr;
-    enum_rename_fn rename = apply_enum_rename<void>;
     codec::nan_repr nan = default_config<>::nan_repr;
     /// A non-human-readable config bypasses variant tagging and encodes the
     /// underlying untagged variant (the is_human_readable gate in
@@ -334,21 +327,10 @@ private:
         }
     }
 
-    /// How an enum's values are spelled: through a behavior::enum_string's
-    /// policy whatever enum_repr says, through the config's enum_rename under
-    /// enum_repr::String; null when they travel as integers.
-    enum_rename_fn spelling(const meta::enum_type_info* ei) const {
-        if(ei->rename != nullptr) {
-            return ei->rename;
-        }
-        return opts.enums == enum_repr::String ? opts.rename : nullptr;
-    }
-
     result_t make_enum(const meta::type_info* ti) const {
         auto* ei = static_cast<const meta::enum_type_info*>(ti);
-        auto rename = spelling(ei);
-        if(rename == nullptr) {
-            // enum_repr::Integer: the codec casts through the underlying type
+        if(!ei->named) {
+            // An integer: the codec casts through the underlying type
             // without checking membership, and name reflection only covers a
             // limited scan range — values outside it still encode. The honest
             // constraint is the underlying integer's range, not a value list.
@@ -358,7 +340,7 @@ private:
         // spelling, so the encoder rejects it instead of emitting one.
         dyn::Array values;
         for(const auto& name: ei->member_names) {
-            values.push_back(dyn::Value(rename(true, name)));
+            values.push_back(dyn::Value(name));
         }
         return dyn::Value{
             {"enum", std::move(values)}
@@ -396,7 +378,7 @@ private:
         auto kind = ti->kind;
         if(kind == tk::enumeration) {
             auto* ei = static_cast<const meta::enum_type_info*>(ti);
-            if(spelling(ei) != nullptr) {
+            if(ei->named) {
                 // An enum's schema never fails.
                 return *make_enum(ti);
             }
@@ -737,7 +719,7 @@ private:
 /// schema), tuple elements, variant alternatives. A repr-routed type is
 /// skipped, subtree included, field-level behavior attrs (`with`, `as`) are
 /// not followed, and a fresh instance the encoder rejects (a NaN member
-/// under nan_repr::Error, an unnamed enum value under enum_repr::String)
+/// under nan_repr::Error, an unnamed enum value through meta::enum_names)
 /// records no document: all three leave their bodies unannotated rather
 /// than annotated wrongly.
 struct FreshDefaults {
@@ -903,8 +885,6 @@ template <typename Config>
 schema_options options_of() {
     using merged = default_config<Config>;
     return {
-        .enums = merged::enum_repr,
-        .rename = apply_enum_rename<merged>,
         .nan = merged::nan_repr,
         .human_readable = is_human_readable<merged, void>(),
     };
@@ -1025,7 +1005,7 @@ inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool p
 /// defaults on top (see DefaultAnnotator). Two consequences of riding the
 /// real encoder: T() must encode under Config — an instance the encoder
 /// rejects (a NaN member under nan_repr::Error, an enum value without a
-/// reflected name under enum_repr::String) fails schema generation with that
+/// reflected name through meta::enum_names) fails schema generation with that
 /// error — and a T whose fields the codec cannot serialize fails to compile,
 /// exactly like to_string itself. A repr-routed root gets an honestly
 /// unannotated schema; an opaque root — one whose JSON-resolved

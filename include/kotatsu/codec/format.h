@@ -1,22 +1,11 @@
 #pragma once
 
 #include <optional>
-#include <string>
-#include <string_view>
 #include <type_traits>
 
 #include "kotatsu/meta/spec.h"
 
 namespace kotatsu::codec {
-
-/// How enums map to serialized form.
-enum class enum_repr {
-    /// The underlying integer value, unchecked against declared enumerators.
-    Integer,
-    /// The declared enumerator name (through Config::enum_rename when
-    /// present); encoding a value with no declared name fails.
-    String,
-};
 
 /// How non-finite floats (NaN, ±Infinity) are serialized. The check runs
 /// after narrowing to double, upstream of the backend visitor.
@@ -66,13 +55,10 @@ struct empty_config_base {};
 /// Config template that resolves missing fields from defaults.
 /// `default_config<>` gives all defaults. `default_config<MyConfig>` fills in
 /// any fields that MyConfig does not provide.  Inherits from UserConfig so that
-/// type aliases (field_rename, enum_rename, etc.) are forwarded transparently.
+/// type aliases (field_rename) are forwarded transparently.
 template <typename UserConfig = void>
 struct default_config :
     std::conditional_t<std::is_void_v<UserConfig>, detail::empty_config_base, UserConfig> {
-    /// Enum serialized representation.
-    KOTATSU_CFG_FIELD_(enum_repr, kotatsu::codec::enum_repr::Integer);
-
     /// NaN/Infinity handling.
     KOTATSU_CFG_FIELD_(nan_repr, kotatsu::codec::nan_repr::Passthrough);
 
@@ -146,14 +132,5 @@ consteval void assert_human_readable_allowed() {
 }
 
 }  // namespace detail
-
-template <typename Config>
-std::string apply_enum_rename(bool is_serialize, std::string_view name) {
-    if constexpr(requires { typename Config::enum_rename; }) {
-        return typename Config::enum_rename{}(is_serialize, name);
-    } else {
-        return std::string(name);
-    }
-}
 
 }  // namespace kotatsu::codec

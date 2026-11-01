@@ -29,7 +29,6 @@
         using ::kotatsu::meta::dsl::presence;                                                      \
         using ::kotatsu::meta::dsl::as;                                                            \
         using ::kotatsu::meta::dsl::with;                                                          \
-        using ::kotatsu::meta::dsl::enum_string;                                                   \
         using ::kotatsu::meta::dsl::schema_default;                                                \
         using ::kotatsu::meta::dsl::minimum;                                                       \
         using ::kotatsu::meta::dsl::maximum;                                                       \
@@ -70,8 +69,8 @@
 /// the field's name, by a consteval function that is neither emitted nor
 /// mangled; a name no member of the class has fails to compile, and so does a
 /// second annotation of one field. Type-valued attributes ride along as
-/// `as = type<Target>`, `with = type<Adapter>`, `presence = type<Pred>` and
-/// `enum_string = type<Policy>`. A field whose type KANNOTATE_TYPE annotates
+/// `as = type<Target>`, `with = type<Adapter>` and `presence = type<Pred>`.
+/// A field whose type KANNOTATE_TYPE annotates
 /// keeps that annotation: an entry given here overrides the type's, and the
 /// rest of both apply.
 #define KANNOTATE(member, ...)                                                                     \

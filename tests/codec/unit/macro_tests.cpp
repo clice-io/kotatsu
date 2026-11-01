@@ -83,8 +83,6 @@ namespace kotatsu::codec {
 
 namespace {
 
-enum class Level : std::uint8_t { low, high };
-
 struct Profile {
     std::string first;
     int age = 0;
@@ -108,8 +106,6 @@ struct Behaviors {
     int with_adapter;
     KANNOTATE(&omit_negative, presence = type<test::IsNegative>)
     int omit_negative;
-    KANNOTATE(&level, enum_string = type<naming::rename_policy::lower_camel>)
-    Level level;
 };
 
 KANNOTATION(ShapeTag, tag = "kind", tag_names = {"circle", "rect"});
@@ -204,9 +200,6 @@ ZEST_CASE(annotate_type_entries_become_behavior_attrs) {
     ZSTATIC_EXPECT(tuple_has_v<with_attrs, meta::behavior::with<test::DecimalText>>);
     using omit_attrs = meta::field_attrs_t<Behaviors, 2>;
     ZSTATIC_EXPECT(tuple_has_v<omit_attrs, meta::behavior::omit_if<test::IsNegative>>);
-    using level_attrs = meta::field_attrs_t<Behaviors, 3>;
-    ZSTATIC_EXPECT(
-        tuple_has_v<level_attrs, meta::behavior::enum_string<naming::rename_policy::lower_camel>>);
 }
 
 ZEST_CASE(annotation_struct_entries_make_a_struct_spec) {

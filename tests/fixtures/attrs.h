@@ -2,7 +2,7 @@
 
 // Attribute fixtures: rename / skip / alias / flatten / presence /
 // rename_all / deny_unknown_fields, and the behavior attrs omit_if / with /
-// as / enum_string with their combinations. The annotations are written as
+// as with their combinations. The annotations are written as
 // KANNOTATE and KANNOTATE_TYPE (in codec's macro sheet) expand to, with
 // meta's own spec API, so meta's tests can use them.
 
@@ -13,6 +13,7 @@
 #include "fixtures/enums.h"
 #include "kotatsu/meta/annotation.h"
 #include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/repr.h"
 
 namespace kotatsu::test {
 
@@ -190,10 +191,9 @@ struct WithReprStruct {
     float plain;
 };
 
-struct EnumStringStruct {
+struct EnumNamesStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"color_field">) {
-        return meta::make_annotation(meta::dsl::enum_string =
-                                         meta::dsl::type<naming::rename_policy::identity>);
+        return meta::make_annotation(meta::dsl::with = meta::dsl::type<meta::enum_names<>>);
     }
 
     Color color_field;

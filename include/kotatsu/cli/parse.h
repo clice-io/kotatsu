@@ -18,10 +18,10 @@
 #include "kotatsu/cli/detail/declaration.h"
 #include "kotatsu/cli/error.h"
 #include "kotatsu/cli/spec.h"
+#include "kotatsu/support/naming.h"
 #include "kotatsu/support/numeric.h"
 #include "kotatsu/support/string_list_ref.h"
 #include "kotatsu/meta/enum.h"
-#include "kotatsu/meta/spelling.h"
 #include "kotatsu/meta/type_info.h"
 #include "kotatsu/codec/decode.h"
 
@@ -296,15 +296,46 @@ struct Reader {
     }
 };
 
+/// How an argument spells enumerator `name`: in lower camel case, `light_blue` as
+/// `lightBlue`, without the `_` of a keyword-like name (`Delete_`) or the `_` or `V` that
+/// makes one starting with a digit an identifier (`_2d`, `V3`).
+inline std::string enum_text(std::string_view name) {
+    return naming::snake_to_camel(name, false);
+}
+
+/// What an argument and an enumerator compare by, so that any spelling of the name reads:
+/// its words in lower snake case (`lightBlue`, `light-blue`, `LIGHT_BLUE` and `light_blue`
+/// alike), without the `v` of a name that starts with a digit.
+inline std::string enum_key(std::string_view text) {
+    auto key = naming::normalize_to_lower_snake(text);
+    if(key.size() > 1 && key.front() == 'v' && naming::is_digit(key[1])) {
+        key.erase(0, 1);
+    }
+    return key;
+}
+
+/// The enumerator `text` names, in any of the spellings enum_key reads alike.
+template <typename Enum>
+std::optional<Enum> enum_from_text(std::string_view text) {
+    const auto key = enum_key(text);
+    const auto& names = meta::reflection<Enum>::member_names;
+    for(std::size_t i = 0; i < names.size(); ++i) {
+        if(enum_key(names[i]) == key) {
+            return meta::reflection<Enum>::member_values[i];
+        }
+    }
+    return std::nullopt;
+}
+
 template <typename Enum>
 std::string invalid_enum_value(std::string_view text) {
     std::string message = std::format("invalid enum value: {}", text);
-    const auto& names = meta::enum_strings<Enum>();
+    const auto& names = meta::reflection<Enum>::member_names;
     if(!names.empty()) {
         message += " (supported: ";
         for(std::size_t i = 0; i < names.size(); ++i) {
             message += i == 0 ? "" : ", ";
-            message += names[i];
+            message += enum_text(names[i]);
         }
         message += ")";
     }
@@ -381,7 +412,7 @@ std::expected<T, Error> parse(R&& argv) {
 
 namespace kotatsu::codec {
 
-/// An enum reads from any spelling of its name meta knows: `info`, `Info`, `INFO`.
+/// An enum reads from any spelling of its name: `info`, `Info`, `INFO`.
 template <typename E, typename Config>
     requires (std::is_enum_v<E> && !meta::has_repr<E, meta::format_of_t<cli::detail::Reader>>)
 struct deserialize_visit<cli::detail::Reader, E, Config> {
@@ -389,7 +420,7 @@ struct deserialize_visit<cli::detail::Reader, E, Config> {
         if(reader.node.kind != cli::detail::Node::Kind::Text) {
             return reader.fail_shape("a name");
         }
-        auto value = meta::map_string_to_enum<E>(reader.node.text);
+        auto value = cli::detail::enum_from_text<E>(reader.node.text);
         if(!value) {
             return reader.fail(cli::detail::invalid_enum_value<E>(reader.node.text));
         }

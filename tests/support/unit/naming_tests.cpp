@@ -1,4 +1,6 @@
+#include <array>
 #include <string>
+#include <string_view>
 
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/support/naming.h"
@@ -6,6 +8,9 @@
 namespace kotatsu::naming {
 
 namespace {
+
+constexpr std::array<std::string_view, 3> declared = {"read_only", "FullControl", "HTTPServer"};
+constexpr std::array<std::string_view, 2> alike = {"FooBar", "foo_bar"};
 
 ZEST_SUITE(support_naming) {
 
@@ -92,20 +97,12 @@ ZEST_CASE(identifier_from_any_text) {
     ZEXPECT(normalize_identifier("--") == "unnamed");
 }
 
-ZEST_CASE(policies_rename_for_serialization) {
-    ZEXPECT(rename_policy::identity{}(true, "fooBar") == "fooBar");
-    ZEXPECT(rename_policy::lower_snake{}(true, "fooBar") == "foo_bar");
-    ZEXPECT(rename_policy::lower_camel{}(true, "foo_bar") == "fooBar");
-    ZEXPECT(rename_policy::upper_camel{}(true, "foo_bar") == "FooBar");
-    ZEXPECT(rename_policy::upper_snake{}(true, "fooBar") == "FOO_BAR");
-}
-
-ZEST_CASE(policies_read_back_to_lower_snake) {
-    ZEXPECT(rename_policy::identity{}(false, "fooBar") == "fooBar");
-    ZEXPECT(rename_policy::lower_snake{}(false, "FooBar") == "foo_bar");
-    ZEXPECT(rename_policy::lower_camel{}(false, "fooBar") == "foo_bar");
-    ZEXPECT(rename_policy::upper_camel{}(false, "FooBar") == "foo_bar");
-    ZEXPECT(rename_policy::upper_snake{}(false, "FOO_BAR") == "foo_bar");
+ZEST_CASE(policies_spell_names_at_compile_time) {
+    ZSTATIC_EXPECT(rename_policy::identity{}("fooBar") == "fooBar");
+    ZSTATIC_EXPECT(rename_policy::lower_snake{}("fooBar") == "foo_bar");
+    ZSTATIC_EXPECT(rename_policy::lower_camel{}("foo_bar") == "fooBar");
+    ZSTATIC_EXPECT(rename_policy::upper_camel{}("foo_bar") == "FooBar");
+    ZSTATIC_EXPECT(rename_policy::upper_snake{}("fooBar") == "FOO_BAR");
 }
 
 ZEST_CASE(casing_names_its_policy) {
@@ -114,6 +111,24 @@ ZEST_CASE(casing_names_its_policy) {
     ZEXPECT(zest::type_eq<rename_policy_t<Casing::LowerCamel>, rename_policy::lower_camel>());
     ZEXPECT(zest::type_eq<rename_policy_t<Casing::UpperCamel>, rename_policy::upper_camel>());
     ZEXPECT(zest::type_eq<rename_policy_t<Casing::UpperSnake>, rename_policy::upper_snake>());
+}
+
+ZEST_CASE(renamed_spells_a_table_into_static_storage) {
+    constexpr const auto& names = renamed<rename_policy::lower_camel, declared>;
+    ZSTATIC_EXPECT(names.size() == 3U);
+    ZSTATIC_EXPECT(names[0] == "readOnly");
+    ZSTATIC_EXPECT(names[1] == "fullControl");
+    ZSTATIC_EXPECT(names[2] == "httpServer");
+    // The identity policy keeps the names as they are.
+    ZSTATIC_EXPECT(renamed<rename_policy::identity, declared>[1] == "FullControl");
+}
+
+ZEST_CASE(distinct_finds_a_name_listed_twice) {
+    constexpr std::array<std::string_view, 3> twice = {"a", "b", "a"};
+    ZSTATIC_EXPECT(distinct(declared));
+    ZSTATIC_EXPECT(!distinct(twice));
+    // Two names a policy spells alike.
+    ZSTATIC_EXPECT(!distinct(renamed<rename_policy::lower_snake, alike>));
 }
 
 ZEST_CASE(renames_in_constant_evaluation) {

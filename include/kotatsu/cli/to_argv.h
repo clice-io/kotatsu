@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "kotatsu/cli/parse.h"
-#include "kotatsu/meta/spelling.h"
 #include "kotatsu/codec/encode.h"
 
 namespace kotatsu::cli {
@@ -176,12 +175,16 @@ std::vector<std::string> to_argv(const T& options) {
 
 namespace kotatsu::codec {
 
-/// An enum writes as its name.
+/// An enum writes as its name (cli::detail::enum_text); a value without one fails.
 template <typename E, typename Config>
     requires (std::is_enum_v<E> && !meta::has_repr<E, meta::format_of_t<cli::detail::Writer>>)
 struct serialize_visit<cli::detail::Writer, E, Config> {
     static bool visit(cli::detail::Writer& writer, const E& value) {
-        return writer.text(meta::map_enum_to_string(value));
+        auto name = meta::enum_name(value);
+        if(name.empty()) {
+            return detail::fail_unnamed_enum(value);
+        }
+        return writer.text(cli::detail::enum_text(name));
     }
 };
 

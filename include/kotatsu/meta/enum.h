@@ -120,8 +120,10 @@ struct reflection<T> {
     }();
 };
 
+/// The position of `e` among reflection<E>::member_values, or member_count when no enumerator
+/// has its value.
 template <enum_type E>
-constexpr std::string_view enum_name(E e, std::string_view fallback = {}) {
+constexpr std::size_t enum_index(E e) {
     using U = std::underlying_type_t<E>;
     const auto target = static_cast<U>(e);
     const auto& values = reflection<E>::member_values;
@@ -138,9 +140,15 @@ constexpr std::string_view enum_name(E e, std::string_view fallback = {}) {
     }
 
     if(left < values.size() && static_cast<U>(values[left]) == target) {
-        return reflection<E>::member_names[left];
+        return left;
     }
-    return fallback;
+    return values.size();
+}
+
+template <enum_type E>
+constexpr std::string_view enum_name(E e, std::string_view fallback = {}) {
+    const auto index = enum_index(e);
+    return index < reflection<E>::member_count ? reflection<E>::member_names[index] : fallback;
 }
 
 template <enum_type E>
