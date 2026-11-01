@@ -27,7 +27,7 @@ struct Helped {
 ZEST_SUITE(cli_spec) {
 
 ZEST_CASE(entries_fold_into_the_spec) {
-    constexpr const auto* spec = codec::extension_of<ArgSpec, Fields, 0>;
+    constexpr const auto* spec = meta::spec_in<ArgSpec, meta::field_attrs_t<Fields, 0>>;
     ZSTATIC_EXPECT(spec->names.size() == 2U);
     ZSTATIC_EXPECT(spec->names[1] == "--out");
     ZSTATIC_EXPECT(spec->meta_var == "<FILE>");
@@ -35,17 +35,17 @@ ZEST_CASE(entries_fold_into_the_spec) {
 }
 
 ZEST_CASE(positional_takes_its_count) {
-    constexpr const auto* spec = codec::extension_of<ArgSpec, Fields, 1>;
+    constexpr const auto* spec = meta::spec_in<ArgSpec, meta::field_attrs_t<Fields, 1>>;
     ZSTATIC_EXPECT(spec->positional);
     ZSTATIC_EXPECT(spec->arg_num == ArgNum(1, 2));
 }
 
 ZEST_CASE(field_without_entries_has_no_spec) {
-    ZSTATIC_EXPECT(codec::extension_of<ArgSpec, Fields, 2> == nullptr);
+    ZSTATIC_EXPECT(meta::spec_in<ArgSpec, meta::field_attrs_t<Fields, 2>> == nullptr);
 }
 
 ZEST_CASE(help_option_stops_and_is_not_required) {
-    constexpr const auto* spec = codec::extension_of<ArgSpec, Helped, 0>;
+    constexpr const auto* spec = meta::spec_in<ArgSpec, meta::field_attrs_t<Helped, 0>>;
     ZSTATIC_EXPECT(spec->stop);
     // It leaves the presence to cli's format, under which a field is optional.
     constexpr const auto& info =
@@ -55,7 +55,7 @@ ZEST_CASE(help_option_stops_and_is_not_required) {
 }
 
 ZEST_CASE(annotated_help_option_keeps_its_names_and_stop) {
-    constexpr const auto* spec = codec::extension_of<ArgSpec, Fields, 3>;
+    constexpr const auto* spec = meta::spec_in<ArgSpec, meta::field_attrs_t<Fields, 3>>;
     ZSTATIC_EXPECT(spec->hidden);
     ZSTATIC_EXPECT(spec->stop);
     ZSTATIC_EXPECT(spec->names[1] == "--help");

@@ -14,7 +14,6 @@ using meta::attrs_of_t;
 using meta::field_attrs_t;
 using meta::make_annotation;
 using meta::name_key;
-using meta::type_attrs_t;
 
 namespace {
 
@@ -266,22 +265,22 @@ ZEST_CASE(attributes_keep_extension_specs_beside_field_spec) {
     using probe = meta::spec_attr<extension_tag, probe_extension>;
     ZSTATIC_EXPECT(probe::value.label == "probe");
     ZSTATIC_EXPECT(probe::value.weight == 3);
-    ZSTATIC_EXPECT(extensions_of<meta::annotation_attrs_t<extension_tag>>.size() == 1U);
-    // An annotation without extension attributes carries none.
-    ZSTATIC_EXPECT(extensions_of<meta::annotation_attrs_t<full_tag>>.empty());
 }
 
 ZEST_CASE(extension_attributes_are_told_apart_by_their_member) {
-    ZSTATIC_EXPECT(meta::detail::attributes_unique<decltype(label = "a"), decltype(weight = 1)>());
-    ZSTATIC_EXPECT(
-        !meta::detail::attributes_unique<decltype(label = "a"), decltype(label = "b")>());
-    ZSTATIC_EXPECT(
-        meta::detail::attributes_unique<decltype(dsl::rename = "a"), decltype(label = "b")>());
+    using std::type_identity;
+    using std::tuple;
+    ZSTATIC_EXPECT(meta::detail::attributes_unique(
+        type_identity<tuple<decltype(label = "a"), decltype(weight = 1)>>{}));
+    ZSTATIC_EXPECT(!meta::detail::attributes_unique(
+        type_identity<tuple<decltype(label = "a"), decltype(label = "b")>>{}));
+    ZSTATIC_EXPECT(meta::detail::attributes_unique(
+        type_identity<tuple<decltype(dsl::rename = "a"), decltype(label = "b")>>{}));
 }
 
-ZEST_CASE(extension_of_finds_a_field_s_extension) {
-    ZSTATIC_EXPECT(extension_of<probe_extension, holds_extension, 0>->weight == 3);
-    ZSTATIC_EXPECT(extension_of<probe_extension, holds_extension, 1> == nullptr);
+ZEST_CASE(a_field_carries_its_extension_specs) {
+    ZSTATIC_EXPECT(meta::spec_in<probe_extension, field_attrs_t<holds_extension, 0>>->weight == 3);
+    ZSTATIC_EXPECT(meta::spec_in<probe_extension, field_attrs_t<holds_extension, 1>> == nullptr);
     ZSTATIC_EXPECT(meta::spec_in<probe_extension, attrs_of_t<int>> == nullptr);
 }
 
@@ -298,6 +297,9 @@ ZEST_CASE(field_info_carries_extensions_and_declared_names) {
 ZEST_CASE(field_info_finds_extensions_at_compile_time) {
     constexpr const auto& info =
         static_cast<const struct_type_info&>(type_info::of<holds_extension>());
+    // The specs of other modules, the codec's own left out.
+    ZSTATIC_EXPECT(info.fields[0].extensions.size() == 1U);
+    ZSTATIC_EXPECT(info.fields[1].extensions.empty());
     ZSTATIC_EXPECT(info.fields[0].has_extension<probe_extension>());
     ZSTATIC_EXPECT(info.fields[0].extension<probe_extension>()->weight == 3);
     ZSTATIC_EXPECT(!info.fields[1].has_extension<probe_extension>());
@@ -306,27 +308,29 @@ ZEST_CASE(field_info_finds_extensions_at_compile_time) {
 ZEST_CASE(annotation_maps_components_to_behavior_attrs) {
     using converted = field_attrs_t<behavior_struct, 0>;
     ZSTATIC_EXPECT(meta::spec_in<field_spec, converted> != nullptr);
-    ZSTATIC_EXPECT(spec_of<converted>.description == "Converted field.");
+    ZSTATIC_EXPECT(spec_of<field_spec, converted>.description == "Converted field.");
     ZSTATIC_EXPECT((tuple_has_v<converted, behavior::as<std::int64_t>>));
 
     ZSTATIC_EXPECT((tuple_has_v<field_attrs_t<behavior_struct, 1>, behavior::with<probe_adapter>>));
 
     using omitted = field_attrs_t<behavior_struct, 2>;
     ZSTATIC_EXPECT((tuple_has_v<omitted, behavior::omit_if<custom_pred>>));
-    ZSTATIC_EXPECT(spec_of<omitted>.presence == presence_kind::omit_if);
+    ZSTATIC_EXPECT(spec_of<field_spec, omitted>.presence == presence_kind::omit_if);
 }
 
 ZEST_CASE(presence_value_and_predicate_are_one_attribute) {
     // So that one annotation cannot write both.
     using value = decltype(dsl::presence = presence_kind::optional);
     using predicate = decltype(dsl::presence = dsl::type<custom_pred>);
-    ZSTATIC_EXPECT(!meta::detail::attributes_unique<value, predicate>());
+    ZSTATIC_EXPECT(
+        !meta::detail::attributes_unique(std::type_identity<std::tuple<value, predicate>>{}));
 }
 
-ZEST_CASE(spec_of_reads_annotation_and_defaults_to_empty) {
-    ZSTATIC_EXPECT(spec_of<field_attrs_t<spec_struct, 0>>.rename == "userId");
-    ZSTATIC_EXPECT(spec_of<attrs_of_t<int>>.rename == "");
-    ZSTATIC_EXPECT((&spec_of<attrs_of_t<int>> == &empty_field_spec));
+ZEST_CASE(spec_of_reads_annotation_and_defaults_to_unset) {
+    ZSTATIC_EXPECT(spec_of<field_spec, field_attrs_t<spec_struct, 0>>.rename == "userId");
+    ZSTATIC_EXPECT(spec_of<field_spec, attrs_of_t<int>>.rename.empty());
+    ZSTATIC_EXPECT(!spec_of<field_spec, attrs_of_t<int>>.presence.has_value());
+    ZSTATIC_EXPECT(spec_of<struct_spec, attrs_of_t<int>>.tagging == tag_mode::none);
 }
 
 ZEST_CASE(field_info_carries_spec_values) {
@@ -349,16 +353,14 @@ ZEST_CASE(field_info_carries_spec_values) {
     ZSTATIC_EXPECT(fields[3].description == "");
 }
 
-ZEST_CASE(name_only_spec_shares_slot_with_bare_field) {
-    // A rename/description-only spec is dropped from encode slots, so the
+ZEST_CASE(field_spec_stays_out_of_the_slot) {
+    // The field's info carries its spec, its presence included, so an
     // annotated field and a bare int share the slot type.
     using slots = virtual_schema<spec_struct>::slots;
     using first_slot = type_list_element_t<0, slots>;
     ZSTATIC_EXPECT((std::is_same_v<typename first_slot::attrs, std::tuple<>>));
-
-    // A spec that sets the presence stays in the slot attrs.
     using retries_slot = type_list_element_t<3, slots>;
-    ZSTATIC_EXPECT(spec_of<typename retries_slot::attrs>.presence == presence_kind::optional);
+    ZSTATIC_EXPECT((std::is_same_v<typename retries_slot::attrs, std::tuple<>>));
 }
 
 ZEST_CASE(struct_attributes_fold_into_values_and_derive_tagging) {
@@ -388,21 +390,9 @@ ZEST_CASE(struct_attributes_fold_into_values_and_derive_tagging) {
         tag_mode::none);
 }
 
-ZEST_CASE(casing_maps_to_rename_policies) {
-    using naming::Casing;
-    using naming::rename_policy_t;
-    namespace policy = naming::rename_policy;
-    ZSTATIC_EXPECT((std::is_same_v<rename_policy_t<Casing::Identity>, policy::identity>));
-    ZSTATIC_EXPECT((std::is_same_v<rename_policy_t<Casing::LowerSnake>, policy::lower_snake>));
-    ZSTATIC_EXPECT((std::is_same_v<rename_policy_t<Casing::LowerCamel>, policy::lower_camel>));
-    ZSTATIC_EXPECT((std::is_same_v<rename_policy_t<Casing::UpperCamel>, policy::upper_camel>));
-    ZSTATIC_EXPECT((std::is_same_v<rename_policy_t<Casing::UpperSnake>, policy::upper_snake>));
-}
-
 ZEST_CASE(type_annotation_attaches_struct_spec) {
-    ZSTATIC_EXPECT(meta::spec_in<struct_spec, type_attrs_t<shape>> != nullptr);
-    ZSTATIC_EXPECT(struct_spec_of<type_attrs_t<shape>>.tag == "kind");
-    ZSTATIC_EXPECT((&struct_spec_of<std::tuple<>> == &empty_struct_spec));
+    ZSTATIC_EXPECT(meta::spec_in<struct_spec, attrs_of_t<shape>> != nullptr);
+    ZSTATIC_EXPECT(spec_of<struct_spec, attrs_of_t<shape>>.tag == "kind");
 }
 
 ZEST_CASE(equivalent_untagged_struct_specs_share_type_info) {

@@ -1,15 +1,12 @@
 #pragma once
 
-#include <array>
 #include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <span>
 #include <string_view>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -17,10 +14,7 @@
 #include "kotatsu/support/config.h"
 #include "kotatsu/support/naming.h"
 #include "kotatsu/support/numeric.h"
-#include "kotatsu/support/tuple_traits.h"
-#include "kotatsu/support/type_traits.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/name.h"
 #include "kotatsu/meta/struct.h"
 #include "kotatsu/meta/type_kind.h"
 
@@ -28,8 +22,6 @@
 /// field's or a struct's attrs say: its name, its presence, how its value is represented, how
 /// a variant is tagged.
 namespace kotatsu::codec {
-
-using meta::name_list;
 
 /// Whether a field may be left out of a document, and when a write leaves it
 /// out. A field's default is the value it has in a value-initialized object
@@ -89,7 +81,7 @@ struct field_spec {
     /// Documentation exported by schema backends; transparent in serialized output.
     std::string_view description = {};
     /// Extra accepted names during deserialization.
-    name_list alias = {};
+    meta::name_list alias = {};
     /// Whether the field may be left out of a document, and when a write
     /// leaves it out; unset, the struct's presence_all, the format's, or what
     /// its kind is, decides.
@@ -111,7 +103,7 @@ struct field_spec {
     schema_number minimum = {};
     schema_number maximum = {};
     /// The values a string field takes.
-    name_list choices = {};
+    meta::name_list choices = {};
 
     constexpr void validate() const {
         if(skip && flatten) {
@@ -184,7 +176,7 @@ struct struct_spec {
     std::string_view content = {};
     /// Custom serialized names for the variant alternatives, in declaration order;
     /// empty means the name of each alternative's type.
-    name_list tag_names = {};
+    meta::name_list tag_names = {};
 
     /// Derives the tagging mode from the tag and content field names, and checks the
     /// combination.
@@ -309,15 +301,11 @@ struct as {
 
 }  // namespace behavior
 
-/// True for the closed set of behavior attributes.
-template <typename T>
-constexpr bool is_behavior_attr_v =
-    is_specialization_of<behavior::omit_if, T> || is_specialization_of<behavior::with, T> ||
-    is_specialization_of<behavior::as, T>;
-
 namespace dsl {
 
+using meta::dsl::name_list_proxy;
 using meta::dsl::type;
+using meta::dsl::value_proxy;
 
 /// `tagged = true` selects external tagging; internal and adjacent tagging are
 /// selected by naming the tag (and content) fields instead.
@@ -356,12 +344,6 @@ struct omit_if_component {
         spec.presence = presence_kind::omit_if;
     }
 };
-
-template <attribute A, auto Member, typename V>
-using value_proxy = meta::dsl::value_proxy<A, Member, V>;
-
-template <attribute A, auto Member>
-using name_list_proxy = meta::dsl::name_list_proxy<A, Member>;
 
 /// `minimum = 1`: any integer or floating-point value, kept exactly.
 template <attribute A, auto Member>
@@ -466,67 +448,39 @@ struct representation_proxy {
 
 }  // namespace dsl
 
-[[maybe_unused]] constexpr inline field_spec empty_field_spec{};
-[[maybe_unused]] constexpr inline struct_spec empty_struct_spec{};
-
-/// The field spec inside an attrs tuple; the empty spec when absent.
-template <typename Attrs>
-constexpr const inline field_spec& spec_of = [] -> const field_spec& {
-    if constexpr(meta::spec_in<field_spec, Attrs> != nullptr) {
-        return *meta::spec_in<field_spec, Attrs>;
-    } else {
-        return empty_field_spec;
-    }
-}();
-
-/// The struct spec inside an attrs tuple; the empty spec when absent.
-template <typename Attrs>
-constexpr const inline struct_spec& struct_spec_of = [] -> const struct_spec& {
-    if constexpr(meta::spec_in<struct_spec, Attrs> != nullptr) {
-        return *meta::spec_in<struct_spec, Attrs>;
-    } else {
-        return empty_struct_spec;
-    }
-}();
-
-/// The spec_attr of the struct spec inside an attrs tuple; void when absent.
-template <typename Attrs>
-using struct_spec_attr_t = meta::spec_attr_t<struct_spec, Attrs>;
-
-/// The spec field I of T carries, its type's annotation included (meta::field_attrs_t).
-template <typename T, std::size_t I>
-constexpr const inline field_spec& field_spec_of = spec_of<meta::field_attrs_t<T, I>>;
-
 namespace detail {
 
-/// Whether a spec is an extension's, of a module other than the codec.
+/// What a spec says when no attribute sets it.
 template <typename Spec>
-struct is_extension_spec :
-    std::bool_constant<!std::same_as<Spec, field_spec> && !std::same_as<Spec, struct_spec>> {};
+constexpr inline Spec unset_spec{};
 
 }  // namespace detail
 
-/// The specs of the extensions an attrs tuple carries.
-template <typename Attrs>
-constexpr std::span<const meta::spec_ref> extensions_of =
-    meta::spec_refs_of<Attrs, detail::is_extension_spec>;
+/// The spec of type Spec, field_spec or struct_spec, an attrs tuple carries; one no attribute
+/// set when it carries none.
+template <typename Spec, typename Attrs>
+constexpr const inline Spec& spec_of = [] -> const Spec& {
+    if constexpr(std::is_void_v<meta::spec_attr_t<Spec, Attrs>>) {
+        return detail::unset_spec<Spec>;
+    } else {
+        return meta::spec_attr_t<Spec, Attrs>::value;
+    }
+}();
 
-/// The spec of type `Spec` an extension attached to field I of T, its type's own annotation
-/// included; null when it has none.
-template <typename Spec, typename T, std::size_t I>
-constexpr const Spec* extension_of = meta::spec_in<Spec, meta::field_attrs_t<T, I>>;
+/// The field spec field I of T carries, its type's annotation included (meta::field_attrs_t).
+template <typename T, std::size_t I>
+constexpr const inline field_spec& field_spec_of = spec_of<field_spec, meta::field_attrs_t<T, I>>;
 
 namespace detail {
 
-/// An optional value as a template argument: 0 when unset, else the value plus one.
-template <typename E>
-constexpr std::uint8_t optional_code(std::optional<E> value) {
-    return value ? static_cast<std::uint8_t>(static_cast<std::uint8_t>(*value) + 1) : 0;
+/// A presence_all as a template argument: 0 when unset, else the presence plus one.
+constexpr std::uint8_t presence_code(std::optional<presence_kind> presence) {
+    return presence ? static_cast<std::uint8_t>(std::to_underlying(*presence) + 1) : 0;
 }
 
-// The layers of a scoped format, one per policy: each declares its member
-// only when its policy is set, so an untouched policy keeps shining through
-// from Base.
+// The layers of a scoped format, one per struct attribute: each declares its
+// member only when the attribute is set, so that Base's shows through
+// otherwise.
 
 template <typename Base, naming::rename_fn RenameAll>
 struct rename_layer : Base {
@@ -553,55 +507,33 @@ struct presence_layer : Base {
 template <typename Base>
 struct presence_layer<Base, 0> : Base {};
 
-/// Base under every policy layer: the one format type a merge makes.
+/// The format a struct's own attributes make of Base, the format around the struct: Base
+/// under a layer for each of them. Base stays the format the struct's members are read and
+/// written under (members_format_t), and the one whose reprs apply.
 template <typename Base, naming::rename_fn RenameAll, bool DenyUnknown, std::uint8_t Presence>
 struct scoped_format :
     presence_layer<deny_layer<rename_layer<Base, RenameAll>, DenyUnknown>, Presence> {
-    using members_of = Base;
-    /// A struct's scope extends the format it was entered under, whose reprs apply in it.
     using base = Base;
 };
 
-/// The rename_fn Base spells names with: its rename_all's, else identity's.
-template <typename Base>
-consteval naming::rename_fn base_rename_fn() {
-    if constexpr(requires { typename Base::rename_all; }) {
-        return &naming::spell_with<typename Base::rename_all>;
-    } else {
-        return &naming::spell_with<naming::rename_policy::identity>;
-    }
-}
-
-template <typename Base>
-consteval std::uint8_t base_presence_code() {
-    if constexpr(requires { Base::presence_all; }) {
-        return optional_code(Base::presence_all);
-    } else {
-        return 0;
-    }
-}
-
-/// Base under the layers that say what Base does not: a policy equal to
-/// Base's own is dropped, so a struct whose annotation restates the format
-/// shares the format's type_info, and its $def.
+/// The scope of a struct whose attributes say RenameAll, DenyUnknown and Presence, under
+/// Base: Base scoped by those that differ from what Base says, or Base itself when none does,
+/// so that a struct whose annotation restates the format shares the format's type_info, and
+/// its $def.
 template <typename Base, naming::rename_fn RenameAll, bool DenyUnknown, std::uint8_t Presence>
-struct layered_format {
+struct scope {
     constexpr static naming::rename_fn rename =
-        RenameAll == base_rename_fn<Base>() ? nullptr : RenameAll;
-    constexpr static std::uint8_t presence = Presence == base_presence_code<Base>() ? 0 : Presence;
+        RenameAll == &naming::spell_with<typename Base::rename_all> ? nullptr : RenameAll;
+    constexpr static std::uint8_t presence =
+        Presence == presence_code(Base::presence_all) ? 0 : Presence;
     using type = std::conditional_t<rename == nullptr && !DenyUnknown && presence == 0,
                                     Base,
                                     scoped_format<Base, rename, DenyUnknown, presence>>;
 };
 
-template <typename Base, naming::rename_fn RenameAll, bool DenyUnknown, std::uint8_t Presence>
-struct scope_format_impl : layered_format<Base, RenameAll, DenyUnknown, Presence> {};
-
-/// Merging onto an already-merged base rebuilds a single normalized layer
-/// instead of stacking (a deeper rename or presence overrides, deny is
-/// sticky), so equivalent merge chains produce the same format type —
-/// type_info instance sharing (and thus one $defs entry per struct) depends
-/// on that.
+/// A scope entered within another, as the type a repr declares is within its type's: one
+/// scope of the outer one's Base, the inner rename or presence over the outer, deny_unknown
+/// kept once either sets it, so that equal scopes are one type.
 template <typename Base,
           naming::rename_fn R0,
           bool D0,
@@ -609,69 +541,55 @@ template <typename Base,
           naming::rename_fn RenameAll,
           bool DenyUnknown,
           std::uint8_t Presence>
-struct scope_format_impl<scoped_format<Base, R0, D0, P0>, RenameAll, DenyUnknown, Presence> :
-    layered_format<Base,
-                   RenameAll != nullptr ? RenameAll : R0,
-                   D0 || DenyUnknown,
-                   Presence != 0 ? Presence : P0> {};
+struct scope<scoped_format<Base, R0, D0, P0>, RenameAll, DenyUnknown, Presence> :
+    scope<Base,
+          RenameAll != nullptr ? RenameAll : R0,
+          D0 || DenyUnknown,
+          Presence != 0 ? Presence : P0> {};
 
 }  // namespace detail
 
-/// The format Base with an annotated struct's rename_all /
-/// deny_unknown_fields / presence_all layered on top; a spec carrying none of
-/// these policies leaves Base untouched. A deeper merge overrides an earlier
-/// rename or presence, deny is sticky: once set it is never merged away. This
-/// is the single implementation of the merge: the dispatch applies it when
-/// crossing an annotated struct and the repr resolver replays it, so
-/// type_info always describes the documents the codec reads and writes.
-template <typename Base, typename AttrsTuple>
-using scoped_format_t =
-    typename detail::scope_format_impl<Base,
-                                       struct_spec_of<AttrsTuple>.rename_all,
-                                       struct_spec_of<AttrsTuple>.deny_unknown_fields,
-                                       detail::optional_code(
-                                           struct_spec_of<AttrsTuple>.presence_all)>::type;
+/// The format a node of type T carrying Attrs, a field's attrs or its type's, is read and
+/// written under: Format scoped by the struct attributes of Attrs (rename_all,
+/// deny_unknown_fields, presence_all) when T is a reflectable struct, whose members they name
+/// and mark, or an enum, whose names an enum_names repr spells by its rename_all; Format on
+/// every other node. The dispatch and type_info both scope through it, so that type_info
+/// describes the documents the codec reads and writes.
+template <typename Format, typename T, typename Attrs>
+using node_format_t = std::conditional_t<
+    meta::reflectable_class<T> || std::is_enum_v<T>,
+    typename detail::scope<Format,
+                           spec_of<struct_spec, Attrs>.rename_all,
+                           spec_of<struct_spec, Attrs>.deny_unknown_fields,
+                           detail::presence_code(spec_of<struct_spec, Attrs>.presence_all)>::type,
+    Format>;
 
-/// The format a node of type T carrying AttrsTuple (a field's attrs, or an
-/// annotation's) is read and written under: its rename_all /
-/// deny_unknown_fields / presence_all merge onto Format when T is a
-/// reflectable struct, whose members they name and mark, or an enum, whose
-/// names an enum_names repr spells by its rename_all; they are inert on every
-/// other node.
-template <typename Format, typename T, typename AttrsTuple>
-using node_format_t = std::conditional_t<meta::reflectable_class<T> || std::is_enum_v<T>,
-                                         scoped_format_t<Format, AttrsTuple>,
-                                         Format>;
-
-/// The format the values of a struct's fields are read and written under:
-/// the one its own rename_all / deny_unknown_fields / presence_all merged
-/// onto, which name and mark its members alone and reach no deeper.
+/// The format the values of a struct's fields are read and written under, Format being the
+/// struct's scope: the format the scope was made of, as a struct's attributes name and mark its
+/// own members alone.
 template <typename Format>
 struct members_format {
     using type = Format;
 };
 
-template <typename Format>
-    requires requires { typename Format::members_of; }
-struct members_format<Format> {
-    using type = typename Format::members_of;
+template <typename Base, naming::rename_fn RenameAll, bool DenyUnknown, std::uint8_t Presence>
+struct members_format<detail::scoped_format<Base, RenameAll, DenyUnknown, Presence>> {
+    using type = Base;
 };
 
 template <typename Format>
 using members_format_t = typename members_format<Format>::type;
 
 /// The presence a field of kind `kind` whose spec is `spec` has under Format: the spec's own,
-/// else Format's presence_all (a struct's, merged on the way, or the format's own), else
+/// else Format's presence_all (a struct's, scoped on the way, or the format's own), else
 /// optional for a std::optional, a pointer or null, and required for the rest.
 template <typename Format>
 constexpr presence_kind effective_presence(const field_spec& spec, meta::type_kind kind) {
     if(spec.presence) {
         return *spec.presence;
     }
-    if constexpr(requires { Format::presence_all; }) {
-        if(Format::presence_all) {
-            return *Format::presence_all;
-        }
+    if(Format::presence_all) {
+        return *Format::presence_all;
     }
     using enum meta::type_kind;
     return kind == optional || kind == pointer || kind == null ? presence_kind::optional

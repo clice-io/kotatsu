@@ -22,9 +22,9 @@
 
 namespace kotatsu::codec {
 
+using meta::attrs_of_t;
 using meta::kind_of;
 using meta::make_annotation;
-using meta::type_attrs_t;
 using meta::type_kind;
 
 namespace {
@@ -62,11 +62,11 @@ ZEST_CASE(struct_description_comes_from_its_annotation) {
 }
 
 ZEST_CASE(derived_struct_takes_no_annotation_of_its_base) {
-    ZEXPECT(zest::type_eq<type_attrs_t<DerivedFromDescribed>, std::tuple<>>());
+    ZEXPECT(zest::type_eq<attrs_of_t<DerivedFromDescribed>, std::tuple<>>());
 }
 
 ZEST_CASE(enum_annotated_after_its_definition_is_found) {
-    ZSTATIC_EXPECT(spec_of<type_attrs_t<Lamp>>.description == "A lamp");
+    ZSTATIC_EXPECT(spec_of<field_spec, attrs_of_t<Lamp>>.description == "A lamp");
 }
 
 ZEST_CASE(scalars_have_their_kind) {
@@ -648,9 +648,8 @@ ZEST_CASE(recursive_self_pointer_identity) {
 }
 
 ZEST_CASE(virtual_schema_recursive_fields_are_usable) {
-    // Drives the same code path as type_info::of but through virtual_schema, which
-    // previously routed through struct_info_node. Verifies fields/count are
-    // instantiable and consistent for recursive types.
+    // The path type_info::of takes, entered through virtual_schema: its fields
+    // are instantiable and consistent for recursive types.
     using TS = virtual_schema<fx::TreeNode>;
     ZSTATIC_EXPECT(TS::fields.size() == 2U);
     ZSTATIC_EXPECT(TS::fields.size() == 2U);

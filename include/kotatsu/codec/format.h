@@ -66,24 +66,19 @@ struct decode_options {
 
 namespace detail {
 
-const inline encode_options default_encode_options{};
-const inline decode_options default_decode_options{};
-
 /// The options of the encode under way: those its entry point was given, else the defaults.
 const inline encode_options& current_encode_options() {
+    constexpr static encode_options defaults{};
     auto* options = scoped_context<const encode_options>::try_current();
-    return options ? *options : default_encode_options;
+    return options ? *options : defaults;
 }
 
 /// The options of the decode under way: those its entry point was given, else the defaults.
 const inline decode_options& current_decode_options() {
+    constexpr static decode_options defaults{};
     auto* options = scoped_context<const decode_options>::try_current();
-    return options ? *options : default_decode_options;
+    return options ? *options : defaults;
 }
-
-}  // namespace detail
-
-namespace detail {
 
 template <typename Vis>
 constexpr auto format_of_impl() {
@@ -129,13 +124,5 @@ concept omits_unstated_defaults = requires { requires F::omit_unstated_defaults;
 /// fields unchecked.
 template <typename Vis>
 concept presence_checked = requires { requires Vis::presence_checked; };
-
-/// Whether documents carry names, as the format says: a struct's fields and a
-/// variant's tags. Determines text vs binary serialization strategy for
-/// user-defined types.
-template <typename Format, typename Vis>
-constexpr bool is_human_readable() {
-    return Format::human_readable;
-}
 
 }  // namespace kotatsu::codec

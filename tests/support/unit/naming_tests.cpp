@@ -106,11 +106,14 @@ ZEST_CASE(policies_spell_names_at_compile_time) {
 }
 
 ZEST_CASE(casing_names_its_policy) {
-    ZEXPECT(zest::type_eq<rename_policy_t<Casing::Identity>, rename_policy::identity>());
-    ZEXPECT(zest::type_eq<rename_policy_t<Casing::LowerSnake>, rename_policy::lower_snake>());
-    ZEXPECT(zest::type_eq<rename_policy_t<Casing::LowerCamel>, rename_policy::lower_camel>());
-    ZEXPECT(zest::type_eq<rename_policy_t<Casing::UpperCamel>, rename_policy::upper_camel>());
-    ZEXPECT(zest::type_eq<rename_policy_t<Casing::UpperSnake>, rename_policy::upper_snake>());
+    ZSTATIC_EXPECT(casing_fn(Casing::Identity) == &spell_with<rename_policy::identity>);
+    ZSTATIC_EXPECT(casing_fn(Casing::LowerSnake) == &spell_with<rename_policy::lower_snake>);
+    ZSTATIC_EXPECT(casing_fn(Casing::LowerCamel) == &spell_with<rename_policy::lower_camel>);
+    ZSTATIC_EXPECT(casing_fn(Casing::UpperCamel) == &spell_with<rename_policy::upper_camel>);
+    ZSTATIC_EXPECT(casing_fn(Casing::UpperSnake) == &spell_with<rename_policy::upper_snake>);
+    // A policy's rename_fn names the policy again.
+    ZEXPECT(zest::type_eq<rename_policy_of_t<casing_fn(Casing::UpperCamel)>,
+                          rename_policy::upper_camel>());
 }
 
 ZEST_CASE(renamed_spells_a_table_into_static_storage) {
@@ -119,8 +122,8 @@ ZEST_CASE(renamed_spells_a_table_into_static_storage) {
     ZSTATIC_EXPECT(names[0] == "readOnly");
     ZSTATIC_EXPECT(names[1] == "fullControl");
     ZSTATIC_EXPECT(names[2] == "httpServer");
-    // The identity policy keeps the names as they are.
-    ZSTATIC_EXPECT(renamed<rename_policy::identity, declared>[1] == "FullControl");
+    // The identity policy keeps the names as they are, where they are.
+    ZSTATIC_EXPECT(&renamed<rename_policy::identity, declared> == &declared);
 }
 
 ZEST_CASE(distinct_finds_a_name_listed_twice) {

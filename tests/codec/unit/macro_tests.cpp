@@ -173,14 +173,17 @@ ZEST_CASE(annotate_field_takes_a_parenthesized_member) {
 }
 
 ZEST_CASE(annotate_type_declares_the_struct_where_it_is_written) {
-    ZSTATIC_EXPECT(codec::spec_of<meta::type_attrs_t<downstream::Options>>.description ==
-                   std::string_view("Downstream options"));
-    ZSTATIC_EXPECT(codec::spec_of<meta::type_attrs_t<::Options>>.description.empty());
+    ZSTATIC_EXPECT(
+        codec::spec_of<codec::field_spec, meta::attrs_of_t<downstream::Options>>.description ==
+        std::string_view("Downstream options"));
+    ZSTATIC_EXPECT(
+        codec::spec_of<codec::field_spec, meta::attrs_of_t<::Options>>.description.empty());
 }
 
 ZEST_CASE(annotate_type_follows_an_opaque_enum_declaration) {
-    ZSTATIC_EXPECT(codec::spec_of<meta::type_attrs_t<downstream::Level>>.description ==
-                   std::string_view("How loud"));
+    ZSTATIC_EXPECT(
+        codec::spec_of<codec::field_spec, meta::attrs_of_t<downstream::Level>>.description ==
+        std::string_view("How loud"));
 }
 
 ZEST_CASE(annotate_type_carries_extension_attributes_to_plain_fields) {
@@ -217,13 +220,13 @@ ZEST_CASE(annotate_type_attributes_become_behavior_attrs) {
 }
 
 ZEST_CASE(annotation_struct_attributes_make_a_struct_spec) {
-    constexpr const auto& shape = codec::struct_spec_of<meta::type_attrs_t<Shape>>;
+    constexpr const auto& shape = codec::spec_of<codec::struct_spec, meta::attrs_of_t<Shape>>;
     ZSTATIC_EXPECT(shape.tagging == codec::tag_mode::internal);
     ZSTATIC_EXPECT(shape.tag == std::string_view("kind"));
     ZSTATIC_EXPECT(shape.tag_names[1] == std::string_view("rect"));
 
-    using strict_attrs = meta::type_attrs_t<StrictProfile>;
-    constexpr const auto& strict = codec::struct_spec_of<strict_attrs>;
+    using strict_attrs = meta::attrs_of_t<StrictProfile>;
+    constexpr const auto& strict = codec::spec_of<codec::struct_spec, strict_attrs>;
     ZSTATIC_EXPECT(strict.rename_all == naming::casing_fn(naming::Casing::LowerCamel));
     ZSTATIC_EXPECT(strict.deny_unknown_fields);
     ZSTATIC_EXPECT(strict.presence_all == codec::presence_kind::optional);
@@ -232,18 +235,19 @@ ZEST_CASE(annotation_struct_attributes_make_a_struct_spec) {
 }
 
 ZEST_CASE(attributes_after_a_bundle_override_its_own) {
-    constexpr const auto& shape = codec::struct_spec_of<meta::field_attrs_t<Bundled, 0>>;
+    constexpr const auto& shape =
+        codec::spec_of<codec::struct_spec, meta::field_attrs_t<Bundled, 0>>;
     ZSTATIC_EXPECT(shape.tag == std::string_view("type"));
     ZSTATIC_EXPECT(shape.tag_names[0] == std::string_view("circle"));
 }
 
 ZEST_CASE(annotate_takes_struct_attributes_on_a_field) {
     constexpr const auto& shape =
-        codec::struct_spec_of<meta::field_attrs_t<StructEntriesOnFields, 0>>;
+        codec::spec_of<codec::struct_spec, meta::field_attrs_t<StructEntriesOnFields, 0>>;
     ZSTATIC_EXPECT(shape.tagging == codec::tag_mode::internal);
     ZSTATIC_EXPECT(shape.tag == std::string_view("kind"));
     constexpr const auto& inner =
-        codec::struct_spec_of<meta::field_attrs_t<StructEntriesOnFields, 1>>;
+        codec::spec_of<codec::struct_spec, meta::field_attrs_t<StructEntriesOnFields, 1>>;
     ZSTATIC_EXPECT(inner.rename_all == naming::casing_fn(naming::Casing::UpperSnake));
     ZSTATIC_EXPECT(inner.deny_unknown_fields);
 }

@@ -83,6 +83,10 @@ struct Holder {
     Weighed narrowed;
 };
 
+/// The attrs of an annotation written alone.
+template <typename Tag>
+using attrs_alone_t = detail::layered_attrs_t<detail::no_annotation, Tag>;
+
 ZEST_SUITE(meta_annotation) {
 
 ZEST_CASE(attributes_fold_into_their_specs) {
@@ -92,7 +96,7 @@ ZEST_CASE(attributes_fold_into_their_specs) {
     ZSTATIC_EXPECT(spec_attr<labeled_tag, Note>::value.text == "n");
     // One spec_attr for each spec type the attributes set.
     ZSTATIC_EXPECT(
-        (std::is_same_v<annotation_attrs_t<labeled_tag>,
+        (std::is_same_v<attrs_alone_t<labeled_tag>,
                         std::tuple<spec_attr<labeled_tag, Range>, spec_attr<labeled_tag, Note>>>));
 }
 
@@ -103,9 +107,14 @@ ZEST_CASE(attributes_written_beside_a_bundle_override_it) {
 }
 
 ZEST_CASE(attributes_are_told_apart_by_kind_and_spec) {
-    ZSTATIC_EXPECT(detail::attributes_unique<decltype(label = "a"), decltype(weight = 1)>());
-    ZSTATIC_EXPECT(!detail::attributes_unique<decltype(label = "a"), decltype(label = "b")>());
-    ZSTATIC_EXPECT(detail::attributes_unique<decltype(label = "a"), decltype(text = "b")>());
+    using std::type_identity;
+    using std::tuple;
+    ZSTATIC_EXPECT(detail::attributes_unique(
+        type_identity<tuple<decltype(label = "a"), decltype(weight = 1)>>{}));
+    ZSTATIC_EXPECT(!detail::attributes_unique(
+        type_identity<tuple<decltype(label = "a"), decltype(label = "b")>>{}));
+    ZSTATIC_EXPECT(detail::attributes_unique(
+        type_identity<tuple<decltype(label = "a"), decltype(text = "b")>>{}));
 }
 
 ZEST_CASE(a_group_is_overridden_as_a_whole) {
@@ -137,11 +146,9 @@ ZEST_CASE(a_type_annotation_takes_no_field_only_attribute) {
         std::type_identity<std::remove_const_t<decltype(make_annotation(label = "a"))>>{}));
 }
 
-template <typename Spec>
-struct is_note : std::is_same<Spec, Note> {};
-
 ZEST_CASE(spec_refs_find_specs_by_type) {
-    constexpr auto refs = spec_refs_of<annotation_attrs_t<labeled_tag>, is_note>;
+    // The specs but the Range.
+    constexpr auto refs = spec_refs_of<attrs_alone_t<labeled_tag>, Range>;
     ZSTATIC_EXPECT(refs.size() == 1U);
     ZSTATIC_EXPECT(refs[0].holds<Note>());
     ZSTATIC_EXPECT(!refs[0].holds<Range>());

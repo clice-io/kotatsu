@@ -118,21 +118,16 @@ namespace detail {
 template <typename C>
 using kind_type_t = std::remove_cv_t<decltype(C::kind)>;
 
-template <typename C>
-consteval int group_of() {
-    return attribute_traits<kind_type_t<C>>::group(C::kind);
-}
-
-template <typename C>
-consteval bool field_only() {
-    return attribute_traits<kind_type_t<C>>::field_only(C::kind);
-}
+/// Whether the kinds of attributes A and B tell them apart: they set specs of one type, and
+/// their kinds are of one type.
+template <typename A, typename B>
+concept kinds_comparable = std::same_as<typename A::spec_type, typename B::spec_type> &&
+                           std::same_as<kind_type_t<A>, kind_type_t<B>>;
 
 /// Whether attributes A and B set the same thing: the same kind of the same spec type.
 template <typename A, typename B>
 consteval bool same_attribute() {
-    if constexpr(std::same_as<typename A::spec_type, typename B::spec_type> &&
-                 std::same_as<kind_type_t<A>, kind_type_t<B>>) {
+    if constexpr(kinds_comparable<A, B>) {
         return A::kind == B::kind;
     } else {
         return false;
@@ -143,18 +138,18 @@ consteval bool same_attribute() {
 /// same thing, or belong to one group.
 template <typename I, typename O>
 consteval bool overrides() {
-    if constexpr(same_attribute<I, O>()) {
-        return true;
-    } else if constexpr(std::same_as<typename I::spec_type, typename O::spec_type> &&
-                        std::same_as<kind_type_t<I>, kind_type_t<O>>) {
-        return group_of<I>() != 0 && group_of<I>() == group_of<O>();
+    if constexpr(kinds_comparable<I, O>) {
+        using traits = attribute_traits<kind_type_t<I>>;
+        constexpr int group = traits::group(I::kind);
+        return I::kind == O::kind || (group != 0 && group == traits::group(O::kind));
     } else {
         return false;
     }
 }
 
+/// Whether no two of the attributes Cs set the same thing.
 template <typename... Cs>
-consteval bool attributes_unique() {
+consteval bool attributes_unique(std::type_identity<std::tuple<Cs...>>) {
     std::size_t pairs = 0;
     (
         [&]<typename C>(std::type_identity<C>) {
@@ -221,38 +216,20 @@ constexpr auto compose_bundles(const Attributes& attributes,
     return compose_bundles(compose_attributes(attributes, next), rest...);
 }
 
-/// Whether no attribute is written twice among the arguments, bundles aside: a bundle's
-/// attributes give way to the ones written after it.
-template <typename... Args>
-consteval bool direct_attributes_unique() {
-    return []<typename... Cs>(std::type_identity<std::tuple<Cs...>>) {
-        return attributes_unique<Cs...>();
-    }(std::type_identity<decltype(std::tuple_cat(
-               std::conditional_t<is_bundle_v<Args>, std::tuple<>, std::tuple<Args>>{}...))>{});
-}
-
-/// The tuple of the distinct spec types the attributes `Cs` set, in the order they first
-/// appear.
-template <typename Tuple, typename... Cs>
+/// The distinct spec types the attributes `Attributes`, a tuple, set, as a tuple, in the order
+/// they first appear; Specs holds the ones found so far.
+template <typename Attributes, typename Specs = std::tuple<>>
 struct spec_types {
-    using type = Tuple;
+    using type = Specs;
 };
 
-template <typename... Specs, typename C, typename... Rest>
-struct spec_types<std::tuple<Specs...>, C, Rest...> {
+template <typename C, typename... Rest, typename... Specs>
+struct spec_types<std::tuple<C, Rest...>, std::tuple<Specs...>> {
     using spec_t = typename C::spec_type;
-    using type = typename spec_types<std::conditional_t<is_one_of<spec_t, Specs...>,
+    using type = typename spec_types<std::tuple<Rest...>,
+                                     std::conditional_t<is_one_of<spec_t, Specs...>,
                                                         std::tuple<Specs...>,
-                                                        std::tuple<Specs..., spec_t>>,
-                                     Rest...>::type;
-};
-
-template <typename Attributes>
-struct spec_types_of;
-
-template <typename... Cs>
-struct spec_types_of<std::tuple<Cs...>> {
-    using type = typename spec_types<std::tuple<>, Cs...>::type;
+                                                        std::tuple<Specs..., spec_t>>>::type;
 };
 
 /// The spec of type `Spec` the attributes set, checked by a validate() of its own, which may
@@ -278,11 +255,11 @@ constexpr Spec spec_from(const std::tuple<Cs...>& attributes) {
 }
 
 /// Checks the spec of every type the attributes set.
-template <typename... Cs>
-constexpr void check_specs(const std::tuple<Cs...>& attributes) {
+template <typename Attributes>
+constexpr void check_specs(const Attributes& attributes) {
     [&]<typename... Specs>(std::type_identity<std::tuple<Specs...>>) {
         (spec_from<Specs>(attributes), ...);
-    }(std::type_identity<typename spec_types<std::tuple<>, Cs...>::type>{});
+    }(std::type_identity<typename spec_types<Attributes>::type>{});
 }
 
 }  // namespace detail
@@ -299,8 +276,11 @@ template <typename... Args>
 constexpr auto make_annotation(const Args&... args) {
     static_assert(((detail::is_bundle_v<Args> || dsl::component<Args>) && ...),
                   "an annotation takes attributes, e.g. skip = true, or bundles");
-    static_assert(detail::direct_attributes_unique<Args...>(),
-                  "annotation: the same attribute appears twice");
+    // No attribute is written twice beside the bundles, whose attributes give way to them.
+    static_assert(
+        detail::attributes_unique(
+            std::type_identity<decltype(std::tuple_cat(detail::direct_attributes(args)...))>{}),
+        "annotation: the same attribute appears twice");
     // The attributes written here override the bundles', which never override one another's
     // group as the attributes of one annotation would.
     auto attributes = detail::compose_attributes(
@@ -317,7 +297,6 @@ constexpr auto make_annotation(const Args&... args) {
 /// arguments.
 template <typename Tag, typename Spec>
 struct spec_attr {
-    using tag = Tag;
     using spec_type = Spec;
     constexpr static Spec value = detail::spec_from<Spec>(Tag::attributes);
 };
@@ -363,6 +342,32 @@ constexpr const Spec* spec_in = [] -> const Spec* {
 
 namespace detail {
 
+/// No annotation, as a tag: what a type or a field nothing annotates has.
+struct no_annotation {
+    constexpr static std::tuple<> attributes{};
+};
+
+/// The annotation Outer written around Inner, as one tag: the inner one's attributes the
+/// outer one's do not override, then the outer one's.
+template <typename Inner, typename Outer>
+struct composed_tag {
+    constexpr static auto attributes = compose_attributes(Inner::attributes, Outer::attributes);
+};
+
+/// Whether the annotation Tag sets a spec of type Spec.
+template <typename Tag, typename Spec>
+constexpr bool sets_spec =
+    tuple_has_v<typename spec_types<std::remove_const_t<decltype(Tag::attributes)>>::type, Spec>;
+
+/// The tag the spec of type Spec is kept under when the annotation Outer is written around
+/// Inner: both composed when both set one, else the one that does, whose tag it keeps, so that
+/// a field shares its type's specs where its own annotation sets none of their type.
+template <typename Inner, typename Outer, typename Spec>
+using spec_tag_t = std::conditional_t<
+    !sets_spec<Outer, Spec>,
+    Inner,
+    std::conditional_t<sets_spec<Inner, Spec>, composed_tag<Inner, Outer>, Outer>>;
+
 /// The attr an attribute adds beside the specs: one that carries a type names it.
 template <typename C>
 constexpr auto added_attr() {
@@ -373,82 +378,22 @@ constexpr auto added_attr() {
     }
 }
 
-template <typename Tag, typename... Specs>
-constexpr auto spec_attrs(std::type_identity<std::tuple<Specs...>>) {
-    return std::tuple<spec_attr<Tag, Specs>...>{};
-}
-
-template <typename Tag, typename... Cs>
-constexpr auto annotation_attrs(std::type_identity<std::tuple<Cs...>>) {
-    return std::tuple_cat(
-        spec_attrs<Tag>(std::type_identity<typename spec_types<std::tuple<>, Cs...>::type>{}),
-        added_attr<Cs>()...);
-}
-
-}  // namespace detail
-
-/// The attrs of the annotation `Tag`: a spec_attr for each spec type its attributes set, then
-/// the attrs its attributes add.
-template <typename Tag>
-using annotation_attrs_t = decltype(detail::annotation_attrs<Tag>(
-    std::type_identity<std::remove_const_t<decltype(Tag::attributes)>>{}));
-
-namespace detail {
-
-/// An annotation written around another, as one tag: the inner one's attributes the outer
-/// one's do not override, then the outer one's.
-template <typename Inner, typename Outer>
-struct composed_tag {
-    constexpr static auto attributes = compose_attributes(Inner::attributes, Outer::attributes);
-};
-
-/// The spec_attr of type Spec the annotations Inner and Outer make together: both composed
-/// when both set one, else the one either has, which keeps its type so that the specs of an
-/// annotation that composes with nothing of theirs stay the ones it had alone.
-template <typename Inner, typename Outer, typename Spec>
-constexpr auto composed_spec_attr() {
-    using inner_specs =
-        typename spec_types_of<std::remove_const_t<decltype(Inner::attributes)>>::type;
-    using outer_specs =
-        typename spec_types_of<std::remove_const_t<decltype(Outer::attributes)>>::type;
-    constexpr bool inner = tuple_has_v<inner_specs, Spec>;
-    constexpr bool outer = tuple_has_v<outer_specs, Spec>;
-    if constexpr(inner && outer) {
-        return std::tuple<spec_attr<composed_tag<Inner, Outer>, Spec>>{};
-    } else if constexpr(inner) {
-        return std::tuple<spec_attr<Inner, Spec>>{};
-    } else {
-        return std::tuple<spec_attr<Outer, Spec>>{};
-    }
-}
-
 template <typename Inner, typename Outer, typename... Specs, typename... Cs>
-constexpr auto composed_attrs(std::type_identity<std::tuple<Specs...>>,
-                              std::type_identity<std::tuple<Cs...>>) {
-    return std::tuple_cat(composed_spec_attr<Inner, Outer, Specs>()..., added_attr<Cs>()...);
+constexpr auto layered_attrs(std::type_identity<std::tuple<Specs...>>,
+                             std::type_identity<std::tuple<Cs...>>) {
+    return std::tuple_cat(std::tuple<spec_attr<spec_tag_t<Inner, Outer, Specs>, Specs>...>{},
+                          added_attr<Cs>()...);
 }
 
 template <typename Inner, typename Outer>
-constexpr auto composed_annotation_attrs() {
-    using composed = std::remove_const_t<decltype(composed_tag<Inner, Outer>::attributes)>;
-    return composed_attrs<Inner, Outer>(
-        std::type_identity<typename spec_types_of<composed>::type>{},
-        std::type_identity<composed>{});
-}
+using composed_attributes_t = decltype(compose_attributes(Inner::attributes, Outer::attributes));
 
-/// The attrs of the annotation Outer written around Inner, either of them void for none.
+/// The attrs of the annotation Outer written around Inner, either of them no_annotation: a
+/// spec_attr for each spec type their attributes set, then the attrs the attributes add.
 template <typename Inner, typename Outer>
-constexpr auto layered_attrs() {
-    if constexpr(std::is_void_v<Inner> && std::is_void_v<Outer>) {
-        return std::tuple<>{};
-    } else if constexpr(std::is_void_v<Inner>) {
-        return annotation_attrs_t<Outer>{};
-    } else if constexpr(std::is_void_v<Outer>) {
-        return annotation_attrs_t<Inner>{};
-    } else {
-        return composed_annotation_attrs<Inner, Outer>();
-    }
-}
+using layered_attrs_t = decltype(layered_attrs<Inner, Outer>(
+    std::type_identity<typename spec_types<composed_attributes_t<Inner, Outer>>::type>{},
+    std::type_identity<composed_attributes_t<Inner, Outer>>{}));
 
 /// Declared so that the unqualified call below finds the user's by argument-dependent
 /// lookup, in the namespace of the type KANNOTATE_TYPE annotates.
@@ -460,9 +405,10 @@ template <typename T>
 concept has_type_annotation = (std::is_class_v<T> || std::is_enum_v<T>) &&
                               requires { __kotatsu__type_annotation(std::type_identity<T>{}); };
 
+/// Whether the attributes Cs may annotate a type: none annotates a field alone.
 template <typename... Cs>
 consteval bool type_attributes(std::type_identity<std::tuple<Cs...>>) {
-    return (!field_only<Cs>() && ...);
+    return (!attribute_traits<kind_type_t<Cs>>::field_only(Cs::kind) && ...);
 }
 
 /// The annotation of type `T` itself, as a tag.
@@ -475,17 +421,16 @@ struct type_annotation {
 };
 
 template <typename T>
-using type_annotation_t = std::conditional_t<has_type_annotation<T>, type_annotation<T>, void>;
+using type_annotation_t =
+    std::conditional_t<has_type_annotation<T>, type_annotation<T>, no_annotation>;
 
 }  // namespace detail
 
-/// The attrs of type `T` itself: the annotation KANNOTATE_TYPE gives it.
+/// The attrs a value of type `T` carries wherever it is: the annotation KANNOTATE_TYPE gives
+/// its type.
 template <typename T>
-using type_attrs_t = decltype(detail::layered_attrs<detail::type_annotation_t<T>, void>());
-
-/// The attrs a value of type `T` carries wherever it is: its type's annotation.
-template <typename T>
-using attrs_of_t = type_attrs_t<std::remove_cv_t<T>>;
+using attrs_of_t =
+    detail::layered_attrs_t<detail::type_annotation_t<std::remove_cv_t<T>>, detail::no_annotation>;
 
 namespace detail {
 
@@ -599,7 +544,8 @@ struct field_annotation {
 };
 
 template <typename T, std::size_t I>
-using field_annotation_t = std::conditional_t<field_annotated<T, I>, field_annotation<T, I>, void>;
+using field_annotation_t =
+    std::conditional_t<field_annotated<T, I>, field_annotation<T, I>, no_annotation>;
 
 }  // namespace detail
 
@@ -607,8 +553,8 @@ using field_annotation_t = std::conditional_t<field_annotated<T, I>, field_annot
 /// whose attributes override them.
 template <typename T, std::size_t I>
 using field_attrs_t =
-    decltype(detail::layered_attrs<detail::type_annotation_t<std::remove_cv_t<field_type<T, I>>>,
-                                   detail::field_annotation_t<T, I>>());
+    detail::layered_attrs_t<detail::type_annotation_t<std::remove_cv_t<field_type<T, I>>>,
+                            detail::field_annotation_t<T, I>>;
 
 /// The key a spec type is found by: its qualified name, which compares in a constant
 /// expression too, where the address of a variable may not.
@@ -644,11 +590,11 @@ struct spec_ref {
 
 namespace detail {
 
-template <template <typename> typename Keep, typename Attr>
+template <typename Attr, typename... Excluded>
 constexpr auto kept_spec_value() {
     if constexpr(is_spec_attr_v<Attr>) {
         using spec_t = typename Attr::spec_type;
-        if constexpr(Keep<spec_t>::value) {
+        if constexpr(!is_one_of<spec_t, Excluded...>) {
             return std::tuple<spec_value<spec_t>>{
                 spec_value<spec_t>{{spec_key<spec_t>}, Attr::value}
             };
@@ -660,12 +606,12 @@ constexpr auto kept_spec_value() {
     }
 }
 
-template <typename Attrs, template <typename> typename Keep>
+template <typename Attrs, typename... Excluded>
 struct kept_spec_values;
 
-template <typename... Attrs, template <typename> typename Keep>
-struct kept_spec_values<std::tuple<Attrs...>, Keep> {
-    constexpr static auto value = std::tuple_cat(kept_spec_value<Keep, Attrs>()...);
+template <typename... Attrs, typename... Excluded>
+struct kept_spec_values<std::tuple<Attrs...>, Excluded...> {
+    constexpr static auto value = std::tuple_cat(kept_spec_value<Attrs, Excluded...>()...);
     constexpr static auto refs = std::apply(
         [](const auto&... spec) {
             return std::array<spec_ref, sizeof...(spec)>{spec_ref{&spec}...};
@@ -675,8 +621,10 @@ struct kept_spec_values<std::tuple<Attrs...>, Keep> {
 
 }  // namespace detail
 
-/// The specs Attrs carries whose types `Keep<Spec>::value` accepts.
-template <typename Attrs, template <typename> typename Keep>
-constexpr std::span<const spec_ref> spec_refs_of = detail::kept_spec_values<Attrs, Keep>::refs;
+/// The specs Attrs carries but those of the types Excluded: a module that reads some spec
+/// types itself keeps the others, of other modules, for them to find.
+template <typename Attrs, typename... Excluded>
+constexpr std::span<const spec_ref> spec_refs_of =
+    detail::kept_spec_values<Attrs, Excluded...>::refs;
 
 }  // namespace kotatsu::meta

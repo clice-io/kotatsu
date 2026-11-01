@@ -70,7 +70,7 @@ namespace detail {
 template <typename Repr, typename Format, typename Vis, typename E>
 bool decode_enum_name(Vis& vis, E& out) {
     static_assert(std::is_enum_v<E>, "codec::enum_names is the repr of an enum");
-    using policy = codec::detail::enum_names_policy_t<Repr, E, Format>;
+    using policy = codec::detail::enum_names_policy_t<Repr, Format>;
     const auto& names = codec::detail::enum_names_of<E, policy>;
     std::string name;
     KOTATSU_CODEC_TRY(vis.visit_str(name));
@@ -240,11 +240,12 @@ bool decode_with_attrs(Vis& vis, T& out) {
         KOTATSU_CODEC_TRY(decode_value<Format>(vis, converted));
         out = T(std::move(converted));
         return true;
-    } else if constexpr(codec::struct_spec_of<Attrs>.tagging != codec::tag_mode::none) {
+    } else if constexpr(codec::spec_of<codec::struct_spec, Attrs>.tagging !=
+                        codec::tag_mode::none) {
         static_assert(taggable<T>, "a tagging attribute requires a std::variant");
         // decode_variant reads the variant as itself, tagged or not; a repr
         // of its type does not apply.
-        using spec_attr = struct_spec_attr_t<Attrs>;
+        using spec_attr = meta::spec_attr_t<codec::struct_spec, Attrs>;
         if constexpr(meta::derived_variant<T>) {
             return decode_variant<Format, spec_attr>(vis,
                                                      static_cast<meta::variant_base_t<T>&>(out));
@@ -670,7 +671,7 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
         if constexpr(std::is_same_v<resolved_t, codec::dynamic>) {
             return true;
         } else if constexpr(codec::resolves_to_tagged_variant<T, codec::members_format_t<Format>> &&
-                            is_human_readable<Format, Vis>()) {
+                            Format::human_readable) {
             // A tagging spec survived resolution: the tagged decoders read an
             // object ({tag: value}, {tag, content}, or tag-in-fields), so the
             // alternatives' own kinds never face the input directly. A
@@ -831,7 +832,7 @@ bool decode_variant(Vis& vis, Var& var) {
                 return detail::construct_and_visit<Format>(pv, var, index);
             });
         } else if constexpr(!std::is_same_v<SpecAttr, detail::no_tag>) {
-            if constexpr(!is_human_readable<Format, Vis>()) {
+            if constexpr(!Format::human_readable) {
                 return detail::decode_untagged_variant<Format>(vis, var);
             } else {
                 constexpr auto tagging = SpecAttr::value.tagging;

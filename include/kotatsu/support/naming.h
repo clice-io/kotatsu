@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace kotatsu::naming {
 
@@ -187,26 +188,6 @@ enum class Casing : std::uint8_t {
     UpperSnake,
 };
 
-namespace detail {
-
-template <Casing C>
-struct casing_policy;
-
-// clang-format off
-template <> struct casing_policy<Casing::Identity> { using type = rename_policy::identity; };
-template <> struct casing_policy<Casing::LowerSnake> { using type = rename_policy::lower_snake; };
-template <> struct casing_policy<Casing::LowerCamel> { using type = rename_policy::lower_camel; };
-template <> struct casing_policy<Casing::UpperCamel> { using type = rename_policy::upper_camel; };
-template <> struct casing_policy<Casing::UpperSnake> { using type = rename_policy::upper_snake; };
-
-// clang-format on
-
-}  // namespace detail
-
-/// The rename_policy type behind a Casing value.
-template <Casing C>
-using rename_policy_t = typename detail::casing_policy<C>::type;
-
 /// A rename policy as a value, which an annotation's spec holds: the function spelling a name
 /// as the policy does.
 using rename_fn = std::string (*)(std::string_view);
@@ -226,7 +207,7 @@ constexpr rename_fn casing_fn(Casing casing) {
         case Casing::UpperCamel: return &spell_with<rename_policy::upper_camel>;
         case Casing::UpperSnake: return &spell_with<rename_policy::upper_snake>;
     }
-    return &spell_with<rename_policy::identity>;
+    std::unreachable();
 }
 
 namespace detail {
@@ -299,21 +280,16 @@ struct renamed_table {
     }();
 };
 
+/// The identity policy spells the names as they are.
 template <const auto& Names>
 struct renamed_table<rename_policy::identity, Names> {
-    constexpr static std::array<std::string_view, std::size(Names)> value = [] {
-        std::array<std::string_view, std::size(Names)> out{};
-        for(std::size_t i = 0; i < out.size(); ++i) {
-            out[i] = Names[i];
-        }
-        return out;
-    }();
+    constexpr const static auto& value = Names;
 };
 
 }  // namespace detail
 
-/// Names, an array of std::string_view in static storage, each spelled by Policy: computed at
-/// compile time, an array of views into static storage.
+/// Names, a std::array of names in static storage, each spelled by Policy: computed at compile
+/// time, an array of views into static storage.
 template <renames Policy, const auto& Names>
 constexpr const inline auto& renamed = detail::renamed_table<Policy, Names>::value;
 

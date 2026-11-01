@@ -16,7 +16,7 @@ namespace {
 
 namespace fx = ::kotatsu::test;
 
-struct OmitDefaultsPolicy {
+struct OmitDefaultsPolicy : extend<format> {
     constexpr static std::optional<presence_kind> presence_all = presence_kind::omit_if_default;
 };
 
@@ -137,8 +137,8 @@ ZEST_CASE(default_value) {
     ZSTATIC_EXPECT(fields[2].presence == presence_kind::required);
 }
 
-ZEST_CASE(presence_all_config_reaches_every_field) {
-    // Every field takes the config's presence, in the structs nested inside
+ZEST_CASE(presence_all_of_the_format_reaches_every_field) {
+    // Every field takes the format's presence, in the structs nested inside
     // too, but one that gives its own: DefaultStruct's first field is
     // optional of its own.
     constexpr auto& fields = virtual_schema<fx::DefaultStruct, OmitDefaultsPolicy>::fields;

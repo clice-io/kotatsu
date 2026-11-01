@@ -19,7 +19,7 @@
 
 /// The attributes of one annotation, checked, with their names in scope: what
 /// each macro below keeps.
-#define KANNOTATION_ATTRIBUTES(...)                                                                \
+#define KOTATSU_ANNOTATION_ATTRIBUTES(...)                                                         \
     [] {                                                                                           \
         using ::kotatsu::codec::dsl::rename;                                                       \
         using ::kotatsu::codec::dsl::description;                                                  \
@@ -58,7 +58,7 @@
 ///
 /// In a class, a bundle named like one of its members is named with its namespace.
 #define KANNOTATION(name, ...)                                                                     \
-    [[maybe_unused]] constexpr inline auto name = KANNOTATION_ATTRIBUTES(__VA_ARGS__)
+    [[maybe_unused]] constexpr inline auto name = KOTATSU_ANNOTATION_ATTRIBUTES(__VA_ARGS__)
 
 /// Annotates a field of the class it is written in, above the field, which
 /// `&field` names as a member pointer names it:
@@ -74,15 +74,14 @@
 /// mangled; a name no member of the class has fails to compile, and so does a
 /// second annotation of one field. Type-valued attributes ride along as
 /// `as = type<Target>`, `with = type<Adapter>` and `presence = type<Pred>`.
-/// A field whose type KANNOTATE_TYPE annotates
-/// keeps that annotation: an attribute given here overrides the type's, and the
-/// rest of both apply.
+/// A field whose type KANNOTATE_TYPE annotates keeps that annotation: an
+/// attribute given here overrides the type's, and the rest of both apply.
 #define KANNOTATE(member, ...)                                                                     \
     [[maybe_unused]] static consteval auto __kotatsu__annotation(                                  \
         ::kotatsu::meta::detail::member_key_t<#member>) {                                          \
         [[maybe_unused]] ::std::type_identity<decltype(::kotatsu::meta::detail::member_probe {     \
         } member)> annotated;                                                                      \
-        return KANNOTATION_ATTRIBUTES(__VA_ARGS__);                                                \
+        return KOTATSU_ANNOTATION_ATTRIBUTES(__VA_ARGS__);                                         \
     }
 
 /// Annotates a field from outside its class, for a class whose definition
@@ -100,7 +99,7 @@
         ::kotatsu::meta::detail::member_key_t<#member>) {                                          \
         static_assert(::std::is_member_object_pointer_v<decltype(member)>,                         \
                       "KANNOTATE_FIELD names a data member: &T::field");                           \
-        return KANNOTATION_ATTRIBUTES(__VA_ARGS__);                                                \
+        return KOTATSU_ANNOTATION_ATTRIBUTES(__VA_ARGS__);                                         \
     }                                                                                              \
     static_assert(::kotatsu::meta::detail::field_annotation_found<                                 \
                       ::kotatsu::class_type_t<decltype(member)>,                                   \
@@ -124,9 +123,9 @@
 /// a field. It takes the type's description, the presence of a field of it,
 /// the struct and variant attributes (rename_all, deny_unknown_fields,
 /// presence_all, tag, tag_names, ...) and other modules' attributes; a
-/// field's own annotation overrides them attribute by attribute. A variant that a document
-/// holds other than as a field takes its tagging here, as a class derived from
-/// the std::variant:
+/// field's own annotation overrides them attribute by attribute. A variant that
+/// a document holds other than as a field takes its tagging here, as a class
+/// derived from the std::variant:
 ///
 ///     KANNOTATE_TYPE(struct Shape, tag = "kind", tag_names = {"circle", "rect"});
 ///     struct Shape : std::variant<Circle, Rect> {
@@ -151,7 +150,7 @@
 #define KANNOTATE_TYPE(annotated, ...)                                                             \
     KOTATSU_WHEN(KOTATSU_DECLARES(annotated))(annotated;) [[maybe_unused]] constexpr auto          \
         __kotatsu__type_annotation(::std::type_identity<annotated>) {                              \
-        return KANNOTATION_ATTRIBUTES(__VA_ARGS__);                                                \
+        return KOTATSU_ANNOTATION_ATTRIBUTES(__VA_ARGS__);                                         \
     }                                                                                              \
     static_assert(::kotatsu::meta::detail::has_type_annotation<annotated>,                         \
                   "KANNOTATE_TYPE: write it in the namespace of the type it annotates")

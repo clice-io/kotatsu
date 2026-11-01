@@ -3,8 +3,8 @@
 #include <variant>
 
 #include "fixtures/attrs.h"
-#include "fixtures/settings.h"
 #include "kotatsu/zest/zest.h"
+#include "kotatsu/support/naming.h"
 #include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/type_info.h"
 
@@ -15,6 +15,14 @@ using meta::reflection;
 namespace {
 
 namespace fx = ::kotatsu::test;
+
+namespace policy = naming::rename_policy;
+
+/// The format that spells the names a type declares as Policy does.
+template <typename Policy>
+struct renaming : extend<format> {
+    using rename_all = Policy;
+};
 
 /// A rename policy of the program's own: words joined by dashes.
 struct Dashed {
@@ -78,7 +86,8 @@ ZEST_SUITE(codec_schema_rename_all) {
 ZEST_CASE(rename_policies) {
     // lower_camel
     {
-        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::CamelSettings>::fields;
+        constexpr auto& fields =
+            virtual_schema<fx::RenameAllTarget, renaming<policy::lower_camel>>::fields;
         ZSTATIC_EXPECT(fields[0].name == "userName");
         ZSTATIC_EXPECT(fields[1].name == "totalScore");
         ZSTATIC_EXPECT(fields[2].name == "itemId");
@@ -86,7 +95,8 @@ ZEST_CASE(rename_policies) {
 
     // upper_camel (PascalCase)
     {
-        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::PascalSettings>::fields;
+        constexpr auto& fields =
+            virtual_schema<fx::RenameAllTarget, renaming<policy::upper_camel>>::fields;
         ZSTATIC_EXPECT(fields[0].name == "UserName");
         ZSTATIC_EXPECT(fields[1].name == "TotalScore");
         ZSTATIC_EXPECT(fields[2].name == "ItemId");
@@ -95,7 +105,7 @@ ZEST_CASE(rename_policies) {
     // UPPER_SNAKE
     {
         constexpr auto& fields =
-            virtual_schema<fx::RenameAllTarget, fx::UpperSnakeSettings>::fields;
+            virtual_schema<fx::RenameAllTarget, renaming<policy::upper_snake>>::fields;
         ZSTATIC_EXPECT(fields[0].name == "USER_NAME");
         ZSTATIC_EXPECT(fields[1].name == "TOTAL_SCORE");
         ZSTATIC_EXPECT(fields[2].name == "ITEM_ID");
@@ -104,7 +114,7 @@ ZEST_CASE(rename_policies) {
     // lower_snake (identity for already-snake_case)
     {
         constexpr auto& fields =
-            virtual_schema<fx::RenameAllTarget, fx::LowerSnakeSettings>::fields;
+            virtual_schema<fx::RenameAllTarget, renaming<policy::lower_snake>>::fields;
         ZSTATIC_EXPECT(fields[0].name == "user_name");
         ZSTATIC_EXPECT(fields[1].name == "total_score");
         ZSTATIC_EXPECT(fields[2].name == "item_id");
@@ -112,7 +122,8 @@ ZEST_CASE(rename_policies) {
 
     // identity
     {
-        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, fx::IdentitySettings>::fields;
+        constexpr auto& fields =
+            virtual_schema<fx::RenameAllTarget, renaming<policy::identity>>::fields;
         ZSTATIC_EXPECT(fields[0].name == "user_name");
         ZSTATIC_EXPECT(fields[1].name == "total_score");
         ZSTATIC_EXPECT(fields[2].name == "item_id");
@@ -128,20 +139,25 @@ ZEST_CASE(rename_policies) {
 }
 
 ZEST_CASE(explicit_rename_overrides_rename_all) {
-    constexpr auto& fields = virtual_schema<fx::MixedRenameStruct, fx::CamelSettings>::fields;
+    constexpr auto& fields =
+        virtual_schema<fx::MixedRenameStruct, renaming<policy::lower_camel>>::fields;
     ZSTATIC_EXPECT(fields[0].name == "ID");          // explicit rename wins
     ZSTATIC_EXPECT(fields[1].name == "totalScore");  // rename_all applied
     ZSTATIC_EXPECT(fields[2].name == "itemName");    // rename_all applied
 }
 
 ZEST_CASE(field_count_unchanged) {
-    ZSTATIC_EXPECT((virtual_schema<fx::RenameAllTarget, fx::CamelSettings>::fields.size()) == 3U);
-    ZSTATIC_EXPECT((virtual_schema<fx::MixedRenameStruct, fx::CamelSettings>::fields.size()) == 3U);
+    ZSTATIC_EXPECT(
+        (virtual_schema<fx::RenameAllTarget, renaming<policy::lower_camel>>::fields.size()) == 3U);
+    ZSTATIC_EXPECT(
+        (virtual_schema<fx::MixedRenameStruct, renaming<policy::lower_camel>>::fields.size()) ==
+        3U);
 }
 
 ZEST_CASE(alias_unaffected_by_rename_all) {
     // Under camelCase rename_all, the canonical name changes but alias stays fixed
-    constexpr auto& fields = virtual_schema<fx::AliasRenameAllStruct, fx::CamelSettings>::fields;
+    constexpr auto& fields =
+        virtual_schema<fx::AliasRenameAllStruct, renaming<policy::lower_camel>>::fields;
 
     // canonical name: "id" (reflection name, not renamed) -> camelCase -> "id" (single word)
     ZSTATIC_EXPECT(fields[0].name == "id");
@@ -159,8 +175,8 @@ ZEST_CASE(rename_all_takes_a_policy_type) {
     ZEXPECT(info.fields[0].name == "user-name");
     ZEXPECT(info.fields[1].name == "item-id");
     // The annotation's policy stands over the format's.
-    const auto& camel =
-        static_cast<const struct_type_info&>(type_info::of<DashedFields, fx::CamelSettings>());
+    const auto& camel = static_cast<const struct_type_info&>(
+        type_info::of<DashedFields, renaming<policy::lower_camel>>());
     ZEXPECT(camel.fields[1].name == "item-id");
 }
 

@@ -97,7 +97,7 @@ bool fail_unnamed_enum(E value) {
 template <typename Repr, typename Format, typename Vis, typename E>
 bool encode_enum_name(Vis& vis, const E& value) {
     static_assert(std::is_enum_v<E>, "codec::enum_names is the repr of an enum");
-    using policy = codec::detail::enum_names_policy_t<Repr, E, Format>;
+    using policy = codec::detail::enum_names_policy_t<Repr, Format>;
     const auto& names = codec::detail::enum_names_of<E, policy>;
     const auto index = meta::enum_index(value);
     if(index == names.size()) {
@@ -165,7 +165,7 @@ bool encode_untagged_variant(Vis& vis, const std::variant<Ts...>& var) {
 /// way the variant is written as itself: a repr of its type does not apply.
 template <typename Format, typename SpecAttr, typename Vis, typename Var>
 bool encode_tagged_variant(Vis& vis, const Var& var) {
-    if constexpr(!is_human_readable<Format, Vis>()) {
+    if constexpr(!Format::human_readable) {
         return encode_untagged_variant<Format>(vis, var);
     } else {
         // MSVC mis-handles uncaptured constexpr locals inside the nested
@@ -234,7 +234,7 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
 
 /// Encodes a value under a node's attributes (a struct field's, or an
 /// annotation's): behavior::with > behavior::as > variant tagging > the struct-level policy merge
-/// (scoped_format_t), the precedence the repr resolver replays. A class
+/// (node_format_t), the precedence the repr resolver replays. A class
 /// derived from a std::variant is tagged as that variant; untagged, it is
 /// written as its type writes it, its repr first.
 template <typename Format, typename Attrs, typename Vis, typename T>
@@ -250,9 +250,10 @@ bool encode_with_attrs(Vis& vis, const T& value) {
         using target = typename tuple_find_spec_t<Attrs, codec::behavior::as>::target;
         target converted(value);
         return encode_value<Format>(vis, converted);
-    } else if constexpr(codec::struct_spec_of<Attrs>.tagging != codec::tag_mode::none) {
+    } else if constexpr(codec::spec_of<codec::struct_spec, Attrs>.tagging !=
+                        codec::tag_mode::none) {
         static_assert(taggable<T>, "a tagging attribute requires a std::variant");
-        using spec_attr = struct_spec_attr_t<Attrs>;
+        using spec_attr = meta::spec_attr_t<codec::struct_spec, Attrs>;
         if constexpr(meta::derived_variant<T>) {
             return encode_tagged_variant<Format, spec_attr>(
                 vis,

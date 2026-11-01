@@ -62,8 +62,7 @@ struct dynamic {};
 ///         ...
 ///     };
 ///
-/// Per-field customization (behavior::with / behavior::as annotations) takes
-/// priority over the field type's repr.
+/// A field's `with` or `as` attribute takes priority over its type's repr.
 template <typename T, typename Format = void>
 struct repr;
 
@@ -71,9 +70,9 @@ namespace detail {
 
 template <typename T, typename F>
 constexpr auto repr_lookup() {
-    if constexpr(!std::is_void_v<F> && requires { sizeof(repr<T, F>); }) {
+    if constexpr(requires { sizeof(repr<T, F>); }) {
         return std::type_identity<repr<T, F>>{};
-    } else if constexpr(!std::is_void_v<F> && requires { typename F::base; }) {
+    } else if constexpr(requires { typename F::base; }) {
         return repr_lookup<T, typename F::base>();
     } else if constexpr(requires { sizeof(repr<T>); }) {
         return std::type_identity<repr<T>>{};
@@ -86,7 +85,7 @@ constexpr auto repr_lookup() {
 
 /// True when a repr applies to T under the format F: one for F or a format it extends, the
 /// nearest first, else the one for every format.
-template <typename T, typename F = void>
+template <typename T, typename F>
 concept has_repr = !std::is_void_v<typename decltype(detail::repr_lookup<T, F>())::type>;
 
 /// The repr that applies to T under the format F.
@@ -134,8 +133,9 @@ constexpr auto declared_repr_impl() {
 
 /// The representation a repr specialization or with-adapter declares; a
 /// missing `type` member is a hard error with the protocol diagnostic.
-/// Declared representations are not final: resolved_repr_t follows
-/// chained reprs and annotations nested inside them to the resolved type.
+/// Declared representations are not final: resolved_repr_t follows chained
+/// reprs, and the annotations of the types they declare, to the type that
+/// travels.
 template <typename Repr>
 using declared_repr_t = typename decltype(detail::declared_repr_impl<Repr>())::type;
 

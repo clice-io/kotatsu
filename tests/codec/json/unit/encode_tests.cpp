@@ -37,7 +37,7 @@ struct Folio {
 };
 
 /// A format tag no backend declares.
-struct OtherFormat {};
+struct OtherFormat : codec::extend<codec::format> {};
 
 /// Keys JSON escapes, which encode spells out as it compiles.
 struct OddlyNamed {

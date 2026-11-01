@@ -127,7 +127,7 @@ namespace {
 ZEST_SUITE(codec_schema_type_info_repr) {
 
 ZEST_CASE(equivalent_merge_chains_share_type_info) {
-    // Both routes merge to one config, so they share one type_info and
+    // Both routes scope the struct alike, so they share one type_info and
     // describe one document.
     const auto& chained = type_info::of<ChainedPolicies>();
     const auto& flat = type_info::of<FlatPolicies>();

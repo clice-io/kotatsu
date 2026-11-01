@@ -81,8 +81,8 @@ ZEST_CASE(a_repr_applies_along_the_format_chain) {
 ZEST_CASE(a_visitor_carries_its_format) {
     ZSTATIC_EXPECT(std::is_same_v<format_of_t<Visitor<leaf_format>>, leaf_format>);
     ZSTATIC_EXPECT(std::is_void_v<format_of_t<int>>);
-    ZSTATIC_EXPECT(!is_human_readable<leaf_format, Visitor<leaf_format>>());
-    ZSTATIC_EXPECT(is_human_readable<format, Visitor<format>>());
+    // A format carries no format of its own.
+    ZSTATIC_EXPECT(std::is_void_v<format_of_t<leaf_format>>);
 }
 
 };  // ZEST_SUITE(codec_format)
