@@ -142,7 +142,8 @@ struct Caps {
     /// dependency that fails on some garbage worse than by rejecting it. The
     /// case stays registered and reports itself skipped with this reason.
     std::string_view hostile_gap = {};
-    /// A format tag scopes codec::repr specializations to the backend.
+    /// The backend has a format of its own, which scopes codec::repr
+    /// specializations to it.
     bool format_tag = false;
     /// Documents are UTF-8 text, so a string must be UTF-8 to encode.
     bool utf8_text = false;

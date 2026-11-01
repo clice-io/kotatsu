@@ -68,10 +68,6 @@ struct HoldsLabeledCount {
 
 }  // namespace
 
-}  // namespace kotatsu::codec
-
-namespace kotatsu::codec {
-
 template <>
 struct repr<codec::GreedySeq> {
     using type = std::vector<std::int32_t>;
@@ -135,10 +131,6 @@ struct repr<codec::LabeledCount> {
         });
     }
 };
-
-}  // namespace kotatsu::codec
-
-namespace kotatsu::codec {
 
 namespace {
 

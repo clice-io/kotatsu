@@ -128,7 +128,7 @@ void variants(const Kit<B>& kit) {
             "default_tag_names_are_type_names",
             [] { return DefaultNamed{Circle{.radius = 1.5}}; },
             [] { return Field<std::map<std::string, Circle>>{{{"Circle", {.radius = 1.5}}}}; });
-        // A rename_all spells them, the variant's own or else the config's.
+        // A rename_all spells them, the variant's own or else the format's.
         encodes_as(
             kit,
             "default_tag_names_follow_rename_all",
@@ -142,7 +142,7 @@ void variants(const Kit<B>& kit) {
             });
         encodes_as<CamelSettings>(
             kit,
-            "default_tag_names_follow_the_config_rename",
+            "default_tag_names_follow_the_format_rename",
             [] { return DefaultNamed{Circle{.radius = 1.5}}; },
             [] { return Field<std::map<std::string, Circle>>{{{"circle", {.radius = 1.5}}}}; });
         roundtrip<CamelSettings>(kit, "renamed_default_tag_names_roundtrip", [] {
@@ -152,7 +152,7 @@ void variants(const Kit<B>& kit) {
         });
     }
     // Where a document is not human readable, each tagging travels as the
-    // bare variant: a positional backend always, a keyed one under a config
+    // bare variant: a positional backend always, a keyed one under a format
     // that says so.
     auto bare = [] {
         return TaggedHolderBare{

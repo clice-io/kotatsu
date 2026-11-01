@@ -46,10 +46,6 @@ std::vector<std::byte> bytes(std::initializer_list<unsigned> values) {
 
 }  // namespace
 
-}  // namespace kotatsu::codec
-
-namespace kotatsu::codec {
-
 template <>
 struct repr<codec::Page> {
     using type = std::uint8_t;
@@ -78,10 +74,6 @@ struct repr<codec::Framed> {
                codec::decode_value(vis, framed.bytes);
     }
 };
-
-}  // namespace kotatsu::codec
-
-namespace kotatsu::codec {
 
 namespace {
 

@@ -425,7 +425,7 @@ void attrs(const Kit<B>& kit) {
         using Sections = std::map<std::string, Ints>;
         reads<Tunables, AllOptionalSettings>(
             kit,
-            "presence_all_config_reads_what_is_there",
+            "presence_all_format_reads_what_is_there",
             [] {
                 return Sections{
                     {"limits", {{"high", 20}}}
@@ -584,7 +584,7 @@ void attrs(const Kit<B>& kit) {
             [] { return RenameTargetWithExtra{.user_name = 7, .display_name = "ada", .extra = 1}; },
             {.message = "unknown field 'extra'", .path = ""});
         read_fails<Point, StrictSettings>(kit,
-                                          "unknown_field_under_config_fails",
+                                          "unknown_field_under_options_fails",
                                           with_extra,
                                           {.message = "unknown field 'extra'", .path = ""});
         read_fails<SnakeStrict>(kit,

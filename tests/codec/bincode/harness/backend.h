@@ -19,7 +19,7 @@ struct Bincode {
     /// that wrote it, so names, aliases and tags never reach it, and a
     /// tagged variant travels as its index. Not absent_fields: fields are
     /// concatenated with nothing to mark one missing, so a write leaves out
-    /// none, whatever its presence (Writer::writes_every_field).
+    /// none, whatever its presence (bincode::format::writes_every_field).
     /// nested_nulls: a presence byte marks a null wherever it stands.
     /// non_finite: a float travels as its IEEE double bits. Not
     /// layout_computed: a dynamic repr compiles and writes through the

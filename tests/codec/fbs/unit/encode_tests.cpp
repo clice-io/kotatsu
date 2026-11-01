@@ -134,10 +134,6 @@ struct CalibrationText {
 
 }  // namespace
 
-}  // namespace kotatsu::codec
-
-namespace kotatsu::codec {
-
 template <>
 struct repr<codec::ByteBag> {
     using type = std::vector<std::byte>;
@@ -216,10 +212,6 @@ struct repr<codec::ProbeKind, codec::fbs::format> {
         return static_cast<codec::ProbeKind>(v);
     }
 };
-
-}  // namespace kotatsu::codec
-
-namespace kotatsu::codec {
 
 namespace {
 

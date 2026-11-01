@@ -158,7 +158,7 @@ struct RenameTargetUpperSnakeWithExtra {
     int EXTRA;
 };
 
-/// rename_all merges into the config only at a reflected struct; an untagged
+/// rename_all merges into the format only at a reflected struct; an untagged
 /// variant is not one, so its alternatives keep their names.
 KANNOTATE_TYPE(struct CamelChoice, rename_all = Casing::LowerCamel);
 

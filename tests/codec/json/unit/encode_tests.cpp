@@ -31,12 +31,12 @@ struct Spliced {
 };
 
 /// Travels as "f<page>", and in json as the page itself: its json-scoped
-/// repr names json's own format tag.
+/// repr names json's own format.
 struct Folio {
     int page = 0;
 };
 
-/// A format tag no backend declares.
+/// A format no backend declares.
 struct OtherFormat : codec::extend<codec::format> {};
 
 /// Keys JSON escapes, which encode spells out as it compiles.
@@ -72,10 +72,6 @@ struct NoteFirst {
 
 }  // namespace
 
-}  // namespace kotatsu::codec
-
-namespace kotatsu::codec {
-
 template <>
 struct repr<codec::Folio> {
     using type = std::string;
@@ -105,10 +101,6 @@ struct repr<codec::Folio, codec::json::format> {
         return {.page = static_cast<int>(page)};
     }
 };
-
-}  // namespace kotatsu::codec
-
-namespace kotatsu::codec {
 
 namespace {
 

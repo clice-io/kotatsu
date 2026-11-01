@@ -2,7 +2,7 @@
 
 // codec::repr: the declarative, imperative, one-directional, dynamic, chained
 // and format-scoped forms, reprs wherever a value can stand, and their
-// precedence against field annotations and config.
+// precedence against field annotations and formats.
 
 #include <cstdint>
 #include <map>
@@ -168,7 +168,7 @@ void repr(const Kit<B>& kit) {
         };
     });
 
-    // A backend with a format tag carries Journal as an integer; one without
+    // A backend with a format of its own carries Journal as an integer; one without
     // sees the format-agnostic textual repr.
     auto journal = [] {
         return Field<Journal>{{.page = 41}};
