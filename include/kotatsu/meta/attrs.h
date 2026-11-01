@@ -4,7 +4,9 @@
 #include <array>
 #include <concepts>
 #include <optional>
+#include <span>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 
 #include "name.h"
@@ -12,6 +14,7 @@
 #include "struct.h"
 #include "kotatsu/support/naming.h"
 #include "kotatsu/support/tuple_traits.h"
+#include "kotatsu/support/type_list.h"
 #include "kotatsu/support/type_traits.h"
 
 namespace kotatsu::meta {
@@ -32,6 +35,7 @@ namespace attrs {
 template <typename Tag>
 struct spec {
     constexpr const static field_spec& value = Tag::spec.value;
+    constexpr const static auto& extensions = Tag::spec.extensions;
 };
 
 // Struct-level
@@ -77,6 +81,104 @@ constexpr const inline field_spec& field_spec_of = [] -> const field_spec& {
         return empty_field_spec;
     }
 }();
+
+/// The key an extension's spec type is found by: its qualified name, which compares in a
+/// constant expression too, where the address of a variable may not.
+template <typename Spec>
+constexpr inline std::string_view extension_key = type_name<Spec>(true);
+
+/// An extension's spec as a field keeps it: beside the key of its type, which
+/// extension_ref compares before it casts down, in a constant expression too.
+struct extension_base {
+    std::string_view key;
+};
+
+template <typename Spec>
+struct extension_value : extension_base {
+    Spec spec;
+};
+
+/// An extension's spec attached to a field: one value of a spec type of
+/// another module, set by its own annotation entries.
+struct extension_ref {
+    const extension_base* value;
+
+    template <typename Spec>
+    constexpr bool holds() const {
+        return value->key == extension_key<Spec>;
+    }
+
+    /// The spec it holds, which must be a `Spec`.
+    template <typename Spec>
+    constexpr const Spec& get() const {
+        return static_cast<const extension_value<Spec>*>(value)->spec;
+    }
+};
+
+namespace detail {
+
+/// The extensions an attrs tuple carries, each beside its key.
+template <typename AttrsTuple>
+constexpr inline auto extension_values = [] {
+    if constexpr(tuple_any_of_v<AttrsTuple, is_spec_attr>) {
+        return std::apply(
+            []<typename... Specs>(const Specs&... spec) {
+                return std::tuple<extension_value<Specs>...>{
+                    extension_value<Specs>{{extension_key<Specs>}, spec}
+                    ...
+                };
+            },
+            tuple_find_t<AttrsTuple, is_spec_attr>::extensions);
+    } else {
+        return std::tuple<>{};
+    }
+}();
+
+template <typename AttrsTuple>
+constexpr auto extension_refs_of() {
+    return std::apply(
+        [](const auto&... value) {
+            return std::array<extension_ref, sizeof...(value)>{extension_ref{&value}...};
+        },
+        extension_values<AttrsTuple>);
+}
+
+template <typename AttrsTuple>
+constexpr inline auto extension_refs = extension_refs_of<AttrsTuple>();
+
+}  // namespace detail
+
+/// The specs of the extensions an attrs tuple carries.
+template <typename AttrsTuple>
+constexpr std::span<const extension_ref> extensions_of = detail::extension_refs<AttrsTuple>;
+
+namespace detail {
+
+template <typename Spec, typename... Extensions>
+constexpr const Spec* find_extension(const std::tuple<Extensions...>& extensions) {
+    if constexpr(is_one_of<Spec, Extensions...>) {
+        return &std::get<Spec>(extensions);
+    } else {
+        return nullptr;
+    }
+}
+
+template <typename Spec, typename T>
+constexpr const Spec* extension_of_field() {
+    if constexpr(annotated_type<T>) {
+        if constexpr(tuple_any_of_v<typename T::attrs, is_spec_attr>) {
+            return find_extension<Spec>(tuple_find_t<typename T::attrs, is_spec_attr>::extensions);
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace detail
+
+/// The spec of type `Spec` an extension attached to a (possibly annotated)
+/// field type; null when it has none.
+template <typename Spec, typename T>
+constexpr const Spec* extension_of = detail::extension_of_field<Spec, std::remove_cv_t<T>>();
 
 template <typename T>
 struct is_struct_spec_attr {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -122,6 +123,7 @@ struct optional_type_info : type_info {
 };
 
 struct field_info {
+    /// The name the field is serialized under: its declared name, renamed.
     std::string_view name;
     std::span<const std::string_view> aliases;
     std::size_t offset;
@@ -152,13 +154,55 @@ struct field_info {
     schema_number minimum = {};
     schema_number maximum = {};
     std::span<const std::string_view> choices = {};
+
+    /// The name the field is declared with.
+    std::string_view declared_name = {};
+    /// The specs of the extensions its annotation carries, found with extension().
+    std::span<const extension_ref> extensions = {};
+
+    /// Whether an extension attached a spec of type `Spec` to the field.
+    template <typename Spec>
+    constexpr bool has_extension() const {
+        return std::ranges::any_of(extensions,
+                                   [](const extension_ref& ref) { return ref.holds<Spec>(); });
+    }
+
+    /// The spec of type `Spec` an extension attached to the field; null when it has none.
+    /// A constant expression asks has_extension() first: GCC compares no address of an
+    /// inline variable with null there.
+    template <typename Spec>
+    constexpr const Spec* extension() const {
+        for(const auto& ref: extensions) {
+            if(ref.holds<Spec>()) {
+                return &ref.get<Spec>();
+            }
+        }
+        return nullptr;
+    }
 };
 
 struct struct_type_info : type_info {
     bool deny_unknown;
     bool is_trivial_layout;
     std::span<const field_info> fields;
+    /// What the struct is, from its `constexpr static std::string_view description`; empty
+    /// when it declares none.
+    std::string_view description = {};
 };
+
+/// The description struct `T` declares: a static member `description` a string_view takes,
+/// such as `constexpr static std::string_view description = "...";`.
+template <typename T>
+constexpr std::string_view struct_description() {
+    if constexpr(requires {
+                     requires !std::is_member_pointer_v<decltype(&T::description)>;
+                     std::string_view(T::description);
+                 }) {
+        return T::description;
+    } else {
+        return {};
+    }
+}
 
 template <typename T, typename Config = default_config>
 constexpr const type_info& type_info_of();
@@ -598,6 +642,7 @@ struct type_instance_impl<T, AttrsT, Config, type_kind::structure> {
         deny_unknown,
         is_trivially_copyable,
         {fields.data(),        count               },
+        struct_description<T>(),
     };
 };
 
@@ -632,6 +677,8 @@ constexpr field_info make_field_info(std::size_t base_offset) {
         .minimum = spec.minimum,
         .maximum = spec.maximum,
         .choices = spec.choices.names(),
+        .declared_name = meta::field_name<I, T>(),
+        .extensions = extensions_of<attrs_t>,
     };
 }
 

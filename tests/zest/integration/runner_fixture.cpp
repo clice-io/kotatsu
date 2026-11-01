@@ -3,6 +3,7 @@
 #include <expected>
 #include <format>
 #include <print>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -12,7 +13,7 @@
 #include <unistd.h>
 #endif
 
-#include "kotatsu/deco/deco.h"
+#include "kotatsu/cli/parse.h"
 #include "kotatsu/zest/async.h"
 #include "kotatsu/zest/zest.h"
 
@@ -388,8 +389,8 @@ ZEST_CASE(checked_before_crashing, crashes = true) {
 struct FixtureOptions {
     Options zest;
 
-    DecoFlag(help = "make every worker fail to start"; required = false)
-    fail_worker_start = false;
+    KOTATSU_ANNOTATE(description = "make every worker fail to start")
+    <bool> fail_worker_start = false;
 };
 
 }  // namespace
@@ -415,13 +416,13 @@ ZEST_CASE(registered) {
 // Embeds zest's options the way a downstream test program does, so that its
 // own flag has to reach the workers.
 int main(int argc, char** argv) {
-    auto args = kotatsu::deco::util::argvify(argc, argv);
-    auto parsed = kotatsu::deco::cli::parse<kotatsu::zest::FixtureOptions>(args);
+    auto parsed = kotatsu::cli::parse<kotatsu::zest::FixtureOptions>(
+        std::span(argv, static_cast<std::size_t>(argc)).subspan(1));
     if(!parsed.has_value()) {
         return 1;
     }
-    auto& options = parsed->options;
-    if(*options.fail_worker_start && *options.zest.zest_worker) {
+    auto& options = *parsed;
+    if(options.fail_worker_start && options.zest.zest_worker) {
         return 7;
     }
     return kotatsu::zest::run_tests(std::move(options.zest), argc, argv);

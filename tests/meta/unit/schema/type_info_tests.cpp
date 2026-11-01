@@ -7,6 +7,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -25,7 +26,25 @@ namespace {
 
 namespace fx = ::kotatsu::test;
 
+struct Described {
+    constexpr static std::string_view description = "A described struct";
+    int value = 0;
+};
+
+/// A field named `description`, which is no description of the struct.
+struct Noted {
+    std::string_view description;
+};
+
 ZEST_SUITE(meta_schema_type_info) {
+
+ZEST_CASE(struct_description_is_its_static_description) {
+    const auto& described =
+        static_cast<const struct_type_info&>(type_info_of<Described, default_config>());
+    ZEXPECT(described.description == "A described struct");
+    const auto& noted = static_cast<const struct_type_info&>(type_info_of<Noted, default_config>());
+    ZEXPECT(noted.description.empty());
+}
 
 ZEST_CASE(scalar_helpers) {
     // int32: signed integer, numeric, scalar

@@ -6,16 +6,16 @@
 through [meta](meta.md), so reflectable types need no `operator==`. By default
 cases run in worker processes, so a crash, a failed `ZASSERT` or a hang fails
 only that case (`--no-isolation` runs them in-process, for a debugger). It suits projects already on kotatsu, as it brings
-[deco](deco.md), [async](async.md) and cpptrace along.
+[cli](cli.md), [async](async.md) and cpptrace along.
 
 ## Targets
 
-|            |                                                                                                                                                                                                          |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Bazel      | `@kotatsu//:zest`; `@kotatsu//:zest_async` for `zest/async.h`                                                                                                                                            |
-| CMake      | `kotatsu::zest`, with `KOTATSU_ENABLE_ZEST` (off by default); `kotatsu::zest::async` for `zest/async.h`                                                                                                  |
-| Headers    | [include/kotatsu/zest/](../include/kotatsu/zest/)                                                                                                                                                        |
-| Depends on | [deco](deco.md), [meta](meta.md), [codec](codec.md)'s debug codec, [support](support.md); privately [async](async.md), [fs](fs.md), [sys](sys.md); [cpptrace](https://github.com/jeremy-rifkin/cpptrace) |
+|            |                                                                                                                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Bazel      | `@kotatsu//:zest`; `@kotatsu//:zest_async` for `zest/async.h`                                                                                                                                          |
+| CMake      | `kotatsu::zest`, with `KOTATSU_ENABLE_ZEST` (off by default); `kotatsu::zest::async` for `zest/async.h`                                                                                                |
+| Headers    | [include/kotatsu/zest/](../include/kotatsu/zest/)                                                                                                                                                      |
+| Depends on | [cli](cli.md), [meta](meta.md), [codec](codec.md)'s debug codec, [support](support.md); privately [async](async.md), [fs](fs.md), [sys](sys.md); [cpptrace](https://github.com/jeremy-rifkin/cpptrace) |
 
 ## Example
 
@@ -60,7 +60,7 @@ Adapted from `tests/zest/unit/check_tests.cpp`; `main` is
 | [snapshot/snapshot.h](../include/kotatsu/zest/snapshot/snapshot.h) | `snapshot(value[, name])` and `snapshot_glob`, compared with files under `--snapshot-dir`                                                  |
 | [runner/registry.h](../include/kotatsu/zest/runner/registry.h)     | `TestAttrs` (`skip`, `focus`, `serial`, `crashes`), `skip()`                                                                               |
 | [runner/suite.h](../include/kotatsu/zest/runner/suite.h)           | `TestSuiteDef`, the base `ZEST_SUITE` gives a suite, and `CaseRegistrar`                                                                   |
-| [runner/run.h](../include/kotatsu/zest/runner/run.h)               | `run_cli`, `run_tests`, and `Options`, the runner's flags as a deco struct                                                                 |
+| [runner/run.h](../include/kotatsu/zest/runner/run.h)               | `run_cli`, `run_tests`, and `Options`, the runner's flags as a cli struct                                                                  |
 | [async.h](../include/kotatsu/zest/async.h)                         | `LoopFixture`: an event loop and `run(tasks...)` with a watchdog, for tests of async code                                                  |
 
 A test binary lists the runner's flags with `--help`; snapshot checks need
@@ -73,4 +73,4 @@ A test binary lists the runner's flags with `--help`; snapshot checks need
 
 ## See also
 
-[deco](deco.md), [meta](meta.md), [async](async.md), [tests/zest](../tests/zest/).
+[cli](cli.md), [meta](meta.md), [async](async.md), [tests/zest](../tests/zest/).

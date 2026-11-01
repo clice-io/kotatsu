@@ -199,8 +199,8 @@ add_subdirectory(fs)
 add_subdirectory(sys)
 add_subdirectory(meta)
 add_subdirectory(codec)
-if(KOTATSU_ENABLE_DECO)
-    add_subdirectory(deco)
+if(KOTATSU_ENABLE_CLI)
+    add_subdirectory(cli)
 endif()
 add_subdirectory(async)
 if(KOTATSU_CODEC_ENABLE_SIMDJSON)
@@ -299,8 +299,8 @@ endif()
 # zest runs tests on worker processes it drives through kotatsu::async, finds
 # with kotatsu::sys and logs with kotatsu::fs, compares with meta, prints with
 # the debug codec, matches filters with support's glob patterns and parses its
-# options with deco, so the checks are staged and a failed stage keeps the
-# later ones from running:
+# options with cli, on meta's reflection and codec's decoding, so the checks
+# are staged and a failed stage keeps the later ones from running:
 #   1. zest_bootstrap_*: the tests of what zest itself relies on run in this
 #      process, without the pool.
 #   2. zest_runner: the pool itself, end to end, against tests that crash,
@@ -310,7 +310,7 @@ endif()
 add_test(NAME zest_bootstrap_unit
     COMMAND unit_tests
         --no-isolation
-        "--test-filter={support_*,sys_cmd_split,sys_cmd_join,sys_process_signal_name,sys_spawn_exit_status,sys_windows_exit_status,sys_detail_memory_model,meta_compare,meta_name,meta_spelling,codec_debug_*,deco_*,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_watcher,zest_async}.*"
+        "--test-filter={support_*,sys_cmd_split,sys_cmd_join,sys_process_signal_name,sys_spawn_exit_status,sys_windows_exit_status,sys_detail_memory_model,meta_*,codec_visit_*,codec_debug_*,cli_*,async_vocab_error,async_runtime_task,async_runtime_when_*,async_io_loop,async_io_watcher,zest_async}.*"
         "--snapshot-dir=tests/snapshots"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )

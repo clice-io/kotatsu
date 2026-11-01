@@ -11,7 +11,7 @@ Each page gives a module's purpose, its build targets, a short example and what 
 | [codec](codec.md)     | Serialization driven by reflection: JSON, TOML, bincode, FlatBuffers and zero-copy blobs                      |
 | [fs](fs.md)           | Paths, files and directories on UTF-8 strings, synchronous                                                    |
 | [sys](sys.md)         | Environment, process spawning and system information, synchronous                                             |
-| [deco](deco.md)       | Command-line options declared as structs, on an option parser modelled on LLVM's                              |
+| [cli](cli.md)         | Command lines read into plain structs as a codec backend, on an option parser modelled on LLVM's              |
 | [async](async.md)     | Coroutine tasks and cancellation, an event loop, sockets, pipes, child processes, timers                      |
 | [ipc](ipc.md)         | JSON-RPC peers over any transport, and the generated LSP 3.18 model                                           |
 | [http](http.md)       | An HTTP client on libcurl and the async runtime                                                               |
@@ -21,20 +21,20 @@ Each page gives a module's purpose, its build targets, a short example and what 
 
 ## Dependencies between modules
 
-| Module  | Depends on                                              |
-| ------- | ------------------------------------------------------- |
-| support | the standard library                                    |
-| meta    | support                                                 |
-| codec   | meta, support                                           |
-| fs      | support                                                 |
-| sys     | fs, support                                             |
-| deco    | meta, support                                           |
-| async   | fs, sys, support                                        |
-| ipc     | codec, support; its peers and the LSP part also async   |
-| http    | async; codec's JSON backend when it is enabled          |
-| zest    | deco, meta, codec, support; privately async, fs and sys |
+| Module  | Depends on                                             |
+| ------- | ------------------------------------------------------ |
+| support | the standard library                                   |
+| meta    | support                                                |
+| codec   | meta, support                                          |
+| fs      | support                                                |
+| sys     | fs, support                                            |
+| cli     | meta, codec, support                                   |
+| async   | fs, sys, support                                       |
+| ipc     | codec, support; its peers and the LSP part also async  |
+| http    | async; codec's JSON backend when it is enabled         |
+| zest    | cli, meta, codec, support; privately async, fs and sys |
 
-Only async and the modules built on it need an event loop; support, meta, codec, fs, sys, deco and ipc's codec target do not, so a program that must stay small, such as a library injected into other processes, can use them alone.
+Only async and the modules built on it need an event loop; support, meta, codec, fs, sys, cli and ipc's codec target do not, so a program that must stay small, such as a library injected into other processes, can use them alone.
 
 ## Conventions
 

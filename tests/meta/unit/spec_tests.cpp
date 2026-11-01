@@ -1,5 +1,6 @@
 #include <compare>
 #include <cstdint>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <variant>
@@ -74,6 +75,25 @@ struct is_zero {
 struct extras_tag {
     constexpr static auto spec =
         make_spec(dsl::description = "Converted field.", dsl::as = dsl::type<std::int64_t>);
+};
+
+/// The spec of an extension, a module beside meta with entries of its own.
+struct probe_extension {
+    std::string_view label;
+    int weight = 0;
+};
+
+[[maybe_unused]] constexpr inline dsl::member_proxy<&probe_extension::label> label{};
+[[maybe_unused]] constexpr inline dsl::member_proxy<&probe_extension::weight> weight{};
+
+struct extension_tag {
+    constexpr static auto spec =
+        make_spec(dsl::description = "Weighed.", label = "probe", weight = 3);
+};
+
+struct holds_extension {
+    annotate<extension_tag>::type<int> weighed;
+    annotate<full_tag>::type<int> plain;
 };
 
 struct inner_pair {
@@ -171,6 +191,47 @@ ZEST_CASE(make_spec_keeps_type_components_in_type) {
     ZSTATIC_EXPECT(std::tuple_size_v<extras> == 1);
     ZSTATIC_EXPECT((std::is_same_v<std::tuple_element_t<0, extras>,
                                    dsl::type_component<dsl::aspect::as, std::int64_t>>));
+}
+
+ZEST_CASE(make_spec_keeps_extension_specs_beside_its_own) {
+    constexpr const auto& spec = extension_tag::spec;
+    ZSTATIC_EXPECT(spec.value.description == "Weighed.");
+    ZSTATIC_EXPECT(std::get<probe_extension>(spec.extensions).label == "probe");
+    ZSTATIC_EXPECT(std::get<probe_extension>(spec.extensions).weight == 3);
+    // An annotation without extension entries carries none.
+    ZSTATIC_EXPECT(std::tuple_size_v<decltype(full_tag::spec.extensions)> == 0);
+}
+
+ZEST_CASE(extension_entries_are_told_apart_by_their_member) {
+    ZSTATIC_EXPECT(detail::component_kinds_unique<decltype(label = "a"), decltype(weight = 1)>());
+    ZSTATIC_EXPECT(!detail::component_kinds_unique<decltype(label = "a"), decltype(label = "b")>());
+    ZSTATIC_EXPECT(
+        detail::component_kinds_unique<decltype(dsl::rename = "a"), decltype(label = "b")>());
+}
+
+ZEST_CASE(extension_of_finds_a_field_s_extension) {
+    using weighed_t = annotate<extension_tag>::type<int>;
+    ZSTATIC_EXPECT(extension_of<probe_extension, weighed_t>->weight == 3);
+    ZSTATIC_EXPECT(extension_of<probe_extension, annotate<full_tag>::type<int>> == nullptr);
+    ZSTATIC_EXPECT(extension_of<probe_extension, int> == nullptr);
+}
+
+ZEST_CASE(field_info_carries_extensions_and_declared_names) {
+    const auto& info = static_cast<const struct_type_info&>(type_info_of<holds_extension>());
+    ZASSERT(info.fields.size() == 2u);
+    ZEXPECT(info.fields[0].extension<probe_extension>()->label == "probe");
+    ZEXPECT(info.fields[1].extension<probe_extension>() == nullptr);
+    // The declared name survives a rename.
+    ZEXPECT(info.fields[1].name == "userId");
+    ZEXPECT(info.fields[1].declared_name == "plain");
+}
+
+ZEST_CASE(field_info_finds_extensions_at_compile_time) {
+    constexpr const auto& info =
+        static_cast<const struct_type_info&>(type_info_of<holds_extension>());
+    ZSTATIC_EXPECT(info.fields[0].has_extension<probe_extension>());
+    ZSTATIC_EXPECT(info.fields[0].extension<probe_extension>()->weight == 3);
+    ZSTATIC_EXPECT(!info.fields[1].has_extension<probe_extension>());
 }
 
 ZEST_CASE(annotate_maps_components_to_behavior_attrs) {

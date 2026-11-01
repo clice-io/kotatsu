@@ -112,22 +112,42 @@ kotatsu_library(
 )
 
 kotatsu_library(
-    name = "option",
-    srcs = glob(["src/deco/option/*.cc"]),
-    hdrs = ["include/kotatsu/deco/option.h"] + glob(["include/kotatsu/deco/option/**"]),
+    name = "cli_table",
+    srcs = [
+        "src/cli/ansi.h",
+        "src/cli/error.cc",
+        "src/cli/error_at.h",
+    ] + glob(["src/cli/table/*.cc"]),
+    hdrs = [
+        "include/kotatsu/cli/error.h",
+        "include/kotatsu/cli/table.h",
+    ] + glob(["include/kotatsu/cli/table/**"]),
     deps = [":support"],
 )
 
 kotatsu_library(
-    name = "deco",
-    srcs = glob(["src/deco/facade/*.cc"]),
+    name = "cli",
+    srcs = [
+        "src/cli/ansi.h",
+        "src/cli/command.cc",
+        "src/cli/command.h",
+        "src/cli/error_at.h",
+        "src/cli/parse.cc",
+        "src/cli/to_argv.cc",
+        "src/cli/usage.cc",
+    ],
     hdrs = [
-        "include/kotatsu/deco/deco.h",
-        "include/kotatsu/deco/macro.h",
-    ] + glob(["include/kotatsu/deco/facade/**"]),
+        "include/kotatsu/cli/cli.h",
+        "include/kotatsu/cli/detail/declaration.h",
+        "include/kotatsu/cli/parse.h",
+        "include/kotatsu/cli/spec.h",
+        "include/kotatsu/cli/to_argv.h",
+        "include/kotatsu/cli/usage.h",
+    ],
     deps = [
+        ":cli_table",
+        ":codec",
         ":meta",
-        ":option",
         ":support",
     ],
 )
@@ -248,8 +268,8 @@ kotatsu_library(
     ),
     deps = [
         ":async",
+        ":cli",
         ":codec",
-        ":deco",
         ":fs",
         ":meta",
         ":support",

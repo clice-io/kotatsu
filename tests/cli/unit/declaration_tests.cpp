@@ -1,0 +1,188 @@
+// Mistakes in a struct of options, which keep it from compiling: checked here as whether the
+// check of the declaration is a constant expression.
+
+#include <optional>
+#include <string>
+#include <tuple>
+#include <type_traits>
+#include <variant>
+#include <vector>
+
+#include "kotatsu/cli/cli.h"
+#include "kotatsu/zest/zest.h"
+
+namespace kotatsu::cli {
+
+namespace {
+
+/// Whether options `T` declare what cli takes, so that parse<T>() compiles.
+template <typename T>
+concept declared = requires {
+    typename std::bool_constant<detail::check_declaration(
+        meta::type_info_of<T, detail::decode_config>())>;
+};
+
+struct Serve {
+    int port = 0;
+};
+
+struct Fine {
+    bool verbose = false;
+    KOTATSU_ANNOTATE(cli::names = {"--x"})
+    <std::string> separate;
+    KOTATSU_ANNOTATE(cli::names = {"--x="})
+    <std::string> joined;
+    KOTATSU_ANNOTATE(cli::positional = true)
+    <std::vector<std::string>> paths;
+    std::optional<std::variant<Serve>> command;
+};
+
+struct Twice {
+    KOTATSU_ANNOTATE(cli::names = {"-o"})
+    <std::string> first;
+    KOTATSU_ANNOTATE(cli::names = {"-o"})
+    <std::string> second;
+};
+
+struct Inner {
+    bool verbose = false;
+};
+
+/// A group naming an option as the struct around it does.
+struct TwiceInAGroup {
+    bool verbose = false;
+    Inner inner;
+};
+
+/// A Joined option of a generated name, whose only form another field names.
+struct EqualsTaken {
+    KOTATSU_ANNOTATE(cli::style = KVStyle::Joined)
+    <std::string> level;
+    KOTATSU_ANNOTATE(cli::names = {"--level="})
+    <std::string> other;
+};
+
+struct Unprefixed {
+    KOTATSU_ANNOTATE(cli::names = {"out"})
+    <std::string> out;
+};
+
+struct CommaScalar {
+    KOTATSU_ANNOTATE(cli::comma = true)
+    <std::string> t;
+};
+
+struct Loop {
+    KOTATSU_ANNOTATE(cli::names = {"-a"}, cli::forward = {"-b"})
+    <cli::Alias> a;
+    KOTATSU_ANNOTATE(cli::names = {"-b"}, cli::forward = {"-a"})
+    <cli::Alias> b;
+};
+
+struct TwoRests {
+    KOTATSU_ANNOTATE(cli::rest = true)
+    <std::vector<std::string>> first;
+    KOTATSU_ANNOTATE(cli::rest = true)
+    <std::vector<std::string>> second;
+};
+
+struct ScalarRest {
+    KOTATSU_ANNOTATE(cli::rest = true)
+    <std::string> rest;
+};
+
+struct TwoSubcommandFields {
+    std::variant<Serve> first;
+    std::variant<Serve> second;
+};
+
+struct ScalarSubcommand {
+    std::variant<Serve, int> command;
+};
+
+namespace one {
+
+struct Serve {};
+
+}  // namespace one
+
+struct SameWords {
+    std::variant<Serve, one::Serve> command;
+};
+
+struct HiddenUnknown {
+    KOTATSU_ANNOTATE(cli::hidden_sub = {"worker"})
+    <std::variant<Serve>> command;
+};
+
+struct InnerTwice {
+    std::variant<Twice> command;
+};
+
+ZEST_SUITE(cli_declaration) {
+
+ZEST_CASE(sound_options_compile) {
+    ZSTATIC_EXPECT(declared<Fine>);
+}
+
+ZEST_CASE(two_options_of_one_name_do_not_compile) {
+    ZSTATIC_EXPECT(!declared<Twice>);
+}
+
+ZEST_CASE(group_naming_an_option_of_its_command_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<TwiceInAGroup>);
+}
+
+ZEST_CASE(only_form_another_field_names_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<EqualsTaken>);
+}
+
+ZEST_CASE(name_without_a_prefix_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<Unprefixed>);
+}
+
+ZEST_CASE(comma_scalar_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<CommaScalar>);
+}
+
+ZEST_CASE(alias_of_an_alias_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<Loop>);
+}
+
+ZEST_CASE(two_rests_do_not_compile) {
+    ZSTATIC_EXPECT(!declared<TwoRests>);
+}
+
+ZEST_CASE(scalar_rest_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<ScalarRest>);
+}
+
+ZEST_CASE(two_fields_of_subcommands_do_not_compile) {
+    ZSTATIC_EXPECT(!declared<TwoSubcommandFields>);
+}
+
+ZEST_CASE(subcommand_of_no_struct_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<ScalarSubcommand>);
+}
+
+ZEST_CASE(two_subcommands_of_one_word_do_not_compile) {
+    ZSTATIC_EXPECT(!declared<SameWords>);
+}
+
+ZEST_CASE(hidden_subcommand_of_another_word_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<HiddenUnknown>);
+}
+
+ZEST_CASE(mistake_in_a_subcommand_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<InnerTwice>);
+}
+
+ZEST_CASE(options_of_no_struct_do_not_compile) {
+    ZSTATIC_EXPECT(!declared<std::tuple<int>>);
+}
+
+};  // ZEST_SUITE(cli_declaration)
+
+}  // namespace
+
+}  // namespace kotatsu::cli

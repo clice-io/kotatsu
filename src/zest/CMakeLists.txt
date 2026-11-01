@@ -60,7 +60,7 @@ target_include_directories(kotatsu_zest PUBLIC
 
 target_link_libraries(kotatsu_zest PUBLIC
     cpptrace::cpptrace
-    kotatsu::deco
+    kotatsu::cli
     kotatsu::support
 )
 

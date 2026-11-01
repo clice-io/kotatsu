@@ -62,7 +62,7 @@ cc_library(
         ":codec_harness",
         "//:codec_toml",
     ]),
-    ("deco", ["//:deco"]),
+    ("cli", ["//:cli"]),
     ("ipc", [
         ":async_harness",
         "//:codec_json",
@@ -108,7 +108,7 @@ cc_library(
     ("codec/fbs", "unit", [":codec_fbs_harness"]),
     ("codec/json", "unit", [":codec_json_harness"]),
     ("codec/toml", "unit", [":codec_toml_harness"]),
-    ("deco", "unit", [":deco_harness"]),
+    ("cli", "unit", [":cli_harness"]),
     ("async", "unit", [
         ":async_harness",
         "//:zest_async",

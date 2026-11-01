@@ -2,7 +2,7 @@
 
 A C++23 async runtime with reflection-driven serialization, JSON-RPC and LSP,
 and file system and process APIs. Library modules live under
-`include/kotatsu/<module>/` (`async`, `codec`, `deco`, `fs`, `http`, `ipc`,
+`include/kotatsu/<module>/` (`async`, `cli`, `codec`, `fs`, `http`, `ipc`,
 `meta`, `support`, `sys`, `zest`).
 
 ## Build systems

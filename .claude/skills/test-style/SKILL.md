@@ -23,7 +23,7 @@ A test's level is decided by what it touches, not by the module it tests.
 
 ## Layout
 
-Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/kotatsu/<module>/`; the modules are `support`, `fs`, `sys`, `meta`, `codec` with one directory per backend (`codec/json`, `codec/toml`, `codec/fbs`, `codec/bincode`, `codec/blob`, `codec/dyn`, `codec/debug`), `deco`, `async`, `ipc` with `ipc/lsp`, `http` and `zest`. `tests/examples/` holds the tests of `examples/`, by the module an example shows (`tests/examples/async/`, `tests/examples/ipc/`): unit tests of what an example builds on, and the example programs run end to end. `tests/harness/` holds what every module's integration tests share.
+Tests are grouped by module, then by level. `tests/<module>/` mirrors `include/kotatsu/<module>/`; the modules are `support`, `fs`, `sys`, `meta`, `codec` with one directory per backend (`codec/json`, `codec/toml`, `codec/fbs`, `codec/bincode`, `codec/blob`, `codec/dyn`, `codec/debug`), `cli`, `async`, `ipc` with `ipc/lsp`, `http` and `zest`. `tests/examples/` holds the tests of `examples/`, by the module an example shows (`tests/examples/async/`, `tests/examples/ipc/`): unit tests of what an example builds on, and the example programs run end to end. `tests/harness/` holds what every module's integration tests share.
 
 ```
 tests/<module>/
@@ -57,7 +57,7 @@ tests/snapshots/<suite>/      snapshot files
 
 What each module's headers include, and so what its tests may use:
 
-- `support`; `fs` on support; `sys` on fs; `meta` on support; `deco` on meta.
+- `support`; `fs` on support; `sys` on fs; `meta` on support; `cli` on codec's core and meta.
 - `codec`: its core (`visit/`, `macro.h`) on meta; the backends `blob`, `debug`, `dyn`, `toml` and `fbs` on the core; `bincode` and `json` on the core and `dyn`.
 - `async` on support, `fs` and `sys`; `ipc`'s codecs (`codec.h`, `codec/`, `framing.h`, `protocol.h`) and its blocking client (`blocking_client.h`) on codec (`json`, `dyn`, `bincode`), the rest of `ipc` on those and async; `ipc/lsp` on ipc; `http` on async and codec `json`.
 - `zest` on all of the above that it checks, prints, parses or runs with. Every test includes zest; that is the one exception.
@@ -84,7 +84,7 @@ Rules:
 
 ## Trust
 
-zest decides pass or fail with meta's comparisons, prints operands with the debug codec, matches test filters with support's glob patterns, parses its options with deco, drives its worker processes with kotatsu::async and writes their logs with kotatsu::fs. ctest therefore runs in stages, each needing the one before:
+zest decides pass or fail with meta's comparisons, prints operands with the debug codec, matches test filters with support's glob patterns, parses its options with cli, drives its worker processes with kotatsu::async and writes their logs with kotatsu::fs. ctest therefore runs in stages, each needing the one before:
 
 1. `zest_bootstrap_unit`, `zest_bootstrap_system`: the tests of what zest relies on, in this process, without the worker pool. Their filters are in `tests/CMakeLists.txt`.
 2. `zest_runner`: the worker pool end to end, failed `ZASSERT`s and crash tests, LoopFixture's watchdog, and `run_cli`'s command line.
