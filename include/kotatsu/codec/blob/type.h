@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
 #include "kotatsu/meta/struct.h"
+#include "kotatsu/codec/attribute.h"
 
 // Zero-copy blobs of reflected structs: a value laid out once in one
 // contiguous buffer and read in place as a C++ struct.
@@ -43,7 +43,7 @@
 // underlying type) is its native little-endian image.
 //
 // The layout is a function of the type alone: there is no Config, and
-// neither annotations nor meta::repr apply, since the view is the struct
+// neither annotations nor codec::repr apply, since the view is the struct
 // itself. It is canonical: to_bytes writes a value as exactly one blob,
 // padding zeroed, so the bytes' hash identifies the value. view checks
 // untrusted bytes against that layout: every Vec pointing where to_bytes puts

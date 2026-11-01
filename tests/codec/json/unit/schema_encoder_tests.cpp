@@ -8,10 +8,10 @@
 #include "codec/json/harness/schema.h"
 #include "fixtures/repr.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/json/schema.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 namespace {
 
@@ -184,7 +184,7 @@ ZEST_CASE(schema_agrees_with_encoder_on_config) {
                       R"("additionalProperties":false})");
 }
 
-// meta::repr: the schema describes the document the encoder writes, which the
+// codec::repr: the schema describes the document the encoder writes, which the
 // codec kit's repr area pins.
 ZEST_CASE(schema_follows_repr) {
     auto schema = json::schema_string<test::Symbol>();
@@ -253,4 +253,4 @@ ZEST_CASE(schema_follows_json_scoped_repr) {
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

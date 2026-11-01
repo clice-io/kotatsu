@@ -20,8 +20,8 @@
 #include "codec/harness/fixtures/structs.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
 #include "kotatsu/meta/compare.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/fbs/fbs.h"
 #include "kotatsu/codec/macro.h"
 
@@ -70,7 +70,7 @@ struct HoldsLabeledCount {
 
 }  // namespace kotatsu::codec
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 template <>
 struct repr<codec::GreedySeq> {
@@ -139,7 +139,7 @@ struct repr<codec::LabeledCount> {
     }
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec
 
 namespace kotatsu::codec {
 
@@ -194,7 +194,7 @@ struct Rich {
     std::tuple<std::int32_t, std::array<std::int32_t, 3>> mixed;
     KANNOTATE(&widened, as = type<std::int64_t>)
     std::int32_t widened = 0;
-    KANNOTATE(&level_name, with = type<meta::enum_names<>>)
+    KANNOTATE(&level_name, with = type<codec::enum_names<>>)
     Grade level_name = Grade::low;
 
     auto operator==(const Rich&) const -> bool = default;

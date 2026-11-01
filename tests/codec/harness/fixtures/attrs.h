@@ -19,7 +19,7 @@
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/attrs.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/macro.h"
 
 namespace kotatsu::test {
@@ -408,19 +408,19 @@ struct TextPlain {
 
 /// Travels as its enumerator's name, in lowerCamel, in a field.
 struct AccessName {
-    KANNOTATE(&value, with = type<meta::enum_names<naming::rename_policy::lower_camel>>)
+    KANNOTATE(&value, with = type<codec::enum_names<naming::rename_policy::lower_camel>>)
     Access value;
 };
 
 struct AccessGrant {
-    KANNOTATE(&level, with = type<meta::enum_names<naming::rename_policy::lower_camel>>)
+    KANNOTATE(&level, with = type<codec::enum_names<naming::rename_policy::lower_camel>>)
     Access level;
     int count;
 };
 
 /// Mixed's enumerators in lower camel case.
 struct MixedName {
-    KANNOTATE(&value, with = type<meta::enum_names<naming::rename_policy::lower_camel>>)
+    KANNOTATE(&value, with = type<codec::enum_names<naming::rename_policy::lower_camel>>)
     Mixed value;
 };
 

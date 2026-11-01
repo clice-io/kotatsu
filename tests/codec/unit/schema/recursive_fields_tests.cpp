@@ -17,15 +17,15 @@
 
 #include "fixtures/recursive.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 namespace {
 
 namespace fx = ::kotatsu::test;
 
-ZEST_SUITE(meta_schema_recursive_fields) {
+ZEST_SUITE(codec_schema_recursive_fields) {
 
 // Each test deliberately does NOT call type_info_of<T>() beforehand.
 // This exercises the exact code path that previously failed on Clang.
@@ -81,8 +81,8 @@ ZEST_CASE(variant_branch_mutual_recursion_without_prior_type_info) {
     ZSTATIC_EXPECT(S::fields[0].name == "nodes");
 }
 
-};  // ZEST_SUITE(meta_schema_recursive_fields)
+};  // ZEST_SUITE(codec_schema_recursive_fields)
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

@@ -19,25 +19,24 @@
 #include "kotatsu/support/type_list.h"
 #include "kotatsu/support/utf8.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
 #include "kotatsu/meta/enum.h"
-#include "kotatsu/meta/repr.h"
-#include "kotatsu/meta/schema.h"
 #include "kotatsu/meta/struct.h"
-#include "kotatsu/meta/type_info.h"
 #include "kotatsu/meta/type_kind.h"
+#include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/repr.h"
+#include "kotatsu/codec/type_info.h"
 
 namespace kotatsu::codec {
 
 /// How a visitor writes one type, overridden per backend or protocol:
 /// specialize it for one visitor type, or for every visitor a constraint
 /// admits, with a static visit(Vis&, const T&) returning bool. The backends
-/// use it for their own document types (json RawValue, toml tables,
+/// use it for their own document types (json raw_value, toml tables,
 /// dyn::Value) and protocol layers for types they shape themselves (ipc's
 /// Error and Literal). A specialization is consulted before everything
-/// else, annotations and meta::repr included, and a type may not have both
-/// a specialization and a meta::repr for the visitor's format. To say how a
-/// type of your own is represented, prefer meta::repr (or behavior::with on
+/// else, annotations and codec::repr included, and a type may not have both
+/// a specialization and a codec::repr for the visitor's format. To say how a
+/// type of your own is represented, prefer codec::repr (or behavior::with on
 /// a field): those are visible to schema consumers (type_info, the JSON
 /// schema, the fbs views), a specialization is not.
 template <typename Vis, typename T, typename Config>
@@ -52,7 +51,7 @@ bool encode_struct_fields(Vis& vis, const T& value);
 namespace detail {
 
 /// Encodes a value as its type writes it, its type's annotation aside: a
-/// meta::repr, or what its kind is.
+/// codec::repr, or what its kind is.
 template <typename Config, typename Vis, typename T>
 bool encode_plain(Vis& vis, const T& value);
 
@@ -73,7 +72,7 @@ struct FieldName {
 /// True when the visitor writes UTF-8 text (json, toml), which its format tag
 /// says, so its value and map key writers alike.
 template <typename Vis>
-concept writes_utf8 = requires { requires meta::format_of_t<Vis>::utf8; };
+concept writes_utf8 = requires { requires codec::format_of_t<Vis>::utf8; };
 
 namespace detail {
 
@@ -109,9 +108,9 @@ bool fail_unnamed_enum(E value) {
 /// spelled with.
 template <typename Repr, typename Config, typename Vis, typename E>
 bool encode_enum_name(Vis& vis, const E& value) {
-    static_assert(std::is_enum_v<E>, "meta::enum_names is the repr of an enum");
-    using policy = meta::detail::enum_names_policy_t<Repr, E, Config>;
-    const auto& names = meta::detail::enum_names_of<E, policy>;
+    static_assert(std::is_enum_v<E>, "codec::enum_names is the repr of an enum");
+    using policy = codec::detail::enum_names_policy_t<Repr, E, Config>;
+    const auto& names = codec::detail::enum_names_of<E, policy>;
     const auto index = meta::enum_index(value);
     if(index == names.size()) {
         return fail_unnamed_enum(value);
@@ -119,18 +118,18 @@ bool encode_enum_name(Vis& vis, const E& value) {
     return vis.visit_str(names[index]);
 }
 
-/// Encode a value through a representation declaration (a meta::repr
+/// Encode a value through a representation declaration (a codec::repr
 /// specialization or a behavior::with adapter): declarative to() when
 /// present, the imperative serialize<Config>() body otherwise.
 template <typename Repr, typename Config, typename Vis, typename V>
 bool repr_encode(Vis& vis, const V& value) {
-    using declared_t = meta::declared_repr_t<Repr>;
-    if constexpr(std::is_same_v<declared_t, meta::dynamic>) {
+    using declared_t = codec::declared_repr_t<Repr>;
+    if constexpr(std::is_same_v<declared_t, codec::dynamic>) {
         static_assert(!layout_computed<Vis>,
                       "this backend computes the output layout statically and cannot encode a "
-                      "meta::dynamic repr");
+                      "codec::dynamic repr");
     }
-    if constexpr(meta::names_enum<Repr>) {
+    if constexpr(codec::names_enum<Repr>) {
         return encode_enum_name<Repr, Config>(vis, value);
     } else if constexpr(requires { Repr::to(value); }) {
         static_assert(
@@ -167,7 +166,7 @@ bool encode_untagged_variant(Vis& vis, const std::variant<Ts...>& var) {
 }
 
 /// Encodes a variant in one of the three tagged shapes selected by the
-/// spec's meta::tag_mode (tag names resolve through resolve_tag_names):
+/// spec's codec::tag_mode (tag names resolve through resolve_tag_names):
 /// - external:  { "TagName": payload }
 /// - internal:  { "<tag>": "TagName", ...payload fields } — requires every
 ///   alternative to be a struct, whose fields are spliced in after the tag
@@ -184,10 +183,10 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
         // generic lambdas below (C3861/ICE), so the spec is read via SpecAttr
         // each time.
         return [&]<typename... Ts>(const std::variant<Ts...>&) -> bool {
-            constexpr auto names = meta::resolve_tag_names<SpecAttr, Config, Ts...>();
+            constexpr auto names = codec::resolve_tag_names<SpecAttr, Config, Ts...>();
             std::string_view tag_name = names[var.index()];
 
-            if constexpr(SpecAttr::value.tagging == meta::tag_mode::external) {
+            if constexpr(SpecAttr::value.tagging == codec::tag_mode::external) {
                 return vis.visit_struct(var, [&](auto& sv) -> bool {
                     return sv.visit_field(std::size_t(0), tag_name, [&](auto& pv) -> bool {
                         return std::visit(
@@ -195,7 +194,7 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
                             var);
                     });
                 });
-            } else if constexpr(SpecAttr::value.tagging == meta::tag_mode::internal) {
+            } else if constexpr(SpecAttr::value.tagging == codec::tag_mode::internal) {
                 return std::visit(
                     [&](const auto& alt) -> bool {
                         using alt_t = std::remove_cvref_t<decltype(alt)>;
@@ -212,7 +211,7 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
                     },
                     var);
             } else {
-                static_assert(SpecAttr::value.tagging == meta::tag_mode::adjacent);
+                static_assert(SpecAttr::value.tagging == codec::tag_mode::adjacent);
                 return vis.visit_struct(var, [&](auto& sv) -> bool {
                     KOTATSU_CODEC_TRY(
                         sv.visit_field(std::size_t(0), SpecAttr::value.tag, [&](auto& tv) -> bool {
@@ -241,19 +240,19 @@ bool encode_with_attrs(Vis& vis, const T& value) {
     if constexpr(meta::derived_variant<T>) {
         return encode_with_attrs<Config, Attrs>(vis,
                                                 static_cast<const meta::variant_base_t<T>&>(value));
-    } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::with>) {
-        using adapter = typename tuple_find_spec_t<Attrs, meta::behavior::with>::adapter;
+    } else if constexpr(tuple_has_spec_v<Attrs, codec::behavior::with>) {
+        using adapter = typename tuple_find_spec_t<Attrs, codec::behavior::with>::adapter;
         return repr_encode<adapter, Config>(vis, value);
-    } else if constexpr(tuple_has_spec_v<Attrs, meta::behavior::as>) {
-        using target = typename tuple_find_spec_t<Attrs, meta::behavior::as>::target;
+    } else if constexpr(tuple_has_spec_v<Attrs, codec::behavior::as>) {
+        using target = typename tuple_find_spec_t<Attrs, codec::behavior::as>::target;
         target converted(value);
         return encode_value<Config>(vis, converted);
-    } else if constexpr(meta::struct_spec_of<Attrs>.tagging != meta::tag_mode::none) {
+    } else if constexpr(codec::struct_spec_of<Attrs>.tagging != codec::tag_mode::none) {
         static_assert(taggable<T>, "a tagging attribute requires a std::variant");
-        using spec_attr = tuple_find_spec_t<Attrs, meta::attrs::struct_spec>;
+        using spec_attr = struct_spec_attr_t<Attrs>;
         return encode_tagged_variant<Config, spec_attr>(vis, value);
     } else {
-        return encode_plain<meta::node_config_t<Config, T, Attrs>>(vis, value);
+        return encode_plain<codec::node_config_t<Config, T, Attrs>>(vis, value);
     }
 }
 
@@ -279,7 +278,7 @@ bool encode_one_field(Vis& vis, const T& value) {
             std::integral_constant<std::size_t, I>{},
             FieldName<field>{},
             [&](auto& fv) -> bool {
-                return encode_with_attrs<meta::members_config_t<Config>, typename field::attrs>(
+                return encode_with_attrs<codec::members_config_t<Config>, typename field::attrs>(
                     fv,
                     field_ref);
             });
@@ -305,12 +304,12 @@ bool encode_plain(Vis& vis, const T& value) {
     if constexpr(requires(Vis& v, const T& val) {
                      serialize_visit<Vis, T, Config>::visit(v, val);
                  }) {
-        static_assert(!meta::has_repr<T, meta::format_of_t<Vis>>,
-                      "type has both a serialize_visit specialization and a meta::repr; "
+        static_assert(!codec::has_repr<T, codec::format_of_t<Vis>>,
+                      "type has both a serialize_visit specialization and a codec::repr; "
                       "keep exactly one");
         return serialize_visit<Vis, T, Config>::visit(vis, value);
-    } else if constexpr(meta::has_repr<T, meta::format_of_t<Vis>>) {
-        return repr_encode<meta::repr_for<T, meta::format_of_t<Vis>>, Config>(vis, value);
+    } else if constexpr(codec::has_repr<T, codec::format_of_t<Vis>>) {
+        return repr_encode<codec::repr_for<T, codec::format_of_t<Vis>>, Config>(vis, value);
     } else if constexpr(meta::derived_variant<T>) {
         return encode_plain<Config>(vis, static_cast<const meta::variant_base_t<T>&>(value));
     } else {
@@ -489,7 +488,7 @@ bool encode_plain(Vis& vis, const T& value) {
 
 template <typename Config, typename Vis, typename T>
 bool encode_struct_fields(Vis& vis, const T& value) {
-    using schema = meta::virtual_schema<T, Config>;
+    using schema = codec::virtual_schema<T, Config>;
     using slots = typename schema::slots;
     constexpr std::size_t N = type_list_size_v<slots>;
 
@@ -518,7 +517,7 @@ std::expected<void, rich_error> run_encode(Vis& vis, const T& value) {
 // Map keys for backends whose native maps take only string keys (json, toml,
 // dyn): integer keys are rendered as their decimal string on encode and
 // parsed back on decode. Format is the backend's format tag — void for a
-// format-agnostic backend — so format-scoped meta::repr specializations
+// format-agnostic backend — so format-scoped codec::repr specializations
 // resolve for key types the same way they do for values.
 
 /// Encodes a map key into its string form, handing the result to Sink::emit

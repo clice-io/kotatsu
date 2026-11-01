@@ -54,7 +54,7 @@ std::string help_of(const UsageEntry& entry) {
 }
 
 /// The numbers `field` takes: "1..64", "1..", "..64"; empty when unbounded.
-std::string range_of(const meta::field_info& field) {
+std::string range_of(const codec::field_info& field) {
     const auto minimum = number_text(field.minimum);
     const auto maximum = number_text(field.maximum);
     return minimum.empty() && maximum.empty() ? "" : std::format("{}..{}", minimum, maximum);

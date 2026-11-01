@@ -6,7 +6,7 @@
 #include <optional>
 
 #include "kotatsu/support/naming.h"
-#include "kotatsu/meta/spec.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/format.h"
 
 namespace kotatsu::test {
@@ -28,8 +28,8 @@ struct StrictConfig {
 };
 
 struct AllOptionalConfig {
-    constexpr static std::optional<meta::presence_kind> presence_all =
-        meta::presence_kind::optional;
+    constexpr static std::optional<codec::presence_kind> presence_all =
+        codec::presence_kind::optional;
 };
 
 struct ReplaceUTF8Config {

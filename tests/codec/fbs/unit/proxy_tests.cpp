@@ -28,7 +28,7 @@
 #include "fixtures/repr.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/fbs/fbs.h"
 #include "kotatsu/codec/macro.h"
 

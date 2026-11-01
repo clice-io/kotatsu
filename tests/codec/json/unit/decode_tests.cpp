@@ -462,19 +462,19 @@ ZEST_CASE(nested_type_mismatch_text_fails) {
 }
 
 ZEST_CASE(raw_value_alternative_takes_any_kind) {
-    // RawValue decodes through a dispatch override that accepts any value, so
+    // raw_value decodes through a dispatch override that accepts any value, so
     // probing never judges it by its declared shape.
-    std::variant<int, RawValue, bool> out;
+    std::variant<int, raw_value, bool> out;
     ZASSERT(json::from_string(R"("text")", out));
     ZASSERT(out.index() == 1U);
-    ZEXPECT(std::get<RawValue>(out).data == R"("text")");
+    ZEXPECT(std::get<raw_value>(out).data == R"("text")");
 
     ZASSERT(json::from_string("7", out));
     ZEXPECT(out.index() == 0U);
 }
 
 ZEST_CASE(optional_raw_value_alternative_takes_any_kind) {
-    std::variant<std::optional<RawValue>, int> out;
+    std::variant<std::optional<raw_value>, int> out;
     ZASSERT(json::from_string(R"("text")", out));
     ZASSERT(out.index() == 0U);
     const auto& raw = std::get<0>(out);

@@ -45,7 +45,7 @@ std::string input_args_text(ArgNum num) {
 
 /// `text` as the number a value of `type` reads it as, exactly; monostate when it reads as
 /// none, which the decode then says.
-meta::schema_number number_of(std::string_view text, const meta::type_info& type) {
+codec::schema_number number_of(std::string_view text, const codec::type_info& type) {
     if(std::int64_t value = 0; !read_number(text, value)) {
         return value;
     }
@@ -60,14 +60,14 @@ meta::schema_number number_of(std::string_view text, const meta::type_info& type
 
 /// What refuses `number`, read from `text`, under the minimum and maximum of `field`; none when
 /// it is no number, which the decode then says, or both take it.
-std::optional<std::string> refused_number(const meta::field_info& field,
-                                          const meta::schema_number& number,
+std::optional<std::string> refused_number(const codec::field_info& field,
+                                          const codec::schema_number& number,
                                           std::string_view text) {
     if(std::holds_alternative<std::monostate>(number)) {
         return std::nullopt;
     }
-    const auto below = meta::compare_numbers(number, field.minimum);
-    const auto above = meta::compare_numbers(number, field.maximum);
+    const auto below = codec::compare_numbers(number, field.minimum);
+    const auto above = codec::compare_numbers(number, field.maximum);
     if(below == std::partial_ordering::less) {
         return std::format("value {} is below the minimum {}", text, number_text(field.minimum));
     }

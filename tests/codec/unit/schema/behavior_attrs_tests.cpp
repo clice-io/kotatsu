@@ -7,10 +7,13 @@
 #include "fixtures/attrs.h"
 #include "fixtures/tagged.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::field_attrs_t;
+using meta::type_kind;
 
 using kotatsu::type_list_element_t;
 
@@ -18,7 +21,7 @@ namespace {
 
 namespace fx = ::kotatsu::test;
 
-ZEST_SUITE(meta_schema_behavior_attrs) {
+ZEST_SUITE(codec_schema_behavior_attrs) {
 
 ZEST_CASE(omit_if_and_as) {
     ZSTATIC_EXPECT(virtual_schema<fx::BehaviorStruct>::fields.size() == 3U);
@@ -117,8 +120,8 @@ ZEST_CASE(omit_if_combined_with_behavior) {
     }
 }
 
-};  // ZEST_SUITE(meta_schema_behavior_attrs)
+};  // ZEST_SUITE(codec_schema_behavior_attrs)
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

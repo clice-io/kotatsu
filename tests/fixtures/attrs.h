@@ -12,20 +12,20 @@
 
 #include "fixtures/enums.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/repr.h"
+#include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 
 struct AnnotatedStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"user_id">) {
-        return meta::make_annotation(meta::dsl::rename = "id");
+        return meta::make_annotation(codec::dsl::rename = "id");
     }
 
     int user_id;
 
     static consteval auto __kotatsu__annotation(meta::name_key<"internal">) {
-        return meta::make_annotation(meta::dsl::skip = true);
+        return meta::make_annotation(codec::dsl::skip = true);
     }
 
     std::string internal = "kept";
@@ -34,7 +34,7 @@ struct AnnotatedStruct {
 
 struct AliasStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"id">) {
-        return meta::make_annotation(meta::dsl::alias = {"user_id", "userId"});
+        return meta::make_annotation(codec::dsl::alias = {"user_id", "userId"});
     }
 
     int id;
@@ -52,7 +52,7 @@ struct Outer {
     int x;
 
     static consteval auto __kotatsu__annotation(meta::name_key<"inner">) {
-        return meta::make_annotation(meta::dsl::flatten = true);
+        return meta::make_annotation(codec::dsl::flatten = true);
     }
 
     Inner inner;
@@ -70,7 +70,7 @@ struct Middle {
     int m;
 
     static consteval auto __kotatsu__annotation(meta::name_key<"deep">) {
-        return meta::make_annotation(meta::dsl::flatten = true);
+        return meta::make_annotation(codec::dsl::flatten = true);
     }
 
     DeepInner deep;
@@ -82,7 +82,7 @@ struct DeepOuter {
     int head;
 
     static consteval auto __kotatsu__annotation(meta::name_key<"mid">) {
-        return meta::make_annotation(meta::dsl::flatten = true);
+        return meta::make_annotation(codec::dsl::flatten = true);
     }
 
     Middle mid;
@@ -91,7 +91,7 @@ struct DeepOuter {
 
 struct DefaultStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"with_default">) {
-        return meta::make_annotation(meta::dsl::presence = meta::presence_kind::optional);
+        return meta::make_annotation(codec::dsl::presence = codec::presence_kind::optional);
     }
 
     int with_default = 3;
@@ -110,7 +110,7 @@ struct RenameTarget {
 struct RenamedRoot;
 
 constexpr auto __kotatsu__type_annotation(std::type_identity<RenamedRoot>) {
-    return meta::make_annotation(meta::dsl::rename_all = naming::Casing::LowerCamel);
+    return meta::make_annotation(codec::dsl::rename_all = naming::Casing::LowerCamel);
 }
 
 struct RenamedRoot {
@@ -122,7 +122,7 @@ struct RenamedRoot {
 struct StrictRoot;
 
 constexpr auto __kotatsu__type_annotation(std::type_identity<StrictRoot>) {
-    return meta::make_annotation(meta::dsl::deny_unknown_fields = true);
+    return meta::make_annotation(codec::dsl::deny_unknown_fields = true);
 }
 
 struct StrictRoot {
@@ -138,7 +138,7 @@ struct RenameAllTarget {
 
 struct MixedRenameStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"user_id">) {
-        return meta::make_annotation(meta::dsl::rename = "ID");
+        return meta::make_annotation(codec::dsl::rename = "ID");
     }
 
     int user_id;
@@ -148,7 +148,7 @@ struct MixedRenameStruct {
 
 struct AliasRenameAllStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"id">) {
-        return meta::make_annotation(meta::dsl::alias = {"user_id"});
+        return meta::make_annotation(codec::dsl::alias = {"user_id"});
     }
 
     int id;
@@ -169,13 +169,13 @@ struct IsNone {
 
 struct BehaviorStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"maybe">) {
-        return meta::make_annotation(meta::dsl::presence = meta::dsl::type<IsNone>);
+        return meta::make_annotation(codec::dsl::presence = meta::dsl::type<IsNone>);
     }
 
     std::optional<int> maybe;
 
     static consteval auto __kotatsu__annotation(meta::name_key<"as_str">) {
-        return meta::make_annotation(meta::dsl::as = meta::dsl::type<std::string>);
+        return meta::make_annotation(codec::dsl::as = meta::dsl::type<std::string>);
     }
 
     int as_str;
@@ -184,7 +184,7 @@ struct BehaviorStruct {
 
 struct WithReprStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"converted">) {
-        return meta::make_annotation(meta::dsl::with = meta::dsl::type<IntToStringAdapter>);
+        return meta::make_annotation(codec::dsl::with = meta::dsl::type<IntToStringAdapter>);
     }
 
     int converted;
@@ -193,7 +193,7 @@ struct WithReprStruct {
 
 struct EnumNamesStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"color_field">) {
-        return meta::make_annotation(meta::dsl::with = meta::dsl::type<meta::enum_names<>>);
+        return meta::make_annotation(codec::dsl::with = meta::dsl::type<codec::enum_names<>>);
     }
 
     Color color_field;
@@ -202,15 +202,15 @@ struct EnumNamesStruct {
 
 struct MultiAttrStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"opt_omitted">) {
-        return meta::make_annotation(meta::dsl::presence = meta::dsl::type<IsNone>,
-                                     meta::dsl::description = "Left out when empty.");
+        return meta::make_annotation(codec::dsl::presence = meta::dsl::type<IsNone>,
+                                     codec::dsl::description = "Left out when empty.");
     }
 
     std::optional<int> opt_omitted;
 
     static consteval auto __kotatsu__annotation(meta::name_key<"renamed_as">) {
-        return meta::make_annotation(meta::dsl::rename = "score",
-                                     meta::dsl::as = meta::dsl::type<std::string>);
+        return meta::make_annotation(codec::dsl::rename = "score",
+                                     codec::dsl::as = meta::dsl::type<std::string>);
     }
 
     int renamed_as;
@@ -218,8 +218,8 @@ struct MultiAttrStruct {
 
 struct OmitIfAsStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"field">) {
-        return meta::make_annotation(meta::dsl::presence = meta::dsl::type<IsNone>,
-                                     meta::dsl::as = meta::dsl::type<std::string>);
+        return meta::make_annotation(codec::dsl::presence = meta::dsl::type<IsNone>,
+                                     codec::dsl::as = meta::dsl::type<std::string>);
     }
 
     std::optional<std::string> field;
@@ -227,8 +227,8 @@ struct OmitIfAsStruct {
 
 struct OmitIfWithStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"field">) {
-        return meta::make_annotation(meta::dsl::presence = meta::dsl::type<IsNone>,
-                                     meta::dsl::with = meta::dsl::type<IntToStringAdapter>);
+        return meta::make_annotation(codec::dsl::presence = meta::dsl::type<IsNone>,
+                                     codec::dsl::with = meta::dsl::type<IntToStringAdapter>);
     }
 
     std::optional<int> field;

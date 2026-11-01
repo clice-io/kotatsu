@@ -1,6 +1,6 @@
 #pragma once
 
-// meta::repr: the declarative, imperative, one-directional, dynamic, chained
+// codec::repr: the declarative, imperative, one-directional, dynamic, chained
 // and format-scoped forms, reprs wherever a value can stand, and their
 // precedence against field annotations and config.
 

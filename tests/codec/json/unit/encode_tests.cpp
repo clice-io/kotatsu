@@ -27,7 +27,7 @@ namespace {
 
 struct Spliced {
     int id = 0;
-    RawValue payload;
+    raw_value payload;
 };
 
 /// Travels as "f<page>", and in json as the page itself: its json-scoped
@@ -65,7 +65,7 @@ struct NoteFirst {
 
 }  // namespace kotatsu::codec
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 template <>
 struct repr<codec::Folio> {
@@ -93,7 +93,7 @@ struct repr<codec::Folio, codec::json::format> {
     }
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec
 
 namespace kotatsu::codec {
 
@@ -334,8 +334,8 @@ ZEST_CASE(dyn_value_encodes_as_typed) {
 }
 
 ZEST_CASE(json_scoped_repr_applies_to_json_only) {
-    ZSTATIC_EXPECT(std::is_same_v<meta::resolved_repr_t<Folio, json::format>, std::int64_t>);
-    ZSTATIC_EXPECT(std::is_same_v<meta::resolved_repr_t<Folio, OtherFormat>, std::string>);
+    ZSTATIC_EXPECT(std::is_same_v<codec::resolved_repr_t<Folio, json::format>, std::int64_t>);
+    ZSTATIC_EXPECT(std::is_same_v<codec::resolved_repr_t<Folio, OtherFormat>, std::string>);
     auto text = json::to_string(test::Field<Folio>{{.page = 41}});
     ZASSERT(text);
     ZEXPECT(*text == R"({"value":41})");

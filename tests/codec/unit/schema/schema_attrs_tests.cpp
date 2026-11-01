@@ -4,10 +4,13 @@
 #include "fixtures/structs.h"
 #include "fixtures/tagged.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::field_offset;
+using meta::type_kind;
 
 namespace {
 
@@ -17,7 +20,7 @@ struct OmitDefaultsPolicy {
     constexpr static std::optional<presence_kind> presence_all = presence_kind::omit_if_default;
 };
 
-ZEST_SUITE(meta_schema_attrs) {
+ZEST_SUITE(codec_schema_attrs) {
 
 ZEST_CASE(simple_struct_fields) {
     ZSTATIC_EXPECT(virtual_schema<fx::SimpleStruct>::fields.size() == 3U);
@@ -198,8 +201,8 @@ ZEST_CASE(tagged_field_type_info) {
     ZSTATIC_EXPECT(adj.alt_names[1] == "text");
 }
 
-};  // ZEST_SUITE(meta_schema_attrs)
+};  // ZEST_SUITE(codec_schema_attrs)
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

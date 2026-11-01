@@ -5,7 +5,7 @@
 #include <string_view>
 
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/spec.h"
+#include "kotatsu/codec/attribute.h"
 
 namespace kotatsu::cli {
 
@@ -50,7 +50,7 @@ struct CommandSet {
 
 }  // namespace detail
 
-/// What a field's `cli::` annotation entries say about it on a command line, beside the
+/// What a field's `cli::` attributes say about it on a command line, beside the
 /// `description` its help is. A field without them is an option all the same, named after it.
 struct ArgSpec {
     /// The names it is given by, as written: "-o", "--output", "/out". Without, its declared
@@ -101,7 +101,7 @@ struct ArgSpec {
     }
 };
 
-/// The entries of ArgSpec in a KANNOTATE: `cli::names = {"-o", "--output"}`.
+/// The attributes of ArgSpec in a KANNOTATE: `cli::names = {"-o", "--output"}`.
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::names> names{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::meta_var> meta_var{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::positional> positional{};
@@ -122,14 +122,14 @@ struct Alias {
     constexpr bool operator==(const Alias&) const = default;
 };
 
-/// The standard help option, `-h` and `--help`, as a bundle of entries: given, it ends the
+/// The standard help option, `-h` and `--help`, as a bundle of attributes: given, it ends the
 /// parse where it stands, so that nothing required is missed, and the caller finds it set and
 /// prints the usage.
 ///
 ///     KANNOTATE(&help, cli::help)
 ///     bool help = false;
 [[maybe_unused]] constexpr inline auto help =
-    meta::make_annotation(meta::dsl::description = "display this help and exit",
+    meta::make_annotation(codec::dsl::description = "display this help and exit",
                           names = {"-h", "--help"},
                           stop = true);
 

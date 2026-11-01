@@ -10,7 +10,7 @@
 
 #include "fixtures/structs.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/attribute.h"
 
 namespace kotatsu::test {
 
@@ -24,13 +24,13 @@ struct TaggedIntRect {
 };
 
 [[maybe_unused]] constexpr inline auto InternalKindTag =
-    meta::make_annotation(meta::dsl::tag = "kind", meta::dsl::tag_names = {"circle", "rect"});
+    meta::make_annotation(codec::dsl::tag = "kind", codec::dsl::tag_names = {"circle", "rect"});
 
 struct ExternalTagged;
 
 constexpr auto __kotatsu__type_annotation(std::type_identity<ExternalTagged>) {
-    return meta::make_annotation(meta::dsl::tagged = true,
-                                 meta::dsl::tag_names = {"integer", "text"});
+    return meta::make_annotation(codec::dsl::tagged = true,
+                                 codec::dsl::tag_names = {"integer", "text"});
 }
 
 struct ExternalTagged : std::variant<int, std::string> {
@@ -50,9 +50,9 @@ struct InternalTagged : std::variant<TaggedIntCircle, TaggedIntRect> {
 struct AdjacentTagged;
 
 constexpr auto __kotatsu__type_annotation(std::type_identity<AdjacentTagged>) {
-    return meta::make_annotation(meta::dsl::tag = "type",
-                                 meta::dsl::content = "value",
-                                 meta::dsl::tag_names = {"integer", "text"});
+    return meta::make_annotation(codec::dsl::tag = "type",
+                                 codec::dsl::content = "value",
+                                 codec::dsl::tag_names = {"integer", "text"});
 }
 
 struct AdjacentTagged : std::variant<int, std::string> {
@@ -77,7 +77,7 @@ struct TaggedFieldStruct {
 
 struct TaggedVariantStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"tv">) {
-        return meta::make_annotation(meta::dsl::tagged = true);
+        return meta::make_annotation(codec::dsl::tagged = true);
     }
 
     std::variant<int, std::string> tv;

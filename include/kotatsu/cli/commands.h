@@ -13,7 +13,7 @@
 #include "kotatsu/cli/spec.h"
 #include "kotatsu/cli/to_argv.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/type_info.h"
+#include "kotatsu/codec/type_info.h"
 
 namespace kotatsu::cli {
 
@@ -32,7 +32,7 @@ struct CommandEntry {
     std::string name;
     std::string_view description;
     bool hidden = false;
-    const meta::type_info* type = nullptr;
+    const codec::type_info* type = nullptr;
     void* (*make)() = nullptr;
     void (*destroy)(void*) = nullptr;
     bool (*decode)(Reader& reader, void* value) = nullptr;
@@ -100,7 +100,7 @@ public:
     /// The struct held, if it is a `T`; null when it is another, or none.
     template <typename T>
     T* get_if() const {
-        return entry != nullptr && entry->type == &meta::type_info_of<T, decode_config>()
+        return entry != nullptr && entry->type == &codec::type_info_of<T, decode_config>()
                    ? static_cast<T*>(value.get())
                    : nullptr;
     }
@@ -164,12 +164,12 @@ template <typename Tag, typename T, typename R, typename... Args>
 bool add_command(R (*run)(T&, Args...), CommandInfo info = {}) {
     static_assert(std::is_same_v<typename Tag::signature, R(Args...)>,
                   "cli: a subcommand's callback takes its struct, then the set's signature");
-    static_assert(detail::check_declaration(meta::type_info_of<T, detail::decode_config>()));
+    static_assert(detail::check_declaration(codec::type_info_of<T, detail::decode_config>()));
     using callback_t = R (*)(T&, Args...);
-    const auto& type = meta::type_info_of<T, detail::decode_config>();
+    const auto& type = codec::type_info_of<T, detail::decode_config>();
     detail::registry<Tag>().add(detail::CommandEntry{
         .name = info.name.empty() ? detail::kebab(type.type_name) : std::string(info.name),
-        .description = static_cast<const meta::struct_type_info&>(type).description,
+        .description = static_cast<const codec::struct_type_info&>(type).description,
         .hidden = info.hidden,
         .type = &type,
         .make = []() -> void* { return new T(); },

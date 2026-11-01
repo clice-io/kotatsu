@@ -24,12 +24,11 @@
 #include "kotatsu/support/expected_try.h"
 #include "kotatsu/support/naming.h"
 #include "kotatsu/support/type_list.h"
-#include "kotatsu/meta/schema.h"
-#include "kotatsu/meta/type_info.h"
 #include "kotatsu/codec/dyn/decode.h"
 #include "kotatsu/codec/dyn/document.h"
 #include "kotatsu/codec/format.h"
 #include "kotatsu/codec/json/json.h"
+#include "kotatsu/codec/type_info.h"
 
 namespace kotatsu::codec::json {
 
@@ -64,7 +63,7 @@ public:
     explicit SchemaEmitter(const schema_options& opts, bool mark_alternatives = false) :
         opts(opts), mark_alternatives(mark_alternatives) {}
 
-    result_t emit(const meta::type_info& root) {
+    result_t emit(const codec::type_info& root) {
         root_ti = unwrap(&root);
         if(root_ti->kind == tk::structure) {
             auto name = kotatsu::naming::normalize_identifier(root_ti->type_name);
@@ -89,21 +88,21 @@ public:
     }
 
 private:
-    const static meta::type_info* unwrap(const meta::type_info* ti) {
+    const static codec::type_info* unwrap(const codec::type_info* ti) {
         while(ti->kind == tk::optional || ti->kind == tk::pointer) {
-            ti = &static_cast<const meta::optional_type_info*>(ti)->inner();
+            ti = &static_cast<const codec::optional_type_info*>(ti)->inner();
         }
         return ti;
     }
 
-    static std::string alternative_name(const meta::variant_type_info* vi, std::size_t i) {
+    static std::string alternative_name(const codec::variant_type_info* vi, std::size_t i) {
         if(i < vi->alt_names.size()) {
             return std::string(vi->alt_names[i]);
         }
         return kotatsu::naming::normalize_identifier(vi->alternatives[i]().type_name);
     }
 
-    std::expected<std::string_view, rich_error> def_name(const meta::type_info* ti) {
+    std::expected<std::string_view, rich_error> def_name(const codec::type_info* ti) {
         auto it = def_names.find(ti);
         if(it != def_names.end()) {
             return std::string_view(it->second);
@@ -117,7 +116,7 @@ private:
         return std::string_view(pos->second);
     }
 
-    result_t make_nullable(const meta::type_info* ti) {
+    result_t make_nullable(const codec::type_info* ti) {
         auto* inner = unwrap(ti);
         KOTATSU_EXPECTED_TRY_V(auto schema, make_schema(inner));
         // anyOf, not oneOf: the inner schema may itself admit null (a
@@ -128,7 +127,7 @@ private:
         };
     }
 
-    result_t make_schema(const meta::type_info* ti) {
+    result_t make_schema(const codec::type_info* ti) {
         switch(ti->kind) {
             case tk::optional:
             case tk::pointer: return make_nullable(ti);
@@ -184,10 +183,10 @@ private:
     }
 
     std::expected<void, rich_error> merge_schema_fields(dyn::Object& target,
-                                                        const meta::type_info* ti) {
+                                                        const codec::type_info* ti) {
         ti = unwrap(ti);
         if(ti->kind == tk::structure) {
-            return add_struct_body(target, static_cast<const meta::struct_type_info*>(ti));
+            return add_struct_body(target, static_cast<const codec::struct_type_info*>(ti));
         }
         KOTATSU_EXPECTED_TRY_V(auto schema, make_schema(ti));
         if(auto* obj = schema.get_object()) {
@@ -209,7 +208,7 @@ private:
     /// also carries the tag property, required after the struct's own
     /// required fields.
     std::expected<void, rich_error> add_struct_body(dyn::Object& target,
-                                                    const meta::struct_type_info* si,
+                                                    const codec::struct_type_info* si,
                                                     const InternalTag* tag = nullptr) {
         target.insert("type", "object");
         if(!si->description.empty()) {
@@ -327,8 +326,8 @@ private:
         }
     }
 
-    result_t make_enum(const meta::type_info* ti) const {
-        auto* ei = static_cast<const meta::enum_type_info*>(ti);
+    result_t make_enum(const codec::type_info* ti) const {
+        auto* ei = static_cast<const codec::enum_type_info*>(ti);
         if(!ei->named) {
             // An integer: the codec casts through the underlying type
             // without checking membership, and name reflection only covers a
@@ -347,8 +346,8 @@ private:
         };
     }
 
-    result_t make_array(const meta::type_info* ti) {
-        auto* ai = static_cast<const meta::array_type_info*>(ti);
+    result_t make_array(const codec::type_info* ti) {
+        auto* ai = static_cast<const codec::array_type_info*>(ti);
         KOTATSU_EXPECTED_TRY_V(auto items, make_schema(&ai->element()));
         // No uniqueItems for a set: the decoder takes duplicates and keeps
         // one, and a multiset encodes them.
@@ -358,8 +357,8 @@ private:
         };
     }
 
-    result_t make_map(const meta::type_info* ti) {
-        auto* mi = static_cast<const meta::map_type_info*>(ti);
+    result_t make_map(const codec::type_info* ti) {
+        auto* mi = static_cast<const codec::map_type_info*>(ti);
         KOTATSU_EXPECTED_TRY_V(auto val_schema, make_schema(&mi->value()));
         dyn::Object obj{
             {"type",                 "object"             },
@@ -374,10 +373,10 @@ private:
     /// What a map's keys must spell, beyond a string, as its keys decode:
     /// the decimal digits of an integer, the name of an enumerator. The
     /// range of an integer key is not stated.
-    std::optional<dyn::Value> key_names(const meta::type_info* ti) const {
+    std::optional<dyn::Value> key_names(const codec::type_info* ti) const {
         auto kind = ti->kind;
         if(kind == tk::enumeration) {
-            auto* ei = static_cast<const meta::enum_type_info*>(ti);
+            auto* ei = static_cast<const codec::enum_type_info*>(ti);
             if(ei->named) {
                 // An enum's schema never fails.
                 return *make_enum(ti);
@@ -403,8 +402,8 @@ private:
         }
     }
 
-    result_t make_tuple(const meta::type_info* ti) {
-        auto* tup = static_cast<const meta::tuple_type_info*>(ti);
+    result_t make_tuple(const codec::type_info* ti) {
+        auto* tup = static_cast<const codec::tuple_type_info*>(ti);
         dyn::Array items;
         for(std::size_t i = 0; i < tup->elements.size(); ++i) {
             KOTATSU_EXPECTED_TRY_V(auto elem, make_schema(&tup->elements[i]()));
@@ -420,7 +419,7 @@ private:
         };
     }
 
-    result_t make_struct_ref(const meta::type_info* ti) {
+    result_t make_struct_ref(const codec::type_info* ti) {
         if(ti == root_ti) {
             return dyn::Value{
                 {"$ref", "#"}
@@ -433,11 +432,11 @@ private:
         };
     }
 
-    std::expected<void, rich_error> ensure_struct_def(const meta::type_info* ti) {
+    std::expected<void, rich_error> ensure_struct_def(const codec::type_info* ti) {
         if(!emitted.insert(ti).second) {
             return {};
         }
-        auto* si = static_cast<const meta::struct_type_info*>(ti);
+        auto* si = static_cast<const codec::struct_type_info*>(ti);
         KOTATSU_EXPECTED_TRY_V(auto name, def_name(ti));
         dyn::Object body;
         KOTATSU_EXPECTED_TRY(add_struct_body(body, si));
@@ -445,12 +444,12 @@ private:
         return {};
     }
 
-    result_t make_properties(const meta::struct_type_info* si) {
+    result_t make_properties(const codec::struct_type_info* si) {
         dyn::Object props;
         // A key the decoder gives the first field answering to it: a second
         // field's property under the same name would claim it too.
         auto claim = [&](std::string_view name,
-                         const meta::field_info& f) -> std::expected<void, rich_error> {
+                         const codec::field_info& f) -> std::expected<void, rich_error> {
             if(props.find(name) != nullptr) {
                 return std::unexpected(
                     rich_error(std::format("field '{}' answers to '{}', as another field does",
@@ -505,7 +504,7 @@ private:
         }
     }
 
-    static dyn::Value to_dyn(const meta::schema_number& number) {
+    static dyn::Value to_dyn(const codec::schema_number& number) {
         if(const auto* i = std::get_if<std::int64_t>(&number)) {
             return *i;
         }
@@ -515,7 +514,7 @@ private:
         return std::get<double>(number);
     }
 
-    static meta::schema_number number_of(const dyn::Value& value) {
+    static codec::schema_number number_of(const dyn::Value& value) {
         if(auto i = value.get_int()) {
             return *i;
         }
@@ -529,9 +528,9 @@ private:
     /// where it is tighter than the one the type gives: tighter is greater
     /// for a minimum, less for a maximum.
     static std::expected<void, rich_error> bound(dyn::Object& branch,
-                                                 const meta::field_info& f,
+                                                 const codec::field_info& f,
                                                  std::string_view key,
-                                                 const meta::schema_number& number,
+                                                 const codec::schema_number& number,
                                                  std::partial_ordering tighter) {
         if(std::holds_alternative<std::monostate>(number)) {
             return {};
@@ -542,7 +541,7 @@ private:
                 rich_error(std::format("floating-point {} on integer field '{}'", key, f.name)));
         }
         if(auto* current = branch.find(key)) {
-            if(meta::compare_numbers(number, number_of(*current)) == tighter) {
+            if(codec::compare_numbers(number, number_of(*current)) == tighter) {
                 *current = to_dyn(number);
             }
         } else {
@@ -554,7 +553,7 @@ private:
     /// What the field's annotation states beyond its type: the bounds of a
     /// number, the values of a string. The decoder checks neither.
     static std::expected<void, rich_error> constrain(dyn::Value& schema,
-                                                     const meta::field_info& f) {
+                                                     const codec::field_info& f) {
         bool bounded = !std::holds_alternative<std::monostate>(f.minimum) ||
                        !std::holds_alternative<std::monostate>(f.maximum);
         if(bounded) {
@@ -592,8 +591,8 @@ private:
 
     /// A field is required when its presence is: the decoder rejects a document
     /// without it, and the encoder always writes it.
-    static bool is_required(const meta::field_info& f) {
-        return f.presence == meta::presence_kind::required;
+    static bool is_required(const codec::field_info& f) {
+        return f.presence == codec::presence_kind::required;
     }
 
     static dyn::Value make_tag_const(std::string_view tag_field, std::string_view alt_name) {
@@ -603,7 +602,7 @@ private:
         };
     }
 
-    result_t make_internal_tagged(const meta::type_info* ti,
+    result_t make_internal_tagged(const codec::type_info* ti,
                                   std::string_view tag_field,
                                   std::string_view alt_name) {
         ti = unwrap(ti);
@@ -620,7 +619,7 @@ private:
         dyn::Object obj;
         InternalTag tag{.field = tag_field, .alt_name = alt_name};
         KOTATSU_EXPECTED_TRY(
-            add_struct_body(obj, static_cast<const meta::struct_type_info*>(ti), &tag));
+            add_struct_body(obj, static_cast<const codec::struct_type_info*>(ti), &tag));
         // The body is inlined here rather than $def'd, so it names its type
         // for the default-annotation sweep, which removes the marker.
         if(mark_alternatives) {
@@ -630,20 +629,20 @@ private:
         return dyn::Value(std::move(obj));
     }
 
-    result_t make_variant(const meta::type_info* ti) {
-        auto* vi = static_cast<const meta::variant_type_info*>(ti);
-        auto tagging = opts.human_readable ? vi->tagging : meta::tag_mode::none;
+    result_t make_variant(const codec::type_info* ti) {
+        auto* vi = static_cast<const codec::variant_type_info*>(ti);
+        auto tagging = opts.human_readable ? vi->tagging : codec::tag_mode::none;
         dyn::Array alts;
 
         for(std::size_t i = 0; i < vi->alternatives.size(); ++i) {
             switch(tagging) {
-                case meta::tag_mode::none: {
+                case codec::tag_mode::none: {
                     KOTATSU_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
                     alts.push_back(std::move(schema));
                     break;
                 }
 
-                case meta::tag_mode::external: {
+                case codec::tag_mode::external: {
                     auto alt_name = alternative_name(vi, i);
                     KOTATSU_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
                     alts.push_back({
@@ -655,7 +654,7 @@ private:
                     break;
                 }
 
-                case meta::tag_mode::internal: {
+                case codec::tag_mode::internal: {
                     auto alt_name = alternative_name(vi, i);
                     KOTATSU_EXPECTED_TRY_V(
                         auto schema,
@@ -664,7 +663,7 @@ private:
                     break;
                 }
 
-                case meta::tag_mode::adjacent: {
+                case codec::tag_mode::adjacent: {
                     auto alt_name = alternative_name(vi, i);
                     KOTATSU_EXPECTED_TRY_V(auto schema, make_schema(&vi->alternatives[i]()));
                     dyn::Object branch{
@@ -694,17 +693,17 @@ private:
         // range next to an integer both match the same document — so only the
         // tagged forms, disjoint by their tag, claim exactly-one semantics.
         return dyn::Value{
-            {tagging == meta::tag_mode::none ? "anyOf" : "oneOf", std::move(alts)},
+            {tagging == codec::tag_mode::none ? "anyOf" : "oneOf", std::move(alts)},
         };
     }
 
     schema_options opts;
     bool mark_alternatives;
     std::vector<std::pair<std::string, dyn::Value>> defs;
-    std::unordered_map<const meta::type_info*, std::string> def_names;
+    std::unordered_map<const codec::type_info*, std::string> def_names;
     std::unordered_set<std::string> used_names;
-    std::unordered_set<const meta::type_info*> emitted;
-    const meta::type_info* root_ti = nullptr;
+    std::unordered_set<const codec::type_info*> emitted;
+    const codec::type_info* root_ti = nullptr;
 };
 
 /// The fresh documents the default-annotation pass pairs schema bodies with:
@@ -719,13 +718,13 @@ private:
 /// schema), tuple elements, variant alternatives. A repr-routed type is
 /// skipped, subtree included, field-level behavior attrs (`with`, `as`) are
 /// not followed, and a fresh instance the encoder rejects (a NaN member
-/// under nan_repr::Error, an unnamed enum value through meta::enum_names)
+/// under nan_repr::Error, an unnamed enum value through codec::enum_names)
 /// records no document: all three leave their bodies unannotated rather
 /// than annotated wrongly.
 struct FreshDefaults {
     std::unordered_map<std::string, dyn::Value> docs;
     std::unordered_set<std::string> claimed;
-    std::unordered_set<const meta::type_info*> seen;
+    std::unordered_set<const codec::type_info*> seen;
 };
 
 /// Annotates the emitted schema with `default` values in two layers, each
@@ -863,7 +862,7 @@ private:
 /// Metadata resolution config for schema generation: the user's config
 /// (field_rename, deny_unknown_fields, ...) merged over defaults — the same
 /// merge the codec dispatch applies — tagged with the JSON format so
-/// format-scoped meta::repr specializations resolve the way to_string does.
+/// format-scoped codec::repr specializations resolve the way to_string does.
 template <typename Config>
 struct schema_config : default_config<Config> {
     using format = json::format;
@@ -892,12 +891,12 @@ schema_options options_of() {
 
 /// True when decode reads a T value directly: T resolves to itself, or is a
 /// class derived from the std::variant it resolves to. Anything routed
-/// through a meta::repr makes decode read the repr's value instead, whose
+/// through a codec::repr makes decode read the repr's value instead, whose
 /// relationship to a fresh T is the repr's business; the defaults pass covers
 /// only the direct kind and leaves the rest honestly unannotated.
 template <typename T>
 constexpr bool decoder_reads_directly() {
-    using resolved = meta::resolved_repr_t<T, format>;
+    using resolved = codec::resolved_repr_t<T, format>;
     if constexpr(meta::derived_variant<T>) {
         return std::same_as<resolved, meta::variant_base_t<T>>;
     } else {
@@ -911,9 +910,9 @@ void collect_fresh(FreshDefaults& out);
 template <typename Config, typename... Slots>
 void collect_fresh_slots(FreshDefaults& out, kotatsu::type_list<Slots...>) {
     (collect_fresh<typename Slots::raw_type,
-                   meta::node_config_t<meta::members_config_t<Config>,
-                                       typename Slots::raw_type,
-                                       typename Slots::attrs>>(out),
+                   codec::node_config_t<codec::members_config_t<Config>,
+                                        typename Slots::raw_type,
+                                        typename Slots::attrs>>(out),
      ...);
 }
 
@@ -928,10 +927,10 @@ void collect_fresh(FreshDefaults& out) {
     // repr's value, not a T, so no honest fresh document exists here.
     if constexpr(decoder_reads_directly<T>()) {
         using tk = meta::type_kind;
-        using resolved = meta::resolved_repr_t<T, format>;
+        using resolved = codec::resolved_repr_t<T, format>;
         constexpr tk kind = meta::kind_of<resolved>();
         if constexpr(kind == tk::structure) {
-            const meta::type_info& ti = meta::type_info_of<T, Config>();
+            const codec::type_info& ti = codec::type_info_of<T, Config>();
             if(!out.seen.insert(&ti).second) {
                 return;
             }
@@ -939,7 +938,7 @@ void collect_fresh(FreshDefaults& out) {
             // annotated root or container element — slots merge theirs
             // before recursing), so the document keys and field names below
             // match the schema the emitter derives from the same resolution.
-            using cfg = meta::resolved_config_t<T, Config>;
+            using cfg = codec::resolved_config_t<T, Config>;
             auto name = kotatsu::naming::normalize_identifier(ti.type_name);
             if(!out.claimed.insert(name).second) {
                 // Two distinct types under one normalized name: the emitter
@@ -955,7 +954,7 @@ void collect_fresh(FreshDefaults& out) {
                     }
                 }
             }
-            collect_fresh_slots<cfg>(out, typename meta::virtual_schema<resolved, cfg>::slots{});
+            collect_fresh_slots<cfg>(out, typename codec::virtual_schema<resolved, cfg>::slots{});
         } else if constexpr(kind == tk::optional) {
             collect_fresh<typename resolved::value_type, Config>(out);
         } else if constexpr(kind == tk::pointer) {
@@ -977,7 +976,7 @@ void collect_fresh(FreshDefaults& out) {
 
 }  // namespace detail
 
-inline std::expected<dyn::Value, rich_error> schema(const meta::type_info& root,
+inline std::expected<dyn::Value, rich_error> schema(const codec::type_info& root,
                                                     const schema_options& options = {}) {
     return detail::SchemaEmitter{options}.emit(root);
 }
@@ -1006,7 +1005,7 @@ inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool p
 /// defaults on top (see DefaultAnnotator). Two consequences of riding the
 /// real encoder: T() must encode under Config — an instance the encoder
 /// rejects (a NaN member under nan_repr::Error, an enum value without a
-/// reflected name through meta::enum_names) fails schema generation with that
+/// reflected name through codec::enum_names) fails schema generation with that
 /// error — and a T whose fields the codec cannot serialize fails to compile,
 /// exactly like to_string itself. A repr-routed root gets an honestly
 /// unannotated schema; an opaque root — one whose JSON-resolved
@@ -1022,14 +1021,14 @@ inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool p
 /// of them.
 template <typename T, typename Config = void>
 std::expected<dyn::Value, rich_error> schema() {
-    using resolved = meta::resolved_repr_t<T, format>;
+    using resolved = codec::resolved_repr_t<T, format>;
     constexpr bool annotate_defaults = std::is_default_constructible_v<T> &&
                                        meta::kind_of<resolved>() != meta::type_kind::unknown &&
                                        detail::decoder_reads_directly<T>();
     KOTATSU_EXPECTED_TRY_V(
         auto result,
         (detail::SchemaEmitter{detail::options_of<Config>(), annotate_defaults}.emit(
-            meta::type_info_of<T, detail::schema_config<Config>>())));
+            codec::type_info_of<T, detail::schema_config<Config>>())));
     if constexpr(annotate_defaults) {
         KOTATSU_EXPECTED_TRY_V(auto text, to_string<detail::default_document_config<Config>>(T()));
         KOTATSU_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));
@@ -1040,7 +1039,7 @@ std::expected<dyn::Value, rich_error> schema() {
     return result;
 }
 
-inline std::expected<std::string, rich_error> schema_string(const meta::type_info& root,
+inline std::expected<std::string, rich_error> schema_string(const codec::type_info& root,
                                                             bool pretty = false,
                                                             const schema_options& options = {}) {
     KOTATSU_EXPECTED_TRY_V(auto value, schema(root, options));

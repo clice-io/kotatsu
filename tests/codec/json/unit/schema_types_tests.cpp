@@ -14,12 +14,15 @@
 #include "codec/harness/fixtures/configs.h"
 #include "codec/json/harness/schema.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/json/schema.h"
 #include "kotatsu/codec/macro.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::reflection;
+using meta::type_kind;
 
 namespace {
 
@@ -27,8 +30,12 @@ struct json_schema_opaque_root {};
 
 }  // namespace
 
+}  // namespace kotatsu::codec
+
 template <>
-constexpr inline bool schema_opaque<json_schema_opaque_root> = true;
+constexpr inline bool kotatsu::meta::schema_opaque<kotatsu::codec::json_schema_opaque_root> = true;
+
+namespace kotatsu::codec {
 
 namespace {
 
@@ -1072,4 +1079,4 @@ ZEST_CASE(bytes_field) {
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

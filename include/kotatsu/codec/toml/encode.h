@@ -223,7 +223,7 @@ bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
 template <typename Config = void, typename T>
 auto to_toml(const T& value) -> std::expected<Table, rich_error> {
     // Root routing follows the representation the codec dispatch resolves
-    // (annotations and toml-scoped meta::repr included), not the declared
+    // (annotations and toml-scoped codec::repr included), not the declared
     // type: a struct whose repr is a scalar is boxed under the root key, and
     // a repr that resolves to a table shape becomes the root table.
     if constexpr(detail::nullable_root_v<T>) {

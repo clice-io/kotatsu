@@ -11,10 +11,10 @@
 #include <utility>
 
 #include "kotatsu/support/type_traits.h"
-#include "kotatsu/meta/repr.h"
 #include "kotatsu/meta/type_kind.h"
 #include "kotatsu/codec/context.h"
 #include "kotatsu/codec/format.h"
+#include "kotatsu/codec/repr.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include "flatbuffers/flatbuffers.h"
@@ -41,13 +41,13 @@ using string_offset_t = offset_t<String>;
 
 using verifier_t = ::flatbuffers::Verifier;
 
-/// Format tag: scopes a meta::repr specialization to the flatbuffers backend
-/// (meta::repr<T, codec::fbs::format>).
+/// Format tag: scopes a codec::repr specialization to the flatbuffers backend
+/// (codec::repr<T, codec::fbs::format>).
 ///
 /// # Lowerings
 ///
 /// FlatBuffers binary built in two passes (allocate child offsets, then
-/// write tables); layout_computed=true, so meta::dynamic reprs are rejected
+/// write tables); layout_computed=true, so codec::dynamic reprs are rejected
 /// at compile time. Field slots use voffsets first_field=4, field_step=2 in
 /// declaration order; the buffer carries the "EVTO" identifier.
 /// - root → always a table: structures map directly, tuples and variants
@@ -95,7 +95,7 @@ namespace detail {
 
 /// Static visitor traits shared by the fbs visitors the codec dispatch
 /// drives: a binary backend whose output layout is computed statically (so
-/// meta::dynamic reprs are rejected at compile time). An absent slot is how a
+/// codec::dynamic reprs are rejected at compile time). An absent slot is how a
 /// null travels, and reads back as null, empty or zero: a field a write left
 /// out at a default that is none of those would not read back, so every field
 /// is written, whatever its presence.
@@ -282,7 +282,7 @@ consteval bool inline_struct_field() {
         // optional field keeps the enclosing struct table-shaped, where
         // disengagement is an absent slot instead of a raw flag byte.
         return false;
-    } else if constexpr(meta::has_repr<U, format>) {
+    } else if constexpr(codec::has_repr<U, format>) {
         // A repr replaces the raw layout, so the field cannot be part of an
         // inline struct's memcpy image; the enclosing type degrades to a
         // table, where the dispatch applies the repr.

@@ -8,9 +8,9 @@
 #include "fixtures/structs.h"
 #include "fixtures/tagged.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/repr.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/repr.h"
+#include "kotatsu/codec/type_info.h"
 
 namespace kotatsu_slots_repr_test {
 
@@ -28,7 +28,10 @@ struct ReprStruct {
 
 }  // namespace kotatsu_slots_repr_test
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::kind_of;
+using meta::type_kind;
 
 template <>
 struct repr<kotatsu_slots_repr_test::RepId> {
@@ -40,9 +43,9 @@ struct repr<kotatsu_slots_repr_test::DynBlob> {
     using type = dynamic;
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 using kotatsu::type_list_size_v;
 using kotatsu::type_list_element_t;
@@ -51,7 +54,7 @@ namespace {
 
 namespace fx = ::kotatsu::test;
 
-ZEST_SUITE(meta_schema_slots) {
+ZEST_SUITE(codec_schema_slots) {
 
 ZEST_CASE(simple_struct_slots) {
     using slots = virtual_schema<fx::SimpleStruct>::slots;
@@ -134,8 +137,8 @@ ZEST_CASE(tagged_variant_slot) {
     ZSTATIC_EXPECT(!std::is_same_v<slot0::attrs, std::tuple<>>);
 }
 
-};  // ZEST_SUITE(meta_schema_slots)
+};  // ZEST_SUITE(codec_schema_slots)
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

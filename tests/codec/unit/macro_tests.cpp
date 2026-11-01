@@ -10,12 +10,12 @@
 #include "fixtures/structs.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/macro.h"
+#include "kotatsu/codec/type_info.h"
 
 // Outside namespace kotatsu, where <cstdio> puts ::rename in scope: the macros
-// name their entries through using-declarations, so `rename` is not ambiguous.
+// name their attributes through using-declarations, so `rename` is not ambiguous.
 namespace {
 
 struct DownstreamConfig {
@@ -126,7 +126,7 @@ struct StrictProfile {
     int age = 0;
 };
 
-/// A bundle, then an entry that overrides one of its own.
+/// A bundle, then an attribute that overrides one of its own.
 struct Bundled {
     KANNOTATE(&shape, ShapeTag, tag = "type")
     std::variant<test::Circle, test::Rect> shape;
@@ -147,89 +147,89 @@ struct StructEntriesOnFields {
 ZEST_SUITE(codec_macro) {
 
 ZEST_CASE(annotate_works_outside_kotatsu) {
-    constexpr const auto& spec = meta::field_spec_of<DownstreamConfig, 0>;
+    constexpr const auto& spec = codec::field_spec_of<DownstreamConfig, 0>;
     ZSTATIC_EXPECT(spec.rename == std::string_view("compileCommands"));
 }
 
 ZEST_CASE(annotate_field_annotates_a_class_from_outside) {
-    constexpr const auto& y = meta::field_spec_of<third_party::Point, 1>;
+    constexpr const auto& y = codec::field_spec_of<third_party::Point, 1>;
     ZSTATIC_EXPECT(y.rename == std::string_view("Y"));
     ZSTATIC_EXPECT(y.alias[0] == std::string_view("why"));
-    ZSTATIC_EXPECT(meta::field_spec_of<third_party::Point, 0>.rename.empty());
+    ZSTATIC_EXPECT(codec::field_spec_of<third_party::Point, 0>.rename.empty());
 }
 
 ZEST_CASE(annotate_type_declares_the_struct_where_it_is_written) {
-    ZSTATIC_EXPECT(meta::spec_of<meta::type_attrs_t<downstream::Options>>.description ==
+    ZSTATIC_EXPECT(codec::spec_of<meta::type_attrs_t<downstream::Options>>.description ==
                    std::string_view("Downstream options"));
-    ZSTATIC_EXPECT(meta::spec_of<meta::type_attrs_t<::Options>>.description.empty());
+    ZSTATIC_EXPECT(codec::spec_of<meta::type_attrs_t<::Options>>.description.empty());
 }
 
 ZEST_CASE(annotate_type_follows_an_opaque_enum_declaration) {
-    ZSTATIC_EXPECT(meta::spec_of<meta::type_attrs_t<downstream::Level>>.description ==
+    ZSTATIC_EXPECT(codec::spec_of<meta::type_attrs_t<downstream::Level>>.description ==
                    std::string_view("How loud"));
 }
 
-ZEST_CASE(annotate_type_carries_extension_entries_to_plain_fields) {
-    constexpr const auto& info =
-        static_cast<const meta::struct_type_info&>(meta::type_info_of<downstream::HoldsWeighed>());
+ZEST_CASE(annotate_type_carries_extension_attributes_to_plain_fields) {
+    constexpr const auto& info = static_cast<const codec::struct_type_info&>(
+        codec::type_info_of<downstream::HoldsWeighed>());
     ZSTATIC_EXPECT(info.fields[0].has_extension<downstream::Probe>());
     ZEXPECT(info.fields[0].extension<downstream::Probe>()->weight == 2);
 }
 
 ZEST_CASE(annotate_works_in_a_class_template) {
-    constexpr const auto& spec = meta::field_spec_of<DownstreamBox<int>, 0>;
+    constexpr const auto& spec = codec::field_spec_of<DownstreamBox<int>, 0>;
     ZSTATIC_EXPECT(spec.alias.size() == 1U);
     ZSTATIC_EXPECT(spec.alias[0] == std::string_view("v"));
 }
 
-ZEST_CASE(annotate_field_entries_make_a_field_spec) {
-    constexpr const auto& id = meta::field_spec_of<Entries, 0>;
+ZEST_CASE(annotate_field_attributes_make_a_field_spec) {
+    constexpr const auto& id = codec::field_spec_of<Entries, 0>;
     ZSTATIC_EXPECT(id.rename == std::string_view("id"));
     ZSTATIC_EXPECT(id.alias[0] == std::string_view("uid"));
     ZSTATIC_EXPECT(id.description == std::string_view("Identifier."));
-    ZSTATIC_EXPECT(meta::field_spec_of<Entries, 1>.skip);
-    ZSTATIC_EXPECT(meta::field_spec_of<Entries, 2>.flatten);
-    constexpr const auto& note = meta::field_spec_of<Entries, 3>;
-    ZSTATIC_EXPECT(note.presence == meta::presence_kind::omit_if_default);
+    ZSTATIC_EXPECT(codec::field_spec_of<Entries, 1>.skip);
+    ZSTATIC_EXPECT(codec::field_spec_of<Entries, 2>.flatten);
+    constexpr const auto& note = codec::field_spec_of<Entries, 3>;
+    ZSTATIC_EXPECT(note.presence == codec::presence_kind::omit_if_default);
 }
 
-ZEST_CASE(annotate_type_entries_become_behavior_attrs) {
+ZEST_CASE(annotate_type_attributes_become_behavior_attrs) {
     using as_attrs = meta::field_attrs_t<Behaviors, 0>;
-    ZSTATIC_EXPECT(tuple_has_v<as_attrs, meta::behavior::as<std::string>>);
+    ZSTATIC_EXPECT(tuple_has_v<as_attrs, codec::behavior::as<std::string>>);
     using with_attrs = meta::field_attrs_t<Behaviors, 1>;
-    ZSTATIC_EXPECT(tuple_has_v<with_attrs, meta::behavior::with<test::DecimalText>>);
+    ZSTATIC_EXPECT(tuple_has_v<with_attrs, codec::behavior::with<test::DecimalText>>);
     using omit_attrs = meta::field_attrs_t<Behaviors, 2>;
-    ZSTATIC_EXPECT(tuple_has_v<omit_attrs, meta::behavior::omit_if<test::IsNegative>>);
+    ZSTATIC_EXPECT(tuple_has_v<omit_attrs, codec::behavior::omit_if<test::IsNegative>>);
 }
 
-ZEST_CASE(annotation_struct_entries_make_a_struct_spec) {
-    constexpr const auto& shape = meta::struct_spec_of<meta::type_attrs_t<Shape>>;
-    ZSTATIC_EXPECT(shape.tagging == meta::tag_mode::internal);
+ZEST_CASE(annotation_struct_attributes_make_a_struct_spec) {
+    constexpr const auto& shape = codec::struct_spec_of<meta::type_attrs_t<Shape>>;
+    ZSTATIC_EXPECT(shape.tagging == codec::tag_mode::internal);
     ZSTATIC_EXPECT(shape.tag == std::string_view("kind"));
     ZSTATIC_EXPECT(shape.tag_names[1] == std::string_view("rect"));
 
     using strict_attrs = meta::type_attrs_t<StrictProfile>;
-    constexpr const auto& strict = meta::struct_spec_of<strict_attrs>;
+    constexpr const auto& strict = codec::struct_spec_of<strict_attrs>;
     ZSTATIC_EXPECT(strict.rename_all == naming::Casing::LowerCamel);
     ZSTATIC_EXPECT(strict.deny_unknown_fields);
-    ZSTATIC_EXPECT(strict.presence_all == meta::presence_kind::optional);
-    // Struct entries alone make the struct spec and nothing else.
+    ZSTATIC_EXPECT(strict.presence_all == codec::presence_kind::optional);
+    // Struct attributes alone make the struct spec and nothing else.
     ZSTATIC_EXPECT(std::tuple_size_v<strict_attrs> == 1U);
 }
 
-ZEST_CASE(entries_after_a_bundle_override_its_own) {
-    constexpr const auto& shape = meta::struct_spec_of<meta::field_attrs_t<Bundled, 0>>;
+ZEST_CASE(attributes_after_a_bundle_override_its_own) {
+    constexpr const auto& shape = codec::struct_spec_of<meta::field_attrs_t<Bundled, 0>>;
     ZSTATIC_EXPECT(shape.tag == std::string_view("type"));
     ZSTATIC_EXPECT(shape.tag_names[0] == std::string_view("circle"));
 }
 
-ZEST_CASE(annotate_takes_struct_entries_on_a_field) {
+ZEST_CASE(annotate_takes_struct_attributes_on_a_field) {
     constexpr const auto& shape =
-        meta::struct_spec_of<meta::field_attrs_t<StructEntriesOnFields, 0>>;
-    ZSTATIC_EXPECT(shape.tagging == meta::tag_mode::internal);
+        codec::struct_spec_of<meta::field_attrs_t<StructEntriesOnFields, 0>>;
+    ZSTATIC_EXPECT(shape.tagging == codec::tag_mode::internal);
     ZSTATIC_EXPECT(shape.tag == std::string_view("kind"));
     constexpr const auto& inner =
-        meta::struct_spec_of<meta::field_attrs_t<StructEntriesOnFields, 1>>;
+        codec::struct_spec_of<meta::field_attrs_t<StructEntriesOnFields, 1>>;
     ZSTATIC_EXPECT(inner.rename_all == naming::Casing::UpperSnake);
     ZSTATIC_EXPECT(inner.deny_unknown_fields);
 }
@@ -238,8 +238,8 @@ ZEST_CASE(field_annotation_shares_type_info) {
     // A field spec is local to its field: it does not fork the type_info of
     // the type it annotates.
     const auto& info =
-        static_cast<const meta::struct_type_info&>(meta::type_info_of<DescribedProfile>());
-    ZEXPECT(&info.fields[0].type() == &meta::type_info_of<Profile>());
+        static_cast<const codec::struct_type_info&>(codec::type_info_of<DescribedProfile>());
+    ZEXPECT(&info.fields[0].type() == &codec::type_info_of<Profile>());
 }
 
 };  // ZEST_SUITE(codec_macro)

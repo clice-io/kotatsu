@@ -3,7 +3,7 @@
 #include <optional>
 #include <type_traits>
 
-#include "kotatsu/meta/spec.h"
+#include "kotatsu/codec/attribute.h"
 
 namespace kotatsu::codec {
 
@@ -75,7 +75,7 @@ struct default_config :
 
     /// The presence of every struct field its annotation leaves unset;
     /// unset, a field's kind decides.
-    KOTATSU_CFG_FIELD_(presence_all, std::optional<meta::presence_kind>{});
+    KOTATSU_CFG_FIELD_(presence_all, std::optional<codec::presence_kind>{});
 
     /// Generate error path tracking code (prepend_field/prepend_index).
     KOTATSU_CFG_FIELD_(detailed_error, true);
@@ -84,7 +84,7 @@ struct default_config :
 #undef KOTATSU_CFG_FIELD_
 
 /// True when the visitor computes the output layout statically (flatbuffers).
-/// Such backends cannot carry a meta::dynamic repr: there is no layout to
+/// Such backends cannot carry a codec::dynamic repr: there is no layout to
 /// compute.
 template <typename Vis>
 concept layout_computed = requires { requires Vis::layout_computed; };

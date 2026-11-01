@@ -47,13 +47,13 @@ void peer_link(const PeerKit<A>& kit) {
         Peers f;
         f.b.on_request(
             "test/raw",
-            [](Context&, const AddParams& params) -> async::task<codec::RawValue, ipc::Error> {
-                co_return codec::RawValue{A::encode(AddResult{.sum = params.a + params.b})};
+            [](Context&, const AddParams& params) -> async::task<codec::raw_value, ipc::Error> {
+                co_return codec::raw_value{A::encode(AddResult{.sum = params.a + params.b})};
             });
-        auto script = [&]() -> async::task<codec::RawValue, ipc::Error> {
+        auto script = [&]() -> async::task<codec::raw_value, ipc::Error> {
             auto result =
                 co_await f.a
-                    .template send_request<codec::RawValue>("test/raw", AddParams{.a = 2, .b = 3})
+                    .template send_request<codec::raw_value>("test/raw", AddParams{.a = 2, .b = 3})
                     .or_fail();
             f.a.close();
             f.b.close();

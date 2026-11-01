@@ -15,7 +15,7 @@
 #include "kotatsu/cli/parse.h"
 #include "kotatsu/cli/spec.h"
 #include "kotatsu/cli/table/table.h"
-#include "kotatsu/meta/type_info.h"
+#include "kotatsu/codec/type_info.h"
 
 namespace kotatsu::cli::detail {
 
@@ -37,7 +37,7 @@ enum class Form : std::uint8_t {
 /// A field of a command that takes arguments: an option, a positional argument, or the
 /// arguments after "--".
 struct Arg : FieldUse {
-    const meta::field_info* field = nullptr;
+    const codec::field_info* field = nullptr;
     /// The innermost group it is in; no_group in the command's own struct.
     std::uint32_t group = no_group;
     /// The group of the alternative of an exclusive field it is in, or no_group.
@@ -104,7 +104,7 @@ struct Subcommands {
 
 /// What a struct takes from an argv, and the table it reads options with.
 struct Command {
-    const meta::struct_type_info* type = nullptr;
+    const codec::struct_type_info* type = nullptr;
     std::vector<Group> groups;
     std::vector<Arg> args;
     /// The positional arguments, in declaration order, by index in `args`.
@@ -146,7 +146,7 @@ std::string join(R&& parts, std::string_view separator) {
 }
 
 /// `number` as a usage and an error write it; empty when unset.
-std::string number_text(const meta::schema_number& number);
+std::string number_text(const codec::schema_number& number);
 
 /// The node `keys` reach from `root` through objects, or null.
 const Node* find_node(const Node& root, std::span<const std::string_view> keys);

@@ -316,13 +316,13 @@ void codec_protocol(const CodecKit<A>& kit) {
         ZEXPECT(notification->params.text().empty());
     });
 
-    // A RawValue is in the codec's encoding already, and goes as it is.
+    // A raw_value is in the codec's encoding already, and goes as it is.
     kit.add("raw_params_and_results_go_as_they_are", [] {
         Codec codec;
         const auto body = A::encode(NoteParams{.text = "raw"});
-        auto request = codec.encode_request(1, "test/note", codec::RawValue{body});
-        auto notification = codec.encode_notification("test/note", codec::RawValue{body});
-        auto response = codec.encode_success_response(2, codec::RawValue{body});
+        auto request = codec.encode_request(1, "test/note", codec::raw_value{body});
+        auto notification = codec.encode_notification("test/note", codec::raw_value{body});
+        auto response = codec.encode_success_response(2, codec::raw_value{body});
         for(const auto& [kind, encoded]: {
                 std::pair{"request",      &request     },
                 std::pair{"notification", &notification},
@@ -340,8 +340,8 @@ void codec_protocol(const CodecKit<A>& kit) {
         auto* answer = std::get_if<ipc::IncomingResponse>(&answered);
         ZASSERT(incoming != nullptr);
         ZASSERT(answer != nullptr);
-        auto params = codec.template deserialize_value<codec::RawValue>(incoming->params);
-        auto result = codec.template deserialize_value<codec::RawValue>(answer->result);
+        auto params = codec.template deserialize_value<codec::raw_value>(incoming->params);
+        auto result = codec.template deserialize_value<codec::raw_value>(answer->result);
         ZASSERT(params.has_value());
         ZASSERT(result.has_value());
         ZEXPECT(params->data == body);

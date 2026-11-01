@@ -23,11 +23,11 @@
 #include "kotatsu/support/function_traits.h"
 #include "kotatsu/support/tuple_traits.h"
 #include "kotatsu/support/type_list.h"
-#include "kotatsu/meta/repr.h"
-#include "kotatsu/meta/schema.h"
 #include "kotatsu/meta/struct.h"
 #include "kotatsu/meta/type_kind.h"
 #include "kotatsu/codec/fbs/type.h"
+#include "kotatsu/codec/repr.h"
+#include "kotatsu/codec/type_info.h"
 
 namespace kotatsu::codec::fbs {
 
@@ -79,15 +79,15 @@ private:
 };
 
 /// Substitute a type by its resolved representation: annotation behavior attrs
-/// take precedence over the underlying type's meta::repr, and chained reprs
-/// are followed under the fbs format tag (meta::resolved_repr_t); identity
+/// take precedence over the underlying type's codec::repr, and chained reprs
+/// are followed under the fbs format tag (codec::resolved_repr_t); identity
 /// when neither applies. Flatbuffers computes layout statically, so a dynamic
 /// representation is rejected here.
 template <typename T>
 constexpr auto apply_repr_impl() {
-    using repr_t = meta::resolved_repr_t<T, format>;
-    static_assert(!std::is_same_v<repr_t, meta::dynamic>,
-                  "flatbuffers computes layout statically; a meta::dynamic repr cannot be "
+    using repr_t = codec::resolved_repr_t<T, format>;
+    static_assert(!std::is_same_v<repr_t, codec::dynamic>,
+                  "flatbuffers computes layout statically; a codec::dynamic repr cannot be "
                   "used with the fbs backend");
     return std::type_identity<repr_t>{};
 }
@@ -289,16 +289,16 @@ consteval field_layout field_layout_of() {
 }
 
 template <typename Object>
-using object_schema = meta::virtual_schema<Object, meta::format_config<format>>;
+using object_schema = codec::virtual_schema<Object, codec::format_config<format>>;
 
 /// The view type of a struct field slot: the type meta's resolver gives its
 /// raw type and attrs, the type the dispatch wrote. A tagged variant is that
 /// variant itself; anything else still has its nullable wrappers peeled.
 template <typename Slot>
 consteval auto slot_view_impl() {
-    using resolved = decltype(meta::detail::resolve_node<std::remove_cv_t<typename Slot::raw_type>,
-                                                         typename Slot::attrs,
-                                                         meta::format_config<format>>());
+    using resolved = decltype(codec::detail::resolve_node<std::remove_cv_t<typename Slot::raw_type>,
+                                                          typename Slot::attrs,
+                                                          codec::format_config<format>>());
     if constexpr(std::is_same_v<typename resolved::tag_attrs, std::tuple<>>) {
         return std::type_identity<deep_clean_t<typename resolved::type>>{};
     } else {
@@ -320,7 +320,7 @@ using field_value_t = std::remove_cv_t<meta::field_type<Object, I>>;
 /// enclosing table's slots.
 template <typename Object, std::size_t I>
 constexpr bool addressable_field_v =
-    !meta::field_spec_of<Object, I>.skip && !meta::field_spec_of<Object, I>.flatten;
+    !codec::field_spec_of<Object, I>.skip && !codec::field_spec_of<Object, I>.flatten;
 
 /// The types of Object's addressable members, each once.
 template <typename Object, typename Seq = std::make_index_sequence<meta::field_count<Object>()>>
@@ -361,7 +361,7 @@ template <typename Object, typename M>
 consteval auto member_slots() {
     constexpr auto taken = []<std::size_t... Is>(std::index_sequence<Is...>) {
         return std::array<std::size_t, sizeof...(Is)>{
-            type_list_size_v<typename meta::detail::single_field_slots<Object, Is>::type>...};
+            type_list_size_v<typename codec::detail::single_field_slots<Object, Is>::type>...};
     }(std::make_index_sequence<meta::field_count<Object>()>{});
     auto slots = member_fields<Object, M>();
     for(auto& slot: slots) {

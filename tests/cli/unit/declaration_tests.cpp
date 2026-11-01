@@ -19,7 +19,7 @@ namespace {
 template <typename T>
 concept declared = requires {
     typename std::bool_constant<detail::check_declaration(
-        meta::type_info_of<T, detail::decode_config>())>;
+        codec::type_info_of<T, detail::decode_config>())>;
 };
 
 struct Serve {

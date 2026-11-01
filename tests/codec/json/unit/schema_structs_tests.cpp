@@ -8,11 +8,13 @@
 
 #include "codec/json/harness/schema.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/schema.h"
 #include "kotatsu/codec/json/schema.h"
 #include "kotatsu/codec/macro.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::type_kind;
 
 namespace {
 
@@ -698,4 +700,4 @@ ZEST_CASE(mutual_recursion) {
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

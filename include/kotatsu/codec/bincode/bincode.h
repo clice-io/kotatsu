@@ -9,15 +9,15 @@
 namespace kotatsu::codec {
 
 template <typename Config>
-struct serialize_visit<bincode::Writer, RawValue, Config> {
-    static bool visit(bincode::Writer& vis, const RawValue& value) {
+struct serialize_visit<bincode::Writer, raw_value, Config> {
+    static bool visit(bincode::Writer& vis, const raw_value& value) {
         return vis.visit_str(value.data);
     }
 };
 
 template <typename Config>
-struct deserialize_visit<bincode::Reader, RawValue, Config> {
-    static bool visit(bincode::Reader& vis, RawValue& value) {
+struct deserialize_visit<bincode::Reader, raw_value, Config> {
+    static bool visit(bincode::Reader& vis, raw_value& value) {
         return vis.visit_str(value.data);
     }
 };

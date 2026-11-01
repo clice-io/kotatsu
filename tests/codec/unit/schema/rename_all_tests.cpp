@@ -3,16 +3,18 @@
 #include "fixtures/attrs.h"
 #include "fixtures/configs.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::reflection;
 
 namespace {
 
 namespace fx = ::kotatsu::test;
 
-ZEST_SUITE(meta_schema_rename_all) {
+ZEST_SUITE(codec_schema_rename_all) {
 
 ZEST_CASE(rename_policies) {
     // lower_camel
@@ -55,9 +57,9 @@ ZEST_CASE(rename_policies) {
         ZSTATIC_EXPECT(fields[2].name == "item_id");
     }
 
-    // default_config preserves names
+    // default_config<> preserves names
     {
-        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, default_config>::fields;
+        constexpr auto& fields = virtual_schema<fx::RenameAllTarget, default_config<>>::fields;
         ZSTATIC_EXPECT(fields[0].name == "user_name");
         ZSTATIC_EXPECT(fields[1].name == "total_score");
         ZSTATIC_EXPECT(fields[2].name == "item_id");
@@ -91,8 +93,8 @@ ZEST_CASE(alias_unaffected_by_rename_all) {
     ZSTATIC_EXPECT(fields[1].name == "totalScore");
 }
 
-};  // ZEST_SUITE(meta_schema_rename_all)
+};  // ZEST_SUITE(codec_schema_rename_all)
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

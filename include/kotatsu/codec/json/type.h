@@ -12,8 +12,8 @@
 
 namespace kotatsu::codec::json {
 
-/// Format tag: scopes a meta::repr specialization to the JSON backend
-/// (meta::repr<T, codec::json::format>).
+/// Format tag: scopes a codec::repr specialization to the JSON backend
+/// (codec::repr<T, codec::json::format>).
 ///
 /// # Lowerings
 ///
@@ -35,7 +35,7 @@ namespace kotatsu::codec::json {
 /// - string → quoted, escaped string; one that is not UTF-8 follows Config's
 ///   invalid_utf8
 /// - bytes → array of octet numbers
-/// - enumeration → underlying integer; through meta::enum_names, the
+/// - enumeration → underlying integer; through codec::enum_names, the
 ///   enumerator's name
 /// - array/set/tuple → `[...]`
 /// - map → object; non-string keys go through MapKeyWriter/MapKeyReader as
@@ -43,7 +43,7 @@ namespace kotatsu::codec::json {
 /// - structure → object keyed by (renamed) field names
 /// - variant → shaped by the spec's tag_mode (see encode_tagged_variant in
 ///   visit/encode.h); untagged variants emit the bare payload
-/// - RawValue → spliced into the output verbatim; an empty RawValue is `null`
+/// - raw_value → spliced into the output verbatim; an empty raw_value is `null`
 struct format {
     /// Its documents are UTF-8 text.
     constexpr static bool utf8 = true;

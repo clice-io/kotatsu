@@ -5,56 +5,56 @@
 // kotatsu as a module still has to pick these up textually, and anything
 // included here would duplicate declarations the module already provides.
 //
-// The kotatsu::meta entities an expansion refers to only have to be visible
-// where the macro is used, e.g. via a codec backend header such as
+// The kotatsu entities an expansion refers to only have to be visible where
+// the macro is used, e.g. via a codec backend header such as
 // "kotatsu/codec/json/json.h".
 
 #define KOTATSU_CONCAT_IMPL(a, b) a##b
 #define KOTATSU_CONCAT(a, b) KOTATSU_CONCAT_IMPL(a, b)
 
-// The DSL names are brought in with using-declarations rather than a
+// The attribute names are brought in with using-declarations rather than a
 // using-directive: block-scope using-declarations shadow outer names, while a
 // using-directive would make e.g. `rename` ambiguous with ::rename from
 // <stdio.h> at any use site outside namespace kotatsu.
 
-/// The entries of one annotation, checked, with the DSL names in scope: what
+/// The attributes of one annotation, checked, with their names in scope: what
 /// each macro below keeps.
-#define KANNOTATION_ENTRIES(...)                                                                   \
+#define KANNOTATION_ATTRIBUTES(...)                                                                \
     [] {                                                                                           \
-        using ::kotatsu::meta::dsl::rename;                                                        \
-        using ::kotatsu::meta::dsl::description;                                                   \
-        using ::kotatsu::meta::dsl::alias;                                                         \
-        using ::kotatsu::meta::dsl::skip;                                                          \
-        using ::kotatsu::meta::dsl::flatten;                                                       \
-        using ::kotatsu::meta::dsl::presence;                                                      \
-        using ::kotatsu::meta::dsl::as;                                                            \
-        using ::kotatsu::meta::dsl::with;                                                          \
-        using ::kotatsu::meta::dsl::schema_default;                                                \
-        using ::kotatsu::meta::dsl::minimum;                                                       \
-        using ::kotatsu::meta::dsl::maximum;                                                       \
-        using ::kotatsu::meta::dsl::choices;                                                       \
-        using ::kotatsu::meta::dsl::rename_all;                                                    \
-        using ::kotatsu::meta::dsl::deny_unknown_fields;                                           \
-        using ::kotatsu::meta::dsl::presence_all;                                                  \
-        using ::kotatsu::meta::dsl::tagged;                                                        \
-        using ::kotatsu::meta::dsl::tag;                                                           \
-        using ::kotatsu::meta::dsl::content;                                                       \
-        using ::kotatsu::meta::dsl::tag_names;                                                     \
+        using ::kotatsu::codec::dsl::rename;                                                       \
+        using ::kotatsu::codec::dsl::description;                                                  \
+        using ::kotatsu::codec::dsl::alias;                                                        \
+        using ::kotatsu::codec::dsl::skip;                                                         \
+        using ::kotatsu::codec::dsl::flatten;                                                      \
+        using ::kotatsu::codec::dsl::presence;                                                     \
+        using ::kotatsu::codec::dsl::as;                                                           \
+        using ::kotatsu::codec::dsl::with;                                                         \
+        using ::kotatsu::codec::dsl::schema_default;                                               \
+        using ::kotatsu::codec::dsl::minimum;                                                      \
+        using ::kotatsu::codec::dsl::maximum;                                                      \
+        using ::kotatsu::codec::dsl::choices;                                                      \
+        using ::kotatsu::codec::dsl::rename_all;                                                   \
+        using ::kotatsu::codec::dsl::deny_unknown_fields;                                          \
+        using ::kotatsu::codec::dsl::presence_all;                                                 \
+        using ::kotatsu::codec::dsl::tagged;                                                       \
+        using ::kotatsu::codec::dsl::tag;                                                          \
+        using ::kotatsu::codec::dsl::content;                                                      \
+        using ::kotatsu::codec::dsl::tag_names;                                                    \
         using ::kotatsu::meta::dsl::type;                                                          \
-        using enum ::kotatsu::meta::presence_kind;                                                 \
+        using enum ::kotatsu::codec::presence_kind;                                                \
         using ::kotatsu::naming::Casing;                                                           \
         return ::kotatsu::meta::make_annotation(__VA_ARGS__);                                      \
     }()
 
-/// Names a bundle of entries, reusable in any annotation as one more entry there, which the
-/// entries written after it override. Written at namespace scope:
+/// Names a bundle of attributes, reusable in any annotation as one more attribute there, which
+/// the attributes written after it override. Written at namespace scope:
 ///
 ///     KANNOTATION(help, description = "display this help", cli::names = {"-h", "--help"});
 ///
 ///     KANNOTATE(&help, help, description = "show usage")
 ///     bool help = false;
 #define KANNOTATION(name, ...)                                                                     \
-    [[maybe_unused]] constexpr inline auto name = KANNOTATION_ENTRIES(__VA_ARGS__)
+    [[maybe_unused]] constexpr inline auto name = KANNOTATION_ATTRIBUTES(__VA_ARGS__)
 
 /// Annotates a field of the class it is written in, above the field, which
 /// `&field` names as a member pointer names it:
@@ -71,14 +71,14 @@
 /// second annotation of one field. Type-valued attributes ride along as
 /// `as = type<Target>`, `with = type<Adapter>` and `presence = type<Pred>`.
 /// A field whose type KANNOTATE_TYPE annotates
-/// keeps that annotation: an entry given here overrides the type's, and the
+/// keeps that annotation: an attribute given here overrides the type's, and the
 /// rest of both apply.
 #define KANNOTATE(member, ...)                                                                     \
     [[maybe_unused]] static consteval auto __kotatsu__annotation(                                  \
         ::kotatsu::meta::detail::member_key_t<#member>) {                                          \
         [[maybe_unused]] ::std::type_identity<decltype(::kotatsu::meta::detail::member_probe {     \
         } member)> annotated;                                                                      \
-        return KANNOTATION_ENTRIES(__VA_ARGS__);                                                   \
+        return KANNOTATION_ATTRIBUTES(__VA_ARGS__);                                                \
     }
 
 /// Annotates a field from outside its class, for a class whose definition
@@ -95,7 +95,7 @@
         ::kotatsu::meta::detail::member_key_t<#member>) {                                          \
         static_assert(::std::is_member_object_pointer_v<decltype(member)>,                         \
                       "KANNOTATE_FIELD names a data member: &T::field");                           \
-        return KANNOTATION_ENTRIES(__VA_ARGS__);                                                   \
+        return KANNOTATION_ATTRIBUTES(__VA_ARGS__);                                                \
     }                                                                                              \
     static_assert(true)
 
@@ -114,9 +114,9 @@
 
 /// Annotates a type, wherever a value of it is: a document's root, an element,
 /// a field. It takes the type's description, the presence of a field of it,
-/// the struct and variant entries (rename_all, deny_unknown_fields,
-/// presence_all, tag, tag_names, ...) and extension entries; a field's
-/// own annotation overrides them entry by entry. A variant that a document
+/// the struct and variant attributes (rename_all, deny_unknown_fields,
+/// presence_all, tag, tag_names, ...) and other modules' attributes; a
+/// field's own annotation overrides them attribute by attribute. A variant that a document
 /// holds other than as a field takes its tagging here, as a class derived from
 /// the std::variant:
 ///
@@ -143,7 +143,7 @@
 #define KANNOTATE_TYPE(annotated, ...)                                                             \
     KOTATSU_WHEN(KOTATSU_DECLARES(annotated))(annotated;) [[maybe_unused]] constexpr auto          \
         __kotatsu__type_annotation(::std::type_identity<annotated>) {                              \
-        return KANNOTATION_ENTRIES(__VA_ARGS__);                                                   \
+        return KANNOTATION_ATTRIBUTES(__VA_ARGS__);                                                \
     }                                                                                              \
     static_assert(::kotatsu::meta::detail::has_type_annotation<annotated>,                         \
                   "KANNOTATE_TYPE: write it in the namespace of the type it annotates")

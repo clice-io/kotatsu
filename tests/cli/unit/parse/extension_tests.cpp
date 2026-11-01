@@ -1,5 +1,5 @@
 // What parse() offers beyond the fields themselves: aliases, a visit of the arguments in
-// order, the help option's stop, and values of types of their own through meta::repr.
+// order, the help option's stop, and values of types of their own through codec::repr.
 
 #include <expected>
 #include <optional>
@@ -78,7 +78,7 @@ std::expected<T, Error> parse_line(std::string_view line) {
 }  // namespace kotatsu::cli
 
 template <>
-struct kotatsu::meta::repr<kotatsu::cli::Port> {
+struct kotatsu::codec::repr<kotatsu::cli::Port> {
     using type = std::string;
 
     template <typename Config>

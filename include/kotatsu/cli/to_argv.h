@@ -177,7 +177,7 @@ namespace kotatsu::codec {
 
 /// An enum writes as its name (cli::detail::enum_text); a value without one fails.
 template <typename E, typename Config>
-    requires (std::is_enum_v<E> && !meta::has_repr<E, meta::format_of_t<cli::detail::Writer>>)
+    requires (std::is_enum_v<E> && !codec::has_repr<E, codec::format_of_t<cli::detail::Writer>>)
 struct serialize_visit<cli::detail::Writer, E, Config> {
     static bool visit(cli::detail::Writer& writer, const E& value) {
         auto name = meta::enum_name(value);

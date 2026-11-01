@@ -14,8 +14,8 @@
 #include "codec/harness/fixtures/containers.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/compare.h"
-#include "kotatsu/meta/repr.h"
 #include "kotatsu/codec/bincode/bincode.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::codec {
 
@@ -48,7 +48,7 @@ std::vector<std::byte> bytes(std::initializer_list<unsigned> values) {
 
 }  // namespace kotatsu::codec
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 template <>
 struct repr<codec::Page> {
@@ -81,7 +81,7 @@ struct repr<codec::Framed> {
     }
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec
 
 namespace kotatsu::codec {
 

@@ -1,6 +1,6 @@
 #pragma once
 
-// meta::repr fixtures the codec's tests use beyond tests/fixtures/repr.h:
+// codec::repr fixtures the codec's tests use beyond tests/fixtures/repr.h:
 // every form of the repr protocol, and the plain structs that describe the
 // documents they encode to. DynamicBox writes through the codec itself.
 
@@ -19,11 +19,11 @@
 #include "codec/harness/fixtures/containers.h"
 #include "fixtures/repr.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/repr.h"
 #include "kotatsu/meta/type_kind.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/encode.h"
 #include "kotatsu/codec/macro.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 
@@ -260,7 +260,7 @@ struct LoadOkDocument {
 
 }  // namespace kotatsu::test
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 template <>
 struct repr<test::Relation> {
@@ -333,7 +333,7 @@ struct repr<test::DynamicBox> {
 
     template <typename Config>
     static bool deserialize(auto& vis, test::DynamicBox& box) {
-        if(vis.peek_kind() == type_kind::string) {
+        if(vis.peek_kind() == meta::type_kind::string) {
             std::string text;
             if(!vis.visit_str(text)) {
                 return false;
@@ -441,4 +441,4 @@ struct repr<test::BoxedScalar> {
     }
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

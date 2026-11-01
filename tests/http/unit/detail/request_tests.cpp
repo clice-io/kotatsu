@@ -35,7 +35,7 @@ struct Unencodable {};
 }  // namespace kotatsu::http
 
 #if KOTATSU_HTTP_HAS_CODEC_JSON
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 template <>
 struct repr<http::Unencodable> {
@@ -47,7 +47,7 @@ struct repr<http::Unencodable> {
     }
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec
 #endif
 
 namespace kotatsu::http {

@@ -4,9 +4,9 @@
 
 #include <cstdint>
 
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/repr.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/macro.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 
@@ -36,7 +36,7 @@ enum class Mixed : std::uint8_t { FullControl, readOnly, HTTPServer, no_access }
 }  // namespace kotatsu::test
 
 template <>
-struct kotatsu::meta::repr<kotatsu::test::NamedAccess> : meta::enum_names<> {};
+struct kotatsu::codec::repr<kotatsu::test::NamedAccess> : codec::enum_names<> {};
 
 template <>
-struct kotatsu::meta::repr<kotatsu::test::CamelAccess> : meta::enum_names<> {};
+struct kotatsu::codec::repr<kotatsu::test::CamelAccess> : codec::enum_names<> {};

@@ -6,41 +6,47 @@
 #include <variant>
 
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::attrs_of_t;
+using meta::field_attrs_t;
+using meta::make_annotation;
+using meta::name_key;
+using meta::type_attrs_t;
 
 namespace {
 
 struct full_tag {
-    constexpr static auto entries = make_annotation(dsl::rename = "userId",
-                                                    dsl::alias = {"user_id", "uid"},
-                                                    dsl::description = "User identifier.");
+    constexpr static auto attributes = make_annotation(dsl::rename = "userId",
+                                                       dsl::alias = {"user_id", "uid"},
+                                                       dsl::description = "User identifier.");
 };
 
 struct schema_tag {
-    constexpr static auto entries = make_annotation(dsl::minimum = 1,
-                                                    dsl::maximum = 2.5,
-                                                    dsl::choices = {"off", "on"},
-                                                    dsl::schema_default = false);
+    constexpr static auto attributes = make_annotation(dsl::minimum = 1,
+                                                       dsl::maximum = 2.5,
+                                                       dsl::choices = {"off", "on"},
+                                                       dsl::schema_default = false);
 };
 
 struct optional_tag {
-    constexpr static auto entries = make_annotation(dsl::presence = presence_kind::optional);
+    constexpr static auto attributes = make_annotation(dsl::presence = presence_kind::optional);
 };
 
 struct skip_tag {
-    constexpr static auto entries = make_annotation(dsl::skip = true);
+    constexpr static auto attributes = make_annotation(dsl::skip = true);
 };
 
 struct flatten_tag {
-    constexpr static auto entries = make_annotation(dsl::flatten = true);
+    constexpr static auto attributes = make_annotation(dsl::flatten = true);
 };
 
 struct probe_adapter {};
 
 struct with_tag {
-    constexpr static auto entries = make_annotation(dsl::with = dsl::type<probe_adapter>);
+    constexpr static auto attributes = make_annotation(dsl::with = dsl::type<probe_adapter>);
 };
 
 struct custom_pred {
@@ -50,21 +56,21 @@ struct custom_pred {
 };
 
 struct extras_tag {
-    constexpr static auto entries =
+    constexpr static auto attributes =
         make_annotation(dsl::description = "Converted field.", dsl::as = dsl::type<std::int64_t>);
 };
 
-/// The spec of an extension, a module beside meta with entries of its own.
+/// The spec of an extension, a module beside the codec with attributes of its own.
 struct probe_extension {
     std::string_view label;
     int weight = 0;
 };
 
-[[maybe_unused]] constexpr inline dsl::member_proxy<&probe_extension::label> label{};
-[[maybe_unused]] constexpr inline dsl::member_proxy<&probe_extension::weight> weight{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&probe_extension::label> label{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&probe_extension::weight> weight{};
 
 struct extension_tag {
-    constexpr static auto entries =
+    constexpr static auto attributes =
         make_annotation(dsl::description = "Weighed.", label = "probe", weight = 3);
 };
 
@@ -73,13 +79,13 @@ struct extension_tag {
 
 struct holds_extension {
     static consteval auto __kotatsu__annotation(name_key<"weighed">) {
-        return extension_tag::entries;
+        return extension_tag::attributes;
     }
 
     int weighed;
 
     static consteval auto __kotatsu__annotation(name_key<"plain">) {
-        return full_tag::entries;
+        return full_tag::attributes;
     }
 
     int plain;
@@ -99,44 +105,44 @@ struct rect_alt {
 };
 
 struct internal_struct_tag {
-    constexpr static auto entries =
+    constexpr static auto attributes =
         make_annotation(dsl::tag = "kind", dsl::tag_names = {"circle", "rect"});
 };
 
 struct adjacent_struct_tag {
-    constexpr static auto entries = make_annotation(dsl::tag = "t", dsl::content = "c");
+    constexpr static auto attributes = make_annotation(dsl::tag = "t", dsl::content = "c");
 };
 
 struct external_struct_tag {
-    constexpr static auto entries = make_annotation(dsl::tagged = true);
+    constexpr static auto attributes = make_annotation(dsl::tagged = true);
 };
 
 struct config_struct_tag {
-    constexpr static auto entries = make_annotation(dsl::rename_all = naming::Casing::LowerCamel,
-                                                    dsl::deny_unknown_fields = true);
+    constexpr static auto attributes = make_annotation(dsl::rename_all = naming::Casing::LowerCamel,
+                                                       dsl::deny_unknown_fields = true);
 };
 
 struct spec_struct {
     static consteval auto __kotatsu__annotation(name_key<"user_id">) {
-        return full_tag::entries;
+        return full_tag::attributes;
     }
 
     int user_id;
 
     static consteval auto __kotatsu__annotation(name_key<"internal">) {
-        return skip_tag::entries;
+        return skip_tag::attributes;
     }
 
     int internal = 0;
 
     static consteval auto __kotatsu__annotation(name_key<"pair">) {
-        return flatten_tag::entries;
+        return flatten_tag::attributes;
     }
 
     inner_pair pair;
 
     static consteval auto __kotatsu__annotation(name_key<"retries">) {
-        return optional_tag::entries;
+        return optional_tag::attributes;
     }
 
     int retries = 0;
@@ -144,13 +150,13 @@ struct spec_struct {
 
 struct behavior_struct {
     static consteval auto __kotatsu__annotation(name_key<"converted">) {
-        return extras_tag::entries;
+        return extras_tag::attributes;
     }
 
     std::int32_t converted;
 
     static consteval auto __kotatsu__annotation(name_key<"adapted">) {
-        return with_tag::entries;
+        return with_tag::attributes;
     }
 
     int adapted;
@@ -165,13 +171,13 @@ struct behavior_struct {
 /// Each field merges the same untagged struct spec, the last none at all.
 struct policy_fields {
     static consteval auto __kotatsu__annotation(name_key<"lhs">) {
-        return config_struct_tag::entries;
+        return config_struct_tag::attributes;
     }
 
     inner_pair lhs;
 
     static consteval auto __kotatsu__annotation(name_key<"rhs">) {
-        return config_struct_tag::entries;
+        return config_struct_tag::attributes;
     }
 
     inner_pair rhs;
@@ -186,7 +192,7 @@ struct policy_fields {
 struct shape;
 
 constexpr auto __kotatsu__type_annotation(std::type_identity<shape>) {
-    return internal_struct_tag::entries;
+    return internal_struct_tag::attributes;
 }
 
 struct shape : std::variant<circle_alt, rect_alt> {
@@ -196,17 +202,17 @@ struct shape : std::variant<circle_alt, rect_alt> {
 struct adjacent_shape;
 
 constexpr auto __kotatsu__type_annotation(std::type_identity<adjacent_shape>) {
-    return adjacent_struct_tag::entries;
+    return adjacent_struct_tag::attributes;
 }
 
 struct adjacent_shape : std::variant<circle_alt, rect_alt> {
     using variant::variant;
 };
 
-ZEST_SUITE(meta_spec) {
+ZEST_SUITE(codec_attribute) {
 
-ZEST_CASE(entries_fold_into_values) {
-    constexpr const field_spec& spec = attrs::spec<full_tag>::value;
+ZEST_CASE(attributes_fold_into_values) {
+    constexpr const field_spec& spec = meta::spec_attr<full_tag, field_spec>::value;
     ZSTATIC_EXPECT(spec.rename == "userId");
     ZSTATIC_EXPECT(spec.description == "User identifier.");
     ZSTATIC_EXPECT(spec.alias.size() == 2u);
@@ -218,19 +224,21 @@ ZEST_CASE(entries_fold_into_values) {
     ZSTATIC_EXPECT(std::tuple_size_v<field_attrs_t<spec_struct, 0>> == 1);
 }
 
-ZEST_CASE(entries_fold_into_what_a_schema_states) {
-    constexpr const field_spec& spec = attrs::spec<schema_tag>::value;
+ZEST_CASE(attributes_fold_into_what_a_schema_states) {
+    constexpr const field_spec& spec = meta::spec_attr<schema_tag, field_spec>::value;
     ZSTATIC_EXPECT(std::get<std::int64_t>(spec.minimum) == 1);
     ZSTATIC_EXPECT(std::get<double>(spec.maximum) == 2.5);
     ZSTATIC_EXPECT(spec.choices[1] == "on");
     ZSTATIC_EXPECT(!spec.schema_default);
     // Unset, a field states its default and no bounds.
-    ZSTATIC_EXPECT(attrs::spec<full_tag>::value.schema_default);
-    ZSTATIC_EXPECT(std::holds_alternative<std::monostate>(attrs::spec<full_tag>::value.minimum));
+    ZSTATIC_EXPECT(meta::spec_attr<full_tag, field_spec>::value.schema_default);
+    ZSTATIC_EXPECT(std::holds_alternative<std::monostate>(
+        meta::spec_attr<full_tag, field_spec>::value.minimum));
     // Unsigned values keep their sign.
-    ZSTATIC_EXPECT(std::get<std::uint64_t>(
-                       detail::field_spec_from(make_annotation(dsl::maximum = ~0ULL)).maximum) ==
-                   ~0ULL);
+    ZSTATIC_EXPECT(
+        std::get<std::uint64_t>(
+            meta::detail::spec_from<field_spec>(make_annotation(dsl::maximum = ~0ULL)).maximum) ==
+        ~0ULL);
 }
 
 ZEST_CASE(numbers_compare_exactly) {
@@ -245,33 +253,36 @@ ZEST_CASE(numbers_compare_exactly) {
                    partial_ordering::unordered);
 }
 
-ZEST_CASE(entries_keep_type_components) {
-    ZSTATIC_EXPECT(attrs::spec<extras_tag>::value.description == "Converted field.");
-    using entries = std::remove_const_t<decltype(extras_tag::entries)>;
-    ZSTATIC_EXPECT((std::is_same_v<std::tuple_element_t<1, entries>,
-                                   dsl::type_component<dsl::aspect::as, std::int64_t>>));
+ZEST_CASE(attributes_keep_type_components) {
+    ZSTATIC_EXPECT(meta::spec_attr<extras_tag, field_spec>::value.description ==
+                   "Converted field.");
+    using attributes = std::remove_const_t<decltype(extras_tag::attributes)>;
+    ZSTATIC_EXPECT((std::is_same_v<std::tuple_element_t<1, attributes>,
+                                   dsl::representation_component<behavior::as<std::int64_t>>>));
 }
 
-ZEST_CASE(entries_keep_extension_specs_beside_field_spec) {
-    using spec = attrs::spec<extension_tag>;
-    ZSTATIC_EXPECT(spec::value.description == "Weighed.");
-    ZSTATIC_EXPECT(std::get<probe_extension>(spec::extensions).label == "probe");
-    ZSTATIC_EXPECT(std::get<probe_extension>(spec::extensions).weight == 3);
-    // An annotation without extension entries carries none.
-    ZSTATIC_EXPECT(std::tuple_size_v<decltype(attrs::spec<full_tag>::extensions)> == 0);
+ZEST_CASE(attributes_keep_extension_specs_beside_field_spec) {
+    ZSTATIC_EXPECT(meta::spec_attr<extension_tag, field_spec>::value.description == "Weighed.");
+    using probe = meta::spec_attr<extension_tag, probe_extension>;
+    ZSTATIC_EXPECT(probe::value.label == "probe");
+    ZSTATIC_EXPECT(probe::value.weight == 3);
+    ZSTATIC_EXPECT(extensions_of<meta::annotation_attrs_t<extension_tag>>.size() == 1U);
+    // An annotation without extension attributes carries none.
+    ZSTATIC_EXPECT(extensions_of<meta::annotation_attrs_t<full_tag>>.empty());
 }
 
-ZEST_CASE(extension_entries_are_told_apart_by_their_member) {
-    ZSTATIC_EXPECT(detail::component_kinds_unique<decltype(label = "a"), decltype(weight = 1)>());
-    ZSTATIC_EXPECT(!detail::component_kinds_unique<decltype(label = "a"), decltype(label = "b")>());
+ZEST_CASE(extension_attributes_are_told_apart_by_their_member) {
+    ZSTATIC_EXPECT(meta::detail::attributes_unique<decltype(label = "a"), decltype(weight = 1)>());
     ZSTATIC_EXPECT(
-        detail::component_kinds_unique<decltype(dsl::rename = "a"), decltype(label = "b")>());
+        !meta::detail::attributes_unique<decltype(label = "a"), decltype(label = "b")>());
+    ZSTATIC_EXPECT(
+        meta::detail::attributes_unique<decltype(dsl::rename = "a"), decltype(label = "b")>());
 }
 
 ZEST_CASE(extension_of_finds_a_field_s_extension) {
     ZSTATIC_EXPECT(extension_of<probe_extension, holds_extension, 0>->weight == 3);
     ZSTATIC_EXPECT(extension_of<probe_extension, holds_extension, 1> == nullptr);
-    ZSTATIC_EXPECT(extension_in<probe_extension, attrs_of_t<int>> == nullptr);
+    ZSTATIC_EXPECT(meta::spec_in<probe_extension, attrs_of_t<int>> == nullptr);
 }
 
 ZEST_CASE(field_info_carries_extensions_and_declared_names) {
@@ -294,7 +305,7 @@ ZEST_CASE(field_info_finds_extensions_at_compile_time) {
 
 ZEST_CASE(annotation_maps_components_to_behavior_attrs) {
     using converted = field_attrs_t<behavior_struct, 0>;
-    ZSTATIC_EXPECT(tuple_has_spec_v<converted, attrs::spec>);
+    ZSTATIC_EXPECT(meta::spec_in<field_spec, converted> != nullptr);
     ZSTATIC_EXPECT(spec_of<converted>.description == "Converted field.");
     ZSTATIC_EXPECT((tuple_has_v<converted, behavior::as<std::int64_t>>));
 
@@ -305,11 +316,11 @@ ZEST_CASE(annotation_maps_components_to_behavior_attrs) {
     ZSTATIC_EXPECT(spec_of<omitted>.presence == presence_kind::omit_if);
 }
 
-ZEST_CASE(presence_value_and_predicate_are_one_entry) {
+ZEST_CASE(presence_value_and_predicate_are_one_attribute) {
     // So that one annotation cannot write both.
     using value = decltype(dsl::presence = presence_kind::optional);
     using predicate = decltype(dsl::presence = dsl::type<custom_pred>);
-    ZSTATIC_EXPECT(!detail::component_kinds_unique<value, predicate>());
+    ZSTATIC_EXPECT(!meta::detail::attributes_unique<value, predicate>());
 }
 
 ZEST_CASE(spec_of_reads_annotation_and_defaults_to_empty) {
@@ -350,27 +361,31 @@ ZEST_CASE(name_only_spec_shares_slot_with_bare_field) {
     ZSTATIC_EXPECT(spec_of<typename retries_slot::attrs>.presence == presence_kind::optional);
 }
 
-ZEST_CASE(struct_entries_fold_into_values_and_derive_tagging) {
-    constexpr const struct_spec& internal = attrs::struct_spec<internal_struct_tag>::value;
+ZEST_CASE(struct_attributes_fold_into_values_and_derive_tagging) {
+    constexpr const struct_spec& internal =
+        meta::spec_attr<internal_struct_tag, struct_spec>::value;
     ZSTATIC_EXPECT(internal.tagging == tag_mode::internal);
     ZSTATIC_EXPECT(internal.tag == "kind");
     ZSTATIC_EXPECT(internal.tag_names.size() == 2u);
     ZSTATIC_EXPECT(internal.tag_names[1] == "rect");
 
-    constexpr const struct_spec& adjacent = attrs::struct_spec<adjacent_struct_tag>::value;
+    constexpr const struct_spec& adjacent =
+        meta::spec_attr<adjacent_struct_tag, struct_spec>::value;
     ZSTATIC_EXPECT(adjacent.tagging == tag_mode::adjacent);
     ZSTATIC_EXPECT(adjacent.tag == "t");
     ZSTATIC_EXPECT(adjacent.content == "c");
 
-    ZSTATIC_EXPECT(attrs::struct_spec<external_struct_tag>::value.tagging == tag_mode::external);
+    ZSTATIC_EXPECT(meta::spec_attr<external_struct_tag, struct_spec>::value.tagging ==
+                   tag_mode::external);
 
-    constexpr const struct_spec& config = attrs::struct_spec<config_struct_tag>::value;
+    constexpr const struct_spec& config = meta::spec_attr<config_struct_tag, struct_spec>::value;
     ZSTATIC_EXPECT(config.rename_all == naming::Casing::LowerCamel);
     ZSTATIC_EXPECT(config.deny_unknown_fields);
     ZSTATIC_EXPECT(config.tagging == tag_mode::none);
 
-    ZSTATIC_EXPECT(detail::struct_spec_from(make_annotation(dsl::tagged = false)).tagging ==
-                   tag_mode::none);
+    ZSTATIC_EXPECT(
+        meta::detail::spec_from<struct_spec>(make_annotation(dsl::tagged = false)).tagging ==
+        tag_mode::none);
 }
 
 ZEST_CASE(casing_maps_to_rename_policies) {
@@ -385,7 +400,7 @@ ZEST_CASE(casing_maps_to_rename_policies) {
 }
 
 ZEST_CASE(type_annotation_attaches_struct_spec) {
-    ZSTATIC_EXPECT(tuple_has_spec_v<type_attrs_t<shape>, attrs::struct_spec>);
+    ZSTATIC_EXPECT(meta::spec_in<struct_spec, type_attrs_t<shape>> != nullptr);
     ZSTATIC_EXPECT(struct_spec_of<type_attrs_t<shape>>.tag == "kind");
     ZSTATIC_EXPECT((&struct_spec_of<std::tuple<>> == &empty_struct_spec));
 }
@@ -424,8 +439,8 @@ ZEST_CASE(variant_type_info_carries_struct_spec) {
     ZEXPECT(bare.alt_names.size() == 0u);
 }
 
-};  // ZEST_SUITE(meta_spec)
+};  // ZEST_SUITE(codec_attribute)
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

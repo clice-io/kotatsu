@@ -12,7 +12,7 @@
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/structs.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/macro.h"
 
 namespace kotatsu::test {

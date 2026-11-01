@@ -48,7 +48,7 @@ struct Label {
 
 }  // namespace kotatsu::codec
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 template <>
 struct repr<codec::Page> {
@@ -76,7 +76,7 @@ struct repr<codec::Page, codec::toml::format> {
     }
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec
 
 namespace kotatsu::codec {
 

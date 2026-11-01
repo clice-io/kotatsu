@@ -113,7 +113,7 @@ enum class type_kind : std::uint8_t {
     string,
     /// Anything convertible to std::span<const std::byte>.
     bytes,
-    /// enum / enum class: its underlying integer, or a name through meta::enum_names.
+    /// enum / enum class: its underlying integer, or a name through codec::enum_names.
     enumeration,
 
     /// Homogeneous sequence ranges (vector, span, list, ...). std::array is
@@ -138,7 +138,7 @@ enum class type_kind : std::uint8_t {
 
     /// Not classifiable (or explicitly schema_opaque); codecs reject it.
     unknown = 254,
-    /// meta::dynamic — shape known only at runtime; schemas degrade to "any".
+    /// codec::dynamic — shape known only at runtime; schemas degrade to "any".
     any = 255,
 };
 
@@ -153,9 +153,10 @@ constexpr bool is_floating_kind(type_kind k) noexcept {
 template <typename T>
 constexpr inline bool schema_opaque = false;
 
-/// Marker representation for meta::repr: the shape is only known at runtime.
-/// Maps to type_kind::any, so schema output degrades to "any".
-struct dynamic {};
+/// Whether T stands for a value whose shape is known only at run time
+/// (codec::dynamic): its kind is any.
+template <typename T>
+constexpr inline bool runtime_shaped = false;
 
 namespace detail {
 
@@ -180,7 +181,7 @@ consteval type_kind kind_of() {
         return kind_of<std::remove_cv_t<T>>();
     } else if constexpr(schema_opaque<T>) {
         return type_kind::unknown;
-    } else if constexpr(std::is_same_v<T, dynamic>) {
+    } else if constexpr(runtime_shaped<T>) {
         return type_kind::any;
     } else if constexpr(std::is_enum_v<T>) {
         return type_kind::enumeration;

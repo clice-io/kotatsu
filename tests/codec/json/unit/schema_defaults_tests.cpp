@@ -12,16 +12,16 @@
 #include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/json/schema.h"
 #include "kotatsu/codec/macro.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 namespace {
 
-/// A non-reflectable class (raw kind unknown) whose meta::repr resolves to a
+/// A non-reflectable class (raw kind unknown) whose codec::repr resolves to a
 /// struct with an optional member: the schema describes the representation's
 /// shape, but the defaults pass covers only types the decoder reads
 /// directly, so a repr-routed root stays unannotated.
@@ -172,7 +172,7 @@ struct defaults_omitted {
 enum class defaults_level : std::uint8_t { Low = 0, High = 1 };
 
 struct defaults_with_enum {
-    KANNOTATE(&log_level, presence = optional, with = type<meta::enum_names<>>)
+    KANNOTATE(&log_level, presence = optional, with = type<codec::enum_names<>>)
     defaults_level log_level = defaults_level::High;
 };
 
@@ -627,4 +627,4 @@ ZEST_CASE(defaults_type_erased_absent) {
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

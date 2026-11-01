@@ -8,8 +8,8 @@
 #include <string_view>
 
 #include "kotatsu/ipc/protocol.h"
-#include "kotatsu/meta/repr.h"
 #include "kotatsu/codec/context.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 
@@ -69,7 +69,7 @@ struct NotificationTraits<test::NoParams> {
 
 }  // namespace kotatsu::ipc::protocol
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 template <>
 struct repr<test::Unwritable> {
@@ -81,4 +81,4 @@ struct repr<test::Unwritable> {
     }
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

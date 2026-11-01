@@ -16,7 +16,7 @@
 #include "kotatsu/codec/repr.h"
 
 // The dyn backend is deliberately format-agnostic: its visitors declare no
-// `format` tag, so format-scoped meta::repr specializations never apply here
+// `format` tag, so format-scoped codec::repr specializations never apply here
 // — only the format-neutral repr<T>. dyn::Value is the interchange DOM that
 // other backends convert through, and a concrete format's repr leaking into
 // it would bake that format's shape into every conversion.

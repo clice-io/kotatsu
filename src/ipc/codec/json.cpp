@@ -39,16 +39,16 @@ struct outgoing_error_response_message {
 
 struct json_rpc_incoming {
     std::optional<std::string> jsonrpc;
-    // RawValue, not optional<RequestID>, so that a null id stays apart from
+    // raw_value, not optional<RequestID>, so that a null id stays apart from
     // a missing one: absent → empty(), null → "null" text.
     KANNOTATE(&id, presence = optional)
-    codec::RawValue id;
+    codec::raw_value id;
     std::optional<std::string> method;
-    std::optional<codec::RawValue> params;
-    // Not optional<RawValue> because "result": null is a valid success
+    std::optional<codec::raw_value> params;
+    // Not optional<raw_value> because "result": null is a valid success
     // response — optional would lose it as nullopt.
     KANNOTATE(&result, presence = optional)
-    codec::RawValue result;
+    codec::raw_value result;
     std::optional<Error> error;
 };
 

@@ -1,7 +1,7 @@
 #pragma once
 
 // The shared protocol suite. The visit layer (visit/encode.h, visit/decode.h,
-// meta::repr, attrs, config) is one protocol shared by every backend, so its
+// codec::repr, attrs, config) is one protocol shared by every backend, so its
 // behaviour is written once, in the area headers next to this one, and each
 // backend runs every area through a Kit over its adapter:
 //
@@ -63,7 +63,7 @@ struct Caps {
     bool non_finite = false;
     /// The layout is a function of the type alone (fbs), so nothing that
     /// shapes a document by the value or the config compiles:
-    /// nan_repr::String and meta::dynamic reprs.
+    /// nan_repr::String and codec::dynamic reprs.
     bool layout_computed = false;
     /// Documents come from outside the program, so decoding garbage is in
     /// scope: the hostile sweep applies.
@@ -72,7 +72,7 @@ struct Caps {
     /// dependency that fails on some garbage worse than by rejecting it. The
     /// case stays registered and reports itself skipped with this reason.
     std::string_view hostile_gap = {};
-    /// A format tag scopes meta::repr specializations to the backend.
+    /// A format tag scopes codec::repr specializations to the backend.
     bool format_tag = false;
     /// Documents are UTF-8 text, so a string must be UTF-8 to encode.
     bool utf8_text = false;

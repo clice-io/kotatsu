@@ -11,7 +11,7 @@
 #include "kotatsu/cli/table/arg.h"
 #include "kotatsu/support/config.h"
 #include "kotatsu/support/naming.h"
-#include "kotatsu/meta/type_info.h"
+#include "kotatsu/codec/type_info.h"
 
 // What a struct of options declares, read from its type_info: the shape of each field and the
 // names each option registers. A command is built from it at run time, and checked against it
@@ -73,25 +73,25 @@ struct FieldUse {
     ArgSpec spec = {};
     /// Whether the field is a std::optional, the type below it `type`.
     bool optional = false;
-    const meta::type_info* type = nullptr;
+    const codec::type_info* type = nullptr;
     /// For an argument: how it takes values, whether it collects them, how many a tuple
     /// takes, and the type of one value (a list's element).
     Shape shape = Shape::Value;
     bool list = false;
     std::uint32_t tuple_size = 0;
-    const meta::type_info* value_type = nullptr;
+    const codec::type_info* value_type = nullptr;
 };
 
-constexpr FieldUse use_of(const meta::field_info& field) {
+constexpr FieldUse use_of(const codec::field_info& field) {
     FieldUse use;
     if(field.has_extension<ArgSpec>()) {
         use.spec = *field.extension<ArgSpec>();
     }
-    use.spec.required = field.presence == meta::presence_kind::required;
+    use.spec.required = field.presence == codec::presence_kind::required;
     use.type = &field.type();
     if(use.type->kind == meta::type_kind::optional) {
         use.optional = true;
-        use.type = &static_cast<const meta::optional_type_info&>(*use.type).inner();
+        use.type = &static_cast<const codec::optional_type_info&>(*use.type).inner();
     }
     use.value_type = use.type;
     if(use.spec.commands.given) {
@@ -110,14 +110,14 @@ constexpr FieldUse use_of(const meta::field_info& field) {
         case meta::type_kind::array:
         case meta::type_kind::set:
             use.list = true;
-            use.value_type = &static_cast<const meta::array_type_info&>(*use.type).element();
+            use.value_type = &static_cast<const codec::array_type_info&>(*use.type).element();
             break;
         default: break;
     }
     if(use.value_type->kind == meta::type_kind::tuple) {
         use.shape = Shape::Tuple;
         use.tuple_size = static_cast<std::uint32_t>(
-            static_cast<const meta::tuple_type_info&>(*use.value_type).elements.size());
+            static_cast<const codec::tuple_type_info&>(*use.value_type).elements.size());
     } else if(use.value_type->kind == meta::type_kind::boolean && !use.list &&
               !use.spec.positional && !use.spec.rest) {
         use.shape = Shape::Flag;
@@ -209,8 +209,8 @@ constexpr std::vector<NameForm> name_forms(const FieldUse& use, std::string_view
 
 /// The word that names alternative `index` of a variant of subcommands: its tag name, else its
 /// type's name in kebab case.
-constexpr std::string subcommand_name(const meta::variant_type_info& variant, std::size_t index) {
-    if(variant.tagging != meta::tag_mode::none && index < variant.alt_names.size()) {
+constexpr std::string subcommand_name(const codec::variant_type_info& variant, std::size_t index) {
+    if(variant.tagging != codec::tag_mode::none && index < variant.alt_names.size()) {
         return std::string(variant.alt_names[index]);
     }
     return kebab(variant.alternatives[index]().type_name);
@@ -245,9 +245,10 @@ class DeclarationCheck {
         }
     }
 
-    constexpr void check_subcommands(const meta::variant_type_info& variant, const FieldUse& use) {
+    constexpr void check_subcommands(const codec::variant_type_info& variant, const FieldUse& use) {
         claim_subcommands();
-        if(variant.tagging != meta::tag_mode::none && variant.tagging != meta::tag_mode::external) {
+        if(variant.tagging != codec::tag_mode::none &&
+           variant.tagging != codec::tag_mode::external) {
             KOTATSU_THROW("cli: subcommands are named by their tag names alone");
         }
         std::vector<std::string> words;
@@ -258,7 +259,7 @@ class DeclarationCheck {
             }
             words.push_back(subcommand_name(variant, i));
             DeclarationCheck inner;
-            inner.check(static_cast<const meta::struct_type_info&>(alternative));
+            inner.check(static_cast<const codec::struct_type_info&>(alternative));
         }
         for(auto hidden: use.spec.hidden_sub) {
             if(std::ranges::find(words, hidden) == words.end()) {
@@ -274,8 +275,8 @@ class DeclarationCheck {
     /// An exclusive field's alternatives join the command's arguments; one holds no
     /// subcommands and no exclusive field of its own, and one alternative alone has positional
     /// arguments, which the argv then gives to it.
-    constexpr void check_exclusive(const meta::variant_type_info& variant) {
-        if(variant.tagging != meta::tag_mode::none) {
+    constexpr void check_exclusive(const codec::variant_type_info& variant) {
+        if(variant.tagging != codec::tag_mode::none) {
             KOTATSU_THROW("cli: an exclusive field is untagged");
         }
         std::size_t positional = 0;
@@ -285,7 +286,7 @@ class DeclarationCheck {
                 KOTATSU_THROW("cli: an alternative of an exclusive field is a struct");
             }
             alternative_positional = false;
-            add_struct(static_cast<const meta::struct_type_info&>(alternative()));
+            add_struct(static_cast<const codec::struct_type_info&>(alternative()));
             positional += alternative_positional ? 1 : 0;
         }
         in_alternative = false;
@@ -294,7 +295,7 @@ class DeclarationCheck {
         }
     }
 
-    constexpr void check_arg(const meta::field_info& field, const FieldUse& use) {
+    constexpr void check_arg(const codec::field_info& field, const FieldUse& use) {
         if(use.spec.rest) {
             if(!use.list) {
                 KOTATSU_THROW("cli: the rest is a list");
@@ -328,7 +329,7 @@ class DeclarationCheck {
         }
     }
 
-    constexpr void add_struct(const meta::struct_type_info& type) {
+    constexpr void add_struct(const codec::struct_type_info& type) {
         for(const auto& field: type.fields) {
             const auto use = use_of(field);
             if(use.spec.exclusive && use.kind != FieldUse::Kind::Exclusive) {
@@ -342,15 +343,15 @@ class DeclarationCheck {
             }
             switch(use.kind) {
                 case FieldUse::Kind::Group:
-                    add_struct(static_cast<const meta::struct_type_info&>(*use.type));
+                    add_struct(static_cast<const codec::struct_type_info&>(*use.type));
                     break;
                 case FieldUse::Kind::Subcommands:
-                    check_subcommands(static_cast<const meta::variant_type_info&>(*use.type), use);
+                    check_subcommands(static_cast<const codec::variant_type_info&>(*use.type), use);
                     break;
                 // The subcommands of a set are checked where their files add them.
                 case FieldUse::Kind::Commands: claim_subcommands(); break;
                 case FieldUse::Kind::Exclusive:
-                    check_exclusive(static_cast<const meta::variant_type_info&>(*use.type));
+                    check_exclusive(static_cast<const codec::variant_type_info&>(*use.type));
                     break;
                 case FieldUse::Kind::Arg: check_arg(field, use); break;
             }
@@ -358,7 +359,7 @@ class DeclarationCheck {
     }
 
 public:
-    constexpr void check(const meta::struct_type_info& type) {
+    constexpr void check(const codec::struct_type_info& type) {
         add_struct(type);
         // An '=' form yields to an option named so, unless it is the only form of its own.
         for(auto& form: equals_forms) {
@@ -384,12 +385,12 @@ public:
 
 /// Whether `type` declares options cli takes; a mistake in them fails the constant evaluation
 /// this runs in, at the check that finds it.
-constexpr bool check_declaration(const meta::type_info& type) {
+constexpr bool check_declaration(const codec::type_info& type) {
     if(type.kind != meta::type_kind::structure) {
         KOTATSU_THROW("cli: options are declared in a struct");
     }
     DeclarationCheck check;
-    check.check(static_cast<const meta::struct_type_info&>(type));
+    check.check(static_cast<const codec::struct_type_info&>(type));
     return true;
 }
 

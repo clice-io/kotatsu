@@ -16,8 +16,8 @@
 
 #include "kotatsu/ipc/protocol.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/repr.h"
 #include "kotatsu/codec/dyn/dyn.h"
+#include "kotatsu/codec/repr.h"
 
 // The C++ spelling of the LSP metaModel's TypeScript type constructs, which
 // the generated kotatsu/ipc/lsp/protocol.h is written in.
@@ -94,7 +94,7 @@ struct optional_bool {
 };
 
 consteval auto __kotatsu__type_annotation(std::type_identity<optional_bool>) {
-    return meta::make_annotation(meta::dsl::presence = meta::presence_kind::omit_if_default);
+    return meta::make_annotation(codec::dsl::presence = codec::presence_kind::omit_if_default);
 }
 
 /// `undefined | T`.
@@ -118,14 +118,14 @@ struct optional : std::optional<T> {
 
 template <typename T>
 consteval auto __kotatsu__type_annotation(std::type_identity<optional<T>>) {
-    return meta::make_annotation(meta::dsl::presence = meta::presence_kind::omit_if_default);
+    return meta::make_annotation(codec::dsl::presence = codec::presence_kind::omit_if_default);
 }
 
 namespace detail {
 
 template <typename T>
 consteval auto __kotatsu__type_annotation(std::type_identity<present_optional<T>>) {
-    return meta::make_annotation(meta::dsl::presence = meta::presence_kind::omit_if_default);
+    return meta::make_annotation(codec::dsl::presence = codec::presence_kind::omit_if_default);
 }
 
 }  // namespace detail
@@ -149,7 +149,7 @@ struct optional_ptr : std::unique_ptr<T> {
 
 template <typename T>
 consteval auto __kotatsu__type_annotation(std::type_identity<optional_ptr<T>>) {
-    return meta::make_annotation(meta::dsl::presence = meta::presence_kind::omit_if_default);
+    return meta::make_annotation(codec::dsl::presence = codec::presence_kind::omit_if_default);
 }
 
 /// `A | B | ...`, decoded as the first alternative the input fits.
@@ -183,7 +183,7 @@ struct format;
 
 }  // namespace kotatsu::codec::bincode
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 /// Read and written as the std::optional it is; being no std::optional to the
 /// codec, it is required in a structure.
@@ -276,7 +276,7 @@ struct repr<ipc::protocol::detail::present_optional<T>, codec::bincode::format> 
     }
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec
 
 namespace kotatsu::codec {
 

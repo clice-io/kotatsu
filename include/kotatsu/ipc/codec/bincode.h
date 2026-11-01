@@ -70,7 +70,7 @@ using message_prefix = std::variant<request_prefix, notification_prefix, success
 }  // namespace detail
 
 /// Messages in bincode. A message's params or result take the rest of its
-/// payload, without a length; a RawValue is taken to be bincode already, and
+/// payload, without a length; a raw_value is taken to be bincode already, and
 /// goes in and comes out as it is.
 struct BincodeCodec {
     /// Reads the message `payload` holds. The params or result keep the
@@ -118,8 +118,8 @@ struct BincodeCodec {
     template <typename T>
     Result<T> deserialize_value(const PayloadSlice& raw,
                                 protocol::ErrorCode code = protocol::ErrorCode::RequestFailed) {
-        if constexpr(std::is_same_v<T, codec::RawValue>) {
-            return codec::RawValue{std::string(raw.text())};
+        if constexpr(std::is_same_v<T, codec::raw_value>) {
+            return codec::raw_value{std::string(raw.text())};
         } else {
             const auto text = raw.text();
             T value{};
@@ -147,7 +147,7 @@ private:
         std::vector<std::byte> bytes;
         codec::bincode::Writer writer{bytes};
         bool written = codec::encode_value<codec::default_config<>>(writer, prefix);
-        if constexpr(std::is_same_v<T, codec::RawValue>) {
+        if constexpr(std::is_same_v<T, codec::raw_value>) {
             std::memcpy(writer.claim(value->data.size()), value->data.data(), value->data.size());
         } else if constexpr(!std::is_void_v<T>) {
             written = written && codec::encode_value<codec::default_config<>>(writer, *value);

@@ -172,11 +172,11 @@ void peer_requests(const PeerKit<A>& kit) {
         ZEXPECT(second->sum == 20);
     });
 
-    // A RawValue result is the result as the codec wrote it.
+    // A raw_value result is the result as the codec wrote it.
     kit.add("raw_value_result_is_read_as_it_is", [](Fixture& f) {
-        auto ask = [&]() -> async::task<codec::RawValue, ipc::Error> {
+        auto ask = [&]() -> async::task<codec::raw_value, ipc::Error> {
             co_return co_await f.peer
-                .template send_request<codec::RawValue>("worker/build", AddParams{})
+                .template send_request<codec::raw_value>("worker/build", AddParams{})
                 .or_fail();
         };
         auto remote = [&]() -> async::task<> {

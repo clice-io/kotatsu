@@ -1,221 +1,151 @@
+#include <cstdint>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
-#include <variant>
 
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/annotation.h"
 
-// Annotations are written below as KANNOTATE and KANNOTATE_TYPE (in codec's
-// macro sheet) expand to.
+// Annotations of a module of the test's own, written as KANNOTATE and KANNOTATE_TYPE (in
+// codec's macro sheet) expand to.
 
 namespace kotatsu::meta {
 
 namespace {
 
-/// The spec of an extension, a module beside meta with entries of its own.
-struct Probe {
+/// The attributes of the test's module.
+enum class knob : std::uint8_t { label, weight, low, high };
+
+/// The spec they set.
+struct Range {
     std::string_view label;
     int weight = 0;
+    int low = 0;
+    int high = 0;
 };
 
-[[maybe_unused]] constexpr inline dsl::member_proxy<&Probe::label> label{};
-[[maybe_unused]] constexpr inline dsl::member_proxy<&Probe::weight> weight{};
+}  // namespace
 
-struct ten_aliases_tag {
-    constexpr static auto entries =
-        make_annotation(dsl::alias = {"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"});
+/// low and high override one another as a whole, and label annotates a field alone.
+template <>
+struct attribute_traits<knob> {
+    constexpr static int group(knob kind) {
+        return kind == knob::low || kind == knob::high ? 1 : 0;
+    }
+
+    constexpr static bool field_only(knob kind) {
+        return kind == knob::label;
+    }
 };
 
-template <int I>
-struct Alt {};
+namespace {
 
-struct nine_names_tag {
-    constexpr static auto entries =
-        make_annotation(dsl::tagged = true,
-                        dsl::tag_names = {"a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"});
+[[maybe_unused]] constexpr inline dsl::value_proxy<knob::label, &Range::label, std::string_view>
+    label{};
+[[maybe_unused]] constexpr inline dsl::value_proxy<knob::weight, &Range::weight, int> weight{};
+[[maybe_unused]] constexpr inline dsl::value_proxy<knob::low, &Range::low, int> low{};
+[[maybe_unused]] constexpr inline dsl::value_proxy<knob::high, &Range::high, int> high{};
+
+/// A spec of another module, whose attributes member_proxy tells apart by member.
+struct Note {
+    std::string_view text;
+};
+
+[[maybe_unused]] constexpr inline dsl::member_proxy<&Note::text> text{};
+
+struct labeled_tag {
+    constexpr static auto attributes = make_annotation(label = "a", weight = 2, text = "n");
+};
+
+[[maybe_unused]] constexpr inline auto heavy = make_annotation(label = "bundled", weight = 9);
+
+struct bundled_tag {
+    constexpr static auto attributes = make_annotation(heavy, label = "own");
 };
 
 struct Weighed;
 
 constexpr auto __kotatsu__type_annotation(std::type_identity<Weighed>) {
-    return make_annotation(dsl::description = "weighed",
-                           dsl::presence = presence_kind::optional,
-                           label = "type",
-                           weight = 1);
+    return make_annotation(weight = 1, low = 1, high = 5);
 }
 
 struct Weighed {
     int value = 0;
 };
 
-struct HoldsWeighed {
+struct Holder {
     Weighed plain;
 
-    static consteval auto __kotatsu__annotation(name_key<"heavier">) {
-        return make_annotation(dsl::description = "heavier", dsl::rename = "renamed", weight = 9);
+    static consteval auto __kotatsu__annotation(name_key<"narrowed">) {
+        return make_annotation(label = "narrowed", low = 2);
     }
 
-    Weighed heavier;
-};
-
-/// Holds when the value it judges is negative.
-struct Negative {
-    template <typename T>
-    constexpr bool operator()(const T& held) const {
-        return held.value < 0;
-    }
-};
-
-/// Left out where it holds its default.
-struct Plain;
-
-constexpr auto __kotatsu__type_annotation(std::type_identity<Plain>) {
-    return make_annotation(dsl::presence = presence_kind::omit_if_default);
-}
-
-struct Plain {
-    int value = 0;
-
-    auto operator==(const Plain&) const -> bool = default;
-};
-
-/// Left out where it is negative.
-struct Signed;
-
-constexpr auto __kotatsu__type_annotation(std::type_identity<Signed>) {
-    return make_annotation(dsl::presence = dsl::type<Negative>);
-}
-
-struct Signed {
-    int value = 0;
-};
-
-struct PresenceOverrides {
-    static consteval auto __kotatsu__annotation(name_key<"predicate_over_value">) {
-        return make_annotation(dsl::presence = dsl::type<Negative>);
-    }
-
-    Plain predicate_over_value;
-
-    static consteval auto __kotatsu__annotation(name_key<"value_over_predicate">) {
-        return make_annotation(dsl::presence = presence_kind::omit_if_default);
-    }
-
-    Signed value_over_predicate;
-
-    static consteval auto __kotatsu__annotation(name_key<"required_over_predicate">) {
-        return make_annotation(dsl::presence = presence_kind::required);
-    }
-
-    Signed required_over_predicate;
-
-    static consteval auto __kotatsu__annotation(name_key<"renamed">) {
-        return make_annotation(dsl::rename = "renamed");
-    }
-
-    Signed renamed;
-};
-
-/// Internally tagged wherever it is.
-struct Shape;
-
-constexpr auto __kotatsu__type_annotation(std::type_identity<Shape>) {
-    return make_annotation(dsl::tag = "kind");
-}
-
-struct Shape : std::variant<Alt<0>, Alt<1>> {
-    using variant::variant;
-};
-
-struct HoldsShapes {
-    Shape internal;
-
-    static consteval auto __kotatsu__annotation(name_key<"external">) {
-        return make_annotation(dsl::tagged = true);
-    }
-
-    Shape external;
-
-    /// Field entries and struct entries in one annotation.
-    static consteval auto __kotatsu__annotation(name_key<"mixed">) {
-        return make_annotation(dsl::rename = "shape", dsl::tag = "kind");
-    }
-
-    std::variant<Alt<0>, Alt<1>> mixed;
+    Weighed narrowed;
 };
 
 ZEST_SUITE(meta_annotation) {
 
-ZEST_CASE(name_lists_take_any_number_of_names) {
-    constexpr const field_spec& spec = attrs::spec<ten_aliases_tag>::value;
-    ZSTATIC_EXPECT(spec.alias.size() == 10u);
-    ZSTATIC_EXPECT(spec.alias[9] == "j");
-    constexpr auto names = resolve_tag_names<attrs::struct_spec<nine_names_tag>,
-                                             void,
-                                             Alt<0>,
-                                             Alt<1>,
-                                             Alt<2>,
-                                             Alt<3>,
-                                             Alt<4>,
-                                             Alt<5>,
-                                             Alt<6>,
-                                             Alt<7>,
-                                             Alt<8>>();
-    ZSTATIC_EXPECT(names[8] == "a8");
+ZEST_CASE(attributes_fold_into_their_specs) {
+    constexpr const Range& range = spec_attr<labeled_tag, Range>::value;
+    ZSTATIC_EXPECT(range.label == "a");
+    ZSTATIC_EXPECT(range.weight == 2);
+    ZSTATIC_EXPECT(spec_attr<labeled_tag, Note>::value.text == "n");
+    // One spec_attr for each spec type the attributes set.
+    ZSTATIC_EXPECT(
+        (std::is_same_v<annotation_attrs_t<labeled_tag>,
+                        std::tuple<spec_attr<labeled_tag, Range>, spec_attr<labeled_tag, Note>>>));
 }
 
-ZEST_CASE(one_annotation_takes_field_and_struct_entries) {
-    using attrs_t = field_attrs_t<HoldsShapes, 2>;
-    ZSTATIC_EXPECT(spec_of<attrs_t>.rename == "shape");
-    ZSTATIC_EXPECT(struct_spec_of<attrs_t>.tagging == tag_mode::internal);
+ZEST_CASE(attributes_written_beside_a_bundle_override_it) {
+    constexpr const Range& range = spec_attr<bundled_tag, Range>::value;
+    ZSTATIC_EXPECT(range.label == "own");
+    ZSTATIC_EXPECT(range.weight == 9);
 }
 
-ZEST_CASE(field_annotation_overrides_its_type_annotation) {
-    ZSTATIC_EXPECT(spec_of<attrs_of_t<Weighed>>.description == "weighed");
-    ZSTATIC_EXPECT(extension_in<Probe, attrs_of_t<Weighed>>->weight == 1);
-    using heavier = field_attrs_t<HoldsWeighed, 1>;
-    ZSTATIC_EXPECT(spec_of<heavier>.description == "heavier");
-    ZSTATIC_EXPECT(extension_in<Probe, heavier>->weight == 9);
-    // What only one of them says stays.
-    ZSTATIC_EXPECT(spec_of<heavier>.rename == "renamed");
-    ZSTATIC_EXPECT(spec_of<heavier>.presence == presence_kind::optional);
-    ZSTATIC_EXPECT(extension_in<Probe, heavier>->label == "type");
+ZEST_CASE(attributes_are_told_apart_by_kind_and_spec) {
+    ZSTATIC_EXPECT(detail::attributes_unique<decltype(label = "a"), decltype(weight = 1)>());
+    ZSTATIC_EXPECT(!detail::attributes_unique<decltype(label = "a"), decltype(label = "b")>());
+    ZSTATIC_EXPECT(detail::attributes_unique<decltype(label = "a"), decltype(text = "b")>());
 }
 
-ZEST_CASE(type_annotation_reaches_a_plain_field) {
-    constexpr const auto& info = static_cast<const struct_type_info&>(type_info_of<HoldsWeighed>());
-    ZSTATIC_EXPECT(info.fields[0].has_extension<Probe>());
-    ZEXPECT(info.fields[0].extension<Probe>()->weight == 1);
+ZEST_CASE(a_group_is_overridden_as_a_whole) {
+    constexpr auto composed =
+        detail::compose_attributes(make_annotation(low = 1, high = 5, weight = 3),
+                                   make_annotation(low = 2));
+    constexpr Range range = detail::spec_from<Range>(composed);
+    ZSTATIC_EXPECT(range.low == 2);
+    ZSTATIC_EXPECT(range.high == 0);
+    ZSTATIC_EXPECT(range.weight == 3);
 }
 
-ZEST_CASE(field_presence_overrides_type_one) {
-    using predicate_over_value = field_attrs_t<PresenceOverrides, 0>;
-    ZSTATIC_EXPECT(spec_of<predicate_over_value>.presence == presence_kind::omit_if);
-    ZSTATIC_EXPECT((tuple_has_v<predicate_over_value, behavior::omit_if<Negative>>));
-
-    using value_over_predicate = field_attrs_t<PresenceOverrides, 1>;
-    ZSTATIC_EXPECT(spec_of<value_over_predicate>.presence == presence_kind::omit_if_default);
-    ZSTATIC_EXPECT(!(tuple_has_v<value_over_predicate, behavior::omit_if<Negative>>));
+ZEST_CASE(a_field_annotation_composes_over_its_type_one) {
+    ZSTATIC_EXPECT(spec_in<Range, attrs_of_t<Weighed>>->weight == 1);
+    // A plain field keeps its type's attrs as they are.
+    ZSTATIC_EXPECT((std::is_same_v<field_attrs_t<Holder, 0>, attrs_of_t<Weighed>>));
+    constexpr const Range* narrowed = spec_in<Range, field_attrs_t<Holder, 1>>;
+    ZSTATIC_EXPECT(narrowed->label == "narrowed");
+    ZSTATIC_EXPECT(narrowed->weight == 1);
+    ZSTATIC_EXPECT(narrowed->low == 2);
+    ZSTATIC_EXPECT(narrowed->high == 0);
+    ZSTATIC_EXPECT(spec_in<Note, field_attrs_t<Holder, 1>> == nullptr);
 }
 
-ZEST_CASE(field_required_overrides_type_predicate) {
-    using required_over_predicate = field_attrs_t<PresenceOverrides, 2>;
-    ZSTATIC_EXPECT(!(tuple_has_v<required_over_predicate, behavior::omit_if<Negative>>));
-    ZSTATIC_EXPECT(spec_of<required_over_predicate>.presence == presence_kind::required);
+ZEST_CASE(a_type_annotation_takes_no_field_only_attribute) {
+    ZSTATIC_EXPECT(detail::type_attributes(
+        std::type_identity<std::remove_const_t<decltype(make_annotation(weight = 1))>>{}));
+    ZSTATIC_EXPECT(!detail::type_attributes(
+        std::type_identity<std::remove_const_t<decltype(make_annotation(label = "a"))>>{}));
 }
 
-ZEST_CASE(field_annotation_keeps_its_type_predicate) {
-    using renamed = field_attrs_t<PresenceOverrides, 3>;
-    ZSTATIC_EXPECT((tuple_has_v<renamed, behavior::omit_if<Negative>>));
-    ZSTATIC_EXPECT(spec_of<renamed>.presence == presence_kind::omit_if);
-    ZSTATIC_EXPECT(spec_of<renamed>.rename == "renamed");
-}
+template <typename Spec>
+struct is_note : std::is_same<Spec, Note> {};
 
-ZEST_CASE(field_tagging_overrides_type_one) {
-    ZSTATIC_EXPECT(struct_spec_of<field_attrs_t<HoldsShapes, 0>>.tagging == tag_mode::internal);
-    using external = field_attrs_t<HoldsShapes, 1>;
-    ZSTATIC_EXPECT(struct_spec_of<external>.tagging == tag_mode::external);
-    ZSTATIC_EXPECT(struct_spec_of<external>.tag.empty());
+ZEST_CASE(spec_refs_find_specs_by_type) {
+    constexpr auto refs = spec_refs_of<annotation_attrs_t<labeled_tag>, is_note>;
+    ZSTATIC_EXPECT(refs.size() == 1U);
+    ZSTATIC_EXPECT(refs[0].holds<Note>());
+    ZSTATIC_EXPECT(!refs[0].holds<Range>());
+    ZSTATIC_EXPECT(refs[0].get<Note>().text == "n");
 }
 
 };  // ZEST_SUITE(meta_annotation)

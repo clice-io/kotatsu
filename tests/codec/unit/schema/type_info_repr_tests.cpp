@@ -6,15 +6,20 @@
 #include "fixtures/attrs.h"
 #include "fixtures/repr.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/type_info.h"
 
-// How type_info follows meta::repr: through chains, annotations and tagging
+// How type_info follows codec::repr: through chains, annotations and tagging
 // nested in declared representations, and format scopes. The codec follows
 // the same resolution when it encodes, which the codec kit's repr area checks.
 // The annotations are written as KANNOTATE and KANNOTATE_TYPE (in codec's
 // macro sheet) expand to.
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::field_attrs_t;
+using meta::make_annotation;
+using meta::name_key;
+using meta::type_kind;
 
 namespace {
 
@@ -119,7 +124,7 @@ struct repr<FlatPolicies> {
 
 namespace {
 
-ZEST_SUITE(meta_schema_type_info_repr) {
+ZEST_SUITE(codec_schema_type_info_repr) {
 
 ZEST_CASE(equivalent_merge_chains_share_type_info) {
     // Both routes merge to one config, so they share one type_info and
@@ -199,8 +204,8 @@ ZEST_CASE(rename_all_on_untagged_variant_is_inert) {
     ZEXPECT(alternative.fields[0].name == "user_name");
 }
 
-};  // ZEST_SUITE(meta_schema_type_info_repr)
+};  // ZEST_SUITE(codec_schema_type_info_repr)
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

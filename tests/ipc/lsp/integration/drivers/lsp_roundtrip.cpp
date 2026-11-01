@@ -35,11 +35,11 @@ namespace protocol = ipc::protocol;
 
 struct Input {
     std::string type;
-    codec::RawValue value;
+    codec::raw_value value;
 };
 
 /// Holds for an empty optional: a write leaves it out. A predicate rather
-/// than `presence = omit_if_default`, which compares with ==, which RawValue
+/// than `presence = omit_if_default`, which compares with ==, which raw_value
 /// has not.
 struct IsNone {
     template <typename T>
@@ -51,7 +51,7 @@ struct IsNone {
 /// The value encoded again, or why it did not decode.
 struct Output {
     KANNOTATE(&value, presence = type<IsNone>)
-    std::optional<codec::RawValue> value;
+    std::optional<codec::raw_value> value;
     KANNOTATE(&error, presence = type<IsNone>)
     std::optional<std::string> error;
 };
@@ -66,7 +66,7 @@ Output roundtrip(std::string_view json) {
     if(!encoded) {
         return {.value = std::nullopt, .error = encoded.error().to_string()};
     }
-    return {.value = codec::RawValue{std::move(*encoded)}, .error = std::nullopt};
+    return {.value = codec::raw_value{std::move(*encoded)}, .error = std::nullopt};
 }
 
 const std::unordered_map<std::string_view, Output (*)(std::string_view)> types = {

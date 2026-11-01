@@ -6,8 +6,8 @@
 
 namespace kotatsu::codec::bincode {
 
-/// Format tag: scopes a meta::repr specialization to the bincode backend
-/// (meta::repr<T, codec::bincode::format>).
+/// Format tag: scopes a codec::repr specialization to the bincode backend
+/// (codec::repr<T, codec::bincode::format>).
 ///
 /// # Lowerings
 ///
@@ -25,7 +25,7 @@ namespace kotatsu::codec::bincode {
 ///   LE bit pattern
 /// - character → one byte
 /// - string / bytes → byte length (see below) + raw bytes
-/// - enumeration → underlying integer (8 bytes); through meta::enum_names, a
+/// - enumeration → underlying integer (8 bytes); through codec::enum_names, a
 ///   length-prefixed name string
 /// - array/set/map → element count (see below), then elements back to back
 ///   (maps: key, value, key, value, ...)
@@ -33,7 +33,7 @@ namespace kotatsu::codec::bincode {
 ///   presence omits nothing, since no marker could say a field is absent
 /// - variant → u32 LE alternative index + payload
 /// - optional/pointer → presence byte (0x00 / 0x01) + payload when engaged
-/// - RawValue → its text as bytes (length + raw)
+/// - raw_value → its text as bytes (length + raw)
 /// - dyn::Value → its ValueKind as one byte, then what it holds as above (an
 ///   array as a sequence of Values, an object as a map from strings to
 ///   Values); decode rejects an unknown kind and nesting deeper than 1024

@@ -4,13 +4,13 @@
 aggregate, the enumerators of an enum and the names of types and members, read
 from what the compiler knows, with no registration macro or code generation. It
 also sorts types into a `type_kind`, compares values deeply (`meta::eq`), and
-defines the attributes, `repr` and type descriptors the codec module consumes.
+finds and composes the annotations written on fields and types.
 
-meta encodes nothing. Attributes and reprs take effect when a [codec](codec.md)
-backend reads or writes the type; `spec.h` documents each attribute, and the
-codec page shows one in use. The macros are in `kotatsu/codec/macro.h`:
-`KANNOTATE` annotates a field, `KANNOTATE_TYPE` a type, and `KANNOTATION`
-names a bundle of attributes either reuses.
+meta encodes nothing and knows no attribute: each module defines its own and
+the specs they fold into, as the [codec](codec.md) does for its attributes
+(`rename`, `presence`, `tag`, ...) and cli for its options. The macros are in
+`kotatsu/codec/macro.h`: `KANNOTATE` annotates a field, `KANNOTATE_TYPE` a
+type, and `KANNOTATION` names a bundle of attributes either reuses.
 
 ## Targets
 
@@ -56,16 +56,14 @@ Adapted from `tests/meta/unit/struct_tests.cpp` and `tests/meta/unit/enum_tests.
 
 ## Overview
 
-| Header                                                                                                                                     | Contents                                                                                                                                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [struct.h](../include/kotatsu/meta/struct.h)                                                                                               | Aggregate reflection: `field_count`, `field_names`, `field_refs`, `field_offset`, `for_each`, the `reflectable_class` concept                                                                                                                                                                                |
-| [enum.h](../include/kotatsu/meta/enum.h)                                                                                                   | Enum reflection: `enum_name(value)`, `enum_value<E>(name)`, the members in `reflection<E>`                                                                                                                                                                                                                   |
-| [name.h](../include/kotatsu/meta/name.h)                                                                                                   | Names from `std::source_location`: `type_name<T>()`, `enum_name<V>()`, `pointer_name`, `member_name`                                                                                                                                                                                                         |
-| [type_kind.h](../include/kotatsu/meta/type_kind.h)                                                                                         | `type_kind` and `kind_of<T>()`, the shape codec dispatches on, with concepts such as `int_like` and `str_like`                                                                                                                                                                                               |
-| [compare.h](../include/kotatsu/meta/compare.h)                                                                                             | `eq`, `ne`, `lt`, `le`, `gt`, `ge`: transparent functors that also compare aggregates field by field, variants and ranges                                                                                                                                                                                    |
-| [spec.h](../include/kotatsu/meta/spec.h), [attrs.h](../include/kotatsu/meta/attrs.h), [annotation.h](../include/kotatsu/meta/annotation.h) | The attributes codec acts on (`rename`, `skip`, `flatten`, `rename_all`, `tag`, ...), each documented in spec.h; a field's annotation, found by its name (`field_attrs_t<T, I>`) and composed over its type's; and the specs other modules add (cli's `ArgSpec`), found with `extension_of` or `extension()` |
-| [repr.h](../include/kotatsu/meta/repr.h)                                                                                                   | `repr<T>` and `repr<T, Format>`: specialize one to say what a type is encoded as; `enum_names`, an enum as its enumerators' names                                                                                                                                                                            |
-| [type_info.h](../include/kotatsu/meta/type_info.h), [schema.h](../include/kotatsu/meta/schema.h)                                           | `type_info_of<T, Config>()` descriptors and `virtual_schema<T, Config>`, resolved as the codec resolves them                                                                                                                                                                                                 |
+| Header                                               | Contents                                                                                                                                                                                                                            |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [struct.h](../include/kotatsu/meta/struct.h)         | Aggregate reflection: `field_count`, `field_names`, `field_refs`, `field_offset`, `for_each`, the `reflectable_class` concept                                                                                                       |
+| [enum.h](../include/kotatsu/meta/enum.h)             | Enum reflection: `enum_name(value)`, `enum_value<E>(name)`, the members in `reflection<E>`                                                                                                                                          |
+| [name.h](../include/kotatsu/meta/name.h)             | Names from `std::source_location`: `type_name<T>()`, `enum_name<V>()`, `pointer_name`, `member_name`                                                                                                                                |
+| [type_kind.h](../include/kotatsu/meta/type_kind.h)   | `type_kind` and `kind_of<T>()`, the shape codec dispatches on, with concepts such as `int_like` and `str_like`                                                                                                                      |
+| [annotation.h](../include/kotatsu/meta/annotation.h) | Annotations: `make_annotation` over the attributes a module defines, bundles, a field's annotation found by its name and composed over its type's (`field_attrs_t<T, I>`), and the specs they fold into (`spec_in`, `spec_refs_of`) |
+| [compare.h](../include/kotatsu/meta/compare.h)       | `eq`, `ne`, `lt`, `le`, `gt`, `ge`: transparent functors that also compare aggregates field by field, variants and ranges                                                                                                           |
 
 ## Platform notes
 

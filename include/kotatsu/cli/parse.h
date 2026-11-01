@@ -22,8 +22,8 @@
 #include "kotatsu/support/numeric.h"
 #include "kotatsu/support/string_list_ref.h"
 #include "kotatsu/meta/enum.h"
-#include "kotatsu/meta/type_info.h"
 #include "kotatsu/codec/decode.h"
+#include "kotatsu/codec/type_info.h"
 
 namespace kotatsu::cli {
 
@@ -67,8 +67,8 @@ struct Node {
 
 /// How the options are decoded: a field the argv does not give keeps the value it has.
 struct DecodeConfig {
-    constexpr static std::optional<meta::presence_kind> presence_all =
-        meta::presence_kind::optional;
+    constexpr static std::optional<codec::presence_kind> presence_all =
+        codec::presence_kind::optional;
 };
 
 using decode_config = codec::default_config<DecodeConfig>;
@@ -84,14 +84,14 @@ using CommandPtr = std::unique_ptr<Command, CommandDeleter>;
 
 /// Builds the command `type`, a struct, describes: its options, positional arguments, groups
 /// and subcommands, and their option table.
-CommandPtr build_command(const meta::type_info& type);
+CommandPtr build_command(const codec::type_info& type);
 
 /// The command of options `T`, which a mistake in them keeps from compiling. Built on first
 /// use.
 template <typename T>
 const Command& command_of() {
-    static_assert(check_declaration(meta::type_info_of<T, decode_config>()));
-    const static CommandPtr command = build_command(meta::type_info_of<T, decode_config>());
+    static_assert(check_declaration(codec::type_info_of<T, decode_config>()));
+    const static CommandPtr command = build_command(codec::type_info_of<T, decode_config>());
     return *command;
 }
 
@@ -414,7 +414,7 @@ namespace kotatsu::codec {
 
 /// An enum reads from any spelling of its name: `info`, `Info`, `INFO`.
 template <typename E, typename Config>
-    requires (std::is_enum_v<E> && !meta::has_repr<E, meta::format_of_t<cli::detail::Reader>>)
+    requires (std::is_enum_v<E> && !codec::has_repr<E, codec::format_of_t<cli::detail::Reader>>)
 struct deserialize_visit<cli::detail::Reader, E, Config> {
     static bool visit(cli::detail::Reader& reader, E& out) {
         if(reader.node.kind != cli::detail::Node::Kind::Text) {

@@ -13,13 +13,13 @@
 
 #include "kotatsu/support/expected_try.h"
 #include "kotatsu/support/ranges.h"
-#include "kotatsu/meta/repr.h"
 #include "kotatsu/meta/type_kind.h"
 #include "kotatsu/codec/context.h"
 #include "kotatsu/codec/encode.h"
 #include "kotatsu/codec/fbs/proxy.h"
 #include "kotatsu/codec/fbs/type.h"
 #include "kotatsu/codec/format.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::codec::fbs {
 

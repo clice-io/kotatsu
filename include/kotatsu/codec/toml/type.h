@@ -5,9 +5,9 @@
 #include <string_view>
 #include <type_traits>
 
-#include "kotatsu/meta/type_info.h"
 #include "kotatsu/meta/type_kind.h"
 #include "kotatsu/codec/context.h"
+#include "kotatsu/codec/type_info.h"
 
 // kotatsu's TOML backend converts every toml++ failure into std::expected /
 // rich_error and never lets an exception escape, so toml++ is pinned to its
@@ -34,8 +34,8 @@ static_assert(!TOML_EXCEPTIONS, "toml++ must be in no-exceptions mode for kotats
 
 namespace kotatsu::codec::toml {
 
-/// Format tag: scopes a meta::repr specialization to the TOML backend
-/// (meta::repr<T, codec::toml::format>).
+/// Format tag: scopes a codec::repr specialization to the TOML backend
+/// (codec::repr<T, codec::toml::format>).
 ///
 /// # Lowerings
 ///
@@ -55,7 +55,7 @@ namespace kotatsu::codec::toml {
 ///   UTF-8); decode accepts exactly one codepoint ≤ 255
 /// - string → TOML string; one that is not UTF-8 follows Config's invalid_utf8
 /// - bytes → array of integer octets; decode range-checks each into [0, 255]
-/// - enumeration → underlying integer; through meta::enum_names, the
+/// - enumeration → underlying integer; through codec::enum_names, the
 ///   enumerator's name
 /// - array/set/tuple → TOML array
 /// - map → table; non-string keys go through MapKeyWriter/MapKeyReader as
@@ -83,7 +83,7 @@ constexpr inline std::string_view boxed_root_key = "__value";
 /// its own root even though its range kind would box it.
 template <typename T>
 constexpr bool root_table_v = [] {
-    using R = meta::resolved_repr_t<T, format>;
+    using R = codec::resolved_repr_t<T, format>;
     constexpr auto kind = meta::kind_of<R>();
     return kind == meta::type_kind::structure || kind == meta::type_kind::map ||
            std::is_same_v<R, Table>;
@@ -93,7 +93,7 @@ constexpr bool root_table_v = [] {
 /// own): absent, it is the empty document; present, the root is routed by
 /// the value it wraps.
 template <typename T>
-constexpr bool nullable_root_v = std::is_same_v<meta::resolved_repr_t<T, format>, T> &&
+constexpr bool nullable_root_v = std::is_same_v<codec::resolved_repr_t<T, format>, T> &&
                                  (meta::kind_of<T>() == meta::type_kind::optional ||
                                   meta::kind_of<T>() == meta::type_kind::pointer);
 

@@ -6,9 +6,9 @@
 #include <string>
 #include <variant>
 
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/repr.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/macro.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 
@@ -50,7 +50,7 @@ struct root_external_variant : std::variant<std::int32_t, std::string> {
 }  // namespace kotatsu::test
 
 template <>
-struct kotatsu::meta::repr<kotatsu::test::named_color> : meta::enum_names<> {};
+struct kotatsu::codec::repr<kotatsu::test::named_color> : codec::enum_names<> {};
 
 template <>
-struct kotatsu::meta::repr<kotatsu::test::shouting_color> : meta::enum_names<> {};
+struct kotatsu::codec::repr<kotatsu::test::shouting_color> : codec::enum_names<> {};
