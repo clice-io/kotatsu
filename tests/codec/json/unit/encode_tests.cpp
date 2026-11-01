@@ -53,6 +53,15 @@ struct OddlyNamed {
     int kept = 5;
 };
 
+enum class Mood { calm, upset };
+
+struct MoodHolder {
+    Mood mood = Mood::calm;
+};
+
+/// Writes every enum by name, through a repr scoped to it.
+struct NamedEnums : extend<json::format> {};
+
 /// Its first field is left out at its default, empty, and the next one's key
 /// then opens the object.
 struct NoteFirst {
@@ -79,6 +88,10 @@ struct repr<codec::Folio> {
         return {.page = std::stoi(text.substr(1))};
     }
 };
+
+template <typename E>
+    requires std::is_enum_v<E>
+struct repr<E, codec::NamedEnums> : enum_names<> {};
 
 template <>
 struct repr<codec::Folio, codec::json::format> {
@@ -353,6 +366,17 @@ ZEST_CASE(everything_lowering) {
     ZASSERT(document);
     ZEXPECT(zest::snapshot(test::Json::render(*document)));
     ZEXPECT(zest::snapshot(*document, "compact"));
+}
+
+ZEST_CASE(format_writes_every_enum_by_name) {
+    auto text = json::to_string<NamedEnums>(MoodHolder{.mood = Mood::upset});
+    ZASSERT(text);
+    ZEXPECT(*text == R"({"mood":"upset"})");
+    MoodHolder back;
+    ZASSERT(json::from_string<NamedEnums>(*text, back));
+    ZEXPECT(back.mood == Mood::upset);
+    // Under json::format it stays a number.
+    ZEXPECT(json::to_string(MoodHolder{.mood = Mood::upset}) == R"({"mood":1})");
 }
 
 };  // ZEST_SUITE(codec_json_encode)
