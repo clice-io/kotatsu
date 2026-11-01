@@ -27,25 +27,21 @@ concept annotated_type = requires {
 
 namespace attrs {
 
-// Field-level
-
-/// The value attributes of one annotated field. Tag is the struct generated
-/// by KOTATSU_ANNOTATE (or hand-written) whose `spec` static member is a
-/// meta::spec_result; only the short tag name appears in template arguments.
+/// The field entries of one annotation, and its extensions' specs. Tag is the struct
+/// KANNOTATE generates, or one written by hand, whose static `entries` make_annotation
+/// returned; only the short tag name appears in template arguments.
 template <typename Tag>
 struct spec {
-    constexpr const static field_spec& value = Tag::spec.value;
-    constexpr const static auto& extensions = Tag::spec.extensions;
+    constexpr static field_spec value = detail::field_spec_from(Tag::entries);
+    constexpr static auto extensions = detail::extensions_from(Tag::entries);
 };
 
-// Struct-level
-
-/// The value attributes of one annotated struct or variant type. Unlike spec,
-/// this attr forks the type_info identity of the annotated type — a renamed
-/// or tagged type and its bare form have different serialized schemas.
+/// The struct entries of one annotation, on a struct or variant type. Unlike spec, they fork
+/// the type_info identity of the annotated type: a renamed or tagged type and its bare form
+/// have different serialized schemas.
 template <typename Tag>
 struct struct_spec {
-    constexpr const static meta::struct_spec& value = Tag::spec;
+    constexpr static meta::struct_spec value = detail::struct_spec_from(Tag::entries);
 };
 
 }  // namespace attrs
@@ -67,16 +63,6 @@ template <typename AttrsTuple>
 constexpr const inline field_spec& spec_of = [] -> const field_spec& {
     if constexpr(tuple_any_of_v<AttrsTuple, is_spec_attr>) {
         return tuple_find_t<AttrsTuple, is_spec_attr>::value;
-    } else {
-        return empty_field_spec;
-    }
-}();
-
-/// The value spec attached to a (possibly annotated) field type.
-template <typename T>
-constexpr const inline field_spec& field_spec_of = [] -> const field_spec& {
-    if constexpr(annotated_type<T>) {
-        return spec_of<typename T::attrs>;
     } else {
         return empty_field_spec;
     }
@@ -163,22 +149,16 @@ constexpr const Spec* find_extension(const std::tuple<Extensions...>& extensions
     }
 }
 
-template <typename Spec, typename T>
-constexpr const Spec* extension_of_field() {
-    if constexpr(annotated_type<T>) {
-        if constexpr(tuple_any_of_v<typename T::attrs, is_spec_attr>) {
-            return find_extension<Spec>(tuple_find_t<typename T::attrs, is_spec_attr>::extensions);
-        }
+template <typename Spec, typename AttrsTuple>
+constexpr const Spec* extension_in() {
+    if constexpr(tuple_any_of_v<AttrsTuple, is_spec_attr>) {
+        return find_extension<Spec>(tuple_find_t<AttrsTuple, is_spec_attr>::extensions);
+    } else {
+        return nullptr;
     }
-    return nullptr;
 }
 
 }  // namespace detail
-
-/// The spec of type `Spec` an extension attached to a (possibly annotated)
-/// field type; null when it has none.
-template <typename Spec, typename T>
-constexpr const Spec* extension_of = detail::extension_of_field<Spec, std::remove_cv_t<T>>();
 
 template <typename T>
 struct is_struct_spec_attr {
@@ -302,8 +282,8 @@ using node_config_t =
 template <typename SpecAttr, typename... Ts>
 constexpr auto resolve_tag_names() {
     constexpr const struct_spec& spec = SpecAttr::value;
-    if constexpr(spec.tag_names.count != 0) {
-        static_assert(spec.tag_names.count == sizeof...(Ts),
+    if constexpr(!spec.tag_names.names().empty()) {
+        static_assert(spec.tag_names.names().size() == sizeof...(Ts),
                       "tagged: number of custom names must match variant alternatives");
         std::array<std::string_view, sizeof...(Ts)> names{};
         std::ranges::copy_n(spec.tag_names.names().begin(), sizeof...(Ts), names.begin());
@@ -439,6 +419,200 @@ constexpr bool validate_attrs() {
     return true;
 }
 
+/// An annotation written around another, as one tag: the inner one's entries the outer one's
+/// do not override, then the outer one's.
+template <typename Inner, typename Outer>
+struct composed_tag {
+    constexpr static auto entries = compose_entries(Inner::entries, Outer::entries);
+};
+
+template <typename Attr>
+struct tag_of;
+
+template <typename Tag>
+struct tag_of<attrs::spec<Tag>> {
+    using type = Tag;
+};
+
+template <typename Tag>
+struct tag_of<attrs::struct_spec<Tag>> {
+    using type = Tag;
+};
+
+/// The attr of the kind `Is` finds (attrs::spec, attrs::struct_spec) that inner attrs and
+/// outer ones make together: both tags composed, or the one either has.
+template <typename Inner,
+          typename Outer,
+          template <typename> typename Is,
+          template <typename> typename Attr>
+constexpr auto composed_spec_attr() {
+    constexpr bool inner = tuple_any_of_v<Inner, Is>;
+    constexpr bool outer = tuple_any_of_v<Outer, Is>;
+    if constexpr(inner && outer) {
+        using tag = composed_tag<typename tag_of<tuple_find_t<Inner, Is>>::type,
+                                 typename tag_of<tuple_find_t<Outer, Is>>::type>;
+        return std::tuple<Attr<tag>>{};
+    } else if constexpr(inner) {
+        return std::tuple<tuple_find_t<Inner, Is>>{};
+    } else if constexpr(outer) {
+        return std::tuple<tuple_find_t<Outer, Is>>{};
+    } else {
+        return std::tuple<>{};
+    }
+}
+
+/// An inner behavior attr, unless the outer attrs pick the same thing: how the value is
+/// represented, or when it is skipped.
+template <typename Outer, typename Attr>
+constexpr auto kept_behavior() {
+    if constexpr(!is_behavior_attr_v<Attr>) {
+        return std::tuple<>{};
+    } else if constexpr(is_specialization_of<behavior::skip_if, Attr>) {
+        if constexpr(tuple_has_spec_v<Outer, behavior::skip_if> ||
+                     spec_of<Outer>.skip_if != skip_when::never) {
+            return std::tuple<>{};
+        } else {
+            return std::tuple<Attr>{};
+        }
+    } else if constexpr(tuple_any_of_v<Outer, is_behavior_provider>) {
+        return std::tuple<>{};
+    } else {
+        return std::tuple<Attr>{};
+    }
+}
+
+template <typename Attr>
+constexpr auto behavior_attr() {
+    if constexpr(is_behavior_attr_v<Attr>) {
+        return std::tuple<Attr>{};
+    } else {
+        return std::tuple<>{};
+    }
+}
+
+template <typename Inner, typename Outer>
+struct compose_attrs;
+
+template <typename... Is, typename... Os>
+struct compose_attrs<std::tuple<Is...>, std::tuple<Os...>> {
+    using inner = std::tuple<Is...>;
+    using outer = std::tuple<Os...>;
+    using type = decltype(std::tuple_cat(
+        composed_spec_attr<inner, outer, is_spec_attr, attrs::spec>(),
+        composed_spec_attr<inner, outer, is_struct_spec_attr, attrs::struct_spec>(),
+        kept_behavior<outer, Is>()...,
+        behavior_attr<Os>()...));
+};
+
+template <typename... Os>
+struct compose_attrs<std::tuple<>, std::tuple<Os...>> {
+    using type = std::tuple<Os...>;
+};
+
+template <typename... Is>
+struct compose_attrs<std::tuple<Is...>, std::tuple<>> {
+    using type = std::tuple<Is...>;
+};
+
+template <>
+struct compose_attrs<std::tuple<>, std::tuple<>> {
+    using type = std::tuple<>;
+};
+
 }  // namespace detail
+
+/// The attrs of an annotation written around the attrs `Inner`, `Outer` its own: an entry of
+/// the outer one overrides the inner one's, and the rest of both apply.
+template <typename Inner, typename Outer>
+using compose_attrs_t = typename detail::compose_attrs<Inner, Outer>::type;
+
+namespace detail {
+
+/// Declared so that the unqualified call below finds the user's by argument-dependent
+/// lookup, in the namespace of the type KANNOTATE_TYPE annotates.
+void kotatsu_type_annotation() = delete;
+
+/// Whether KANNOTATE_TYPE annotates `T`. A class derived from it is not: a
+/// std::type_identity of it converts to none of its base's.
+template <typename T>
+concept has_type_annotation = (std::is_class_v<T> || std::is_enum_v<T>) &&
+                              requires { kotatsu_type_annotation(std::type_identity<T>{}); };
+
+/// Whether an entry may annotate a type: its description, or an extension's.
+template <typename C>
+constexpr bool type_entry_v = dsl::extension_component<C>;
+
+template <auto Member, typename V>
+constexpr bool type_entry_v<dsl::value_component<dsl::aspect::description, Member, V>> = true;
+
+template <typename... Cs>
+consteval bool type_entries(std::type_identity<std::tuple<Cs...>>) {
+    return (type_entry_v<Cs> && ...);
+}
+
+/// The annotation of type `T` itself, as a tag.
+template <typename T>
+struct type_annotation {
+    constexpr static auto entries = kotatsu_type_annotation(std::type_identity<T>{});
+    static_assert(type_entries(std::type_identity<std::remove_const_t<decltype(entries)>>{}),
+                  "a type annotation takes description and extension entries");
+};
+
+template <typename T>
+constexpr auto type_attrs() {
+    if constexpr(has_type_annotation<T>) {
+        return std::tuple<attrs::spec<type_annotation<T>>>{};
+    } else {
+        return std::tuple<>{};
+    }
+}
+
+template <typename T>
+constexpr auto own_attrs() {
+    if constexpr(annotated_type<T>) {
+        return typename T::attrs{};
+    } else {
+        return std::tuple<>{};
+    }
+}
+
+}  // namespace detail
+
+/// The attrs of type `T` itself: the annotation KANNOTATE_TYPE gives it.
+template <typename T>
+using type_attrs_t = decltype(detail::type_attrs<T>());
+
+namespace detail {
+
+template <typename T>
+struct raw_type {
+    using type = T;
+};
+
+template <annotated_type T>
+struct raw_type<T> {
+    using type = typename T::annotated_type;
+};
+
+}  // namespace detail
+
+/// The type an annotated `T` annotates, through every annotation around it; `T` itself when
+/// it is not one.
+template <typename T>
+using raw_type_t = typename detail::raw_type<T>::type;
+
+/// The attrs a field of type `T` carries: the annotation of the type it annotates, under the
+/// annotations written around it, an outer one's entries overriding an inner one's.
+template <typename T>
+using attrs_of_t = compose_attrs_t<type_attrs_t<raw_type_t<T>>, decltype(detail::own_attrs<T>())>;
+
+/// The value spec a field of type `T` carries (attrs_of_t).
+template <typename T>
+constexpr const inline field_spec& field_spec_of = spec_of<attrs_of_t<std::remove_cv_t<T>>>;
+
+/// The spec of type `Spec` an extension attached to a field of type `T`, its type's own
+/// annotation included (attrs_of_t); null when it has none.
+template <typename Spec, typename T>
+constexpr const Spec* extension_of = detail::extension_in<Spec, attrs_of_t<std::remove_cv_t<T>>>();
 
 }  // namespace kotatsu::meta

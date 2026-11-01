@@ -17,15 +17,13 @@ namespace {
 
 struct Optimize {
     int level = 0;
-    KOTATSU_ANNOTATE(cli::names = {"-O2"},
-                     cli::forward = {"--level", "2"},
-                     description = "--level 2")
+    KANNOTATE(cli::names = {"-O2"}, cli::forward = {"--level", "2"}, description = "--level 2")
     <cli::Alias> o2;
 };
 
 struct Strict {
     unsigned level = 0;
-    KOTATSU_ANNOTATE(cli::names = {"-Oneg"}, cli::forward = {"--level", "-1"})
+    KANNOTATE(cli::names = {"-Oneg"}, cli::forward = {"--level", "-1"})
     <cli::Alias> neg;
 };
 
@@ -55,7 +53,7 @@ struct Port {
 struct Server {
     Port port;
     cli::Help help;
-    KOTATSU_ANNOTATE(cli::required = true)
+    KANNOTATE(cli::required = true)
     <std::string> host;
 };
 

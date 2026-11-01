@@ -36,7 +36,7 @@ private:
 };
 
 struct json_schema_reprd_repr {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> total = 5;
 };
 
@@ -58,7 +58,7 @@ private:
 };
 
 struct json_schema_reprd_shifted_repr {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> n = 4;
 };
 
@@ -81,7 +81,7 @@ private:
 };
 
 struct json_schema_imperative_repr {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> n = 4;
 };
 
@@ -134,10 +134,10 @@ struct repr<json_schema_imperative_root> {
 namespace {
 
 struct defaults_leaf {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> threads = 4;
 
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::string> name = "worker";
 };
 
@@ -152,7 +152,7 @@ struct defaults_explicit_holder {
 };
 
 struct defaults_root {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <bool> enabled = true;
 
     defaults_leaf pool;
@@ -160,19 +160,19 @@ struct defaults_root {
 
     std::optional<std::int32_t> limit;
 
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::vector<std::int32_t>> ids;
 };
 
 struct defaults_skipped {
-    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
+    KANNOTATE(skip_if = skip_when::empty)
     <std::vector<std::int32_t>> tags;
 };
 
 enum class defaults_level : std::uint8_t { Low = 0, High = 1 };
 
 struct defaults_with_enum {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <defaults_level> log_level = defaults_level::High;
 };
 
@@ -187,33 +187,33 @@ struct defaults_engaged {
 };
 
 struct defaults_node {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> depth = 1;
 
     std::unique_ptr<defaults_node> next;
 };
 
 struct defaults_ref_sites {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <defaults_leaf> pool;
 
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <defaults_leaf> mirror = {defaults_leaf{.threads = 9}};
 };
 
 struct defaults_alt_a {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> depth = 3;
 
     std::string name;
 };
 
 struct defaults_alt_b {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> other = 9;
 };
 
-KOTATSU_ANNOTATION(defaults_internal_annotation, tag = "kind", tag_names = {"a", "b"});
+KANNOTATION(defaults_internal_annotation, tag = "kind", tag_names = {"a", "b"});
 using defaults_internal_variant =
     annotate<defaults_internal_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
 
@@ -221,29 +221,26 @@ struct defaults_variant_holder {
     defaults_internal_variant shape;
 };
 
-KOTATSU_ANNOTATION(defaults_adjacent_annotation,
-                   tag = "type",
-                   content = "value",
-                   tag_names = {"a", "b"});
+KANNOTATION(defaults_adjacent_annotation, tag = "type", content = "value", tag_names = {"a", "b"});
 using defaults_adjacent_variant =
     annotate<defaults_adjacent_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
 
-KOTATSU_ANNOTATION(defaults_external_annotation, tagged = true, tag_names = {"a", "b"});
+KANNOTATION(defaults_external_annotation, tagged = true, tag_names = {"a", "b"});
 using defaults_external_variant =
     annotate<defaults_external_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
 
 struct defaults_elem_a {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> alpha = 7;
 };
 
 struct defaults_elem_b {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::string> beta = "cell";
 };
 
 struct defaults_elem_c {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <bool> gamma = true;
 };
 
@@ -266,7 +263,7 @@ struct defaults_variant_override {
 };
 
 struct defaults_cyclic {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> depth = 1;
 
     std::vector<defaults_cyclic> kids = {
@@ -291,16 +288,16 @@ struct defaults_tuple_override {
 };
 
 struct renamed_defaults_child {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> first_value = 4;
 };
 
 struct renamed_defaults_holder {
-    KOTATSU_ANNOTATE(rename_all = Casing::LowerCamel)
+    KANNOTATE(rename_all = Casing::LowerCamel)
     <renamed_defaults_child> child;
 };
 
-KOTATSU_ANNOTATION(renamed_defaults_root_annotation, rename_all = Casing::LowerCamel);
+KANNOTATION(renamed_defaults_root_annotation, rename_all = Casing::LowerCamel);
 using renamed_defaults_root =
     annotate<renamed_defaults_root_annotation>::type<renamed_defaults_child>;
 

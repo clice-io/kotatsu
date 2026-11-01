@@ -389,7 +389,7 @@ ZEST_CASE(checked_before_crashing, crashes = true) {
 struct FixtureOptions {
     Options zest;
 
-    KOTATSU_ANNOTATE(description = "make every worker fail to start")
+    KANNOTATE(description = "make every worker fail to start")
     <bool> fail_worker_start = false;
 };
 

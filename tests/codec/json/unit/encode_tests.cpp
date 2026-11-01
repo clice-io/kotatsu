@@ -41,22 +41,22 @@ struct OtherFormat {};
 
 /// Keys JSON escapes, which encode spells out as it compiles.
 struct OddlyNamed {
-    KOTATSU_ANNOTATE(rename = R"(say "hi")")
+    KANNOTATE(rename = R"(say "hi")")
     <int> quoted = 1;
-    KOTATSU_ANNOTATE(rename = R"(back\slash)")
+    KANNOTATE(rename = R"(back\slash)")
     <int> backslashed = 2;
-    KOTATSU_ANNOTATE(rename = "tab\tand\x01")
+    KANNOTATE(rename = "tab\tand\x01")
     <int> controlled = 3;
-    KOTATSU_ANNOTATE(rename = "\b\f\n\r\x1f")
+    KANNOTATE(rename = "\b\f\n\r\x1f")
     <int> shortened = 4;
-    KOTATSU_ANNOTATE(rename = "del\x7f/caf\xC3\xA9")
+    KANNOTATE(rename = "del\x7f/caf\xC3\xA9")
     <int> kept = 5;
 };
 
 /// Its first field is left out when empty, and the next one's key then
 /// opens the object.
 struct NoteFirst {
-    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
+    KANNOTATE(skip_if = skip_when::empty)
     <std::string> note;
     int id = 1;
 };

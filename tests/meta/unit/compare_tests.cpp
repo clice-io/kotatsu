@@ -735,7 +735,7 @@ ZEST_CASE(variant_valueless_compares_less) {
 #endif
 
 struct kind_tag {
-    constexpr static auto spec = make_struct_spec(dsl::tag = "kind");
+    constexpr static auto entries = meta::make_annotation(dsl::tag = "kind");
 };
 
 ZEST_CASE(variant_in_annotation) {

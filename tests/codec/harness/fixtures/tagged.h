@@ -22,28 +22,28 @@ namespace kotatsu::test {
 // backend.
 
 struct ExternalShapeTag {
-    constexpr static auto spec =
-        meta::make_struct_spec(meta::dsl::tagged = true,
-                               meta::dsl::tag_names = {"none", "number", "text", "point"});
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::tagged = true,
+                              meta::dsl::tag_names = {"none", "number", "text", "point"});
 };
 
 using ExternalShape =
     meta::annotate<ExternalShapeTag>::type<std::variant<std::monostate, int, std::string, Point>>;
 
 struct AdjacentShapeTag {
-    constexpr static auto spec =
-        meta::make_struct_spec(meta::dsl::tag = "t",
-                               meta::dsl::content = "c",
-                               meta::dsl::tag_names = {"none", "number", "text", "point"});
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::tag = "t",
+                              meta::dsl::content = "c",
+                              meta::dsl::tag_names = {"none", "number", "text", "point"});
 };
 
 using AdjacentShape =
     meta::annotate<AdjacentShapeTag>::type<std::variant<std::monostate, int, std::string, Point>>;
 
 struct InternalShapeTag {
-    constexpr static auto spec =
-        meta::make_struct_spec(meta::dsl::tag = "kind",
-                               meta::dsl::tag_names = {"circle", "rect", "segment"});
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::tag = "kind",
+                              meta::dsl::tag_names = {"circle", "rect", "segment"});
 };
 
 using InternalShape = meta::annotate<InternalShapeTag>::type<std::variant<Circle, Rect, Segment>>;
@@ -151,9 +151,9 @@ struct TaggedWrapper {
 };
 
 struct NestedTag {
-    constexpr static auto spec =
-        meta::make_struct_spec(meta::dsl::tagged = true,
-                               meta::dsl::tag_names = {"plain", "wrapped"});
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::tagged = true,
+                              meta::dsl::tag_names = {"plain", "wrapped"});
 };
 
 using NestedTagged = meta::annotate<NestedTag>::type<std::variant<int, TaggedWrapper>>;

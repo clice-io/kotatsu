@@ -22,7 +22,7 @@ enum class Level : std::uint8_t { Trace, Debug, Info, Warn };
 
 struct Options {
     bool verbose = false;
-    KOTATSU_ANNOTATE(cli::count = true, cli::names = {"-v"})
+    KANNOTATE(cli::count = true, cli::names = {"-v"})
     <std::uint32_t> noise = 0;
     int jobs = 1;
     double ratio = 0.5;
@@ -30,26 +30,26 @@ struct Options {
     Level level = Level::Warn;
     std::optional<std::string> output;
     std::vector<std::string> include;
-    KOTATSU_ANNOTATE(cli::comma = true)
+    KANNOTATE(cli::comma = true)
     <std::vector<std::string>> tags;
     std::vector<std::pair<std::string, std::string>> define;
     std::tuple<int, int> size = {0, 0};
-    KOTATSU_ANNOTATE(cli::names = {"-o", "--out"})
+    KANNOTATE(cli::names = {"-o", "--out"})
     <std::string> out;
-    KOTATSU_ANNOTATE(cli::names = {"-I"}, cli::style = KVStyle::Joined)
+    KANNOTATE(cli::names = {"-I"}, cli::style = KVStyle::Joined)
     <std::string> dir;
-    KOTATSU_ANNOTATE(cli::names = {"--sep"}, cli::style = KVStyle::Separate)
+    KANNOTATE(cli::names = {"--sep"}, cli::style = KVStyle::Separate)
     <std::string> sep;
-    KOTATSU_ANNOTATE(cli::required = true)
+    KANNOTATE(cli::required = true)
     <std::string> must = "x";
     std::string x;
 };
 
 /// An option named with '=' beside one whose '=' form it is, declared first.
 struct Spelled {
-    KOTATSU_ANNOTATE(cli::names = {"--x"})
+    KANNOTATE(cli::names = {"--x"})
     <std::string> separate;
-    KOTATSU_ANNOTATE(cli::names = {"--x="})
+    KANNOTATE(cli::names = {"--x="})
     <std::string> joined;
 };
 
@@ -59,29 +59,29 @@ struct Toggles {
 
 /// A command that names no option.
 struct Files {
-    KOTATSU_ANNOTATE(cli::positional = true)
+    KANNOTATE(cli::positional = true)
     <std::vector<std::string>> files;
 };
 
 struct Tuned {
-    KOTATSU_ANNOTATE(minimum = 1, maximum = 64, description = "Workers")
+    KANNOTATE(minimum = 1, maximum = 64, description = "Workers")
     <int> jobs = 4;
-    KOTATSU_ANNOTATE(choices = {"fast", "slow"})
+    KANNOTATE(choices = {"fast", "slow"})
     <std::string> mode = "fast";
     std::vector<std::string> include;
     std::string name;
 };
 
 struct Bounded {
-    KOTATSU_ANNOTATE(minimum = 0, maximum = 1)
+    KANNOTATE(minimum = 0, maximum = 1)
     <double> ratio = 0;
-    KOTATSU_ANNOTATE(cli::count = true, cli::names = {"-v"}, maximum = 3)
+    KANNOTATE(cli::count = true, cli::names = {"-v"}, maximum = 3)
     <std::uint32_t> noise = 0;
-    KOTATSU_ANNOTATE(choices = {"a", "b"})
+    KANNOTATE(choices = {"a", "b"})
     <std::pair<std::string, std::string>> pair;
-    KOTATSU_ANNOTATE(cli::positional = true, choices = {"a", "b"})
+    KANNOTATE(cli::positional = true, choices = {"a", "b"})
     <std::optional<std::string>> word;
-    KOTATSU_ANNOTATE(cli::hidden = true)
+    KANNOTATE(cli::hidden = true)
     <bool> secret = false;
 };
 

@@ -154,7 +154,7 @@ NamespaceMacros: [ZEST_SUITE]
 StatementMacros:
   # Field-position annotation: always break between the macro and the
   # annotated declaration, so `<T> name;` gets its own line.
-  - KOTATSU_ANNOTATE
+  - KANNOTATE
 
 KeepEmptyLines:
   AtEndOfFile: false

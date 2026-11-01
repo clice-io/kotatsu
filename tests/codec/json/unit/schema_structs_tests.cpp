@@ -580,13 +580,13 @@ ZEST_CASE(combo_trivial_nested) {
 
 ZEST_CASE(self_referential_struct) {
     static struct_type_info self_info = {
-        {type_kind::structure, "self_ref"},
+        {type_kind::structure, "self_ref", {}},
         false,
         false,
         {},
     };
     const static optional_type_info opt_self = {
-        {type_kind::optional, "optional<self_ref>"},
+        {type_kind::optional, "optional<self_ref>", {}},
         []() -> const type_info& { return self_info; },
     };
     const static field_info self_fields[] = {
@@ -617,10 +617,10 @@ ZEST_CASE(field_ordering_stability) {
         {"beta",   {}, 0, 3, type_info_of<double>,       false, false, false},
     };
     const static struct_type_info ordered_info = {
-        {type_kind::structure, "ordered_struct"},
+        {type_kind::structure, "ordered_struct", {}},
         false,
         false,
-        {ordered_fields,       4               },
+        {ordered_fields, 4},
     };
     const auto result = json::schema_string(ordered_info).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -635,24 +635,24 @@ ZEST_CASE(field_ordering_stability) {
 
 ZEST_CASE(mutual_recursion) {
     static struct_type_info info_a = {
-        {type_kind::structure, "node_a"},
+        {type_kind::structure, "node_a", {}},
         false,
         false,
         {}
     };
     static struct_type_info info_b = {
-        {type_kind::structure, "node_b"},
+        {type_kind::structure, "node_b", {}},
         false,
         false,
         {}
     };
 
     const static optional_type_info opt_b = {
-        {type_kind::optional, "optional<node_b>"},
+        {type_kind::optional, "optional<node_b>", {}},
         []() -> const type_info& { return info_b; },
     };
     const static optional_type_info opt_a = {
-        {type_kind::optional, "optional<node_a>"},
+        {type_kind::optional, "optional<node_a>", {}},
         []() -> const type_info& { return info_a; },
     };
 

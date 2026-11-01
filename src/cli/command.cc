@@ -236,12 +236,15 @@ class Builder {
     }
 
     /// Adds the subcommands files added to the set of a cli::Commands field, which may be left
-    /// out: the field is empty then.
+    /// out unless the field is required: the field is empty then.
     void add_commands(const FieldUse& use,
                       std::uint32_t group,
                       const std::vector<std::string_view>& keys,
                       const std::string& path) {
-        Subcommands subcommands{.keys = keys, .path = path, .optional = true, .group = group};
+        Subcommands subcommands{.keys = keys,
+                                .path = path,
+                                .optional = !use.spec.required,
+                                .group = group};
         for(const auto& entry: use.spec.commands.registry().entries) {
             subcommands.names.push_back(entry.name);
             subcommands.descriptions.push_back(entry.description);

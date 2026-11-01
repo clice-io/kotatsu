@@ -22,13 +22,13 @@ using test::casing_child;
 
 struct with_default {
     std::string name;
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> count;
 };
 
 struct with_skip {
     std::string visible;
-    KOTATSU_ANNOTATE(skip = true)
+    KANNOTATE(skip = true)
     <std::int32_t> hidden;
 };
 
@@ -38,46 +38,46 @@ struct base_fields {
 };
 
 struct with_flatten {
-    KOTATSU_ANNOTATE(flatten = true)
+    KANNOTATE(flatten = true)
     <base_fields> base;
     std::string extra;
 };
 
 struct with_rename {
-    KOTATSU_ANNOTATE(rename = "my_field")
+    KANNOTATE(rename = "my_field")
     <std::int32_t> x;
     std::string y;
 };
 
 struct with_skip_when {
     std::string name;
-    KOTATSU_ANNOTATE(skip_if = skip_when::empty)
+    KANNOTATE(skip_if = skip_when::empty)
     <std::vector<std::int32_t>> tags;
-    KOTATSU_ANNOTATE(skip_if = skip_when::default_value)
+    KANNOTATE(skip_if = skip_when::default_value)
     <std::int32_t> count;
-    KOTATSU_ANNOTATE(skip_if = type<pred::empty>)
+    KANNOTATE(skip_if = type<pred::empty>)
     <std::string> note;
 };
 
 struct repeated_child_annotation {
-    KOTATSU_ANNOTATE(rename_all = Casing::LowerCamel)
+    KANNOTATE(rename_all = Casing::LowerCamel)
     <casing_child> left;
-    KOTATSU_ANNOTATE(rename_all = Casing::LowerCamel)
+    KANNOTATE(rename_all = Casing::LowerCamel)
     <casing_child> right;
 };
 
 struct all_default {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> x;
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::string> y;
 };
 
 struct skip_default {
     std::string name;
-    KOTATSU_ANNOTATE(skip = true)
+    KANNOTATE(skip = true)
     <std::int32_t> hidden;
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::int32_t> count;
 };
 
@@ -87,71 +87,71 @@ struct base_with_opt {
 };
 
 struct flatten_opt {
-    KOTATSU_ANNOTATE(flatten = true)
+    KANNOTATE(flatten = true)
     <base_with_opt> base;
     std::string tag;
 };
 
 struct rename_base {
-    KOTATSU_ANNOTATE(rename = "alpha")
+    KANNOTATE(rename = "alpha")
     <std::int32_t> a;
     std::int32_t b;
 };
 
 struct flatten_rename {
-    KOTATSU_ANNOTATE(flatten = true)
+    KANNOTATE(flatten = true)
     <rename_base> inner;
     std::string extra;
 };
 
 struct bounded_fields {
-    KOTATSU_ANNOTATE(minimum = 1, maximum = 64)
+    KANNOTATE(minimum = 1, maximum = 64)
     <std::uint32_t> workers;
     /// Looser than its type, whose bound stays.
-    KOTATSU_ANNOTATE(minimum = -1000)
+    KANNOTATE(minimum = -1000)
     <std::int8_t> offset;
-    KOTATSU_ANNOTATE(minimum = 0.5)
+    KANNOTATE(minimum = 0.5)
     <double> ratio;
-    KOTATSU_ANNOTATE(maximum = 10)
+    KANNOTATE(maximum = 10)
     <std::optional<std::int32_t>> limit;
     /// Nullable twice over: its own null, and nan_repr's.
-    KOTATSU_ANNOTATE(minimum = 0.25)
+    KANNOTATE(minimum = 0.25)
     <std::optional<double>> share;
 };
 
 struct bounded_text {
-    KOTATSU_ANNOTATE(minimum = 1)
+    KANNOTATE(minimum = 1)
     <std::string> name;
 };
 
 struct fractional_bound_on_integer {
-    KOTATSU_ANNOTATE(maximum = 2.5)
+    KANNOTATE(maximum = 2.5)
     <std::int32_t> count;
 };
 
 struct chosen_fields {
-    KOTATSU_ANNOTATE(choices = {"off", "on", "auto"})
+    KANNOTATE(choices = {"off", "on", "auto"})
     <std::string> readonly;
-    KOTATSU_ANNOTATE(choices = {"a", "b"})
+    KANNOTATE(choices = {"a", "b"})
     <std::optional<std::string>> mode;
 };
 
 struct chosen_number {
-    KOTATSU_ANNOTATE(choices = {"1"})
+    KANNOTATE(choices = {"1"})
     <std::int32_t> count;
 };
 
 struct machine_section {
-    KOTATSU_ANNOTATE(defaulted = true, schema_default = false)
+    KANNOTATE(defaulted = true, schema_default = false)
     <std::uint32_t> workers = 8;
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::uint32_t> retries = 3;
 };
 
 struct machine_root {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <machine_section> section;
-    KOTATSU_ANNOTATE(defaulted = true, schema_default = false)
+    KANNOTATE(defaulted = true, schema_default = false)
     <std::uint32_t> jobs = 8;
 };
 
@@ -162,47 +162,47 @@ enum class level_kind : std::uint8_t {
 
 /// Sections in an array, which carries their encoded objects as its default.
 struct machine_sections {
-    KOTATSU_ANNOTATE(defaulted = true)
+    KANNOTATE(defaulted = true)
     <std::vector<machine_section>> sections = {machine_section{}};
 };
 
 struct bounded_enum {
-    KOTATSU_ANNOTATE(maximum = 1)
+    KANNOTATE(maximum = 1)
     <level_kind> level;
 };
 
 struct wide_bounds {
-    KOTATSU_ANNOTATE(minimum = -1, maximum = ~0ULL)
+    KANNOTATE(minimum = -1, maximum = ~0ULL)
     <std::uint64_t> count;
 };
 
 struct aliased_required {
-    KOTATSU_ANNOTATE(alias = {"legacy"})
+    KANNOTATE(alias = {"legacy"})
     <std::int32_t> value;
 };
 
 /// A required field whose default a schema would leave unstated.
 struct unstated_required {
-    KOTATSU_ANNOTATE(schema_default = false)
+    KANNOTATE(schema_default = false)
     <std::uint32_t> seed = 1;
 };
 
 /// Two fields answering to "dup", and an alias taking another field's name.
 struct shared_alias {
-    KOTATSU_ANNOTATE(alias = {"dup"})
+    KANNOTATE(alias = {"dup"})
     <std::int32_t> left;
-    KOTATSU_ANNOTATE(alias = {"dup"})
+    KANNOTATE(alias = {"dup"})
     <std::int32_t> right;
 };
 
 struct alias_on_a_name {
-    KOTATSU_ANNOTATE(alias = {"right"})
+    KANNOTATE(alias = {"right"})
     <std::int32_t> left;
     std::int32_t right;
 };
 
 struct enum_string_field {
-    KOTATSU_ANNOTATE(enum_string = type<naming::rename_policy::lower_camel>)
+    KANNOTATE(enum_string = type<naming::rename_policy::lower_camel>)
     <level_kind> level;
 };
 
@@ -217,50 +217,50 @@ struct char_field {
 };
 
 struct desc_scalar {
-    KOTATSU_ANNOTATE(description = "Number of worker threads.")
+    KANNOTATE(description = "Number of worker threads.")
     <std::int32_t> threads;
     std::string name;
 };
 
 struct desc_optional {
-    KOTATSU_ANNOTATE(description = "Optional display label.")
+    KANNOTATE(description = "Optional display label.")
     <std::optional<std::string>> label;
 };
 
 struct desc_struct_ref {
-    KOTATSU_ANNOTATE(description = "Anchor position.")
+    KANNOTATE(description = "Anchor position.")
     <point2d> anchor;
 };
 
 struct desc_base {
-    KOTATSU_ANNOTATE(description = "Inherited counter.")
+    KANNOTATE(description = "Inherited counter.")
     <std::int32_t> count;
 };
 
 struct desc_flatten {
-    KOTATSU_ANNOTATE(flatten = true)
+    KANNOTATE(flatten = true)
     <desc_base> base;
     std::string tag;
 };
 
 struct desc_rename {
-    KOTATSU_ANNOTATE(rename = "max_size", description = "Maximum size in bytes.")
+    KANNOTATE(rename = "max_size", description = "Maximum size in bytes.")
     <std::int32_t> size;
 };
 
 struct desc_default {
-    KOTATSU_ANNOTATE(defaulted = true, description = "Retry limit.")
+    KANNOTATE(defaulted = true, description = "Retry limit.")
     <std::int32_t> retries;
 };
 
 struct desc_shared_ref {
     point2d origin;
-    KOTATSU_ANNOTATE(description = "Anchor position.")
+    KANNOTATE(description = "Anchor position.")
     <point2d> anchor;
 };
 
 struct desc_tagged_circle {
-    KOTATSU_ANNOTATE(description = "Radius in meters.")
+    KANNOTATE(description = "Radius in meters.")
     <double> radius;
 };
 
@@ -269,7 +269,7 @@ struct desc_tagged_rect {
     double height;
 };
 
-KOTATSU_ANNOTATION(desc_internal_annotation, tag = "kind", tag_names = {"circle", "rect"});
+KANNOTATION(desc_internal_annotation, tag = "kind", tag_names = {"circle", "rect"});
 using desc_internal_variant =
     annotate<desc_internal_annotation>::type<std::variant<desc_tagged_circle, desc_tagged_rect>>;
 
@@ -306,10 +306,10 @@ ZEST_CASE(deny_unknown_struct) {
         {"count", {}, 0, 1, type_info_of<std::int32_t>, false, false, false},
     };
     const static struct_type_info deny_info = {
-        {type_kind::structure, "deny_struct"},
+        {type_kind::structure, "deny_struct", {}},
         true, // deny_unknown
         false, // is_trivial_layout
-        {deny_fields,          2            },
+        {deny_fields, 2},
     };
     const auto result = json::schema_string(deny_info).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
@@ -363,7 +363,7 @@ ZEST_CASE(skip_if_fields_not_required) {
                       R"("required":["name"]})");
 }
 
-// Two KOTATSU_ANNOTATE uses expand to distinct tags; identical untagged
+// Two KANNOTATE uses expand to distinct tags; identical untagged
 // struct specs must still collapse to one type_info instance and $defs entry.
 ZEST_CASE(repeated_inline_struct_annotation_shares_def) {
     const auto result = json::schema_string<repeated_child_annotation>().value();

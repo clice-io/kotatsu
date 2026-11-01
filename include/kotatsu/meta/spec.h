@@ -5,7 +5,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 #include <limits>
 #include <span>
 #include <string_view>
@@ -34,15 +33,13 @@ enum class skip_when : std::uint8_t {
     default_value,
 };
 
-/// Fixed-capacity list of alias names for one field.
+/// The names an entry lists, such as a field's aliases: a view of the ones its annotation
+/// keeps, as many as it wrote.
 struct name_list {
-    constexpr static std::size_t capacity = 8;
-
-    std::array<std::string_view, capacity> items = {};
-    std::size_t count = 0;
+    std::span<const std::string_view> items = {};
 
     constexpr std::span<const std::string_view> names() const {
-        return {items.data(), count};
+        return items;
     }
 };
 
@@ -75,7 +72,7 @@ constexpr std::partial_ordering compare_numbers(const schema_number& a, const sc
 }
 
 /// The value part of a field annotation. One non-template type, built by
-/// KOTATSU_ANNOTATE at compile time; downstream code reads it through
+/// KANNOTATE at compile time; downstream code reads it through
 /// field_spec_of so mangled names never contain the string payloads. Designed
 /// to be attachable verbatim as a C++26 [[=...]] annotation object later.
 struct field_spec {
@@ -140,7 +137,7 @@ struct struct_spec {
     /// were `defaulted`. An entry of its own, since `defaulted` alone makes a
     /// field annotation.
     bool defaulted_fields = false;
-    /// Variant tagging mode; derived from tagged/tag/content by make_struct_spec.
+    /// Variant tagging mode; derived from tagged/tag/content when the spec is built.
     tag_mode tagging = tag_mode::none;
     /// Tag field name (internal and adjacent tagging).
     std::string_view tag = {};
@@ -186,11 +183,10 @@ enum class aspect : std::uint8_t {
 };
 
 /// Sets one member of a spec. The member pointer decides which spec type the
-/// component applies to: field_spec makes it valid in make_spec, struct_spec in
-/// make_struct_spec, and the spec type of another module, an extension's, puts
-/// it in the annotation beside the field_spec. `A` tells the entries of one
-/// spec type apart, so that none appears twice: an aspect for meta's own, the
-/// member pointer itself for an extension's (member_proxy).
+/// component applies to: field_spec, struct_spec, or the spec type of another
+/// module, an extension's. `A` tells the entries of one spec type apart, so that
+/// none appears twice: an aspect for meta's own, the member pointer itself for an
+/// extension's (member_proxy).
 template <auto A, auto Member, typename V>
 struct value_component {
     V value;
@@ -235,6 +231,14 @@ constexpr bool is_type_component_v = false;
 template <aspect A, typename T>
 constexpr bool is_type_component_v<type_component<A, T>> = true;
 
+/// Whether component T picks how the value is represented: as, with or enum_string.
+template <typename T>
+constexpr bool is_provider_v = false;
+
+template <aspect A, typename T>
+constexpr bool is_provider_v<type_component<A, T>> =
+    A == aspect::as || A == aspect::with || A == aspect::enum_string;
+
 /// A DSL component: it applies to its spec_type and says which entry it is.
 template <typename T>
 concept component = requires(const T& component, typename T::spec_type& spec) {
@@ -276,17 +280,25 @@ struct number_proxy {
     }
 };
 
+/// `alias = {"a", "b"}`: the names, kept in the component, which the spec views. The entries
+/// of an annotation stay in static storage (make_annotation), so the view outlives the build.
+template <auto A, auto Member, std::size_t N>
+struct names_component {
+    std::array<std::string_view, N> value;
+
+    using spec_type = class_type_t<decltype(Member)>;
+    constexpr static auto kind = A;
+
+    constexpr void apply(spec_type& spec) const {
+        spec.*Member = name_list{value};
+    }
+};
+
 template <auto A, auto Member>
 struct name_list_proxy {
-    constexpr auto operator=(std::initializer_list<std::string_view> names) const {
-        if(names.size() > name_list::capacity) {
-            KOTATSU_THROW("annotation: too many names");
-        }
-        value_component<A, Member, name_list> component{};
-        for(auto name: names) {
-            component.value.items[component.value.count++] = name;
-        }
-        return component;
+    template <std::size_t N>
+    constexpr auto operator=(const std::string_view (&names)[N]) const {
+        return names_component<A, Member, N>{std::to_array(names)};
     }
 };
 
@@ -369,17 +381,6 @@ template <typename T>
 [[maybe_unused]] constexpr inline type_tag<T> type{};
 
 }  // namespace dsl
-
-/// What KOTATSU_ANNOTATE stores in its tag: the folded value spec, the specs
-/// of the extensions its entries set, one value of each spec type, and the type
-/// components preserved in the result type.
-template <typename Extras, typename Extensions>
-struct spec_result {
-    field_spec value;
-    Extensions extensions;
-
-    using extras = Extras;
-};
 
 namespace detail {
 
@@ -498,76 +499,106 @@ constexpr struct_spec finalize_struct_spec(struct_spec spec) {
     return spec;
 }
 
-}  // namespace detail
-
-template <typename... Cs>
-constexpr auto make_spec(const Cs&... components) {
-    static_assert((dsl::component<Cs> && ...),
-                  "annotation entries must be assignments, e.g. skip = true");
-    static_assert(
-        (!dsl::spec_component<Cs, struct_spec> && ...),
-        "struct-level entries (rename_all/deny_unknown_fields/defaulted_fields/tagged/...) "
-        "cannot be mixed with field-level entries in one annotation");
-    static_assert(detail::component_kinds_unique<Cs...>(),
-                  "annotation: the same attribute appears twice");
-
-    using extras_t = decltype(std::tuple_cat(
-        std::declval<
-            std::conditional_t<dsl::is_type_component_v<Cs>, std::tuple<Cs>, std::tuple<>>>()...));
-    using extensions_t = typename detail::extension_specs<std::tuple<>, Cs...>::type;
-
-    spec_result<extras_t, extensions_t> result{};
-    (
-        [&](const auto& component) {
-            if constexpr(dsl::spec_component<std::remove_cvref_t<decltype(component)>,
-                                             field_spec>) {
-                component.apply(result.value);
-            } else {
-                using spec_t = typename std::remove_cvref_t<decltype(component)>::spec_type;
-                component.apply(std::get<spec_t>(result.extensions));
-            }
-        }(components),
-        ...);
-    detail::validate_spec(result.value);
-    // An extension checks its own spec, with a validate() of its own.
+/// The spec of type `Spec` the entries an annotation keeps set, folded in order: a later
+/// entry overrides an earlier one of the same member, as an outer annotation's do an inner's.
+template <typename Spec, typename... Cs>
+constexpr Spec fold_entries(const std::tuple<Cs...>& entries) {
+    Spec spec{};
     std::apply(
-        [](const auto&... extension) {
+        [&](const Cs&... component) {
             (
                 [&] {
-                    if constexpr(requires { extension.validate(); }) {
-                        extension.validate();
+                    if constexpr(dsl::spec_component<Cs, Spec>) {
+                        component.apply(spec);
                     }
                 }(),
                 ...);
         },
-        result.extensions);
-    return result;
+        entries);
+    return spec;
 }
 
 template <typename... Cs>
-constexpr struct_spec make_struct_spec(const Cs&... components) {
+constexpr field_spec field_spec_from(const std::tuple<Cs...>& entries) {
+    auto spec = fold_entries<field_spec>(entries);
+    validate_spec(spec);
+    return spec;
+}
+
+template <typename... Cs>
+constexpr struct_spec struct_spec_from(const std::tuple<Cs...>& entries) {
+    return finalize_struct_spec(fold_entries<struct_spec>(entries));
+}
+
+/// The specs of the extensions the entries set, one of each spec type, each checked by a
+/// validate() of its own.
+template <typename... Cs>
+constexpr auto extensions_from(const std::tuple<Cs...>& entries) {
+    using extensions_t = typename extension_specs<std::tuple<>, Cs...>::type;
+    return [&]<typename... Specs>(std::type_identity<std::tuple<Specs...>>) {
+        return extensions_t{[&] {
+            auto spec = fold_entries<Specs>(entries);
+            if constexpr(requires { spec.validate(); }) {
+                spec.validate();
+            }
+            return spec;
+        }()...};
+    }(std::type_identity<extensions_t>{});
+}
+
+/// Whether components `I`, of an inner annotation, and `O`, of an outer one, set one thing:
+/// the same entry, or how the value is represented (as, with, enum_string), which one
+/// annotation picks once.
+template <typename I, typename O>
+consteval bool overrides() {
+    return same_entry<I, O>() || (dsl::is_provider_v<I> && dsl::is_provider_v<O>);
+}
+
+template <typename... Os, typename I>
+constexpr auto kept_entry(const I& component) {
+    if constexpr((overrides<I, Os>() || ...)) {
+        return std::tuple<>{};
+    } else {
+        return std::tuple<I>{component};
+    }
+}
+
+/// The entries of an annotation written around another: the inner one's that no outer one
+/// overrides, then the outer ones.
+template <typename... Is, typename... Os>
+constexpr auto compose_entries(const std::tuple<Is...>& inner, const std::tuple<Os...>& outer) {
+    return std::apply(
+        [&](const Is&... component) {
+            return std::tuple_cat(kept_entry<Os...>(component)..., outer);
+        },
+        inner);
+}
+
+}  // namespace detail
+
+/// The entries of one annotation, checked, as the tag it makes keeps them in its static
+/// `entries`: what KANNOTATION expands to, and what a hand-written tag writes,
+///
+///     struct user_id_tag {
+///         constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "userId");
+///     };
+///
+/// Kept as written rather than folded, so that the names they list stay where the specs view
+/// them, and so that annotations compose entry by entry. Field entries make a field_spec,
+/// struct entries a struct_spec, and an extension's entries its own spec; any mix may share
+/// one annotation.
+template <typename... Cs>
+constexpr std::tuple<Cs...> make_annotation(const Cs&... components) {
     static_assert((dsl::component<Cs> && ...),
-                  "annotation entries must be assignments, e.g. deny_unknown_fields = true");
-    static_assert((dsl::spec_component<Cs, struct_spec> && ...),
-                  "field-level entries are not valid in a struct annotation; use make_spec");
+                  "annotation entries must be assignments, e.g. skip = true");
     static_assert(detail::component_kinds_unique<Cs...>(),
                   "annotation: the same attribute appears twice");
-
-    struct_spec spec{};
-    (components.apply(spec), ...);
-    return detail::finalize_struct_spec(spec);
-}
-
-/// The entries decide what an annotation describes: struct-level entries only
-/// make a struct_spec, anything else a field spec. KOTATSU_ANNOTATION routes
-/// through this so one macro covers both.
-template <typename... Cs>
-constexpr auto make_annotation(const Cs&... components) {
-    if constexpr(sizeof...(Cs) > 0 && (dsl::spec_component<Cs, struct_spec> && ...)) {
-        return make_struct_spec(components...);
-    } else {
-        return make_spec(components...);
-    }
+    std::tuple<Cs...> entries{components...};
+    // Checked where the annotation is written, not first where a field uses it.
+    detail::field_spec_from(entries);
+    detail::struct_spec_from(entries);
+    detail::extensions_from(entries);
+    return entries;
 }
 
 }  // namespace kotatsu::meta

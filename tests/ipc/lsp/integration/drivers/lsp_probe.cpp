@@ -41,7 +41,7 @@ struct Question {
     std::optional<bool> clamped;
 };
 
-KOTATSU_ANNOTATION(left_out_if_none, skip_if = skip_when::none);
+KANNOTATION(left_out_if_none, skip_if = skip_when::none);
 
 template <typename T>
 using omittable = meta::annotate<left_out_if_none>::type<std::optional<T>>;

@@ -23,10 +23,18 @@ concept inherit_use_type = !std::is_aggregate_v<T> && !wrap_type<T>;
 template <typename T, typename... Attrs>
 struct annotation;
 
+namespace detail {
+
+/// The attrs of an annotation of `T`: `Attrs`, written around those of `T` when `T` is an
+/// annotation itself, so that an annotation of an annotation is one annotation of the type
+/// inside both, whose outer entries override the inner ones.
+template <typename T, typename... Attrs>
+using layered_attrs_t = compose_attrs_t<decltype(own_attrs<T>()), std::tuple<Attrs...>>;
+
+}  // namespace detail
+
 template <wrap_type T, typename... Attrs>
 struct annotation<T, Attrs...> {
-    static_assert(detail::validate_attrs<std::tuple<Attrs...>>(), "Invalid attribute combination");
-
     T value;
 
     constexpr annotation() = default;
@@ -51,22 +59,20 @@ struct annotation<T, Attrs...> {
         return *this;
     }
 
-    using annotated_type = T;
-    using attrs = std::tuple<Attrs...>;
+    using annotated_type = raw_type_t<T>;
+    using attrs = detail::layered_attrs_t<T, Attrs...>;
+    static_assert(detail::validate_attrs<attrs>(), "Invalid attribute combination");
 };
 
 template <inherit_type T, typename... Attrs>
 struct annotation<T, Attrs...> : T {
-    static_assert(detail::validate_attrs<std::tuple<Attrs...>>(), "Invalid attribute combination");
-
-    using annotated_type = T;
-    using attrs = std::tuple<Attrs...>;
+    using annotated_type = raw_type_t<T>;
+    using attrs = detail::layered_attrs_t<T, Attrs...>;
+    static_assert(detail::validate_attrs<attrs>(), "Invalid attribute combination");
 };
 
 template <inherit_use_type T, typename... Attrs>
 struct annotation<T, Attrs...> : T {
-    static_assert(detail::validate_attrs<std::tuple<Attrs...>>(), "Invalid attribute combination");
-
     using T::T;
 
     constexpr annotation() = default;
@@ -86,8 +92,9 @@ struct annotation<T, Attrs...> : T {
         return *this;
     }
 
-    using annotated_type = T;
-    using attrs = std::tuple<Attrs...>;
+    using annotated_type = raw_type_t<T>;
+    using attrs = detail::layered_attrs_t<T, Attrs...>;
+    static_assert(detail::validate_attrs<attrs>(), "Invalid attribute combination");
 };
 
 template <annotated_type Value>
@@ -156,35 +163,49 @@ struct component_attr<dsl::type_component<dsl::aspect::enum_string, Policy>> {
     using type = behavior::enum_string<Policy>;
 };
 
-template <typename T, typename Tag, typename Extras, typename... Extra>
-struct annotated_field;
+template <typename C>
+constexpr auto type_component_attr() {
+    if constexpr(dsl::is_type_component_v<C>) {
+        return std::tuple<typename component_attr<C>::type>{};
+    } else {
+        return std::tuple<>{};
+    }
+}
 
-template <typename T, typename Tag, typename... Cs, typename... Extra>
-struct annotated_field<T, Tag, std::tuple<Cs...>, Extra...> {
-    using type = annotation<T, attrs::spec<Tag>, typename component_attr<Cs>::type..., Extra...>;
+/// The attrs the entries `Cs` of the annotation `Tag` make: attrs::spec for its field and
+/// extension entries, attrs::struct_spec for its struct entries, and the behavior attr of
+/// each entry that carries a type.
+template <typename Tag, typename... Cs>
+constexpr auto tag_attrs(std::type_identity<std::tuple<Cs...>>) {
+    constexpr bool field = (!dsl::spec_component<Cs, struct_spec> || ...);
+    constexpr bool structure = (dsl::spec_component<Cs, struct_spec> || ...);
+    return std::tuple_cat(
+        std::conditional_t<field, std::tuple<attrs::spec<Tag>>, std::tuple<>>{},
+        std::conditional_t<structure, std::tuple<attrs::struct_spec<Tag>>, std::tuple<>>{},
+        type_component_attr<Cs>()...);
+}
+
+template <typename T, typename Attrs, typename... Extra>
+struct annotation_of;
+
+template <typename T, typename... Attrs, typename... Extra>
+struct annotation_of<T, std::tuple<Attrs...>, Extra...> {
+    using type = annotation<T, Attrs..., Extra...>;
 };
 
 }  // namespace detail
 
-/// A tag whose spec is a struct-level annotation (made by make_struct_spec)
-/// rather than a field spec.
-template <typename Tag>
-concept struct_spec_tag = std::same_as<std::remove_cv_t<decltype(Tag::spec)>, struct_spec>;
-
-/// Binds a KOTATSU_ANNOTATE tag to the field type it annotates. Extra type
-/// attrs (behavior, ...) may follow the field type explicitly.
+/// Binds the annotation `Tag` (KANNOTATION, or a struct with static `entries` from
+/// make_annotation) to the type it annotates, a field's or a struct's or variant's. Extra
+/// type attrs (behavior, ...) may follow the type explicitly.
 template <typename Tag>
 struct annotate {
     template <typename T, typename... Extra>
-    using type = typename detail::
-        annotated_field<T, Tag, typename decltype(Tag::spec)::extras, Extra...>::type;
-};
-
-/// Binds a make_struct_spec tag to the struct or variant type it annotates.
-template <struct_spec_tag Tag>
-struct annotate<Tag> {
-    template <typename T, typename... Extra>
-    using type = annotation<T, attrs::struct_spec<Tag>, Extra...>;
+    using type = typename detail::annotation_of<
+        T,
+        decltype(detail::tag_attrs<Tag>(
+            std::type_identity<std::remove_const_t<decltype(Tag::entries)>>{})),
+        Extra...>::type;
 };
 
 }  // namespace kotatsu::meta

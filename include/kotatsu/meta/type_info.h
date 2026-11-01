@@ -53,9 +53,47 @@ using format_of_t = typename decltype(detail::format_of_impl<Config>())::type;
 
 struct field_info;
 
+namespace detail {
+
+/// Compares keys rather than an address with null, which GCC refuses in a constant expression
+/// for an inline variable's.
+template <typename Spec>
+constexpr bool holds_extension(std::span<const extension_ref> extensions) {
+    return std::ranges::any_of(extensions,
+                               [](const extension_ref& ref) { return ref.holds<Spec>(); });
+}
+
+template <typename Spec>
+constexpr const Spec* find_extension_ref(std::span<const extension_ref> extensions) {
+    for(const auto& ref: extensions) {
+        if(ref.holds<Spec>()) {
+            return &ref.get<Spec>();
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace detail
+
 struct type_info {
     type_kind kind;
     std::string_view type_name;
+    /// The specs of the extensions the type's own annotation carries (type_attrs_t), found
+    /// with extension().
+    std::span<const extension_ref> extensions;
+
+    /// Whether the type's annotation attached a spec of type `Spec`.
+    template <typename Spec>
+    constexpr bool has_extension() const {
+        return detail::holds_extension<Spec>(extensions);
+    }
+
+    /// The spec of type `Spec` the type's annotation attached; null when it has none. A
+    /// constant expression asks has_extension() first.
+    template <typename Spec>
+    constexpr const Spec* extension() const {
+        return detail::find_extension_ref<Spec>(extensions);
+    }
 
     constexpr bool is_integer() const {
         return kind >= type_kind::int8 && kind <= type_kind::uint64;
@@ -163,8 +201,7 @@ struct field_info {
     /// Whether an extension attached a spec of type `Spec` to the field.
     template <typename Spec>
     constexpr bool has_extension() const {
-        return std::ranges::any_of(extensions,
-                                   [](const extension_ref& ref) { return ref.holds<Spec>(); });
+        return detail::holds_extension<Spec>(extensions);
     }
 
     /// The spec of type `Spec` an extension attached to the field; null when it has none.
@@ -172,12 +209,7 @@ struct field_info {
     /// inline variable with null there.
     template <typename Spec>
     constexpr const Spec* extension() const {
-        for(const auto& ref: extensions) {
-            if(ref.holds<Spec>()) {
-                return &ref.get<Spec>();
-            }
-        }
-        return nullptr;
+        return detail::find_extension_ref<Spec>(extensions);
     }
 };
 
@@ -185,24 +217,9 @@ struct struct_type_info : type_info {
     bool deny_unknown;
     bool is_trivial_layout;
     std::span<const field_info> fields;
-    /// What the struct is, from its `constexpr static std::string_view description`; empty
-    /// when it declares none.
+    /// What the struct is, the `description` of its own annotation; empty when it has none.
     std::string_view description = {};
 };
-
-/// The description struct `T` declares: a static member `description` a string_view takes,
-/// such as `constexpr static std::string_view description = "...";`.
-template <typename T>
-constexpr std::string_view struct_description() {
-    if constexpr(requires {
-                     requires !std::is_member_pointer_v<decltype(&T::description)>;
-                     std::string_view(T::description);
-                 }) {
-        return T::description;
-    } else {
-        return {};
-    }
-}
 
 template <typename T, typename Config = default_config>
 constexpr const type_info& type_info_of();
@@ -316,17 +333,20 @@ struct filter_runtime_attrs<std::tuple<First, Rest...>> {
 template <typename Tuple>
 using filter_runtime_attrs_t = typename filter_runtime_attrs<Tuple>::type;
 
+/// A field's type as its raw type, through every annotation around it, and the attrs it
+/// carries, its type's own annotation's included (attrs_of_t).
 template <typename T>
 struct unwrap_annotated {
-    using raw_type = T;
-    using attrs = std::tuple<>;
+    using raw_type = raw_type_t<T>;
+    using attrs = attrs_of_t<T>;
 };
 
-template <annotated_type T>
-struct unwrap_annotated<T> {
-    using raw_type = typename T::annotated_type;
-    using attrs = typename T::attrs;
-};
+/// The kind and name of type `T`, and the extensions its own annotation carries: the part
+/// every type_info has.
+template <typename T>
+constexpr type_info type_header(type_kind kind) {
+    return {kind, meta::type_name<T>(), extensions_of<type_attrs_t<T>>};
+}
 
 /// The info of enum E, its members spelled through Rename when it travels as
 /// a behavior::enum_string's names.
@@ -336,8 +356,8 @@ struct enum_info_node {
     constexpr static auto& values = meta::reflection<E>::member_values;
 
     constexpr inline static enum_type_info value = {
-        {type_kind::enumeration, meta::type_name<E>()},
-        {names.data(),           names.size()        },
+        type_header<E>(type_kind::enumeration),
+        {names.data(), names.size()},
         static_cast<const void*>(values.data()),
         kind_of<std::underlying_type_t<E>>(),
         Rename,
@@ -426,7 +446,7 @@ template <typename T, typename AttrsT, typename Config, type_kind Kind = kind_of
 struct type_instance_impl;
 
 /// The instance key is the resolution result, not the annotated input: two
-/// textually identical annotations (KOTATSU_ANNOTATE mints a fresh tag per
+/// textually identical annotations (KANNOTATE mints a fresh tag per
 /// use) resolve to the same type and the same value-parameterized merged
 /// config, so they share one type_info instance — and thus one $defs entry in
 /// schema output. Tagged variant specs keep their own tag (the string
@@ -532,7 +552,7 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     }();
 
     constexpr inline static variant_type_info value = {
-        {type_kind::variant,  meta::type_name<variant_t>()  },
+        type_header<variant_t>(type_kind::variant),
         {alternatives.data(), alternatives.size()           },
         spec.tagging,
         spec.tag,
@@ -553,17 +573,14 @@ struct tuple_info_node<Tuple, Config, std::index_sequence<Is...>> {
         type_info_of<std::tuple_element_t<Is, Tuple>, Config>...};
 
     constexpr inline static tuple_type_info value = {
-        {type_kind::tuple, meta::type_name<Tuple>()},
-        {elements.data(),  elements.size()         },
+        type_header<Tuple>(type_kind::tuple),
+        {elements.data(), elements.size()},
     };
 };
 
 template <typename T, typename AttrsT, typename Config, type_kind Kind>
 struct type_instance_impl {
-    constexpr inline static type_info value = {
-        kind_of<T>(),
-        meta::type_name<T>(),
-    };
+    constexpr inline static type_info value = type_header<T>(kind_of<T>());
 };
 
 template <typename T, typename AttrsT, typename Config>
@@ -571,7 +588,7 @@ struct type_instance_impl<T, AttrsT, Config, type_kind::optional> {
     using inner_t = typename T::value_type;
 
     constexpr inline static optional_type_info value = {
-        {type_kind::optional, meta::type_name<T>()},
+        type_header<T>(type_kind::optional),
         type_info_of<inner_t, Config>,
     };
 };
@@ -581,7 +598,7 @@ struct type_instance_impl<T, AttrsT, Config, type_kind::pointer> {
     using inner_t = typename T::element_type;
 
     constexpr inline static optional_type_info value = {
-        {type_kind::pointer, meta::type_name<T>()},
+        type_header<T>(type_kind::pointer),
         type_info_of<inner_t, Config>,
     };
 };
@@ -603,7 +620,7 @@ struct type_instance_impl<T, AttrsT, Config, type_kind::map> {
     using mapped_t = typename kv_t::second_type;
 
     constexpr inline static map_type_info value = {
-        {type_kind::map, meta::type_name<T>()},
+        type_header<T>(type_kind::map),
         type_info_of<key_t, Config>,
         type_info_of<mapped_t, Config>,
     };
@@ -614,7 +631,7 @@ struct type_instance_impl<T, AttrsT, Config, type_kind::set> {
     using element_t = std::ranges::range_value_t<T>;
 
     constexpr inline static array_type_info value = {
-        {type_kind::set, meta::type_name<T>()},
+        type_header<T>(type_kind::set),
         type_info_of<element_t, Config>,
     };
 };
@@ -624,7 +641,7 @@ struct type_instance_impl<T, AttrsT, Config, type_kind::array> {
     using element_t = std::ranges::range_value_t<T>;
 
     constexpr inline static array_type_info value = {
-        {type_kind::array, meta::type_name<T>()},
+        type_header<T>(type_kind::array),
         type_info_of<element_t, Config>,
     };
 };
@@ -638,11 +655,11 @@ struct type_instance_impl<T, AttrsT, Config, type_kind::structure> {
     constexpr inline static built_fields_t<T> fields = build_fields<T, Config>();
 
     constexpr inline static struct_type_info value = {
-        {type_kind::structure, meta::type_name<T>()},
+        type_header<T>(type_kind::structure),
         deny_unknown,
         is_trivially_copyable,
-        {fields.data(),        count               },
-        struct_description<T>(),
+        {fields.data(), count},
+        spec_of<type_attrs_t<T>>.description,
     };
 };
 

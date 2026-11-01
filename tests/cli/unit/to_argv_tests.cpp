@@ -22,40 +22,40 @@ struct Serve {
 
 struct Options {
     bool verbose = false;
-    KOTATSU_ANNOTATE(cli::count = true, cli::names = {"-v"})
+    KANNOTATE(cli::count = true, cli::names = {"-v"})
     <std::uint32_t> noise = 0;
-    KOTATSU_ANNOTATE(cli::names = {"-j", "--jobs"})
+    KANNOTATE(cli::names = {"-j", "--jobs"})
     <int> jobs = 0;
     Level level = Level::Info;
     std::optional<std::string> output;
     std::vector<std::string> include;
-    KOTATSU_ANNOTATE(cli::comma = true)
+    KANNOTATE(cli::comma = true)
     <std::vector<std::string>> tags;
     std::vector<std::pair<std::string, std::string>> define;
-    KOTATSU_ANNOTATE(cli::names = {"-I"}, cli::style = KVStyle::Joined)
+    KANNOTATE(cli::names = {"-I"}, cli::style = KVStyle::Joined)
     <std::string> dir;
-    KOTATSU_ANNOTATE(cli::names = {"--sep"}, cli::style = KVStyle::Separate)
+    KANNOTATE(cli::names = {"--sep"}, cli::style = KVStyle::Separate)
     <std::string> sep;
-    KOTATSU_ANNOTATE(cli::positional = true)
+    KANNOTATE(cli::positional = true)
     <std::vector<std::string>> paths;
     std::optional<std::variant<Serve>> command;
 };
 
 struct Values {
     std::vector<bool> seen;
-    KOTATSU_ANNOTATE(cli::positional = true)
+    KANNOTATE(cli::positional = true)
     <bool> on = true;
-    KOTATSU_ANNOTATE(cli::positional = true)
+    KANNOTATE(cli::positional = true)
     <std::optional<std::string>> word;
 };
 
 struct Service {
-    KOTATSU_ANNOTATE(tagged = true, tag_names = {"up"})
+    KANNOTATE(tagged = true, tag_names = {"up"})
     <std::variant<Serve>> command;
 };
 
 struct Run {
-    KOTATSU_ANNOTATE(cli::rest = true)
+    KANNOTATE(cli::rest = true)
     <std::vector<std::string>> command;
 };
 

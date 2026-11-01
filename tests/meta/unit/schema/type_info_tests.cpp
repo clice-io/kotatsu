@@ -26,8 +26,13 @@ namespace {
 
 namespace fx = ::kotatsu::test;
 
+/// Annotated above it, as KANNOTATE_TYPE (in codec's macro sheet) writes it, which
+/// declares the struct.
+constexpr auto kotatsu_type_annotation(std::type_identity<struct Described>) {
+    return make_annotation(dsl::description = "A described struct");
+}
+
 struct Described {
-    constexpr static std::string_view description = "A described struct";
     int value = 0;
 };
 
@@ -36,14 +41,33 @@ struct Noted {
     std::string_view description;
 };
 
+/// Takes no annotation from the struct it derives from.
+struct DerivedFromDescribed : Described {};
+
+enum class Lamp : std::uint8_t { Off, On };
+
+/// Annotated after its definition, as KANNOTATE_TYPE writes it for a type declared
+/// already.
+constexpr auto kotatsu_type_annotation(std::type_identity<Lamp>) {
+    return make_annotation(dsl::description = "A lamp");
+}
+
 ZEST_SUITE(meta_schema_type_info) {
 
-ZEST_CASE(struct_description_is_its_static_description) {
+ZEST_CASE(struct_description_is_its_annotations) {
     const auto& described =
         static_cast<const struct_type_info&>(type_info_of<Described, default_config>());
     ZEXPECT(described.description == "A described struct");
     const auto& noted = static_cast<const struct_type_info&>(type_info_of<Noted, default_config>());
     ZEXPECT(noted.description.empty());
+}
+
+ZEST_CASE(derived_struct_takes_no_annotation_of_its_base) {
+    ZEXPECT(zest::type_eq<type_attrs_t<DerivedFromDescribed>, std::tuple<>>());
+}
+
+ZEST_CASE(enum_annotated_after_its_definition_is_found) {
+    ZSTATIC_EXPECT(spec_of<type_attrs_t<Lamp>>.description == "A lamp");
 }
 
 ZEST_CASE(scalar_helpers) {

@@ -32,7 +32,7 @@ struct casing_child {
     std::int32_t first_value;
 };
 
-KOTATSU_ANNOTATION(root_external_annotation, tagged = true, tag_names = {"integer", "text"});
+KANNOTATION(root_external_annotation, tagged = true, tag_names = {"integer", "text"});
 using root_external_variant =
     meta::annotate<root_external_annotation>::type<std::variant<std::int32_t, std::string>>;
 

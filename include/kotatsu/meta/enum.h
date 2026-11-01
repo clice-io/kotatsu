@@ -35,7 +35,10 @@ struct enum_probe {
 
 template <typename U, int... Is>
 consteval auto make_scan_values(std::integer_sequence<int, Is...>) {
-    if constexpr(std::is_signed_v<U>) {
+    if constexpr(std::is_same_v<U, bool>) {
+        // Any other value converts to true, which would name the true member again.
+        return std::integer_sequence<int, 0, 1>{};
+    } else if constexpr(std::is_signed_v<U>) {
         return std::integer_sequence<int, (Is - 128)...>{};
     } else {
         return std::integer_sequence<int, (Is < 128 ? Is : Is - 256)...>{};
@@ -45,6 +48,7 @@ consteval auto make_scan_values(std::integer_sequence<int, Is...>) {
 /// The values the reflection of an enum whose underlying type is U scans, -128..127, in
 /// ascending order of U, which enum_name's binary search needs: an unsigned U (char too, where
 /// it is unsigned) converts the negative ones to its largest values, so they come after 0..127.
+/// A bool U has only 0 and 1.
 template <typename U>
 using scan_values = decltype(make_scan_values<U>(std::make_integer_sequence<int, 256>{}));
 

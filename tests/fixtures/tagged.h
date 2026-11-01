@@ -22,23 +22,24 @@ struct TaggedIntRect {
 };
 
 struct ExternalTag {
-    constexpr static auto spec = meta::make_struct_spec(meta::dsl::tagged = true,
-                                                        meta::dsl::tag_names = {"integer", "text"});
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::tagged = true, meta::dsl::tag_names = {"integer", "text"});
 };
 
 struct InternalKindTag {
-    constexpr static auto spec =
-        meta::make_struct_spec(meta::dsl::tag = "kind", meta::dsl::tag_names = {"circle", "rect"});
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::tag = "kind", meta::dsl::tag_names = {"circle", "rect"});
 };
 
 struct AdjacentTag {
-    constexpr static auto spec = meta::make_struct_spec(meta::dsl::tag = "type",
-                                                        meta::dsl::content = "value",
-                                                        meta::dsl::tag_names = {"integer", "text"});
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::tag = "type",
+                              meta::dsl::content = "value",
+                              meta::dsl::tag_names = {"integer", "text"});
 };
 
 struct TaggedTag {
-    constexpr static auto spec = meta::make_struct_spec(meta::dsl::tagged = true);
+    constexpr static auto entries = meta::make_annotation(meta::dsl::tagged = true);
 };
 
 using ExternalTagged = meta::annotate<ExternalTag>::type<std::variant<int, std::string>>;

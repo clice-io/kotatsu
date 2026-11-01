@@ -16,15 +16,15 @@
 namespace kotatsu::test {
 
 struct RenameToId {
-    constexpr static auto spec = meta::make_spec(meta::dsl::rename = "id");
+    constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "id");
 };
 
 struct Skip {
-    constexpr static auto spec = meta::make_spec(meta::dsl::skip = true);
+    constexpr static auto entries = meta::make_annotation(meta::dsl::skip = true);
 };
 
 struct Flatten {
-    constexpr static auto spec = meta::make_spec(meta::dsl::flatten = true);
+    constexpr static auto entries = meta::make_annotation(meta::dsl::flatten = true);
 };
 
 struct AnnotatedStruct {
@@ -34,7 +34,7 @@ struct AnnotatedStruct {
 };
 
 struct AliasUserId {
-    constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"user_id", "userId"});
+    constexpr static auto entries = meta::make_annotation(meta::dsl::alias = {"user_id", "userId"});
 };
 
 struct AliasStruct {
@@ -76,7 +76,7 @@ struct DeepOuter {
 };
 
 struct Defaulted {
-    constexpr static auto spec = meta::make_spec(meta::dsl::defaulted = true);
+    constexpr static auto entries = meta::make_annotation(meta::dsl::defaulted = true);
 };
 
 struct DefaultStruct {
@@ -93,14 +93,14 @@ struct RenameTarget {
 };
 
 struct RenameAllCamelTag {
-    constexpr static auto spec =
-        meta::make_struct_spec(meta::dsl::rename_all = naming::Casing::LowerCamel);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::rename_all = naming::Casing::LowerCamel);
 };
 
 using RenamedRoot = meta::annotate<RenameAllCamelTag>::type<RenameTarget>;
 
 struct DenyUnknownTag {
-    constexpr static auto spec = meta::make_struct_spec(meta::dsl::deny_unknown_fields = true);
+    constexpr static auto entries = meta::make_annotation(meta::dsl::deny_unknown_fields = true);
 };
 
 using StrictRoot = meta::annotate<DenyUnknownTag>::type<RenameTarget>;
@@ -112,7 +112,7 @@ struct RenameAllTarget {
 };
 
 struct RenameToUpperId {
-    constexpr static auto spec = meta::make_spec(meta::dsl::rename = "ID");
+    constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "ID");
 };
 
 struct MixedRenameStruct {
@@ -122,7 +122,7 @@ struct MixedRenameStruct {
 };
 
 struct AliasUserIdOnly {
-    constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"user_id"});
+    constexpr static auto entries = meta::make_annotation(meta::dsl::alias = {"user_id"});
 };
 
 struct AliasRenameAllStruct {
@@ -161,14 +161,15 @@ struct EnumStringThroughAs {
 };
 
 struct DefaultedUnlessNone {
-    constexpr static auto spec =
-        meta::make_spec(meta::dsl::defaulted = true,
-                        meta::dsl::skip_if = meta::dsl::type<meta::pred::optional_none>);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::defaulted = true,
+                              meta::dsl::skip_if = meta::dsl::type<meta::pred::optional_none>);
 };
 
 struct RenameToScoreAsString {
-    constexpr static auto spec =
-        meta::make_spec(meta::dsl::rename = "score", meta::dsl::as = meta::dsl::type<std::string>);
+    constexpr static auto entries =
+        meta::make_annotation(meta::dsl::rename = "score",
+                              meta::dsl::as = meta::dsl::type<std::string>);
 };
 
 struct MultiAttrStruct {

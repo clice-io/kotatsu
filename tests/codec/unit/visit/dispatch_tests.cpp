@@ -17,7 +17,7 @@ struct Shape {
 };
 
 struct LegacyAlias {
-    constexpr static auto spec = meta::make_spec(meta::dsl::alias = {"corners"});
+    constexpr static auto entries = meta::make_annotation(meta::dsl::alias = {"corners"});
 };
 
 struct Polygon {

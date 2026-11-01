@@ -40,9 +40,9 @@ struct Input {
 
 /// The value encoded again, or why it did not decode.
 struct Output {
-    KOTATSU_ANNOTATE(skip_if = skip_when::none)
+    KANNOTATE(skip_if = skip_when::none)
     <std::optional<codec::RawValue>> value;
-    KOTATSU_ANNOTATE(skip_if = skip_when::none)
+    KANNOTATE(skip_if = skip_when::none)
     <std::optional<std::string>> error;
 };
 
