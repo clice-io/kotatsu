@@ -232,8 +232,8 @@ struct Tunables {
     auto operator==(const Tunables&) const -> bool = default;
 };
 
-/// presence_all on a field reaches the struct below it, not the one holding
-/// it.
+/// presence_all on a field reaches the members of the struct below it, not
+/// the one holding it, nor the structs further down.
 struct TunablesHolder {
     KANNOTATE(&tunables, presence_all = optional)
     Tunables tunables;

@@ -171,7 +171,9 @@ struct presence_layer<Base, 0> : Base {};
 /// Base under every policy layer: the one config type a merge makes.
 template <typename Base, naming::Casing RenameAll, bool DenyUnknown, std::uint8_t Presence>
 struct merged_config :
-    presence_layer<deny_layer<rename_layer<Base, RenameAll>, DenyUnknown>, Presence> {};
+    presence_layer<deny_layer<rename_layer<Base, RenameAll>, DenyUnknown>, Presence> {
+    using members_of = Base;
+};
 
 template <typename Base, naming::Casing RenameAll, bool DenyUnknown, std::uint8_t Presence>
 struct merge_config_impl {
@@ -233,6 +235,18 @@ using merged_config_t =
 template <typename Config, typename T, typename AttrsTuple>
 using node_config_t =
     std::conditional_t<reflectable_class<T>, merged_config_t<Config, AttrsTuple>, Config>;
+
+/// The config the values of a struct's fields are read and written under:
+/// the one its own rename_all / deny_unknown_fields / presence_all merged
+/// onto, which name and mark its members alone and reach no deeper.
+template <typename Config>
+using members_config_t = typename decltype([] {
+    if constexpr(requires { typename Config::members_of; }) {
+        return std::type_identity<typename Config::members_of>{};
+    } else {
+        return std::type_identity<Config>{};
+    }
+}())::type;
 
 /// The presence a field of kind `kind` whose spec is `spec` has under Config: the spec's own,
 /// else Config's presence_all (a struct's, merged on the way, or the config's own), else

@@ -633,7 +633,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
         .name = resolve_field_name<T, I, Config>(),
         .aliases = spec.alias,
         .offset = base_offset + meta::field_offset<T>(I),
-        .type = resolved_info<decltype(resolve_node<raw_t, attrs_t, Config>())>,
+        .type = resolved_info<decltype(resolve_node<raw_t, attrs_t, members_config_t<Config>>())>,
         .presence = effective_presence<Config>(spec, raw_kind),
         .description = spec.description,
         .schema_default = spec.schema_default,

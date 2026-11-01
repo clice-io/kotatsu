@@ -300,7 +300,8 @@ bool decode_field_value(Vis& vis, T& out, std::string_view key, UnknownFields* s
     using field = FieldAt<Config, I, T>;
     auto& field_ref = field::of(out);
     return decode_step<Config>(sink, key, [&] {
-        return decode_with_attrs<Config, typename field::attrs>(vis, field_ref);
+        return decode_with_attrs<meta::members_config_t<Config>, typename field::attrs>(vis,
+                                                                                        field_ref);
     });
 }
 
@@ -778,12 +779,14 @@ template <typename Config, std::size_t I, typename Vis, typename T>
 bool decode_one_field(Vis& vis, T& out) {
     using field = FieldAt<Config, I, T>;
     auto& field_ref = field::of(out);
-    bool ok =
-        vis.visit_field(std::integral_constant<std::size_t, I>{},
-                        field::name,
-                        [&](auto& fv) -> bool {
-                            return decode_with_attrs<Config, typename field::attrs>(fv, field_ref);
-                        });
+    bool ok = vis.visit_field(
+        std::integral_constant<std::size_t, I>{},
+        field::name,
+        [&](auto& fv) -> bool {
+            return decode_with_attrs<meta::members_config_t<Config>, typename field::attrs>(
+                fv,
+                field_ref);
+        });
     return trace_path<Config>(ok, field::name);
 }
 

@@ -135,16 +135,16 @@ ZEST_CASE(equivalent_merge_chains_share_type_info) {
     ZEXPECT(info.fields[0].name == "xVal");
 }
 
-ZEST_CASE(presence_all_stays_through_a_deeper_merge) {
-    // Like deny, presence_all stays where a deeper merge sets none: the
-    // rename merged below it keeps it.
+ZEST_CASE(struct_level_attributes_reach_their_own_members_only) {
+    // RenamedInside's presence_all marks its own members, not those of the
+    // struct below, which the field's rename_all names.
     const auto& info = static_cast<const struct_type_info&>(type_info_of<RenamedInside>());
     ZASSERT(info.fields.size() == 1U);
     ZEXPECT(info.fields[0].presence == presence_kind::optional);
     const auto& inner = static_cast<const struct_type_info&>(info.fields[0].type());
     ZASSERT(inner.fields.size() == 1U);
     ZEXPECT(inner.fields[0].name == "xVal");
-    ZEXPECT(inner.fields[0].presence == presence_kind::optional);
+    ZEXPECT(inner.fields[0].presence == presence_kind::required);
 }
 
 ZEST_CASE(tagging_in_declared_repr_reaches_type_info) {

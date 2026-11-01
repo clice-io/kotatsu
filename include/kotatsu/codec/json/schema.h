@@ -911,8 +911,9 @@ void collect_fresh(FreshDefaults& out);
 template <typename Config, typename... Slots>
 void collect_fresh_slots(FreshDefaults& out, kotatsu::type_list<Slots...>) {
     (collect_fresh<typename Slots::raw_type,
-                   meta::node_config_t<Config, typename Slots::raw_type, typename Slots::attrs>>(
-         out),
+                   meta::node_config_t<meta::members_config_t<Config>,
+                                       typename Slots::raw_type,
+                                       typename Slots::attrs>>(out),
      ...);
 }
 

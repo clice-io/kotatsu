@@ -279,7 +279,9 @@ bool encode_one_field(Vis& vis, const T& value) {
             std::integral_constant<std::size_t, I>{},
             FieldName<field>{},
             [&](auto& fv) -> bool {
-                return encode_with_attrs<Config, typename field::attrs>(fv, field_ref);
+                return encode_with_attrs<meta::members_config_t<Config>, typename field::attrs>(
+                    fv,
+                    field_ref);
             });
         return trace_path<Config>(ok, field::name);
     }

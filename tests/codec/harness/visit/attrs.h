@@ -462,16 +462,27 @@ void attrs(const Kit<B>& kit) {
             "presence_all_on_a_field_reads_what_is_there",
             [] {
                 return std::map<std::string, std::variant<int, Sections>>{
-                    {"count",    3                                 },
-                    {"tunables", Sections{{"limits", {{"low", 0}}}}},
+                    {"count",    3                                              },
+                    {"tunables", Sections{{"limits", {{"high", 7}, {"low", 0}}}}},
                 };
             },
             [] {
                 return TunablesHolder{
-                    .tunables = {.threads = 4, .name = "worker", .limits = {.low = 0, .high = 9}},
+                    .tunables = {.threads = 4, .name = "worker", .limits = {.low = 0, .high = 7}},
                     .count = 3,
                 };
             });
+        // It goes no deeper: the members of the struct below keep theirs.
+        read_fails<TunablesHolder>(
+            kit,
+            "presence_all_on_a_field_stops_at_its_struct",
+            [] {
+                return std::map<std::string, std::variant<int, Sections>>{
+                    {"count",    3                                 },
+                    {"tunables", Sections{{"limits", {{"low", 0}}}}},
+                };
+            },
+            {.message = "missing required field 'high'", .path = "tunables.limits"});
         read_fails<TunablesHolder>(kit,
                                    "presence_all_on_a_field_holder_field_missing_fails",
                                    [] {
