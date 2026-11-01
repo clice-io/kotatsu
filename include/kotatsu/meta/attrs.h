@@ -602,9 +602,9 @@ template <typename Spec, typename T>
 constexpr const Spec* extension_of = [] -> const Spec* {
     using attrs_t = attrs_of_t<T>;
     if constexpr(tuple_has_spec_v<attrs_t, attrs::spec>) {
-        const auto& extensions = tuple_find_spec_t<attrs_t, attrs::spec>::extensions;
-        if constexpr(tuple_has_v<std::remove_cvref_t<decltype(extensions)>, Spec>) {
-            return &std::get<Spec>(extensions);
+        using spec_attr = tuple_find_spec_t<attrs_t, attrs::spec>;
+        if constexpr(tuple_has_v<std::remove_cvref_t<decltype(spec_attr::extensions)>, Spec>) {
+            return &std::get<Spec>(spec_attr::extensions);
         }
     }
     return nullptr;
