@@ -158,9 +158,9 @@ struct AllocTableVisitor : detail::VisitorBase {
     std::vector<uoffset_t> offsets{};
     std::size_t next_idx = 0;
 
-    template <typename F>
-    bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
-        const std::size_t I = index;
+    template <typename Field, typename F>
+    bool visit_field(Field field, F&& writer) {
+        const std::size_t I = field.index;
         if(offsets.size() <= I) {
             offsets.resize(I + 1, 0);
         }
@@ -172,7 +172,7 @@ struct AllocTableVisitor : detail::VisitorBase {
 
     template <typename F>
     bool visit_element(F&& writer) {
-        return visit_field(next_idx++, std::string_view{}, std::forward<F>(writer));
+        return visit_field(named_field{next_idx++, {}}, std::forward<F>(writer));
     }
 };
 
@@ -270,9 +270,9 @@ struct WriteTableVisitor : detail::VisitorBase {
     const std::vector<uoffset_t>& offsets;
     std::size_t next_idx = 0;
 
-    template <typename F>
-    bool visit_field(auto index, std::string_view /*name*/, F&& writer) {
-        const std::size_t I = index;
+    template <typename Field, typename F>
+    bool visit_field(Field field, F&& writer) {
+        const std::size_t I = field.index;
         const slot_id sid = detail::field_slot(I);
         const auto off = (I < offsets.size()) ? offsets[I] : uoffset_t{0};
         WriteFieldVisitor wv{.fbb = fbb, .sid = sid, .stored_offset = off};
@@ -281,7 +281,7 @@ struct WriteTableVisitor : detail::VisitorBase {
 
     template <typename F>
     bool visit_element(F&& writer) {
-        return visit_field(next_idx++, std::string_view{}, std::forward<F>(writer));
+        return visit_field(named_field{next_idx++, {}}, std::forward<F>(writer));
     }
 };
 
@@ -829,11 +829,9 @@ bool MapEntryCollector<Key>::visit_entry(KF&& key_fn, VF&& value_fn) {
     KOTATSU_CODEC_TRY(key_fn(capture));
 
     auto entry = [&](auto& sv) -> bool {
-        KOTATSU_CODEC_TRY(sv.visit_field(std::integral_constant<std::size_t, 0>{},
-                                         std::string_view{"key"},
-                                         [&](auto& kv) -> bool { return key_fn(kv); }));
-        return sv.visit_field(std::integral_constant<std::size_t, 1>{},
-                              std::string_view{"value"},
+        KOTATSU_CODEC_TRY(
+            sv.visit_field(named_field{0, "key"}, [&](auto& kv) -> bool { return key_fn(kv); }));
+        return sv.visit_field(named_field{1, "value"},
                               [&](auto& vv) -> bool { return value_fn(vv); });
     };
     uoffset_t table_off = 0;

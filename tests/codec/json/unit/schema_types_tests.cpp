@@ -554,8 +554,8 @@ ZEST_CASE(variant_three_alts) {
 
 ZEST_CASE(variant_external_tag) {
     const static type_info_fn ext_alts[] = {
-        type_info_of<std::int32_t>,
-        type_info_of<std::string>,
+        type_info::of<std::int32_t>,
+        type_info::of<std::string>,
     };
     const static std::string_view ext_names[] = {"num", "text"};
     const static variant_type_info ext_var = {
@@ -603,8 +603,8 @@ ZEST_CASE(variant_external_tag) {
 
 ZEST_CASE(variant_internal_tag) {
     const static type_info_fn int_alts[] = {
-        type_info_of<point2d>,
-        type_info_of<inner>,
+        type_info::of<point2d>,
+        type_info::of<inner>,
     };
     const static std::string_view int_names[] = {"point", "inner"};
     const static variant_type_info int_var = {
@@ -651,8 +651,8 @@ ZEST_CASE(variant_internal_tag) {
 
 ZEST_CASE(variant_adjacent_tag) {
     const static type_info_fn adj_alts[] = {
-        type_info_of<std::int32_t>,
-        type_info_of<std::string>,
+        type_info::of<std::int32_t>,
+        type_info::of<std::string>,
     };
     const static std::string_view adj_names[] = {"num", "text"};
     const static variant_type_info adj_var = {
@@ -1002,8 +1002,8 @@ ZEST_CASE(empty_enum) {
 
 ZEST_CASE(variant_of_variant) {
     const static type_info_fn inner_alts[] = {
-        type_info_of<std::string>,
-        type_info_of<bool>,
+        type_info::of<std::string>,
+        type_info::of<bool>,
     };
     const static variant_type_info inner_var = {
         {type_kind::variant, "inner_variant"},
@@ -1015,7 +1015,7 @@ ZEST_CASE(variant_of_variant) {
     };
 
     const static type_info_fn outer_alts[] = {
-        type_info_of<std::int32_t>,
+        type_info::of<std::int32_t>,
         []() -> const type_info& { return inner_var; },
     };
     const static variant_type_info outer_var = {

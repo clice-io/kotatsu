@@ -102,11 +102,11 @@ struct ValueWriter {
 
 namespace detail {
 
-/// `,"name":`, the key of a member that follows another, for a field whose
-/// name is known at compile time.
+/// `,"name":`, the key of a member that follows another, for a reflected
+/// field, whose name is known at compile time.
 template <typename Field>
 constexpr auto member_key = [] {
-    constexpr std::string_view name = FieldName<Field>::value;
+    constexpr std::string_view name = Field::name;
     std::array<char, escaped_size(name) + 4> key{};
     key[0] = ',';
     key[1] = '"';
@@ -124,11 +124,11 @@ struct StructWriter {
     bool first = true;
 
     template <typename F>
-    bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
+    bool visit_field(named_field field, F&& writer);
 
-    /// A field's key, written as one piece the compiler spells out.
-    template <typename Field, typename F>
-    bool visit_field(std::size_t /*index*/, FieldName<Field> /*name*/, F&& writer);
+    /// A reflected field's key, written as one piece the compiler spells out.
+    template <typename T, std::size_t I, typename Scope, typename F>
+    bool visit_field(codec::field<T, I, Scope> field, F&& writer);
 };
 
 template <typename Format>
@@ -197,22 +197,20 @@ bool ValueWriter<Format>::visit_tuple(const T& value, Body&& body) {
 
 template <typename Format>
 template <typename F>
-bool StructWriter<Format>::visit_field(std::size_t /*index*/, std::string_view name, F&& writer) {
+bool StructWriter<Format>::visit_field(named_field field, F&& writer) {
     if(!first)
         builder.put(',');
     first = false;
-    builder.append_string(name);
+    builder.append_string(field.name);
     builder.put(':');
     ValueWriter<Format> vw{builder};
     return writer(vw);
 }
 
 template <typename Format>
-template <typename Field, typename F>
-bool StructWriter<Format>::visit_field(std::size_t /*index*/,
-                                       FieldName<Field> /*name*/,
-                                       F&& writer) {
-    constexpr auto& key = detail::member_key<Field>;
+template <typename T, std::size_t I, typename Scope, typename F>
+bool StructWriter<Format>::visit_field(codec::field<T, I, Scope> /*field*/, F&& writer) {
+    constexpr auto& key = detail::member_key<codec::field<T, I, Scope>>;
     if(first) {
         builder.append_raw<key.size() - 1>(key.data() + 1);
     } else {

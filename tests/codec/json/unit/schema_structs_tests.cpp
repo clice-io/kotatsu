@@ -612,7 +612,7 @@ ZEST_CASE(self_referential_struct) {
         []() -> const type_info& { return self_info; },
     };
     const static field_info self_fields[] = {
-        {"value", {}, 0, type_info_of<std::int32_t>,                    presence_kind::required},
+        {"value", {}, 0, type_info::of<std::int32_t>,                   presence_kind::required},
         {"next",  {}, 0, []() -> const type_info& { return opt_self; }, presence_kind::optional},
     };
     self_info.fields = {self_fields, 2};
@@ -628,10 +628,10 @@ ZEST_CASE(self_referential_struct) {
 
 ZEST_CASE(field_ordering_stability) {
     const static field_info ordered_fields[] = {
-        {"zebra",  {}, 0, type_info_of<std::string>,  presence_kind::required},
-        {"alpha",  {}, 0, type_info_of<std::int32_t>, presence_kind::required},
-        {"middle", {}, 0, type_info_of<bool>,         presence_kind::required},
-        {"beta",   {}, 0, type_info_of<double>,       presence_kind::required},
+        {"zebra",  {}, 0, type_info::of<std::string>,  presence_kind::required},
+        {"alpha",  {}, 0, type_info::of<std::int32_t>, presence_kind::required},
+        {"middle", {}, 0, type_info::of<bool>,         presence_kind::required},
+        {"beta",   {}, 0, type_info::of<double>,       presence_kind::required},
     };
     const static struct_type_info ordered_info = {
         {type_kind::structure, "ordered_struct"},
@@ -671,11 +671,11 @@ ZEST_CASE(mutual_recursion) {
     };
 
     const static field_info fields_a[] = {
-        {"value", {}, 0, type_info_of<std::int32_t>,                 presence_kind::required},
+        {"value", {}, 0, type_info::of<std::int32_t>,                presence_kind::required},
         {"b",     {}, 0, []() -> const type_info& { return opt_b; }, presence_kind::optional},
     };
     const static field_info fields_b[] = {
-        {"name", {}, 0, type_info_of<std::string>,                  presence_kind::required},
+        {"name", {}, 0, type_info::of<std::string>,                 presence_kind::required},
         {"a",    {}, 0, []() -> const type_info& { return opt_a; }, presence_kind::optional},
     };
     info_a.fields = {fields_a, 2};

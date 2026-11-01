@@ -900,7 +900,7 @@ void collect_fresh(FreshDefaults& out) {
         using resolved = codec::resolved_repr_t<T, codec::members_config_t<Config>>;
         constexpr tk kind = meta::kind_of<resolved>();
         if constexpr(kind == tk::structure) {
-            const codec::type_info& ti = codec::type_info_of<T, Config>();
+            const codec::type_info& ti = codec::type_info::of<T, Config>();
             if(!out.seen.insert(&ti).second) {
                 return;
             }
@@ -999,7 +999,7 @@ std::expected<dyn::Value, rich_error> schema(const schema_options& options = {})
     KOTATSU_EXPECTED_TRY_V(
         auto result,
         (detail::SchemaEmitter{detail::options_of<F>(options), annotate_defaults}.emit(
-            codec::type_info_of<T, F>())));
+            codec::type_info::of<T, F>())));
     if constexpr(annotate_defaults) {
         KOTATSU_EXPECTED_TRY_V(auto text, to_string<detail::default_document_format<F>>(T()));
         KOTATSU_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));

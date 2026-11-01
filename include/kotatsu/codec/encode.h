@@ -57,18 +57,6 @@ bool encode_plain(Vis& vis, const T& value);
 
 }  // namespace detail
 
-/// The name of a struct's field as encode hands it to a visitor's
-/// visit_field: a visitor that takes a std::string_view reads it as one, and
-/// one that takes a FieldName has it at compile time.
-template <typename Field>
-struct FieldName {
-    constexpr static std::string_view value = Field::name;
-
-    constexpr operator std::string_view() const {
-        return value;
-    }
-};
-
 /// True when the visitor writes UTF-8 text (json, toml), which its format tag
 /// says, so its value and map key writers alike.
 template <typename Vis>
@@ -188,7 +176,7 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
 
             if constexpr(SpecAttr::value.tagging == codec::tag_mode::external) {
                 return vis.visit_struct(var, [&](auto& sv) -> bool {
-                    return sv.visit_field(std::size_t(0), tag_name, [&](auto& pv) -> bool {
+                    return sv.visit_field(named_field{0, tag_name}, [&](auto& pv) -> bool {
                         return std::visit(
                             [&](const auto& alt) -> bool { return encode_value<Config>(pv, alt); },
                             var);
@@ -203,8 +191,7 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
                         assert_internal_tag_fits<Config, SpecAttr, alt_t>();
                         return vis.visit_struct(alt, [&](auto& sv) -> bool {
                             KOTATSU_CODEC_TRY(sv.visit_field(
-                                std::size_t(0),
-                                SpecAttr::value.tag,
+                                named_field{0, SpecAttr::value.tag},
                                 [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
                             return encode_struct_fields<Config>(sv, alt);
                         });
@@ -214,11 +201,9 @@ bool encode_tagged_variant(Vis& vis, const Var& var) {
                 static_assert(SpecAttr::value.tagging == codec::tag_mode::adjacent);
                 return vis.visit_struct(var, [&](auto& sv) -> bool {
                     KOTATSU_CODEC_TRY(
-                        sv.visit_field(std::size_t(0), SpecAttr::value.tag, [&](auto& tv) -> bool {
-                            return tv.visit_str(tag_name);
-                        }));
-                    return sv.visit_field(std::size_t(1),
-                                          SpecAttr::value.content,
+                        sv.visit_field(named_field{0, SpecAttr::value.tag},
+                                       [&](auto& tv) -> bool { return tv.visit_str(tag_name); }));
+                    return sv.visit_field(named_field{1, SpecAttr::value.content},
                                           [&](auto& cv) -> bool {
                                               return std::visit(
                                                   [&](const auto& alt) -> bool {
@@ -259,29 +244,26 @@ bool encode_with_attrs(Vis& vis, const T& value) {
 /// Encode a single struct field, applying behavior transforms if present.
 template <typename Config, std::size_t I, typename Vis, typename T>
 bool encode_one_field(Vis& vis, const T& value) {
-    using field = FieldAt<Config, I, T>;
+    using descriptor = codec::field<T, I, Config>;
 
     // A visitor that writes every field has nothing to mark one absent, so
     // presence omits fields only elsewhere.
     if constexpr(!writes_every_field<Vis>) {
-        if constexpr(omits_unstated_defaults<Config> && !field::schema::fields[I].schema_default) {
+        if constexpr(omits_unstated_defaults<Config> && !descriptor::info.schema_default) {
             return true;
         }
-        if(omitted<Config, I>(value)) {
+        if(descriptor::omitted(value)) {
             return true;
         }
     }
-    const auto& field_ref = field::of(value);
+    const auto& field_ref = descriptor::of(value);
 
-    bool ok = vis.visit_field(
-        std::integral_constant<std::size_t, I>{},
-        FieldName<field>{},
-        [&](auto& fv) -> bool {
-            return encode_with_attrs<codec::members_config_t<Config>, typename field::attrs>(
-                fv,
-                field_ref);
-        });
-    return trace_path(ok, field::name);
+    bool ok = vis.visit_field(descriptor{}, [&](auto& fv) -> bool {
+        return encode_with_attrs<codec::members_config_t<Config>, typename descriptor::attrs>(
+            fv,
+            field_ref);
+    });
+    return trace_path(ok, descriptor::name);
 }
 
 }  // namespace detail

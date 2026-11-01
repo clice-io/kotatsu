@@ -104,8 +104,8 @@ struct TableFieldReader : detail::VisitorBase {
     verifier_t* verifier;
     std::size_t idx = 0;
 
-    template <typename Idx, typename F>
-    bool visit_field(Idx, std::string_view, F&& reader);
+    template <typename Field, typename F>
+    bool visit_field(Field field, F&& reader);
 
     template <typename F>
     bool visit_element(F&& reader);
@@ -295,9 +295,9 @@ private:
     }
 };
 
-template <typename Idx, typename F>
-bool TableFieldReader::visit_field(Idx, std::string_view, F&& reader) {
-    const voffset_t vid = detail::field_slot(Idx{});
+template <typename Field, typename F>
+bool TableFieldReader::visit_field(Field field, F&& reader) {
+    const voffset_t vid = detail::field_slot(field.index);
     FieldReader fr{.tbl = tbl, .slot = vid, .verifier = verifier};
     return reader(fr);
 }

@@ -89,8 +89,8 @@ CommandPtr build_command(const codec::type_info& type);
 /// use.
 template <typename T>
 const Command& command_of() {
-    static_assert(check_declaration(codec::type_info_of<T, cli::format>()));
-    const static CommandPtr command = build_command(codec::type_info_of<T, cli::format>());
+    static_assert(check_declaration(codec::type_info::of<T, cli::format>()));
+    const static CommandPtr command = build_command(codec::type_info::of<T, cli::format>());
     return *command;
 }
 

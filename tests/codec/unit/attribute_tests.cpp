@@ -286,7 +286,7 @@ ZEST_CASE(extension_of_finds_a_field_s_extension) {
 }
 
 ZEST_CASE(field_info_carries_extensions_and_declared_names) {
-    const auto& info = static_cast<const struct_type_info&>(type_info_of<holds_extension>());
+    const auto& info = static_cast<const struct_type_info&>(type_info::of<holds_extension>());
     ZASSERT(info.fields.size() == 2u);
     ZEXPECT(info.fields[0].extension<probe_extension>()->label == "probe");
     ZEXPECT(info.fields[1].extension<probe_extension>() == nullptr);
@@ -297,7 +297,7 @@ ZEST_CASE(field_info_carries_extensions_and_declared_names) {
 
 ZEST_CASE(field_info_finds_extensions_at_compile_time) {
     constexpr const auto& info =
-        static_cast<const struct_type_info&>(type_info_of<holds_extension>());
+        static_cast<const struct_type_info&>(type_info::of<holds_extension>());
     ZSTATIC_EXPECT(info.fields[0].has_extension<probe_extension>());
     ZSTATIC_EXPECT(info.fields[0].extension<probe_extension>()->weight == 3);
     ZSTATIC_EXPECT(!info.fields[1].has_extension<probe_extension>());
@@ -409,16 +409,17 @@ ZEST_CASE(equivalent_untagged_struct_specs_share_type_info) {
     // Each field's annotation is a tag of its own, so identical untagged
     // struct specs live on distinct tags; the type_info instance is keyed by
     // the spec values and must be shared.
-    const auto& fields = static_cast<const struct_type_info&>(type_info_of<policy_fields>()).fields;
+    const auto& fields =
+        static_cast<const struct_type_info&>(type_info::of<policy_fields>()).fields;
     ZASSERT(fields.size() == 3u);
     ZEXPECT((&fields[0].type() == &fields[1].type()));
 
     // A spec whose values match the defaults collapses to the bare type.
-    ZEXPECT((&fields[2].type() == &type_info_of<inner_pair>()));
+    ZEXPECT((&fields[2].type() == &type_info::of<inner_pair>()));
 }
 
 ZEST_CASE(variant_type_info_carries_struct_spec) {
-    const auto& info = static_cast<const variant_type_info&>(type_info_of<shape>());
+    const auto& info = static_cast<const variant_type_info&>(type_info::of<shape>());
     ZEXPECT(info.tagging == tag_mode::internal);
     ZEXPECT(info.tag_field == "kind");
     ZEXPECT(info.content_field == "");
@@ -427,14 +428,14 @@ ZEST_CASE(variant_type_info_carries_struct_spec) {
     ZEXPECT(info.alt_names[1] == "rect");
 
     // Without tag_names the alternatives fall back to their type names.
-    const auto& adj = static_cast<const variant_type_info&>(type_info_of<adjacent_shape>());
+    const auto& adj = static_cast<const variant_type_info&>(type_info::of<adjacent_shape>());
     ZEXPECT(adj.content_field == "c");
     ZASSERT(adj.alt_names.size() == 2u);
     ZEXPECT(adj.alt_names[0] == "circle_alt");
 
     // An untagged variant exposes no alternative names.
     const auto& bare =
-        static_cast<const variant_type_info&>(type_info_of<std::variant<circle_alt, rect_alt>>());
+        static_cast<const variant_type_info&>(type_info::of<std::variant<circle_alt, rect_alt>>());
     ZEXPECT(bare.tagging == tag_mode::none);
     ZEXPECT(bare.alt_names.size() == 0u);
 }

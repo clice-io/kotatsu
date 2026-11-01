@@ -622,7 +622,7 @@ ZEST_CASE(defaults_enum_and_rename_with_format) {
 
 ZEST_CASE(defaults_type_erased_absent) {
     // The type-erased entry has no T to default-construct, so no defaults.
-    const auto result = json::schema_string(type_info_of<defaults_root>()).value();
+    const auto result = json::schema_string(type_info::of<defaults_root>()).value();
     ZEXPECT(!zest::contains(result, R"("default")"));
 }
 

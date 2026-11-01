@@ -129,8 +129,8 @@ ZEST_SUITE(codec_schema_type_info_repr) {
 ZEST_CASE(equivalent_merge_chains_share_type_info) {
     // Both routes merge to one config, so they share one type_info and
     // describe one document.
-    const auto& chained = type_info_of<ChainedPolicies>();
-    const auto& flat = type_info_of<FlatPolicies>();
+    const auto& chained = type_info::of<ChainedPolicies>();
+    const auto& flat = type_info::of<FlatPolicies>();
     ZEXPECT(&chained == &flat);
 
     ZASSERT(chained.kind == type_kind::structure);
@@ -143,7 +143,7 @@ ZEST_CASE(equivalent_merge_chains_share_type_info) {
 ZEST_CASE(struct_level_attributes_reach_their_own_members_only) {
     // RenamedInside's presence_all marks its own members, not those of the
     // struct below, which the field's rename_all names.
-    const auto& info = static_cast<const struct_type_info&>(type_info_of<RenamedInside>());
+    const auto& info = static_cast<const struct_type_info&>(type_info::of<RenamedInside>());
     ZASSERT(info.fields.size() == 1U);
     ZEXPECT(info.fields[0].presence == presence_kind::optional);
     const auto& inner = static_cast<const struct_type_info&>(info.fields[0].type());
@@ -153,7 +153,7 @@ ZEST_CASE(struct_level_attributes_reach_their_own_members_only) {
 }
 
 ZEST_CASE(tagging_in_declared_repr_reaches_type_info) {
-    const auto& info = type_info_of<test::LoadResult>();
+    const auto& info = type_info::of<test::LoadResult>();
     ZASSERT(info.kind == type_kind::variant);
     const auto& variant = static_cast<const variant_type_info&>(info);
     ZEXPECT(variant.tagging == tag_mode::adjacent);
@@ -161,7 +161,7 @@ ZEST_CASE(tagging_in_declared_repr_reaches_type_info) {
 }
 
 ZEST_CASE(outer_policy_reaches_repr_alternatives) {
-    const auto& holder = static_cast<const struct_type_info&>(type_info_of<StrictLoad>());
+    const auto& holder = static_cast<const struct_type_info&>(type_info::of<StrictLoad>());
     ZASSERT(holder.fields.size() == 1U);
     const auto& info = holder.fields[0].type();
     ZASSERT(info.kind == type_kind::variant);
@@ -195,7 +195,7 @@ ZEST_CASE(format_scoped_repr_resolves_under_its_format) {
 ZEST_CASE(rename_all_on_untagged_variant_is_inert) {
     // rename_all merges only at a reflected struct; an untagged variant is not
     // one, so its alternatives keep their names.
-    const auto& erased = type_info_of<CamelChoice>();
+    const auto& erased = type_info::of<CamelChoice>();
     ZASSERT(erased.kind == type_kind::variant);
     const auto& info = static_cast<const variant_type_info&>(erased);
     ZASSERT(info.alternatives.size() == 2U);

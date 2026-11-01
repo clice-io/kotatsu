@@ -49,7 +49,7 @@ ZEST_CASE(help_option_stops_and_is_not_required) {
     ZSTATIC_EXPECT(spec->stop);
     // It leaves the presence to cli's format, under which a field is optional.
     constexpr const auto& info =
-        static_cast<const codec::struct_type_info&>(codec::type_info_of<Helped, cli::format>());
+        static_cast<const codec::struct_type_info&>(codec::type_info::of<Helped, cli::format>());
     ZSTATIC_EXPECT(info.fields[0].presence == codec::presence_kind::optional);
     ZSTATIC_EXPECT(spec->names[0] == "-h");
 }

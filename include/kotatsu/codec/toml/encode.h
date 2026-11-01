@@ -145,8 +145,8 @@ template <typename Format>
 struct TableWriter {
     Table& tbl;
 
-    template <typename F>
-    bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
+    template <typename Field, typename F>
+    bool visit_field(Field field, F&& writer);
 };
 
 template <typename Format>
@@ -199,10 +199,10 @@ bool ValueWriter<Format, Sink>::visit_tuple(const T& value, Body&& body) {
 }
 
 template <typename Format>
-template <typename F>
-bool TableWriter<Format>::visit_field(std::size_t /*index*/, std::string_view name, F&& writer) {
+template <typename Field, typename F>
+bool TableWriter<Format>::visit_field(Field field, F&& writer) {
     TableValueWriter<Format> vw{
-        {tbl, std::string(name)}
+        {tbl, std::string(field.name)}
     };
     return writer(vw);
 }

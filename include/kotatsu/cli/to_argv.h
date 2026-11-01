@@ -94,11 +94,11 @@ struct FieldWriter {
     std::deque<std::string>& texts;
     bool lenient = false;
 
-    template <typename F>
-    bool visit_field(std::size_t, std::string_view name, F&& write) {
-        node.keys.push_back(name);
-        Writer field{node.items.emplace_back(), texts, lenient};
-        if(write(field)) {
+    template <typename Field, typename F>
+    bool visit_field(Field field, F&& write) {
+        node.keys.push_back(field.name);
+        Writer value{node.items.emplace_back(), texts, lenient};
+        if(write(value)) {
             return true;
         }
         if(!lenient) {

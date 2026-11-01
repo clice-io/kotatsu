@@ -100,7 +100,7 @@ public:
     /// The struct held, if it is a `T`; null when it is another, or none.
     template <typename T>
     T* get_if() const {
-        return entry != nullptr && entry->type == &codec::type_info_of<T, cli::format>()
+        return entry != nullptr && entry->type == &codec::type_info::of<T, cli::format>()
                    ? static_cast<T*>(value.get())
                    : nullptr;
     }
@@ -164,9 +164,9 @@ template <typename Tag, typename T, typename R, typename... Args>
 bool add_command(R (*run)(T&, Args...), CommandInfo info = {}) {
     static_assert(std::is_same_v<typename Tag::signature, R(Args...)>,
                   "cli: a subcommand's callback takes its struct, then the set's signature");
-    static_assert(detail::check_declaration(codec::type_info_of<T, cli::format>()));
+    static_assert(detail::check_declaration(codec::type_info::of<T, cli::format>()));
     using callback_t = R (*)(T&, Args...);
-    const auto& type = codec::type_info_of<T, cli::format>();
+    const auto& type = codec::type_info::of<T, cli::format>();
     detail::registry<Tag>().add(detail::CommandEntry{
         .name = info.name.empty() ? detail::kebab(type.type_name) : std::string(info.name),
         .description = static_cast<const codec::struct_type_info&>(type).description,

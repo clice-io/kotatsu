@@ -314,8 +314,8 @@ ZEST_CASE(all_default_fields) {
 
 ZEST_CASE(deny_unknown_struct) {
     const static field_info deny_fields[] = {
-        {"name",  {}, 0, type_info_of<std::string>,  presence_kind::required},
-        {"count", {}, 0, type_info_of<std::int32_t>, presence_kind::required},
+        {"name",  {}, 0, type_info::of<std::string>,  presence_kind::required},
+        {"count", {}, 0, type_info::of<std::int32_t>, presence_kind::required},
     };
     const static struct_type_info deny_info = {
         {type_kind::structure, "deny_struct"},

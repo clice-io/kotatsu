@@ -85,10 +85,10 @@ template <typename Vis>
 struct serialize_visit<Vis, kotatsu::ipc::protocol::Error> {
     static bool visit(Vis& vis, const kotatsu::ipc::protocol::Error& error) {
         return vis.visit_struct(error, [&]<typename StructVis>(StructVis& sv) -> bool {
-            KOTATSU_CODEC_TRY(sv.visit_field(std::size_t(0), "code", [&](auto& fv) -> bool {
+            KOTATSU_CODEC_TRY(sv.visit_field(named_field{0, "code"}, [&](auto& fv) -> bool {
                 return encode_value(fv, error.code);
             }));
-            KOTATSU_CODEC_TRY(sv.visit_field(std::size_t(1), "message", [&](auto& fv) -> bool {
+            KOTATSU_CODEC_TRY(sv.visit_field(named_field{1, "message"}, [&](auto& fv) -> bool {
                 return encode_value(fv, error.message);
             }));
             // JSON-RPC lets an error without data leave the member out; a
@@ -98,9 +98,8 @@ struct serialize_visit<Vis, kotatsu::ipc::protocol::Error> {
                     return true;
                 }
             }
-            return sv.visit_field(std::size_t(2), "data", [&](auto& fv) -> bool {
-                return encode_value(fv, error.data);
-            });
+            return sv.visit_field(named_field{2, "data"},
+                                  [&](auto& fv) -> bool { return encode_value(fv, error.data); });
         });
     }
 };

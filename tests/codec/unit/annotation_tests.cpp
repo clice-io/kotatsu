@@ -189,7 +189,8 @@ ZEST_CASE(field_annotation_overrides_its_type_annotation) {
 }
 
 ZEST_CASE(type_annotation_reaches_a_plain_field) {
-    constexpr const auto& info = static_cast<const struct_type_info&>(type_info_of<HoldsWeighed>());
+    constexpr const auto& info =
+        static_cast<const struct_type_info&>(type_info::of<HoldsWeighed>());
     ZSTATIC_EXPECT(info.fields[0].has_extension<Probe>());
     ZEXPECT(info.fields[0].extension<Probe>()->weight == 1);
 }

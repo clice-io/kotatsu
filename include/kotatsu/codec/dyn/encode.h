@@ -97,8 +97,8 @@ template <typename Format>
 struct StructWriter {
     dyn::Object& obj;
 
-    template <typename F>
-    bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
+    template <typename Field, typename F>
+    bool visit_field(Field field, F&& writer);
 };
 
 template <typename Format>
@@ -154,12 +154,12 @@ bool ValueWriter<Format>::visit_tuple(const T& value, Body&& body) {
 }
 
 template <typename Format>
-template <typename F>
-bool StructWriter<Format>::visit_field(std::size_t /*index*/, std::string_view name, F&& writer) {
+template <typename Field, typename F>
+bool StructWriter<Format>::visit_field(Field field, F&& writer) {
     dyn::Value field_val;
     ValueWriter<Format> vw{field_val};
     KOTATSU_CODEC_TRY(writer(vw));
-    obj.insert(std::string(name), std::move(field_val));
+    obj.insert(std::string(field.name), std::move(field_val));
     return true;
 }
 

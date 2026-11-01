@@ -1,11 +1,11 @@
 // Regression test: accessing virtual_schema<T>::fields for recursive types must work
 // even when it is the FIRST interaction with the type_info system for that type in the TU.
 //
-// Background: build_fields<T>() stores type_info_of<child> function pointers in field_info.
+// Background: build_fields<T>() stores type_info::of<child> function pointers in field_info.
 // For recursive types this creates a transitive instantiation chain back to
 // type_instance<T>::value, whose initializer references fields.data().  If `fields` is
 // evaluated directly (not through `value`), Clang detects a circular dependency.
-// The fix routes virtual_schema::fields through type_info_of<T>() (i.e. through `value`),
+// The fix routes virtual_schema::fields through type_info::of<T>() (i.e. through `value`),
 // so `fields` is always resolved as a sub-expression of `value`, avoiding re-entry.
 
 #include <map>
@@ -27,7 +27,7 @@ namespace fx = ::kotatsu::test;
 
 ZEST_SUITE(codec_schema_recursive_fields) {
 
-// Each test deliberately does NOT call type_info_of<T>() beforehand.
+// Each test deliberately does NOT call type_info::of<T>() beforehand.
 // This exercises the exact code path that previously failed on Clang.
 
 ZEST_CASE(tree_node_fields_without_prior_type_info) {

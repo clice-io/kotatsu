@@ -238,8 +238,8 @@ struct Reader {
         return body(*this);
     }
 
-    template <typename Idx, typename F>
-    bool visit_field(Idx, std::string_view, F&& r) {
+    template <typename Field, typename F>
+    bool visit_field(Field /*field*/, F&& r) {
         return r(*this);
     }
 

@@ -171,7 +171,7 @@ ZEST_CASE(annotate_type_follows_an_opaque_enum_declaration) {
 
 ZEST_CASE(annotate_type_carries_extension_attributes_to_plain_fields) {
     constexpr const auto& info = static_cast<const codec::struct_type_info&>(
-        codec::type_info_of<downstream::HoldsWeighed>());
+        codec::type_info::of<downstream::HoldsWeighed>());
     ZSTATIC_EXPECT(info.fields[0].has_extension<downstream::Probe>());
     ZEXPECT(info.fields[0].extension<downstream::Probe>()->weight == 2);
 }
@@ -238,8 +238,8 @@ ZEST_CASE(field_annotation_shares_type_info) {
     // A field spec is local to its field: it does not fork the type_info of
     // the type it annotates.
     const auto& info =
-        static_cast<const codec::struct_type_info&>(codec::type_info_of<DescribedProfile>());
-    ZEXPECT(&info.fields[0].type() == &codec::type_info_of<Profile>());
+        static_cast<const codec::struct_type_info&>(codec::type_info::of<DescribedProfile>());
+    ZEXPECT(&info.fields[0].type() == &codec::type_info::of<Profile>());
 }
 
 };  // ZEST_SUITE(codec_macro)

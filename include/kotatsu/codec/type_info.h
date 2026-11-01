@@ -37,6 +37,11 @@ namespace kotatsu::codec {
 struct type_info {
     meta::type_kind kind;
     std::string_view type_name;
+
+    /// What T is under the format F: the info a schema or a command line reads, which lives as
+    /// long as the program.
+    template <typename T, typename F = format>
+    constexpr const static type_info& of();
 };
 
 using type_info_fn = const type_info& (*)();
@@ -133,9 +138,6 @@ struct struct_type_info : type_info {
     /// What the struct is, the `description` of its own annotation; empty when it has none.
     std::string_view description = {};
 };
-
-template <typename T, typename Config = format>
-constexpr const type_info& type_info_of();
 
 namespace detail {
 
@@ -476,7 +478,7 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
     constexpr static bool has_tag = spec.tagging != tag_mode::none;
 
     constexpr static std::array<type_info_fn, sizeof...(Ts)> alternatives = {
-        type_info_of<Ts, Config>...};
+        type_info::of<Ts, Config>...};
 
     // The backing array is always sizeof...(Ts) (>=1 since variant must have alternatives);
     // for non-tagged variants the elements stay default-constructed and the consumer
@@ -508,7 +510,7 @@ struct tuple_info_node;
 template <typename Tuple, typename Config, std::size_t... Is>
 struct tuple_info_node<Tuple, Config, std::index_sequence<Is...>> {
     constexpr inline static std::array<type_info_fn, sizeof...(Is)> elements = {
-        type_info_of<std::tuple_element_t<Is, Tuple>, Config>...};
+        type_info::of<std::tuple_element_t<Is, Tuple>, Config>...};
 
     constexpr inline static tuple_type_info value = {
         {meta::type_kind::tuple, meta::type_name<Tuple>()},
@@ -527,7 +529,7 @@ struct type_instance_impl<T, AttrsT, Config, meta::type_kind::optional> {
 
     constexpr inline static optional_type_info value = {
         {meta::type_kind::optional, meta::type_name<T>()},
-        type_info_of<inner_t, Config>,
+        type_info::of<inner_t, Config>,
     };
 };
 
@@ -537,7 +539,7 @@ struct type_instance_impl<T, AttrsT, Config, meta::type_kind::pointer> {
 
     constexpr inline static optional_type_info value = {
         {meta::type_kind::pointer, meta::type_name<T>()},
-        type_info_of<inner_t, Config>,
+        type_info::of<inner_t, Config>,
     };
 };
 
@@ -559,8 +561,8 @@ struct type_instance_impl<T, AttrsT, Config, meta::type_kind::map> {
 
     constexpr inline static map_type_info value = {
         {meta::type_kind::map, meta::type_name<T>()},
-        type_info_of<key_t, Config>,
-        type_info_of<mapped_t, Config>,
+        type_info::of<key_t, Config>,
+        type_info::of<mapped_t, Config>,
     };
 };
 
@@ -570,7 +572,7 @@ struct type_instance_impl<T, AttrsT, Config, meta::type_kind::set> {
 
     constexpr inline static array_type_info value = {
         {meta::type_kind::set, meta::type_name<T>()},
-        type_info_of<element_t, Config>,
+        type_info::of<element_t, Config>,
     };
 };
 
@@ -580,7 +582,7 @@ struct type_instance_impl<T, AttrsT, Config, meta::type_kind::array> {
 
     constexpr inline static array_type_info value = {
         {meta::type_kind::array, meta::type_name<T>()},
-        type_info_of<element_t, Config>,
+        type_info::of<element_t, Config>,
     };
 };
 
@@ -670,11 +672,10 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 template <typename T, typename F = format>
 using resolved_repr_t = typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, F>())::type;
 
-/// The config T's resolution ends with: every rename_all /
-/// deny_unknown_fields / presence_all spec crossed on the way — a
-/// structural annotation on T itself included — merged onto Config, exactly
-/// as the codec dispatch layers them while reading or writing a T. Config is a codec config (as for
-/// type_info_of), not a bare format tag; its format selects format-scoped reprs.
+/// The scope T's resolution ends with: Config, the format, with the struct
+/// attributes (rename_all, deny_unknown_fields, presence_all) of the struct it
+/// resolves to merged in, as the dispatch layers them while reading or writing
+/// a T.
 template <typename T, typename Config>
 using resolved_config_t =
     typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, Config>())::config;
@@ -688,15 +689,19 @@ constexpr bool resolves_to_tagged_variant =
     !std::is_same_v<typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, F>())::tag_attrs,
                     std::tuple<>>;
 
-template <typename T, typename Config>
-constexpr const type_info& type_info_of() {
-    return detail::type_instance<T, Config>::value;
+template <typename T, typename F>
+constexpr const type_info& type_info::of() {
+    return detail::type_instance<T, F>::value;
 }
 
-template <typename RawType, typename BehaviorAttrs>
+/// A field a document holds, as a struct's virtual_schema lists them: its type, the attributes
+/// that change how its value travels, and where it is declared, Owner's member Index.
+template <typename RawType, typename BehaviorAttrs, typename Owner, std::size_t Index>
 struct field_slot {
     using raw_type = RawType;
     using attrs = BehaviorAttrs;
+    using owner = Owner;
+    constexpr static std::size_t index = Index;
 };
 
 namespace detail {
@@ -710,7 +715,7 @@ struct single_field_slots {
     using raw_type = field_t;
     using attrs_t = meta::field_attrs_t<T, I>;
 
-    using type = type_list<field_slot<raw_type, filter_runtime_attrs_t<attrs_t>>>;
+    using type = type_list<field_slot<raw_type, filter_runtime_attrs_t<attrs_t>, T, I>>;
 };
 
 template <typename T, std::size_t I, bool Flattened>
@@ -742,45 +747,22 @@ struct single_field_slots<T, I, /*Skipped=*/false, /*Flattened=*/true> {
 template <typename T, typename Config = format>
     requires meta::reflectable_class<T>
 struct virtual_schema {
-    // Obtain fields from type_info_of<T>().fields (the span inside struct_type_info::value)
+    // Obtain fields from type_info::of<T>().fields (the span inside struct_type_info::value)
     // rather than referencing type_instance<T>::fields directly.  This matters for recursive
-    // types: build_fields<T>() stores type_info_of<child> function pointers which
+    // types: build_fields<T>() stores type_info::of<child> function pointers which
     // transitively instantiate type_instance<T>::value.  If we enter through `value` first,
     // the constexpr evaluator resolves `fields` as a sub-expression of `value` and the
     // back-reference to `value` is recognized as already-in-progress (no re-entry).
     // Entering through `fields` directly would leave `value` unevaluated, causing Clang to
     // attempt its verification and discover a circular dependency.
     constexpr static std::span<const field_info> fields =
-        static_cast<const struct_type_info&>(type_info_of<T, Config>()).fields;
+        static_cast<const struct_type_info&>(type_info::of<T, Config>()).fields;
 
     using slots = detail::build_slots_t<T>;
     constexpr static bool deny_unknown = detail::type_instance<T, Config>::deny_unknown;
 };
 
 namespace detail {
-
-/// Struct field I of T as the dispatch sees it under Config: the slot's
-/// type and attrs, its serialized name, and the field inside an object.
-template <typename Config, std::size_t I, typename T>
-struct FieldAt {
-    using schema = virtual_schema<T, Config>;
-    using slot = type_list_element_t<I, typename schema::slots>;
-    using type = std::remove_cv_t<typename slot::raw_type>;
-    using attrs = typename slot::attrs;
-
-    constexpr static std::string_view name = schema::fields[I].name;
-
-    /// The field inside object, as const as object is.
-    template <typename Object>
-        requires std::same_as<std::remove_const_t<Object>, T>
-    static auto& of(Object& object) {
-        constexpr bool is_const = std::is_const_v<Object>;
-        using byte_t = std::conditional_t<is_const, const std::byte, std::byte>;
-        using field_t = std::conditional_t<is_const, const type, type>;
-        auto* base = reinterpret_cast<byte_t*>(std::addressof(object));
-        return *reinterpret_cast<field_t*>(base + schema::fields[I].offset);
-    }
-};
 
 /// Whether a field of struct T under Config answers to name, by its own name
 /// or an alias.
@@ -805,28 +787,87 @@ consteval void assert_internal_tag_fits() {
 template <typename T>
 concept taggable = is_specialization_of<std::variant, T>;
 
-/// Whether a write leaves out field I of owner: it is its default, the field
-/// of a value-initialized owner, under presence = omit_if_default, or its
-/// predicate holds for it under presence = type<Pred>.
-template <typename Config, std::size_t I, typename T>
-bool omitted(const T& owner) {
-    using field = FieldAt<Config, I, T>;
-    constexpr auto presence = field::schema::fields[I].presence;
-    if constexpr(presence == presence_kind::omit_if_default) {
-        static_assert(std::is_default_constructible_v<T>,
-                      "presence = omit_if_default compares a field with its value in a "
-                      "value-initialized struct: the struct needs a default constructor");
-        const static T defaults = T();
-        return meta::eq(field::of(owner), field::of(defaults));
-    } else if constexpr(presence == presence_kind::omit_if) {
-        using pred =
-            typename tuple_find_spec_t<typename field::attrs, behavior::omit_if>::predicate;
-        return static_cast<bool>(pred{}(field::of(owner)));
-    } else {
-        return false;
-    }
-}
-
 }  // namespace detail
+
+/// Field I of struct T as a document holds it under the format F, with T's own
+/// attributes merged in: what encode and decode hand a visitor's visit_field,
+/// all of it known at compile time. I counts the fields a document holds,
+/// skipped ones left out and a flattened struct's spread in its place.
+template <typename T, std::size_t I, typename F = format>
+struct field {
+private:
+    using schema = virtual_schema<T, F>;
+    using slot = type_list_element_t<I, typename schema::slots>;
+
+public:
+    /// The field's type, and the attributes of its annotation that change how
+    /// its value travels.
+    using type = std::remove_cv_t<typename slot::raw_type>;
+    using attrs = typename slot::attrs;
+
+    constexpr static std::size_t index = I;
+    /// What the run-time type_info says of it.
+    constexpr const static field_info& info = schema::fields[I];
+    /// The name it is written under, and the others a read takes for it.
+    constexpr static std::string_view name = info.name;
+    constexpr static std::span<const std::string_view> aliases = info.aliases;
+    /// Whether it may be left out of a document, and when a write leaves it
+    /// out.
+    constexpr static presence_kind presence = info.presence;
+    /// Its annotation's spec, composed in the struct that declares it: T, or
+    /// the flattened member's struct it comes from.
+    constexpr const static field_spec& spec = field_spec_of<typename slot::owner, slot::index>;
+
+    /// Whether an extension attached a spec of type Spec to the field.
+    template <typename Spec>
+    constexpr static bool has() {
+        return info.template has_extension<Spec>();
+    }
+
+    /// The spec of type Spec an extension attached to the field, which it
+    /// must have.
+    template <typename Spec>
+    constexpr const static Spec& extension() {
+        static_assert(has<Spec>(), "the field has no extension spec of this type");
+        return *info.template extension<Spec>();
+    }
+
+    /// The field inside object, as const as object is.
+    template <typename Object>
+        requires std::same_as<std::remove_const_t<Object>, T>
+    static auto& of(Object& object) {
+        constexpr bool is_const = std::is_const_v<Object>;
+        using byte_t = std::conditional_t<is_const, const std::byte, std::byte>;
+        using field_t = std::conditional_t<is_const, const type, type>;
+        auto* base = reinterpret_cast<byte_t*>(std::addressof(object));
+        return *reinterpret_cast<field_t*>(base + info.offset);
+    }
+
+    /// Whether a write leaves the field of owner out: it is its default, the
+    /// field of a value-initialized T, under presence = omit_if_default, or
+    /// its predicate holds for it under presence = type<Pred>.
+    static bool omitted(const T& owner) {
+        if constexpr(presence == presence_kind::omit_if_default) {
+            static_assert(std::is_default_constructible_v<T>,
+                          "presence = omit_if_default compares a field with its value in a "
+                          "value-initialized struct: the struct needs a default constructor");
+            const static T defaults = T();
+            return meta::eq(of(owner), of(defaults));
+        } else if constexpr(presence == presence_kind::omit_if) {
+            using pred = typename tuple_find_spec_t<attrs, behavior::omit_if>::predicate;
+            return static_cast<bool>(pred{}(of(owner)));
+        } else {
+            return false;
+        }
+    }
+};
+
+/// A field a repr or a serialize_visit specialization writes by hand, and the
+/// codec for a variant's tag and content: its place among the fields written,
+/// and its name.
+struct named_field {
+    std::size_t index;
+    std::string_view name;
+};
 
 }  // namespace kotatsu::codec

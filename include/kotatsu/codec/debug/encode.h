@@ -242,8 +242,8 @@ struct StructWriter {
     Formatter& fmt;
     bool first = true;
 
-    template <typename F>
-    bool visit_field(std::size_t index, std::string_view name, F&& writer);
+    template <typename Field, typename F>
+    bool visit_field(Field field, F&& writer);
 };
 
 template <typename Format>
@@ -323,10 +323,10 @@ bool ValueWriter<Format>::visit_tuple(const T&, Body&& body) {
 }
 
 template <typename Format>
-template <typename F>
-bool StructWriter<Format>::visit_field(std::size_t, std::string_view name, F&& writer) {
+template <typename Field, typename F>
+bool StructWriter<Format>::visit_field(Field field, F&& writer) {
     fmt.write_separator(first);
-    fmt.out += name;
+    fmt.out += field.name;
     fmt.out += ": ";
     ValueWriter<Format> vw{fmt};
     return writer(vw);
