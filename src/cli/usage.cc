@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -64,34 +65,22 @@ std::string text_of(const Node& node) {
     if(node.kind != Node::Kind::List) {
         return std::string(node.text);
     }
-    std::string text;
-    for(const auto& item: node.items) {
-        text += text.empty() ? "" : " ";
-        text += item.text;
-    }
-    return text;
+    return join(node.items | std::views::transform(&Node::text), " ");
 }
 
 /// The default of `arg` as `defaults` holds it: empty for a flag, a count, an alias, an empty
 /// list, an empty optional and an alternative the default does not hold.
 std::string default_of(const Command& command, const Arg& arg, const Node& defaults) {
+    // A required argument has no default: the argv gives it.
     if(arg.shape == Shape::Flag || arg.shape == Shape::Count || arg.shape == Shape::Alias ||
-       !present(command, defaults, arg.group)) {
+       arg.required() || !present(command, defaults, arg.group)) {
         return {};
     }
     const Node* node = find_node(defaults, arg.keys);
     if(node == nullptr || node->kind == Node::Kind::Flag) {
         return {};
     }
-    if(!arg.list) {
-        return text_of(*node);
-    }
-    std::string text;
-    for(const auto& item: node->items) {
-        text += text.empty() ? "" : ", ";
-        text += text_of(item);
-    }
-    return text;
+    return arg.list ? join(node->items | std::views::transform(text_of), ", ") : text_of(*node);
 }
 
 }  // namespace

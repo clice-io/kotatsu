@@ -131,7 +131,6 @@ kotatsu_library(
         "src/cli/ansi.h",
         "src/cli/command.cc",
         "src/cli/command.h",
-        "src/cli/commands.cc",
         "src/cli/error_at.h",
         "src/cli/parse.cc",
         "src/cli/report.cc",

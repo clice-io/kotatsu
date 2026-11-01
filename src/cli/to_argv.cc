@@ -135,7 +135,7 @@ void write(const Command& command, const Node& root, std::vector<std::string>& o
             return;
         }
     }
-    if(command.rest) {
+    if(command.rest && present(command, root, command.args[*command.rest].group)) {
         if(const Node* node = node_at(root, command.args[*command.rest].keys);
            node != nullptr && !node->items.empty()) {
             out.emplace_back("--");

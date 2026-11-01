@@ -63,16 +63,16 @@ Adapted from `tests/cli/unit/parse/positional_tests.cpp` and `tests/cli/unit/usa
 
 ## Overview
 
-| Header                                          | Contents                                                                                                                                        |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| [cli.h](../include/kotatsu/cli/cli.h)           | The headers below but the table, and `KOTATSU_ANNOTATE`                                                                                         |
-| [spec.h](../include/kotatsu/cli/spec.h)         | `ArgSpec`, what a field's `cli::` entries say (`names`, `positional`, `rest`, `count`, `required`, `hidden`, `exclusive`, ...), `Help`, `Alias` |
-| [parse.h](../include/kotatsu/cli/parse.h)       | `parse<T>` and `parse_into`, from a `string_list_ref` or any range of strings, with a visit of each argument it reads, and `Given`              |
-| [commands.h](../include/kotatsu/cli/commands.h) | `Commands<Tag>`, a field of subcommands files add with `add_command`, which calling runs                                                        |
-| [error.h](../include/kotatsu/cli/error.h)       | `Error`, its `Kind`, the argv span at fault, its subcommands and a suggestion, and `render`, under a `Style`                                    |
-| [report.h](../include/kotatsu/cli/report.h)     | `report` and `print_usage`, in the style for a terminal (`style_for`)                                                                           |
-| [usage.h](../include/kotatsu/cli/usage.h)       | `usage<T>`, the help text with defaults and ranges, and `usage_entries<T>`, its lines for a program to lay out itself                           |
-| [to_argv.h](../include/kotatsu/cli/to_argv.h)   | `to_argv`: options written back as the argv that parses to them                                                                                 |
+| Header                                          | Contents                                                                                                                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [cli.h](../include/kotatsu/cli/cli.h)           | The headers below but the table, and `KOTATSU_ANNOTATE`                                                                                                             |
+| [spec.h](../include/kotatsu/cli/spec.h)         | `ArgSpec`, what a field's `cli::` entries say (`names`, `positional`, `rest`, `count`, `required`, `hidden`, `exclusive`, ...), `Help`, `Alias`                     |
+| [parse.h](../include/kotatsu/cli/parse.h)       | `parse<T>`, from a `string_list_ref` or any range of strings, and `parse_into`, onto options already held, each with a visit of the arguments it reads, and `Given` |
+| [commands.h](../include/kotatsu/cli/commands.h) | `Commands<Tag>`, a field of subcommands files add with `add_command`, which calling runs                                                                            |
+| [error.h](../include/kotatsu/cli/error.h)       | `Error`, its `Kind`, the argv span at fault, its subcommands and a suggestion, and `render`, under a `Style`                                                        |
+| [report.h](../include/kotatsu/cli/report.h)     | `report` and `print_usage`, in the style for a terminal (`style_for`)                                                                                               |
+| [usage.h](../include/kotatsu/cli/usage.h)       | `usage<T>`, the help text with defaults and ranges, and `usage_entries<T>`, its lines for a program to lay out itself                                               |
+| [to_argv.h](../include/kotatsu/cli/to_argv.h)   | `to_argv`: options written back as the argv that parses to them                                                                                                     |
 
 ### Option table
 
@@ -89,7 +89,9 @@ with aliases, grouped short options (`-abc`) and visibility masks.
 
 ## Platform notes
 
-None: cli parses the same on every platform.
+cli parses the same on every platform. `report` and `print_usage` color what they write when
+the descriptor is a terminal (a console on Windows) and `NO_COLOR` is unset, and write UTF-16
+to a Windows console.
 
 ## See also
 

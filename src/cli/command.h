@@ -5,6 +5,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -21,6 +22,7 @@ namespace kotatsu::cli::detail {
 constexpr std::uint32_t no_group = std::numeric_limits<std::uint32_t>::max();
 constexpr std::uint32_t no_arg = std::numeric_limits<std::uint32_t>::max();
 constexpr std::uint32_t no_exclusive = std::numeric_limits<std::uint32_t>::max();
+constexpr std::uint32_t no_alternative = std::numeric_limits<std::uint32_t>::max();
 
 /// How to_argv() writes a value of a named option.
 enum class Form : std::uint8_t {
@@ -38,6 +40,8 @@ struct Arg : FieldUse {
     const meta::field_info* field = nullptr;
     /// The innermost group it is in; no_group in the command's own struct.
     std::uint32_t group = no_group;
+    /// The group of the alternative of an exclusive field it is in, or no_group.
+    std::uint32_t alternative = no_group;
     /// The serialized names of the fields from the command's struct down to it.
     std::vector<std::string_view> keys = {};
     /// The declared names of the same fields, joined by '.'.
@@ -74,10 +78,12 @@ struct Group {
 /// the one the argv gives an argument of first held.
 struct Exclusive {
     std::vector<std::string_view> keys = {};
-    /// The group it is in, whether it must be given, and the group each alternative is.
+    /// The group it is in, whether it must be given, the group each alternative is, and the
+    /// first argument of each, which an error names it by.
     std::uint32_t group = no_group;
     bool required = false;
     std::vector<std::uint32_t> alternatives = {};
+    std::vector<std::uint32_t> first_args = {};
 };
 
 struct Command;
@@ -122,9 +128,25 @@ struct Command {
 /// Builds the command `type`, a struct, describes.
 std::unique_ptr<Command> build_command(const meta::type_info& type);
 
-/// Whether the options in `root` hold the arguments of `group`: the alternative of an exclusive
-/// field it is in held, and an optional group around it given.
+/// The alternative exclusive field `exclusive` holds in the options `root`, or no_alternative.
+std::uint32_t held(const Command& command, const Node& root, std::uint32_t exclusive);
+
+/// Whether the options in `root` hold the arguments of `group`: every alternative of an
+/// exclusive field around it held, and every optional group around it given.
 bool present(const Command& command, const Node& root, std::uint32_t group);
+
+/// `parts` joined by `separator`.
+template <std::ranges::input_range R>
+std::string join(R&& parts, std::string_view separator) {
+    std::string joined;
+    bool first = true;
+    for(const auto& part: parts) {
+        joined += first ? "" : separator;
+        joined += part;
+        first = false;
+    }
+    return joined;
+}
 
 /// `number` as a usage and an error write it; empty when unset.
 std::string number_text(const meta::schema_number& number);

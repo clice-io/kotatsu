@@ -43,28 +43,48 @@ std::string input_args_text(ArgNum num) {
     return std::format("{} to {} input arguments", num.min, num.max);
 }
 
-/// `names` joined by ", ".
-std::string join_names(std::span<const std::string_view> names) {
-    std::string joined;
-    for(auto name: names) {
-        joined += joined.empty() ? "" : ", ";
-        joined += name;
-    }
-    return joined;
-}
-
-/// `text` as the number it reads as, exactly; monostate when it reads as none.
-meta::schema_number number_of(std::string_view text) {
+/// `text` as the number a value of `type` reads it as, exactly; monostate when it reads as
+/// none, which the decode then says.
+meta::schema_number number_of(std::string_view text, const meta::type_info& type) {
     if(std::int64_t value = 0; !read_number(text, value)) {
         return value;
     }
     if(std::uint64_t value = 0; !read_number(text, value)) {
         return value;
     }
-    if(double value = 0; !read_number(text, value)) {
+    if(double value = 0; !type.is_integer() && !read_number(text, value)) {
         return value;
     }
     return std::monostate{};
+}
+
+/// What refuses `number`, read from `text`, under the minimum and maximum of `field`; none when
+/// it is no number, which the decode then says, or both take it.
+std::optional<std::string> refused_number(const meta::field_info& field,
+                                          const meta::schema_number& number,
+                                          std::string_view text) {
+    if(std::holds_alternative<std::monostate>(number)) {
+        return std::nullopt;
+    }
+    const auto below = meta::compare_numbers(number, field.minimum);
+    const auto above = meta::compare_numbers(number, field.maximum);
+    if(below == std::partial_ordering::less) {
+        return std::format("value {} is below the minimum {}", text, number_text(field.minimum));
+    }
+    if(above == std::partial_ordering::greater) {
+        return std::format("value {} is above the maximum {}", text, number_text(field.maximum));
+    }
+    // NaN, which no bound orders.
+    const bool has_minimum = !std::holds_alternative<std::monostate>(field.minimum);
+    const bool has_maximum = !std::holds_alternative<std::monostate>(field.maximum);
+    if((has_minimum && below == std::partial_ordering::unordered) ||
+       (has_maximum && above == std::partial_ordering::unordered)) {
+        return std::format("value {} is not a number in {}..{}",
+                           text,
+                           number_text(field.minimum),
+                           number_text(field.maximum));
+    }
+    return std::nullopt;
 }
 
 /// Edits from `a` to `b`: insertions, deletions, substitutions and swaps of two neighbours.
@@ -88,15 +108,17 @@ std::size_t edit_distance(std::string_view a, std::string_view b) {
     return d[a.size()][b.size()];
 }
 
-/// The name of `names` closest to `word`, without the '=' or ',' a name takes its value after,
-/// when it is a third of `word` or fewer edits away; empty when none is.
+/// The name of `names` closest to `word`, without the '=', ':' or ',' a name takes its value
+/// after, when it is no more edits away than a third of `word` past its prefix; empty when
+/// none is. A one-letter option ("-q") is so offered nothing.
 template <typename Names>
 std::string closest(std::string_view word, const Names& names) {
+    const auto stem = word.substr(std::min(word.find_first_not_of("-/"), word.size()));
     std::string best;
-    std::size_t best_distance = std::max<std::size_t>(1, word.size() / 3) + 1;
+    std::size_t best_distance = stem.size() / 3 + 1;
     for(const auto& spelling: names) {
         std::string_view name = spelling;
-        if(name.ends_with('=') || name.ends_with(',')) {
+        if(name.ends_with('=') || name.ends_with(':') || name.ends_with(',')) {
             name.remove_suffix(1);
         }
         const auto distance = edit_distance(word, name);
@@ -111,21 +133,22 @@ std::string closest(std::string_view word, const Names& names) {
 /// The alternatives of `exclusive`, each by the usage of its first argument: "<LOCATOR> or
 /// --spec <value>".
 std::string alternatives_text(const Command& command, const Exclusive& exclusive) {
-    std::string text;
-    for(const auto alternative: exclusive.alternatives) {
-        for(const auto& arg: command.args) {
-            auto group = arg.group;
-            while(group != no_group && group != alternative) {
-                group = command.groups[group].parent;
-            }
-            if(group == alternative) {
-                text += text.empty() ? "" : " or ";
-                text += arg.usage;
-                break;
-            }
+    return join(exclusive.first_args | std::views::filter([](auto arg) { return arg != no_arg; }) |
+                    std::views::transform(
+                        [&](auto arg) -> const std::string& { return command.args[arg].usage; }),
+                " or ");
+}
+
+/// The names of the options a usage lists, which a suggestion may name.
+std::vector<std::string_view> shown_names(const Command& command) {
+    std::vector<std::string_view> names;
+    for(std::size_t i = 0; i < command.spellings.size(); ++i) {
+        // Spelling i names the option of id i + 3, after the unknown and input options.
+        if(!command.args[command.arg_of[i + 3]].spec.hidden) {
+            names.push_back(command.spellings[i]);
         }
     }
-    return text;
+    return names;
 }
 
 /// The words of the subcommands a usage lists, which a suggestion may name.
@@ -242,7 +265,7 @@ public:
             case Shape::Value:
                 for(auto value: values) {
                     auto read = text(value);
-                    if(auto err = check_constraints(*arg.field, read)) {
+                    if(auto err = check_constraints(arg, read)) {
                         return err;
                     }
                     if(arg.list) {
@@ -256,6 +279,9 @@ public:
                 Node tuple{.kind = Node::Kind::List, .begin = begin, .end = end};
                 for(auto value: values) {
                     tuple.items.push_back(text(value));
+                    if(auto err = check_constraints(arg, tuple.items.back())) {
+                        return err;
+                    }
                 }
                 if(arg.list) {
                     node.items.push_back(std::move(tuple));
@@ -278,58 +304,36 @@ public:
         return std::nullopt;
     }
 
-    /// The error of `value`, a Text node, when the minimum, maximum or choices of `field`
-    /// refuse it. A value that is no number is left to the decode, which says so.
-    std::optional<Error> check_constraints(const meta::field_info& field, const Node& value) const {
+    /// The error of `value`, a Text node of `arg`, when the minimum, maximum or choices of its
+    /// field refuse it. A value that is no number of its type is left to the decode, which says
+    /// so; a number no bound orders, NaN, is refused.
+    std::optional<Error> check_constraints(const Arg& arg, const Node& value) const {
+        const auto& field = *arg.field;
         if(!field.choices.empty() &&
            std::ranges::find(field.choices, value.text) == field.choices.end()) {
             return error(Error::Kind::InvalidValue,
                          std::format("invalid value '{}' (supported: {})",
                                      value.text,
-                                     join_names(field.choices)),
+                                     join(field.choices, ", ")),
                          value.begin,
                          value.end);
         }
-        const bool bounded = !std::holds_alternative<std::monostate>(field.minimum) ||
-                             !std::holds_alternative<std::monostate>(field.maximum);
-        if(!bounded) {
-            return std::nullopt;
-        }
-        const auto number = number_of(value.text);
-        if(meta::compare_numbers(number, field.minimum) == std::partial_ordering::less) {
-            return error(Error::Kind::InvalidValue,
-                         std::format("value {} is below the minimum {}",
-                                     value.text,
-                                     number_text(field.minimum)),
-                         value.begin,
-                         value.end);
-        }
-        if(meta::compare_numbers(number, field.maximum) == std::partial_ordering::greater) {
-            return error(Error::Kind::InvalidValue,
-                         std::format("value {} is above the maximum {}",
-                                     value.text,
-                                     number_text(field.maximum)),
-                         value.begin,
-                         value.end);
+        const auto number = number_of(value.text, *arg.value_type);
+        if(auto message = refused_number(field, number, value.text)) {
+            return error(Error::Kind::InvalidValue, std::move(*message), value.begin, value.end);
         }
         return std::nullopt;
     }
 
-    /// The exclusive field whose alternative other than the one `arg` is in `level` holds, or
+    /// The exclusive field holding an alternative other than the one `arg` is in, or
     /// no_exclusive.
     static std::uint32_t excluding(const Level& level, const Arg& arg) {
-        const auto& command = *level.command;
-        for(auto group = arg.group; group != no_group; group = command.groups[group].parent) {
-            const auto& g = command.groups[group];
-            if(g.exclusive == no_exclusive) {
-                continue;
-            }
-            const Node* node = find_node(*level.root, command.exclusives[g.exclusive].keys);
-            if(node != nullptr && node->count != g.alternative) {
-                return g.exclusive;
-            }
+        if(arg.alternative == no_group) {
+            return no_exclusive;
         }
-        return no_exclusive;
+        const auto& g = level.command->groups[arg.alternative];
+        const auto holds = held(*level.command, *level.root, g.exclusive);
+        return holds != no_alternative && holds != g.alternative ? g.exclusive : no_exclusive;
     }
 
     /// The error of argument `arg_index`, read from [begin, end), given beside the argument
@@ -348,29 +352,27 @@ public:
                      end);
     }
 
-    /// Makes the alternatives argument `arg_index` is in held by their exclusive fields, or says
+    /// Makes the alternative argument `arg_index` is in held by its exclusive field, or says
     /// which argument of another alternative it conflicts with.
     std::optional<Error>
         choose(Level& level, std::uint32_t arg_index, std::uint32_t begin, std::uint32_t end) {
         const auto& command = *level.command;
-        if(const auto other = excluding(level, command.args[arg_index]); other != no_exclusive) {
+        const auto& arg = command.args[arg_index];
+        if(arg.alternative == no_group) {
+            return std::nullopt;
+        }
+        if(const auto other = excluding(level, arg); other != no_exclusive) {
             return conflict(level, arg_index, other, begin, end);
         }
-        for(auto group = command.args[arg_index].group; group != no_group;
-            group = command.groups[group].parent) {
-            const auto& g = command.groups[group];
-            if(g.exclusive == no_exclusive) {
-                continue;
-            }
-            Node& variant =
-                make_node(*level.root, command.exclusives[g.exclusive].keys, Node::Kind::Variant);
-            if(variant.items.empty()) {
-                variant.count = g.alternative;
-                variant.begin = begin;
-                variant.end = end;
-                variant.items.push_back(Node{.kind = Node::Kind::Object});
-                level.chosen_by[g.exclusive] = arg_index;
-            }
+        const auto& g = command.groups[arg.alternative];
+        Node& variant =
+            make_node(*level.root, command.exclusives[g.exclusive].keys, Node::Kind::Variant);
+        if(variant.items.empty()) {
+            variant.count = g.alternative;
+            variant.begin = begin;
+            variant.end = end;
+            variant.items.push_back(Node{.kind = Node::Kind::Object});
+            level.chosen_by[g.exclusive] = arg_index;
         }
         return std::nullopt;
     }
@@ -450,6 +452,13 @@ public:
                     at_end,
                     at_end);
             }
+            // A count's bounds are on how often it is given.
+            if(arg.shape == Shape::Count && given != 0) {
+                const auto count = std::to_string(given);
+                if(auto message = refused_number(*arg.field, std::uint64_t{given}, count)) {
+                    return error(Error::Kind::InvalidValue, std::move(*message), at_end, at_end);
+                }
+            }
             if(given != 0 || !arg.required() || !present(arg.group)) {
                 continue;
             }
@@ -512,7 +521,7 @@ public:
                     // What precedes '=' is the name: "--verbos=1".
                     const auto name = std::string_view(parsed.spelling)
                                           .substr(0, std::string_view(parsed.spelling).find('='));
-                    err.suggestion = closest(name, command.spellings);
+                    err.suggestion = closest(name, shown_names(command));
                     return err;
                 }
                 if(parsed.id == command.table->input_option_id) {

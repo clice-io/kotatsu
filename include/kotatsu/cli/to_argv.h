@@ -67,8 +67,9 @@ struct Writer {
         return true;
     }
 
-    /// A subcommand: alternative `index`, its fields below. A variant tagged by name writes an
-    /// object of one field instead, the name of the alternative its key.
+    /// A subcommand or an exclusive field's alternative: alternative `index`, its fields below.
+    /// A variant tagged by name writes an object of one field instead, the name of the
+    /// alternative its key.
     template <typename Body>
     bool visit_variant(std::size_t index, Body&& body) {
         node = Node{.kind = Node::Kind::Variant, .count = static_cast<std::uint32_t>(index)};
@@ -133,19 +134,28 @@ std::vector<std::string> write_args(const Command& command, const Node& root);
 
 }  // namespace detail
 
+namespace detail {
+
+/// `options` as a Writer writes them, their texts kept in `texts`.
+template <typename T>
+Node write_options(const T& options, std::deque<std::string>& texts) {
+    Node root;
+    Writer writer{root, texts};
+    codec::rich_error error;
+    codec::scoped_context<codec::rich_error> guard(error);
+    [[maybe_unused]] const bool written = codec::encode_value<decode_config>(writer, options);
+    assert(written);
+    return root;
+}
+
+}  // namespace detail
+
 /// The argv parse() reads back as `options`: each option and positional argument with a
 /// value, in declaration order, then the subcommand and its own.
 template <typename T>
 std::vector<std::string> to_argv(const T& options) {
-    detail::Node root;
     std::deque<std::string> texts;
-    detail::Writer writer{root, texts};
-    codec::rich_error error;
-    codec::scoped_context<codec::rich_error> guard(error);
-    [[maybe_unused]] const bool written =
-        codec::encode_value<detail::decode_config>(writer, options);
-    assert(written);
-    return detail::write_args(detail::command_of<T>(), root);
+    return detail::write_args(detail::command_of<T>(), detail::write_options(options, texts));
 }
 
 }  // namespace kotatsu::cli

@@ -224,8 +224,17 @@ class DeclarationCheck {
     std::vector<std::string_view> forwards;
     bool rest = false;
     bool subcommands = false;
-    /// Whether the fields being read are of an alternative of an exclusive field.
+    /// Whether the fields being read are of an alternative of an exclusive field, and whether
+    /// that alternative has a positional argument.
     bool in_alternative = false;
+    bool alternative_positional = false;
+
+    constexpr void claim_subcommands() {
+        if(subcommands) {
+            KOTATSU_THROW("cli: a command has one field of subcommands");
+        }
+        subcommands = true;
+    }
 
     constexpr void check_name(std::string_view name) {
         const bool prefixed = (name.starts_with("--") && name.size() > 2) ||
@@ -236,10 +245,7 @@ class DeclarationCheck {
     }
 
     constexpr void check_subcommands(const meta::variant_type_info& variant, const FieldUse& use) {
-        if(subcommands) {
-            KOTATSU_THROW("cli: a command has one field of subcommands");
-        }
-        subcommands = true;
+        claim_subcommands();
         if(variant.tagging != meta::tag_mode::none && variant.tagging != meta::tag_mode::external) {
             KOTATSU_THROW("cli: subcommands are named by their tag names alone");
         }
@@ -265,19 +271,25 @@ class DeclarationCheck {
     }
 
     /// An exclusive field's alternatives join the command's arguments; one holds no
-    /// subcommands, and no exclusive field of its own.
+    /// subcommands and no exclusive field of its own, and one alternative alone has positional
+    /// arguments, which the argv then gives to it.
     constexpr void check_exclusive(const meta::variant_type_info& variant) {
         if(variant.tagging != meta::tag_mode::none) {
             KOTATSU_THROW("cli: an exclusive field is untagged");
         }
+        std::size_t positional = 0;
+        in_alternative = true;
         for(const auto& alternative: variant.alternatives) {
             if(alternative().kind != meta::type_kind::structure) {
                 KOTATSU_THROW("cli: an alternative of an exclusive field is a struct");
             }
-            const bool outer = in_alternative;
-            in_alternative = true;
+            alternative_positional = false;
             add_struct(static_cast<const meta::struct_type_info&>(alternative()));
-            in_alternative = outer;
+            positional += alternative_positional ? 1 : 0;
+        }
+        in_alternative = false;
+        if(positional > 1) {
+            KOTATSU_THROW("cli: one alternative of an exclusive field has positional arguments");
         }
     }
 
@@ -293,6 +305,7 @@ class DeclarationCheck {
             return;
         }
         if(use.spec.positional) {
+            alternative_positional = in_alternative;
             return;
         }
         if(use.spec.comma && !use.list) {
@@ -319,43 +332,28 @@ class DeclarationCheck {
     constexpr void add_struct(const meta::struct_type_info& type) {
         for(const auto& field: type.fields) {
             const auto use = use_of(field);
+            if(use.spec.exclusive && use.kind != FieldUse::Kind::Exclusive) {
+                KOTATSU_THROW("cli: an exclusive field is a std::variant of structs");
+            }
+            if(in_alternative && use.kind != FieldUse::Kind::Group &&
+               use.kind != FieldUse::Kind::Arg) {
+                KOTATSU_THROW(
+                    "cli: an alternative of an exclusive field has no subcommands, "
+                    "and no exclusive field");
+            }
             switch(use.kind) {
                 case FieldUse::Kind::Group:
-                    if(use.spec.exclusive) {
-                        KOTATSU_THROW("cli: an exclusive field is a std::variant of structs");
-                    }
                     add_struct(static_cast<const meta::struct_type_info&>(*use.type));
                     break;
                 case FieldUse::Kind::Subcommands:
-                    if(in_alternative) {
-                        KOTATSU_THROW(
-                            "cli: an alternative of an exclusive field has no subcommands");
-                    }
                     check_subcommands(static_cast<const meta::variant_type_info&>(*use.type), use);
                     break;
-                case FieldUse::Kind::Commands:
-                    if(in_alternative) {
-                        KOTATSU_THROW(
-                            "cli: an alternative of an exclusive field has no subcommands");
-                    }
-                    if(subcommands) {
-                        KOTATSU_THROW("cli: a command has one field of subcommands");
-                    }
-                    // The subcommands are checked where their files add them.
-                    subcommands = true;
-                    break;
+                // The subcommands of a set are checked where their files add them.
+                case FieldUse::Kind::Commands: claim_subcommands(); break;
                 case FieldUse::Kind::Exclusive:
-                    if(in_alternative) {
-                        KOTATSU_THROW("cli: exclusive fields do not nest");
-                    }
                     check_exclusive(static_cast<const meta::variant_type_info&>(*use.type));
                     break;
-                case FieldUse::Kind::Arg:
-                    if(use.spec.exclusive) {
-                        KOTATSU_THROW("cli: an exclusive field is a std::variant of structs");
-                    }
-                    check_arg(field, use);
-                    break;
+                case FieldUse::Kind::Arg: check_arg(field, use); break;
             }
         }
     }

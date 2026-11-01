@@ -63,9 +63,9 @@ struct Error {
     ///              ^~~~
     ///       invalid integer value: many
     ///
-    /// The suggestion follows the message: "...; did you mean '--verbose'?". `message` alone
-    /// for an empty argv. In color, it reads "error [argv[1]]" and draws the
-    /// mark.
+    /// The suggestion follows the message: "...; did you mean '--verbose'?". For an empty
+    /// argv, the message and the suggestion alone. In color, it reads "error [argv[1]]" and draws
+    /// the mark.
     std::string render(const Style& style = {}) const;
 };
 

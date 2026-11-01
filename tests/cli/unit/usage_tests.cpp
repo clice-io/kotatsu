@@ -59,6 +59,20 @@ struct Internal {
     <std::variant<Serve, Query>> command;
 };
 
+struct Tuned {
+    KOTATSU_ANNOTATE(minimum = 1, maximum = 64, description = "Workers")
+    <int> jobs = 4;
+    KOTATSU_ANNOTATE(choices = {"fast", "slow"})
+    <std::string> mode = "fast";
+    std::vector<std::string> include = {"a", "b"};
+    std::string name;
+};
+
+struct Must {
+    KOTATSU_ANNOTATE(cli::required = true)
+    <std::string> must = "x";
+};
+
 struct Run {
     KOTATSU_ANNOTATE(cli::rest = true, cli::meta_var = "<ARG>")
     <std::vector<std::string>> command;
@@ -149,6 +163,32 @@ ZEST_CASE(hidden_ones_still_parse) {
     ZASSERT(internal.has_value());
     ZEXPECT(internal->trace);
     ZEXPECT(internal->command.index() == 0U);
+}
+
+ZEST_CASE(entries_say_defaults_and_ranges) {
+    const auto entries = cli::usage_entries<Tuned>();
+    ZASSERT(entries.size() == 4U);
+    ZEXPECT(entries[0].default_value == "4");
+    ZEXPECT(entries[0].range == "1..64");
+    ZEXPECT(entries[2].default_value == "a, b");
+    ZEXPECT(entries[3].default_value.empty());
+}
+
+ZEST_CASE(choices_are_the_value_token) {
+    const auto entries = cli::usage_entries<Tuned>();
+    ZASSERT(entries.size() == 4U);
+    ZEXPECT(entries[1].usage == "--mode <fast|slow>");
+    ZEXPECT(entries[1].default_value == "fast");
+}
+
+ZEST_CASE(help_says_default_and_range) {
+    ZEXPECT(cli::usage<Tuned>("tuned").contains("Workers [default: 4] [range: 1..64]"));
+}
+
+ZEST_CASE(required_option_has_no_default) {
+    const auto entries = cli::usage_entries<Must>();
+    ZASSERT(entries.size() == 1U);
+    ZEXPECT(entries[0].default_value.empty());
 }
 
 };  // ZEST_SUITE(cli_usage)

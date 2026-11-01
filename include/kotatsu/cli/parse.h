@@ -49,7 +49,8 @@ struct Node {
         List,
         /// The fields of a struct the argv gives something, `keys[i]` naming `items[i]`.
         Object,
-        /// A subcommand: alternative `count` of a variant, its fields `items[0]`.
+        /// A subcommand or an exclusive field: alternative `count` of a variant, its fields
+        /// `items[0]`.
         Variant,
     };
 
@@ -322,8 +323,10 @@ std::expected<void, Error> parse_into(T& options, string_list_ref argv, Visit vi
 }
 
 /// Parses `argv` onto `options`, which keep what the argv does not give: options read from a
-/// config file first, say, that the command line then overrides. A list the argv gives is
-/// replaced, not added to. On an error, `options` may hold part of what was read.
+/// config file first, say, that the command line then overrides. A list, a variant or a
+/// cli::Commands field the argv gives is replaced, not merged with what it held, and a required
+/// option counts as given only when the argv gives it. On an error, `options` may hold part of
+/// what was read.
 template <typename T>
 std::expected<void, Error> parse_into(T& options, string_list_ref argv) {
     return parse_into(options, argv, [](T&, const Given&) {});

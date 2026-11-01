@@ -1,6 +1,7 @@
 // Subcommands files add to a set, which a cli::Commands field takes without naming them.
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kotatsu/cli/cli.h"
@@ -50,6 +51,38 @@ int run_internal(Internal&, int) {
 [[maybe_unused]] const bool internal_added =
     cli::add_command<Top>(run_internal, {.name = "internal", .hidden = true});
 
+struct Lifecycle {
+    using signature = int();
+};
+
+struct Service {
+    std::string name;
+};
+
+struct Daemon {
+    cli::Commands<Lifecycle> command;
+};
+
+int start(Service&) {
+    return 1;
+}
+
+int stop(Service&) {
+    return 2;
+}
+
+[[maybe_unused]] const bool start_added = cli::add_command<Lifecycle>(start, {.name = "start"});
+[[maybe_unused]] const bool stop_added = cli::add_command<Lifecycle>(stop, {.name = "stop"});
+
+/// A set a test adds to while it runs.
+struct Late {
+    using signature = int();
+};
+
+struct LateOptions {
+    cli::Commands<Late> command;
+};
+
 ZEST_SUITE(cli_commands) {
 
 ZEST_CASE(word_picks_an_added_subcommand) {
@@ -59,12 +92,18 @@ ZEST_CASE(word_picks_an_added_subcommand) {
     ZEXPECT(tool->command.name() == "build");
     ZASSERT(tool->command.get_if<Build>() != nullptr);
     ZEXPECT(tool->command.get_if<Build>()->jobs == 3);
+}
+
+ZEST_CASE(struct_of_another_subcommand_is_not_held) {
+    auto tool = cli::parse<Tool>(std::vector<std::string>{"build"});
+    ZASSERT(tool.has_value());
     ZEXPECT(tool->command.get_if<ServeIt>() == nullptr);
 }
 
 ZEST_CASE(calling_runs_its_callback) {
     auto tool = cli::parse<Tool>(std::vector<std::string>{"serve", "--port", "8"});
     ZASSERT(tool.has_value());
+    ZASSERT(static_cast<bool>(tool->command));
     ZEXPECT(tool->command(100) == 108);
 }
 
@@ -72,6 +111,34 @@ ZEST_CASE(no_word_leaves_it_empty) {
     auto tool = cli::parse<Tool>(std::vector<std::string>{"--verbose"});
     ZASSERT(tool.has_value());
     ZEXPECT(!tool->command);
+}
+
+ZEST_CASE(one_struct_added_twice_runs_each_callback) {
+    auto daemon = cli::parse<Daemon>(std::vector<std::string>{"stop"});
+    ZASSERT(daemon.has_value());
+    ZASSERT(static_cast<bool>(daemon->command));
+    ZEXPECT(daemon->command() == 2);
+}
+
+ZEST_CASE(moved_from_holds_nothing) {
+    auto tool = cli::parse<Tool>(std::vector<std::string>{"build"});
+    ZASSERT(tool.has_value());
+    auto moved = std::move(tool->command);
+    ZEXPECT(static_cast<bool>(moved));
+    ZEXPECT(!tool->command);
+    ZEXPECT(tool->command.get_if<Build>() == nullptr);
+}
+
+ZEST_CASE(error_in_a_subcommand_names_it) {
+    auto tool = cli::parse<Tool>(std::vector<std::string>{"build", "--jobs", "x"});
+    ZASSERT(!tool.has_value());
+    ZEXPECT(tool.error().subcommands == (std::vector<std::string>{"build"}));
+}
+
+ZEST_CASE(unknown_word_near_a_hidden_one_suggests_none) {
+    auto tool = cli::parse<Tool>(std::vector<std::string>{"internl"});
+    ZASSERT(!tool.has_value());
+    ZEXPECT(tool.error().suggestion.empty());
 }
 
 ZEST_CASE(unknown_word_fails_with_the_closest) {
@@ -92,6 +159,7 @@ ZEST_CASE(usage_lists_the_shown_ones_by_name) {
 ZEST_CASE(hidden_one_still_parses) {
     auto tool = cli::parse<Tool>(std::vector<std::string>{"internal", "--quiet"});
     ZASSERT(tool.has_value());
+    ZASSERT(static_cast<bool>(tool->command));
     ZEXPECT(tool->command(0) == -1);
 }
 
@@ -99,6 +167,26 @@ ZEST_CASE(held_one_writes_back) {
     auto tool = cli::parse<Tool>(std::vector<std::string>{"build", "--jobs", "2"});
     ZASSERT(tool.has_value());
     ZEXPECT(cli::to_argv(*tool) == (std::vector<std::string>{"build", "--jobs=2"}));
+}
+
+ZEST_CASE(hidden_one_writes_back) {
+    auto tool = cli::parse<Tool>(std::vector<std::string>{"internal", "--quiet"});
+    ZASSERT(tool.has_value());
+    ZEXPECT(cli::to_argv(*tool) == (std::vector<std::string>{"internal", "--quiet"}));
+}
+
+ZEST_CASE(none_held_writes_nothing) {
+    ZEXPECT(cli::to_argv(Tool{}).empty());
+}
+
+ZEST_CASE(two_added_under_one_name_end_the_program, crashes = true) {
+    cli::add_command<Late>(+[](Service&) { return 0; }, {.name = "same"});
+    cli::add_command<Late>(+[](Service&) { return 1; }, {.name = "same"});
+}
+
+ZEST_CASE(added_after_the_set_was_read_ends_the_program, crashes = true) {
+    static_cast<void>(cli::parse<LateOptions>(std::vector<std::string>{}));
+    cli::add_command<Late>(+[](Service&) { return 0; }, {.name = "late"});
 }
 
 };  // ZEST_SUITE(cli_commands)

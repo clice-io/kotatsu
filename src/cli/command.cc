@@ -1,6 +1,8 @@
 #include "command.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <format>
 #include <map>
 #include <mutex>
@@ -78,19 +80,12 @@ std::string numbered(std::string_view token, std::uint32_t count) {
     return numbered_tokens;
 }
 
-std::string join(const std::vector<std::string>& parts, std::string_view separator) {
-    std::string joined;
-    for(const auto& part: parts) {
-        joined += joined.empty() ? "" : separator;
-        joined += part;
-    }
-    return joined;
-}
-
 /// Builds a command by the rules declaration.h states, which check_declaration() has held its
 /// struct to.
 class Builder {
     Command& command;
+    /// The group of the alternative of an exclusive field whose fields are being added.
+    std::uint32_t current_alternative = no_group;
     /// The '=' forms of the names, named once every field has named its own.
     std::vector<std::pair<NameForm, std::uint32_t>> equals_forms;
 
@@ -183,6 +178,11 @@ class Builder {
     void add_arg(Arg arg) {
         const auto index = static_cast<std::uint32_t>(command.args.size());
         auto& added = command.args.emplace_back(std::move(arg));
+        if(added.alternative != no_group) {
+            const auto& g = command.groups[added.alternative];
+            auto& first = command.exclusives[g.exclusive].first_args[g.alternative];
+            first = first == no_arg ? index : first;
+        }
         const auto token = value_token(added);
         if(added.spec.rest) {
             command.rest = index;
@@ -251,14 +251,18 @@ class Builder {
                        const std::vector<std::string_view>& keys,
                        const std::string& path) {
         const auto index = static_cast<std::uint32_t>(command.exclusives.size());
-        command.exclusives.push_back(
-            Exclusive{.keys = keys, .group = group, .required = use.spec.required});
         const auto& variant = static_cast<const meta::variant_type_info&>(*use.type);
+        command.exclusives.push_back(Exclusive{
+            .keys = keys,
+            .group = group,
+            .required = use.spec.required,
+            .first_args = std::vector<std::uint32_t>(variant.alternatives.size(), no_arg),
+        });
+        const auto title = field.description.empty() ? std::string(field.declared_name)
+                                                     : std::string(field.description);
         for(std::uint32_t i = 0; i < variant.alternatives.size(); ++i) {
             const auto& alternative =
                 static_cast<const meta::struct_type_info&>(variant.alternatives[i]());
-            const auto title = field.description.empty() ? std::string(field.declared_name)
-                                                         : std::string(field.description);
             const auto inner = static_cast<std::uint32_t>(command.groups.size());
             command.groups.push_back(Group{
                 .parent = group,
@@ -272,7 +276,9 @@ class Builder {
                 .alternative = i,
             });
             command.exclusives[index].alternatives.push_back(inner);
+            current_alternative = inner;
             add_struct(alternative, inner, keys, path);
+            current_alternative = no_group;
         }
     }
 
@@ -312,6 +318,7 @@ class Builder {
                     Arg arg{use};
                     arg.field = &field;
                     arg.group = group;
+                    arg.alternative = current_alternative;
                     arg.keys = std::move(field_keys);
                     arg.path = field_path;
                     arg.help = field.description;
@@ -358,20 +365,38 @@ std::unique_ptr<Command> build_command(const meta::type_info& type) {
     return command;
 }
 
+void CommandRegistry::add(CommandEntry entry) {
+    if(sealed) {
+        std::fprintf(stderr,
+                     "cli: subcommand %s added after its set was read\n",
+                     entry.name.c_str());
+        std::abort();
+    }
+    const auto at = std::ranges::lower_bound(entries, entry.name, {}, &CommandEntry::name);
+    if(at != entries.end() && at->name == entry.name) {
+        std::fprintf(stderr, "cli: two subcommands are named %s\n", entry.name.c_str());
+        std::abort();
+    }
+    entries.insert(at, std::move(entry));
+}
+
+std::uint32_t held(const Command& command, const Node& root, std::uint32_t exclusive) {
+    const Node* node = find_node(root, command.exclusives[exclusive].keys);
+    return node != nullptr && node->kind == Node::Kind::Variant ? node->count : no_alternative;
+}
+
 bool present(const Command& command, const Node& root, std::uint32_t group) {
-    // The innermost group that is given or not decides: one inside it is given with it.
-    while(group != no_group) {
+    for(; group != no_group; group = command.groups[group].parent) {
         const auto& g = command.groups[group];
-        if(g.exclusive != no_exclusive) {
-            const Node* node = find_node(root, command.exclusives[g.exclusive].keys);
-            return node != nullptr && node->kind == Node::Kind::Variant &&
-                   node->count == g.alternative;
+        if(g.exclusive != no_exclusive && held(command, root, g.exclusive) != g.alternative) {
+            return false;
         }
         if(g.optional) {
             const Node* node = find_node(root, g.keys);
-            return node != nullptr && node->kind == Node::Kind::Object;
+            if(node == nullptr || node->kind != Node::Kind::Object) {
+                return false;
+            }
         }
-        group = g.parent;
     }
     return true;
 }

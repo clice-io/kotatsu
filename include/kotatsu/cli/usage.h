@@ -4,6 +4,7 @@
 #include <deque>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "kotatsu/cli/error.h"
@@ -31,8 +32,10 @@ struct UsageEntry {
     std::string group = {};
     /// Whether every occurrence of it counts, which its help then says.
     bool repeatable = false;
-    /// The value it has when the argv leaves it out, as an argv writes it: "0", "a, b"; empty
-    /// for none, a flag, an empty list or an empty optional.
+    /// The value it has when the argv leaves it out, as an argv writes it: "0", "a, b". Empty
+    /// for none: a required one, a flag, a count, an alias, an empty list, an empty optional,
+    /// an option of an alternative a default-constructed struct does not hold, and all of a
+    /// struct that is not default-constructible.
     std::string default_value = {};
     /// The numbers it takes, from its field's minimum and maximum: "1..64", "1..", "..64";
     /// empty when unbounded.
@@ -41,18 +44,15 @@ struct UsageEntry {
 
 namespace detail {
 
-/// The options `T` declares as a default-constructed `T` holds them, written as to_argv() writes
-/// them, their texts kept in `texts`.
+/// The options a default-constructed `T` holds, which a usage says the defaults of; none for a
+/// `T` that is not default-constructible.
 template <typename T>
 Node defaults_of(std::deque<std::string>& texts) {
-    Node root;
-    Writer writer{root, texts};
-    codec::rich_error error;
-    codec::scoped_context<codec::rich_error> guard(error);
-    if(!codec::encode_value<decode_config>(writer, T{})) {
+    if constexpr(std::is_default_constructible_v<T>) {
+        return write_options(T{}, texts);
+    } else {
         return Node{};
     }
-    return root;
 }
 
 std::vector<UsageEntry> usage_entries(const Command& command, const Node& defaults);

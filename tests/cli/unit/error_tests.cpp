@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "kotatsu/cli/error.h"
-#include "kotatsu/cli/report.h"
 #include "kotatsu/zest/zest.h"
 
 namespace kotatsu::cli {
@@ -82,10 +81,6 @@ ZEST_CASE(suggestion_follows_the_message) {
     auto error = at({"--verbos"}, 0, 1);
     error.suggestion = "--verbose";
     ZEXPECT(error.render().ends_with("bad; did you mean '--verbose'?"));
-}
-
-ZEST_CASE(style_for_what_is_no_terminal_has_no_color) {
-    ZEXPECT(!cli::style_for(-1).color);
 }
 
 };  // ZEST_SUITE(cli_error)

@@ -46,6 +46,39 @@ struct Maybe {
     <std::optional<std::variant<BySpec, ByLocator>>> target;
 };
 
+struct Wrapped {
+    int level = 0;
+    KOTATSU_ANNOTATE(cli::exclusive = true, cli::required = true)
+    <std::variant<BySpec, ByLocator>> target;
+};
+
+struct Outer {
+    std::optional<Wrapped> wrapped;
+};
+
+struct WithRest {
+    KOTATSU_ANNOTATE(cli::rest = true)
+    <std::vector<std::string>> command;
+};
+
+struct Pass {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<WithRest, BySpec>> how;
+};
+
+struct ByName {
+    std::string name;
+};
+
+struct ById {
+    int id = 0;
+};
+
+struct Plain {
+    KOTATSU_ANNOTATE(cli::exclusive = true)
+    <std::variant<ByName, ById>> choice;
+};
+
 template <typename T>
 std::expected<T, Error> parse_line(std::string_view line) {
     return cli::parse<T>(line.empty() ? std::vector<std::string>{} : test::split(line));
@@ -88,6 +121,7 @@ ZEST_CASE(positional_of_another_alternative_fails) {
 ZEST_CASE(required_option_of_the_held_alternative_left_out_fails) {
     auto rename = parse_line<Rename>("--dry");
     ZASSERT(!rename.has_value());
+    ZEXPECT(rename.error().kind == Error::Kind::MissingRequired);
     ZEXPECT(rename.error().message == "required option --spec <value> is missing");
 }
 
@@ -114,9 +148,56 @@ ZEST_CASE(held_alternative_writes_alone) {
     Rename rename;
     rename.target = BySpec{.spec = std::string("s"), .dry = true};
     ZEXPECT(cli::to_argv(rename) == (std::vector<std::string>{"--spec=s", "--dry"}));
+}
+
+ZEST_CASE(written_alternative_parses_back) {
+    Rename rename;
+    rename.target = BySpec{.spec = std::string("s"), .dry = true};
     auto back = cli::parse<Rename>(cli::to_argv(rename));
     ZASSERT(back.has_value());
     ZEXPECT(back->target.index() == 1U);
+}
+
+ZEST_CASE(held_positional_alternative_writes_its_values) {
+    Rename rename;
+    rename.target = ByLocator{.locator = std::string("old"), .new_name = std::string("-new")};
+    ZEXPECT(cli::to_argv(rename) == (std::vector<std::string>{"--", "old", "-new"}));
+}
+
+ZEST_CASE(given_paths_go_through_the_field) {
+    std::vector<std::string> paths;
+    auto rename =
+        cli::parse<Rename>(test::split("--spec s --dry"),
+                           [&](Rename&, const Given& given) { paths.push_back(given.path); });
+    ZASSERT(rename.has_value());
+    ZEXPECT(paths == (std::vector<std::string>{"target.spec", "target.dry"}));
+}
+
+ZEST_CASE(optional_field_given_holds_its_alternative) {
+    auto maybe = parse_line<Maybe>("--spec s");
+    ZASSERT(maybe.has_value());
+    ZASSERT(maybe->target.has_value());
+    ZEXPECT(maybe->target->index() == 0U);
+}
+
+ZEST_CASE(field_in_an_optional_group_left_out_with_it_passes) {
+    ZEXPECT(parse_line<Outer>("").has_value());
+}
+
+ZEST_CASE(optional_group_given_without_its_required_field_fails) {
+    auto outer = parse_line<Outer>("--level 1");
+    ZASSERT(!outer.has_value());
+    ZEXPECT(outer.error().message == "one of --spec <value> or <LOCATOR> is required");
+}
+
+ZEST_CASE(rest_of_another_alternative_fails) {
+    auto pass = parse_line<Pass>("--spec s -- x");
+    ZASSERT(!pass.has_value());
+    ZEXPECT(pass.error().kind == Error::Kind::Conflict);
+}
+
+ZEST_CASE(alternative_without_a_description_is_headed_by_its_name) {
+    ZEXPECT(cli::usage<Plain>("plain").contains("choice, one of: by-name:"));
 }
 
 ZEST_CASE(usage_heads_each_alternative) {
