@@ -39,44 +39,51 @@ struct schema_options {
     bool deny_unknown_fields = false;
     /// Indented, rather than compact, text.
     bool pretty = false;
-    /// Whether the documents carry variant tags: a format that is not human
-    /// readable encodes a tagged variant as its bare alternative (see
-    /// encode_tagged_variant). The typed entry
-    /// points take it from the format.
-    bool human_readable = true;
 };
 
 namespace detail {
 
-/// An internal-tagged struct branch is the one schema site whose struct body
-/// is inlined rather than $def'd (the tag property must merge into the
-/// struct's own properties). When the typed entry point will run the
-/// default-annotation pass, the emitter stamps each such branch with the
-/// alternative's normalized type name under this key so the pass can pair
-/// the branch with the fresh document of its type; the pass strips every
-/// marker it meets, so no returned schema ever carries one.
-constexpr inline std::string_view alternative_marker = "x-kotatsu-alternative";
+/// The documents the defaults a schema states come from: the one the root
+/// value encodes to, for the root's properties, and, by the info of each
+/// struct, the one a value-initialized instance of it encodes to, for its
+/// $def or its inlined body. Null where there is none.
+struct DefaultDocuments {
+    dyn::Value root;
+    std::unordered_map<const codec::type_info*, dyn::Value> fresh;
+};
 
 class SchemaEmitter {
     using tk = meta::type_kind;
     using result_t = std::expected<dyn::Value, rich_error>;
 
 public:
-    explicit SchemaEmitter(const schema_options& opts, bool mark_alternatives = false) :
-        opts(opts), mark_alternatives(mark_alternatives) {}
+    /// human_readable says whether the documents carry variant tags: a format
+    /// that is not human readable writes a tagged variant as its bare
+    /// alternative. Without defaults, the schema states none.
+    SchemaEmitter(const schema_options& opts,
+                  bool human_readable,
+                  const DefaultDocuments* defaults = nullptr) :
+        opts(opts), human_readable(human_readable), defaults(defaults) {}
 
     result_t emit(const codec::type_info& root) {
         root_ti = unwrap(&root);
-        if(root_ti->kind == tk::structure) {
-            auto name = kotatsu::naming::normalize_identifier(root_ti->type_name);
-            used_names.insert(name);
-            def_names.emplace(root_ti, std::move(name));
-        }
 
         dyn::Object schema;
         schema.insert("$schema", "https://json-schema.org/draft/2020-12/schema");
 
-        KOTATSU_EXPECTED_TRY(merge_schema_fields(schema, &root));
+        if(root_ti->kind == tk::structure) {
+            // The root's references are "#": no $def may take its name.
+            used_names.insert(kotatsu::naming::normalize_identifier(root_ti->type_name));
+            KOTATSU_EXPECTED_TRY(
+                add_struct_body(schema,
+                                static_cast<const codec::struct_type_info*>(root_ti),
+                                defaults ? defaults->root.get_object() : nullptr));
+        } else {
+            KOTATSU_EXPECTED_TRY_V(auto body, make_schema(root_ti));
+            for(auto& [k, v]: *body.get_object()) {
+                schema.insert(std::string(k), std::move(v));
+            }
+        }
 
         if(!defs.empty()) {
             dyn::Object defs_obj;
@@ -104,35 +111,29 @@ private:
         return kotatsu::naming::normalize_identifier(vi->alternatives[i]().type_name);
     }
 
-    std::expected<std::string_view, rich_error> def_name(const codec::type_info* ti) {
-        auto it = def_names.find(ti);
-        if(it != def_names.end()) {
-            return std::string_view(it->second);
+    /// The document the defaults of struct si's body come from: none without
+    /// defaults, and none for a struct reached through a repr or whose fresh
+    /// instance does not encode.
+    const dyn::Object* document_of(const codec::struct_type_info* si) const {
+        if(defaults == nullptr) {
+            return nullptr;
         }
-        auto name = kotatsu::naming::normalize_identifier(ti->type_name);
-        if(!used_names.insert(name).second) {
-            return std::unexpected(rich_error(
-                std::format("duplicate $defs name '{}' from type '{}'", name, ti->type_name)));
-        }
-        auto [pos, _] = def_names.emplace(ti, std::move(name));
-        return std::string_view(pos->second);
-    }
-
-    result_t make_nullable(const codec::type_info* ti) {
-        auto* inner = unwrap(ti);
-        KOTATSU_EXPECTED_TRY_V(auto schema, make_schema(inner));
-        // anyOf, not oneOf: the inner schema may itself admit null (a
-        // monostate alternative, an unconstrained any), and a null document
-        // must not fail by matching both branches.
-        return dyn::Value{
-            {"anyOf", dyn::Array{std::move(schema), dyn::Value{{"type", "null"}}}},
-        };
+        auto it = defaults->fresh.find(si);
+        return it == defaults->fresh.end() ? nullptr : it->second.get_object();
     }
 
     result_t make_schema(const codec::type_info* ti) {
         switch(ti->kind) {
             case tk::optional:
-            case tk::pointer: return make_nullable(ti);
+            case tk::pointer: {
+                KOTATSU_EXPECTED_TRY_V(auto schema, make_schema(unwrap(ti)));
+                // anyOf, not oneOf: the inner schema may itself admit null (a
+                // monostate alternative, an unconstrained any), and a null
+                // document must not fail by matching both branches.
+                return dyn::Value{
+                    {"anyOf", dyn::Array{std::move(schema), dyn::Value{{"type", "null"}}}},
+                };
+            }
             case tk::null:
                 return dyn::Value{
                     {"type", "null"}
@@ -160,7 +161,12 @@ private:
                 };
             }
             case tk::float32:
-            case tk::float64: return make_float();
+            case tk::float64:
+                // A number: the encoder fails on a float that is not finite,
+                // which JSON has no number for.
+                return dyn::Value{
+                    {"type", "number"}
+                };
             case tk::int8:
             case tk::int16:
             case tk::int32:
@@ -184,21 +190,6 @@ private:
         }
     }
 
-    std::expected<void, rich_error> merge_schema_fields(dyn::Object& target,
-                                                        const codec::type_info* ti) {
-        ti = unwrap(ti);
-        if(ti->kind == tk::structure) {
-            return add_struct_body(target, static_cast<const codec::struct_type_info*>(ti));
-        }
-        KOTATSU_EXPECTED_TRY_V(auto schema, make_schema(ti));
-        if(auto* obj = schema.get_object()) {
-            for(auto& [k, v]: *obj) {
-                target.insert(std::string(k), std::move(v));
-            }
-        }
-        return {};
-    }
-
     /// The property an internally tagged alternative's object carries next to
     /// its struct's own fields.
     struct InternalTag {
@@ -208,17 +199,18 @@ private:
         bool deny_unknown = false;
     };
 
-    /// A struct's object schema, written into target; with a tag, the object
-    /// also carries the tag property, required after the struct's own
-    /// required fields.
+    /// A struct's object schema, written into target, its properties stating
+    /// the defaults doc gives them; with a tag, the object also carries the tag
+    /// property, required after the struct's own required fields.
     std::expected<void, rich_error> add_struct_body(dyn::Object& target,
                                                     const codec::struct_type_info* si,
+                                                    const dyn::Object* doc,
                                                     const InternalTag* tag = nullptr) {
         target.insert("type", "object");
         if(!si->description.empty()) {
             target.insert("description", si->description);
         }
-        KOTATSU_EXPECTED_TRY_V(auto props, make_properties(si));
+        KOTATSU_EXPECTED_TRY_V(auto props, make_properties(si, doc));
         dyn::Array required;
         // A required field the document may name by an alias is present under
         // one of its names.
@@ -302,14 +294,6 @@ private:
                     {"type", "integer"}
                 };
         }
-    }
-
-    /// A number: the encoder fails on a float that is not finite, which
-    /// JSON has no number for.
-    result_t make_float() const {
-        return dyn::Value{
-            {"type", "number"}
-        };
     }
 
     result_t make_enum(const codec::type_info* ti) const {
@@ -405,32 +389,41 @@ private:
         };
     }
 
+    /// A reference to the schema of struct ti: the root's, or its $def, which
+    /// the first reference writes. The references inside a $def to its own
+    /// struct find its name taken, so a recursive struct ends there.
     result_t make_struct_ref(const codec::type_info* ti) {
         if(ti == root_ti) {
             return dyn::Value{
                 {"$ref", "#"}
             };
         }
-        KOTATSU_EXPECTED_TRY_V(auto name, def_name(ti));
-        KOTATSU_EXPECTED_TRY(ensure_struct_def(ti));
+        // Held by address: emitting a body adds names, which may rehash.
+        const std::string* name = nullptr;
+        if(auto found = def_names.find(ti); found != def_names.end()) {
+            name = &found->second;
+        } else {
+            auto spelled = kotatsu::naming::normalize_identifier(ti->type_name);
+            if(!used_names.insert(spelled).second) {
+                return std::unexpected(
+                    rich_error(std::format("duplicate $defs name '{}' from type '{}'",
+                                           spelled,
+                                           ti->type_name)));
+            }
+            name = &def_names.emplace(ti, std::move(spelled)).first->second;
+            auto* si = static_cast<const codec::struct_type_info*>(ti);
+            dyn::Object body;
+            KOTATSU_EXPECTED_TRY(add_struct_body(body, si, document_of(si)));
+            defs.emplace_back(*name, std::move(body));
+        }
         return dyn::Value{
-            {"$ref", std::format("#/$defs/{}", name)}
+            {"$ref", std::format("#/$defs/{}", *name)}
         };
     }
 
-    std::expected<void, rich_error> ensure_struct_def(const codec::type_info* ti) {
-        if(!emitted.insert(ti).second) {
-            return {};
-        }
-        auto* si = static_cast<const codec::struct_type_info*>(ti);
-        KOTATSU_EXPECTED_TRY_V(auto name, def_name(ti));
-        dyn::Object body;
-        KOTATSU_EXPECTED_TRY(add_struct_body(body, si));
-        defs.emplace_back(std::string(name), std::move(body));
-        return {};
-    }
-
-    result_t make_properties(const codec::struct_type_info* si) {
+    /// The schemas of si's fields, by name and alias; a field the document
+    /// may leave out states the value doc gives it as its default.
+    result_t make_properties(const codec::struct_type_info* si, const dyn::Object* doc) {
         dyn::Object props;
         for(const auto& f: si->fields) {
             // A required field is in every document, so a default holding
@@ -446,6 +439,13 @@ private:
             auto aliased = f.aliases.empty() ? dyn::Value() : schema;
             if(!f.description.empty()) {
                 schema.get_object()->insert("description", f.description);
+            }
+            // A required field must appear, so a default would be a lie; and
+            // doc leaves out what its encode leaves out.
+            if(doc != nullptr && !is_required(f)) {
+                if(const auto* value = doc->find(f.name)) {
+                    schema.get_object()->insert("default", *value);
+                }
             }
             // No two fields answer to one name, which type_info checks.
             props.insert(std::string(f.name), std::move(schema));
@@ -568,54 +568,43 @@ private:
         return f.presence == codec::presence_kind::required;
     }
 
-    static dyn::Value make_tag_const(std::string_view tag_field, std::string_view alt_name) {
-        return {
-            {"properties", {{std::string(tag_field), {{"const", alt_name}}}}},
-            {"required",   dyn::Array{dyn::Value(tag_field)}                },
-        };
-    }
-
+    /// An internally tagged alternative: its struct's object, the tag among
+    /// its properties. A std::monostate is a unit variant, the tag alone, as
+    /// a struct without fields writes it.
     result_t make_internal_tagged(const codec::type_info* ti, const InternalTag& tag) {
+        const static codec::struct_type_info unit = {
+            {tk::structure, "std::monostate"},
+            false,
+            {},
+        };
         ti = unwrap(ti);
-        const auto tag_field = tag.field;
-        const auto alt_name = tag.alt_name;
         if(ti->kind == tk::null) {
-            // A std::monostate is a unit variant: the tag alone.
-            dyn::Object unit{
-                {"type",       "object"                                         },
-                {"properties", {{std::string(tag_field), {{"const", alt_name}}}}},
-                {"required",   dyn::Array{dyn::Value(tag_field)}                },
-            };
-            if(tag.deny_unknown || opts.deny_unknown_fields) {
-                unit.insert("additionalProperties", false);
-            }
-            return dyn::Value(std::move(unit));
+            ti = &unit;
         }
         if(ti->kind != tk::structure) {
+            // Only an info built by hand holds such an alternative: the codec
+            // tags structs and std::monostate alone.
             KOTATSU_EXPECTED_TRY_V(auto schema, make_schema(ti));
             return dyn::Value{
                 {"allOf",
                  dyn::Array{
                      std::move(schema),
-                     make_tag_const(tag_field, alt_name),
+                     dyn::Value{
+                         {"properties", {{std::string(tag.field), {{"const", tag.alt_name}}}}},
+                         {"required", dyn::Array{dyn::Value(tag.field)}},
+                     },
                  }},
             };
         }
+        auto* si = static_cast<const codec::struct_type_info*>(ti);
         dyn::Object obj;
-        KOTATSU_EXPECTED_TRY(
-            add_struct_body(obj, static_cast<const codec::struct_type_info*>(ti), &tag));
-        // The body is inlined here rather than $def'd, so it names its type
-        // for the default-annotation sweep, which removes the marker.
-        if(mark_alternatives) {
-            obj.insert(std::string(alternative_marker),
-                       kotatsu::naming::normalize_identifier(ti->type_name));
-        }
+        KOTATSU_EXPECTED_TRY(add_struct_body(obj, si, document_of(si), &tag));
         return dyn::Value(std::move(obj));
     }
 
     result_t make_variant(const codec::type_info* ti) {
         auto* vi = static_cast<const codec::variant_type_info*>(ti);
-        auto tagging = opts.human_readable ? vi->tagging : codec::tag_mode::none;
+        auto tagging = human_readable ? vi->tagging : codec::tag_mode::none;
         dyn::Array alts;
 
         for(std::size_t i = 0; i < vi->alternatives.size(); ++i) {
@@ -686,188 +675,27 @@ private:
     }
 
     schema_options opts;
-    bool mark_alternatives;
+    bool human_readable;
+    const DefaultDocuments* defaults;
     std::vector<std::pair<std::string, dyn::Value>> defs;
     std::unordered_map<const codec::type_info*, std::string> def_names;
     std::unordered_set<std::string> used_names;
-    std::unordered_set<const codec::type_info*> emitted;
     const codec::type_info* root_ti = nullptr;
 };
 
-/// The fresh documents the default-annotation pass pairs schema bodies with:
-/// for every default-constructible struct the decoder reads directly (see
-/// decoder_reads_directly) reachable through the resolved type structure,
-/// the document a value-initialized instance encodes to under the resolved
-/// format, keyed by the normalized name the emitter gives the type's $def.
-/// collect_fresh mirrors the emitter's reach — struct fields (flattened
-/// included, skipped excluded), each under the format its slot's struct-level
-/// spec merges to, optional and pointer inners, sequence and
-/// set elements, map values (keys encode as object keys and carry no
-/// schema), tuple elements, variant alternatives. A repr-routed type is
-/// skipped, subtree included, field-level behavior attrs (`with`, `as`) are
-/// not followed, and a fresh instance the encoder rejects (a NaN member
-/// that is not finite, an unnamed enum value through codec::enum_names)
-/// records no document: all three leave their bodies unannotated rather
-/// than annotated wrongly.
-struct FreshDefaults {
-    std::unordered_map<std::string, dyn::Value> docs;
-    std::unordered_set<std::string> claimed;
-    std::unordered_set<const codec::type_info*> seen;
-};
-
-/// Annotates the emitted schema with `default` values in two layers, each
-/// exact for what it describes:
-///
-/// - Fresh defaults. Decode value-initializes sequence and set elements, map
-///   values, and selected variant alternatives before reading their fields,
-///   so every $def body shows the document a freshly constructed instance of
-///   its own type encodes to (FreshDefaults) — and so does every
-///   internal-tagged variant branch, the one schema site whose struct body
-///   is inlined rather than $def'd, via the emitter's alternative marker,
-///   which the sweep consumes and strips. A type that cannot be freshly
-///   constructed and encoded leaves its body unannotated rather than
-///   guessing.
-///
-/// - Site defaults. Decode assigns struct fields in place on the enclosing
-///   instance, so an absent non-required property keeps whatever the
-///   enclosing default instance carries — member initializers included. Each
-///   schema body is paired with a document of its own type (the root body
-///   with the encoded root instance) and every non-required property copies
-///   its encoded value onto its schema as `default`; a non-required struct
-///   $ref or nullable property thus carries its whole encoded object, which
-///   takes precedence at that site wherever an enclosing initializer
-///   overrides the fresh values behind the shared $def. Required properties
-///   must always appear, so a default would be a lie; they are skipped, as
-///   are properties the document does not carry (encode-side skip
-///   conditions, the null a nullable root encodes to), and an override on a
-///   required site has no schema position of its own — the shared body keeps
-///   speaking for fresh instances only.
-class DefaultAnnotator {
-public:
-    explicit DefaultAnnotator(FreshDefaults fresh) : fresh(std::move(fresh)) {}
-
-    void run(dyn::Object& root, const dyn::Value& root_doc) {
-        annotate_properties(root, root_doc);
-        if(auto* defs = root.find("$defs")) {
-            for(auto& [name, body]: *defs->get_object()) {
-                if(auto it = fresh.docs.find(name); it != fresh.docs.end()) {
-                    annotate_properties(*body.get_object(), it->second);
-                }
-            }
-        }
-        sweep(root);
-    }
-
-private:
-    static bool lists(const dyn::Value* required, std::string_view name) {
-        return required != nullptr &&
-               std::ranges::any_of(*required->get_array(),
-                                   [&](const dyn::Value& v) { return v.get_string() == name; });
-    }
-
-    /// Whether body requires the property: in its required list, or, for a
-    /// field the document may name by an alias, under one of its names.
-    static bool is_required(const dyn::Object& body, std::string_view name) {
-        if(lists(body.find("required"), name)) {
-            return true;
-        }
-        const auto* named_once = body.find("allOf");
-        return named_once != nullptr &&
-               std::ranges::any_of(*named_once->get_array(), [&](const dyn::Value& names) {
-                   const auto* any = names.get_object()->find("anyOf");
-                   return any != nullptr &&
-                          std::ranges::any_of(*any->get_array(), [&](const dyn::Value& one) {
-                              return lists(one.get_object()->find("required"), name);
-                          });
-               });
-    }
-
-    static void annotate_properties(dyn::Object& body, const dyn::Value& doc_value) {
-        // A non-struct root pairs with a non-object document (an array, a
-        // scalar, the null a value-initialized nullable root encodes to);
-        // it has no properties to annotate from.
-        const auto* doc = doc_value.get_object();
-        if(doc == nullptr) {
-            return;
-        }
-        auto* props = body.find("properties");
-        if(props == nullptr) {
-            return;
-        }
-        for(auto& [name, prop]: *props->get_object()) {
-            const auto* v = doc->find(name);
-            if(v != nullptr && !is_required(body, name)) {
-                prop.get_object()->insert("default", *v);
-            }
-        }
-    }
-
-    /// Walks every subschema position looking for marked internal-tagged
-    /// branches; a marked branch takes its site defaults from the fresh
-    /// document of its alternative type, and drops the marker either way.
-    /// Only keys whose values are schemas are entered — never `default`,
-    /// `enum`, or `const`, whose contents are documents, not schemas.
-    void sweep(dyn::Object& schema) {
-        if(const auto* marker = schema.find(alternative_marker)) {
-            auto name = std::string(*marker->get_string());
-            if(auto it = fresh.docs.find(name); it != fresh.docs.end()) {
-                annotate_properties(schema, it->second);
-            }
-            schema.remove(alternative_marker);
-        }
-        for(std::string_view key: {"items", "additionalProperties"}) {
-            if(auto* sub = schema.find(key)) {
-                sweep_value(*sub);
-            }
-        }
-        for(std::string_view key: {"prefixItems", "oneOf", "anyOf", "allOf"}) {
-            if(auto* subs = schema.find(key)) {
-                for(auto& sub: *subs->get_array()) {
-                    sweep_value(sub);
-                }
-            }
-        }
-        for(std::string_view key: {"properties", "$defs"}) {
-            if(auto* subs = schema.find(key)) {
-                for(auto& [_, sub]: *subs->get_object()) {
-                    sweep_value(sub);
-                }
-            }
-        }
-    }
-
-    /// A tuple schema closes its prefix with "items": false — not a schema
-    /// object, nothing to enter.
-    void sweep_value(dyn::Value& sub) {
-        if(auto* obj = sub.get_object()) {
-            sweep(*obj);
-        }
-    }
-
-    FreshDefaults fresh;
-};
-
-/// The format the documents the defaults come from are encoded under: F,
-/// leaving out the fields whose default the schema does not state
-/// (schema_default = false), wherever they sit, so that neither their own
-/// property nor the whole-object default of one holding them states it.
+/// F, leaving out the fields annotated `schema_default = false` wherever they
+/// sit, so that neither their own property nor the default of an object
+/// holding them states their value: the format the documents the defaults
+/// come from are encoded under.
 template <typename F>
 struct default_document_format : codec::extend<F> {
     constexpr static bool omit_unstated_defaults = true;
 };
 
-/// The options as the format F has them.
-template <typename F>
-schema_options options_of(schema_options options) {
-    options.human_readable = F::human_readable;
-    return options;
-}
-
 /// True when decode reads a T value directly: T resolves to itself, or is a
-/// class derived from the std::variant it resolves to. Anything routed
-/// through a codec::repr makes decode read the repr's value instead, whose
-/// relationship to a fresh T is the repr's business; the defaults pass covers
-/// only the direct kind and leaves the rest honestly unannotated.
+/// class derived from the std::variant it resolves to. Through a codec::repr,
+/// decode reads the repr's value instead, whose relation to a fresh T is the
+/// repr's business, so no default is stated there.
 template <typename T, typename F>
 constexpr bool decoder_reads_directly() {
     using resolved = codec::resolved_repr_t<T, F>;
@@ -878,58 +706,32 @@ constexpr bool decoder_reads_directly() {
     }
 }
 
-/// S, the scope of a struct, leaving out the fields whose default the schema
-/// does not state: the layer goes beneath S's own policies, so that it
-/// reaches the struct's members, whose scope is S's base, while S's policies
-/// reach no deeper than in a document.
-template <typename S>
-struct unstated_omitted {
-    using type = default_document_format<S>;
-};
-
-template <typename Base, naming::rename_fn R, bool D, std::uint8_t P>
-struct unstated_omitted<codec::detail::scoped_format<Base, R, D, P>> {
-    using type = codec::detail::scoped_format<default_document_format<Base>, R, D, P>;
-};
-
-/// The document T(), a struct, encodes to in S, its scope, with the fields
-/// whose default the schema does not state left out.
-template <typename T, typename S>
-std::expected<std::string, rich_error> fresh_document() {
-    using format = typename unstated_omitted<S>::type;
+/// The document a value-initialized T, a struct, encodes to in Scope, the
+/// scope its node's attributes made, which T's own annotation is merged into
+/// already; null when the encoder rejects it (a member that is NaN, an enum
+/// value without a name), which leaves its body without defaults rather than
+/// failing the schema.
+template <typename T, typename Scope>
+dyn::Value fresh_document() {
     rich_error error;
     codec::scoped_context<rich_error> guard(error);
     StringBuilder builder(default_capacity);
-    ValueWriter<format> writer{builder};
-    if(!codec::detail::encode_plain<format>(writer, T())) {
-        return std::unexpected(std::move(error));
+    ValueWriter<Scope> writer{builder};
+    if(!codec::detail::encode_plain<Scope>(writer, T())) {
+        return {};
     }
-    return std::move(builder).take();
+    return from_string<dyn::Value>(std::move(builder).take()).value_or(dyn::Value());
 }
 
-/// Collects the fresh documents of T and what it holds, T standing where
-/// Format, the format around it, and Attrs, its node's attributes (a field's,
-/// or else its type's), place it.
+/// Records in documents.fresh, by its info, the document of each struct the
+/// emitter reaches from T as the decoder reads it, under Format, the format
+/// around T, and Attrs, its node's attributes (a field's, or else its
+/// type's): a struct's fields, each in its struct's scope, an optional's or a
+/// pointer's value, the elements of a sequence, a set or a tuple, a map's
+/// values, a variant's alternatives. What a codec::repr routes elsewhere is
+/// not followed, nor what a field's `as` or `with` does.
 template <typename T, typename Format, typename Attrs = meta::attrs_of_t<T>>
-void collect_fresh(FreshDefaults& out);
-
-template <typename Format, typename... Slots>
-void collect_fresh_slots(FreshDefaults& out, kotatsu::type_list<Slots...>) {
-    (collect_fresh<typename Slots::raw_type,
-                   codec::members_format_t<Format>,
-                   typename Slots::attrs>(out),
-     ...);
-}
-
-template <typename Format, typename... Ts>
-void collect_fresh_alternatives(FreshDefaults& out, std::type_identity<std::variant<Ts...>>) {
-    (collect_fresh<Ts, Format>(out), ...);
-}
-
-template <typename T, typename Format, typename Attrs>
-void collect_fresh(FreshDefaults& out) {
-    // A repr-routed type is skipped, subtree included: decode reads the
-    // repr's value, not a T, so no honest fresh document exists here.
+void collect_fresh(DefaultDocuments& documents) {
     if constexpr(decoder_reads_directly<T, Format>()) {
         using tk = meta::type_kind;
         using resolved = codec::resolved_repr_t<T, Format>;
@@ -938,53 +740,42 @@ void collect_fresh(FreshDefaults& out) {
             // The scope the emitter's info for T was built in: the node's
             // attributes, the field's over T's own, merged onto Format.
             using scope = codec::node_format_t<Format, T, Attrs>;
-            const codec::type_info& ti = codec::detail::struct_info<T, scope>();
-            if(!out.seen.insert(&ti).second) {
+            auto [at, added] = documents.fresh.try_emplace(&codec::detail::struct_info<T, scope>());
+            if(!added) {
                 return;
             }
-            auto name = kotatsu::naming::normalize_identifier(ti.type_name);
-            if(!out.claimed.insert(name).second) {
-                // Two distinct types under one normalized name: the emitter
-                // rejects the collision for $def'd types, but an inlined
-                // internal-tagged alternative shares the namespace silently
-                // — annotate neither rather than pair one with the other's
-                // document.
-                out.docs.erase(name);
-            } else if constexpr(std::is_default_constructible_v<T>) {
-                if(auto text = fresh_document<T, scope>()) {
-                    if(auto doc = from_string<dyn::Value>(*text)) {
-                        out.docs.emplace(name, std::move(*doc));
-                    }
-                }
+            if constexpr(std::is_default_constructible_v<T>) {
+                at->second = fresh_document<
+                    T,
+                    codec::node_format_t<default_document_format<Format>, T, Attrs>>();
             }
-            collect_fresh_slots<scope>(out, typename codec::virtual_schema<T, scope>::slots{});
+            [&]<typename... Slots>(kotatsu::type_list<Slots...>) {
+                (collect_fresh<typename Slots::raw_type,
+                               codec::members_format_t<scope>,
+                               typename Slots::attrs>(documents),
+                 ...);
+            }(typename codec::virtual_schema<T, scope>::slots{});
         } else if constexpr(kind == tk::optional) {
-            collect_fresh<typename resolved::value_type, Format>(out);
+            collect_fresh<typename resolved::value_type, Format>(documents);
         } else if constexpr(kind == tk::pointer) {
-            collect_fresh<typename resolved::element_type, Format>(out);
+            collect_fresh<typename resolved::element_type, Format>(documents);
         } else if constexpr(kind == tk::array || kind == tk::set) {
-            collect_fresh<std::ranges::range_value_t<resolved>, Format>(out);
+            collect_fresh<std::ranges::range_value_t<resolved>, Format>(documents);
         } else if constexpr(kind == tk::map) {
-            collect_fresh<typename std::ranges::range_value_t<resolved>::second_type, Format>(out);
+            collect_fresh<typename std::ranges::range_value_t<resolved>::second_type, Format>(
+                documents);
         } else if constexpr(kind == tk::tuple) {
-            [&out]<std::size_t... Is>(std::index_sequence<Is...>) {
-                (collect_fresh<std::tuple_element_t<Is, resolved>, Format>(out), ...);
+            [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+                (collect_fresh<std::tuple_element_t<Is, resolved>, Format>(documents), ...);
             }(std::make_index_sequence<std::tuple_size_v<resolved>>{});
         } else if constexpr(kind == tk::variant) {
-            collect_fresh_alternatives<Format>(out, std::type_identity<resolved>{});
+            [&]<typename... Ts>(std::type_identity<std::variant<Ts...>>) {
+                (collect_fresh<Ts, Format>(documents), ...);
+            }(std::type_identity<resolved>{});
         }
-        // Scalars, enums, bytes, any: leaves without annotatable structure.
+        // Scalars, enums, bytes, any: leaves without properties.
     }
 }
-
-}  // namespace detail
-
-inline std::expected<dyn::Value, rich_error> schema(const codec::type_info& root,
-                                                    const schema_options& options = {}) {
-    return detail::SchemaEmitter{options}.emit(root);
-}
-
-namespace detail {
 
 inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool pretty) {
     KOTATSU_EXPECTED_TRY_V(auto compact, to_string(std::move(value)));
@@ -996,51 +787,59 @@ inline std::expected<std::string, rich_error> stringify(dyn::Value value, bool p
 
 }  // namespace detail
 
-/// When T is default-constructible and the decoder reads it directly — T
-/// resolves to itself, or is a class derived from the std::variant it
-/// resolves to — the schema also carries `default` annotations: fresh
-/// instances are encoded through the real JSON encoder under F and
-/// parsed back into documents, so the values match what to_string emits byte
-/// for byte (enum renames, structural annotations on the root
-/// itself included). Root properties take the values of T(); each $def and
-/// inlined variant branch takes the values of a freshly constructed instance
-/// of its own type, with non-required sites layering their whole-object
-/// defaults on top (see DefaultAnnotator). Two consequences of riding the
-/// real encoder: T() must encode under F — an instance the encoder
-/// rejects (a member that is NaN or an infinity, an enum value without a
-/// reflected name through codec::enum_names) fails schema generation with that
-/// error — and a T whose fields the codec cannot serialize fails to compile,
-/// exactly like to_string itself. A repr-routed root gets an honestly
-/// unannotated schema; an opaque root — one whose JSON-resolved
-/// representation still reflects as kind unknown — keeps reporting the
-/// emission error at runtime.
+/// The JSON Schema of the documents `root` describes, as a format that is
+/// human readable writes them; it states no defaults, having no value to
+/// take them from.
+inline std::expected<dyn::Value, rich_error> schema(const codec::type_info& root,
+                                                    const schema_options& options = {}) {
+    return detail::SchemaEmitter{options, true}.emit(root);
+}
+
+/// The JSON Schema of the documents json::to_string<F> writes for a T and
+/// json::from_string<F> reads into one.
 ///
-/// A reader taking a property's default takes the one at the property's own
-/// site over the one inside the $def it refers to: the site's default is the
-/// whole value an enclosing initializer gives it. A field annotated
-/// `schema_default = false` has no default stated anywhere. The bounds
-/// (`minimum`, `maximum`) and the values (`choices`) a field annotation
-/// states join its schema for the schema's readers; the decoder checks none
-/// of them.
+/// When T is default-constructible and decode reads it directly (it resolves
+/// to itself, or is a class derived from the std::variant it resolves to), the
+/// schema also states defaults, the value a property the document leaves out
+/// keeps:
+///
+/// - The root's properties take the values T() encodes to.
+/// - The properties of a $def, and of an internally tagged alternative, whose
+///   struct body is inlined, take what a value-initialized instance of their
+///   struct encodes to: decode value-initializes elements, map values and
+///   alternatives before reading them. A struct the encoder rejects fresh,
+///   or one reached through a codec::repr, states none.
+/// - A property the document may leave out holding a struct thus states the
+///   whole object its holder gives it, which a reader takes over the defaults
+///   inside the $def. A required property states none, and neither does a
+///   field annotated `schema_default = false`, anywhere.
+///
+/// The defaults are what the JSON encoder writes under F, byte for byte, so
+/// T() must encode: one that does not (a member that is NaN, an enum value
+/// without a name through codec::enum_names) fails the schema with the
+/// encoder's error, and a T whose fields the codec cannot write fails to
+/// compile, as to_string does. An opaque T, which has no schema, fails at run
+/// time.
+///
+/// The bounds (`minimum`, `maximum`) and the values (`choices`) a field's
+/// annotation states join its schema for the schema's readers; the decoder
+/// checks none of them.
 template <typename T, typename F = json::format>
 std::expected<dyn::Value, rich_error> schema(const schema_options& options = {}) {
     static_assert(std::derived_from<F, json::format>, "a JSON format extends json::format");
-    using resolved = codec::resolved_repr_t<T, F>;
-    constexpr bool annotate_defaults = std::is_default_constructible_v<T> &&
-                                       meta::kind_of<resolved>() != meta::type_kind::unknown &&
-                                       detail::decoder_reads_directly<T, F>();
-    KOTATSU_EXPECTED_TRY_V(
-        auto result,
-        (detail::SchemaEmitter{detail::options_of<F>(options), annotate_defaults}.emit(
-            codec::type_info::of<T, F>())));
-    if constexpr(annotate_defaults) {
+    const auto& root = codec::type_info::of<T, F>();
+    if constexpr(std::is_default_constructible_v<T> &&
+                 meta::kind_of<codec::resolved_repr_t<T, F>>() != meta::type_kind::unknown &&
+                 detail::decoder_reads_directly<T, F>()) {
+        detail::DefaultDocuments defaults;
         KOTATSU_EXPECTED_TRY_V(auto text, to_string<detail::default_document_format<F>>(T()));
         KOTATSU_EXPECTED_TRY_V(auto doc, from_string<dyn::Value>(text));
-        detail::FreshDefaults fresh;
-        detail::collect_fresh<T, F>(fresh);
-        detail::DefaultAnnotator{std::move(fresh)}.run(*result.get_object(), doc);
+        defaults.root = std::move(doc);
+        detail::collect_fresh<T, F>(defaults);
+        return detail::SchemaEmitter{options, F::human_readable, &defaults}.emit(root);
+    } else {
+        return detail::SchemaEmitter{options, F::human_readable}.emit(root);
     }
-    return result;
 }
 
 inline std::expected<std::string, rich_error> schema_string(const codec::type_info& root,

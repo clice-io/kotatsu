@@ -23,8 +23,8 @@ namespace {
 
 /// A non-reflectable class (raw kind unknown) whose codec::repr resolves to a
 /// struct with an optional member: the schema describes the representation's
-/// shape, but the defaults pass covers only types the decoder reads
-/// directly, so a repr-routed root stays unannotated.
+/// shape, but defaults are stated only for types the decoder reads
+/// directly, so a repr-routed root states none.
 class json_schema_reprd_root {
 public:
     int total() const {
@@ -308,6 +308,15 @@ struct renamed_defaults_holder {
     renamed_defaults_child child;
 };
 
+/// renamed_defaults_child in two scopes under one name: an internally tagged
+/// alternative, whose body is inlined, and, its fields renamed, a $def.
+struct defaults_two_scopes {
+    KANNOTATE(&choice, tag = "kind", tag_names = {"child", "b"})
+    std::variant<renamed_defaults_child, defaults_alt_b> choice;
+    KANNOTATE(&renamed, rename_all = Casing::LowerCamel)
+    renamed_defaults_child renamed;
+};
+
 /// Three levels: the middle one renames its own fields, which the leaf's do
 /// not take, and the leaf states no default for its secret, which no whole-
 /// object default above it states either.
@@ -474,8 +483,8 @@ ZEST_CASE(defaults_engaged_optional) {
 }
 
 ZEST_CASE(defaults_recursive_root) {
-    // A self-referential root terminates: the pointer self-reference sits
-    // inside an anyOf wrapper, which is a leaf for the walk, and carries the
+    // A self-referential root terminates: the pointer self-reference is a
+    // reference to the root inside an anyOf wrapper, which carries the
     // disengaged pointer's null.
     const auto result = json::schema_string<defaults_node>().value();
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":1})"));
@@ -560,8 +569,9 @@ ZEST_CASE(defaults_variant_holder_override_stays_local) {
 ZEST_CASE(defaults_recursive_root_with_elements) {
     // A default instance may carry elements of the root type itself (the
     // element initializer bottoms out by overriding kids to empty); the
-    // pass never follows the emitted root self-reference, so it terminates
-    // and the per-element override leaks into no default.
+    // elements refer to the root, so the schema ends, and the root's body
+    // states T()'s values alone: the per-element override leaks into no
+    // default.
     const auto result = json::schema_string<defaults_cyclic>().value();
     ZEXPECT(zest::contains(result, R"("$ref":"#")"));
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":1})"));
@@ -570,7 +580,7 @@ ZEST_CASE(defaults_recursive_root_with_elements) {
 
 ZEST_CASE(defaults_repr_backed_root_unannotated) {
     // The decoder reads the representation, not a json_schema_reprd_root:
-    // the defaults pass covers only types decode reads directly, so the
+    // defaults are stated only for types decode reads directly, so the
     // repr-routed root keeps the representation's schema shape without any
     // default.
     const auto result = json::schema_string<json_schema_reprd_root>().value();
@@ -602,6 +612,18 @@ ZEST_CASE(defaults_follow_slot_rename_all) {
     const auto result = json::schema_string<renamed_defaults_holder>().value();
     ZEXPECT(zest::contains(result, R"("firstValue")"));
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
+}
+
+ZEST_CASE(defaults_one_struct_in_two_scopes) {
+    // Each body states the defaults of the scope it is written in, though
+    // both bear the struct's name.
+    const auto result = json::schema_string<defaults_two_scopes>().value();
+    ZEXPECT(zest::contains(
+        result,
+        R"("first_value":{"type":"integer","minimum":-2147483648,"maximum":2147483647,"default":4})"));
+    ZEXPECT(zest::contains(
+        result,
+        R"("firstValue":{"type":"integer","minimum":-2147483648,"maximum":2147483647,"default":4})"));
 }
 
 ZEST_CASE(defaults_keep_each_struct_s_own_names_at_every_depth) {
