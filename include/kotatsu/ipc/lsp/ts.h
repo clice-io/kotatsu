@@ -94,8 +94,7 @@ struct optional_bool {
 };
 
 consteval auto __kotatsu__type_annotation(std::type_identity<optional_bool>) {
-    return meta::make_annotation(meta::dsl::skip_if = meta::skip_when::default_value,
-                                 meta::dsl::defaulted = true);
+    return meta::make_annotation(meta::dsl::presence = meta::presence_kind::omit_if_default);
 }
 
 /// `undefined | T`.
@@ -119,15 +118,14 @@ struct optional : std::optional<T> {
 
 template <typename T>
 consteval auto __kotatsu__type_annotation(std::type_identity<optional<T>>) {
-    return meta::make_annotation(meta::dsl::skip_if = meta::skip_when::none);
+    return meta::make_annotation(meta::dsl::presence = meta::presence_kind::omit_if_default);
 }
 
 namespace detail {
 
 template <typename T>
 consteval auto __kotatsu__type_annotation(std::type_identity<present_optional<T>>) {
-    return meta::make_annotation(meta::dsl::skip_if = meta::skip_when::none,
-                                 meta::dsl::defaulted = true);
+    return meta::make_annotation(meta::dsl::presence = meta::presence_kind::omit_if_default);
 }
 
 }  // namespace detail
@@ -151,8 +149,7 @@ struct optional_ptr : std::unique_ptr<T> {
 
 template <typename T>
 consteval auto __kotatsu__type_annotation(std::type_identity<optional_ptr<T>>) {
-    return meta::make_annotation(meta::dsl::skip_if = meta::skip_when::default_value,
-                                 meta::dsl::defaulted = true);
+    return meta::make_annotation(meta::dsl::presence = meta::presence_kind::omit_if_default);
 }
 
 /// `A | B | ...`, decoded as the first alternative the input fits.

@@ -27,7 +27,7 @@ struct ByLocator {
 KANNOTATE_TYPE(struct BySpec, description = "by spec");
 
 struct BySpec {
-    KANNOTATE(&spec, cli::required = true)
+    KANNOTATE(&spec, presence = required)
     std::string spec;
     bool dry = false;
 };
@@ -39,7 +39,7 @@ struct Rename {
 };
 
 struct Pick {
-    KANNOTATE(&target, cli::exclusive = true, cli::required = true)
+    KANNOTATE(&target, cli::exclusive = true, presence = required)
     std::variant<BySpec, ByLocator> target;
 };
 
@@ -50,7 +50,7 @@ struct Maybe {
 
 struct Wrapped {
     int level = 0;
-    KANNOTATE(&target, cli::exclusive = true, cli::required = true)
+    KANNOTATE(&target, cli::exclusive = true, presence = required)
     std::variant<BySpec, ByLocator> target;
 };
 

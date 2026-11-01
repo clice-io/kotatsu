@@ -30,7 +30,7 @@ namespace kotatsu::codec::bincode {
 /// - array/set/map → element count (see below), then elements back to back
 ///   (maps: key, value, key, value, ...)
 /// - tuple/structure → fields concatenated in declaration order, no prefix;
-///   skip_if omits nothing, since no marker could say a field is absent
+///   presence omits nothing, since no marker could say a field is absent
 /// - variant → u32 LE alternative index + payload
 /// - optional/pointer → presence byte (0x00 / 0x01) + payload when engaged
 /// - RawValue → its text as bytes (length + raw)

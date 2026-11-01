@@ -67,7 +67,8 @@ struct Node {
 
 /// How the options are decoded: a field the argv does not give keeps the value it has.
 struct DecodeConfig {
-    constexpr static bool defaulted_fields = true;
+    constexpr static std::optional<meta::presence_kind> presence_all =
+        meta::presence_kind::optional;
 };
 
 using decode_config = codec::default_config<DecodeConfig>;
@@ -132,6 +133,8 @@ struct Reader {
 
     constexpr static bool data_driven = true;
     constexpr static bool human_readable = true;
+    /// The parse checks the required arguments itself, and a help option skips the check.
+    constexpr static bool presence_checked = true;
 
     bool fail(std::string message) const {
         *last = &node;

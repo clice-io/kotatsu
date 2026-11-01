@@ -257,17 +257,17 @@ bool encode_one_field(Vis& vis, const T& value) {
     using field = FieldAt<Config, I, T>;
 
     // A visitor that writes every field has nothing to mark one absent, so
-    // skip_if and omit_unstated_defaults omit fields only elsewhere.
+    // presence and omit_unstated_defaults omit fields only elsewhere.
     if constexpr(!writes_every_field<Vis> && Config::omit_unstated_defaults &&
                  !field::schema::fields[I].schema_default) {
         return true;
     } else {
-        const auto& field_ref = field::of(value);
         if constexpr(!writes_every_field<Vis>) {
-            if(skipped<typename field::attrs>(field_ref, true)) {
+            if(omitted<Config, I>(value)) {
                 return true;
             }
         }
+        const auto& field_ref = field::of(value);
 
         bool ok = vis.visit_field(
             std::integral_constant<std::size_t, I>{},

@@ -47,7 +47,10 @@ ZEST_CASE(field_without_entries_has_no_spec) {
 ZEST_CASE(help_option_stops_and_is_not_required) {
     constexpr const auto* spec = meta::extension_of<ArgSpec, Helped, 0>;
     ZSTATIC_EXPECT(spec->stop);
-    ZSTATIC_EXPECT(!spec->required);
+    // It leaves the presence to cli's config, under which a field is optional.
+    constexpr const auto& info = static_cast<const meta::struct_type_info&>(
+        meta::type_info_of<Helped, detail::decode_config>());
+    ZSTATIC_EXPECT(info.fields[0].presence == meta::presence_kind::optional);
     ZSTATIC_EXPECT(spec->names[0] == "-h");
 }
 

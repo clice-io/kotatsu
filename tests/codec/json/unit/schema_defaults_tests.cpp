@@ -22,7 +22,7 @@ namespace kotatsu::meta {
 namespace {
 
 /// A non-reflectable class (raw kind unknown) whose meta::repr resolves to a
-/// struct with a defaulted member: the schema describes the representation's
+/// struct with an optional member: the schema describes the representation's
 /// shape, but the defaults pass covers only types the decoder reads
 /// directly, so a repr-routed root stays unannotated.
 class json_schema_reprd_root {
@@ -36,7 +36,7 @@ private:
 };
 
 struct json_schema_reprd_repr {
-    KANNOTATE(&total, defaulted = true)
+    KANNOTATE(&total, presence = optional)
     std::int32_t total = 5;
 };
 
@@ -58,7 +58,7 @@ private:
 };
 
 struct json_schema_reprd_shifted_repr {
-    KANNOTATE(&n, defaulted = true)
+    KANNOTATE(&n, presence = optional)
     std::int32_t n = 4;
 };
 
@@ -81,7 +81,7 @@ private:
 };
 
 struct json_schema_imperative_repr {
-    KANNOTATE(&n, defaulted = true)
+    KANNOTATE(&n, presence = optional)
     std::int32_t n = 4;
 };
 
@@ -134,10 +134,10 @@ struct repr<json_schema_imperative_root> {
 namespace {
 
 struct defaults_leaf {
-    KANNOTATE(&threads, defaulted = true)
+    KANNOTATE(&threads, presence = optional)
     std::int32_t threads = 4;
 
-    KANNOTATE(&name, defaulted = true)
+    KANNOTATE(&name, presence = optional)
     std::string name = "worker";
 };
 
@@ -152,7 +152,7 @@ struct defaults_explicit_holder {
 };
 
 struct defaults_root {
-    KANNOTATE(&enabled, defaulted = true)
+    KANNOTATE(&enabled, presence = optional)
     bool enabled = true;
 
     defaults_leaf pool;
@@ -160,19 +160,19 @@ struct defaults_root {
 
     std::optional<std::int32_t> limit;
 
-    KANNOTATE(&ids, defaulted = true)
+    KANNOTATE(&ids, presence = optional)
     std::vector<std::int32_t> ids;
 };
 
-struct defaults_skipped {
-    KANNOTATE(&tags, skip_if = skip_when::empty)
+struct defaults_omitted {
+    KANNOTATE(&tags, presence = omit_if_default)
     std::vector<std::int32_t> tags;
 };
 
 enum class defaults_level : std::uint8_t { Low = 0, High = 1 };
 
 struct defaults_with_enum {
-    KANNOTATE(&log_level, defaulted = true)
+    KANNOTATE(&log_level, presence = optional)
     defaults_level log_level = defaults_level::High;
 };
 
@@ -187,29 +187,29 @@ struct defaults_engaged {
 };
 
 struct defaults_node {
-    KANNOTATE(&depth, defaulted = true)
+    KANNOTATE(&depth, presence = optional)
     std::int32_t depth = 1;
 
     std::unique_ptr<defaults_node> next;
 };
 
 struct defaults_ref_sites {
-    KANNOTATE(&pool, defaulted = true)
+    KANNOTATE(&pool, presence = optional)
     defaults_leaf pool;
 
-    KANNOTATE(&mirror, defaulted = true)
+    KANNOTATE(&mirror, presence = optional)
     defaults_leaf mirror = {defaults_leaf{.threads = 9}};
 };
 
 struct defaults_alt_a {
-    KANNOTATE(&depth, defaulted = true)
+    KANNOTATE(&depth, presence = optional)
     std::int32_t depth = 3;
 
     std::string name;
 };
 
 struct defaults_alt_b {
-    KANNOTATE(&other, defaulted = true)
+    KANNOTATE(&other, presence = optional)
     std::int32_t other = 9;
 };
 
@@ -242,17 +242,17 @@ struct defaults_external_variant : std::variant<defaults_alt_a, defaults_alt_b> 
 };
 
 struct defaults_elem_a {
-    KANNOTATE(&alpha, defaulted = true)
+    KANNOTATE(&alpha, presence = optional)
     std::int32_t alpha = 7;
 };
 
 struct defaults_elem_b {
-    KANNOTATE(&beta, defaulted = true)
+    KANNOTATE(&beta, presence = optional)
     std::string beta = "cell";
 };
 
 struct defaults_elem_c {
-    KANNOTATE(&gamma, defaulted = true)
+    KANNOTATE(&gamma, presence = optional)
     bool gamma = true;
 };
 
@@ -276,7 +276,7 @@ struct defaults_variant_override {
 };
 
 struct defaults_cyclic {
-    KANNOTATE(&depth, defaulted = true)
+    KANNOTATE(&depth, presence = optional)
     std::int32_t depth = 1;
 
     std::vector<defaults_cyclic> kids = {
@@ -301,7 +301,7 @@ struct defaults_tuple_override {
 };
 
 struct renamed_defaults_child {
-    KANNOTATE(&first_value, defaulted = true)
+    KANNOTATE(&first_value, presence = optional)
     std::int32_t first_value = 4;
 };
 
@@ -314,7 +314,7 @@ struct renamed_defaults_holder {
 KANNOTATE_TYPE(struct renamed_defaults_root, rename_all = Casing::LowerCamel);
 
 struct renamed_defaults_root {
-    KANNOTATE(&first_value, defaulted = true)
+    KANNOTATE(&first_value, presence = optional)
     std::int32_t first_value = 4;
 };
 
@@ -346,25 +346,25 @@ ZEST_CASE(defaults_value_initialize) {
     ZEXPECT(zest::contains(nested, R"({"type":"null"}],"default":3})"));
 }
 
-ZEST_CASE(defaulted_fields_requires_nothing) {
+ZEST_CASE(presence_all_requires_nothing) {
     // Every property may be absent and carries its default, nested ones too.
-    const auto result = json::schema_string<test::Tunables, test::DefaultedConfig>().value();
+    const auto result = json::schema_string<test::Tunables, test::AllOptionalConfig>().value();
     ZEXPECT(!zest::contains(result, R"("required")"));
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":9})"));
 }
 
-ZEST_CASE(defaulted_fields_on_a_field_leaves_its_holder_required) {
+ZEST_CASE(presence_all_on_a_field_leaves_its_holder_required) {
     const auto result = json::schema_string<test::TunablesHolder>().value();
     // The field itself is the holder's to require.
     ZEXPECT(zest::contains(result, R"("required":["tunables","count"])"));
     ZEXPECT(!zest::contains(result, R"("required":["threads")"));
 }
 
-ZEST_CASE(defaults_skip_condition) {
-    // The empty vector triggers skip_if at encode time, so the default
-    // document has no such property to annotate from.
-    const auto result = json::schema_string<defaults_skipped>().value();
+ZEST_CASE(defaults_omitted_at_its_default) {
+    // The empty vector is the field's default, which the default document
+    // leaves out, so it has no such property to annotate from.
+    const auto result = json::schema_string<defaults_omitted>().value();
     ZEXPECT(zest::contains(result, R"("tags")"));
     ZEXPECT(!zest::contains(result, R"("default")"));
 }

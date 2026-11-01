@@ -41,7 +41,7 @@ struct Question {
     std::optional<bool> clamped;
 };
 
-KANNOTATION(left_out_if_none, skip_if = skip_when::none);
+KANNOTATION(left_out_if_none, presence = omit_if_default);
 
 struct Answer {
     KANNOTATE(&uri, left_out_if_none)

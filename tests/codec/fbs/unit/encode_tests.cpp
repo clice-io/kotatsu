@@ -566,14 +566,14 @@ ZEST_CASE(engaged_optional_of_a_null_reads_back_disengaged) {
 ZEST_CASE(absent_slot_reads_as_null) {
     // A slot decode visits every slot, and an absent one is how a null
     // travels: whatever the target held, the field reads as null, empty or
-    // zero. Skippable's initializers are none of those.
+    // zero. Omittable's initializers are none of those.
     auto bytes = fbs::to_bytes(test::IdOnly{.id = 1});
     ZASSERT(bytes);
-    test::Skippable decoded{};
+    test::Omittable decoded{};
     ZASSERT(fbs::from_bytes(*bytes, decoded));
     ZEXPECT(meta::eq(
         decoded,
-        test::Skippable{.id = 1, .note = std::nullopt, .tags = {}, .generation = 0, .score = 0}));
+        test::Omittable{.id = 1, .note = std::nullopt, .tags = {}, .generation = 0, .score = 0}));
 }
 
 ZEST_CASE(empty_nullable_leaves_its_slot_absent) {

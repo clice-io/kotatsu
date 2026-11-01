@@ -93,7 +93,7 @@ ZEST_CASE(skip_and_flatten_slot_counts) {
 ZEST_CASE(behavior_slot_attrs) {
     using slots = virtual_schema<fx::BehaviorStruct>::slots;
 
-    // Field 0 (maybe): raw=optional<int>, has skip_if attr
+    // Field 0 (maybe): raw=optional<int>, has an omit_if attr
     using slot0 = type_list_element_t<0, slots>;
     ZEXPECT(zest::type_eq<slot0::raw_type, std::optional<int>>());
     ZSTATIC_EXPECT(!std::is_same_v<slot0::attrs, std::tuple<>>);

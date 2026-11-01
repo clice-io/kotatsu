@@ -209,61 +209,34 @@ void attrs(const Kit<B>& kit) {
                 "enum_string_unnamed_value_fails",
                 [] { return AccessName{static_cast<Access>(9)}; },
                 {.message = "enum value 9 has no reflected name", .path = "value"});
+    // The values a write leaves out: each field at its default, but the
+    // score, which its predicate judges.
     auto matching = [] {
-        return Skippable{
+        return Omittable{
             .id = 1,
-            .note = std::nullopt,
-            .tags = {},
-            .generation = 0,
+            .note = "kept",
+            .tags = {9},
+            .generation = 7,
             .score = -5,
         };
     };
-    // A field skipped on decode is still in the document, written through
-    // its attrs: a positional decode reads past it the same way, and the
-    // field it decodes into keeps its value.
-    reads<CellSkippedOnDecode>(
+    // A predicate judges only the value being written: a decode reads the
+    // field whatever the value it decodes into holds, here the empty text the
+    // predicate matches.
+    reads<OmitsEmptyText>(
         kit,
-        "skip_if_on_decode_reads_past_its_as_field",
-        [] {
-            return CellSkippedOnDecodePlain{
-                .cell = {.x = 1, .y = 2},
-                .after = 7
-            };
-        },
-        [] { return CellSkippedOnDecode{.cell = {}, .after = 7}; });
-    // ...into a value-initialized one, here of a type `{}` cannot make.
-    reads<HeldSkippedOnDecode>(
-        kit,
-        "skip_if_on_decode_reads_past_a_value_initialized_field",
-        [] {
-            return HeldSkippedOnDecodePlain{
-                .held = {.list = {1, 2}, .count = 2},
-                .after = 7
-            };
-        },
-        [] {
-            return HeldSkippedOnDecode{
-                .held = {.list = ExplicitList(), .count = 0},
-                .after = 7
-            };
-        });
-    // A one-argument predicate judges the value being written: a decode
-    // reads the field whatever the value it decodes into holds, here the
-    // empty text the predicate matches.
-    reads<SkipsEmptyText>(
-        kit,
-        "one_argument_skip_if_reads_its_field",
+        "omit_if_reads_its_field",
         [] { return TextPlain{.text = "x"}; },
-        [] { return SkipsEmptyText{.text = std::string("x")}; });
+        [] { return OmitsEmptyText{.text = std::string("x")}; });
     if constexpr(B::caps.absent_fields) {
         // ...and, encoding, it leaves out the value it matches.
         encodes_as(
             kit,
-            "one_argument_skip_if_omits_matching_field",
-            [] { return SkipsEmptyText{.text = std::string()}; },
+            "omit_if_leaves_out_matching_field",
+            [] { return OmitsEmptyText{.text = std::string()}; },
             [] { return Empty{}; });
         auto kept = [] {
-            return Skippable{
+            return Omittable{
                 .id = 1,
                 .note = "n",
                 .tags = {1, 2},
@@ -271,9 +244,9 @@ void attrs(const Kit<B>& kit) {
                 .score = 7
             };
         };
-        encodes_as(kit, "skip_if_omits_matching_fields", matching, [] { return IdOnly{.id = 1}; });
-        encodes_as(kit, "skip_if_keeps_other_fields", kept, [] {
-            return SkippablePlain{
+        encodes_as(kit, "presence_omits_matching_fields", matching, [] { return IdOnly{.id = 1}; });
+        encodes_as(kit, "presence_keeps_other_fields", kept, [] {
+            return OmittablePlain{
                 .id = 1,
                 .note = "n",
                 .tags = {1, 2},
@@ -281,27 +254,70 @@ void attrs(const Kit<B>& kit) {
                 .score = 7
             };
         });
+        // A field's default is its initializer, not the empty value: an
+        // empty value that is not the default is written.
+        encodes_as(
+            kit,
+            "omit_if_default_compares_with_the_initializer",
+            [] {
+                return Omittable{
+                    .id = 1,
+                    .note = std::nullopt,
+                    .tags = {},
+                    .generation = 0,
+                    .score = 3,
+                };
+            },
+            [] {
+                return OmittablePlain{
+                    .id = 1,
+                    .note = std::nullopt,
+                    .tags = {},
+                    .generation = 0,
+                    .score = 3,
+                };
+            });
+        // The default is the field of a value-initialized struct, here one
+        // `{}` cannot make.
+        encodes_as(
+            kit,
+            "omit_if_default_value_initializes_its_struct",
+            [] { return CountBesideExplicit{.list = ExplicitList{1}, .count = 2}; },
+            [] { return ListPlain{.list = {1}}; });
         // A keyed decode never visits an absent field, which is left as the
         // value it decodes into holds it; what a slot decode reads for an
         // absent slot is the backend's own.
         if constexpr(B::caps.self_describing) {
-            reads<Skippable>(
+            reads<Omittable>(
                 kit,
-                "skip_if_absent_fields_left_alone",
+                "presence_absent_fields_left_alone",
                 [] { return IdOnly{.id = 1}; },
                 [] {
-                    return Skippable{.id = 1,
+                    return Omittable{.id = 1,
                                      .note = "kept",
                                      .tags = {9},
                                      .generation = 7,
                                      .score = 3};
                 });
+            // So a field left out at its default reads back as written.
+            roundtrip(kit, "omit_if_default_at_its_default_roundtrip", [] {
+                return Omittable{.id = 1};
+            });
         }
-        roundtrip(kit, "skip_if_roundtrip", kept);
+        roundtrip(kit, "presence_roundtrip", kept);
     } else {
-        // Nothing can mark a field absent, so skip_if omits nothing: a field
-        // it matches is written, and reads back over the initializer.
-        roundtrip(kit, "skip_if_matching_fields_roundtrip", matching);
+        // Nothing can mark a field absent, so presence omits nothing: a field
+        // it would leave out is written, and reads back as written.
+        encodes_as(kit, "presence_writes_matching_fields", matching, [] {
+            return OmittablePlain{
+                .id = 1,
+                .note = "kept",
+                .tags = {9},
+                .generation = 7,
+                .score = -5,
+            };
+        });
+        roundtrip(kit, "presence_matching_fields_roundtrip", matching);
     }
 
     // omit_unstated_defaults leaves out a schema_default = false field where
@@ -395,20 +411,20 @@ void attrs(const Kit<B>& kit) {
             {.message = "missing required field 'userId'", .path = ""});
         reads<DefaultStruct>(
             kit,
-            "defaulted_absent_reads_default",
+            "optional_absent_keeps_its_value",
             [] { return DefaultStructAbsent{.version = "v1", .plain = 2}; },
             [] { return DefaultStruct{.with_default = 3, .version = "v1", .plain = 2}; });
         reads<DefaultStruct>(
             kit,
-            "defaulted_present_reads",
+            "optional_present_reads",
             [] { return DefaultStructPlain{.with_default = 9, .version = "v1", .plain = 2}; },
             [] { return DefaultStruct{.with_default = 9, .version = "v1", .plain = 2}; });
-        // Under defaulted_fields every field may be absent, in the structs
-        // nested inside too, and keeps its value.
+        // Under presence_all = optional every field may be absent, in the
+        // structs nested inside too, and keeps its value.
         using Sections = std::map<std::string, Ints>;
-        reads<Tunables, DefaultedConfig>(
+        reads<Tunables, AllOptionalConfig>(
             kit,
-            "defaulted_fields_config_reads_what_is_there",
+            "presence_all_config_reads_what_is_there",
             [] {
                 return Sections{
                     {"limits", {{"high", 20}}}
@@ -423,7 +439,7 @@ void attrs(const Kit<B>& kit) {
             });
         reads<TunablesHolder>(
             kit,
-            "defaulted_fields_on_a_field_reads_what_is_there",
+            "presence_all_on_a_field_reads_what_is_there",
             [] {
                 return std::map<std::string, std::variant<int, Sections>>{
                     {"count",    3                                 },
@@ -437,7 +453,7 @@ void attrs(const Kit<B>& kit) {
                 };
             });
         read_fails<TunablesHolder>(kit,
-                                   "defaulted_fields_on_a_field_holder_field_missing_fails",
+                                   "presence_all_on_a_field_holder_field_missing_fails",
                                    [] {
                                        return std::map<std::string, Sections>{
                                            {"tunables", {}}

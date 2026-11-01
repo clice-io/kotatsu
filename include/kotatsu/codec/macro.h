@@ -26,8 +26,7 @@
         using ::kotatsu::meta::dsl::alias;                                                         \
         using ::kotatsu::meta::dsl::skip;                                                          \
         using ::kotatsu::meta::dsl::flatten;                                                       \
-        using ::kotatsu::meta::dsl::defaulted;                                                     \
-        using ::kotatsu::meta::dsl::skip_if;                                                       \
+        using ::kotatsu::meta::dsl::presence;                                                      \
         using ::kotatsu::meta::dsl::as;                                                            \
         using ::kotatsu::meta::dsl::with;                                                          \
         using ::kotatsu::meta::dsl::enum_string;                                                   \
@@ -37,13 +36,13 @@
         using ::kotatsu::meta::dsl::choices;                                                       \
         using ::kotatsu::meta::dsl::rename_all;                                                    \
         using ::kotatsu::meta::dsl::deny_unknown_fields;                                           \
-        using ::kotatsu::meta::dsl::defaulted_fields;                                              \
+        using ::kotatsu::meta::dsl::presence_all;                                                  \
         using ::kotatsu::meta::dsl::tagged;                                                        \
         using ::kotatsu::meta::dsl::tag;                                                           \
         using ::kotatsu::meta::dsl::content;                                                       \
         using ::kotatsu::meta::dsl::tag_names;                                                     \
         using ::kotatsu::meta::dsl::type;                                                          \
-        using ::kotatsu::meta::skip_when;                                                          \
+        using enum ::kotatsu::meta::presence_kind;                                                 \
         using ::kotatsu::naming::Casing;                                                           \
         return ::kotatsu::meta::make_annotation(__VA_ARGS__);                                      \
     }()
@@ -71,11 +70,11 @@
 /// the field's name, by a consteval function that is neither emitted nor
 /// mangled; a name no member of the class has fails to compile, and so does a
 /// second annotation of one field. Type-valued attributes ride along as
-/// `as = type<Target>`, `with = type<Adapter>`, `skip_if = type<Pred>` and
+/// `as = type<Target>`, `with = type<Adapter>`, `presence = type<Pred>` and
 /// `enum_string = type<Policy>`. A field whose type KANNOTATE_TYPE annotates
 /// keeps that annotation: an entry given here overrides the type's, and the
 /// rest of both apply.
-#define KANNOTATE(member, ...)                                                                    \
+#define KANNOTATE(member, ...)                                                                     \
     [[maybe_unused]] static consteval auto __kotatsu__annotation(                                  \
         ::kotatsu::meta::detail::member_key_t<#member>) {                                          \
         [[maybe_unused]] ::std::type_identity<decltype(::kotatsu::meta::detail::member_probe {     \
@@ -115,9 +114,9 @@
 #define KOTATSU_WHEN(condition) KOTATSU_CONCAT(KOTATSU_WHEN_, condition)
 
 /// Annotates a type, wherever a value of it is: a document's root, an element,
-/// a field. It takes the type's description, when a field of it is left out
-/// (skip_if, defaulted), the struct and variant entries (rename_all,
-/// deny_unknown_fields, tag, tag_names, ...) and extension entries; a field's
+/// a field. It takes the type's description, the presence of a field of it,
+/// the struct and variant entries (rename_all, deny_unknown_fields,
+/// presence_all, tag, tag_names, ...) and extension entries; a field's
 /// own annotation overrides them entry by entry. A variant that a document
 /// holds other than as a field takes its tagging here, as a class derived from
 /// the std::variant:

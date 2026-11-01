@@ -58,11 +58,21 @@ struct CallParams {
     std::optional<std::uint32_t> timeout_ms;
 };
 
+/// Holds for an empty optional: a write leaves it out. A predicate rather
+/// than `presence = omit_if_default`, which compares with ==, which Error has
+/// not.
+struct IsNone {
+    template <typename T>
+    bool operator()(const std::optional<T>& value) const {
+        return !value.has_value();
+    }
+};
+
 // Exactly one of the two, the other left out.
 struct CallOutcome {
-    KANNOTATE(&result, skip_if = skip_when::none)
+    KANNOTATE(&result, presence = type<IsNone>)
     std::optional<Value> result;
-    KANNOTATE(&error, skip_if = skip_when::none)
+    KANNOTATE(&error, presence = type<IsNone>)
     std::optional<Error> error;
 };
 

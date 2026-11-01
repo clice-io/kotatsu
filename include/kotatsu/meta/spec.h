@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <tuple>
@@ -23,16 +24,26 @@
 
 namespace kotatsu::meta {
 
-/// Built-in conditions for omitting a field during serialization. Custom
-/// predicates use the `skip_if = type<Pred>` component instead.
-enum class skip_when : std::uint8_t {
-    never,
-    /// std::optional field without a value.
-    none,
-    /// Container whose .empty() returns true.
-    empty,
-    /// Value that compares equal to a value-initialized one.
-    default_value,
+/// Whether a field may be left out of a document, and when a write leaves it
+/// out. A field's default is the value it has in a value-initialized object
+/// of its struct, its default member initializer included. A document
+/// without the field leaves it as it is, which in an object read afresh is
+/// its default, so a field written only when it is not its default reads
+/// back as it was.
+enum class presence_kind : std::uint8_t {
+    /// Always written; a document without it fails to read. What a field is
+    /// unless something says otherwise, but a std::optional or a pointer.
+    required,
+    /// Always written; a document may leave it out. What a std::optional or a
+    /// pointer is unless something says otherwise.
+    optional,
+    /// Written only when it is not its default, the field of a
+    /// value-initialized owner, compared with meta::eq (==, or member by
+    /// member); a document may leave it out.
+    omit_if_default,
+    /// Written only when a predicate does not hold for it
+    /// (`presence = type<Pred>`); a document may leave it out.
+    omit_if,
 };
 
 /// The names an entry lists, such as a field's aliases: a view of the ones its annotation
@@ -79,16 +90,14 @@ struct field_spec {
     std::string_view description = {};
     /// Extra accepted names during deserialization.
     name_list alias = {};
-    /// Built-in serialization-skip condition.
-    skip_when skip_if = skip_when::never;
+    /// Whether the field may be left out of a document, and when a write
+    /// leaves it out; unset, the struct's presence_all, the config's, or what
+    /// its kind is, decides.
+    std::optional<presence_kind> presence = {};
     /// Exclude the field from (de)serialization entirely.
     bool skip = false;
     /// Inline the fields of a nested struct into the parent.
     bool flatten = false;
-    /// Allow the field to be absent during deserialization: it keeps the value
-    /// it had, the one its initializer gives in a value decoded fresh.
-    /// Equivalent to Rust's #[serde(default)].
-    bool defaulted = false;
 
     // What a schema states beyond the type, for its readers: the decoder
     // checks none of it.
@@ -124,9 +133,8 @@ struct struct_spec {
     naming::Casing rename_all = naming::Casing::Identity;
     /// Reject unknown keys during deserialization.
     bool deny_unknown_fields = false;
-    /// Allow every field to be absent during deserialization, as if each
-    /// were `defaulted`.
-    bool defaulted_fields = false;
+    /// The presence of every field the field's own annotation leaves unset.
+    std::optional<presence_kind> presence_all = {};
     /// Variant tagging mode; derived from tagged/tag/content when the spec is built.
     tag_mode tagging = tag_mode::none;
     /// Tag field name (internal and adjacent tagging).
@@ -148,8 +156,7 @@ enum class aspect : std::uint8_t {
     alias,
     skip,
     flatten,
-    defaulted,
-    skip_if,
+    presence,
     as,
     with,
     enum_string,
@@ -160,7 +167,7 @@ enum class aspect : std::uint8_t {
     // struct_spec
     rename_all,
     deny_unknown_fields,
-    defaulted_fields,
+    presence_all,
     tagged,
     tag,
     content,
@@ -199,15 +206,19 @@ struct tagged_component {
     }
 };
 
-/// A component that carries a type instead of a value (as/with/enum_string
-/// and custom skip_if predicates). annotation.h maps it to the equivalent
-/// behavior attr; the spec value is untouched.
+/// A component that carries a type instead of a value (as/with/enum_string,
+/// and the predicate of `presence = type<Pred>`), which attrs.h maps to the
+/// equivalent behavior attr. A predicate also sets the presence it decides.
 template <aspect A, typename T>
 struct type_component {
     using spec_type = field_spec;
     constexpr static aspect kind = A;
 
-    constexpr void apply(field_spec&) const {}
+    constexpr void apply(field_spec& spec) const {
+        if constexpr(A == aspect::presence) {
+            spec.presence = presence_kind::omit_if;
+        }
+    }
 };
 
 /// A DSL component: it applies to its spec_type and says which entry it is.
@@ -286,16 +297,18 @@ struct tagged_proxy {
     }
 };
 
-/// `skip_if` accepts both a built-in skip_when value and a custom predicate
-/// type; the two forms conflict through the shared aspect.
-struct skip_if_proxy {
-    constexpr auto operator=(skip_when when) const {
-        return value_component<aspect::skip_if, &field_spec::skip_if, skip_when>{when};
+/// `presence` takes a presence_kind or, for `omit_if`, the predicate type; the
+/// two forms conflict through the shared aspect.
+struct presence_proxy {
+    constexpr auto operator=(presence_kind kind) const {
+        return value_component<aspect::presence,
+                               &field_spec::presence,
+                               std::optional<presence_kind>>{kind};
     }
 
     template <typename Pred>
     constexpr auto operator=(std::type_identity<Pred>) const {
-        return type_component<aspect::skip_if, Pred>{};
+        return type_component<aspect::presence, Pred>{};
     }
 };
 
@@ -315,10 +328,8 @@ struct type_proxy {
 [[maybe_unused]] constexpr inline value_proxy<aspect::skip, &field_spec::skip, bool> skip{};
 [[maybe_unused]] constexpr inline value_proxy<aspect::flatten, &field_spec::flatten, bool>
     flatten{};
-[[maybe_unused]] constexpr inline value_proxy<aspect::defaulted, &field_spec::defaulted, bool>
-    defaulted{};
 [[maybe_unused]] constexpr inline name_list_proxy<aspect::alias, &field_spec::alias> alias{};
-[[maybe_unused]] constexpr inline skip_if_proxy skip_if{};
+[[maybe_unused]] constexpr inline presence_proxy presence{};
 [[maybe_unused]] constexpr inline type_proxy<aspect::as> as{};
 [[maybe_unused]] constexpr inline type_proxy<aspect::with> with{};
 [[maybe_unused]] constexpr inline type_proxy<aspect::enum_string> enum_string{};
@@ -335,9 +346,9 @@ struct type_proxy {
 [[maybe_unused]] constexpr inline value_proxy<aspect::deny_unknown_fields,
                                               &struct_spec::deny_unknown_fields,
                                               bool> deny_unknown_fields{};
-[[maybe_unused]] constexpr inline value_proxy<aspect::defaulted_fields,
-                                              &struct_spec::defaulted_fields,
-                                              bool> defaulted_fields{};
+[[maybe_unused]] constexpr inline value_proxy<aspect::presence_all,
+                                              &struct_spec::presence_all,
+                                              std::optional<presence_kind>> presence_all{};
 [[maybe_unused]] constexpr inline tagged_proxy tagged{};
 [[maybe_unused]] constexpr inline value_proxy<aspect::tag, &struct_spec::tag, std::string_view>
     tag{};
@@ -475,6 +486,10 @@ constexpr struct_spec struct_spec_from(const std::tuple<Cs...>& entries) {
         spec.tagging = tag_mode::adjacent;
     } else if(!spec.tag.empty()) {
         spec.tagging = tag_mode::internal;
+    }
+
+    if(spec.presence_all == presence_kind::omit_if) {
+        KOTATSU_THROW("annotation: presence_all takes no predicate");
     }
 
     auto names = spec.tag_names;

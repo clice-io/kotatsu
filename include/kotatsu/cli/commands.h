@@ -140,7 +140,7 @@ consteval auto __kotatsu__type_annotation(std::type_identity<ErasedCommand<Tag>>
 /// A field of subcommands that files add to themselves, rather than a std::variant naming
 /// them all: `Tag` names the set and its `signature`, the type of the callback each adds,
 /// `int(Context&)` say. The field holds the struct of the one the argv names, which `get_if<T>()`
-/// returns, and is empty (false) when it names none, which `cli::required = true` on the field
+/// returns, and is empty (false) when it names none, which `presence = required` on the field
 /// makes an error; calling it runs that one's callback, and `name()` is its word. A subcommand
 /// the argv names is read afresh: parse_into() keeps none of one held before.
 ///

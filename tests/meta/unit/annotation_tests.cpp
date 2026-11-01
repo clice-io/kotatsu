@@ -39,7 +39,7 @@ struct Weighed;
 
 constexpr auto __kotatsu__type_annotation(std::type_identity<Weighed>) {
     return make_annotation(dsl::description = "weighed",
-                           dsl::defaulted = true,
+                           dsl::presence = presence_kind::optional,
                            label = "type",
                            weight = 1);
 }
@@ -70,7 +70,7 @@ struct Negative {
 struct Plain;
 
 constexpr auto __kotatsu__type_annotation(std::type_identity<Plain>) {
-    return make_annotation(dsl::skip_if = skip_when::default_value);
+    return make_annotation(dsl::presence = presence_kind::omit_if_default);
 }
 
 struct Plain {
@@ -83,31 +83,31 @@ struct Plain {
 struct Signed;
 
 constexpr auto __kotatsu__type_annotation(std::type_identity<Signed>) {
-    return make_annotation(dsl::skip_if = dsl::type<Negative>);
+    return make_annotation(dsl::presence = dsl::type<Negative>);
 }
 
 struct Signed {
     int value = 0;
 };
 
-struct SkipOverrides {
+struct PresenceOverrides {
     static consteval auto __kotatsu__annotation(name_key<"predicate_over_value">) {
-        return make_annotation(dsl::skip_if = dsl::type<Negative>);
+        return make_annotation(dsl::presence = dsl::type<Negative>);
     }
 
     Plain predicate_over_value;
 
     static consteval auto __kotatsu__annotation(name_key<"value_over_predicate">) {
-        return make_annotation(dsl::skip_if = skip_when::default_value);
+        return make_annotation(dsl::presence = presence_kind::omit_if_default);
     }
 
     Signed value_over_predicate;
 
-    static consteval auto __kotatsu__annotation(name_key<"never_over_predicate">) {
-        return make_annotation(dsl::skip_if = skip_when::never);
+    static consteval auto __kotatsu__annotation(name_key<"required_over_predicate">) {
+        return make_annotation(dsl::presence = presence_kind::required);
     }
 
-    Signed never_over_predicate;
+    Signed required_over_predicate;
 
     static consteval auto __kotatsu__annotation(name_key<"renamed">) {
         return make_annotation(dsl::rename = "renamed");
@@ -177,7 +177,7 @@ ZEST_CASE(field_annotation_overrides_its_type_annotation) {
     ZSTATIC_EXPECT(extension_in<Probe, heavier>->weight == 9);
     // What only one of them says stays.
     ZSTATIC_EXPECT(spec_of<heavier>.rename == "renamed");
-    ZSTATIC_EXPECT(spec_of<heavier>.defaulted);
+    ZSTATIC_EXPECT(spec_of<heavier>.presence == presence_kind::optional);
     ZSTATIC_EXPECT(extension_in<Probe, heavier>->label == "type");
 }
 
@@ -187,25 +187,26 @@ ZEST_CASE(type_annotation_reaches_a_plain_field) {
     ZEXPECT(info.fields[0].extension<Probe>()->weight == 1);
 }
 
-ZEST_CASE(field_skip_condition_overrides_type_one) {
-    using predicate_over_value = field_attrs_t<SkipOverrides, 0>;
-    ZSTATIC_EXPECT(spec_of<predicate_over_value>.skip_if == skip_when::never);
-    ZSTATIC_EXPECT((tuple_has_v<predicate_over_value, behavior::skip_if<Negative>>));
+ZEST_CASE(field_presence_overrides_type_one) {
+    using predicate_over_value = field_attrs_t<PresenceOverrides, 0>;
+    ZSTATIC_EXPECT(spec_of<predicate_over_value>.presence == presence_kind::omit_if);
+    ZSTATIC_EXPECT((tuple_has_v<predicate_over_value, behavior::omit_if<Negative>>));
 
-    using value_over_predicate = field_attrs_t<SkipOverrides, 1>;
-    ZSTATIC_EXPECT(spec_of<value_over_predicate>.skip_if == skip_when::default_value);
-    ZSTATIC_EXPECT(!(tuple_has_v<value_over_predicate, behavior::skip_if<Negative>>));
+    using value_over_predicate = field_attrs_t<PresenceOverrides, 1>;
+    ZSTATIC_EXPECT(spec_of<value_over_predicate>.presence == presence_kind::omit_if_default);
+    ZSTATIC_EXPECT(!(tuple_has_v<value_over_predicate, behavior::omit_if<Negative>>));
 }
 
-ZEST_CASE(field_never_overrides_type_skip_predicate) {
-    using never_over_predicate = field_attrs_t<SkipOverrides, 2>;
-    ZSTATIC_EXPECT(!(tuple_has_v<never_over_predicate, behavior::skip_if<Negative>>));
-    ZSTATIC_EXPECT(spec_of<never_over_predicate>.skip_if == skip_when::never);
+ZEST_CASE(field_required_overrides_type_predicate) {
+    using required_over_predicate = field_attrs_t<PresenceOverrides, 2>;
+    ZSTATIC_EXPECT(!(tuple_has_v<required_over_predicate, behavior::omit_if<Negative>>));
+    ZSTATIC_EXPECT(spec_of<required_over_predicate>.presence == presence_kind::required);
 }
 
-ZEST_CASE(field_annotation_keeps_its_type_skip_predicate) {
-    using renamed = field_attrs_t<SkipOverrides, 3>;
-    ZSTATIC_EXPECT((tuple_has_v<renamed, behavior::skip_if<Negative>>));
+ZEST_CASE(field_annotation_keeps_its_type_predicate) {
+    using renamed = field_attrs_t<PresenceOverrides, 3>;
+    ZSTATIC_EXPECT((tuple_has_v<renamed, behavior::omit_if<Negative>>));
+    ZSTATIC_EXPECT(spec_of<renamed>.presence == presence_kind::omit_if);
     ZSTATIC_EXPECT(spec_of<renamed>.rename == "renamed");
 }
 

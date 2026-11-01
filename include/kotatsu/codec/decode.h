@@ -217,7 +217,7 @@ bool decode_enum_name(Vis& vis, E& out, Rename rename) {
 /// Decodes a value under a node's attributes (a struct field's, or an
 /// annotation's), mirroring encode_with_attrs: behavior::with >
 /// behavior::as > behavior::enum_string > variant tagging > the rename_all /
-/// deny_unknown_fields / defaulted_fields merge.
+/// deny_unknown_fields / presence_all merge.
 template <typename Config, typename Attrs, typename Vis, typename T>
 bool decode_with_attrs(Vis& vis, T& out) {
     if constexpr(meta::derived_variant<T>) {
@@ -297,10 +297,6 @@ template <typename Config, std::size_t I, typename Vis, typename T>
 bool decode_field_value(Vis& vis, T& out, std::string_view key, UnknownFields* sink) {
     using field = FieldAt<Config, I, T>;
     auto& field_ref = field::of(out);
-    // A keyed entry the field skips is passed over unread.
-    if(skipped<typename field::attrs>(field_ref, false)) {
-        return true;
-    }
     return decode_step<Config>(sink, key, [&] {
         return decode_with_attrs<Config, typename field::attrs>(vis, field_ref);
     });
@@ -357,37 +353,21 @@ void reserve_for(Container& out, const Access& access) {
     }
 }
 
-/// Whether the input must carry a slot: its type is not nullable (seen
-/// through annotations), and its attrs, those of every annotation around it
-/// composed, give it no default or skip condition.
-template <typename Slot>
-constexpr bool slot_required = [] {
-    using raw_t = std::remove_cv_t<typename Slot::raw_type>;
-    using attrs_t = typename Slot::attrs;
-    constexpr auto kind = meta::kind_of<raw_t>();
-    if(kind == meta::type_kind::optional || kind == meta::type_kind::pointer ||
-       kind == meta::type_kind::null) {
-        return false;
-    }
-    return !(tuple_has_spec_v<attrs_t, meta::behavior::skip_if> ||
-             meta::spec_of<attrs_t>.skip_if != meta::skip_when::never ||
-             meta::spec_of<attrs_t>.defaulted);
-}();
-
-/// Bit I set when slot I of T under Config is required; none is under
-/// defaulted_fields.
+/// Bit I set when slot I of T under Config is required: its presence is
+/// required, so a document must carry it.
 template <typename Config, typename T>
-constexpr std::uint64_t required_mask = []<typename... Slots>(type_list<Slots...>) {
-    static_assert(sizeof...(Slots) <= 64,
+constexpr std::uint64_t required_mask = [] {
+    constexpr auto& fields = meta::virtual_schema<T, Config>::fields;
+    static_assert(fields.size() <= 64,
                   "struct field count exceeds field_mask capacity (max 64 fields)");
-    if(Config::defaulted_fields) {
-        return std::uint64_t{0};
-    }
     std::uint64_t mask = 0;
-    std::size_t i = 0;
-    ((mask |= std::uint64_t{slot_required<Slots>} << i++), ...);
+    for(std::size_t i = 0; i < fields.size(); ++i) {
+        if(fields[i].presence == meta::presence_kind::required) {
+            mask |= std::uint64_t{1} << i;
+        }
+    }
     return mask;
-}(typename meta::virtual_schema<T, Config>::slots{});
+}();
 
 /// After data-driven struct decode, fails on the first required field the
 /// input left out.
@@ -795,24 +775,13 @@ bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
 template <typename Config, std::size_t I, typename Vis, typename T>
 bool decode_one_field(Vis& vis, T& out) {
     using field = FieldAt<Config, I, T>;
-    using attrs = typename field::attrs;
     auto& field_ref = field::of(out);
-
-    // A positional document still holds a field skipped on decode, written
-    // through its attrs: it is read the same way, into a value nobody keeps.
-    // Only a skip_if predicate can hold while decoding, and only then must
-    // the field's type default-construct.
-    bool ok = vis.visit_field(std::integral_constant<std::size_t, I>{},
-                              field::name,
-                              [&](auto& fv) -> bool {
-                                  if constexpr(tuple_has_spec_v<attrs, meta::behavior::skip_if>) {
-                                      if(skipped<attrs>(field_ref, false)) {
-                                          auto discard = typename field::type();
-                                          return decode_with_attrs<Config, attrs>(fv, discard);
-                                      }
-                                  }
-                                  return decode_with_attrs<Config, attrs>(fv, field_ref);
-                              });
+    bool ok =
+        vis.visit_field(std::integral_constant<std::size_t, I>{},
+                        field::name,
+                        [&](auto& fv) -> bool {
+                            return decode_with_attrs<Config, typename field::attrs>(fv, field_ref);
+                        });
     return trace_path<Config>(ok, field::name);
 }
 
@@ -934,8 +903,10 @@ bool decode_plain(Vis& vis, T& out) {
                 bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
                     return detail::match_field<Config, V>(key, fv, out, field_mask, sink);
                 });
-                if(result) {
-                    result = detail::check_required_fields<Config, V>(field_mask);
+                if constexpr(!presence_checked<Vis>) {
+                    if(result) {
+                        result = detail::check_required_fields<Config, V>(field_mask);
+                    }
                 }
                 return result;
             } else {

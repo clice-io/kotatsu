@@ -40,7 +40,7 @@ struct Options {
     std::string dir;
     KANNOTATE(&sep, cli::names = {"--sep"}, cli::style = KVStyle::Separate)
     std::string sep;
-    KANNOTATE(&must, cli::required = true)
+    KANNOTATE(&must, presence = required)
     std::string must = "x";
     std::string x;
 };

@@ -3,7 +3,10 @@
 // Config fixtures for the codec's own knobs. The field_rename configs meta
 // reads live in tests/fixtures/configs.h.
 
+#include <optional>
+
 #include "kotatsu/support/naming.h"
+#include "kotatsu/meta/spec.h"
 #include "kotatsu/codec/format.h"
 
 namespace kotatsu::test {
@@ -33,8 +36,9 @@ struct StrictConfig {
     constexpr static bool deny_unknown_fields = true;
 };
 
-struct DefaultedConfig {
-    constexpr static bool defaulted_fields = true;
+struct AllOptionalConfig {
+    constexpr static std::optional<meta::presence_kind> presence_all =
+        meta::presence_kind::optional;
 };
 
 struct ReplaceUTF8Config {

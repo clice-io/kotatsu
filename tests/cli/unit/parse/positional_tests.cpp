@@ -38,7 +38,7 @@ struct Search {
 
 struct Few {
     bool k = false;
-    KANNOTATE(&words, cli::positional = true, cli::required = true, cli::arg_num = ArgNum(1, 3))
+    KANNOTATE(&words, cli::positional = true, presence = required, cli::arg_num = ArgNum(1, 3))
     std::vector<std::string> words;
 };
 

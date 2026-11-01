@@ -18,21 +18,6 @@ struct full_tag {
                                                     dsl::description = "User identifier.");
 };
 
-/// A member whose default constructor is explicit.
-struct explicit_member {
-    explicit explicit_member() = default;
-
-    auto operator==(const explicit_member&) const -> bool = default;
-};
-
-/// Only value-initialization makes it.
-struct only_value_initialized {
-    explicit_member member;
-    int count = 0;
-
-    auto operator==(const only_value_initialized&) const -> bool = default;
-};
-
 struct schema_tag {
     constexpr static auto entries = make_annotation(dsl::minimum = 1,
                                                     dsl::maximum = 2.5,
@@ -40,8 +25,8 @@ struct schema_tag {
                                                     dsl::schema_default = false);
 };
 
-struct defaulted_tag {
-    constexpr static auto entries = make_annotation(dsl::defaulted = true);
+struct optional_tag {
+    constexpr static auto entries = make_annotation(dsl::presence = presence_kind::optional);
 };
 
 struct skip_tag {
@@ -59,15 +44,8 @@ struct with_tag {
 };
 
 struct custom_pred {
-    constexpr bool operator()(const int& value, bool is_serialize) const {
-        return is_serialize && value < 0;
-    }
-};
-
-/// Takes only the value, so it speaks for encoding.
-struct is_zero {
     constexpr bool operator()(const int& value) const {
-        return value == 0;
+        return value < 0;
     }
 };
 
@@ -158,7 +136,7 @@ struct spec_struct {
     inner_pair pair;
 
     static consteval auto __kotatsu__annotation(name_key<"retries">) {
-        return defaulted_tag::entries;
+        return optional_tag::entries;
     }
 
     int retries = 0;
@@ -177,11 +155,11 @@ struct behavior_struct {
 
     int adapted;
 
-    static consteval auto __kotatsu__annotation(name_key<"skipped">) {
-        return make_annotation(dsl::defaulted = true, dsl::skip_if = dsl::type<custom_pred>);
+    static consteval auto __kotatsu__annotation(name_key<"omitted">) {
+        return make_annotation(dsl::presence = dsl::type<custom_pred>);
     }
 
-    int skipped;
+    int omitted;
 };
 
 /// Each field merges the same untagged struct spec, the last none at all.
@@ -236,8 +214,7 @@ ZEST_CASE(entries_fold_into_values) {
     ZSTATIC_EXPECT(spec.alias[1] == "uid");
     ZSTATIC_EXPECT(!spec.skip);
     ZSTATIC_EXPECT(!spec.flatten);
-    ZSTATIC_EXPECT(!spec.defaulted);
-    ZSTATIC_EXPECT(spec.skip_if == skip_when::never);
+    ZSTATIC_EXPECT(!spec.presence.has_value());
     ZSTATIC_EXPECT(std::tuple_size_v<field_attrs_t<spec_struct, 0>> == 1);
 }
 
@@ -323,18 +300,16 @@ ZEST_CASE(annotation_maps_components_to_behavior_attrs) {
 
     ZSTATIC_EXPECT((tuple_has_v<field_attrs_t<behavior_struct, 1>, behavior::with<probe_adapter>>));
 
-    using skipped = field_attrs_t<behavior_struct, 2>;
-    ZSTATIC_EXPECT((tuple_has_v<skipped, behavior::skip_if<custom_pred>>));
-    ZSTATIC_EXPECT(spec_of<skipped>.defaulted);
+    using omitted = field_attrs_t<behavior_struct, 2>;
+    ZSTATIC_EXPECT((tuple_has_v<omitted, behavior::omit_if<custom_pred>>));
+    ZSTATIC_EXPECT(spec_of<omitted>.presence == presence_kind::omit_if);
 }
 
-ZEST_CASE(skip_predicate_decides_by_direction) {
-    ZSTATIC_EXPECT(evaluate_skip_predicate<custom_pred>(-1, true));
-    ZSTATIC_EXPECT(!evaluate_skip_predicate<custom_pred>(-1, false));
-    // A one-argument predicate holds only when encoding.
-    ZSTATIC_EXPECT(evaluate_skip_predicate<is_zero>(0, true));
-    ZSTATIC_EXPECT(!evaluate_skip_predicate<is_zero>(0, false));
-    ZSTATIC_EXPECT(!evaluate_skip_predicate<is_zero>(1, true));
+ZEST_CASE(presence_value_and_predicate_are_one_entry) {
+    // So that one annotation cannot write both.
+    using value = decltype(dsl::presence = presence_kind::optional);
+    using predicate = decltype(dsl::presence = dsl::type<custom_pred>);
+    ZSTATIC_EXPECT(!detail::component_kinds_unique<value, predicate>());
 }
 
 ZEST_CASE(spec_of_reads_annotation_and_defaults_to_empty) {
@@ -353,13 +328,13 @@ ZEST_CASE(field_info_carries_spec_values) {
     ZSTATIC_EXPECT(fields[0].aliases.size() == 2u);
     ZSTATIC_EXPECT(fields[0].aliases[1] == "uid");
     ZSTATIC_EXPECT(fields[0].description == "User identifier.");
-    ZSTATIC_EXPECT(!fields[0].has_default);
+    ZSTATIC_EXPECT(fields[0].presence == presence_kind::required);
 
     ZSTATIC_EXPECT(fields[1].name == "first");
     ZSTATIC_EXPECT(fields[2].name == "second");
 
     ZSTATIC_EXPECT(fields[3].name == "retries");
-    ZSTATIC_EXPECT(fields[3].has_default);
+    ZSTATIC_EXPECT(fields[3].presence == presence_kind::optional);
     ZSTATIC_EXPECT(fields[3].description == "");
 }
 
@@ -370,9 +345,9 @@ ZEST_CASE(name_only_spec_shares_slot_with_bare_field) {
     using first_slot = type_list_element_t<0, slots>;
     ZSTATIC_EXPECT((std::is_same_v<typename first_slot::attrs, std::tuple<>>));
 
-    // A defaulted spec stays in the slot attrs for decode.
+    // A spec that sets the presence stays in the slot attrs.
     using retries_slot = type_list_element_t<3, slots>;
-    ZSTATIC_EXPECT(spec_of<typename retries_slot::attrs>.defaulted);
+    ZSTATIC_EXPECT(spec_of<typename retries_slot::attrs>.presence == presence_kind::optional);
 }
 
 ZEST_CASE(struct_entries_fold_into_values_and_derive_tagging) {
@@ -447,23 +422,6 @@ ZEST_CASE(variant_type_info_carries_struct_spec) {
         static_cast<const variant_type_info&>(type_info_of<std::variant<circle_alt, rect_alt>>());
     ZEXPECT(bare.tagging == tag_mode::none);
     ZEXPECT(bare.alt_names.size() == 0u);
-}
-
-ZEST_CASE(skip_when_evaluates_builtin_predicates) {
-    ZSTATIC_EXPECT(evaluate_skip_when<skip_when::none>(std::optional<int>{}, true));
-    ZSTATIC_EXPECT(!evaluate_skip_when<skip_when::none>(std::optional<int>{1}, true));
-    ZSTATIC_EXPECT(evaluate_skip_when<skip_when::empty>(std::string_view{}, true));
-    ZSTATIC_EXPECT(!evaluate_skip_when<skip_when::empty>(std::string_view{"x"}, true));
-    ZSTATIC_EXPECT(evaluate_skip_when<skip_when::default_value>(0, true));
-    ZSTATIC_EXPECT(!evaluate_skip_when<skip_when::default_value>(1, true));
-    // Deserialization never skips.
-    ZSTATIC_EXPECT(!evaluate_skip_when<skip_when::default_value>(0, false));
-    // The default value is value-initialized: `{}` would copy-list-initialize
-    // the explicit member.
-    auto fresh = only_value_initialized();
-    ZEXPECT(evaluate_skip_when<skip_when::default_value>(fresh, true));
-    fresh.count = 1;
-    ZEXPECT(!evaluate_skip_when<skip_when::default_value>(fresh, true));
 }
 
 };  // ZEST_SUITE(meta_spec)

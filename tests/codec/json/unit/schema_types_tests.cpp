@@ -568,8 +568,7 @@ ZEST_CASE(variant_external_tag) {
         {},
         0,
         ext_var_ref,
-        false,
-        false,
+        presence_kind::required,
     };
     const static struct_type_info ext_wrap = {
         {type_kind::structure, "ext_wrap"},
@@ -618,8 +617,7 @@ ZEST_CASE(variant_internal_tag) {
         {},
         0,
         int_var_ref,
-        false,
-        false,
+        presence_kind::required,
     };
     const static struct_type_info int_wrap = {
         {type_kind::structure, "int_wrap"},
@@ -667,8 +665,7 @@ ZEST_CASE(variant_adjacent_tag) {
         {},
         0,
         adj_var_ref,
-        false,
-        false,
+        presence_kind::required,
     };
     const static struct_type_info adj_wrap = {
         {type_kind::structure, "adj_wrap"},
@@ -784,7 +781,7 @@ ZEST_CASE(any_type_root) {
 ZEST_CASE(any_type_field) {
     const static type_info any_ti = {type_kind::any, "any"};
     const static field_info any_fields[] = {
-        {"data", {}, 0, []() -> const type_info& { return any_ti; }, false, false},
+        {"data", {}, 0, []() -> const type_info& { return any_ti; }, presence_kind::required},
     };
     const static struct_type_info any_struct = {
         {type_kind::structure, "with_any"},
@@ -1053,7 +1050,7 @@ ZEST_CASE(variant_with_monostate) {
 ZEST_CASE(bytes_field) {
     const static type_info bytes_ti = {type_kind::bytes, "bytes"};
     const static field_info bytes_fields[] = {
-        {"data", {}, 0, []() -> const type_info& { return bytes_ti; }, false, false},
+        {"data", {}, 0, []() -> const type_info& { return bytes_ti; }, presence_kind::required},
     };
     const static struct_type_info bytes_struct = {
         {type_kind::structure, "with_bytes"},

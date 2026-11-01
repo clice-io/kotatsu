@@ -66,7 +66,9 @@ struct ArgSpec {
     bool rest = false;
     /// Whether a flag counts how often it is given (`-v -v -v`) rather than whether it is.
     bool count = false;
-    /// Whether it must be given. A positional scalar must be, unless it is a std::optional.
+    /// Whether it must be given: the field's presence is required (`presence = required`; a
+    /// field is optional otherwise, under cli's config). A positional scalar must be, unless it
+    /// is a std::optional.
     bool required = false;
     /// Whether giving it ends the parse: nothing after it is read, and nothing required is
     /// checked. The help option's does.
@@ -105,7 +107,6 @@ struct ArgSpec {
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::positional> positional{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::rest> rest{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::count> count{};
-[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::required> required{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::stop> stop{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::style> style{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::comma> comma{};

@@ -232,10 +232,10 @@ struct Tunables {
     auto operator==(const Tunables&) const -> bool = default;
 };
 
-/// defaulted_fields on a field reaches the struct below it, not the one
-/// holding it.
+/// presence_all on a field reaches the struct below it, not the one holding
+/// it.
 struct TunablesHolder {
-    KANNOTATE(&tunables, defaulted_fields = true)
+    KANNOTATE(&tunables, presence_all = optional)
     Tunables tunables;
     int count;
 };
@@ -390,55 +390,15 @@ struct AsTargetsPlain {
     Point cell;
 };
 
-/// Skips its field on decode only, whatever the value.
-struct SkipCellOnDecode {
-    bool operator()(const GridIndex& /*cell*/, bool is_serialize) const {
-        return !is_serialize;
-    }
-};
-
-/// A field that travels as another type and is skipped on decode: the
-/// document still holds it, written as that other type.
-struct CellSkippedOnDecode {
-    KANNOTATE(&cell, as = type<Point>, skip_if = type<SkipCellOnDecode>)
-    GridIndex cell;
-    int after = 0;
-};
-
-struct CellSkippedOnDecodePlain {
-    Point cell;
-    int after;
-};
-
-/// Skips its field on decode only, whatever the value.
-struct SkipHeldOnDecode {
-    bool operator()(const HoldsExplicit& /*held*/, bool is_serialize) const {
-        return !is_serialize;
-    }
-};
-
-/// A field skipped on decode whose type only value-initialization makes: a
-/// positional decode reads past it into a value of its own.
-struct HeldSkippedOnDecode {
-    KANNOTATE(&held, skip_if = type<SkipHeldOnDecode>)
-    HoldsExplicit held;
-    int after = 0;
-};
-
-struct HeldSkippedOnDecodePlain {
-    HoldsExplicit held;
-    int after;
-};
-
-/// Skips an empty text. It takes only the value, so it speaks for encoding.
+/// Holds for an empty text: a write leaves it out.
 struct IsEmptyText {
     bool operator()(const std::string& text) const {
         return text.empty();
     }
 };
 
-struct SkipsEmptyText {
-    KANNOTATE(&text, skip_if = type<IsEmptyText>)
+struct OmitsEmptyText {
+    KANNOTATE(&text, presence = type<IsEmptyText>)
     std::string text;
 };
 
@@ -463,39 +423,53 @@ struct AccessGrantPlain {
     int count;
 };
 
-/// Skips a negative value when encoding; decoding never skips.
+/// Holds for a negative value: a write leaves it out.
 struct IsNegative {
-    constexpr bool operator()(const int& value, bool is_serialize) const {
-        return is_serialize && value < 0;
+    constexpr bool operator()(const int& value) const {
+        return value < 0;
     }
 };
 
-/// Every skip condition: the built-in ones and a predicate. The initializers
-/// are not what a skip condition matches, so a decoder that resets a field it
-/// did not read shows.
-struct Skippable {
+/// Every way a write leaves a field out: at its default, and where a
+/// predicate holds. The defaults are not the empty values, so a write that
+/// compares with those, or a decoder that resets a field it did not read,
+/// shows.
+struct Omittable {
     int id;
-    KANNOTATE(&note, skip_if = skip_when::none)
+    KANNOTATE(&note, presence = omit_if_default)
     std::optional<std::string> note = "kept";
-    KANNOTATE(&tags, skip_if = skip_when::empty)
+    KANNOTATE(&tags, presence = omit_if_default)
     std::vector<int> tags = std::vector<int>{9};
-    KANNOTATE(&generation, skip_if = skip_when::default_value)
+    KANNOTATE(&generation, presence = omit_if_default)
     int generation = 7;
-    KANNOTATE(&score, skip_if = type<IsNegative>)
+    KANNOTATE(&score, presence = type<IsNegative>)
     int score = 3;
 };
 
-struct SkippablePlain {
+struct OmittablePlain {
     int id;
-    std::string note;
+    std::optional<std::string> note;
     std::vector<int> tags;
     int generation;
     int score;
 };
 
-/// Skippable with every skippable field left out.
+/// Omittable with every omittable field left out.
 struct IdOnly {
     int id;
+};
+
+/// Left out at its default, beside a list only value-initialization makes:
+/// the default is the field of a value-initialized struct, which `{}` cannot
+/// make.
+struct CountBesideExplicit {
+    ExplicitList list;
+    KANNOTATE(&count, presence = omit_if_default)
+    int count = 2;
+};
+
+struct ListPlain {
+    std::vector<int> list;
 };
 
 }  // namespace kotatsu::test

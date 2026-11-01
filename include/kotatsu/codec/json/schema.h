@@ -608,14 +608,10 @@ private:
         return {};
     }
 
-    /// A field is required only when it always appears in the output: no decode
-    /// default, no encode-side skip condition (built-in skip_when or custom
-    /// predicate — the decoder accepts absence for both), not nullable. The
-    /// declared field type decides nullability, not the representation: a repr or
-    /// behavior attr with a nullable representation still rejects an absent
-    /// property on decode.
+    /// A field is required when its presence is: the decoder rejects a document
+    /// without it, and the encoder always writes it.
     static bool is_required(const meta::field_info& f) {
-        return !f.has_default && !f.has_skip_if && !f.nullable;
+        return f.presence == meta::presence_kind::required;
     }
 
     static dyn::Value make_tag_const(std::string_view tag_field, std::string_view alt_name) {

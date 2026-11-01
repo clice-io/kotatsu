@@ -1,7 +1,7 @@
 #pragma once
 
-// Attribute fixtures: rename / skip / alias / flatten / defaulted /
-// rename_all / deny_unknown_fields, and the behavior attrs skip_if / with /
+// Attribute fixtures: rename / skip / alias / flatten / presence /
+// rename_all / deny_unknown_fields, and the behavior attrs omit_if / with /
 // as / enum_string with their combinations. The annotations are written as
 // KANNOTATE and KANNOTATE_TYPE (in codec's macro sheet) expand to, with
 // meta's own spec API, so meta's tests can use them.
@@ -90,7 +90,7 @@ struct DeepOuter {
 
 struct DefaultStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"with_default">) {
-        return meta::make_annotation(meta::dsl::defaulted = true);
+        return meta::make_annotation(meta::dsl::presence = meta::presence_kind::optional);
     }
 
     int with_default = 3;
@@ -158,10 +158,17 @@ struct IntToStringAdapter {
     using type = std::string;
 };
 
+/// Holds for an empty optional.
+struct IsNone {
+    template <typename T>
+    constexpr bool operator()(const std::optional<T>& value) const {
+        return !value.has_value();
+    }
+};
+
 struct BehaviorStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"maybe">) {
-        return meta::make_annotation(meta::dsl::skip_if =
-                                         meta::dsl::type<meta::pred::optional_none>);
+        return meta::make_annotation(meta::dsl::presence = meta::dsl::type<IsNone>);
     }
 
     std::optional<int> maybe;
@@ -194,13 +201,12 @@ struct EnumStringStruct {
 };
 
 struct MultiAttrStruct {
-    static consteval auto __kotatsu__annotation(meta::name_key<"opt_with_default">) {
-        return meta::make_annotation(meta::dsl::defaulted = true,
-                                     meta::dsl::skip_if =
-                                         meta::dsl::type<meta::pred::optional_none>);
+    static consteval auto __kotatsu__annotation(meta::name_key<"opt_omitted">) {
+        return meta::make_annotation(meta::dsl::presence = meta::dsl::type<IsNone>,
+                                     meta::dsl::description = "Left out when empty.");
     }
 
-    std::optional<int> opt_with_default;
+    std::optional<int> opt_omitted;
 
     static consteval auto __kotatsu__annotation(meta::name_key<"renamed_as">) {
         return meta::make_annotation(meta::dsl::rename = "score",
@@ -210,20 +216,18 @@ struct MultiAttrStruct {
     int renamed_as;
 };
 
-struct SkipIfAsStruct {
+struct OmitIfAsStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"field">) {
-        return meta::make_annotation(meta::dsl::skip_if =
-                                         meta::dsl::type<meta::pred::optional_none>,
+        return meta::make_annotation(meta::dsl::presence = meta::dsl::type<IsNone>,
                                      meta::dsl::as = meta::dsl::type<std::string>);
     }
 
     std::optional<std::string> field;
 };
 
-struct SkipIfWithStruct {
+struct OmitIfWithStruct {
     static consteval auto __kotatsu__annotation(meta::name_key<"field">) {
-        return meta::make_annotation(meta::dsl::skip_if =
-                                         meta::dsl::type<meta::pred::optional_none>,
+        return meta::make_annotation(meta::dsl::presence = meta::dsl::type<IsNone>,
                                      meta::dsl::with = meta::dsl::type<IntToStringAdapter>);
     }
 

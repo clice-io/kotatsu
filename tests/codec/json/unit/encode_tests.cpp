@@ -53,10 +53,10 @@ struct OddlyNamed {
     int kept = 5;
 };
 
-/// Its first field is left out when empty, and the next one's key then
-/// opens the object.
+/// Its first field is left out at its default, empty, and the next one's key
+/// then opens the object.
 struct NoteFirst {
-    KANNOTATE(&note, skip_if = skip_when::empty)
+    KANNOTATE(&note, presence = omit_if_default)
     std::string note;
     int id = 1;
 };

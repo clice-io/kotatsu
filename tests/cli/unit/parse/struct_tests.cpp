@@ -22,7 +22,7 @@ struct Project {
 };
 
 struct Remote {
-    KANNOTATE(&host, cli::required = true)
+    KANNOTATE(&host, presence = required)
     std::string host;
     int port = 0;
 };
@@ -62,7 +62,7 @@ struct Query {
 };
 
 struct Daemon {
-    KANNOTATE(&config, cli::required = true)
+    KANNOTATE(&config, presence = required)
     std::string config;
     std::variant<Serve> command;
 };

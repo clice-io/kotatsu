@@ -22,11 +22,11 @@ struct MergePoint {
     int x_val = 0;
 };
 
-/// A struct whose field merges a policy of its own below a defaulted one.
+/// A struct whose field merges a policy of its own below its presence_all.
 struct RenamedInside;
 
 constexpr auto __kotatsu__type_annotation(std::type_identity<RenamedInside>) {
-    return make_annotation(dsl::defaulted_fields = true);
+    return make_annotation(dsl::presence_all = presence_kind::optional);
 }
 
 struct RenamedInside {
@@ -135,15 +135,16 @@ ZEST_CASE(equivalent_merge_chains_share_type_info) {
     ZEXPECT(info.fields[0].name == "xVal");
 }
 
-ZEST_CASE(defaulted_fields_stays_through_a_deeper_merge) {
-    // Like deny, defaulted is sticky: the rename merged below it keeps it.
+ZEST_CASE(presence_all_stays_through_a_deeper_merge) {
+    // Like deny, presence_all stays where a deeper merge sets none: the
+    // rename merged below it keeps it.
     const auto& info = static_cast<const struct_type_info&>(type_info_of<RenamedInside>());
     ZASSERT(info.fields.size() == 1U);
-    ZEXPECT(info.fields[0].has_default);
+    ZEXPECT(info.fields[0].presence == presence_kind::optional);
     const auto& inner = static_cast<const struct_type_info&>(info.fields[0].type());
     ZASSERT(inner.fields.size() == 1U);
     ZEXPECT(inner.fields[0].name == "xVal");
-    ZEXPECT(inner.fields[0].has_default);
+    ZEXPECT(inner.fields[0].presence == presence_kind::optional);
 }
 
 ZEST_CASE(tagging_in_declared_repr_reaches_type_info) {

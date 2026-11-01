@@ -95,11 +95,15 @@ namespace detail {
 
 /// Static visitor traits shared by the fbs visitors the codec dispatch
 /// drives: a binary backend whose output layout is computed statically (so
-/// meta::dynamic reprs are rejected at compile time).
+/// meta::dynamic reprs are rejected at compile time). An absent slot is how a
+/// null travels, and reads back as null, empty or zero: a field a write left
+/// out at a default that is none of those would not read back, so every field
+/// is written, whatever its presence.
 struct VisitorBase {
     using format = fbs::format;
     constexpr static bool human_readable = false;
     constexpr static bool layout_computed = true;
+    constexpr static bool writes_every_field = true;
 };
 
 constexpr inline char buffer_identifier[] = "EVTO";
@@ -258,7 +262,7 @@ consteval bool inline_struct() {
         return false;
     } else {
         // A field's attrs replace its raw handling (with/as substitute the
-        // shape, skip_if drops the slot), so an annotated field cannot join a
+        // shape, presence drops the slot), so an annotated field cannot join a
         // memcpy image at any nesting depth; the enclosing struct degrades to
         // a table, where the dispatch applies the attrs.
         return []<std::size_t... I>(std::index_sequence<I...>) {

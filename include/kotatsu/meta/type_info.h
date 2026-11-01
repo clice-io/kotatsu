@@ -102,14 +102,9 @@ struct field_info {
     std::size_t offset;
     type_info_fn type;
 
-    bool has_default;
-    bool has_skip_if;
-
-    /// True when the declared (pre-repr-substitution) field type is nullable
-    /// (optional/pointer/null). Decode accepts absence only for these, so
-    /// schema requiredness follows the raw type even when a repr or behavior
-    /// attr gives the field a nullable representation.
-    bool nullable = false;
+    /// Whether the field may be left out of a document, and when a write
+    /// leaves it out, under the config the info was built for.
+    presence_kind presence;
 
     /// Documentation text from the annotation, empty when absent.
     std::string_view description = {};
@@ -228,11 +223,11 @@ constexpr bool is_runtime_spec_attr_v = false;
 
 template <typename Tag>
 constexpr bool is_runtime_spec_attr_v<attrs::spec<Tag>> =
-    attrs::spec<Tag>::value.defaulted || attrs::spec<Tag>::value.skip_if != skip_when::never;
+    attrs::spec<Tag>::value.presence.has_value();
 
 /// A struct spec whose values matter at encode/decode dispatch: the tagged
 /// variant paths read the tagging mode and names from the slot attrs, and a
-/// rename_all / deny_unknown_fields / defaulted_fields spec on a field merges
+/// rename_all / deny_unknown_fields / presence_all spec on a field merges
 /// into the config there.
 template <typename Attr>
 constexpr bool is_runtime_struct_spec_attr_v = false;
@@ -242,7 +237,7 @@ constexpr bool is_runtime_struct_spec_attr_v<attrs::struct_spec<Tag>> =
     attrs::struct_spec<Tag>::value.tagging != tag_mode::none ||
     attrs::struct_spec<Tag>::value.rename_all != naming::Casing::Identity ||
     attrs::struct_spec<Tag>::value.deny_unknown_fields ||
-    attrs::struct_spec<Tag>::value.defaulted_fields;
+    attrs::struct_spec<Tag>::value.presence_all.has_value();
 
 template <typename Tuple>
 struct filter_runtime_attrs;
@@ -290,7 +285,7 @@ std::string rename_with(bool is_serialize, std::string_view name) {
 /// A resolved representation: the type the codec ultimately reads and writes
 /// for T, the tagging spec attr accompanying a tagged variant (an empty tuple
 /// otherwise), the config after merging every rename_all /
-/// deny_unknown_fields / defaulted_fields crossed on the way, and, for an enum
+/// deny_unknown_fields / presence_all crossed on the way, and, for an enum
 /// a behavior::enum_string turned into text, the info of its members (void
 /// otherwise), which a schema lists.
 template <typename T, typename TagAttrs, typename Config, typename SpelledEnum = void>
@@ -311,7 +306,7 @@ struct resolved_repr {
 /// Every chosen representation re-enters the resolver, so chained reprs and
 /// annotations nested inside representation types resolve to the final type,
 /// matching the codec's recursive re-dispatch on the converted value. The
-/// rename_all / deny_unknown_fields / defaulted_fields of annotated nodes
+/// rename_all / deny_unknown_fields / presence_all of annotated nodes
 /// merge into the carried config through node_config_t, the alias the
 /// dispatch uses, so the resulting type_info describes the documents the codec
 /// reads and writes. A tagged variant keeps its tagging spec attr; the spec's
@@ -429,16 +424,6 @@ template <typename Config>
 constexpr bool config_denies_unknown() {
     if constexpr(requires { Config::deny_unknown_fields; }) {
         return Config::deny_unknown_fields;
-    } else {
-        return false;
-    }
-}
-
-/// Defaulted policy carried by the config itself, as config_denies_unknown.
-template <typename Config>
-constexpr bool config_defaults_fields() {
-    if constexpr(requires { Config::defaulted_fields; }) {
-        return Config::defaulted_fields;
     } else {
         return false;
     }
@@ -595,11 +580,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
         .aliases = spec.alias,
         .offset = base_offset + meta::field_offset<T>(I),
         .type = resolved_info<decltype(resolve_node<raw_t, attrs_t, Config>())>,
-        .has_default = spec.defaulted || config_defaults_fields<Config>(),
-        .has_skip_if =
-            spec.skip_if != skip_when::never || tuple_has_spec_v<attrs_t, behavior::skip_if>,
-        .nullable = raw_kind == type_kind::optional || raw_kind == type_kind::pointer ||
-                    raw_kind == type_kind::null,
+        .presence = effective_presence<Config>(spec, raw_kind),
         .description = spec.description,
         .schema_default = spec.schema_default,
         .minimum = spec.minimum,
@@ -655,7 +636,7 @@ using resolved_repr_t =
     typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, format_config<Format>>())::type;
 
 /// The config T's resolution ends with: every rename_all /
-/// deny_unknown_fields / defaulted_fields spec crossed on the way — a
+/// deny_unknown_fields / presence_all spec crossed on the way — a
 /// structural annotation on T itself included — merged onto Config, exactly
 /// as the codec dispatch layers them while reading or writing a T. Config is a codec config (as for
 /// type_info_of), not a bare format tag; its format selects format-scoped reprs.

@@ -16,16 +16,17 @@ struct Fbs {
     constexpr static std::string_view name = "fbs";
     /// Not self_describing: fields travel by slot in declaration order and a
     /// variant by its index; names and tags never reach the buffer.
-    /// absent_fields: an empty nullable or a skipped field leaves its slot
-    /// absent. nested_nulls: a nullable element is boxed in a one-slot
-    /// table, and a map value sits in its entry's slot, either of which can
-    /// be absent. non_finite: float cells hold NaN and the infinities as they
-    /// are. A struct map key must inline (can_inline_struct_v): it is stored
-    /// as its image and the entries sorted field by field. layout_computed:
-    /// assert_config_layout_stable and apply_repr_impl reject what would
-    /// shape the layout by value or config at compile time.
+    /// Not absent_fields: an absent slot is how a null travels, and reads as
+    /// null, empty or zero, so every field is written, whatever its presence
+    /// (VisitorBase::writes_every_field). nested_nulls: a nullable element is boxed in a
+    /// one-slot table, and a map value sits in its entry's slot, either of
+    /// which can be absent. non_finite: float cells hold NaN and the
+    /// infinities as they are. A struct map key must inline
+    /// (can_inline_struct_v): it is stored as its image and the entries
+    /// sorted field by field. layout_computed: assert_config_layout_stable
+    /// and apply_repr_impl reject what would shape the layout by value or
+    /// config at compile time.
     constexpr static Caps caps{
-        .absent_fields = true,
         .full_uint64 = true,
         .nested_nulls = true,
         .non_finite = true,

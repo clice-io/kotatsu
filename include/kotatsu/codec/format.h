@@ -1,8 +1,11 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
+
+#include "kotatsu/meta/spec.h"
 
 namespace kotatsu::codec {
 
@@ -84,9 +87,9 @@ struct default_config :
     /// Deserialize: reject unknown fields in data-driven mode.
     KOTATSU_CFG_FIELD_(deny_unknown_fields, false);
 
-    /// Deserialize: every struct field may be absent, as if each were
-    /// `defaulted`.
-    KOTATSU_CFG_FIELD_(defaulted_fields, false);
+    /// The presence of every struct field its annotation leaves unset;
+    /// unset, a field's kind decides.
+    KOTATSU_CFG_FIELD_(presence_all, std::optional<meta::presence_kind>{});
 
     /// Generate error path tracking code (prepend_field/prepend_index).
     KOTATSU_CFG_FIELD_(detailed_error, true);
@@ -100,11 +103,18 @@ struct default_config :
 template <typename Vis>
 concept layout_computed = requires { requires Vis::layout_computed; };
 
-/// True when the visitor writes a struct's fields back to back with nothing
-/// marking which are present (bincode). It cannot leave a field out, so
-/// skip_if does not apply: every field is written, and decode reads it back.
+/// True when the visitor writes every field of a struct, whatever its
+/// presence: bincode writes the fields back to back with nothing marking
+/// which are present, and fbs reads an absent slot as null, empty or zero.
 template <typename Vis>
 concept writes_every_field = requires { requires Vis::writes_every_field; };
+
+/// True when whoever drives the visitor has checked which fields the document
+/// carries (cli, which reports a missing argument itself, and whose help
+/// option ends a parse before anything is checked): decode leaves required
+/// fields unchecked.
+template <typename Vis>
+concept presence_checked = requires { requires Vis::presence_checked; };
 
 /// Config > Vis > true. Determines text vs binary serialization strategy for user-defined types.
 template <typename Config, typename Vis>

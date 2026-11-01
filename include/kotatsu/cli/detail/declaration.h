@@ -87,6 +87,7 @@ constexpr FieldUse use_of(const meta::field_info& field) {
     if(field.has_extension<ArgSpec>()) {
         use.spec = *field.extension<ArgSpec>();
     }
+    use.spec.required = field.presence == meta::presence_kind::required;
     use.type = &field.type();
     if(use.type->kind == meta::type_kind::optional) {
         use.optional = true;

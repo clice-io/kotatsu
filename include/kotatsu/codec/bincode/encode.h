@@ -39,7 +39,7 @@ struct Writer {
     std::size_t size = buf.size();
     using format = bincode::format;
     constexpr static bool human_readable = false;
-    /// Struct fields are concatenated with no marker, so skip_if never omits
+    /// Struct fields are concatenated with no marker, so presence never omits
     /// one: decode reads every field in order.
     constexpr static bool writes_every_field = true;
 

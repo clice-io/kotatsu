@@ -43,15 +43,15 @@ namespace kotatsu::test {
 /// derived from the library's traits, so the library does not judge itself.
 struct Caps {
     /// Keyed documents (json, toml, dyn): fields travel by name, so rename,
-    /// alias, defaulted, deny_unknown_fields and required fields apply;
+    /// alias, deny_unknown_fields and required fields apply;
     /// tagged variants take object shapes and untagged ones decode by
     /// probing; a map is an object, so its keys are text or numbers, never
     /// structs. A positional backend reads by slot or position with the type
     /// that wrote the document, and writes a map key as a value.
     bool self_describing = false;
-    /// A field can be absent from the document (a key or a slot), so skip_if
-    /// omits the field it matches. What reading an absent field yields
-    /// depends on how the backend visits fields; the cases say which.
+    /// A field can be absent from the document (a key or a slot), so its
+    /// presence can leave it out of a write. What reading an absent field
+    /// yields depends on how the backend visits fields; the cases say which.
     bool absent_fields = false;
     /// uint64 above int64's maximum encodes.
     bool full_uint64 = false;

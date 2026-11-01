@@ -4,7 +4,7 @@
 reflection supplies the fields; attributes, `meta::repr` and a config control
 how they are written. Every backend but blob reads the same attributes, as far
 as its format allows: the binary ones write no field names, so a rename does
-nothing there, and bincode writes every field, so `skip_if` omits none. Encoding and
+nothing there, and bincode writes every field, so `presence` omits none. Encoding and
 decoding return `std::expected<..., rich_error>`, whose error carries the path
 to the failing value (`a.b[3]`) and, where the backend knows one, its line.
 

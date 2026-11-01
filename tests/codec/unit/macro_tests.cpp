@@ -97,7 +97,7 @@ struct Entries {
     int internal;
     KANNOTATE(&profile, flatten = true)
     Profile profile;
-    KANNOTATE(&note, defaulted = true, skip_if = skip_when::none)
+    KANNOTATE(&note, presence = omit_if_default)
     std::optional<int> note;
 };
 
@@ -106,15 +106,15 @@ struct Behaviors {
     int as_text;
     KANNOTATE(&with_adapter, with = type<test::DecimalText>)
     int with_adapter;
-    KANNOTATE(&skip_negative, skip_if = type<test::IsNegative>)
-    int skip_negative;
+    KANNOTATE(&omit_negative, presence = type<test::IsNegative>)
+    int omit_negative;
     KANNOTATE(&level, enum_string = type<naming::rename_policy::lower_camel>)
     Level level;
 };
 
 KANNOTATION(ShapeTag, tag = "kind", tag_names = {"circle", "rect"});
 KANNOTATION(StrictCamel, rename_all = Casing::LowerCamel, deny_unknown_fields = true);
-KANNOTATION(AllDefaulted, defaulted_fields = true);
+KANNOTATION(AllOptional, presence_all = optional);
 
 KANNOTATE_TYPE(struct Shape, ShapeTag);
 
@@ -123,7 +123,7 @@ struct Shape : std::variant<test::Circle, test::Rect> {
 };
 
 /// Two bundles in one annotation.
-KANNOTATE_TYPE(struct StrictProfile, StrictCamel, AllDefaulted);
+KANNOTATE_TYPE(struct StrictProfile, StrictCamel, AllOptional);
 
 struct StrictProfile {
     std::string first;
@@ -194,8 +194,7 @@ ZEST_CASE(annotate_field_entries_make_a_field_spec) {
     ZSTATIC_EXPECT(meta::field_spec_of<Entries, 1>.skip);
     ZSTATIC_EXPECT(meta::field_spec_of<Entries, 2>.flatten);
     constexpr const auto& note = meta::field_spec_of<Entries, 3>;
-    ZSTATIC_EXPECT(note.defaulted);
-    ZSTATIC_EXPECT(note.skip_if == meta::skip_when::none);
+    ZSTATIC_EXPECT(note.presence == meta::presence_kind::omit_if_default);
 }
 
 ZEST_CASE(annotate_type_entries_become_behavior_attrs) {
@@ -203,8 +202,8 @@ ZEST_CASE(annotate_type_entries_become_behavior_attrs) {
     ZSTATIC_EXPECT(tuple_has_v<as_attrs, meta::behavior::as<std::string>>);
     using with_attrs = meta::field_attrs_t<Behaviors, 1>;
     ZSTATIC_EXPECT(tuple_has_v<with_attrs, meta::behavior::with<test::DecimalText>>);
-    using skip_attrs = meta::field_attrs_t<Behaviors, 2>;
-    ZSTATIC_EXPECT(tuple_has_v<skip_attrs, meta::behavior::skip_if<test::IsNegative>>);
+    using omit_attrs = meta::field_attrs_t<Behaviors, 2>;
+    ZSTATIC_EXPECT(tuple_has_v<omit_attrs, meta::behavior::omit_if<test::IsNegative>>);
     using level_attrs = meta::field_attrs_t<Behaviors, 3>;
     ZSTATIC_EXPECT(
         tuple_has_v<level_attrs, meta::behavior::enum_string<naming::rename_policy::lower_camel>>);
@@ -220,7 +219,7 @@ ZEST_CASE(annotation_struct_entries_make_a_struct_spec) {
     constexpr const auto& strict = meta::struct_spec_of<strict_attrs>;
     ZSTATIC_EXPECT(strict.rename_all == naming::Casing::LowerCamel);
     ZSTATIC_EXPECT(strict.deny_unknown_fields);
-    ZSTATIC_EXPECT(strict.defaulted_fields);
+    ZSTATIC_EXPECT(strict.presence_all == meta::presence_kind::optional);
     // Struct entries alone make the struct spec and nothing else.
     ZSTATIC_EXPECT(std::tuple_size_v<strict_attrs> == 1U);
 }

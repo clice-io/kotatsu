@@ -13,6 +13,7 @@
 #include "kotatsu/support/type_list.h"
 #include "kotatsu/support/type_traits.h"
 #include "kotatsu/meta/attrs.h"
+#include "kotatsu/meta/compare.h"
 #include "kotatsu/meta/schema.h"
 
 // Pieces the encode and decode dispatch share.
@@ -68,16 +69,23 @@ consteval void assert_internal_tag_fits() {
 template <typename T>
 concept taggable = is_specialization_of<std::variant, T>;
 
-/// Whether a field's skip condition (a behavior::skip_if predicate or a
-/// skip_when spec) holds for value, when encoding or when decoding.
-template <typename Attrs, typename T>
-bool skipped(const T& value, bool is_serialize) {
-    if constexpr(tuple_has_spec_v<Attrs, meta::behavior::skip_if>) {
-        using pred = typename tuple_find_spec_t<Attrs, meta::behavior::skip_if>::predicate;
-        return meta::evaluate_skip_predicate<pred>(value, is_serialize);
-    } else if constexpr(constexpr auto when = meta::spec_of<Attrs>.skip_if;
-                        when != meta::skip_when::never) {
-        return meta::evaluate_skip_when<when>(value, is_serialize);
+/// Whether a write leaves out field I of owner: it is its default, the field
+/// of a value-initialized owner, under presence = omit_if_default, or its
+/// predicate holds for it under presence = type<Pred>.
+template <typename Config, std::size_t I, typename T>
+bool omitted(const T& owner) {
+    using field = FieldAt<Config, I, T>;
+    constexpr auto presence = field::schema::fields[I].presence;
+    if constexpr(presence == meta::presence_kind::omit_if_default) {
+        static_assert(std::is_default_constructible_v<T>,
+                      "presence = omit_if_default compares a field with its value in a "
+                      "value-initialized struct: the struct needs a default constructor");
+        const static T defaults = T();
+        return meta::eq(field::of(owner), field::of(defaults));
+    } else if constexpr(presence == meta::presence_kind::omit_if) {
+        using pred =
+            typename tuple_find_spec_t<typename field::attrs, meta::behavior::omit_if>::predicate;
+        return static_cast<bool>(pred{}(field::of(owner)));
     } else {
         return false;
     }

@@ -1,3 +1,5 @@
+#include <optional>
+
 #include "fixtures/attrs.h"
 #include "fixtures/structs.h"
 #include "fixtures/tagged.h"
@@ -11,8 +13,8 @@ namespace {
 
 namespace fx = ::kotatsu::test;
 
-struct DefaultedPolicy {
-    constexpr static bool defaulted_fields = true;
+struct OmitDefaultsPolicy {
+    constexpr static std::optional<presence_kind> presence_all = presence_kind::omit_if_default;
 };
 
 ZEST_SUITE(meta_schema_attrs) {
@@ -35,15 +37,12 @@ ZEST_CASE(simple_struct_fields) {
     ZSTATIC_EXPECT(fields[1].offset > fields[0].offset);
     ZSTATIC_EXPECT(fields[2].offset > fields[1].offset);
 
-    // All flags false for plain struct
-    ZSTATIC_EXPECT(!fields[0].has_default);
-    ZSTATIC_EXPECT(!fields[0].has_skip_if);
+    // Every field of a plain struct is required and has no aliases
+    ZSTATIC_EXPECT(fields[0].presence == presence_kind::required);
     ZSTATIC_EXPECT(fields[0].aliases.size() == 0U);
-    ZSTATIC_EXPECT(!fields[1].has_default);
-    ZSTATIC_EXPECT(!fields[1].has_skip_if);
+    ZSTATIC_EXPECT(fields[1].presence == presence_kind::required);
     ZSTATIC_EXPECT(fields[1].aliases.size() == 0U);
-    ZSTATIC_EXPECT(!fields[2].has_default);
-    ZSTATIC_EXPECT(!fields[2].has_skip_if);
+    ZSTATIC_EXPECT(fields[2].presence == presence_kind::required);
     ZSTATIC_EXPECT(fields[2].aliases.size() == 0U);
 }
 
@@ -130,22 +129,24 @@ ZEST_CASE(default_value) {
 
     constexpr auto& fields = virtual_schema<fx::DefaultStruct>::fields;
 
-    ZSTATIC_EXPECT(fields[0].has_default);
-    ZSTATIC_EXPECT(!fields[1].has_default);
-    ZSTATIC_EXPECT(!fields[2].has_default);
+    ZSTATIC_EXPECT(fields[0].presence == presence_kind::optional);
+    ZSTATIC_EXPECT(fields[1].presence == presence_kind::required);
+    ZSTATIC_EXPECT(fields[2].presence == presence_kind::required);
 }
 
-ZEST_CASE(defaulted_fields_config_defaults_every_field) {
-    // Every field has a default, in the structs nested inside too.
-    // DefaultStruct's first field is defaulted of its own.
-    constexpr auto& fields = virtual_schema<fx::DefaultStruct, DefaultedPolicy>::fields;
-    ZSTATIC_EXPECT(fields[1].has_default);
-    ZSTATIC_EXPECT(fields[2].has_default);
+ZEST_CASE(presence_all_config_reaches_every_field) {
+    // Every field takes the config's presence, in the structs nested inside
+    // too, but one that gives its own: DefaultStruct's first field is
+    // optional of its own.
+    constexpr auto& fields = virtual_schema<fx::DefaultStruct, OmitDefaultsPolicy>::fields;
+    ZSTATIC_EXPECT(fields[0].presence == presence_kind::optional);
+    ZSTATIC_EXPECT(fields[1].presence == presence_kind::omit_if_default);
+    ZSTATIC_EXPECT(fields[2].presence == presence_kind::omit_if_default);
 
-    constexpr auto& items = virtual_schema<fx::NestedStruct, DefaultedPolicy>::fields;
+    constexpr auto& items = virtual_schema<fx::NestedStruct, OmitDefaultsPolicy>::fields;
     constexpr auto& element = static_cast<const array_type_info&>(items[0].type()).element();
     constexpr auto& simple = static_cast<const struct_type_info&>(element);
-    ZSTATIC_EXPECT(simple.fields[0].has_default);
+    ZSTATIC_EXPECT(simple.fields[0].presence == presence_kind::omit_if_default);
 }
 
 ZEST_CASE(deny_unknown_default_false) {

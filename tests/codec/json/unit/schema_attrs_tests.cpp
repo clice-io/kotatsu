@@ -5,6 +5,7 @@
 #include <variant>
 #include <vector>
 
+#include "codec/harness/fixtures/attrs.h"
 #include "codec/harness/fixtures/configs.h"
 #include "codec/json/harness/schema.h"
 #include "kotatsu/zest/zest.h"
@@ -22,7 +23,7 @@ using test::casing_child;
 
 struct with_default {
     std::string name;
-    KANNOTATE(&count, defaulted = true)
+    KANNOTATE(&count, presence = optional)
     std::int32_t count;
 };
 
@@ -49,13 +50,13 @@ struct with_rename {
     std::string y;
 };
 
-struct with_skip_when {
+struct with_omitted {
     std::string name;
-    KANNOTATE(&tags, skip_if = skip_when::empty)
+    KANNOTATE(&tags, presence = omit_if_default)
     std::vector<std::int32_t> tags;
-    KANNOTATE(&count, skip_if = skip_when::default_value)
+    KANNOTATE(&count, presence = omit_if_default)
     std::int32_t count;
-    KANNOTATE(&note, skip_if = type<pred::empty>)
+    KANNOTATE(&note, presence = type<test::IsEmptyText>)
     std::string note;
 };
 
@@ -67,9 +68,9 @@ struct repeated_child_annotation {
 };
 
 struct all_default {
-    KANNOTATE(&x, defaulted = true)
+    KANNOTATE(&x, presence = optional)
     std::int32_t x;
-    KANNOTATE(&y, defaulted = true)
+    KANNOTATE(&y, presence = optional)
     std::string y;
 };
 
@@ -77,7 +78,7 @@ struct skip_default {
     std::string name;
     KANNOTATE(&hidden, skip = true)
     std::int32_t hidden;
-    KANNOTATE(&count, defaulted = true)
+    KANNOTATE(&count, presence = optional)
     std::int32_t count;
 };
 
@@ -142,16 +143,16 @@ struct chosen_number {
 };
 
 struct machine_section {
-    KANNOTATE(&workers, defaulted = true, schema_default = false)
+    KANNOTATE(&workers, presence = optional, schema_default = false)
     std::uint32_t workers = 8;
-    KANNOTATE(&retries, defaulted = true)
+    KANNOTATE(&retries, presence = optional)
     std::uint32_t retries = 3;
 };
 
 struct machine_root {
-    KANNOTATE(&section, defaulted = true)
+    KANNOTATE(&section, presence = optional)
     machine_section section;
-    KANNOTATE(&jobs, defaulted = true, schema_default = false)
+    KANNOTATE(&jobs, presence = optional, schema_default = false)
     std::uint32_t jobs = 8;
 };
 
@@ -162,7 +163,7 @@ enum class level_kind : std::uint8_t {
 
 /// Sections in an array, which carries their encoded objects as its default.
 struct machine_sections {
-    KANNOTATE(&sections, defaulted = true)
+    KANNOTATE(&sections, presence = optional)
     std::vector<machine_section> sections = {machine_section{}};
 };
 
@@ -249,7 +250,7 @@ struct desc_rename {
 };
 
 struct desc_default {
-    KANNOTATE(&retries, defaulted = true, description = "Retry limit.")
+    KANNOTATE(&retries, presence = optional, description = "Retry limit.")
     std::int32_t retries;
 };
 
@@ -304,8 +305,8 @@ ZEST_CASE(all_default_fields) {
 
 ZEST_CASE(deny_unknown_struct) {
     const static field_info deny_fields[] = {
-        {"name",  {}, 0, type_info_of<std::string>,  false, false},
-        {"count", {}, 0, type_info_of<std::int32_t>, false, false},
+        {"name",  {}, 0, type_info_of<std::string>,  presence_kind::required},
+        {"count", {}, 0, type_info_of<std::int32_t>, presence_kind::required},
     };
     const static struct_type_info deny_info = {
         {type_kind::structure, "deny_struct"},
@@ -345,10 +346,10 @@ ZEST_CASE(skip_and_default) {
                       R"("required":["name"]})");
 }
 
-// A field the encoder may omit (built-in skip_when or a custom skip_if
-// predicate) is never required — the decoder accepts its absence.
-ZEST_CASE(skip_if_fields_not_required) {
-    const auto result = json::schema_string<with_skip_when>().value();
+// A field the encoder may omit (at its default, or where its predicate holds)
+// is never required — the decoder accepts its absence.
+ZEST_CASE(omitted_fields_not_required) {
+    const auto result = json::schema_string<with_omitted>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("type":"object",)"
                       R"("properties":{)"

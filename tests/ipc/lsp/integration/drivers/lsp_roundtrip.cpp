@@ -38,11 +38,21 @@ struct Input {
     codec::RawValue value;
 };
 
+/// Holds for an empty optional: a write leaves it out. A predicate rather
+/// than `presence = omit_if_default`, which compares with ==, which RawValue
+/// has not.
+struct IsNone {
+    template <typename T>
+    bool operator()(const std::optional<T>& value) const {
+        return !value.has_value();
+    }
+};
+
 /// The value encoded again, or why it did not decode.
 struct Output {
-    KANNOTATE(&value, skip_if = skip_when::none)
+    KANNOTATE(&value, presence = type<IsNone>)
     std::optional<codec::RawValue> value;
-    KANNOTATE(&error, skip_if = skip_when::none)
+    KANNOTATE(&error, presence = type<IsNone>)
     std::optional<std::string> error;
 };
 

@@ -54,7 +54,7 @@ struct Server {
     Port port;
     KANNOTATE(&help, cli::help)
     bool help = false;
-    KANNOTATE(&host, cli::required = true)
+    KANNOTATE(&host, presence = required)
     std::string host;
 };
 

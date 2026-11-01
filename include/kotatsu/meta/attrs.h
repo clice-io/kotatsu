@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <concepts>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -12,6 +13,7 @@
 #include "name.h"
 #include "spec.h"
 #include "struct.h"
+#include "type_kind.h"
 #include "kotatsu/support/naming.h"
 #include "kotatsu/support/tuple_traits.h"
 #include "kotatsu/support/type_list.h"
@@ -152,59 +154,65 @@ struct deny_layer : Base {
 template <typename Base>
 struct deny_layer<Base, false> : Base {};
 
-template <typename Base, bool DefaultedFields>
-struct defaulted_layer : Base {
-    constexpr static bool defaulted_fields = true;
+/// A struct spec's presence_all as a template argument: 0 when unset, else the kind plus one.
+constexpr std::uint8_t presence_code(std::optional<presence_kind> presence) {
+    return presence ? static_cast<std::uint8_t>(static_cast<std::uint8_t>(*presence) + 1) : 0;
+}
+
+template <typename Base, std::uint8_t Presence>
+struct presence_layer : Base {
+    constexpr static std::optional<presence_kind> presence_all =
+        static_cast<presence_kind>(Presence - 1);
 };
 
 template <typename Base>
-struct defaulted_layer<Base, false> : Base {};
+struct presence_layer<Base, 0> : Base {};
 
 /// Base under every policy layer: the one config type a merge makes.
-template <typename Base, naming::Casing RenameAll, bool DenyUnknown, bool DefaultedFields>
+template <typename Base, naming::Casing RenameAll, bool DenyUnknown, std::uint8_t Presence>
 struct merged_config :
-    defaulted_layer<deny_layer<rename_layer<Base, RenameAll>, DenyUnknown>, DefaultedFields> {};
+    presence_layer<deny_layer<rename_layer<Base, RenameAll>, DenyUnknown>, Presence> {};
 
-template <typename Base, naming::Casing RenameAll, bool DenyUnknown, bool DefaultedFields>
+template <typename Base, naming::Casing RenameAll, bool DenyUnknown, std::uint8_t Presence>
 struct merge_config_impl {
-    using type = merged_config<Base, RenameAll, DenyUnknown, DefaultedFields>;
+    using type = merged_config<Base, RenameAll, DenyUnknown, Presence>;
 };
 
 template <typename Base>
-struct merge_config_impl<Base, naming::Casing::Identity, false, false> {
+struct merge_config_impl<Base, naming::Casing::Identity, false, 0> {
     using type = Base;
 };
 
 /// Merging onto an already-merged base rebuilds a single normalized layer
-/// instead of stacking (deeper rename overrides, deny and defaulted are
+/// instead of stacking (a deeper rename or presence overrides, deny is
 /// sticky), so equivalent merge chains produce the same config type —
 /// type_info instance sharing (and thus one $defs entry per struct) depends
 /// on that.
 template <typename Base,
           naming::Casing R0,
           bool D0,
-          bool F0,
+          std::uint8_t P0,
           naming::Casing RenameAll,
           bool DenyUnknown,
-          bool DefaultedFields>
-struct merge_config_impl<merged_config<Base, R0, D0, F0>, RenameAll, DenyUnknown, DefaultedFields> {
+          std::uint8_t Presence>
+struct merge_config_impl<merged_config<Base, R0, D0, P0>, RenameAll, DenyUnknown, Presence> {
     using type = merged_config<Base,
                                RenameAll != naming::Casing::Identity ? RenameAll : R0,
                                D0 || DenyUnknown,
-                               F0 || DefaultedFields>;
+                               Presence != 0 ? Presence : P0>;
 };
 
-template <typename Base, naming::Casing R0, bool D0, bool F0>
-struct merge_config_impl<merged_config<Base, R0, D0, F0>, naming::Casing::Identity, false, false> {
-    using type = merged_config<Base, R0, D0, F0>;
+template <typename Base, naming::Casing R0, bool D0, std::uint8_t P0>
+struct merge_config_impl<merged_config<Base, R0, D0, P0>, naming::Casing::Identity, false, 0> {
+    using type = merged_config<Base, R0, D0, P0>;
 };
 
 }  // namespace detail
 
 /// Base config with an annotated node's rename_all / deny_unknown_fields /
-/// defaulted_fields layered on top; a spec carrying none of these policies
-/// leaves Base untouched. A deeper merge overrides an earlier rename, deny
-/// and defaulted are sticky: once set they are never merged away. This is the
+/// presence_all layered on top; a spec carrying none of these policies
+/// leaves Base untouched. A deeper merge overrides an earlier rename or
+/// presence, deny is sticky: once set it is never merged away. This is the
 /// single implementation of the merge — the codec dispatch applies it when
 /// crossing an annotated reflectable node and meta's repr resolver replays
 /// it, so type_info always describes the documents the codec reads and
@@ -214,16 +222,35 @@ using merged_config_t =
     typename detail::merge_config_impl<Base,
                                        struct_spec_of<AttrsTuple>.rename_all,
                                        struct_spec_of<AttrsTuple>.deny_unknown_fields,
-                                       struct_spec_of<AttrsTuple>.defaulted_fields>::type;
+                                       detail::presence_code(
+                                           struct_spec_of<AttrsTuple>.presence_all)>::type;
 
 /// The config a node of type T carrying AttrsTuple (a field's attrs, or an
 /// annotation's) is read and written under: its rename_all /
-/// deny_unknown_fields / defaulted_fields merge onto Config when T is a
+/// deny_unknown_fields / presence_all merge onto Config when T is a
 /// reflectable struct, the only kind those policies act on, and are inert on
 /// every other node.
 template <typename Config, typename T, typename AttrsTuple>
 using node_config_t =
     std::conditional_t<reflectable_class<T>, merged_config_t<Config, AttrsTuple>, Config>;
+
+/// The presence a field of kind `kind` whose spec is `spec` has under Config: the spec's own,
+/// else Config's presence_all (a struct's, merged on the way, or the config's own), else
+/// optional for a std::optional, a pointer or null, and required for the rest.
+template <typename Config>
+constexpr presence_kind effective_presence(const field_spec& spec, type_kind kind) {
+    if(spec.presence) {
+        return *spec.presence;
+    }
+    if constexpr(requires { Config::presence_all; }) {
+        if(Config::presence_all) {
+            return *Config::presence_all;
+        }
+    }
+    return kind == type_kind::optional || kind == type_kind::pointer || kind == type_kind::null
+               ? presence_kind::optional
+               : presence_kind::required;
+}
 
 /// Resolve serialized names for variant alternatives: the annotation's
 /// tag_names when provided (count must match), meta::type_name of each
@@ -249,12 +276,10 @@ struct enum_string {
     using policy = Policy;
 };
 
-/// Omits a field when Pred holds for its value. A predicate taking
-/// (const Value&, bool is_serialize) decides for encoding and decoding
-/// alike; one taking only the value speaks for encoding, and a decode never
-/// skips on it.
+/// Leaves a field out of what a write produces when Pred, called with the
+/// field's value, returns true (`presence = type<Pred>`).
 template <typename Pred>
-struct skip_if {
+struct omit_if {
     using predicate = Pred;
 };
 
@@ -274,74 +299,10 @@ struct as {
 
 }  // namespace behavior
 
-template <typename Pred, typename Value>
-constexpr bool evaluate_skip_predicate(const Value& value, bool is_serialize) {
-    if constexpr(requires {
-                     { Pred{}(value, is_serialize) } -> std::convertible_to<bool>;
-                 }) {
-        return static_cast<bool>(Pred{}(value, is_serialize));
-    } else if constexpr(requires {
-                            { Pred{}(value) } -> std::convertible_to<bool>;
-                        }) {
-        return is_serialize && static_cast<bool>(Pred{}(value));
-    } else {
-        static_assert(
-            dependent_false<Pred>,
-            "behavior::skip_if predicate must return bool and accept (const Value&, bool) or (const Value&)");
-        return false;
-    }
-}
-
-namespace pred {
-
-struct optional_none {
-    template <typename T>
-    constexpr bool operator()(const std::optional<T>& value, bool is_serialize) const {
-        return is_serialize && !value.has_value();
-    }
-};
-
-struct empty {
-    template <typename T>
-    constexpr bool operator()(const T& value, bool is_serialize) const {
-        if constexpr(requires { value.empty(); }) {
-            return is_serialize && value.empty();
-        } else {
-            return false;
-        }
-    }
-};
-
-struct default_value {
-    template <typename T>
-    constexpr bool operator()(const T& value, bool is_serialize) const {
-        if constexpr(requires { value == T(); }) {
-            return is_serialize && static_cast<bool>(value == T());
-        } else {
-            return false;
-        }
-    }
-};
-
-}  // namespace pred
-
-/// Evaluate a built-in skip_when condition against a field value.
-template <skip_when When, typename Value>
-constexpr bool evaluate_skip_when(const Value& value, bool is_serialize) {
-    static_assert(When != skip_when::never);
-    if constexpr(When == skip_when::none) {
-        return pred::optional_none{}(value, is_serialize);
-    } else if constexpr(When == skip_when::empty) {
-        return pred::empty{}(value, is_serialize);
-    } else {
-        return pred::default_value{}(value, is_serialize);
-    }
-}
-
 /// True for the closed set of behavior attributes.
 template <typename T>
 constexpr bool is_behavior_attr_v =
-    is_specialization_of<behavior::enum_string, T> || is_specialization_of<behavior::skip_if, T> ||
+    is_specialization_of<behavior::enum_string, T> || is_specialization_of<behavior::omit_if, T> ||
     is_specialization_of<behavior::with, T> || is_specialization_of<behavior::as, T>;
 
 /// True for behavior providers (with/as/enum_string) — at most one per field.
@@ -367,9 +328,6 @@ constexpr bool validate_attrs() {
                   "At most one annotation spec allowed per field");
     static_assert(count_attrs<attrs::struct_spec>(std::type_identity<AttrsTuple>{}) <= 1,
                   "At most one struct annotation spec allowed per type");
-    static_assert(!(spec_of<AttrsTuple>.skip_if != skip_when::never &&
-                    tuple_has_spec_v<AttrsTuple, behavior::skip_if>),
-                  "A built-in skip_if condition and a custom skip_if predicate conflict");
     return true;
 }
 
@@ -380,42 +338,19 @@ struct composed_tag {
     constexpr static auto entries = compose_entries(Inner::entries, Outer::entries);
 };
 
-using skip_if_entry = dsl::type_component<dsl::aspect::skip_if, void>;
-
-template <typename... Cs>
-consteval bool has_skip_if_entry(std::type_identity<std::tuple<Cs...>>) {
-    return (same_entry<Cs, skip_if_entry>() || ...);
-}
-
-/// The entries of `Tag` but its skip_if, which the predicate of an annotation around it
-/// replaces.
-template <typename Tag>
-struct without_skip_if {
-    constexpr static auto entries = std::apply(
-        [](const auto&... component) {
-            return std::tuple_cat(kept_entry<skip_if_entry>(component)...);
-        },
-        Tag::entries);
-};
-
 /// The `Attr` (attrs::spec, attrs::struct_spec) inner attrs and outer ones make together:
-/// both tags composed, or the one either has. An inner field spec loses its skip_if to a bare
-/// skip_if predicate around it, which no outer tag carries.
+/// both tags composed, or the one either has.
 template <typename Inner, typename Outer, template <typename> typename Attr>
 constexpr auto composed_spec_attr() {
     constexpr bool inner = tuple_has_spec_v<Inner, Attr>;
     constexpr bool outer = tuple_has_spec_v<Outer, Attr>;
     if constexpr(inner) {
         using inner_tag = typename tuple_find_spec_t<Inner, Attr>::tag;
-        using kept_tag = std::conditional_t<std::same_as<Attr<inner_tag>, attrs::spec<inner_tag>> &&
-                                                tuple_has_spec_v<Outer, behavior::skip_if>,
-                                            without_skip_if<inner_tag>,
-                                            inner_tag>;
         if constexpr(outer) {
             using outer_tag = typename tuple_find_spec_t<Outer, Attr>::tag;
-            return std::tuple<Attr<composed_tag<kept_tag, outer_tag>>>{};
+            return std::tuple<Attr<composed_tag<inner_tag, outer_tag>>>{};
         } else {
-            return std::tuple<Attr<kept_tag>>{};
+            return std::tuple<Attr<inner_tag>>{};
         }
     } else if constexpr(outer) {
         return std::tuple<tuple_find_spec_t<Outer, Attr>>{};
@@ -424,18 +359,10 @@ constexpr auto composed_spec_attr() {
     }
 }
 
-/// Whether attrs say when the value is skipped: a skip_if entry of either form, `never`
-/// included, or a skip_if predicate attr.
+/// Whether attrs say whether the value may be left out: a presence entry of either form.
 template <typename AttrsTuple>
-consteval bool sets_skip_if() {
-    if constexpr(tuple_has_spec_v<AttrsTuple, behavior::skip_if>) {
-        return true;
-    } else if constexpr(tuple_has_spec_v<AttrsTuple, attrs::spec>) {
-        using tag = typename tuple_find_spec_t<AttrsTuple, attrs::spec>::tag;
-        return has_skip_if_entry(std::type_identity<std::remove_const_t<decltype(tag::entries)>>{});
-    } else {
-        return false;
-    }
+consteval bool sets_presence() {
+    return spec_of<AttrsTuple>.presence.has_value();
 }
 
 /// An inner behavior attr, unless the outer attrs pick the same thing: how the value is
@@ -444,8 +371,8 @@ template <typename Outer, typename Attr>
 constexpr auto kept_behavior() {
     if constexpr(!is_behavior_attr_v<Attr>) {
         return std::tuple<>{};
-    } else if constexpr(is_specialization_of<behavior::skip_if, Attr>) {
-        if constexpr(sets_skip_if<Outer>()) {
+    } else if constexpr(is_specialization_of<behavior::omit_if, Attr>) {
+        if constexpr(sets_presence<Outer>()) {
             return std::tuple<>{};
         } else {
             return std::tuple<Attr>{};
@@ -518,10 +445,9 @@ concept has_type_annotation = (std::is_class_v<T> || std::is_enum_v<T>) &&
                               requires { __kotatsu__type_annotation(std::type_identity<T>{}); };
 
 /// Whether an entry may annotate a type, as the default of every field of that type: its
-/// description, when the value is left out (skip_if, defaulted), the struct or variant
-/// entries (rename_all, tagging, ...), or an extension's. What a field alone has (its name,
-/// whether it is skipped or flattened, how its value is represented, its schema bounds) is
-/// not.
+/// description, its presence, the struct or variant entries (rename_all, tagging, ...), or an
+/// extension's. What a field alone has (its name, whether it is skipped or flattened, how its
+/// value is represented, its schema bounds) is not.
 template <typename C>
 constexpr bool type_entry_v = dsl::extension_component<C> || dsl::spec_component<C, struct_spec>;
 
@@ -529,13 +455,10 @@ template <auto Member, typename V>
 constexpr bool type_entry_v<dsl::value_component<dsl::aspect::description, Member, V>> = true;
 
 template <auto Member, typename V>
-constexpr bool type_entry_v<dsl::value_component<dsl::aspect::skip_if, Member, V>> = true;
-
-template <auto Member, typename V>
-constexpr bool type_entry_v<dsl::value_component<dsl::aspect::defaulted, Member, V>> = true;
+constexpr bool type_entry_v<dsl::value_component<dsl::aspect::presence, Member, V>> = true;
 
 template <typename Pred>
-constexpr bool type_entry_v<dsl::type_component<dsl::aspect::skip_if, Pred>> = true;
+constexpr bool type_entry_v<dsl::type_component<dsl::aspect::presence, Pred>> = true;
 
 template <typename... Cs>
 consteval bool type_entries(std::type_identity<std::tuple<Cs...>>) {
@@ -554,8 +477,8 @@ constexpr auto type_component_attr(const dsl::type_component<A, T>&) {
         return std::tuple<behavior::as<T>>{};
     } else if constexpr(A == dsl::aspect::with) {
         return std::tuple<behavior::with<T>>{};
-    } else if constexpr(A == dsl::aspect::skip_if) {
-        return std::tuple<behavior::skip_if<T>>{};
+    } else if constexpr(A == dsl::aspect::presence) {
+        return std::tuple<behavior::omit_if<T>>{};
     } else {
         return std::tuple<behavior::enum_string<T>>{};
     }
@@ -586,8 +509,8 @@ template <typename T>
 struct type_annotation {
     constexpr static auto entries = __kotatsu__type_annotation(std::type_identity<T>{});
     static_assert(type_entries(std::type_identity<std::remove_const_t<decltype(entries)>>{}),
-                  "a type annotation takes a description, skip_if and defaulted, struct and "
-                  "variant entries, and extension entries");
+                  "a type annotation takes a description, a presence, struct and variant "
+                  "entries, and extension entries");
 };
 
 template <typename T>

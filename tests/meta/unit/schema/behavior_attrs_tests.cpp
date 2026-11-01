@@ -20,7 +20,7 @@ namespace fx = ::kotatsu::test;
 
 ZEST_SUITE(meta_schema_behavior_attrs) {
 
-ZEST_CASE(skip_if_and_as) {
+ZEST_CASE(omit_if_and_as) {
     ZSTATIC_EXPECT(virtual_schema<fx::BehaviorStruct>::fields.size() == 3U);
 
     constexpr auto& fields = virtual_schema<fx::BehaviorStruct>::fields;
@@ -29,15 +29,15 @@ ZEST_CASE(skip_if_and_as) {
     ZSTATIC_EXPECT(fields[1].name == "as_str");
     ZSTATIC_EXPECT(fields[2].name == "plain");
 
-    // skip_if is not a behavior provider
-    ZSTATIC_EXPECT(fields[0].has_skip_if);
+    // omit_if is not a behavior provider
+    ZSTATIC_EXPECT(fields[0].presence == presence_kind::omit_if);
 
     // as<string> is a behavior provider; encoded type becomes string
-    ZSTATIC_EXPECT(!fields[1].has_skip_if);
+    ZSTATIC_EXPECT(fields[1].presence == presence_kind::required);
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::string);
 
     // plain field: no behavior flags
-    ZSTATIC_EXPECT(!fields[2].has_skip_if);
+    ZSTATIC_EXPECT(fields[2].presence == presence_kind::required);
 }
 
 ZEST_CASE(with_adapter_type_info) {
@@ -90,27 +90,27 @@ ZEST_CASE(tagged_variant) {
 ZEST_CASE(multi_attr_combination) {
     constexpr auto& fields = virtual_schema<fx::MultiAttrStruct>::fields;
 
-    // opt_with_default: has_default=true, has_skip_if=true
-    ZSTATIC_EXPECT(fields[0].has_default);
-    ZSTATIC_EXPECT(fields[0].has_skip_if);
+    // opt_omitted: presence by a predicate, description="Left out when empty."
+    ZSTATIC_EXPECT(fields[0].presence == presence_kind::omit_if);
+    ZSTATIC_EXPECT(fields[0].description == "Left out when empty.");
 
     // renamed_as: name="score", type->kind=string
     ZSTATIC_EXPECT(fields[1].name == "score");
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::string);
 }
 
-ZEST_CASE(skip_if_combined_with_behavior) {
-    // skip_if + as: both flags present
+ZEST_CASE(omit_if_combined_with_behavior) {
+    // omit_if + as: both present
     {
-        constexpr auto& fields = virtual_schema<fx::SkipIfAsStruct>::fields;
-        ZSTATIC_EXPECT(fields[0].has_skip_if);
+        constexpr auto& fields = virtual_schema<fx::OmitIfAsStruct>::fields;
+        ZSTATIC_EXPECT(fields[0].presence == presence_kind::omit_if);
         ZSTATIC_EXPECT(fields[0].type().kind == type_kind::string);
     }
 
-    // skip_if + with: both flags present, encoded type = string (from adapter)
+    // omit_if + with: both present, encoded type = string (from adapter)
     {
-        constexpr auto& fields = virtual_schema<fx::SkipIfWithStruct>::fields;
-        ZSTATIC_EXPECT(fields[0].has_skip_if);
+        constexpr auto& fields = virtual_schema<fx::OmitIfWithStruct>::fields;
+        ZSTATIC_EXPECT(fields[0].presence == presence_kind::omit_if);
         ZSTATIC_EXPECT(fields[0].type().kind == type_kind::string);
     }
 }
