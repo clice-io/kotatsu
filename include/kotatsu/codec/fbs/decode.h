@@ -25,7 +25,7 @@ namespace decode_detail {
 
 // Readers bounds-check every raw buffer access against the verifier before
 // performing it, so decoding cannot read outside the buffer no matter how
-// the dispatch drives the visit (reprs, adapters, any Config). Table
+// the dispatch drives the visit (reprs, adapters, any format). Table
 // descents pair VerifyTableStart/EndTable, which also caps nesting depth —
 // cyclic offsets terminate instead of recursing forever.
 

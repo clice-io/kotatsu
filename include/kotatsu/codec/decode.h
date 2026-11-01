@@ -45,32 +45,32 @@ namespace kotatsu::codec {
 template <typename Vis, typename T>
 struct deserialize_visit {};
 
-template <typename Config, typename Vis, typename T>
+template <typename Format, typename Vis, typename T>
 bool decode_value(Vis& vis, T& out);
 
-template <typename Config, typename Vis, typename T>
+template <typename Format, typename Vis, typename T>
 bool decode_struct_fields(Vis& vis, T& out);
 
 namespace detail {
 
 /// Decodes a value as its type reads it, its type's annotation aside: a
 /// codec::repr, or what its kind is.
-template <typename Config, typename Vis, typename T>
+template <typename Format, typename Vis, typename T>
 bool decode_plain(Vis& vis, T& out);
 
 }  // namespace detail
 
-template <typename Config, typename TagAttr, typename Vis, typename Var>
+template <typename Format, typename TagAttr, typename Vis, typename Var>
 bool decode_variant(Vis& vis, Var& var);
 
 namespace detail {
 
 /// Decodes an enum through an enum_names repr: the enumerator whose name, as
 /// it is spelled, the document holds exactly.
-template <typename Repr, typename Config, typename Vis, typename E>
+template <typename Repr, typename Format, typename Vis, typename E>
 bool decode_enum_name(Vis& vis, E& out) {
     static_assert(std::is_enum_v<E>, "codec::enum_names is the repr of an enum");
-    using policy = codec::detail::enum_names_policy_t<Repr, E, Config>;
+    using policy = codec::detail::enum_names_policy_t<Repr, E, Format>;
     const auto& names = codec::detail::enum_names_of<E, policy>;
     std::string name;
     KOTATSU_CODEC_TRY(vis.visit_str(name));
@@ -87,7 +87,7 @@ bool decode_enum_name(Vis& vis, E& out) {
 /// Decode a value through a representation declaration (a codec::repr
 /// specialization or a behavior::with adapter): declarative from() when
 /// present, the imperative decode() body otherwise.
-template <typename Repr, typename Config, typename Vis, typename V>
+template <typename Repr, typename Format, typename Vis, typename V>
 bool repr_decode(Vis& vis, V& out) {
     using declared_t = codec::declared_repr_t<Repr>;
     if constexpr(std::is_same_v<declared_t, codec::dynamic>) {
@@ -96,7 +96,7 @@ bool repr_decode(Vis& vis, V& out) {
                       "codec::dynamic repr");
     }
     if constexpr(codec::names_enum<Repr>) {
-        return decode_enum_name<Repr, Config>(vis, out);
+        return decode_enum_name<Repr, Format>(vis, out);
     } else if constexpr(requires { Repr::from(std::declval<declared_t>()); }) {
         static_assert(
             !requires { Repr::decode(vis, out); },
@@ -106,7 +106,7 @@ bool repr_decode(Vis& vis, V& out) {
             "repr protocol: from() must accept the declared representation type and return "
             "the value type");
         auto declared = declared_t();
-        KOTATSU_CODEC_TRY(decode_value<Config>(vis, declared));
+        KOTATSU_CODEC_TRY(decode_value<Format>(vis, declared));
         out = Repr::from(std::move(declared));
         return true;
     } else if constexpr(requires { Repr::decode(vis, out); }) {
@@ -153,7 +153,7 @@ void ensure_allocated(T& out) {
 }
 
 /// Construct the I-th alternative of a variant and decode into it.
-template <typename Config, typename Vis, typename... Ts>
+template <typename Format, typename Vis, typename... Ts>
 bool construct_and_visit(Vis& vis, std::variant<Ts...>& out, std::size_t index) {
     if(index >= sizeof...(Ts)) {
         return scoped_context<rich_error>::fail(
@@ -161,7 +161,7 @@ bool construct_and_visit(Vis& vis, std::variant<Ts...>& out, std::size_t index) 
     }
     return with_index<sizeof...(Ts)>(index, [&](auto i) {
         constexpr std::size_t I = decltype(i)::value;
-        return decode_value<Config>(vis, out.template emplace<I>());
+        return decode_value<Format>(vis, out.template emplace<I>());
     });
 }
 
@@ -225,17 +225,17 @@ inline bool fail_unknown_tag(std::string_view name) {
 /// annotation's), mirroring encode_with_attrs: behavior::with >
 /// behavior::as > variant tagging > the rename_all /
 /// deny_unknown_fields / presence_all merge.
-template <typename Config, typename Attrs, typename Vis, typename T>
+template <typename Format, typename Attrs, typename Vis, typename T>
 bool decode_with_attrs(Vis& vis, T& out) {
     if constexpr(meta::derived_variant<T>) {
-        return decode_with_attrs<Config, Attrs>(vis, static_cast<meta::variant_base_t<T>&>(out));
+        return decode_with_attrs<Format, Attrs>(vis, static_cast<meta::variant_base_t<T>&>(out));
     } else if constexpr(tuple_has_spec_v<Attrs, codec::behavior::with>) {
         using adapter = typename tuple_find_spec_t<Attrs, codec::behavior::with>::adapter;
-        return repr_decode<adapter, Config>(vis, out);
+        return repr_decode<adapter, Format>(vis, out);
     } else if constexpr(tuple_has_spec_v<Attrs, codec::behavior::as>) {
         using target = typename tuple_find_spec_t<Attrs, codec::behavior::as>::target;
         auto converted = target();
-        KOTATSU_CODEC_TRY(decode_value<Config>(vis, converted));
+        KOTATSU_CODEC_TRY(decode_value<Format>(vis, converted));
         out = T(std::move(converted));
         return true;
     } else if constexpr(codec::struct_spec_of<Attrs>.tagging != codec::tag_mode::none) {
@@ -243,9 +243,9 @@ bool decode_with_attrs(Vis& vis, T& out) {
         // decode_variant reads the variant as itself, tagged or not; a repr
         // of its type does not apply.
         using spec_attr = struct_spec_attr_t<Attrs>;
-        return decode_variant<Config, spec_attr>(vis, out);
+        return decode_variant<Format, spec_attr>(vis, out);
     } else {
-        return decode_plain<codec::node_config_t<Config, T, Attrs>>(vis, out);
+        return decode_plain<codec::node_format_t<Format, T, Attrs>>(vis, out);
     }
 }
 
@@ -253,7 +253,7 @@ bool decode_with_attrs(Vis& vis, T& out) {
 /// document spells it or an element index. `at` goes in front of the path of
 /// the error the step fails with, and of every unknown field it reports to
 /// sink.
-template <typename Config, typename Step, typename F>
+template <typename Format, typename Step, typename F>
 bool decode_step(UnknownFields* sink, const Step& at, F&& step) {
     if(!sink) {
         return trace_path(step(), at);
@@ -292,12 +292,12 @@ bool
 /// Decode a field's value applying behavior transforms, without visit_field
 /// wrapping, below key, the name the document gives it. Used by match_field
 /// (data-driven path) where the field reader is already provided.
-template <typename Config, std::size_t I, typename Vis, typename T>
+template <typename Format, std::size_t I, typename Vis, typename T>
 bool decode_field_value(Vis& vis, T& out, std::string_view key, UnknownFields* sink) {
-    using descriptor = codec::field<T, I, Config>;
+    using descriptor = codec::field<T, I, Format>;
     auto& field_ref = descriptor::of(out);
-    return decode_step<Config>(sink, key, [&] {
-        return decode_with_attrs<codec::members_config_t<Config>, typename descriptor::attrs>(
+    return decode_step<Format>(sink, key, [&] {
+        return decode_with_attrs<codec::members_format_t<Format>, typename descriptor::attrs>(
             vis,
             field_ref);
     });
@@ -317,13 +317,13 @@ inline std::size_t find_field_slot(std::span<const codec::field_info> fields,
 
 /// Data-driven field matching: decodes the slot key names into out and sets
 /// the slot's bit in field_mask, or passes over an unknown key.
-template <typename Config, typename T, typename Vis>
+template <typename Format, typename T, typename Vis>
 bool match_field(std::string_view key,
                  Vis& reader,
                  T& out,
                  std::uint64_t& field_mask,
                  UnknownFields* sink) {
-    using schema = codec::virtual_schema<T, Config>;
+    using schema = codec::virtual_schema<T, Format>;
     constexpr std::size_t N = type_list_size_v<typename schema::slots>;
     static_assert(N <= 64, "struct field count exceeds field_mask capacity (max 64 fields)");
 
@@ -337,7 +337,7 @@ bool match_field(std::string_view key,
 
     field_mask |= std::uint64_t{1} << slot;
     return with_index<N>(slot, [&](auto i) {
-        return decode_field_value<Config, decltype(i)::value>(reader, out, key, sink);
+        return decode_field_value<Format, decltype(i)::value>(reader, out, key, sink);
     });
 }
 
@@ -355,11 +355,11 @@ void reserve_for(Container& out, const Access& access) {
     }
 }
 
-/// Bit I set when slot I of T under Config is required: its presence is
+/// Bit I set when slot I of T under Format is required: its presence is
 /// required, so a document must carry it.
-template <typename Config, typename T>
+template <typename Format, typename T>
 constexpr std::uint64_t required_mask = [] {
-    constexpr auto& fields = codec::virtual_schema<T, Config>::fields;
+    constexpr auto& fields = codec::virtual_schema<T, Format>::fields;
     static_assert(fields.size() <= 64,
                   "struct field count exceeds field_mask capacity (max 64 fields)");
     std::uint64_t mask = 0;
@@ -373,20 +373,20 @@ constexpr std::uint64_t required_mask = [] {
 
 /// After data-driven struct decode, fails on the first required field the
 /// input left out.
-template <typename Config, typename T>
+template <typename Format, typename T>
 bool check_required_fields(std::uint64_t field_mask) {
-    std::uint64_t missing = required_mask<Config, T> & ~field_mask;
+    std::uint64_t missing = required_mask<Format, T> & ~field_mask;
     if(missing == 0) {
         return true;
     }
     return scoped_context<rich_error>::fail(rich_error::missing_field(
-        codec::virtual_schema<T, Config>::fields[std::countr_zero(missing)].name));
+        codec::virtual_schema<T, Format>::fields[std::countr_zero(missing)].name));
 }
 
 /// External tagged: { "TagName": value }, the value below its tag.
-template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
+template <typename Format, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_externally_tagged(Vis& vis, std::variant<Ts...>& var) {
-    constexpr auto names = codec::resolve_tag_names<SpecAttr, Config, Ts...>();
+    constexpr auto names = codec::resolve_tag_names<SpecAttr, Format, Ts...>();
     bool found = false;
     auto* sink = scoped_context<UnknownFields>::try_current();
     bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
@@ -399,8 +399,8 @@ bool decode_externally_tagged(Vis& vis, std::variant<Ts...>& var) {
         if(idx >= sizeof...(Ts)) {
             return fail_unknown_tag(key);
         }
-        return decode_step<Config>(sink, key, [&] {
-            return construct_and_visit<Config>(fv, var, idx);
+        return decode_step<Format>(sink, key, [&] {
+            return construct_and_visit<Format>(fv, var, idx);
         });
     });
     if(result && !found) {
@@ -445,13 +445,13 @@ std::size_t peek_tag_index(Vis& vis,
 
 /// Internal tagged: { "tag": "TagName", ...fields... }
 /// The tag is looked up before any field is placed, so it may follow them.
-template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
+template <typename Format, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     static_assert(data_driven<Vis> && has_try_read<Vis>,
                   "a tagged variant decodes through a data-driven visitor with try_read");
     constexpr std::string_view tag_key = SpecAttr::value.tag;
-    assert_internal_tag_fits<Config, SpecAttr, Ts...>();
-    constexpr auto names = codec::resolve_tag_names<SpecAttr, Config, Ts...>();
+    assert_internal_tag_fits<Format, SpecAttr, Ts...>();
+    constexpr auto names = codec::resolve_tag_names<SpecAttr, Format, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
 
     std::size_t idx = peek_tag_index(vis, tag_key, names);
@@ -478,7 +478,7 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
         }
         return with_index<sizeof...(Ts)>(idx, [&](auto i) {
             constexpr std::size_t I = decltype(i)::value;
-            return match_field<Config, std::variant_alternative_t<I, std::variant<Ts...>>>(
+            return match_field<Format, std::variant_alternative_t<I, std::variant<Ts...>>>(
                 key,
                 fv,
                 std::get<I>(var),
@@ -500,20 +500,20 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     }
     return with_index<sizeof...(Ts)>(idx, [&](auto i) {
         constexpr std::size_t I = decltype(i)::value;
-        return check_required_fields<Config, std::variant_alternative_t<I, std::variant<Ts...>>>(
+        return check_required_fields<Format, std::variant_alternative_t<I, std::variant<Ts...>>>(
             field_mask);
     });
 }
 
 /// Adjacent tagged: { "t": "TagName", "c": value }, the value below its
 /// content key. Any other key is unknown, denied under deny_unknown_fields.
-template <typename Config, typename SpecAttr, typename Vis, typename... Ts>
+template <typename Format, typename SpecAttr, typename Vis, typename... Ts>
 bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
     static_assert(data_driven<Vis> && has_try_read<Vis>,
                   "a tagged variant decodes through a data-driven visitor with try_read");
     constexpr std::string_view tag_key = SpecAttr::value.tag;
     constexpr std::string_view content_key = SpecAttr::value.content;
-    constexpr auto names = codec::resolve_tag_names<SpecAttr, Config, Ts...>();
+    constexpr auto names = codec::resolve_tag_names<SpecAttr, Format, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
 
     std::size_t idx = peek_tag_index(vis, tag_key, names);
@@ -529,15 +529,15 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
         }
         if(key != content_key) {
             const bool deny =
-                config_denies_unknown<Config>() || current_decode_options().deny_unknown_fields;
+                format_denies_unknown<Format>() || current_decode_options().deny_unknown_fields;
             return pass_unknown_field(deny, key, fv, sink);
         }
         // Without a usable tag the content cannot be placed: the tag's own
         // entry reports why, and an absent tag is reported after the pass.
         // A duplicate content entry is reported after the pass too.
         if(++content_count == 1 && idx != npos) {
-            return decode_step<Config>(sink, key, [&] {
-                return construct_and_visit<Config>(fv, var, idx);
+            return decode_step<Format>(sink, key, [&] {
+                return construct_and_visit<Format>(fv, var, idx);
             });
         }
         return true;
@@ -564,10 +564,10 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
     return true;
 }
 
-template <typename Config, typename Vis, typename T>
+template <typename Format, typename Vis, typename T>
 constexpr bool kind_compatible(meta::type_kind src, bool widen);
 
-template <typename Config, typename Vis, typename T>
+template <typename Format, typename Vis, typename T>
 constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
     using enum meta::type_kind;
     constexpr auto target = meta::kind_of<T>();
@@ -600,7 +600,7 @@ constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
             else
                 return std::type_identity<typename T::element_type>{};
         }();
-        return kind_compatible<Config, Vis, typename decltype(wrapped)::type>(src, widen);
+        return kind_compatible<Format, Vis, typename decltype(wrapped)::type>(src, widen);
     } else if constexpr(target == structure)
         return src == structure;
     else if constexpr(target == array || target == set)
@@ -612,7 +612,7 @@ constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
         // aggregate them so it neither strict-claims input only a widening
         // alternative accepts nor shadows a later exact match.
         return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            return (kind_compatible<Config, Vis, std::variant_alternative_t<Is, T>>(src, widen) ||
+            return (kind_compatible<Format, Vis, std::variant_alternative_t<Is, T>>(src, widen) ||
                     ...);
         }(std::make_index_sequence<std::variant_size_v<T>>{});
     else if constexpr(target == enumeration)
@@ -621,7 +621,7 @@ constexpr bool kind_compatible_impl(meta::type_kind src, bool widen) {
         return true;
 }
 
-template <typename Config, typename Vis, typename T>
+template <typename Format, typename Vis, typename T>
 constexpr bool kind_compatible(meta::type_kind src, bool widen) {
     if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T>::visit(v, out); }) {
         // A backend dispatch override decodes however it likes — raw_value's
@@ -633,20 +633,20 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
         // attrs on an annotation first, then (chained) reprs under the
         // visitor's format — so compatibility is judged against that; a
         // dynamic representation can be anything.
-        using resolved_t = codec::resolved_repr_t<T, codec::members_config_t<Config>>;
+        using resolved_t = codec::resolved_repr_t<T, codec::members_format_t<Format>>;
         if constexpr(std::is_same_v<resolved_t, codec::dynamic>) {
             return true;
-        } else if constexpr(codec::resolves_to_tagged_variant<T, codec::members_config_t<Config>> &&
-                            is_human_readable<Config, Vis>()) {
+        } else if constexpr(codec::resolves_to_tagged_variant<T, codec::members_format_t<Format>> &&
+                            is_human_readable<Format, Vis>()) {
             // A tagging spec survived resolution: the tagged decoders read an
             // object ({tag: value}, {tag, content}, or tag-in-fields), so the
             // alternatives' own kinds never face the input directly. A
-            // non-human-readable config instead ignores tagging on decode and
+            // non-human-readable format instead ignores tagging on decode and
             // reads the underlying variant, so its alternatives' kinds apply
             // through the branch below.
             return src == meta::type_kind::unknown || src == meta::type_kind::structure;
         } else {
-            return kind_compatible_impl<Config, Vis, resolved_t>(src, widen);
+            return kind_compatible_impl<Format, Vis, resolved_t>(src, widen);
         }
     }
 }
@@ -658,28 +658,28 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
 /// probing it re-enters the pass structure below and the outer pass level
 /// must flow into it. An imperative repr decodes through its own body
 /// instead, so its inner behavior is opaque to the pass structure.
-template <typename Config, typename Vis, typename T>
+template <typename Format, typename Vis, typename T>
 constexpr bool probes_as_untagged_variant() {
     if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T>::visit(v, out); })
         return false;
-    else if constexpr(codec::has_repr<T, Config>) {
-        using chosen = codec::repr_for<T, Config>;
+    else if constexpr(codec::has_repr<T, Format>) {
+        using chosen = codec::repr_for<T, Format>;
         if constexpr(
             requires { chosen::from(std::declval<codec::declared_repr_t<chosen>>()); } &&
-            !requires(Vis& v, T& out) { chosen::template deserialize<Config>(v, out); })
-            return probes_as_untagged_variant<Config, Vis, codec::declared_repr_t<chosen>>();
+            !requires(Vis& v, T& out) { chosen::template deserialize<Format>(v, out); })
+            return probes_as_untagged_variant<Format, Vis, codec::declared_repr_t<chosen>>();
         else
             return false;
     } else if constexpr(is_optional_v<T>)
-        return probes_as_untagged_variant<Config, Vis, typename T::value_type>();
+        return probes_as_untagged_variant<Format, Vis, typename T::value_type>();
     else if constexpr(is_specialization_of<std::unique_ptr, T> ||
                       is_specialization_of<std::shared_ptr, T>)
-        return probes_as_untagged_variant<Config, Vis, typename T::element_type>();
+        return probes_as_untagged_variant<Format, Vis, typename T::element_type>();
     else
         return is_specialization_of<std::variant, T>;
 }
 
-template <typename Config, typename Vis, typename... Ts>
+template <typename Format, typename Vis, typename... Ts>
 bool
     untagged_variant_pass(Vis& vis, std::variant<Ts...>& out, meta::type_kind src_kind, bool widen);
 
@@ -690,21 +690,21 @@ bool
 /// widening pass during an outer exact pass any more than a bare one can.
 /// Reached only for chains probes_as_untagged_variant admitted, so a repr
 /// link here always has the declarative from() decode path.
-template <typename Config, typename Vis, typename T>
+template <typename Format, typename Vis, typename T>
 bool nested_alternative_pass(Vis& vis, T& out, meta::type_kind src_kind, bool widen) {
-    if constexpr(codec::has_repr<T, Config>) {
-        using chosen = codec::repr_for<T, Config>;
+    if constexpr(codec::has_repr<T, Format>) {
+        using chosen = codec::repr_for<T, Format>;
         auto declared = codec::declared_repr_t<chosen>();
-        KOTATSU_CODEC_TRY(nested_alternative_pass<Config>(vis, declared, src_kind, widen));
+        KOTATSU_CODEC_TRY(nested_alternative_pass<Format>(vis, declared, src_kind, widen));
         out = chosen::from(std::move(declared));
         return true;
     } else if constexpr(is_specialization_of<std::variant, T>) {
-        return untagged_variant_pass<Config>(vis, out, src_kind, widen);
+        return untagged_variant_pass<Format>(vis, out, src_kind, widen);
     } else {
         if(src_kind == meta::type_kind::null)
-            return decode_value<Config>(vis, out);
+            return decode_value<Format>(vis, out);
         ensure_allocated(out);
-        return nested_alternative_pass<Config>(vis, *out, src_kind, widen);
+        return nested_alternative_pass<Format>(vis, *out, src_kind, widen);
     }
 }
 
@@ -719,7 +719,7 @@ bool nested_alternative_pass(Vis& vis, T& out, meta::type_kind src_kind, bool wi
 /// failing (a narrowing int8_t) says nothing about its widening branch —
 /// while any other alternative that strict-claimed is skipped: its retry
 /// would just repeat the failure.
-template <typename Config, typename Vis, typename... Ts>
+template <typename Format, typename Vis, typename... Ts>
 bool untagged_variant_pass(Vis& vis,
                            std::variant<Ts...>& out,
                            meta::type_kind src_kind,
@@ -728,22 +728,22 @@ bool untagged_variant_pass(Vis& vis,
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
         return (([&] {
                     using alt_t = std::variant_alternative_t<Is, std::variant<Ts...>>;
-                    constexpr bool nested = probes_as_untagged_variant<Config, Vis, alt_t>();
-                    bool strict = kind_compatible<Config, Vis, alt_t>(src_kind, false);
+                    constexpr bool nested = probes_as_untagged_variant<Format, Vis, alt_t>();
+                    bool strict = kind_compatible<Format, Vis, alt_t>(src_kind, false);
                     bool admit = widen ? (nested || !strict) &&
-                                             kind_compatible<Config, Vis, alt_t>(src_kind, true)
+                                             kind_compatible<Format, Vis, alt_t>(src_kind, true)
                                        : strict;
                     if(!admit)
                         return false;
                     auto reported = sink ? sink->entries.size() : 0;
                     bool claimed = vis.try_read([&](auto& fork) -> bool {
                         if constexpr(nested) {
-                            return nested_alternative_pass<Config>(fork,
+                            return nested_alternative_pass<Format>(fork,
                                                                    out.template emplace<Is>(),
                                                                    src_kind,
                                                                    widen);
                         } else {
-                            return construct_and_visit<Config>(fork, out, Is);
+                            return construct_and_visit<Format>(fork, out, Is);
                         }
                     });
                     // A probe that fails takes back the unknown fields it
@@ -757,7 +757,7 @@ bool untagged_variant_pass(Vis& vis,
     }(std::index_sequence_for<Ts...>{});
 }
 
-template <typename Config, typename Vis, typename... Ts>
+template <typename Format, typename Vis, typename... Ts>
 bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
     static_assert(has_try_read<Vis> && has_peek_kind<Vis>,
                   "untagged variant decode requires a visitor with try_read and peek_kind");
@@ -768,19 +768,19 @@ bool decode_untagged_variant(Vis& vis, std::variant<Ts...>& out) {
     // when nothing claims the value.
     auto src_kind = vis.peek_kind();
     constexpr std::size_t last = sizeof...(Ts) - 1;
-    return untagged_variant_pass<Config>(vis, out, src_kind, false) ||
-           untagged_variant_pass<Config>(vis, out, src_kind, true) ||
-           construct_and_visit<Config>(vis, out, last);
+    return untagged_variant_pass<Format>(vis, out, src_kind, false) ||
+           untagged_variant_pass<Format>(vis, out, src_kind, true) ||
+           construct_and_visit<Format>(vis, out, last);
 }
 
 /// Decode a single struct field, applying behavior transforms if present.
 /// Mirrors encode_one_field: wraps the decode in vis.visit_field.
-template <typename Config, std::size_t I, typename Vis, typename T>
+template <typename Format, std::size_t I, typename Vis, typename T>
 bool decode_one_field(Vis& vis, T& out) {
-    using descriptor = codec::field<T, I, Config>;
+    using descriptor = codec::field<T, I, Format>;
     auto& field_ref = descriptor::of(out);
     bool ok = vis.visit_field(descriptor{}, [&](auto& fv) -> bool {
-        return decode_with_attrs<codec::members_config_t<Config>, typename descriptor::attrs>(
+        return decode_with_attrs<codec::members_format_t<Format>, typename descriptor::attrs>(
             fv,
             field_ref);
     });
@@ -790,41 +790,41 @@ bool decode_one_field(Vis& vis, T& out) {
 }  // namespace detail
 
 /// Unified variant decode: dispatches to native, tagged, or untagged path.
-template <typename Config, typename SpecAttr, typename Vis, typename Var>
+template <typename Format, typename SpecAttr, typename Vis, typename Var>
 bool decode_variant(Vis& vis, Var& var) {
     return [&]<typename... Ts>(std::variant<Ts...>&) -> bool {
         if constexpr(detail::has_native_variant<Vis>) {
             return vis.visit_variant([&](std::size_t index, auto& pv) -> bool {
-                return detail::construct_and_visit<Config>(pv, var, index);
+                return detail::construct_and_visit<Format>(pv, var, index);
             });
         } else if constexpr(!std::is_same_v<SpecAttr, detail::no_tag>) {
-            if constexpr(!is_human_readable<Config, Vis>()) {
-                return detail::decode_untagged_variant<Config>(vis, var);
+            if constexpr(!is_human_readable<Format, Vis>()) {
+                return detail::decode_untagged_variant<Format>(vis, var);
             } else {
                 constexpr auto tagging = SpecAttr::value.tagging;
                 if constexpr(tagging == codec::tag_mode::external) {
-                    return detail::decode_externally_tagged<Config, SpecAttr>(vis, var);
+                    return detail::decode_externally_tagged<Format, SpecAttr>(vis, var);
                 } else if constexpr(tagging == codec::tag_mode::internal) {
-                    return detail::decode_internally_tagged<Config, SpecAttr>(vis, var);
+                    return detail::decode_internally_tagged<Format, SpecAttr>(vis, var);
                 } else {
                     static_assert(tagging == codec::tag_mode::adjacent);
-                    return detail::decode_adjacently_tagged<Config, SpecAttr>(vis, var);
+                    return detail::decode_adjacently_tagged<Format, SpecAttr>(vis, var);
                 }
             }
         } else {
-            return detail::decode_untagged_variant<Config>(vis, var);
+            return detail::decode_untagged_variant<Format>(vis, var);
         }
     }(var);
 }
 
-template <typename Config, typename Vis, typename T>
+template <typename Format, typename Vis, typename T>
 bool decode_value(Vis& vis, T& out) {
     using V = std::remove_const_t<T>;
 
     if constexpr(!std::is_same_v<meta::attrs_of_t<V>, std::tuple<>>) {
-        return detail::decode_with_attrs<Config, meta::attrs_of_t<V>>(vis, out);
+        return detail::decode_with_attrs<Format, meta::attrs_of_t<V>>(vis, out);
     } else {
-        return detail::decode_plain<Config>(vis, out);
+        return detail::decode_plain<Format>(vis, out);
     }
 }
 
@@ -839,19 +839,19 @@ bool decode_value(Vis& vis, T& out) {
 
 namespace detail {
 
-template <typename Config, typename Vis, typename T>
+template <typename Format, typename Vis, typename T>
 bool decode_plain(Vis& vis, T& out) {
     using V = std::remove_const_t<T>;
 
     if constexpr(requires(Vis& v, V& val) { deserialize_visit<Vis, V>::visit(v, val); }) {
-        static_assert(!codec::has_repr<V, Config>,
+        static_assert(!codec::has_repr<V, Format>,
                       "type has both a deserialize_visit specialization and a codec::repr; "
                       "keep exactly one");
         return deserialize_visit<Vis, V>::visit(vis, out);
-    } else if constexpr(codec::has_repr<V, Config>) {
-        return repr_decode<codec::repr_for<V, Config>, Config>(vis, out);
+    } else if constexpr(codec::has_repr<V, Format>) {
+        return repr_decode<codec::repr_for<V, Format>, Format>(vis, out);
     } else if constexpr(meta::derived_variant<V>) {
-        return decode_plain<Config>(vis, static_cast<meta::variant_base_t<V>&>(out));
+        return decode_plain<Format>(vis, static_cast<meta::variant_base_t<V>&>(out));
     } else {
         constexpr auto kind = meta::kind_of<V>();
         using enum meta::type_kind;
@@ -876,7 +876,7 @@ bool decode_plain(Vis& vis, T& out) {
             if constexpr(requires { vis.visit_option(out, [](auto&) -> bool { return true; }); }) {
                 return vis.visit_option(out, [&](auto& sv) -> bool {
                     detail::ensure_allocated(out);
-                    return decode_value<Config>(sv, *out);
+                    return decode_value<Format>(sv, *out);
                 });
             } else {
                 if(vis.peek_null()) {
@@ -884,7 +884,7 @@ bool decode_plain(Vis& vis, T& out) {
                     return vis.visit_null();
                 }
                 detail::ensure_allocated(out);
-                return decode_value<Config>(vis, *out);
+                return decode_value<Format>(vis, *out);
             }
         } else if constexpr(kind == enumeration) {
             if constexpr(requires { vis.visit_enum(out); }) {
@@ -908,17 +908,17 @@ bool decode_plain(Vis& vis, T& out) {
                 std::uint64_t field_mask = 0;
                 auto* sink = scoped_context<UnknownFields>::try_current();
                 bool result = vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
-                    return detail::match_field<Config, V>(key, fv, out, field_mask, sink);
+                    return detail::match_field<Format, V>(key, fv, out, field_mask, sink);
                 });
                 if constexpr(!presence_checked<Vis>) {
                     if(result) {
-                        result = detail::check_required_fields<Config, V>(field_mask);
+                        result = detail::check_required_fields<Format, V>(field_mask);
                     }
                 }
                 return result;
             } else {
                 return vis.visit_struct(out, [&](auto& sv) -> bool {
-                    return decode_struct_fields<Config>(sv, out);
+                    return decode_struct_fields<Format>(sv, out);
                 });
             }
         } else if constexpr(kind == array || kind == set) {
@@ -931,8 +931,8 @@ bool decode_plain(Vis& vis, T& out) {
                 auto* sink = scoped_context<UnknownFields>::try_current();
                 return vis.visit_seq([&](auto& ev) -> bool {
                     auto decode = [&](element_t& item) {
-                        return detail::decode_step<Config>(sink, idx, [&] {
-                            return decode_value<Config>(ev, item);
+                        return detail::decode_step<Format>(sink, idx, [&] {
+                            return decode_value<Format>(ev, item);
                         });
                     };
                     // An element of a container whose emplace_back gives it
@@ -967,7 +967,7 @@ bool decode_plain(Vis& vis, T& out) {
                     while(sv.has_element()) {
                         auto item = element_t();
                         bool ok = sv.visit_element(
-                            [&](auto& ev) -> bool { return decode_value<Config>(ev, item); });
+                            [&](auto& ev) -> bool { return decode_value<Format>(ev, item); });
                         KOTATSU_CODEC_TRY(detail::trace_path(ok, idx));
                         kotatsu::detail::append_sequence_element(out, std::move(item));
                         ++idx;
@@ -985,9 +985,9 @@ bool decode_plain(Vis& vis, T& out) {
                         return scoped_context<rich_error>::fail(rich_error(
                             std::format("too many elements for tuple (expected {})", expected)));
                     }
-                    KOTATSU_CODEC_TRY(detail::decode_step<Config>(sink, idx, [&] {
+                    KOTATSU_CODEC_TRY(detail::decode_step<Format>(sink, idx, [&] {
                         return detail::with_index<std::tuple_size_v<V>>(idx, [&](auto i) {
-                            return decode_value<Config>(ev, std::get<decltype(i)::value>(out));
+                            return decode_value<Format>(ev, std::get<decltype(i)::value>(out));
                         });
                     }));
                     ++idx;
@@ -1006,7 +1006,7 @@ bool decode_plain(Vis& vis, T& out) {
                 return vis.visit_tuple(out, [&](auto& sv) -> bool {
                     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                         return (detail::trace_path(sv.visit_element([&](auto& ev) -> bool {
-                                    return decode_value<Config>(ev, std::get<Is>(out));
+                                    return decode_value<Format>(ev, std::get<Is>(out));
                                 }),
                                                    Is) &&
                                 ...);
@@ -1026,10 +1026,10 @@ bool decode_plain(Vis& vis, T& out) {
                 return vis.visit_map([&](auto& kv, auto& vv) -> bool {
                     const std::string_view text = kv.str;
                     auto key = key_t();
-                    KOTATSU_CODEC_TRY(detail::trace_path(decode_value<Config>(kv, key), text));
+                    KOTATSU_CODEC_TRY(detail::trace_path(decode_value<Format>(kv, key), text));
                     auto val = mapped_t();
-                    KOTATSU_CODEC_TRY(detail::decode_step<Config>(sink, text, [&] {
-                        return decode_value<Config>(vv, val);
+                    KOTATSU_CODEC_TRY(detail::decode_step<Format>(sink, text, [&] {
+                        return decode_value<Format>(vv, val);
                     }));
                     kotatsu::detail::insert_map_entry(out, std::move(key), std::move(val));
                     return true;
@@ -1045,8 +1045,8 @@ bool decode_plain(Vis& vis, T& out) {
                         auto key = key_t();
                         auto val = mapped_t();
                         bool ok = sv.visit_entry(
-                            [&](auto& kv) -> bool { return decode_value<Config>(kv, key); },
-                            [&](auto& vv) -> bool { return decode_value<Config>(vv, val); });
+                            [&](auto& kv) -> bool { return decode_value<Format>(kv, key); },
+                            [&](auto& vv) -> bool { return decode_value<Format>(vv, val); });
                         KOTATSU_CODEC_TRY(detail::trace_path(ok, idx));
                         kotatsu::detail::insert_map_entry(out, std::move(key), std::move(val));
                         ++idx;
@@ -1055,7 +1055,7 @@ bool decode_plain(Vis& vis, T& out) {
                 });
             }
         } else if constexpr(kind == variant) {
-            return decode_variant<Config, detail::no_tag>(vis, out);
+            return decode_variant<Format, detail::no_tag>(vis, out);
         } else {
             static_assert(
                 dependent_false<V>,
@@ -1067,14 +1067,14 @@ bool decode_plain(Vis& vis, T& out) {
 
 }  // namespace detail
 
-template <typename Config, typename Vis, typename T>
+template <typename Format, typename Vis, typename T>
 bool decode_struct_fields(Vis& vis, T& out) {
-    using schema = codec::virtual_schema<T, Config>;
+    using schema = codec::virtual_schema<T, Format>;
     using slots = typename schema::slots;
     constexpr std::size_t N = type_list_size_v<slots>;
 
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return (detail::decode_one_field<Config, Is>(vis, out) && ...);
+        return (detail::decode_one_field<Format, Is>(vis, out) && ...);
     }(std::make_index_sequence<N>{});
 }
 

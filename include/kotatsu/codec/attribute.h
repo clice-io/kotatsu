@@ -91,7 +91,7 @@ struct field_spec {
     /// Extra accepted names during deserialization.
     name_list alias = {};
     /// Whether the field may be left out of a document, and when a write
-    /// leaves it out; unset, the struct's presence_all, the config's, or what
+    /// leaves it out; unset, the struct's presence_all, the format's, or what
     /// its kind is, decides.
     std::optional<presence_kind> presence = {};
     /// Exclude the field from (de)serialization entirely.
@@ -518,14 +518,15 @@ constexpr const Spec* extension_of = meta::spec_in<Spec, meta::field_attrs_t<T, 
 
 namespace detail {
 
-/// The layers of a merged config, one per policy: each declares its member
-/// only when its policy is set, so an untouched policy keeps shining through
-/// from Base.
 /// An optional value as a template argument: 0 when unset, else the value plus one.
 template <typename E>
 constexpr std::uint8_t optional_code(std::optional<E> value) {
     return value ? static_cast<std::uint8_t>(static_cast<std::uint8_t>(*value) + 1) : 0;
 }
+
+// The layers of a scoped format, one per policy: each declares its member
+// only when its policy is set, so an untouched policy keeps shining through
+// from Base.
 
 template <typename Base, naming::rename_fn RenameAll>
 struct rename_layer : Base {
@@ -552,9 +553,9 @@ struct presence_layer : Base {
 template <typename Base>
 struct presence_layer<Base, 0> : Base {};
 
-/// Base under every policy layer: the one config type a merge makes.
+/// Base under every policy layer: the one format type a merge makes.
 template <typename Base, naming::rename_fn RenameAll, bool DenyUnknown, std::uint8_t Presence>
-struct merged_config :
+struct scoped_format :
     presence_layer<deny_layer<rename_layer<Base, RenameAll>, DenyUnknown>, Presence> {
     using members_of = Base;
     /// A struct's scope extends the format it was entered under, whose reprs apply in it.
@@ -562,18 +563,18 @@ struct merged_config :
 };
 
 template <typename Base, naming::rename_fn RenameAll, bool DenyUnknown, std::uint8_t Presence>
-struct merge_config_impl {
-    using type = merged_config<Base, RenameAll, DenyUnknown, Presence>;
+struct scope_format_impl {
+    using type = scoped_format<Base, RenameAll, DenyUnknown, Presence>;
 };
 
 template <typename Base>
-struct merge_config_impl<Base, nullptr, false, 0> {
+struct scope_format_impl<Base, nullptr, false, 0> {
     using type = Base;
 };
 
 /// Merging onto an already-merged base rebuilds a single normalized layer
 /// instead of stacking (a deeper rename or presence overrides, deny is
-/// sticky), so equivalent merge chains produce the same config type —
+/// sticky), so equivalent merge chains produce the same format type —
 /// type_info instance sharing (and thus one $defs entry per struct) depends
 /// on that.
 template <typename Base,
@@ -583,68 +584,67 @@ template <typename Base,
           naming::rename_fn RenameAll,
           bool DenyUnknown,
           std::uint8_t Presence>
-struct merge_config_impl<merged_config<Base, R0, D0, P0>, RenameAll, DenyUnknown, Presence> {
-    using type = merged_config<Base,
+struct scope_format_impl<scoped_format<Base, R0, D0, P0>, RenameAll, DenyUnknown, Presence> {
+    using type = scoped_format<Base,
                                RenameAll != nullptr ? RenameAll : R0,
                                D0 || DenyUnknown,
                                Presence != 0 ? Presence : P0>;
 };
 
 template <typename Base, naming::rename_fn R0, bool D0, std::uint8_t P0>
-struct merge_config_impl<merged_config<Base, R0, D0, P0>, nullptr, false, 0> {
-    using type = merged_config<Base, R0, D0, P0>;
+struct scope_format_impl<scoped_format<Base, R0, D0, P0>, nullptr, false, 0> {
+    using type = scoped_format<Base, R0, D0, P0>;
 };
 
 }  // namespace detail
 
-/// Base config with an annotated node's rename_all / deny_unknown_fields /
-/// presence_all layered on top; a spec carrying none of these policies
-/// leaves Base untouched. A deeper merge overrides an earlier rename or
-/// presence, deny is sticky: once set it is never merged away. This is the
-/// single implementation of the merge — the codec dispatch applies it when
-/// crossing an annotated reflectable node and meta's repr resolver replays
-/// it, so type_info always describes the documents the codec reads and
-/// writes.
+/// The format Base with an annotated struct's rename_all /
+/// deny_unknown_fields / presence_all layered on top; a spec carrying none of
+/// these policies leaves Base untouched. A deeper merge overrides an earlier
+/// rename or presence, deny is sticky: once set it is never merged away. This
+/// is the single implementation of the merge: the dispatch applies it when
+/// crossing an annotated struct and the repr resolver replays it, so
+/// type_info always describes the documents the codec reads and writes.
 template <typename Base, typename AttrsTuple>
-using merged_config_t =
-    typename detail::merge_config_impl<Base,
+using scoped_format_t =
+    typename detail::scope_format_impl<Base,
                                        struct_spec_of<AttrsTuple>.rename_all,
                                        struct_spec_of<AttrsTuple>.deny_unknown_fields,
                                        detail::optional_code(
                                            struct_spec_of<AttrsTuple>.presence_all)>::type;
 
-/// The config a node of type T carrying AttrsTuple (a field's attrs, or an
+/// The format a node of type T carrying AttrsTuple (a field's attrs, or an
 /// annotation's) is read and written under: its rename_all /
-/// deny_unknown_fields / presence_all merge onto Config when T is a
+/// deny_unknown_fields / presence_all merge onto Format when T is a
 /// reflectable struct, the only kind those policies act on, and are inert on
 /// every other node.
-template <typename Config, typename T, typename AttrsTuple>
-using node_config_t =
-    std::conditional_t<meta::reflectable_class<T>, merged_config_t<Config, AttrsTuple>, Config>;
+template <typename Format, typename T, typename AttrsTuple>
+using node_format_t =
+    std::conditional_t<meta::reflectable_class<T>, scoped_format_t<Format, AttrsTuple>, Format>;
 
-/// The config the values of a struct's fields are read and written under:
+/// The format the values of a struct's fields are read and written under:
 /// the one its own rename_all / deny_unknown_fields / presence_all merged
 /// onto, which name and mark its members alone and reach no deeper.
-template <typename Config>
-using members_config_t = typename decltype([] {
-    if constexpr(requires { typename Config::members_of; }) {
-        return std::type_identity<typename Config::members_of>{};
+template <typename Format>
+using members_format_t = typename decltype([] {
+    if constexpr(requires { typename Format::members_of; }) {
+        return std::type_identity<typename Format::members_of>{};
     } else {
-        return std::type_identity<Config>{};
+        return std::type_identity<Format>{};
     }
 }())::type;
 
-/// The presence a field of kind `kind` whose spec is `spec` has under Config: the spec's own,
-/// else Config's presence_all (a struct's, merged on the way, or the config's own), else
+/// The presence a field of kind `kind` whose spec is `spec` has under Format: the spec's own,
+/// else Format's presence_all (a struct's, merged on the way, or the format's own), else
 /// optional for a std::optional, a pointer or null, and required for the rest.
-template <typename Config>
+template <typename Format>
 constexpr presence_kind effective_presence(const field_spec& spec, meta::type_kind kind) {
     if(spec.presence) {
         return *spec.presence;
     }
-    if constexpr(requires { Config::presence_all; }) {
-        if(Config::presence_all) {
-            return *Config::presence_all;
+    if constexpr(requires { Format::presence_all; }) {
+        if(Format::presence_all) {
+            return *Format::presence_all;
         }
     }
     using enum meta::type_kind;

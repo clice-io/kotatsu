@@ -694,9 +694,9 @@ private:
 /// for every default-constructible struct the decoder reads directly (see
 /// decoder_reads_directly) reachable through the resolved type structure,
 /// the document a value-initialized instance encodes to under the resolved
-/// config, keyed by the normalized name the emitter gives the type's $def.
+/// format, keyed by the normalized name the emitter gives the type's $def.
 /// collect_fresh mirrors the emitter's reach — struct fields (flattened
-/// included, skipped excluded), each under the config its slot's struct-level
+/// included, skipped excluded), each under the format its slot's struct-level
 /// spec merges to, optional and pointer inners, sequence and
 /// set elements, map values (keys encode as object keys and carry no
 /// schema), tuple elements, variant alternatives. A repr-routed type is
@@ -874,41 +874,41 @@ constexpr bool decoder_reads_directly() {
     }
 }
 
-template <typename T, typename Config>
+template <typename T, typename Format>
 void collect_fresh(FreshDefaults& out);
 
-template <typename Config, typename... Slots>
+template <typename Format, typename... Slots>
 void collect_fresh_slots(FreshDefaults& out, kotatsu::type_list<Slots...>) {
     (collect_fresh<typename Slots::raw_type,
-                   codec::node_config_t<codec::members_config_t<Config>,
+                   codec::node_format_t<codec::members_format_t<Format>,
                                         typename Slots::raw_type,
                                         typename Slots::attrs>>(out),
      ...);
 }
 
-template <typename Config, typename... Ts>
+template <typename Format, typename... Ts>
 void collect_fresh_alternatives(FreshDefaults& out, std::type_identity<std::variant<Ts...>>) {
-    (collect_fresh<Ts, Config>(out), ...);
+    (collect_fresh<Ts, Format>(out), ...);
 }
 
-template <typename T, typename Config>
+template <typename T, typename Format>
 void collect_fresh(FreshDefaults& out) {
     // A repr-routed type is skipped, subtree included: decode reads the
     // repr's value, not a T, so no honest fresh document exists here.
-    if constexpr(decoder_reads_directly<T, codec::members_config_t<Config>>()) {
+    if constexpr(decoder_reads_directly<T, codec::members_format_t<Format>>()) {
         using tk = meta::type_kind;
-        using resolved = codec::resolved_repr_t<T, codec::members_config_t<Config>>;
+        using resolved = codec::resolved_repr_t<T, codec::members_format_t<Format>>;
         constexpr tk kind = meta::kind_of<resolved>();
         if constexpr(kind == tk::structure) {
-            const codec::type_info& ti = codec::type_info::of<T, Config>();
+            const codec::type_info& ti = codec::type_info::of<T, Format>();
             if(!out.seen.insert(&ti).second) {
                 return;
             }
-            // The resolved config carries T's own structural annotations (an
+            // The resolved format carries T's own structural annotations (an
             // annotated root or container element — slots merge theirs
             // before recursing), so the document keys and field names below
             // match the schema the emitter derives from the same resolution.
-            using cfg = codec::resolved_config_t<T, Config>;
+            using scope = codec::resolved_format_t<T, Format>;
             auto name = kotatsu::naming::normalize_identifier(ti.type_name);
             if(!out.claimed.insert(name).second) {
                 // Two distinct types under one normalized name: the emitter
@@ -918,27 +918,28 @@ void collect_fresh(FreshDefaults& out) {
                 // document.
                 out.docs.erase(name);
             } else if constexpr(std::is_default_constructible_v<T>) {
-                if(auto text = to_string<default_document_format<cfg>>(T())) {
+                if(auto text = to_string<default_document_format<scope>>(T())) {
                     if(auto doc = from_string<dyn::Value>(*text)) {
                         out.docs.emplace(name, std::move(*doc));
                     }
                 }
             }
-            collect_fresh_slots<cfg>(out, typename codec::virtual_schema<resolved, cfg>::slots{});
+            collect_fresh_slots<scope>(out,
+                                       typename codec::virtual_schema<resolved, scope>::slots{});
         } else if constexpr(kind == tk::optional) {
-            collect_fresh<typename resolved::value_type, Config>(out);
+            collect_fresh<typename resolved::value_type, Format>(out);
         } else if constexpr(kind == tk::pointer) {
-            collect_fresh<typename resolved::element_type, Config>(out);
+            collect_fresh<typename resolved::element_type, Format>(out);
         } else if constexpr(kind == tk::array || kind == tk::set) {
-            collect_fresh<std::ranges::range_value_t<resolved>, Config>(out);
+            collect_fresh<std::ranges::range_value_t<resolved>, Format>(out);
         } else if constexpr(kind == tk::map) {
-            collect_fresh<typename std::ranges::range_value_t<resolved>::second_type, Config>(out);
+            collect_fresh<typename std::ranges::range_value_t<resolved>::second_type, Format>(out);
         } else if constexpr(kind == tk::tuple) {
             [&out]<std::size_t... Is>(std::index_sequence<Is...>) {
-                (collect_fresh<std::tuple_element_t<Is, resolved>, Config>(out), ...);
+                (collect_fresh<std::tuple_element_t<Is, resolved>, Format>(out), ...);
             }(std::make_index_sequence<std::tuple_size_v<resolved>>{});
         } else if constexpr(kind == tk::variant) {
-            collect_fresh_alternatives<Config>(out, std::type_identity<resolved>{});
+            collect_fresh_alternatives<Format>(out, std::type_identity<resolved>{});
         }
         // Scalars, enums, bytes, any: leaves without annotatable structure.
     }

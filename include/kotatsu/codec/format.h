@@ -129,9 +129,9 @@ concept presence_checked = requires { requires Vis::presence_checked; };
 /// Whether documents carry names, as the format says: a struct's fields and a
 /// variant's tags. Determines text vs binary serialization strategy for
 /// user-defined types.
-template <typename Config, typename Vis>
+template <typename Format, typename Vis>
 constexpr bool is_human_readable() {
-    return Config::human_readable;
+    return Format::human_readable;
 }
 
 }  // namespace kotatsu::codec

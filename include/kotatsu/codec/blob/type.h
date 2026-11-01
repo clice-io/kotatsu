@@ -42,7 +42,7 @@
 // A scalar (an arithmetic type other than long double, an enum with a fixed
 // underlying type) is its native little-endian image.
 //
-// The layout is a function of the type alone: there is no Config, and
+// The layout is a function of the type alone: there is no format, and
 // neither annotations nor codec::repr apply, since the view is the struct
 // itself. It is canonical: to_bytes writes a value as exactly one blob,
 // padding zeroed, so the bytes' hash identifies the value. view checks

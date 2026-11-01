@@ -92,7 +92,7 @@ struct field_info {
     type_info_fn type;
 
     /// Whether the field may be left out of a document, and when a write
-    /// leaves it out, under the config the info was built for.
+    /// leaves it out, under the format the info was built for.
     presence_kind presence;
 
     /// Documentation text from the annotation, empty when absent.
@@ -156,23 +156,23 @@ struct renamed_name_static {
     constexpr static std::string_view value{chars.data(), chars.size()};
 };
 
-template <typename Config>
+template <typename Format>
 struct effective_field_rename {
     using type = naming::rename_policy::identity;
 };
 
-template <typename Config>
-    requires requires { typename Config::rename_all; }
-struct effective_field_rename<Config> {
-    using type = typename Config::rename_all;
+template <typename Format>
+    requires requires { typename Format::rename_all; }
+struct effective_field_rename<Format> {
+    using type = typename Format::rename_all;
 };
 
-template <typename Config>
-using effective_field_rename_t = typename effective_field_rename<Config>::type;
+template <typename Format>
+using effective_field_rename_t = typename effective_field_rename<Format>::type;
 
-/// The policy an enum_names repr spells E's enumerators with under Config: its own, else the
-/// rename_all of E's own annotation, else Config's.
-template <typename Repr, typename E, typename Config>
+/// The policy an enum_names repr spells E's enumerators with under Format: its own, else the
+/// rename_all of E's own annotation, else Format's.
+template <typename Repr, typename E, typename Format>
 consteval auto enum_names_policy() {
     constexpr naming::rename_fn own = struct_spec_of<meta::attrs_of_t<E>>.rename_all;
     if constexpr(!std::is_void_v<typename Repr::policy>) {
@@ -180,12 +180,12 @@ consteval auto enum_names_policy() {
     } else if constexpr(own != nullptr) {
         return std::type_identity<naming::rename_policy_of_t<own>>{};
     } else {
-        return std::type_identity<effective_field_rename_t<Config>>{};
+        return std::type_identity<effective_field_rename_t<Format>>{};
     }
 }
 
-template <typename Repr, typename E, typename Config>
-using enum_names_policy_t = typename decltype(enum_names_policy<Repr, E, Config>())::type;
+template <typename Repr, typename E, typename Format>
+using enum_names_policy_t = typename decltype(enum_names_policy<Repr, E, Format>())::type;
 
 template <typename... Ts>
 struct type_names {
@@ -196,8 +196,8 @@ struct type_names {
 
 /// The names a tagged variant's alternatives travel under: the annotation's tag_names when it
 /// gives them, one per alternative, else the names of the alternatives' types, spelled by the
-/// annotation's rename_all, else by Config's. No two may be alike.
-template <typename SpecAttr, typename Config, typename... Ts>
+/// annotation's rename_all, else by Format's. No two may be alike.
+template <typename SpecAttr, typename Format, typename... Ts>
 constexpr auto resolve_tag_names() {
     constexpr const struct_spec& spec = SpecAttr::value;
     if constexpr(!spec.tag_names.empty()) {
@@ -212,7 +212,7 @@ constexpr auto resolve_tag_names() {
             if constexpr(spec.rename_all != nullptr) {
                 return std::type_identity<naming::rename_policy_of_t<spec.rename_all>>{};
             } else {
-                return std::type_identity<detail::effective_field_rename_t<Config>>{};
+                return std::type_identity<detail::effective_field_rename_t<Format>>{};
             }
         }())::type;
         constexpr const auto& names = naming::renamed<policy, detail::type_names<Ts...>::value>;
@@ -234,9 +234,9 @@ constexpr const inline auto& enum_names_of = []() -> const auto& {
     return names;
 }();
 
-template <typename T, std::size_t I, typename Config>
+template <typename T, std::size_t I, typename Format>
 constexpr std::string_view resolve_field_name() {
-    using policy = effective_field_rename_t<Config>;
+    using policy = effective_field_rename_t<Format>;
     constexpr const field_spec& spec = field_spec_of<T, I>;
     if constexpr(!spec.rename.empty()) {
         return spec.rename;
@@ -260,7 +260,7 @@ constexpr bool is_runtime_spec_attr_v<meta::spec_attr<Tag, field_spec>> =
 /// A struct spec whose values matter at encode/decode dispatch: the tagged
 /// variant paths read the tagging mode and names from the slot attrs, and a
 /// rename_all / deny_unknown_fields / presence_all spec on a field merges
-/// into the config there.
+/// into the format there.
 template <typename Attr>
 constexpr bool is_runtime_struct_spec_attr_v = false;
 
@@ -317,15 +317,15 @@ struct enum_info_node {
 
 /// A resolved representation: the type the codec ultimately reads and writes
 /// for T, the tagging spec attr accompanying a tagged variant (an empty tuple
-/// otherwise), the config after merging every rename_all /
+/// otherwise), the format after merging every rename_all /
 /// deny_unknown_fields / presence_all crossed on the way, and, for an enum
 /// an enum_names repr turns into text, the info of its members (void
 /// otherwise), which a schema lists.
-template <typename T, typename TagAttrs, typename Config, typename SpelledEnum = void>
+template <typename T, typename TagAttrs, typename Format, typename SpelledEnum = void>
 struct resolved_repr {
     using type = T;
     using tag_attrs = TagAttrs;
-    using config = Config;
+    using format = Format;
     using spelled_enum = SpelledEnum;
 };
 
@@ -334,70 +334,70 @@ struct resolved_repr {
 /// a tagging spec on a std::variant (a
 /// tagged variant is read and written as that variant, whatever repr its
 /// type has). The type's repr applies only when none of these does, and the
-/// config's format tag selects a format-scoped specialization over the
+/// format selects a format-scoped specialization over the
 /// format-agnostic one, as the dispatch does from the visitor's format tag.
 /// Every chosen representation re-enters the resolver, so chained reprs and
 /// annotations nested inside representation types resolve to the final type,
 /// matching the codec's recursive re-dispatch on the converted value. The
 /// rename_all / deny_unknown_fields / presence_all of annotated nodes
-/// merge into the carried config through node_config_t, the alias the
+/// merge into the carried format through node_format_t, the alias the
 /// dispatch uses, so the resulting type_info describes the documents the codec
 /// reads and writes. A tagged variant keeps its tagging spec attr; the spec's
 /// own policies stay inert for the alternatives, as in the codec, where the
-/// tagging branch is taken before the config merge.
-template <typename T, typename Config = format>
+/// tagging branch is taken before the merge.
+template <typename T, typename Format = format>
 constexpr auto resolve_repr();
 
 /// resolve_repr over a type given as its raw type and attrs, as a struct
 /// field's slot holds it.
-template <typename Raw, typename Attrs, typename Config = format>
+template <typename Raw, typename Attrs, typename Format = format>
 constexpr auto resolve_node() {
     if constexpr(meta::derived_variant<Raw>) {
         // Read and written as the variant it is, under its own annotation.
-        return resolve_node<meta::variant_base_t<Raw>, Attrs, Config>();
+        return resolve_node<meta::variant_base_t<Raw>, Attrs, Format>();
     } else if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
         using adapter = typename tuple_find_spec_t<Attrs, behavior::with>::adapter;
         if constexpr(names_enum<adapter>) {
             return resolved_repr<std::string_view,
                                  std::tuple<>,
-                                 Config,
-                                 enum_info_node<Raw, enum_names_policy_t<adapter, Raw, Config>>>{};
+                                 Format,
+                                 enum_info_node<Raw, enum_names_policy_t<adapter, Raw, Format>>>{};
         } else {
-            return resolve_repr<declared_repr_t<adapter>, Config>();
+            return resolve_repr<declared_repr_t<adapter>, Format>();
         }
     } else if constexpr(tuple_has_spec_v<Attrs, behavior::as>) {
         using target = typename tuple_find_spec_t<Attrs, behavior::as>::target;
-        return resolve_repr<target, Config>();
+        return resolve_repr<target, Format>();
     } else if constexpr(is_specialization_of<std::variant, Raw> &&
                         struct_spec_of<Attrs>.tagging != tag_mode::none) {
-        return resolved_repr<Raw, std::tuple<struct_spec_attr_t<Attrs>>, Config>{};
-    } else if constexpr(has_repr<Raw, Config>) {
-        using chosen = repr_for<Raw, Config>;
+        return resolved_repr<Raw, std::tuple<struct_spec_attr_t<Attrs>>, Format>{};
+    } else if constexpr(has_repr<Raw, Format>) {
+        using chosen = repr_for<Raw, Format>;
         if constexpr(names_enum<chosen>) {
             return resolved_repr<std::string_view,
                                  std::tuple<>,
-                                 Config,
-                                 enum_info_node<Raw, enum_names_policy_t<chosen, Raw, Config>>>{};
+                                 Format,
+                                 enum_info_node<Raw, enum_names_policy_t<chosen, Raw, Format>>>{};
         } else {
-            return resolve_repr<declared_repr_t<chosen>, node_config_t<Config, Raw, Attrs>>();
+            return resolve_repr<declared_repr_t<chosen>, node_format_t<Format, Raw, Attrs>>();
         }
     } else {
-        return resolved_repr<Raw, std::tuple<>, node_config_t<Config, Raw, Attrs>>{};
+        return resolved_repr<Raw, std::tuple<>, node_format_t<Format, Raw, Attrs>>{};
     }
 }
 
-template <typename T, typename Config>
+template <typename T, typename Format>
 constexpr auto resolve_repr() {
-    return resolve_node<std::remove_cv_t<T>, meta::attrs_of_t<T>, Config>();
+    return resolve_node<std::remove_cv_t<T>, meta::attrs_of_t<T>, Format>();
 }
 
-template <typename T, typename AttrsT, typename Config, meta::type_kind Kind = meta::kind_of<T>()>
+template <typename T, typename AttrsT, typename Format, meta::type_kind Kind = meta::kind_of<T>()>
 struct type_instance_impl;
 
 /// The instance key is the resolution result, not the annotated input: two
 /// textually identical annotations (KANNOTATE mints a fresh tag per
-/// use) resolve to the same type and the same value-parameterized merged
-/// config, so they share one type_info instance — and thus one $defs entry in
+/// use) resolve to the same type and the same value-parameterized scoped
+/// format, so they share one type_info instance — and thus one $defs entry in
 /// schema output. Tagged variant specs keep their own tag (the string
 /// payloads are not structural); schema backends emit variants inline rather
 /// than as shared defs, so distinct instances are harmless there.
@@ -406,11 +406,11 @@ struct resolved_instance :
     std::conditional_t<std::is_void_v<typename Resolved::spelled_enum>,
                        type_instance_impl<typename Resolved::type,
                                           typename Resolved::tag_attrs,
-                                          typename Resolved::config>,
+                                          typename Resolved::format>,
                        typename Resolved::spelled_enum> {};
 
-template <typename T, typename Config = format>
-struct type_instance : resolved_instance<decltype(resolve_repr<std::remove_cv_t<T>, Config>())> {};
+template <typename T, typename Format = format>
+struct type_instance : resolved_instance<decltype(resolve_repr<std::remove_cv_t<T>, Format>())> {};
 
 /// The info of a node resolved as Resolved, as a type_info_fn.
 template <typename Resolved>
@@ -454,38 +454,38 @@ constexpr std::size_t single_field_count() {
 template <typename T>
 using built_fields_t = std::array<field_info, effective_field_count<T>()>;
 
-template <typename T, typename Config>
+template <typename T, typename Format>
 constexpr built_fields_t<T> build_fields(std::size_t base_offset = 0);
 
-/// Deny policy carried by the config itself — merged there by merged_config_t
-/// on the way down, or set directly on a codec config.
-template <typename Config>
-constexpr bool config_denies_unknown() {
-    if constexpr(requires { Config::deny_unknown_fields; }) {
-        return Config::deny_unknown_fields;
+/// Whether the format denies unknown fields: a struct's deny_unknown_fields,
+/// merged there by scoped_format_t on the way down.
+template <typename Format>
+constexpr bool format_denies_unknown() {
+    if constexpr(requires { Format::deny_unknown_fields; }) {
+        return Format::deny_unknown_fields;
     } else {
         return false;
     }
 }
 
-template <typename Variant, typename Config, typename AttrsTuple>
+template <typename Variant, typename Format, typename AttrsTuple>
 struct variant_info_node;
 
-template <typename Config, typename AttrsTuple, typename... Ts>
-struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
+template <typename Format, typename AttrsTuple, typename... Ts>
+struct variant_info_node<std::variant<Ts...>, Format, AttrsTuple> {
     using variant_t = std::variant<Ts...>;
     constexpr const static struct_spec& spec = struct_spec_of<AttrsTuple>;
     constexpr static bool has_tag = spec.tagging != tag_mode::none;
 
     constexpr static std::array<type_info_fn, sizeof...(Ts)> alternatives = {
-        type_info::of<Ts, Config>...};
+        type_info::of<Ts, Format>...};
 
     // The backing array is always sizeof...(Ts) (>=1 since variant must have alternatives);
     // for non-tagged variants the elements stay default-constructed and the consumer
     // span below is explicitly given size 0, so no element is ever read.
     constexpr static auto alt_names = [] {
         if constexpr(has_tag) {
-            return resolve_tag_names<struct_spec_attr_t<AttrsTuple>, Config, Ts...>();
+            return resolve_tag_names<struct_spec_attr_t<AttrsTuple>, Format, Ts...>();
         } else {
             return std::array<std::string_view, sizeof...(Ts)>{};
         }
@@ -498,19 +498,19 @@ struct variant_info_node<std::variant<Ts...>, Config, AttrsTuple> {
         spec.tag,
         spec.content,
         {alt_names.data(),         has_tag ? alt_names.size() : 0},
-        config_denies_unknown<Config>(),
+        format_denies_unknown<Format>(),
     };
 };
 
 template <typename Tuple,
-          typename Config,
+          typename Format,
           typename Seq = std::make_index_sequence<std::tuple_size_v<Tuple>>>
 struct tuple_info_node;
 
-template <typename Tuple, typename Config, std::size_t... Is>
-struct tuple_info_node<Tuple, Config, std::index_sequence<Is...>> {
+template <typename Tuple, typename Format, std::size_t... Is>
+struct tuple_info_node<Tuple, Format, std::index_sequence<Is...>> {
     constexpr inline static std::array<type_info_fn, sizeof...(Is)> elements = {
-        type_info::of<std::tuple_element_t<Is, Tuple>, Config>...};
+        type_info::of<std::tuple_element_t<Is, Tuple>, Format>...};
 
     constexpr inline static tuple_type_info value = {
         {meta::type_kind::tuple, meta::type_name<Tuple>()},
@@ -518,79 +518,79 @@ struct tuple_info_node<Tuple, Config, std::index_sequence<Is...>> {
     };
 };
 
-template <typename T, typename AttrsT, typename Config, meta::type_kind Kind>
+template <typename T, typename AttrsT, typename Format, meta::type_kind Kind>
 struct type_instance_impl {
     constexpr inline static type_info value = {meta::kind_of<T>(), meta::type_name<T>()};
 };
 
-template <typename T, typename AttrsT, typename Config>
-struct type_instance_impl<T, AttrsT, Config, meta::type_kind::optional> {
+template <typename T, typename AttrsT, typename Format>
+struct type_instance_impl<T, AttrsT, Format, meta::type_kind::optional> {
     using inner_t = typename T::value_type;
 
     constexpr inline static optional_type_info value = {
         {meta::type_kind::optional, meta::type_name<T>()},
-        type_info::of<inner_t, Config>,
+        type_info::of<inner_t, Format>,
     };
 };
 
-template <typename T, typename AttrsT, typename Config>
-struct type_instance_impl<T, AttrsT, Config, meta::type_kind::pointer> {
+template <typename T, typename AttrsT, typename Format>
+struct type_instance_impl<T, AttrsT, Format, meta::type_kind::pointer> {
     using inner_t = typename T::element_type;
 
     constexpr inline static optional_type_info value = {
         {meta::type_kind::pointer, meta::type_name<T>()},
-        type_info::of<inner_t, Config>,
+        type_info::of<inner_t, Format>,
     };
 };
 
-template <typename T, typename AttrsT, typename Config>
-struct type_instance_impl<T, AttrsT, Config, meta::type_kind::variant> {
-    constexpr inline static variant_type_info value = variant_info_node<T, Config, AttrsT>::value;
+template <typename T, typename AttrsT, typename Format>
+struct type_instance_impl<T, AttrsT, Format, meta::type_kind::variant> {
+    constexpr inline static variant_type_info value = variant_info_node<T, Format, AttrsT>::value;
 };
 
-template <typename T, typename AttrsT, typename Config>
-struct type_instance_impl<T, AttrsT, Config, meta::type_kind::tuple> {
-    constexpr inline static tuple_type_info value = tuple_info_node<T, Config>::value;
+template <typename T, typename AttrsT, typename Format>
+struct type_instance_impl<T, AttrsT, Format, meta::type_kind::tuple> {
+    constexpr inline static tuple_type_info value = tuple_info_node<T, Format>::value;
 };
 
-template <typename T, typename AttrsT, typename Config>
-struct type_instance_impl<T, AttrsT, Config, meta::type_kind::map> {
+template <typename T, typename AttrsT, typename Format>
+struct type_instance_impl<T, AttrsT, Format, meta::type_kind::map> {
     using kv_t = std::ranges::range_value_t<T>;
     using key_t = std::remove_const_t<typename kv_t::first_type>;
     using mapped_t = typename kv_t::second_type;
 
     constexpr inline static map_type_info value = {
         {meta::type_kind::map, meta::type_name<T>()},
-        type_info::of<key_t, Config>,
-        type_info::of<mapped_t, Config>,
+        type_info::of<key_t, Format>,
+        type_info::of<mapped_t, Format>,
     };
 };
 
-template <typename T, typename AttrsT, typename Config>
-struct type_instance_impl<T, AttrsT, Config, meta::type_kind::set> {
+template <typename T, typename AttrsT, typename Format>
+struct type_instance_impl<T, AttrsT, Format, meta::type_kind::set> {
     using element_t = std::ranges::range_value_t<T>;
 
     constexpr inline static array_type_info value = {
         {meta::type_kind::set, meta::type_name<T>()},
-        type_info::of<element_t, Config>,
+        type_info::of<element_t, Format>,
     };
 };
 
-template <typename T, typename AttrsT, typename Config>
-struct type_instance_impl<T, AttrsT, Config, meta::type_kind::array> {
+template <typename T, typename AttrsT, typename Format>
+struct type_instance_impl<T, AttrsT, Format, meta::type_kind::array> {
     using element_t = std::ranges::range_value_t<T>;
 
     constexpr inline static array_type_info value = {
         {meta::type_kind::array, meta::type_name<T>()},
-        type_info::of<element_t, Config>,
+        type_info::of<element_t, Format>,
     };
 };
 
-template <typename T, typename AttrsT, typename Config>
-struct type_instance_impl<T, AttrsT, Config, meta::type_kind::structure> {
-    constexpr static bool deny_unknown = config_denies_unknown<Config>();
+template <typename T, typename AttrsT, typename Format>
+struct type_instance_impl<T, AttrsT, Format, meta::type_kind::structure> {
+    constexpr static bool deny_unknown = format_denies_unknown<Format>();
 
-    constexpr inline static built_fields_t<T> fields = build_fields<T, Config>();
+    constexpr inline static built_fields_t<T> fields = build_fields<T, Format>();
 
     constexpr inline static struct_type_info value = {
         {meta::type_kind::structure, meta::type_name<T>()},
@@ -600,13 +600,13 @@ struct type_instance_impl<T, AttrsT, Config, meta::type_kind::structure> {
     };
 };
 
-template <typename T, typename AttrsT, typename Config>
-struct type_instance_impl<T, AttrsT, Config, meta::type_kind::enumeration> : enum_info_node<T> {};
+template <typename T, typename AttrsT, typename Format>
+struct type_instance_impl<T, AttrsT, Format, meta::type_kind::enumeration> : enum_info_node<T> {};
 
-template <typename T, typename Config, std::size_t I>
+template <typename T, typename Format, std::size_t I>
 constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offset);
 
-template <typename T, typename Config, std::size_t I>
+template <typename T, typename Format, std::size_t I>
 constexpr field_info make_field_info(std::size_t base_offset) {
     using field_t = meta::field_type<T, I>;
     using raw_t = std::remove_cv_t<field_t>;
@@ -615,11 +615,11 @@ constexpr field_info make_field_info(std::size_t base_offset) {
     constexpr meta::type_kind raw_kind = meta::kind_of<raw_t>();
 
     return field_info{
-        .name = resolve_field_name<T, I, Config>(),
+        .name = resolve_field_name<T, I, Format>(),
         .aliases = spec.alias,
         .offset = base_offset + meta::field_offset<T>(I),
-        .type = resolved_info<decltype(resolve_node<raw_t, attrs_t, members_config_t<Config>>())>,
-        .presence = effective_presence<Config>(spec, raw_kind),
+        .type = resolved_info<decltype(resolve_node<raw_t, attrs_t, members_format_t<Format>>())>,
+        .presence = effective_presence<Format>(spec, raw_kind),
         .description = spec.description,
         .schema_default = spec.schema_default,
         .minimum = spec.minimum,
@@ -630,7 +630,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
     };
 }
 
-template <typename T, typename Config>
+template <typename T, typename Format>
 constexpr built_fields_t<T> build_fields(std::size_t base_offset) {
     built_fields_t<T> result{};
     std::size_t out = 0;
@@ -638,14 +638,14 @@ constexpr built_fields_t<T> build_fields(std::size_t base_offset) {
     constexpr std::size_t N = meta::field_count<T>();
     if constexpr(N > 0) {
         [&]<std::size_t... Is>(std::index_sequence<Is...>) constexpr {
-            (fill_field<T, Config, Is>(result, out, base_offset), ...);
+            (fill_field<T, Format, Is>(result, out, base_offset), ...);
         }(std::make_index_sequence<N>{});
     }
 
     return result;
 }
 
-template <typename T, typename Config, std::size_t I>
+template <typename T, typename Format, std::size_t I>
 constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offset) {
     using field_t = meta::field_type<T, I>;
     constexpr const field_spec& spec = field_spec_of<T, I>;
@@ -654,12 +654,12 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
     } else if constexpr(spec.flatten) {
         using inner_t = std::remove_cv_t<field_t>;
         std::size_t inner_offset = base_offset + meta::field_offset<T>(I);
-        auto inner = build_fields<inner_t, Config>(inner_offset);
+        auto inner = build_fields<inner_t, Format>(inner_offset);
         for(std::size_t i = 0; i < inner.size(); ++i) {
             result[out++] = inner[i];
         }
     } else {
-        result[out++] = make_field_info<T, Config, I>(base_offset);
+        result[out++] = make_field_info<T, Format, I>(base_offset);
     }
 }
 
@@ -672,13 +672,13 @@ constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offse
 template <typename T, typename F = format>
 using resolved_repr_t = typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, F>())::type;
 
-/// The scope T's resolution ends with: Config, the format, with the struct
+/// The scope T's resolution ends with: Format, the format, with the struct
 /// attributes (rename_all, deny_unknown_fields, presence_all) of the struct it
 /// resolves to merged in, as the dispatch layers them while reading or writing
 /// a T.
-template <typename T, typename Config>
-using resolved_config_t =
-    typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, Config>())::config;
+template <typename T, typename Format>
+using resolved_format_t =
+    typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, Format>())::format;
 
 /// True when T resolves to a std::variant whose tagging spec survived
 /// resolution: external, internal, and adjacent tagging all give the value an
@@ -744,7 +744,7 @@ struct single_field_slots<T, I, /*Skipped=*/false, /*Flattened=*/true> {
 
 }  // namespace detail
 
-template <typename T, typename Config = format>
+template <typename T, typename Format = format>
     requires meta::reflectable_class<T>
 struct virtual_schema {
     // Obtain fields from type_info::of<T>().fields (the span inside struct_type_info::value)
@@ -756,28 +756,28 @@ struct virtual_schema {
     // Entering through `fields` directly would leave `value` unevaluated, causing Clang to
     // attempt its verification and discover a circular dependency.
     constexpr static std::span<const field_info> fields =
-        static_cast<const struct_type_info&>(type_info::of<T, Config>()).fields;
+        static_cast<const struct_type_info&>(type_info::of<T, Format>()).fields;
 
     using slots = detail::build_slots_t<T>;
-    constexpr static bool deny_unknown = detail::type_instance<T, Config>::deny_unknown;
+    constexpr static bool deny_unknown = detail::type_instance<T, Format>::deny_unknown;
 };
 
 namespace detail {
 
-/// Whether a field of struct T under Config answers to name, by its own name
+/// Whether a field of struct T under Format answers to name, by its own name
 /// or an alias.
-template <typename Config, typename T>
+template <typename Format, typename T>
 consteval bool has_field_named(std::string_view name) {
-    return std::ranges::any_of(virtual_schema<T, Config>::fields, [&](const field_info& field) {
+    return std::ranges::any_of(virtual_schema<T, Format>::fields, [&](const field_info& field) {
         return field.name == name || std::ranges::find(field.aliases, name) != field.aliases.end();
     });
 }
 
 /// Rejects an internally tagged variant one of whose alternatives has a
 /// field named like the tag: its document would hold the key twice.
-template <typename Config, typename SpecAttr, typename... Ts>
+template <typename Format, typename SpecAttr, typename... Ts>
 consteval void assert_internal_tag_fits() {
-    static_assert((!has_field_named<Config, Ts>(SpecAttr::value.tag) && ...),
+    static_assert((!has_field_named<Format, Ts>(SpecAttr::value.tag) && ...),
                   "internally tagged: an alternative has a field named like the tag, so its "
                   "document would hold the key twice");
 }

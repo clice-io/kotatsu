@@ -13,7 +13,7 @@ namespace kotatsu::codec::bincode {
 ///
 /// Non-self-describing little-endian binary: no field names, no type tags,
 /// and no markers beyond the prefixes listed below, so decode must run with
-/// exactly the type and config that encoded the bytes. human_readable is
+/// exactly the type and format that encoded the bytes. human_readable is
 /// false, so variants are never name-tagged. Byte-level details live on
 /// Writer (encode.h) and Reader (decode.h).
 /// - null (and disengaged optional/pointer) → one 0x00 byte; decode rejects

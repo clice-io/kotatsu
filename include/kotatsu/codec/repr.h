@@ -96,7 +96,7 @@ using repr_for = typename decltype(detail::repr_lookup<T, F>())::type;
 
 /// The repr of an enum that travels as the names of its enumerators, spelled by Policy (a
 /// naming::rename_policy); without one, by the rename_all of the enum's own annotation, else
-/// the config's. The names are computed at compile time and must be distinct; a document is
+/// the format's. The names are computed at compile time and must be distinct; a document is
 /// read by matching them exactly, and a value no enumerator has fails to write.
 ///
 ///     template <>

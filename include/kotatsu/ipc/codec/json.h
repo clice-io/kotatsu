@@ -82,7 +82,7 @@ struct JSONCodec {
     }
 
 private:
-    /// Writes a message, its text and its values in the codec's config, into
+    /// Writes a message, its text and its values in the codec's format, into
     /// one buffer, so that no value is copied into its message.
     struct MessageWriter {
         codec::rich_error error;
