@@ -53,7 +53,7 @@ struct Tool {
 };
 
 struct Internal {
-    KANNOTATE(&trace, cli::hidden = true)
+    KANNOTATE(&trace, cli::hidden = true, cli::global = true)
     bool trace = false;
     KANNOTATE(&command, cli::hidden_sub = {"serve"})
     std::variant<Serve, Query> command;

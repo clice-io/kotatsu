@@ -107,6 +107,11 @@ class Builder {
     /// The '=' forms of the names, named once every field has named its own.
     std::vector<std::pair<NameForm, std::uint32_t>> equals_forms;
 
+    /// Whether the arguments of `group` go with a subcommand.
+    bool global_in(std::uint32_t group) const {
+        return group != no_group && command.groups[group].global;
+    }
+
     void add_option(std::string name, OptionKind kind, std::uint32_t arg) {
         const auto id = static_cast<std::uint32_t>(command.options.size() + 1);
         const auto& spelling = command.spellings.emplace_back(std::move(name));
@@ -291,11 +296,13 @@ class Builder {
                        const std::string& path) {
         const auto index = static_cast<std::uint32_t>(command.exclusives.size());
         const auto& variant = static_cast<const codec::variant_type_info&>(*use.type);
+        const bool global = use.spec.global || global_in(group);
         command.exclusives.push_back(Exclusive{
             .keys = keys,
             .group = group,
             .required = use.required,
             .first_args = std::vector<std::uint32_t>(variant.alternatives.size(), no_arg),
+            .global = global,
         });
         const auto title = field.description.empty() ? std::string(field.declared_name)
                                                      : std::string(field.description);
@@ -305,6 +312,7 @@ class Builder {
             const auto inner = static_cast<std::uint32_t>(command.groups.size());
             command.groups.push_back(Group{
                 .parent = group,
+                .global = global,
                 .keys = keys,
                 .description = std::format("{}, one of: {}",
                                            title,
@@ -340,6 +348,7 @@ class Builder {
                         field.description.empty() ? members.description : field.description;
                     command.groups.push_back(Group{.parent = group,
                                                    .optional = use.optional,
+                                                   .global = use.spec.global || global_in(group),
                                                    .keys = field_keys,
                                                    .description = std::string(description)});
                     add_struct(members, inner, field_keys, field_path);
@@ -359,6 +368,7 @@ class Builder {
                     arg.field = &field;
                     arg.group = group;
                     arg.alternative = current_alternative;
+                    arg.global = use.spec.global || global_in(group);
                     arg.keys = std::move(field_keys);
                     arg.path = field_path;
                     add_arg(std::move(arg));

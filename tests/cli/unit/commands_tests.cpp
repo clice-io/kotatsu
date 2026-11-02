@@ -16,6 +16,7 @@ struct Top {
 };
 
 struct Tool {
+    KANNOTATE(&verbose, cli::global = true)
     bool verbose = false;
     cli::Commands<Top> command;
 };

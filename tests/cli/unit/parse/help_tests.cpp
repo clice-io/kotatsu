@@ -35,9 +35,9 @@ struct Remote {
 };
 
 struct Tool {
-    KANNOTATE(&config, presence = required)
+    KANNOTATE(&config, presence = required, cli::global = true)
     std::string config;
-    KANNOTATE(&path, cli::positional = true)
+    KANNOTATE(&path, cli::positional = true, cli::global = true)
     std::string path;
     std::variant<Serve, Index, Remote> command;
 };
@@ -47,7 +47,7 @@ struct Top {
 };
 
 struct Daemon {
-    KANNOTATE(&jobs, presence = required)
+    KANNOTATE(&jobs, presence = required, cli::global = true)
     int jobs = 0;
     cli::Commands<Top> command;
 };

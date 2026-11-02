@@ -45,6 +45,7 @@ struct ProjectFiles {
 };
 
 struct Tool {
+    KANNOTATE(&verbose, cli::global = true)
     bool verbose = false;
     std::variant<Serve, ProjectFiles> command;
 };
@@ -61,8 +62,28 @@ struct Query {
 };
 
 struct Daemon {
-    KANNOTATE(&config, presence = required)
+    KANNOTATE(&config, presence = required, cli::global = true)
     std::string config;
+    std::variant<Serve> command;
+};
+
+/// A command with a job of its own, beside subcommands that take none of its arguments.
+struct Indexer {
+    std::optional<std::string> workspace;
+    KANNOTATE(&json, presence = required)
+    bool json = false;
+    std::optional<std::variant<Serve>> operation;
+};
+
+/// Options every subcommand shares, in a group.
+struct Shared {
+    int level = 0;
+};
+
+struct Grouped {
+    KANNOTATE(&shared, cli::global = true)
+    Shared shared;
+    bool own = false;
     std::variant<Serve> command;
 };
 
@@ -121,6 +142,53 @@ ZEST_CASE(command_s_option_after_the_subcommand_fails) {
     ZASSERT(tool.error() != nullptr);
     ZEXPECT(tool.error()->kind == Error::Kind::UnknownOption);
     ZEXPECT(tool.error()->begin == 1U);
+}
+
+ZEST_CASE(command_s_option_before_a_subcommand_fails) {
+    auto indexer = parse_line<Indexer>("--workspace /b serve");
+    ZASSERT(indexer.error() != nullptr);
+    ZEXPECT(indexer.error()->kind == Error::Kind::Conflict);
+    ZEXPECT(indexer.error()->message ==
+            "subcommand 'serve' cannot be used with --workspace <value>");
+    // At the subcommand's word.
+    ZEXPECT(indexer.error()->begin == 2U);
+}
+
+ZEST_CASE(command_s_flag_before_a_subcommand_fails) {
+    auto indexer = parse_line<Indexer>("--json serve");
+    ZASSERT(indexer.error() != nullptr);
+    ZEXPECT(indexer.error()->kind == Error::Kind::Conflict);
+    ZEXPECT(indexer.error()->message == "subcommand 'serve' cannot be used with --json");
+}
+
+ZEST_CASE(command_s_positional_before_a_subcommand_fails) {
+    auto main = parse_line<Main>("a.cc serve");
+    ZASSERT(main.error() != nullptr);
+    ZEXPECT(main.error()->kind == Error::Kind::Conflict);
+    ZEXPECT(main.error()->message == "subcommand 'serve' cannot be used with <value>");
+}
+
+ZEST_CASE(command_s_required_option_is_not_required_with_a_subcommand) {
+    auto indexer = parse_line<Indexer>("serve --port 3");
+    ZASSERT(indexer.has_value());
+    ZASSERT(indexer->operation.has_value());
+    ZEXPECT(std::get<Serve>(*indexer->operation).port == 3);
+}
+
+ZEST_CASE(command_s_option_without_a_subcommand_is_read) {
+    auto indexer = parse_line<Indexer>("--workspace /b --json");
+    ZASSERT(indexer.has_value());
+    ZEXPECT(indexer->workspace == std::optional<std::string>("/b"));
+    ZEXPECT(!indexer->operation.has_value());
+}
+
+ZEST_CASE(global_group_goes_with_a_subcommand) {
+    auto grouped = parse_line<Grouped>("--level 2 serve");
+    ZASSERT(grouped.has_value());
+    ZEXPECT(grouped->shared.level == 2);
+    auto own = parse_line<Grouped>("--own serve");
+    ZASSERT(own.error() != nullptr);
+    ZEXPECT(own.error()->kind == Error::Kind::Conflict);
 }
 
 ZEST_CASE(missing_subcommand_fails) {

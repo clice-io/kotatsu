@@ -6,7 +6,8 @@ of a `KANNOTATE`, the macro [codec](codec.md) uses, say anything more. An
 option may be left out unless its field's presence is required
 (`presence = required`). A nested struct is a group of options, a
 `std::optional` of one is given all or nothing, and a `std::variant` of structs
-is a set of subcommands. Every command, the program's and each subcommand's,
+is a set of subcommands, whose word conflicts with an argument of the command
+given before it, unless the argument is `cli::global`. Every command, the program's and each subcommand's,
 takes `-h` and `--help` without a field for it, each unless an option of its own
 takes that name: `cli::parse` then stops and says which command's usage was
 asked for, a `cli::Help`, beside the options and an `Error` in the
@@ -71,7 +72,7 @@ Adapted from `tests/cli/unit/parse/positional_tests.cpp`, `tests/cli/unit/parse/
 | Header                                          | Contents                                                                                                                                                                                                                                                                                              |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [cli.h](../include/kotatsu/cli/cli.h)           | The headers below but the table, `KANNOTATE` and `KANNOTATE_TYPE`                                                                                                                                                                                                                                     |
-| [spec.h](../include/kotatsu/cli/spec.h)         | `ArgSpec`, what a field's `cli::` attributes say (`names`, `positional`, `rest`, `count`, `stop`, `hidden`, `exclusive`, ...), `Alias`                                                                                                                                                                |
+| [spec.h](../include/kotatsu/cli/spec.h)         | `ArgSpec`, what a field's `cli::` attributes say (`names`, `positional`, `rest`, `count`, `stop`, `hidden`, `exclusive`, `global`, ...), `Alias`                                                                                                                                                      |
 | [parse.h](../include/kotatsu/cli/parse.h)       | `parse<T>`, from a `string_list_ref` or any range of strings, and `parse_into`, onto options already held, each with a visit of the arguments it reads, and `Given`; `Parsed`, what they return: the options, the `Help` the argv asks for, or an `Error`; `format`, the codec format they read under |
 | [commands.h](../include/kotatsu/cli/commands.h) | `Commands<Tag>`, a field of subcommands files add with `add_command`, which calling runs and a usage lists by name                                                                                                                                                                                    |
 | [error.h](../include/kotatsu/cli/error.h)       | `Error`, its `Kind`, the argv span at fault, its subcommands and a suggestion, and `render`, under a `Style`                                                                                                                                                                                          |
