@@ -1,6 +1,7 @@
 // Mistakes in a struct of options, which keep it from compiling: checked here as whether the
 // check of the declaration is a constant expression.
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -41,6 +42,13 @@ struct Twice {
     std::string first;
     KANNOTATE(&second, cli::names = {"-o"})
     std::string second;
+};
+
+/// A generated name, '_' spelled '-', that another field names as written.
+struct GeneratedTwice {
+    bool log_level = false;
+    KANNOTATE(&other, cli::names = {"--log-level"})
+    bool other = false;
 };
 
 struct Inner {
@@ -199,7 +207,114 @@ struct PositionalsInTwoAlternatives {
     std::variant<First, Second> field;
 };
 
+/// A command of many options, most of them generated names with an '=' form each, in groups
+/// its seven subcommands repeat: one check of them all must stay within a compiler's default
+/// constant-evaluation steps, under a standard library whose strings are instrumented for ASan
+/// too.
+namespace large {
+
+enum class Level : std::uint8_t { Trace, Debug, Info, Warn, Error, Off };
+
+struct Log {
+    Level log_level = Level::Warn;
+};
+
+struct Build {
+    std::string configuration;
+};
+
+struct Project {
+    std::optional<std::string> workspace;
+    Build build;
+};
+
+struct Model {
+    std::vector<std::string> scope;
+    std::vector<std::string> exclude;
+    int dir_depth = 0;
+    std::string partition;
+    std::string library;
+    std::string format;
+    std::vector<std::string> move;
+    std::vector<std::string> merge;
+    std::vector<std::string> move_entity;
+    bool all_targets = false;
+    std::string target;
+    std::vector<std::string> define;
+    Project where;
+};
+
+struct Weights {
+    std::vector<std::string> annotation;
+    std::string churn_since;
+    int window = 0;
+};
+
+struct Edge {
+    KANNOTATE(&modules, presence = required, cli::positional = true, cli::arg_num = 2)
+    std::vector<std::string> modules;
+    Model model;
+    Log log;
+};
+
+struct Module {
+    KANNOTATE(&module, cli::positional = true)
+    std::string module;
+    Model model;
+    Log log;
+};
+
+struct File {
+    KANNOTATE(&path, cli::positional = true)
+    std::string path;
+    Model model;
+    Weights weights;
+    Log log;
+};
+
+struct Obstacles {
+    Model model;
+    Log log;
+};
+
+struct Macros {
+    Model model;
+    Log log;
+};
+
+struct Impact {
+    Model model;
+    Weights weights;
+    Log log;
+};
+
+struct Interface {
+    KANNOTATE(&module, cli::positional = true)
+    std::optional<std::string> module;
+    Model model;
+    Log log;
+};
+
+struct Modules {
+    int limit = 20;
+    Model model;
+    Weights weights;
+    Log log;
+    std::optional<std::variant<Edge, Module, File, Obstacles, Macros, Impact, Interface>> operation;
+};
+
+struct Analyze {
+    KANNOTATE(&operation, presence = required)
+    std::variant<Modules> operation;
+};
+
+}  // namespace large
+
 ZEST_SUITE(cli_declaration) {
+
+ZEST_CASE(large_options_compile) {
+    ZSTATIC_EXPECT(declared<large::Analyze>);
+}
 
 ZEST_CASE(sound_options_compile) {
     ZSTATIC_EXPECT(declared<Fine>);
@@ -207,6 +322,10 @@ ZEST_CASE(sound_options_compile) {
 
 ZEST_CASE(two_options_of_one_name_do_not_compile) {
     ZSTATIC_EXPECT(!declared<Twice>);
+}
+
+ZEST_CASE(generated_name_another_field_gives_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<GeneratedTwice>);
 }
 
 ZEST_CASE(group_naming_an_option_of_its_command_does_not_compile) {

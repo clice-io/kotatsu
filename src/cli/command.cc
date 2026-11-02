@@ -107,12 +107,12 @@ class Builder {
     /// The '=' forms of the names, named once every field has named its own.
     std::vector<std::pair<NameForm, std::uint32_t>> equals_forms;
 
-    void add_option(const NameForm& form, std::uint32_t arg) {
+    void add_option(std::string name, OptionKind kind, std::uint32_t arg) {
         const auto id = static_cast<std::uint32_t>(command.options.size() + 1);
-        const auto& spelling = command.spellings.emplace_back(form.name);
+        const auto& spelling = command.spellings.emplace_back(std::move(name));
         command.options.push_back(
-            Option::unaliased_one(prefixes_of(spelling), spelling, id, form.kind, 0, "", ""));
-        if(form.kind == OptionKind::MultiArg) {
+            Option::unaliased_one(prefixes_of(spelling), spelling, id, kind, 0, "", ""));
+        if(kind == OptionKind::MultiArg) {
             command.options.back().num_args =
                 static_cast<unsigned char>(command.args[arg].tuple_size);
         }
@@ -123,12 +123,13 @@ class Builder {
     /// writes its value separate.
     void name_equals_forms() {
         for(const auto& [form, index]: equals_forms) {
-            if(std::ranges::find(command.spellings, form.name) == command.spellings.end()) {
-                add_option(form, index);
+            auto name = form.name.text();
+            if(std::ranges::find(command.spellings, name) == command.spellings.end()) {
+                add_option(std::move(name), form.kind, index);
                 continue;
             }
             auto& arg = command.args[index];
-            if(arg.form == Form::Equals && arg.write_name + "=" == form.name) {
+            if(arg.form == Form::Equals && arg.write_name + "=" == name) {
                 arg.form = Form::Separate;
             }
         }
@@ -138,39 +139,45 @@ class Builder {
     /// write it.
     void name(std::uint32_t index) {
         auto& arg = command.args[index];
-        const auto forms = name_forms(arg, arg.field->declared_name);
+        std::vector<NameForm> forms;
+        name_forms(arg, arg.field->declared_name, [&](const NameForm& form) {
+            forms.push_back(form);
+        });
         const auto token = value_token(arg);
         std::vector<std::string> own;
         std::vector<std::string> separate;
         std::vector<std::string> joined;
         for(const auto& form: forms) {
+            const auto name = form.name.text();
             switch(form.role) {
                 case NameForm::Role::Own:
-                    add_option(form, index);
-                    own.push_back(form.name);
+                    add_option(name, form.kind, index);
+                    own.push_back(name);
                     if(form.kind == OptionKind::Separate) {
-                        separate.push_back(form.name);
+                        separate.push_back(name);
                     } else if(form.kind == OptionKind::Joined) {
-                        joined.push_back(form.name + token);
+                        joined.push_back(name + token);
                     } else if(form.kind == OptionKind::CommaJoined) {
-                        joined.push_back(std::format("{}{}[,{}...]", form.name, token, token));
+                        joined.push_back(std::format("{}{}[,{}...]", name, token, token));
                     }
                     break;
-                case NameForm::Role::OnlyEquals:
-                    joined.push_back(form.name + token);
-                    [[fallthrough]];
+                case NameForm::Role::OnlyEquals: joined.push_back(name + token); [[fallthrough]];
                 case NameForm::Role::Equals: equals_forms.emplace_back(form, index); break;
             }
         }
         // The first name writes the option: after '=' when it has an '=' form, which reads
         // back any value.
         const auto& first = forms.front();
-        arg.write_name = first.role == NameForm::Role::Own
-                             ? first.name
-                             : first.name.substr(0, first.name.size() - 1);
+        const auto first_name = first.name.text();
+        auto write = first.name;
+        auto equals = first.name;
+        if(first.role != NameForm::Role::Own) {
+            write.suffix = '\0';
+        }
+        equals.suffix = '=';
+        arg.write_name = write.text();
         if(first.role != NameForm::Role::Own ||
-           (forms.size() > 1 && forms[1].role != NameForm::Role::Own &&
-            forms[1].name == first.name + "=")) {
+           (forms.size() > 1 && forms[1].role != NameForm::Role::Own && forms[1].name == equals)) {
             arg.form = Form::Equals;
         } else if(first.kind == OptionKind::Joined || first.kind == OptionKind::CommaJoined) {
             arg.form = Form::Joined;
@@ -181,11 +188,11 @@ class Builder {
             case Shape::Count:
             case Shape::Alias:
                 arg.usage = join(own, "|");
-                arg.synopsis = first.name;
+                arg.synopsis = first_name;
                 return;
             case Shape::Tuple:
                 arg.usage = std::format("{} {}", join(own, "|"), numbered(token, arg.tuple_size));
-                arg.synopsis = std::format("{} {}", first.name, numbered(token, arg.tuple_size));
+                arg.synopsis = std::format("{} {}", first_name, numbered(token, arg.tuple_size));
                 return;
             case Shape::Value: break;
         }
@@ -196,7 +203,7 @@ class Builder {
         usages.insert(usages.end(), joined.begin(), joined.end());
         arg.usage = join(usages, "|");
         // A first name that takes its value joined is the first of `joined`.
-        arg.synopsis = first.kind == OptionKind::Separate ? std::format("{} {}", first.name, token)
+        arg.synopsis = first.kind == OptionKind::Separate ? std::format("{} {}", first_name, token)
                                                           : joined.front();
     }
 
@@ -379,7 +386,7 @@ public:
             if(std::ranges::none_of(command.spellings, [&](std::string_view spelling) {
                    return takes(spelling, name);
                })) {
-                add_option(NameForm{.name = std::string(name), .kind = OptionKind::Flag}, help_arg);
+                add_option(std::string(name), OptionKind::Flag, help_arg);
                 help_names.push_back(name);
             }
         }

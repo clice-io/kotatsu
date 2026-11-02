@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -133,6 +134,53 @@ constexpr FieldUse use_of(const codec::field_info& field) {
     return use;
 }
 
+/// A name an option registers, read off its declaration rather than built: `dashes` and `stem`,
+/// '_' in the stem spelled '-' when the name is generated from a declared one, then `suffix`,
+/// '=' or ',' or none. Building no string keeps the check of a declaration cheap enough for a
+/// compiler's constant evaluation.
+struct Spelling {
+    std::string_view dashes = {};
+    std::string_view stem = {};
+    bool generated = false;
+    char suffix = '\0';
+
+    constexpr std::size_t size() const {
+        return dashes.size() + stem.size() + (suffix == '\0' ? 0 : 1);
+    }
+
+    constexpr char operator[](std::size_t index) const {
+        if(index < dashes.size()) {
+            return dashes[index];
+        }
+        index -= dashes.size();
+        if(index == stem.size()) {
+            return suffix;
+        }
+        return generated && stem[index] == '_' ? '-' : stem[index];
+    }
+
+    constexpr bool operator==(const Spelling& other) const {
+        const auto length = size();
+        if(other.size() != length) {
+            return false;
+        }
+        for(std::size_t i = 0; i < length; ++i) {
+            if((*this)[i] != other[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    std::string text() const {
+        std::string text(size(), '\0');
+        for(std::size_t i = 0; i < text.size(); ++i) {
+            text[i] = (*this)[i];
+        }
+        return text;
+    }
+};
+
 /// One spelling an option registers: a name of its own, or the '=' form of one, which a field
 /// naming it so keeps unless it is the only form its option takes.
 struct NameForm {
@@ -142,75 +190,69 @@ struct NameForm {
         OnlyEquals,
     };
 
-    std::string name;
+    Spelling name;
     OptionKind kind = OptionKind::Flag;
     Role role = Role::Own;
 };
 
-/// The names an option is given by: its own, else its declared name with '_' spelled '-',
-/// after "-" when one letter long and "--" otherwise.
-constexpr std::vector<std::string> names_of(const ArgSpec& spec, std::string_view declared) {
-    std::vector<std::string> names;
-    for(auto name: spec.names) {
-        names.emplace_back(name);
-    }
-    if(names.empty()) {
-        auto name = std::string(declared.size() == 1 ? "-" : "--") + std::string(declared);
-        std::ranges::replace(name, '_', '-');
-        names.push_back(std::move(name));
-    }
-    return names;
-}
-
-/// The spellings a named option registers, in the order of its names.
-constexpr std::vector<NameForm> name_forms(const FieldUse& use, std::string_view declared) {
-    std::vector<NameForm> forms;
-    const auto names = names_of(use.spec, declared);
+/// Passes `add` each spelling a named option registers, in the order of its names: its own, else
+/// its declared name with '_' spelled '-', after "-" when one letter long and "--" otherwise.
+template <typename F>
+constexpr void name_forms(const FieldUse& use, std::string_view declared, F&& add) {
+    auto each_name = [&](auto&& form) {
+        if(use.spec.names.empty()) {
+            form(Spelling{.dashes = declared.size() == 1 ? "-" : "--",
+                          .stem = declared,
+                          .generated = true});
+        }
+        for(auto name: use.spec.names) {
+            form(Spelling{.stem = name});
+        }
+    };
     switch(use.shape) {
         case Shape::Flag:
         case Shape::Count:
         case Shape::Alias:
-            for(const auto& name: names) {
-                forms.push_back(NameForm{.name = name, .kind = OptionKind::Flag});
-            }
-            return forms;
+            each_name([&](const Spelling& name) {
+                add(NameForm{.name = name, .kind = OptionKind::Flag});
+            });
+            return;
         case Shape::Tuple:
-            for(const auto& name: names) {
-                forms.push_back(NameForm{.name = name, .kind = OptionKind::MultiArg});
-            }
-            return forms;
+            each_name([&](const Spelling& name) {
+                add(NameForm{.name = name, .kind = OptionKind::MultiArg});
+            });
+            return;
         case Shape::Value: break;
     }
     if(use.spec.comma) {
-        for(auto name: names) {
-            if(!name.ends_with(',')) {
-                name.push_back(',');
+        each_name([&](Spelling name) {
+            if(!name.stem.ends_with(',')) {
+                name.suffix = ',';
             }
-            forms.push_back(NameForm{.name = std::move(name), .kind = OptionKind::CommaJoined});
-        }
-        return forms;
+            add(NameForm{.name = name, .kind = OptionKind::CommaJoined});
+        });
+        return;
     }
     const auto style = use.spec.style;
-    const bool generated = use.spec.names.empty();
-    for(const auto& name: names) {
+    each_name([&](const Spelling& name) {
         // A generated name of a Joined option takes its value after '='.
         const bool joins =
-            generated ? !has_style(style, KVStyle::Separate) : joined_name(style, name);
-        if(joins && !generated) {
-            forms.push_back(NameForm{.name = name, .kind = OptionKind::Joined});
-            continue;
+            name.generated ? !has_style(style, KVStyle::Separate) : joined_name(style, name.stem);
+        if(joins && !name.generated) {
+            add(NameForm{.name = name, .kind = OptionKind::Joined});
+            return;
         }
         if(!joins) {
-            forms.push_back(NameForm{.name = name, .kind = OptionKind::Separate});
+            add(NameForm{.name = name, .kind = OptionKind::Separate});
         }
         if(has_style(style, KVStyle::Joined)) {
-            forms.push_back(
-                NameForm{.name = name + "=",
+            auto equals = name;
+            equals.suffix = '=';
+            add(NameForm{.name = equals,
                          .kind = OptionKind::Joined,
                          .role = joins ? NameForm::Role::OnlyEquals : NameForm::Role::Equals});
         }
-    }
-    return forms;
+    });
 }
 
 /// The word that names alternative `index` of a variant of subcommands: its tag name, else its
@@ -222,12 +264,62 @@ constexpr std::string subcommand_name(const codec::variant_type_info& variant, s
     return kebab(variant.alternatives[index]().type_name);
 }
 
+/// Whether `values` holds `value`, by a plain loop: std::ranges::find takes a constant
+/// evaluation several times the steps, which the many names of a large command add up.
+template <typename T>
+constexpr bool holds(std::span<const T> values, const T& value) {
+    for(const auto& held: values) {
+        if(held == value) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Whether two of `values` are equal: pairwise, which for the few names of a command takes a
+/// constant evaluation fewer steps than sorting them.
+template <typename T>
+constexpr bool repeats(std::span<const T> values) {
+    for(std::size_t i = 0; i < values.size(); ++i) {
+        if(holds<T>(values.subspan(i + 1), values[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Checks what a struct of options declares, and the subcommands it holds, failing the
 /// constant evaluation it runs in, when there, at the first mistake.
 class DeclarationCheck {
-    std::vector<std::string> names;
+    /// A name with a hash of it (FNV-1a), which tells most two names apart without reading them
+    /// again.
+    struct Name {
+        Spelling spelling;
+        std::uint64_t hash = 0xcbf29ce484222325;
+
+        constexpr explicit Name(const Spelling& spelling) : spelling(spelling) {
+            auto mix = [&](char c) {
+                hash = (hash ^ static_cast<unsigned char>(c)) * 0x100000001b3;
+            };
+            for(char c: spelling.dashes) {
+                mix(c);
+            }
+            for(char c: spelling.stem) {
+                mix(spelling.generated && c == '_' ? '-' : c);
+            }
+            if(spelling.suffix != '\0') {
+                mix(spelling.suffix);
+            }
+        }
+
+        constexpr bool operator==(const Name& other) const {
+            return hash == other.hash && spelling == other.spelling;
+        }
+    };
+
+    std::vector<Name> names;
     std::vector<NameForm> equals_forms;
-    std::vector<std::string> alias_names;
+    std::vector<Name> alias_names;
     std::vector<std::string_view> forwards;
     bool rest = false;
     bool subcommands = false;
@@ -243,10 +335,8 @@ class DeclarationCheck {
         subcommands = true;
     }
 
-    constexpr void check_name(std::string_view name) {
-        const bool prefixed = (name.starts_with("--") && name.size() > 2) ||
-                              ((name.starts_with('-') || name.starts_with('/')) && name.size() > 1);
-        if(!prefixed) {
+    constexpr void check_name(const Spelling& name) {
+        if(name.size() < 2 || (name[0] != '-' && name[0] != '/')) {
             KOTATSU_THROW("cli: an option name starts with '-', '--' or '/' and goes on");
         }
     }
@@ -272,8 +362,7 @@ class DeclarationCheck {
                 KOTATSU_THROW("cli: a hidden subcommand is one of the field's");
             }
         }
-        std::ranges::sort(words);
-        if(std::ranges::adjacent_find(words) != words.end()) {
+        if(repeats<std::string>(words)) {
             KOTATSU_THROW("cli: two subcommands are named the same");
         }
     }
@@ -319,17 +408,17 @@ class DeclarationCheck {
         if(use.spec.comma && !use.list) {
             KOTATSU_THROW("cli: a comma option is a list");
         }
-        for(auto& form: name_forms(use, field.declared_name)) {
+        name_forms(use, field.declared_name, [&](const NameForm& form) {
             check_name(form.name);
             if(use.shape == Shape::Alias) {
-                alias_names.push_back(form.name);
+                alias_names.emplace_back(form.name);
             }
             if(form.role == NameForm::Role::Own) {
-                names.push_back(std::move(form.name));
+                names.emplace_back(form.name);
             } else {
-                equals_forms.push_back(std::move(form));
+                equals_forms.push_back(form);
             }
-        }
+        });
         if(use.shape == Shape::Alias) {
             forwards.insert(forwards.end(), use.spec.forward.begin(), use.spec.forward.end());
         }
@@ -368,22 +457,22 @@ public:
     constexpr void check(const codec::struct_type_info& type) {
         add_struct(type);
         // An '=' form yields to an option named so, unless it is the only form of its own.
-        for(auto& form: equals_forms) {
-            const bool named = std::ranges::find(names, form.name) != names.end();
+        for(const auto& form: equals_forms) {
+            const Name name(form.name);
+            const bool named = holds<Name>(names, name);
             if(named && form.role == NameForm::Role::OnlyEquals) {
                 KOTATSU_THROW("cli: two options are named the same");
             }
             if(!named) {
-                names.push_back(std::move(form.name));
+                names.push_back(name);
             }
         }
         for(auto token: forwards) {
-            if(std::ranges::find(alias_names, token) != alias_names.end()) {
+            if(holds<Name>(alias_names, Name(Spelling{.stem = token}))) {
                 KOTATSU_THROW("cli: an alias stands for another alias");
             }
         }
-        std::ranges::sort(names);
-        if(std::ranges::adjacent_find(names) != names.end()) {
+        if(repeats<Name>(names)) {
             KOTATSU_THROW("cli: two options are named the same");
         }
     }
