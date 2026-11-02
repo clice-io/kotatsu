@@ -4,8 +4,8 @@
 #include <limits>
 #include <string_view>
 
+#include "kotatsu/support/config.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/codec/attribute.h"
 
 namespace kotatsu::cli {
 
@@ -57,7 +57,8 @@ struct ArgSpec {
     /// name with '_' spelled '-', after "-" when one letter long and "--" otherwise.
     meta::name_list names = {};
     /// What a usage shows for its value: "<FILE>". Without, the names of an enum, else
-    /// "<value>".
+    /// "<value>". For a field of subcommands, what a usage line writes for the subcommand:
+    /// "<operation>"; without, "<command>".
     std::string_view meta_var = {};
     /// Whether it takes positional arguments rather than being named. Positional fields take
     /// the arguments in the order they are declared; a list takes as many as follow.
@@ -67,7 +68,7 @@ struct ArgSpec {
     /// Whether a flag counts how often it is given (`-v -v -v`) rather than whether it is.
     bool count = false;
     /// Whether giving it ends the parse: nothing after it is read, and nothing required is
-    /// checked. The help option's does.
+    /// checked. A --version option's does.
     bool stop = false;
     KVStyle style = KVStyle::JoinedOrSeparate;
     /// Whether a list takes its values joined to its name by commas: "--tags,a,b".
@@ -117,16 +118,5 @@ struct ArgSpec {
 struct Alias {
     constexpr bool operator==(const Alias&) const = default;
 };
-
-/// The standard help option, `-h` and `--help`, as a bundle of attributes: given, it ends the
-/// parse where it stands, so that nothing required is missed, and the caller finds it set and
-/// prints the usage.
-///
-///     KANNOTATE(&help, cli::help)
-///     bool help = false;
-[[maybe_unused]] constexpr inline auto help =
-    meta::make_annotation(codec::dsl::description = "display this help and exit",
-                          names = {"-h", "--help"},
-                          stop = true);
 
 }  // namespace kotatsu::cli

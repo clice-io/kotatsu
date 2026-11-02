@@ -66,7 +66,7 @@ ZEST_CASE(report_writes_the_rendered_error_and_a_newline) {
 }
 
 ZEST_CASE(print_usage_writes_the_usage) {
-    ZEXPECT(captured([](int fd) { cli::print_usage<Options>("tool", fd); }) ==
+    ZEXPECT(captured([](int fd) { cli::print_usage<Options>("tool", {}, fd); }) ==
             cli::usage<Options>("tool"));
 }
 

@@ -23,6 +23,8 @@ constexpr std::uint32_t no_group = std::numeric_limits<std::uint32_t>::max();
 constexpr std::uint32_t no_arg = std::numeric_limits<std::uint32_t>::max();
 constexpr std::uint32_t no_exclusive = std::numeric_limits<std::uint32_t>::max();
 constexpr std::uint32_t no_alternative = std::numeric_limits<std::uint32_t>::max();
+/// What an option of the help a command takes reads into, in place of an argument.
+constexpr std::uint32_t help_arg = no_arg - 1;
 
 /// How to_argv() writes a value of a named option.
 enum class Form : std::uint8_t {
@@ -48,6 +50,8 @@ struct Arg : FieldUse {
     std::string path = {};
     /// How a usage writes it: "-o|--output <FILE>".
     std::string usage = {};
+    /// How a usage line writes it, by its first name alone: "-o <FILE>".
+    std::string synopsis = {};
     /// The name to_argv() writes it with, and how it writes a value.
     std::string write_name = {};
     Form form = Form::Separate;
@@ -88,6 +92,9 @@ struct Subcommands {
     std::string path = {};
     bool optional = false;
     std::uint32_t group = no_group;
+    /// What a usage line writes for the subcommand, the field's meta_var; empty for
+    /// "<command>".
+    std::string_view meta_var = {};
     /// The word naming each alternative, what each is (its struct's description), and
     /// whether a usage leaves it out.
     std::vector<std::string> names = {};
@@ -109,11 +116,14 @@ struct Command {
     std::optional<std::uint32_t> rest;
     std::optional<Subcommands> subcommands;
     std::vector<Exclusive> exclusives;
+    /// How a usage writes the help option, by the names it takes of -h and --help, those the
+    /// command does not name an option itself: "-h|--help"; empty when it names both.
+    std::string help_usage;
 
     /// The option names the table views.
     std::deque<std::string> spellings;
     std::vector<Option> options;
-    /// The argument each option id reads into.
+    /// The argument each option id reads into, or help_arg.
     std::vector<std::uint32_t> arg_of;
     std::unique_ptr<OptTable> table;
     ParseOptions parse_options;

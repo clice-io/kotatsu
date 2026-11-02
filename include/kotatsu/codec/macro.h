@@ -50,11 +50,11 @@
 /// the attributes written after it override. Written at namespace scope:
 ///
 ///     namespace app {
-///     KANNOTATION(help_option, description = "display this help", cli::names = {"-h", "--help"});
+///     KANNOTATION(version_option, description = "print the version", cli::stop = true);
 ///     }
 ///
-///     KANNOTATE(&help, app::help_option, description = "show usage")
-///     bool help = false;
+///     KANNOTATE(&version, app::version_option, description = "print the version and exit")
+///     bool version = false;
 ///
 /// In a class, a bundle named like one of its members is named with its namespace.
 #define KANNOTATION(name, ...)                                                                     \

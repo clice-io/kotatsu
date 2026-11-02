@@ -4,6 +4,7 @@
 
 #include "kotatsu/cli/error.h"
 #include "kotatsu/cli/usage.h"
+#include "kotatsu/support/string_list_ref.h"
 
 namespace kotatsu::cli {
 
@@ -22,11 +23,11 @@ void write_out(int fd, std::string_view text);
 
 }  // namespace detail
 
-/// Writes the usage of the options `T` declares, in the style for `fd`, to descriptor `fd`,
-/// the standard output by default: what a program says for --help.
+/// Writes usage<T>(), in the style for `fd`, to descriptor `fd`, the standard output by
+/// default: what a program says for --help, of the command its Help names.
 template <typename T>
-void print_usage(std::string_view usage_line, int fd = 1) {
-    detail::write_out(fd, usage<T>(usage_line, style_for(fd)));
+void print_usage(std::string_view program, string_list_ref subcommands = {}, int fd = 1) {
+    detail::write_out(fd, usage<T>(program, subcommands, style_for(fd)));
 }
 
 }  // namespace kotatsu::cli

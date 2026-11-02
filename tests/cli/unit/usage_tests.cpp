@@ -28,8 +28,6 @@ struct Remote {
 KANNOTATE_TYPE(struct Serve, description = "Start the server");
 
 struct Serve {
-    KANNOTATE(&help, cli::help)
-    bool help = false;
     KANNOTATE(&mode, description = "Server mode")
     Mode mode = Mode::Pipe;
     KANNOTATE(&jobs, cli::names = {"-j", "--jobs"}, cli::meta_var = "<N>", description = "Workers")
@@ -51,8 +49,6 @@ struct Query {};
 KANNOTATE_TYPE(struct Tool, description = "A tool");
 
 struct Tool {
-    KANNOTATE(&help, cli::help)
-    bool help = false;
     std::variant<Serve, Query> command;
 };
 
@@ -86,25 +82,83 @@ struct Unnamed {
     int jobs = 2;
 };
 
-/// The help option, kept out of the usage.
-struct QuietHelp {
-    KANNOTATE(&help, cli::help, cli::hidden = true)
-    bool help = false;
-    int jobs = 0;
-};
-
 struct Run {
     KANNOTATE(&command, cli::rest = true, cli::meta_var = "<ARG>")
     std::vector<std::string> command;
 };
 
+/// Options a repr reads from fields of their own, refusing them without a host.
+struct Endpoint {
+    std::string host = "localhost";
+};
+
+struct EndpointFields {
+    std::string host;
+};
+
+struct Connect {
+    KANNOTATE(&command, tagged = true, tag_names = {"endpoint"})
+    std::variant<Endpoint> command;
+};
+
+/// Commands taking one of the help's names, or both, with options of their own.
+struct NamesH {
+    KANNOTATE(&host, cli::names = {"-h", "--host"})
+    std::string host;
+};
+
+struct SlashH {
+    KANNOTATE(&host, cli::names = {"/h"})
+    std::string host;
+};
+
+struct HelpField {
+    bool help = false;
+};
+
+struct BothNames {
+    KANNOTATE(&help, cli::names = {"-h", "--help"})
+    bool help = false;
+};
+
+}  // namespace
+
+}  // namespace kotatsu::cli
+
+template <>
+struct kotatsu::codec::repr<kotatsu::cli::Endpoint> {
+    using type = kotatsu::cli::EndpointFields;
+
+    template <typename F>
+    static bool encode(auto& writer, const kotatsu::cli::Endpoint& endpoint) {
+        return codec::encode_value<F>(writer, kotatsu::cli::EndpointFields{endpoint.host});
+    }
+
+    template <typename F>
+    static bool decode(auto& reader, kotatsu::cli::Endpoint& endpoint) {
+        kotatsu::cli::EndpointFields fields;
+        if(!codec::decode_value<F>(reader, fields)) {
+            return false;
+        }
+        if(fields.host.empty()) {
+            return codec::scoped_context<codec::rich_error>::fail(codec::rich_error("no host"));
+        }
+        endpoint.host = fields.host;
+        return true;
+    }
+};
+
+namespace kotatsu::cli {
+
+namespace {
+
 ZEST_SUITE(cli_usage) {
 
 ZEST_CASE(usage_lists_options_with_their_help) {
-    ZEXPECT(cli::usage<Serve>("tool serve [OPTIONS]") ==
+    ZEXPECT(cli::usage<Tool>("tool", {"serve"}) ==
             "Start the server\n"
             "\n"
-            "usage: tool serve [OPTIONS]\n"
+            "usage: tool serve [<PATH>...] [OPTIONS]\n"
             "\n"
             "Options:\n"
             "  -h|--help                       display this help and exit\n"
@@ -119,11 +173,11 @@ ZEST_CASE(usage_lists_options_with_their_help) {
             "  --host <value>                  Host to connect to\n");
 }
 
-ZEST_CASE(usage_lists_subcommands_with_their_descriptions) {
-    ZEXPECT(cli::usage<Tool>("tool <command>") ==
+ZEST_CASE(usage_lists_subcommands_in_declaration_order) {
+    ZEXPECT(cli::usage<Tool>("tool") ==
             "A tool\n"
             "\n"
-            "usage: tool <command>\n"
+            "usage: tool [OPTIONS] <command>\n"
             "\n"
             "Options:\n"
             "  -h|--help                       display this help and exit\n"
@@ -134,12 +188,12 @@ ZEST_CASE(usage_lists_subcommands_with_their_descriptions) {
 }
 
 ZEST_CASE(long_usage_puts_its_help_below) {
-    const auto usage = cli::usage<Serve>("serve", Style{.help_column = 10});
+    const auto usage = cli::usage<Serve>("serve", {}, Style{.help_column = 10});
     ZEXPECT(usage.contains("  --mode <pipe|socket>\n            Server mode [default: pipe]\n"));
 }
 
 ZEST_CASE(color_look_paints_headings) {
-    const auto usage = cli::usage<Tool>("tool", Style{.color = true});
+    const auto usage = cli::usage<Tool>("tool", {}, Style{.color = true});
     ZEXPECT(usage.contains("\033[1;38;5;81mUsage\033[0m"));
     ZEXPECT(usage.contains("Commands"));
 }
@@ -166,16 +220,17 @@ ZEST_CASE(entries_say_their_group_and_whether_they_repeat) {
 
 ZEST_CASE(rest_is_positional_and_said_once) {
     const auto entries = cli::usage_entries<Run>();
-    ZASSERT(entries.size() == 1U);
-    ZEXPECT(entries[0].kind == UsageEntry::Kind::Positional);
-    ZEXPECT(entries[0].usage == "-- <ARG>...");
-    ZEXPECT(!entries[0].repeatable);
+    ZASSERT(entries.size() == 2U);
+    ZEXPECT(entries[1].kind == UsageEntry::Kind::Positional);
+    ZEXPECT(entries[1].usage == "-- <ARG>...");
+    ZEXPECT(!entries[1].repeatable);
 }
 
 ZEST_CASE(hidden_ones_are_left_out) {
     const auto entries = cli::usage_entries<Internal>();
-    ZASSERT(entries.size() == 1U);
-    ZEXPECT(entries[0].usage == "query");
+    ZASSERT(entries.size() == 2U);
+    ZEXPECT(entries[0].usage == "-h|--help");
+    ZEXPECT(entries[1].usage == "query");
 }
 
 ZEST_CASE(hidden_ones_still_parse) {
@@ -187,42 +242,66 @@ ZEST_CASE(hidden_ones_still_parse) {
 
 ZEST_CASE(entries_say_defaults_and_ranges) {
     const auto entries = cli::usage_entries<Tuned>();
-    ZASSERT(entries.size() == 4U);
-    ZEXPECT(entries[0].default_value == "4");
-    ZEXPECT(entries[0].range == "1..64");
-    ZEXPECT(entries[2].default_value == "a, b");
-    ZEXPECT(entries[3].default_value.empty());
+    ZASSERT(entries.size() == 5U);
+    ZEXPECT(entries[1].default_value == "4");
+    ZEXPECT(entries[1].range == "1..64");
+    ZEXPECT(entries[3].default_value == "a, b");
+    ZEXPECT(entries[4].default_value.empty());
 }
 
 ZEST_CASE(choices_are_the_value_token) {
     const auto entries = cli::usage_entries<Tuned>();
-    ZASSERT(entries.size() == 4U);
-    ZEXPECT(entries[1].usage == "--mode <fast|slow>");
-    ZEXPECT(entries[1].default_value == "fast");
+    ZASSERT(entries.size() == 5U);
+    ZEXPECT(entries[2].usage == "--mode <fast|slow>");
+    ZEXPECT(entries[2].default_value == "fast");
 }
 
 ZEST_CASE(help_says_default_and_range) {
     ZEXPECT(cli::usage<Tuned>("tuned").contains("Workers [default: 4] [range: 1..64]"));
 }
 
+ZEST_CASE(program_s_defaults_are_written_without_being_read) {
+    ZEXPECT(cli::usage<Endpoint>("tool").contains("[default: localhost]"));
+}
+
+ZEST_CASE(subcommand_a_repr_refuses_to_read_says_no_defaults) {
+    const auto usage = cli::usage<Connect>("tool", {"endpoint"});
+    ZEXPECT(usage.contains("--host <value>"));
+    ZEXPECT(!usage.contains("[default:"));
+}
+
+ZEST_CASE(help_entry_lists_the_names_the_command_leaves_it) {
+    const auto names_h = cli::usage_entries<NamesH>();
+    ZASSERT(names_h.size() == 2U);
+    ZEXPECT(names_h[0].usage == "--help");
+    ZEXPECT(names_h[1].usage == "-h|--host <value>");
+    const auto slash_h = cli::usage_entries<SlashH>();
+    ZASSERT(slash_h.size() == 2U);
+    ZEXPECT(slash_h[0].usage == "--help");
+    const auto help_field = cli::usage_entries<HelpField>();
+    ZASSERT(help_field.size() == 2U);
+    ZEXPECT(help_field[0].usage == "-h");
+    ZEXPECT(help_field[1].usage == "--help");
+}
+
+ZEST_CASE(command_taking_both_names_lists_no_help_entry) {
+    const auto entries = cli::usage_entries<BothNames>();
+    ZASSERT(entries.size() == 1U);
+    ZEXPECT(entries[0].usage == "-h|--help");
+    ZEXPECT(entries[0].help.empty());
+}
+
 ZEST_CASE(required_option_has_no_default) {
     const auto entries = cli::usage_entries<Must>();
-    ZASSERT(entries.size() == 1U);
-    ZEXPECT(entries[0].default_value.empty());
+    ZASSERT(entries.size() == 2U);
+    ZEXPECT(entries[1].default_value.empty());
 }
 
 ZEST_CASE(value_that_does_not_write_has_no_default) {
     const auto entries = cli::usage_entries<Unnamed>();
-    ZASSERT(entries.size() == 2U);
-    ZEXPECT(entries[0].default_value.empty());
-    ZEXPECT(entries[1].default_value == "2");
-}
-
-ZEST_CASE(annotated_help_option_still_stops_and_is_left_out) {
-    auto quiet = cli::parse<QuietHelp>(std::vector<std::string>{"--help", "--jobs", "x"});
-    ZASSERT(quiet.has_value());
-    ZEXPECT(quiet->help);
-    ZEXPECT(!cli::usage<QuietHelp>("quiet").contains("--help"));
+    ZASSERT(entries.size() == 3U);
+    ZEXPECT(entries[1].default_value.empty());
+    ZEXPECT(entries[2].default_value == "2");
 }
 
 };  // ZEST_SUITE(cli_usage)

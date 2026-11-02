@@ -22,6 +22,7 @@
 #include "kotatsu/zest/runner/run.h"
 #include "kotatsu/zest/snapshot/snapshot.h"
 #include "kotatsu/support/glob_pattern.h"
+#include "kotatsu/fs/path.h"
 #include "kotatsu/sys/process.h"
 
 #ifdef _WIN32
@@ -56,9 +57,6 @@ const Entry* running = nullptr;
 
 struct CliOptions {
     Options zest;
-
-    KANNOTATE(&help, cli::help)
-    bool help = false;
 
     KANNOTATE(&test_filter_input,
               cli::positional = true,
@@ -312,17 +310,17 @@ TestState run_in_process(const Entry& entry) {
     return state;
 }
 
-int run_cli(int argc, char** argv, std::string_view command_overview) {
+int run_cli(int argc, char** argv) {
     // The arguments after the program's name.
     auto parsed = cli::parse<CliOptions>(
         std::span(argv, static_cast<std::size_t>(argc)).subspan(std::min(argc, 1)));
-    if(!parsed) {
-        cli::report(parsed.error());
-        return 2;
-    }
-    if(parsed->help) {
-        cli::print_usage<CliOptions>(command_overview);
+    if(parsed.help()) {
+        cli::print_usage<CliOptions>(argc > 0 ? fs::path::stem(argv[0]) : "tests");
         return 0;
+    }
+    if(auto error = parsed.error()) {
+        cli::report(*error);
+        return 2;
     }
     auto& options = *parsed;
     if(options.test_filter_input.has_value() && !options.zest.test_filter.empty()) {

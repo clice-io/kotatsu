@@ -10,6 +10,7 @@
 #include "kotatsu/cli/error.h"
 #include "kotatsu/cli/parse.h"
 #include "kotatsu/cli/to_argv.h"
+#include "kotatsu/support/string_list_ref.h"
 
 namespace kotatsu::cli {
 
@@ -45,12 +46,39 @@ struct UsageEntry {
 
 namespace detail {
 
-/// The options a default-constructed `T` holds, which a usage says the defaults of; none for a
-/// `T` that is not default-constructible, or a field whose value does not write.
+struct Subcommands;
+
+/// Where subcommands lead from the command of a program's options: the command they name, the
+/// fields of subcommands on the way, outermost first, and the options naming them and nothing
+/// more, which a decode reads into options that hold those subcommands.
+struct Path {
+    const Command* command = nullptr;
+    std::vector<const Subcommands*> fields = {};
+    Node options = {};
+};
+
+/// The path `subcommands` take from `command`, each a subcommand of the one before; a word
+/// naming none ends the program, its caller having passed subcommands the options lack.
+Path path_of(const Command& command, string_list_ref subcommands);
+
+/// The options a default-constructed `T` holds once it holds the subcommands `path` names,
+/// read from it, which a usage says the defaults of; none for a `T` that is not
+/// default-constructible, a field whose value does not write, or a path a repr refuses to read
+/// a struct on the way from.
 template <typename T>
-Node defaults_of(std::deque<std::string>& texts) {
+Node defaults_of(const Node& path, std::deque<std::string>& texts) {
     if constexpr(std::is_default_constructible_v<T>) {
-        return write_options(T{}, texts, true);
+        T options{};
+        if(!path.keys.empty()) {
+            const Node* last = nullptr;
+            codec::rich_error error;
+            codec::scoped_context<codec::rich_error> guard(error);
+            Reader reader{path, &last};
+            if(!codec::decode_value(reader, options)) {
+                return Node{};
+            }
+        }
+        return write_options(options, texts, true);
     } else {
         return Node{};
     }
@@ -58,27 +86,44 @@ Node defaults_of(std::deque<std::string>& texts) {
 
 std::vector<UsageEntry> usage_entries(const Command& command, const Node& defaults);
 
-std::string usage(const Command& command,
+std::string usage(const Path& path,
                   const Node& defaults,
-                  std::string_view usage_line,
+                  std::string_view program,
+                  string_list_ref subcommands,
                   const Style& style);
 
 }  // namespace detail
 
-/// The entries a usage of the options `T` declares lists, in declaration order: what a program
-/// lays out its own help from.
+/// The entries a usage of the options `T` declares lists, the help option first, then in
+/// declaration order: what a program lays out its own help from.
 template <typename T>
 std::vector<UsageEntry> usage_entries() {
     std::deque<std::string> texts;
-    return detail::usage_entries(detail::command_of<T>(), detail::defaults_of<T>(texts));
+    return detail::usage_entries(detail::command_of<T>(), detail::defaults_of<T>({}, texts));
 }
 
-/// The usage of a program taking the options `T` declares: what `T` is (the description its
-/// KANNOTATE_TYPE gives), `usage: <usage_line>`, its options, by group, and its subcommands.
+/// The usage of the command `subcommands` names, outermost first, in a program `program` taking
+/// the options `T`; of the program's own when they are none, and `subcommands` of a Help asks
+/// for the one it was asked for. It says what the command is (the description its struct's
+/// KANNOTATE_TYPE gives), the line that calls it, "usage: tool serve <PATH> [OPTIONS]", its
+/// options, by group, and its subcommands. The line writes the program's name and the
+/// subcommands' words, then the command's positional arguments and the options it requires, in
+/// declaration order, then "[OPTIONS]", the arguments after "--", and a placeholder of the
+/// subcommand it takes: the meta_var of its field, else "<command>". What may be left out is in
+/// brackets, and an exclusive field is its alternatives, "(<LOCATOR> | --spec <FILE>)", when it
+/// is required or one of them takes positional arguments. `subcommands` must name subcommands
+/// of `T`.
 template <typename T>
-std::string usage(std::string_view usage_line, const Style& style = {}) {
+std::string usage(std::string_view program,
+                  string_list_ref subcommands = {},
+                  const Style& style = {}) {
+    const auto path = detail::path_of(detail::command_of<T>(), subcommands);
     std::deque<std::string> texts;
-    return detail::usage(detail::command_of<T>(), detail::defaults_of<T>(texts), usage_line, style);
+    return detail::usage(path,
+                         detail::defaults_of<T>(path.options, texts),
+                         program,
+                         subcommands,
+                         style);
 }
 
 }  // namespace kotatsu::cli

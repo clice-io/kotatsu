@@ -77,12 +77,12 @@ const CommandRegistry& sealed_registry() {
 /// which `get_if<T>()` returns, and is empty (false) when it names none, which
 /// `presence = required` on the field makes an error; calling it runs that one's callback, and
 /// `name()` is its word. A subcommand the argv names is read afresh: parse_into() keeps none of
-/// one held before.
+/// one held before. A usage lists the subcommands by name, whatever order the files add them
+/// in.
 ///
 ///     struct Top { using signature = int(Context&); };
 ///     struct Options {
-///         KANNOTATE(&help, cli::help)
-///         bool help = false;
+///         bool verbose = false;
 ///         cli::Commands<Top> command;
 ///     };
 ///     // serve.cc
