@@ -175,16 +175,13 @@ std::vector<std::string> to_argv(const T& options) {
 
 namespace kotatsu::codec {
 
-/// An enum writes as its name (cli::detail::enum_text); a value without one fails.
+/// An enum writes as its name (cli::detail::enum_text); a value without one, as empty text,
+/// which no parse reads back but which keeps the argv whole.
 template <typename E>
     requires (std::is_enum_v<E> && !codec::has_repr<E, cli::format>)
 struct serialize_visit<cli::detail::Writer, E> {
     static bool visit(cli::detail::Writer& writer, const E& value) {
-        auto name = meta::enum_name(value);
-        if(name.empty()) {
-            return detail::fail_unnamed_enum(value);
-        }
-        return writer.text(cli::detail::enum_text(name));
+        return writer.text(cli::detail::enum_text(meta::enum_name(value)));
     }
 };
 

@@ -66,6 +66,14 @@ ZEST_CASE(defaults_write_their_values) {
             (std::vector<std::string>{"-j=0", "--level=info", "-I", "--sep", ""}));
 }
 
+ZEST_CASE(unnamed_enum_value_writes_empty_text) {
+    // A value no enumerator names has no text: the argv stays whole.
+    Options options;
+    options.level = static_cast<Level>(7);
+    ZEXPECT(cli::to_argv(options) ==
+            (std::vector<std::string>{"-j=0", "--level=", "-I", "--sep", ""}));
+}
+
 ZEST_CASE(each_shape_writes_the_form_it_reads) {
     Options options;
     options.verbose = true;
