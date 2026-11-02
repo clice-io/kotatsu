@@ -16,7 +16,7 @@ struct Dyn {
     /// non_finite: the tree holds a double as it is. Not
     /// untrusted_input: a tree is built in memory,
     /// by the program or by a reader that has checked its own input, so
-    /// there is no text or byte sequence to garble. Not format_tag: dyn has
+    /// there is no text or byte sequence to garble. Not own_format: dyn has
     /// no format of its own; the kit runs it under codec::format, whose reprs
     /// are the ones scoped to no backend.
     constexpr static Caps caps{

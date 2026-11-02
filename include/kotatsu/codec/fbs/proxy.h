@@ -78,8 +78,8 @@ private:
     const Table* table = nullptr;
 };
 
-/// Substitute a type by its resolved representation: annotation behavior attrs
-/// take precedence over the underlying type's codec::repr, and chained reprs
+/// Substitute a type by its resolved representation: an annotation's `with`
+/// or `as` takes precedence over the underlying type's codec::repr, and chained reprs
 /// are followed under fbs::format (codec::resolved_repr_t); identity
 /// when neither applies. Flatbuffers computes layout statically, so a dynamic
 /// representation is rejected here.
@@ -96,7 +96,7 @@ template <typename T>
 using apply_repr_t = typename decltype(apply_repr_impl<T>())::type;
 
 /// The fully resolved view type of a member or element: representation
-/// substitution (behavior attrs, then chained reprs) and nullable-wrapper
+/// substitution (`with` or `as`, then chained reprs) and nullable-wrapper
 /// peeling (optional, smart pointers) interleave until a fixpoint, in
 /// whatever order they nest.
 template <typename T>

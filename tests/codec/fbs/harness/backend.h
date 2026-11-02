@@ -31,7 +31,7 @@ struct Fbs {
         .non_finite = true,
         .layout_computed = true,
         .untrusted_input = true,
-        .format_tag = true,
+        .own_format = true,
     };
     using Encoded = std::vector<std::uint8_t>;
 

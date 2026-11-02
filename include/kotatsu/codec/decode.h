@@ -221,7 +221,7 @@ bool decode_tagged_variant(Vis& vis, std::variant<Ts...>& var);
 
 /// Decodes a value under a node's attributes (a struct field's, or its type
 /// annotation's), mirroring encode_with_attrs: `with` > `as` > variant
-/// tagging > the rename_all / deny_unknown_fields / presence_all merge.
+/// tagging > the node's scope (node_format_t).
 template <typename Format, typename Attrs, typename Vis, typename T>
 bool decode_with_attrs(Vis& vis, T& out) {
     if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
@@ -304,8 +304,7 @@ bool decode_field_value(Vis& vis, T& out, std::string_view key, UnknownFields* s
 /// The slot whose name or alias is key; fields.size() when none is.
 inline std::size_t find_field_slot(std::span<const field_info> fields, std::string_view key) {
     for(std::size_t i = 0; i < fields.size(); ++i) {
-        if(fields[i].name == key ||
-           std::ranges::find(fields[i].aliases, key) != fields[i].aliases.end()) {
+        if(fields[i].answers_to(key)) {
             return i;
         }
     }

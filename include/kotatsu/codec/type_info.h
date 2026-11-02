@@ -344,7 +344,7 @@ struct resolved_repr {
 };
 
 /// Precedence mirrors the codec dispatch (encode_with_attrs /
-/// decode_with_attrs): behavior::with wins over behavior::as, which wins over
+/// decode_with_attrs): `with` wins over `as`, which wins over
 /// a tagging spec on a std::variant (a tagged variant is read and written as
 /// that variant, whatever repr its type has). The type's repr applies only
 /// when none of these does, and the format selects a format-scoped
@@ -640,8 +640,8 @@ constexpr built_fields_t<T> build_fields(std::size_t base_offset) {
 
 }  // namespace detail
 
-/// The representation of T as the codec dispatch resolves it: behavior attrs
-/// on an annotation take precedence over the underlying type's codec::repr,
+/// The representation of T as the codec dispatch resolves it: an annotation's
+/// `with` or `as` takes precedence over the underlying type's codec::repr,
 /// and chained reprs and annotations nested inside representation types are
 /// followed to their final type. F selects the reprs of its format chain.
 template <typename T, typename F = format>
@@ -679,6 +679,7 @@ constexpr const struct_type_info& struct_info() {
 template <typename T, typename Format = format>
     requires meta::reflectable_class<T>
 struct virtual_schema {
+    static_assert(std::derived_from<Format, format>, "a format extends codec::format");
     static_assert(std::is_same_v<resolved_repr_t<T, Format>, T>,
                   "virtual_schema: the struct travels as another type, through a codec::repr");
 

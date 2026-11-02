@@ -182,7 +182,7 @@ void repr(const Kit<B>& kit) {
     auto journal_list = [] {
         return std::vector<Journal>{{.page = 3}, {.page = 9}};
     };
-    if constexpr(B::caps.format_tag) {
+    if constexpr(B::caps.own_format) {
         encodes_as(kit, "format_scoped_repr_encodes_as_plain", journal, [] {
             return Field<std::int64_t>{41};
         });
@@ -255,7 +255,7 @@ void repr(const Kit<B>& kit) {
             "format_scoped_repr_guides_probing",
             [] { return std::int64_t{42}; },
             [] {
-                if constexpr(B::caps.format_tag) {
+                if constexpr(B::caps.own_format) {
                     return JournalOrNumber{Journal{.page = 42}};
                 } else {
                     return JournalOrNumber{std::int64_t{42}};

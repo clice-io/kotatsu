@@ -28,7 +28,7 @@ struct Toml {
             "toml++ v3.4.0 asserts, and under NDEBUG assumes the impossible, on a "
             "table header whose key starts with a character no key may start with "
             "([`a]), which the sweep reaches; run it once toml++ rejects that header",
-        .format_tag = true,
+        .own_format = true,
         .utf8_text = true,
     };
     using Encoded = std::string;

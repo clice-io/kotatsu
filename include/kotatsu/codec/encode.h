@@ -241,8 +241,8 @@ bool encode_tagged_variant(Vis& vis, const std::variant<Ts...>& var) {
 }
 
 /// Encodes a value under a node's attributes (a struct field's, or its type
-/// annotation's): `with` > `as` > variant tagging > the struct-level policy
-/// merge (node_format_t), the precedence the repr resolver replays. A class
+/// annotation's): `with` > `as` > variant tagging > the node's scope
+/// (node_format_t), the precedence the repr resolver replays. A class
 /// derived from a std::variant is tagged as that variant; untagged, it is
 /// written as its type writes it, its repr first.
 template <typename Format, typename Attrs, typename Vis, typename T>

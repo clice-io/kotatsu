@@ -144,7 +144,7 @@ struct Caps {
     std::string_view hostile_gap = {};
     /// The backend has a format of its own, which scopes codec::repr
     /// specializations to it.
-    bool format_tag = false;
+    bool own_format = false;
     /// Documents are UTF-8 text, so a string must be UTF-8 to encode.
     bool utf8_text = false;
 };

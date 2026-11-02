@@ -30,7 +30,7 @@ struct Bincode {
         .nested_nulls = true,
         .non_finite = true,
         .untrusted_input = true,
-        .format_tag = true,
+        .own_format = true,
     };
     using Encoded = std::vector<std::byte>;
 

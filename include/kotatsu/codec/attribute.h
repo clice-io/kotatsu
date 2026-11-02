@@ -303,9 +303,7 @@ struct as {
 
 namespace dsl {
 
-using meta::dsl::name_list_proxy;
 using meta::dsl::type;
-using meta::dsl::value_proxy;
 
 /// `tagged = true` selects external tagging; internal and adjacent tagging are
 /// selected by naming the tag (and content) fields instead.
@@ -409,42 +407,40 @@ struct representation_proxy {
     }
 };
 
-[[maybe_unused]] constexpr inline value_proxy<attribute::rename,
-                                              &field_spec::rename,
-                                              std::string_view> rename{};
-[[maybe_unused]] constexpr inline value_proxy<attribute::description,
-                                              &field_spec::description,
-                                              std::string_view> description{};
-[[maybe_unused]] constexpr inline value_proxy<attribute::skip, &field_spec::skip, bool> skip{};
-[[maybe_unused]] constexpr inline value_proxy<attribute::flatten, &field_spec::flatten, bool>
-    flatten{};
-[[maybe_unused]] constexpr inline name_list_proxy<attribute::alias, &field_spec::alias> alias{};
+[[maybe_unused]] constexpr inline meta::dsl::
+    value_proxy<attribute::rename, &field_spec::rename, std::string_view> rename{};
+[[maybe_unused]] constexpr inline meta::dsl::
+    value_proxy<attribute::description, &field_spec::description, std::string_view> description{};
+[[maybe_unused]] constexpr inline meta::dsl::value_proxy<attribute::skip, &field_spec::skip, bool>
+    skip{};
+[[maybe_unused]] constexpr inline meta::dsl::
+    value_proxy<attribute::flatten, &field_spec::flatten, bool> flatten{};
+[[maybe_unused]] constexpr inline meta::dsl::name_list_proxy<attribute::alias, &field_spec::alias>
+    alias{};
 [[maybe_unused]] constexpr inline presence_proxy presence{};
 [[maybe_unused]] constexpr inline representation_proxy<behavior::as> as{};
 [[maybe_unused]] constexpr inline representation_proxy<behavior::with> with{};
-[[maybe_unused]] constexpr inline value_proxy<attribute::schema_default,
-                                              &field_spec::schema_default,
-                                              bool> schema_default{};
+[[maybe_unused]] constexpr inline meta::dsl::
+    value_proxy<attribute::schema_default, &field_spec::schema_default, bool> schema_default{};
 [[maybe_unused]] constexpr inline number_proxy<attribute::minimum, &field_spec::minimum> minimum{};
 [[maybe_unused]] constexpr inline number_proxy<attribute::maximum, &field_spec::maximum> maximum{};
-[[maybe_unused]] constexpr inline name_list_proxy<attribute::choices, &field_spec::choices>
-    choices{};
+[[maybe_unused]] constexpr inline meta::dsl::name_list_proxy<attribute::choices,
+                                                             &field_spec::choices> choices{};
 
 [[maybe_unused]] constexpr inline rename_all_proxy rename_all{};
-[[maybe_unused]] constexpr inline value_proxy<attribute::deny_unknown_fields,
-                                              &struct_spec::deny_unknown_fields,
-                                              bool> deny_unknown_fields{};
-[[maybe_unused]] constexpr inline value_proxy<attribute::presence_all,
-                                              &struct_spec::presence_all,
-                                              std::optional<presence_kind>> presence_all{};
+[[maybe_unused]] constexpr inline meta::dsl::value_proxy<attribute::deny_unknown_fields,
+                                                         &struct_spec::deny_unknown_fields,
+                                                         bool> deny_unknown_fields{};
+[[maybe_unused]] constexpr inline meta::dsl::
+    value_proxy<attribute::presence_all, &struct_spec::presence_all, std::optional<presence_kind>>
+        presence_all{};
 [[maybe_unused]] constexpr inline tagged_proxy tagged{};
-[[maybe_unused]] constexpr inline value_proxy<attribute::tag, &struct_spec::tag, std::string_view>
-    tag{};
-[[maybe_unused]] constexpr inline value_proxy<attribute::content,
-                                              &struct_spec::content,
-                                              std::string_view> content{};
-[[maybe_unused]] constexpr inline name_list_proxy<attribute::tag_names, &struct_spec::tag_names>
-    tag_names{};
+[[maybe_unused]] constexpr inline meta::dsl::
+    value_proxy<attribute::tag, &struct_spec::tag, std::string_view> tag{};
+[[maybe_unused]] constexpr inline meta::dsl::
+    value_proxy<attribute::content, &struct_spec::content, std::string_view> content{};
+[[maybe_unused]] constexpr inline meta::dsl::name_list_proxy<attribute::tag_names,
+                                                             &struct_spec::tag_names> tag_names{};
 
 }  // namespace dsl
 
