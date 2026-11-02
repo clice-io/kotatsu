@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cassert>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -63,18 +62,22 @@ struct Path {
 Path path_of(const Command& command, string_list_ref subcommands);
 
 /// The options a default-constructed `T` holds once it holds the subcommands `path` names,
-/// which a usage says the defaults of; none for a `T` that is not default-constructible, or a
-/// field whose value does not write.
+/// read from it, which a usage says the defaults of; none for a `T` that is not
+/// default-constructible, a field whose value does not write, or a path a repr refuses to read
+/// a struct on the way from.
 template <typename T>
 Node defaults_of(const Node& path, std::deque<std::string>& texts) {
     if constexpr(std::is_default_constructible_v<T>) {
         T options{};
-        const Node* last = nullptr;
-        codec::rich_error error;
-        codec::scoped_context<codec::rich_error> guard(error);
-        Reader reader{path, &last};
-        [[maybe_unused]] const bool decoded = codec::decode_value(reader, options);
-        assert(decoded);
+        if(!path.keys.empty()) {
+            const Node* last = nullptr;
+            codec::rich_error error;
+            codec::scoped_context<codec::rich_error> guard(error);
+            Reader reader{path, &last};
+            if(!codec::decode_value(reader, options)) {
+                return Node{};
+            }
+        }
         return write_options(options, texts, true);
     } else {
         return Node{};

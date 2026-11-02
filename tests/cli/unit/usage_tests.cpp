@@ -87,6 +87,20 @@ struct Run {
     std::vector<std::string> command;
 };
 
+/// Options a repr reads from fields of their own, refusing them without a host.
+struct Endpoint {
+    std::string host = "localhost";
+};
+
+struct EndpointFields {
+    std::string host;
+};
+
+struct Connect {
+    KANNOTATE(&command, tagged = true, tag_names = {"endpoint"})
+    std::variant<Endpoint> command;
+};
+
 /// Commands taking one of the help's names, or both, with options of their own.
 struct NamesH {
     KANNOTATE(&host, cli::names = {"-h", "--host"})
@@ -106,6 +120,37 @@ struct BothNames {
     KANNOTATE(&help, cli::names = {"-h", "--help"})
     bool help = false;
 };
+
+}  // namespace
+
+}  // namespace kotatsu::cli
+
+template <>
+struct kotatsu::codec::repr<kotatsu::cli::Endpoint> {
+    using type = kotatsu::cli::EndpointFields;
+
+    template <typename F>
+    static bool encode(auto& writer, const kotatsu::cli::Endpoint& endpoint) {
+        return codec::encode_value<F>(writer, kotatsu::cli::EndpointFields{endpoint.host});
+    }
+
+    template <typename F>
+    static bool decode(auto& reader, kotatsu::cli::Endpoint& endpoint) {
+        kotatsu::cli::EndpointFields fields;
+        if(!codec::decode_value<F>(reader, fields)) {
+            return false;
+        }
+        if(fields.host.empty()) {
+            return codec::scoped_context<codec::rich_error>::fail(codec::rich_error("no host"));
+        }
+        endpoint.host = fields.host;
+        return true;
+    }
+};
+
+namespace kotatsu::cli {
+
+namespace {
 
 ZEST_SUITE(cli_usage) {
 
@@ -213,6 +258,16 @@ ZEST_CASE(choices_are_the_value_token) {
 
 ZEST_CASE(help_says_default_and_range) {
     ZEXPECT(cli::usage<Tuned>("tuned").contains("Workers [default: 4] [range: 1..64]"));
+}
+
+ZEST_CASE(program_s_defaults_are_written_without_being_read) {
+    ZEXPECT(cli::usage<Endpoint>("tool").contains("[default: localhost]"));
+}
+
+ZEST_CASE(subcommand_a_repr_refuses_to_read_says_no_defaults) {
+    const auto usage = cli::usage<Connect>("tool", {"endpoint"});
+    ZEXPECT(usage.contains("--host <value>"));
+    ZEXPECT(!usage.contains("[default:"));
 }
 
 ZEST_CASE(help_entry_lists_the_names_the_command_leaves_it) {
