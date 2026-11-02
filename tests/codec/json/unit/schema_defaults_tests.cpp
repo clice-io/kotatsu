@@ -113,15 +113,17 @@ template <>
 struct repr<json_schema_imperative_root> {
     using type = json_schema_imperative_repr;
 
+    template <typename F>
     static bool encode(auto& vis, const json_schema_imperative_root& v) {
-        return codec::encode_value(vis, type{.n = v.n()});
+        return codec::encode_value<F>(vis, type{.n = v.n()});
     }
 
+    template <typename F>
     static bool decode(auto& vis, json_schema_imperative_root& v) {
         // Seed the representation from the in-place value: an absent
         // property keeps it.
         type d{.n = v.n()};
-        if(!codec::decode_value(vis, d)) {
+        if(!codec::decode_value<F>(vis, d)) {
             return false;
         }
         v.set_n(d.n);

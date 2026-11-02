@@ -41,6 +41,7 @@ template <>
 struct repr<http::Unencodable> {
     using type = std::string;
 
+    template <typename F>
     static bool encode(auto&, const http::Unencodable&) {
         return codec::scoped_context<codec::rich_error>::fail(codec::rich_error("refused"));
     }

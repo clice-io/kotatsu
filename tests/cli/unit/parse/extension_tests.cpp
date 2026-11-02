@@ -81,6 +81,7 @@ template <>
 struct kotatsu::codec::repr<kotatsu::cli::Port> {
     using type = std::string;
 
+    template <typename F>
     static bool decode(auto& reader, kotatsu::cli::Port& port) {
         std::string text;
         if(!reader.visit_str(text)) {
@@ -95,6 +96,7 @@ struct kotatsu::codec::repr<kotatsu::cli::Port> {
         return true;
     }
 
+    template <typename F>
     static bool encode(auto& writer, const kotatsu::cli::Port& port) {
         return writer.visit_str(std::to_string(port.number));
     }

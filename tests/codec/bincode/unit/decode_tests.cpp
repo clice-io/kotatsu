@@ -63,15 +63,17 @@ template <>
 struct repr<codec::Framed> {
     using type = dynamic;
 
+    template <typename F>
     static bool encode(auto& vis, const codec::Framed& framed) {
-        return codec::encode_value(vis, codec::framed_magic) &&
-               codec::encode_value(vis, framed.bytes);
+        return codec::encode_value<F>(vis, codec::framed_magic) &&
+               codec::encode_value<F>(vis, framed.bytes);
     }
 
+    template <typename F>
     static bool decode(auto& vis, codec::Framed& framed) {
         std::uint8_t magic = 0;
-        return codec::decode_value(vis, magic) && magic == codec::framed_magic &&
-               codec::decode_value(vis, framed.bytes);
+        return codec::decode_value<F>(vis, magic) && magic == codec::framed_magic &&
+               codec::decode_value<F>(vis, framed.bytes);
     }
 };
 

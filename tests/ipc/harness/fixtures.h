@@ -75,6 +75,7 @@ template <>
 struct repr<test::Unwritable> {
     using type = std::string;
 
+    template <typename F>
     static bool encode(auto& /*vis*/, const test::Unwritable& /*value*/) {
         return codec::scoped_context<codec::rich_error>::fail(codec::rich_error("unwritable"));
     }

@@ -165,6 +165,7 @@ struct VersionAsNumber {
 struct Shout {
     using type = std::string;
 
+    template <typename F>
     static bool encode(auto& vis, const std::string& text) {
         std::string encoded = text;
         for(char& c: encoded) {
@@ -173,6 +174,7 @@ struct Shout {
         return vis.visit_str(encoded);
     }
 
+    template <typename F>
     static bool decode(auto& vis, std::string& text) {
         std::string encoded;
         if(!vis.visit_str(encoded)) {
@@ -328,10 +330,12 @@ template <>
 struct repr<test::HexId> {
     using type = std::string;
 
+    template <typename F>
     static bool encode(auto& vis, const test::HexId& h) {
         return vis.visit_str(std::format("{:08x}", h.v));
     }
 
+    template <typename F>
     static bool decode(auto& vis, test::HexId& h) {
         std::string text;
         if(!vis.visit_str(text)) {
@@ -346,10 +350,12 @@ template <>
 struct repr<test::DynamicBox> {
     using type = dynamic;
 
+    template <typename F>
     static bool encode(auto& vis, const test::DynamicBox& box) {
-        return std::visit([&](const auto& alt) { return codec::encode_value(vis, alt); }, box.v);
+        return std::visit([&](const auto& alt) { return codec::encode_value<F>(vis, alt); }, box.v);
     }
 
+    template <typename F>
     static bool decode(auto& vis, test::DynamicBox& box) {
         if(vis.peek_kind() == meta::type_kind::string) {
             std::string text;

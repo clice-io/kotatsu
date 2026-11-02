@@ -69,6 +69,29 @@ struct StrictShape : std::variant<Circle> {
     using variant::variant;
 };
 
+/// What two types travel as, declared by one repr and written by hand by the
+/// other.
+struct Counted {
+    int item_count = 3;
+};
+
+struct Declared {
+    int count = 3;
+};
+
+struct ByHand {
+    int count = 3;
+};
+
+/// A field's struct attributes scope what its type travels as, whichever
+/// form the repr takes.
+struct HoldsReprs {
+    KANNOTATE(&declared, rename_all = Casing::UpperSnake)
+    Declared declared;
+    KANNOTATE(&by_hand, rename_all = Casing::UpperSnake, deny_unknown_fields = true)
+    ByHand by_hand;
+};
+
 KANNOTATE_TYPE(struct Restated, rename_all = Casing::Identity);
 
 struct Restated {
@@ -87,6 +110,39 @@ struct repr<Token> {
 
     static Token from(const type& text) {
         return Token(text);
+    }
+};
+
+template <>
+struct repr<Declared> {
+    using type = Counted;
+
+    static type to(const Declared& value) {
+        return {.item_count = value.count};
+    }
+
+    static Declared from(const type& counted) {
+        return {.count = counted.item_count};
+    }
+};
+
+template <>
+struct repr<ByHand> {
+    using type = Counted;
+
+    template <typename F>
+    static bool encode(auto& vis, const ByHand& value) {
+        return encode_value<F>(vis, Counted{.item_count = value.count});
+    }
+
+    template <typename F>
+    static bool decode(auto& vis, ByHand& out) {
+        Counted counted;
+        if(!decode_value<F>(vis, counted)) {
+            return false;
+        }
+        out.count = counted.item_count;
+        return true;
     }
 };
 
@@ -143,6 +199,18 @@ ZEST_CASE(tagged_variant_denies_unknown_keys) {
     const auto schema = json::schema_string<StrictShape>();
     ZASSERT(schema);
     ZEXPECT(zest::contains(*schema, R"("additionalProperties":false)"));
+}
+
+ZEST_CASE(reprs_take_the_field_s_scope) {
+    const auto text = json::to_string(HoldsReprs{});
+    ZEXPECT(text == R"({"declared":{"ITEM_COUNT":3},"by_hand":{"ITEM_COUNT":3}})");
+    HoldsReprs back{.declared = {.count = 0}, .by_hand = {.count = 0}};
+    ZASSERT(json::from_string(*text, back));
+    ZEXPECT(back.declared.count == 3);
+    ZEXPECT(back.by_hand.count == 3);
+    ZEXPECT(
+        !json::from_string(R"({"declared":{"ITEM_COUNT":3},"by_hand":{"ITEM_COUNT":3,"extra":1}})",
+                           back));
 }
 
 ZEST_CASE(a_scope_that_restates_the_format_is_the_format) {

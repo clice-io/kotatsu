@@ -76,6 +76,7 @@ struct repr<codec::GreedySeq> {
         return g.nums;
     }
 
+    template <typename F>
     static bool decode(auto& vis, codec::GreedySeq& g) {
         g.nums.clear();
         return vis.visit_seq(g.nums, [&](auto& sv) -> bool {
@@ -99,6 +100,7 @@ struct repr<codec::GreedyMap> {
         return g.entries;
     }
 
+    template <typename F>
     static bool decode(auto& vis, codec::GreedyMap& g) {
         g.entries.clear();
         return vis.visit_map(g.entries, [&](auto& mv) -> bool {
@@ -124,6 +126,7 @@ struct repr<codec::LabeledCount> {
         return {c.count, c.label};
     }
 
+    template <typename F>
     static bool decode(auto& vis, codec::LabeledCount& c) {
         return vis.visit_tuple(c, [&](auto& sv) -> bool {
             return sv.visit_element([&](auto& ev) -> bool { return ev.visit_int(c.count); }) &&

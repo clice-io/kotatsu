@@ -55,20 +55,27 @@ bool encode_plain(Vis& vis, const T& value);
 
 }  // namespace detail
 
-/// Encodes `value` through `vis` under the format the visitor carries: what a
-/// repr's encode() or a serialize_visit specialization calls to write the
-/// values it is made of.
-template <typename Vis, typename T>
+/// Encodes `value` through `vis` under Format: what a repr's encode() calls,
+/// with the format it is handed, to write the values it is made of. Without
+/// one, under the format the visitor carries, as a serialize_visit
+/// specialization writes.
+template <typename Format = void, typename Vis, typename T>
 bool encode_value(Vis& vis, const T& value) {
-    static_assert(!std::is_void_v<format_of_t<Vis>>,
-                  "a visitor carries the format it writes under: using format = F");
-    return detail::encode_under<format_of_t<Vis>>(vis, value);
+    if constexpr(std::is_void_v<Format>) {
+        static_assert(!std::is_void_v<format_of_t<Vis>>,
+                      "a visitor carries the format it writes under: using format = F");
+        return detail::encode_under<format_of_t<Vis>>(vis, value);
+    } else {
+        static_assert(std::derived_from<Format, format>, "a format extends codec::format");
+        return detail::encode_under<Format>(vis, value);
+    }
 }
 
-/// True when the visitor writes UTF-8 text (json, toml), as its format says:
-/// its value and map key writers alike.
+/// True when the visitor writes UTF-8 text, as json's and toml's value and map
+/// key writers say: a backend that holds strings as values (dyn, debug) takes
+/// them as they are, whatever the format.
 template <typename Vis>
-concept writes_utf8 = requires { requires format_of_t<Vis>::utf8; };
+concept writes_utf8 = requires { requires Vis::utf8; };
 
 namespace detail {
 
@@ -116,7 +123,7 @@ bool encode_enum_name(Vis& vis, const E& value) {
 
 /// Encode a value through a representation declaration (a codec::repr
 /// specialization or a `with` adapter): declarative to() when present, the
-/// imperative encode() body otherwise.
+/// imperative encode<Format>() body otherwise.
 template <typename Repr, typename Format, typename Vis, typename V>
 bool repr_encode(Vis& vis, const V& value) {
     using declared_t = declared_repr_t<Repr>;
@@ -129,16 +136,17 @@ bool repr_encode(Vis& vis, const V& value) {
         return encode_enum_name<Repr, Format>(vis, value);
     } else if constexpr(requires { Repr::to(value); }) {
         static_assert(
-            !requires { Repr::encode(vis, value); },
+            !requires { Repr::template encode<Format>(vis, value); },
             "repr protocol: define to() or encode() for encoding, not both");
         static_assert(std::is_same_v<std::remove_cvref_t<decltype(Repr::to(value))>, declared_t>,
                       "repr protocol: to() must return the declared representation type");
         return encode_under<Format>(vis, Repr::to(value));
-    } else if constexpr(requires { Repr::encode(vis, value); }) {
-        return Repr::encode(vis, value);
+    } else if constexpr(requires { Repr::template encode<Format>(vis, value); }) {
+        return Repr::template encode<Format>(vis, value);
     } else {
-        static_assert(dependent_false<Repr>,
-                      "repr protocol: no encode path — define to() or encode()");
+        static_assert(
+            dependent_false<Repr>,
+            "repr protocol: no encode path — define to() or template <typename F> encode()");
         return false;
     }
 }

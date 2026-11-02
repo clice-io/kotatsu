@@ -58,14 +58,20 @@ bool decode_plain(Vis& vis, T& out);
 
 }  // namespace detail
 
-/// Decodes `out` through `vis` under the format the visitor carries: what a
-/// repr's decode() or a deserialize_visit specialization calls to read the
-/// values it is made of.
-template <typename Vis, typename T>
+/// Decodes `out` through `vis` under Format: what a repr's decode() calls,
+/// with the format it is handed, to read the values it is made of. Without
+/// one, under the format the visitor carries, as a deserialize_visit
+/// specialization reads.
+template <typename Format = void, typename Vis, typename T>
 bool decode_value(Vis& vis, T& out) {
-    static_assert(!std::is_void_v<format_of_t<Vis>>,
-                  "a visitor carries the format it reads under: using format = F");
-    return detail::decode_under<format_of_t<Vis>>(vis, out);
+    if constexpr(std::is_void_v<Format>) {
+        static_assert(!std::is_void_v<format_of_t<Vis>>,
+                      "a visitor carries the format it reads under: using format = F");
+        return detail::decode_under<format_of_t<Vis>>(vis, out);
+    } else {
+        static_assert(std::derived_from<Format, format>, "a format extends codec::format");
+        return detail::decode_under<Format>(vis, out);
+    }
 }
 
 namespace detail {
@@ -91,7 +97,7 @@ bool decode_enum_name(Vis& vis, E& out) {
 
 /// Decode a value through a representation declaration (a codec::repr
 /// specialization or a `with` adapter): declarative from() when present, the
-/// imperative decode() body otherwise.
+/// imperative decode<Format>() body otherwise.
 template <typename Repr, typename Format, typename Vis, typename V>
 bool repr_decode(Vis& vis, V& out) {
     using declared_t = declared_repr_t<Repr>;
@@ -104,7 +110,7 @@ bool repr_decode(Vis& vis, V& out) {
         return decode_enum_name<Repr, Format>(vis, out);
     } else if constexpr(requires { Repr::from(std::declval<declared_t>()); }) {
         static_assert(
-            !requires { Repr::decode(vis, out); },
+            !requires { Repr::template decode<Format>(vis, out); },
             "repr protocol: define from() or decode() for decoding, not both");
         static_assert(
             requires(declared_t&& d) { out = Repr::from(std::move(d)); },
@@ -114,11 +120,12 @@ bool repr_decode(Vis& vis, V& out) {
         KOTATSU_CODEC_TRY(decode_under<Format>(vis, declared));
         out = Repr::from(std::move(declared));
         return true;
-    } else if constexpr(requires { Repr::decode(vis, out); }) {
-        return Repr::decode(vis, out);
+    } else if constexpr(requires { Repr::template decode<Format>(vis, out); }) {
+        return Repr::template decode<Format>(vis, out);
     } else {
-        static_assert(dependent_false<Repr>,
-                      "repr protocol: no decode path — define from() or decode()");
+        static_assert(
+            dependent_false<Repr>,
+            "repr protocol: no decode path — define from() or template <typename F> decode()");
         return false;
     }
 }
@@ -693,7 +700,7 @@ constexpr bool probes_as_untagged_variant() {
         using chosen = repr_for<T, scope>;
         if constexpr(
             requires { chosen::from(std::declval<declared_repr_t<chosen>>()); } &&
-            !requires(Vis& v, T& out) { chosen::decode(v, out); })
+            !requires(Vis& v, T& out) { chosen::template decode<scope>(v, out); })
             return probes_as_untagged_variant<scope, Vis, declared_repr_t<chosen>>();
         else
             return false;

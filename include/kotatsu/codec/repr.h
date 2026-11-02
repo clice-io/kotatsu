@@ -39,15 +39,17 @@ struct dynamic {};
 ///     template <>
 ///     struct kotatsu::codec::repr<Weird> {
 ///         using type = std::string;  // still required: schema stays honest
+///         template <typename F>
 ///         static bool encode(auto& vis, const Weird& w);
+///         template <typename F>
 ///         static bool decode(auto& vis, Weird& w);
 ///     };
 ///
-/// The visitor carries the format the encode or decode runs under, which
-/// codec::encode_value(vis, part) and codec::decode_value(vis, part) apply
-/// to the values the body is made of. The struct attributes of a field
-/// holding T (rename_all, deny_unknown_fields, presence_all) reach the
-/// members of a declared representation, not those of a body's parts.
+/// F is the format in effect where the value stands, which the struct
+/// attributes of a field holding T (rename_all, deny_unknown_fields,
+/// presence_all) have scoped, as they scope a declared representation: the
+/// body writes the values it is made of with codec::encode_value<F>(vis,
+/// part) and reads them with codec::decode_value<F>(vis, part).
 ///
 /// Use `using type = dynamic;` when the shape is only known at runtime:
 /// schema output degrades to "any", and layout-computed backends
