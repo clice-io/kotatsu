@@ -35,9 +35,17 @@ std::vector<const Node*> values_of(const Node& node) {
 }
 
 void write(const Command& command, const Node& root, std::vector<std::string>& out) {
+    // The subcommand the options hold, before which only the arguments that go with it are
+    // written, and those that end the parse ahead of it.
+    const Node* subcommand =
+        command.subcommands ? node_at(root, command.subcommands->keys) : nullptr;
+    // An argument of an alternative the options do not hold writes nothing.
+    auto writes = [&](const Arg& arg) {
+        return (subcommand == nullptr || arg.global || arg.spec.stop) &&
+               present(command, root, arg.group);
+    };
     for(const auto& arg: command.args) {
-        // An argument of an alternative the options do not hold writes nothing.
-        if(arg.spec.positional || arg.spec.rest || !present(command, root, arg.group)) {
+        if(arg.spec.positional || arg.spec.rest || !writes(arg)) {
             continue;
         }
         const Node* node = node_at(root, arg.keys);
@@ -102,7 +110,7 @@ void write(const Command& command, const Node& root, std::vector<std::string>& o
     }
     std::vector<std::string_view> positionals;
     for(const auto index: command.positionals) {
-        if(!present(command, root, command.args[index].group)) {
+        if(!writes(command.args[index])) {
             continue;
         }
         if(const Node* node = node_at(root, command.args[index].keys)) {
@@ -119,21 +127,19 @@ void write(const Command& command, const Node& root, std::vector<std::string>& o
         out.emplace_back("--");
     }
     out.insert(out.end(), positionals.begin(), positionals.end());
-    if(command.subcommands) {
+    if(subcommand != nullptr) {
         const auto& subcommands = *command.subcommands;
-        if(const Node* node = node_at(root, subcommands.keys)) {
-            // A variant tagged by name writes the name of the alternative, not its index.
-            const auto alternative =
-                node->kind == Node::Kind::Variant
-                    ? node->count
-                    : static_cast<std::uint32_t>(
-                          std::ranges::find(subcommands.names, node->keys.front()) -
-                          subcommands.names.begin());
-            out.push_back(subcommands.names[alternative]);
-            write(*subcommands.commands[alternative], node->items.front(), out);
-            // What follows "--" would be the subcommand's.
-            return;
-        }
+        // A variant tagged by name writes the name of the alternative, not its index.
+        const auto alternative =
+            subcommand->kind == Node::Kind::Variant
+                ? subcommand->count
+                : static_cast<std::uint32_t>(
+                      std::ranges::find(subcommands.names, subcommand->keys.front()) -
+                      subcommands.names.begin());
+        out.push_back(subcommands.names[alternative]);
+        write(*subcommands.commands[alternative], subcommand->items.front(), out);
+        // What follows "--" would be the subcommand's.
+        return;
     }
     if(command.rest && present(command, root, command.args[*command.rest].group)) {
         const auto& rest = command.args[*command.rest];

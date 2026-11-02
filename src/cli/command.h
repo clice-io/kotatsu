@@ -44,6 +44,8 @@ struct Arg : FieldUse {
     std::uint32_t group = no_group;
     /// The group of the alternative of an exclusive field it is in, or no_group.
     std::uint32_t alternative = no_group;
+    /// Whether it goes with a subcommand, cli::global itself or in a group that is.
+    bool global = false;
     /// The serialized names of the fields from the command's struct down to it.
     std::vector<std::string_view> keys = {};
     /// The declared names of the same fields, joined by '.'.
@@ -62,6 +64,8 @@ struct Group {
     std::uint32_t parent = no_group;
     /// Whether it is a std::optional, there only when an argument of it is given.
     bool optional = false;
+    /// Whether its arguments go with a subcommand, it or a group around it cli::global.
+    bool global = false;
     std::vector<std::string_view> keys;
     /// Its heading in a usage, the field's description; none lists its arguments with the
     /// group around it.
@@ -82,6 +86,8 @@ struct Exclusive {
     bool required = false;
     std::vector<std::uint32_t> alternatives = {};
     std::vector<std::uint32_t> first_args = {};
+    /// Whether its arguments go with a subcommand, it or a group around it cli::global.
+    bool global = false;
 };
 
 struct Command;

@@ -87,6 +87,11 @@ struct ArgSpec {
     detail::CommandSet commands = {};
     /// For a field of subcommands, the words of those a usage leaves out.
     meta::name_list hidden_sub = {};
+    /// Whether it goes with a subcommand, as an option every subcommand shares does: given before
+    /// a subcommand's word, it is kept, where any other argument of the command conflicts with
+    /// the subcommand, and is not required when one is given. On a struct of options or an
+    /// exclusive field, for each argument in it.
+    bool global = false;
 
     constexpr void validate() const {
         if(positional && rest) {
@@ -112,6 +117,7 @@ struct ArgSpec {
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::hidden> hidden{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::exclusive> exclusive{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::hidden_sub> hidden_sub{};
+[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::global> global{};
 
 /// A field that stands for other arguments: its names, given, are read as `cli::forward`.
 /// It holds nothing.

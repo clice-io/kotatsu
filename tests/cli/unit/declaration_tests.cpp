@@ -1,6 +1,7 @@
 // Mistakes in a struct of options, which keep it from compiling: checked here as whether the
 // check of the declaration is a constant expression.
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -41,6 +42,61 @@ struct Twice {
     std::string first;
     KANNOTATE(&second, cli::names = {"-o"})
     std::string second;
+};
+
+/// A generated name, '_' spelled '-', that another field names as written.
+struct GeneratedTwice {
+    bool log_level = false;
+    KANNOTATE(&other, cli::names = {"--log-level"})
+    bool other = false;
+};
+
+/// A declared name that is a generated one but for '_', which only a generated name spells '-'.
+struct UnderscoreGiven {
+    bool log_level = false;
+    KANNOTATE(&other, cli::names = {"--log_level"})
+    bool other = false;
+};
+
+/// A comma option whose generated name another field gives with its comma.
+struct CommaTwice {
+    KANNOTATE(&include, cli::comma = true)
+    std::vector<std::string> include;
+    KANNOTATE(&other, cli::names = {"--include,"}, cli::comma = true)
+    std::vector<std::string> other;
+};
+
+/// An alias standing for one whose name is generated.
+struct GeneratedLoop {
+    KANNOTATE(&fast_mode, cli::forward = {"--other"})
+    cli::Alias fast_mode;
+    KANNOTATE(&other, cli::names = {"--other"}, cli::forward = {"--fast-mode"})
+    cli::Alias other;
+};
+
+struct JoinedLevel {
+    KANNOTATE(&level, cli::style = KVStyle::Joined)
+    std::string level;
+};
+
+/// Two options of one generated name that each take only its '=' form.
+struct JoinedTwice {
+    JoinedLevel first;
+    JoinedLevel second;
+};
+
+/// An option of a command whose subcommand must be given, which no argv can give.
+struct OwnBesideRequired {
+    bool verbose = false;
+    std::variant<Serve> command;
+};
+
+struct GlobalBesideRequired {
+    KANNOTATE(&verbose, cli::global = true)
+    bool verbose = false;
+    KANNOTATE(&version, cli::stop = true)
+    bool version = false;
+    std::variant<Serve> command;
 };
 
 struct Inner {
@@ -199,7 +255,114 @@ struct PositionalsInTwoAlternatives {
     std::variant<First, Second> field;
 };
 
+/// A command of many options, most of them generated names with an '=' form each, in groups
+/// its seven subcommands repeat: one check of them all must stay within a compiler's default
+/// constant-evaluation steps, under a standard library whose strings are instrumented for ASan
+/// too.
+namespace large {
+
+enum class Level : std::uint8_t { Trace, Debug, Info, Warn, Error, Off };
+
+struct Log {
+    Level log_level = Level::Warn;
+};
+
+struct Build {
+    std::string configuration;
+};
+
+struct Project {
+    std::optional<std::string> workspace;
+    Build build;
+};
+
+struct Model {
+    std::vector<std::string> scope;
+    std::vector<std::string> exclude;
+    int dir_depth = 0;
+    std::string partition;
+    std::string library;
+    std::string format;
+    std::vector<std::string> move;
+    std::vector<std::string> merge;
+    std::vector<std::string> move_entity;
+    bool all_targets = false;
+    std::string target;
+    std::vector<std::string> define;
+    Project where;
+};
+
+struct Weights {
+    std::vector<std::string> annotation;
+    std::string churn_since;
+    int window = 0;
+};
+
+struct Edge {
+    KANNOTATE(&modules, presence = required, cli::positional = true, cli::arg_num = 2)
+    std::vector<std::string> modules;
+    Model model;
+    Log log;
+};
+
+struct Module {
+    KANNOTATE(&module, cli::positional = true)
+    std::string module;
+    Model model;
+    Log log;
+};
+
+struct File {
+    KANNOTATE(&path, cli::positional = true)
+    std::string path;
+    Model model;
+    Weights weights;
+    Log log;
+};
+
+struct Obstacles {
+    Model model;
+    Log log;
+};
+
+struct Macros {
+    Model model;
+    Log log;
+};
+
+struct Impact {
+    Model model;
+    Weights weights;
+    Log log;
+};
+
+struct Interface {
+    KANNOTATE(&module, cli::positional = true)
+    std::optional<std::string> module;
+    Model model;
+    Log log;
+};
+
+struct Modules {
+    int limit = 20;
+    Model model;
+    Weights weights;
+    Log log;
+    std::optional<std::variant<Edge, Module, File, Obstacles, Macros, Impact, Interface>> operation;
+};
+
+struct Analyze {
+    KANNOTATE(&operation, presence = required)
+    std::variant<Modules> operation;
+};
+
+}  // namespace large
+
 ZEST_SUITE(cli_declaration) {
+
+ZEST_CASE(large_options_compile) {
+    ZSTATIC_EXPECT(declared<large::Analyze>);
+}
 
 ZEST_CASE(sound_options_compile) {
     ZSTATIC_EXPECT(declared<Fine>);
@@ -207,6 +370,35 @@ ZEST_CASE(sound_options_compile) {
 
 ZEST_CASE(two_options_of_one_name_do_not_compile) {
     ZSTATIC_EXPECT(!declared<Twice>);
+}
+
+ZEST_CASE(generated_name_another_field_gives_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<GeneratedTwice>);
+}
+
+ZEST_CASE(declared_name_with_an_underscore_is_not_the_generated_one) {
+    ZSTATIC_EXPECT(declared<UnderscoreGiven>);
+}
+
+ZEST_CASE(comma_name_another_field_gives_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<CommaTwice>);
+}
+
+ZEST_CASE(alias_of_a_generated_alias_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<GeneratedLoop>);
+}
+
+ZEST_CASE(two_only_equals_forms_of_one_name_do_not_compile) {
+    ZSTATIC_EXPECT(!declared<JoinedTwice>);
+}
+
+ZEST_CASE(own_option_beside_a_required_subcommand_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<OwnBesideRequired>);
+}
+
+// A global option goes with the subcommand, and one that stops the parse needs none.
+ZEST_CASE(global_and_stop_options_beside_a_required_subcommand_compile) {
+    ZSTATIC_EXPECT(declared<GlobalBesideRequired>);
 }
 
 ZEST_CASE(group_naming_an_option_of_its_command_does_not_compile) {

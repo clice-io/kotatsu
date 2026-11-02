@@ -40,6 +40,7 @@ struct Serve {
 };
 
 struct Hub {
+    KANNOTATE(&name, cli::global = true)
     std::string name;
     std::variant<Serve> command;
 };

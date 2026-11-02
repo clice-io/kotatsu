@@ -224,6 +224,8 @@ public:
         std::size_t positional = 0;
         /// Where the last argument read ended, in `reading.active`.
         std::uint32_t cursor = 0;
+        /// The first argument given that does not go with a subcommand, or no_arg.
+        std::uint32_t first_own = no_arg;
     };
 
     /// The node argument `arg` of `level` stores into: its field's under the objects of the
@@ -248,6 +250,9 @@ public:
             return err;
         }
         ++level.occurrences[arg_index];
+        if(!arg.global && level.first_own == no_arg) {
+            level.first_own = arg_index;
+        }
         Node& node = node_of(level, arg);
         // A value marks its own element when it is one, else the whole argument: "-Ia" or
         // "--tags,a,b".
@@ -439,8 +444,9 @@ public:
         return find_node(*level.root, subcommands.keys) != nullptr;
     }
 
-    /// Checks what `level` requires once its arguments are read.
-    std::optional<Error> check(const Level& level) const {
+    /// Checks what `level` requires once its arguments are read: before a subcommand's word,
+    /// only what goes with the subcommand, as nothing else may be given.
+    std::optional<Error> check(const Level& level, bool subcommand = false) const {
         const auto& command = *level.command;
         const auto at_end = level.cursor;
         auto present = [&](std::uint32_t group) {
@@ -463,24 +469,26 @@ public:
                     return error(Error::Kind::InvalidValue, std::move(*message), at_end, at_end);
                 }
             }
-            if(given != 0 || !arg.required || !present(arg.group)) {
+            if(given != 0 || !arg.required || (subcommand && !arg.global) || !present(arg.group)) {
                 continue;
             }
-            if(arg.spec.positional) {
+            // A list is short of its count; any other argument is named by its usage.
+            if(arg.spec.positional && arg.list) {
                 return error(Error::Kind::MissingRequired,
-                             std::format("expected {}, got 0",
-                                         input_args_text(arg.list ? arg.spec.arg_num : ArgNum(1))),
+                             std::format("expected {}, got 0", input_args_text(arg.spec.arg_num)),
                              at_end,
                              at_end);
             }
             return error(Error::Kind::MissingRequired,
-                         std::format("required option {} is missing", arg.usage),
+                         std::format("required {} {} is missing",
+                                     arg.spec.positional ? "argument" : "option",
+                                     arg.usage),
                          at_end,
                          at_end);
         }
         for(const auto& exclusive: command.exclusives) {
-            if(exclusive.required && present(exclusive.group) &&
-               find_node(*level.root, exclusive.keys) == nullptr) {
+            if(exclusive.required && (!subcommand || exclusive.global) &&
+               present(exclusive.group) && find_node(*level.root, exclusive.keys) == nullptr) {
                 return error(
                     Error::Kind::MissingRequired,
                     std::format("one of {} is required", alternatives_text(command, exclusive)),
@@ -540,6 +548,14 @@ public:
                         const auto& subcommands = *command.subcommands;
                         const auto found = std::ranges::find(subcommands.names, parsed.spelling);
                         if(found != subcommands.names.end()) {
+                            if(level.first_own != no_arg) {
+                                return error(Error::Kind::Conflict,
+                                             std::format("subcommand '{}' cannot be used with {}",
+                                                         parsed.spelling,
+                                                         command.args[level.first_own].usage),
+                                             index,
+                                             index + 1);
+                            }
                             const auto alternative =
                                 static_cast<std::uint32_t>(found - subcommands.names.begin());
                             Node& variant =
@@ -557,10 +573,11 @@ public:
                                               level.prefix + subcommands.path + ".")) {
                                 return err;
                             }
-                            // What the command itself requires is checked at the subcommand's
-                            // word, unless the subcommand ended the parse.
+                            // What the command requires of its arguments that go with the
+                            // subcommand is checked at the subcommand's word, unless the
+                            // subcommand ended the parse.
                             level.cursor = index;
-                            return stopped ? std::nullopt : check(level);
+                            return stopped ? std::nullopt : check(level, true);
                         }
                         // A word no positional argument takes names a subcommand, even
                         // where one may be left out.

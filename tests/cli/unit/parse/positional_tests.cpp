@@ -71,7 +71,7 @@ ZEST_CASE(scalar_positional_left_out_fails) {
     auto copy = parse_line<Copy>("a");
     ZASSERT(copy.error() != nullptr);
     ZEXPECT(copy.error()->kind == Error::Kind::MissingRequired);
-    ZEXPECT(copy.error()->message == "expected 1 input argument, got 0");
+    ZEXPECT(copy.error()->message == "required argument <TO> is missing");
     // At the end of the argv.
     ZEXPECT(copy.error()->begin == 1U);
 }

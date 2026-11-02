@@ -69,15 +69,22 @@ public:
         friend class split_view;
         friend class expand_view;
 
-        /// How the line is read: as Quoting says, or as clang-cl reads a
+        /// How the line is read: as Quoting says, as clang-cl reads a
         /// Windows response file, which has no program and in which
-        /// carriage returns, newlines and NULs separate arguments too.
-        enum class Reading : std::uint8_t { Windows, WindowsFile, POSIX };
+        /// carriage returns, newlines and NULs separate arguments too, or as
+        /// clang reads a POSIX one, in which a backslash escapes the
+        /// character after it in single quotes too.
+        enum class Reading : std::uint8_t { Windows, WindowsFile, POSIX, POSIXFile };
 
         iterator(std::string_view line, Reading reading);
 
         /// Whether `c` separates arguments outside quotes.
         bool separates(char c) const;
+
+        /// Whether it reads by the POSIX rules, a line's or a response file's.
+        bool posix() const {
+            return reading == Reading::POSIX || reading == Reading::POSIXFile;
+        }
 
         /// Reads into `unquoted` the rest of the argument from `at`, where
         /// the first character to unquote is. The index past it.
@@ -246,12 +253,14 @@ private:
 /// clang expand them, which resolve a relative `name` against the directory
 /// the command runs in, as `read` does itself. A file's text has a UTF-8
 /// byte order mark dropped and UTF-16 with one converted, and is split as
-/// `quoting` says, but that, as clang-cl reads a Windows one, none of its
-/// arguments is a program and carriage returns, newlines and NULs separate
-/// them too. UTF-16 of an odd number of bytes leaves `@name` as written. An
-/// `@name` in a file is expanded alike, up to 8 files deep, past which it
-/// stays as written. Each argument holds until the iterator moves on;
-/// `arguments` and `read` must outlive the iteration.
+/// `quoting` says, but as clang reads response files: in a Windows one, as
+/// clang-cl does, none of its arguments is a program and carriage returns,
+/// newlines and NULs separate them too; in a POSIX one, as GCC did up to 14,
+/// a backslash escapes the character after it in single quotes too. UTF-16
+/// of an odd number of bytes leaves `@name` as written. An `@name` in a file
+/// is expanded alike, up to 8 files deep, past which it stays as written.
+/// Each argument holds until the iterator moves on; `arguments` and `read`
+/// must outlive the iteration.
 inline expand_view
     expand(string_list_ref arguments,
            Quoting quoting,

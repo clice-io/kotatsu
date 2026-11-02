@@ -107,12 +107,12 @@ class Builder {
     /// The '=' forms of the names, named once every field has named its own.
     std::vector<std::pair<NameForm, std::uint32_t>> equals_forms;
 
-    void add_option(const NameForm& form, std::uint32_t arg) {
+    void add_option(std::string name, OptionKind kind, std::uint32_t arg) {
         const auto id = static_cast<std::uint32_t>(command.options.size() + 1);
-        const auto& spelling = command.spellings.emplace_back(form.name);
+        const auto& spelling = command.spellings.emplace_back(std::move(name));
         command.options.push_back(
-            Option::unaliased_one(prefixes_of(spelling), spelling, id, form.kind, 0, "", ""));
-        if(form.kind == OptionKind::MultiArg) {
+            Option::unaliased_one(prefixes_of(spelling), spelling, id, kind, 0, "", ""));
+        if(kind == OptionKind::MultiArg) {
             command.options.back().num_args =
                 static_cast<unsigned char>(command.args[arg].tuple_size);
         }
@@ -123,12 +123,13 @@ class Builder {
     /// writes its value separate.
     void name_equals_forms() {
         for(const auto& [form, index]: equals_forms) {
-            if(std::ranges::find(command.spellings, form.name) == command.spellings.end()) {
-                add_option(form, index);
+            auto name = form.name.text();
+            if(std::ranges::find(command.spellings, name) == command.spellings.end()) {
+                add_option(std::move(name), form.kind, index);
                 continue;
             }
             auto& arg = command.args[index];
-            if(arg.form == Form::Equals && arg.write_name + "=" == form.name) {
+            if(arg.form == Form::Equals && arg.write_name + "=" == name) {
                 arg.form = Form::Separate;
             }
         }
@@ -138,39 +139,44 @@ class Builder {
     /// write it.
     void name(std::uint32_t index) {
         auto& arg = command.args[index];
-        const auto forms = name_forms(arg, arg.field->declared_name);
+        std::vector<NameForm> forms;
+        name_forms(arg, arg.field->declared_name, [&](const NameForm& form) {
+            forms.push_back(form);
+        });
         const auto token = value_token(arg);
         std::vector<std::string> own;
         std::vector<std::string> separate;
         std::vector<std::string> joined;
         for(const auto& form: forms) {
+            const auto name = form.name.text();
             switch(form.role) {
                 case NameForm::Role::Own:
-                    add_option(form, index);
-                    own.push_back(form.name);
+                    add_option(name, form.kind, index);
+                    own.push_back(name);
                     if(form.kind == OptionKind::Separate) {
-                        separate.push_back(form.name);
+                        separate.push_back(name);
                     } else if(form.kind == OptionKind::Joined) {
-                        joined.push_back(form.name + token);
+                        joined.push_back(name + token);
                     } else if(form.kind == OptionKind::CommaJoined) {
-                        joined.push_back(std::format("{}{}[,{}...]", form.name, token, token));
+                        joined.push_back(std::format("{}{}[,{}...]", name, token, token));
                     }
                     break;
-                case NameForm::Role::OnlyEquals:
-                    joined.push_back(form.name + token);
-                    [[fallthrough]];
+                case NameForm::Role::OnlyEquals: joined.push_back(name + token); [[fallthrough]];
                 case NameForm::Role::Equals: equals_forms.emplace_back(form, index); break;
             }
         }
         // The first name writes the option: after '=' when it has an '=' form, which reads
         // back any value.
+        // An '=' form follows its name's own one, unless it is the name's only form.
         const auto& first = forms.front();
-        arg.write_name = first.role == NameForm::Role::Own
-                             ? first.name
-                             : first.name.substr(0, first.name.size() - 1);
+        const auto first_name = first.name.text();
+        auto write = first.name;
+        if(first.role != NameForm::Role::Own) {
+            write.suffix = '\0';
+        }
+        arg.write_name = write.text();
         if(first.role != NameForm::Role::Own ||
-           (forms.size() > 1 && forms[1].role != NameForm::Role::Own &&
-            forms[1].name == first.name + "=")) {
+           (forms.size() > 1 && forms[1].role != NameForm::Role::Own)) {
             arg.form = Form::Equals;
         } else if(first.kind == OptionKind::Joined || first.kind == OptionKind::CommaJoined) {
             arg.form = Form::Joined;
@@ -181,11 +187,11 @@ class Builder {
             case Shape::Count:
             case Shape::Alias:
                 arg.usage = join(own, "|");
-                arg.synopsis = first.name;
+                arg.synopsis = first_name;
                 return;
             case Shape::Tuple:
                 arg.usage = std::format("{} {}", join(own, "|"), numbered(token, arg.tuple_size));
-                arg.synopsis = std::format("{} {}", first.name, numbered(token, arg.tuple_size));
+                arg.synopsis = std::format("{} {}", first_name, numbered(token, arg.tuple_size));
                 return;
             case Shape::Value: break;
         }
@@ -196,7 +202,7 @@ class Builder {
         usages.insert(usages.end(), joined.begin(), joined.end());
         arg.usage = join(usages, "|");
         // A first name that takes its value joined is the first of `joined`.
-        arg.synopsis = first.kind == OptionKind::Separate ? std::format("{} {}", first.name, token)
+        arg.synopsis = first.kind == OptionKind::Separate ? std::format("{} {}", first_name, token)
                                                           : joined.front();
     }
 
@@ -280,6 +286,7 @@ class Builder {
     void add_exclusive(const codec::field_info& field,
                        const FieldUse& use,
                        std::uint32_t group,
+                       bool global,
                        const std::vector<std::string_view>& keys,
                        const std::string& path) {
         const auto index = static_cast<std::uint32_t>(command.exclusives.size());
@@ -289,6 +296,7 @@ class Builder {
             .group = group,
             .required = use.required,
             .first_args = std::vector<std::uint32_t>(variant.alternatives.size(), no_arg),
+            .global = global,
         });
         const auto title = field.description.empty() ? std::string(field.declared_name)
                                                      : std::string(field.description);
@@ -298,6 +306,7 @@ class Builder {
             const auto inner = static_cast<std::uint32_t>(command.groups.size());
             command.groups.push_back(Group{
                 .parent = group,
+                .global = global,
                 .keys = keys,
                 .description = std::format("{}, one of: {}",
                                            title,
@@ -324,6 +333,8 @@ class Builder {
             const auto field_path = path.empty() ? std::string(field.declared_name)
                                                  : std::format("{}.{}", path, field.declared_name);
             const auto use = use_of(field);
+            const bool global =
+                use.spec.global || (group != no_group && command.groups[group].global);
             switch(use.kind) {
                 case FieldUse::Kind::Group: {
                     const auto inner = static_cast<std::uint32_t>(command.groups.size());
@@ -333,6 +344,7 @@ class Builder {
                         field.description.empty() ? members.description : field.description;
                     command.groups.push_back(Group{.parent = group,
                                                    .optional = use.optional,
+                                                   .global = global,
                                                    .keys = field_keys,
                                                    .description = std::string(description)});
                     add_struct(members, inner, field_keys, field_path);
@@ -342,7 +354,7 @@ class Builder {
                     add_subcommands(use, group, field_keys, field_path);
                     break;
                 case FieldUse::Kind::Exclusive:
-                    add_exclusive(field, use, group, field_keys, field_path);
+                    add_exclusive(field, use, group, global, field_keys, field_path);
                     break;
                 case FieldUse::Kind::Commands:
                     add_commands(use, group, field_keys, field_path);
@@ -352,6 +364,7 @@ class Builder {
                     arg.field = &field;
                     arg.group = group;
                     arg.alternative = current_alternative;
+                    arg.global = global;
                     arg.keys = std::move(field_keys);
                     arg.path = field_path;
                     add_arg(std::move(arg));
@@ -379,7 +392,7 @@ public:
             if(std::ranges::none_of(command.spellings, [&](std::string_view spelling) {
                    return takes(spelling, name);
                })) {
-                add_option(NameForm{.name = std::string(name), .kind = OptionKind::Flag}, help_arg);
+                add_option(std::string(name), OptionKind::Flag, help_arg);
                 help_names.push_back(name);
             }
         }

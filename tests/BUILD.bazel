@@ -81,7 +81,8 @@ cc_library(
     size = "medium",
     srcs = ["main.cpp"] + glob(["%s/%s/**/*.cpp" % (module, level)]),
     args = ["--snapshot-dir=tests/snapshots"],
-    # The module's snapshots, and the files its tests read beside them.
+    # The module's snapshots, the files its tests read beside them, and the
+    # sources of the module some read.
     data = glob(
         [
             "snapshots/%s_*/**" % module.replace("/", "_"),
@@ -89,7 +90,9 @@ cc_library(
         ],
         allow_empty = True,
         exclude = ["**/*.cpp"],
-    ),
+    ) + {
+        "codec/system": ["//:include/kotatsu/codec/macro.h"],
+    }.get("%s/%s" % (module, level), []),
     # zest's snapshot cases rewrite a snapshot of tests/snapshots and put it
     # back, as under ctest, which a sandbox's read-only runfiles refuse.
     tags = [level] + (["no-sandbox"] if module == "zest" else []),
@@ -102,6 +105,7 @@ cc_library(
     ("sys", "system", [":sys_harness"]),
     ("meta", "unit", [":fixtures"]),
     ("codec", "unit", [":codec_harness"]),
+    ("codec", "system", []),
     ("codec/bincode", "unit", [":codec_bincode_harness"]),
     ("codec/blob", "unit", [":codec_blob_harness"]),
     ("codec/debug", "unit", [":codec_harness"]),
