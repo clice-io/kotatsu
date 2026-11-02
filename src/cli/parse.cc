@@ -466,15 +466,17 @@ public:
             if(given != 0 || !arg.required || !present(arg.group)) {
                 continue;
             }
-            if(arg.spec.positional) {
+            // A list is short of its count; any other argument is named by its usage.
+            if(arg.spec.positional && arg.list) {
                 return error(Error::Kind::MissingRequired,
-                             std::format("expected {}, got 0",
-                                         input_args_text(arg.list ? arg.spec.arg_num : ArgNum(1))),
+                             std::format("expected {}, got 0", input_args_text(arg.spec.arg_num)),
                              at_end,
                              at_end);
             }
             return error(Error::Kind::MissingRequired,
-                         std::format("required option {} is missing", arg.usage),
+                         std::format("required {} {} is missing",
+                                     arg.spec.positional ? "argument" : "option",
+                                     arg.usage),
                          at_end,
                          at_end);
         }
