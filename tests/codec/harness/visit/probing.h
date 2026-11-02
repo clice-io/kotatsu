@@ -447,6 +447,19 @@ void probing(const Kit<B>& kit) {
             };
         },
         [] { return std::variant<TaggedOverRepr, std::map<std::string, int>>{TaggedOverRepr{1}}; });
+    // A repr's representation probes under the scope it is read under.
+    reads_in_field<std::variant<ScopedBox, std::map<std::string, int>>>(
+        kit,
+        "repr_probes_under_its_scope",
+        [] {
+            return std::map<std::string, int>{
+                {"ItemCount", 42}
+            };
+        },
+        [] {
+            return std::variant<ScopedBox, std::map<std::string, int>>{
+                ScopedBox{.value = BoxedCount{.item_count = 42}}};
+        });
     reads_in_field<std::variant<ExternalShape, bool>, NotHumanReadableSettings>(
         kit,
         "not_human_readable_probes_tagged_by_alternatives",

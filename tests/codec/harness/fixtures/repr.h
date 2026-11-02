@@ -130,6 +130,23 @@ struct TaggedOverRepr : std::variant<int, std::string> {
     using variant::variant;
 };
 
+/// What ScopedBox travels as, inside an untagged variant.
+struct BoxedCount {
+    int item_count = 0;
+
+    auto operator==(const BoxedCount&) const -> bool = default;
+};
+
+/// A struct whose rename_all names the members of what its repr declares,
+/// probing as in a decode of its own.
+KANNOTATE_TYPE(struct ScopedBox, rename_all = Casing::UpperCamel);
+
+struct ScopedBox {
+    std::variant<BoxedCount, int> value;
+
+    auto operator==(const ScopedBox&) const -> bool = default;
+};
+
 /// Adapters for behavior::with.
 struct VersionAsNumber {
     using type = std::uint32_t;
@@ -439,6 +456,19 @@ struct repr<test::TaggedOverRepr> {
 
     static test::TaggedOverRepr from(type v) {
         return std::visit([](auto x) { return test::TaggedOverRepr{std::move(x)}; }, std::move(v));
+    }
+};
+
+template <>
+struct repr<test::ScopedBox> {
+    using type = std::variant<test::BoxedCount, int>;
+
+    static type to(const test::ScopedBox& b) {
+        return b.value;
+    }
+
+    static test::ScopedBox from(type v) {
+        return {.value = std::move(v)};
     }
 };
 

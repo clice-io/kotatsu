@@ -675,11 +675,13 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
 /// must flow into it. An imperative repr decodes through its own body
 /// instead, so its inner behavior is opaque to the pass structure. The type
 /// annotation goes first, as in decode_with_attrs: `with` and `as` are opaque
-/// too, and a tagged variant is read untagged only where decode_tagged_variant
-/// reads no tags, its repr aside.
+/// too, a tagged variant is read untagged only where decode_tagged_variant
+/// reads no tags, its repr aside, and a repr's representation is read under
+/// the node's scope.
 template <typename Format, typename Vis, typename T>
 constexpr bool probes_as_untagged_variant() {
     using attrs = meta::attrs_of_t<T>;
+    using scope = node_format_t<Format, T, attrs>;
     if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T>::visit(v, out); })
         return false;
     else if constexpr(tuple_has_spec_v<attrs, behavior::with> ||
@@ -687,12 +689,12 @@ constexpr bool probes_as_untagged_variant() {
         return false;
     else if constexpr(spec_of<struct_spec, attrs>.tagging != tag_mode::none)
         return has_native_variant<Vis> || !Format::human_readable;
-    else if constexpr(has_repr<T, Format>) {
-        using chosen = repr_for<T, Format>;
+    else if constexpr(has_repr<T, scope>) {
+        using chosen = repr_for<T, scope>;
         if constexpr(
             requires { chosen::from(std::declval<declared_repr_t<chosen>>()); } &&
             !requires(Vis& v, T& out) { chosen::decode(v, out); })
-            return probes_as_untagged_variant<Format, Vis, declared_repr_t<chosen>>();
+            return probes_as_untagged_variant<scope, Vis, declared_repr_t<chosen>>();
         else
             return false;
     } else if constexpr(is_optional_v<T>)
@@ -717,11 +719,12 @@ bool
 /// link here always has the declarative from() decode path.
 template <typename Format, typename Vis, typename T>
 bool nested_alternative_pass(Vis& vis, T& out, meta::type_kind src_kind, bool widen) {
-    if constexpr(has_repr<T, Format> &&
+    using scope = node_format_t<Format, T, meta::attrs_of_t<T>>;
+    if constexpr(has_repr<T, scope> &&
                  spec_of<struct_spec, meta::attrs_of_t<T>>.tagging == tag_mode::none) {
-        using chosen = repr_for<T, Format>;
+        using chosen = repr_for<T, scope>;
         auto declared = declared_repr_t<chosen>();
-        KOTATSU_CODEC_TRY(nested_alternative_pass<Format>(vis, declared, src_kind, widen));
+        KOTATSU_CODEC_TRY(nested_alternative_pass<scope>(vis, declared, src_kind, widen));
         out = chosen::from(std::move(declared));
         return true;
     } else if constexpr(taggable<T>) {
