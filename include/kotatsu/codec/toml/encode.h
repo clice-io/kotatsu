@@ -11,12 +11,11 @@
 #include <type_traits>
 
 #include "kotatsu/support/expected_try.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/encode.h"
+#include "kotatsu/codec/format.h"
+#include "kotatsu/codec/repr.h"
 #include "kotatsu/codec/toml/type.h"
-#include "kotatsu/codec/visit/common.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/context.h"
-#include "kotatsu/codec/visit/encode.h"
-#include "kotatsu/codec/visit/map_key.h"
 
 namespace kotatsu::codec::toml {
 
@@ -70,11 +69,11 @@ struct RootSink {
     }
 };
 
-template <typename Sink>
+template <typename Format, typename Sink>
 struct ValueWriter {
     Sink sink;
-    using format = toml::format;
-    constexpr static bool human_readable = true;
+    using format = Format;
+    constexpr static bool utf8 = true;
 
     bool visit_null() {
         return sink.emit_null();
@@ -138,16 +137,15 @@ struct ValueWriter {
     bool visit_tuple(const T&, Body&& body);
 };
 
-using TableValueWriter = ValueWriter<TableSink>;
-using ArrayValueWriter = ValueWriter<ArraySink>;
-
+template <typename Format>
 struct TableWriter {
     Table& tbl;
 
-    template <typename F>
-    bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
+    template <typename Field, typename F>
+    bool visit_field(Field field, F&& writer);
 };
 
+template <typename Format>
 struct ArraySeqWriter {
     Array& arr;
 
@@ -155,6 +153,7 @@ struct ArraySeqWriter {
     bool visit_element(F&& writer);
 };
 
+template <typename Format>
 struct MapWriter {
     Table& tbl;
 
@@ -162,74 +161,81 @@ struct MapWriter {
     bool visit_entry(KF&& key_fn, VF&& value_fn);
 };
 
-template <typename Sink>
+template <typename Format, typename Sink>
 template <typename T, typename Body>
-bool ValueWriter<Sink>::visit_struct(const T&, Body&& body) {
+bool ValueWriter<Format, Sink>::visit_struct(const T&, Body&& body) {
     Table child;
-    TableWriter tw{child};
+    TableWriter<Format> tw{child};
     KOTATSU_CODEC_TRY(body(tw));
     return sink.emit(std::move(child));
 }
 
-template <typename Sink>
+template <typename Format, typename Sink>
 template <typename Container, typename Body>
-bool ValueWriter<Sink>::visit_seq(const Container&, Body&& body) {
+bool ValueWriter<Format, Sink>::visit_seq(const Container&, Body&& body) {
     Array arr;
-    ArraySeqWriter sw{arr};
+    ArraySeqWriter<Format> sw{arr};
     KOTATSU_CODEC_TRY(body(sw));
     return sink.emit(std::move(arr));
 }
 
-template <typename Sink>
+template <typename Format, typename Sink>
 template <typename Container, typename Body>
-bool ValueWriter<Sink>::visit_map(const Container&, Body&& body) {
+bool ValueWriter<Format, Sink>::visit_map(const Container&, Body&& body) {
     Table child;
-    MapWriter mw{child};
+    MapWriter<Format> mw{child};
     KOTATSU_CODEC_TRY(body(mw));
     return sink.emit(std::move(child));
 }
 
-template <typename Sink>
+template <typename Format, typename Sink>
 template <typename T, typename Body>
-bool ValueWriter<Sink>::visit_tuple(const T& value, Body&& body) {
+bool ValueWriter<Format, Sink>::visit_tuple(const T& value, Body&& body) {
     return visit_seq(value, std::forward<Body>(body));
 }
 
-template <typename F>
-bool TableWriter::visit_field(std::size_t /*index*/, std::string_view name, F&& writer) {
-    TableValueWriter vw{
-        {tbl, std::string(name)}
+template <typename Format>
+template <typename Field, typename F>
+bool TableWriter<Format>::visit_field(Field field, F&& writer) {
+    ValueWriter<Format, TableSink> vw{
+        {tbl, std::string(field.name)}
     };
     return writer(vw);
 }
 
+template <typename Format>
 template <typename F>
-bool ArraySeqWriter::visit_element(F&& writer) {
-    ArrayValueWriter vw{{arr}};
+bool ArraySeqWriter<Format>::visit_element(F&& writer) {
+    ValueWriter<Format, ArraySink> vw{{arr}};
     return writer(vw);
 }
 
+template <typename Format>
 template <typename KF, typename VF>
-bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
+bool MapWriter<Format>::visit_entry(KF&& key_fn, VF&& value_fn) {
     std::string key;
-    MapKeyWriter<StringKeySink, format> kw{{key}};
+    MapKeyWriter<StringKeySink, Format, true> kw{{key}};
     KOTATSU_CODEC_TRY(key_fn(kw));
-    TableValueWriter vw{
+    ValueWriter<Format, TableSink> vw{
         {tbl, std::move(key)}
     };
     return value_fn(vw);
 }
 
-/// Encodes `value` as a toml::Table DOM (to_string renders it as text).
-template <typename Config = void, typename T>
-auto to_toml(const T& value) -> std::expected<Table, rich_error> {
+/// Encodes `value` as a toml::Table DOM under the format F (to_string renders
+/// it as text).
+template <typename F = toml::format, typename T>
+auto to_toml(const T& value, const encode_options& options = {})
+    -> std::expected<Table, rich_error> {
+    static_assert(codec::extends<F, toml::format>,
+                  "a TOML format extends toml::format: codec::extend<toml::format>");
     // Root routing follows the representation the codec dispatch resolves
-    // (annotations and toml-scoped meta::repr included), not the declared
+    // (annotations and toml-scoped codec::repr included), not the declared
     // type: a struct whose repr is a scalar is boxed under the root key, and
     // a repr that resolves to a table shape becomes the root table.
-    if constexpr(detail::nullable_root_v<T>) {
+    if constexpr(detail::nullable_root_v<T, F>) {
         if(value) {
-            auto engaged = to_toml<Config>(*value);
+            auto engaged = to_toml<F>(*value, options);
             // A null root is the empty document (TOML has no null), so an
             // engaged pointee that serializes to an empty table — a non-null
             // pointer to an empty map, say — would decode back as null. Fail
@@ -244,23 +250,24 @@ auto to_toml(const T& value) -> std::expected<Table, rich_error> {
         return Table{};
     } else {
         Table root;
-        if constexpr(detail::root_table_v<T>) {
-            ValueWriter<RootSink> vw{{root}};
-            KOTATSU_EXPECTED_TRY(codec::detail::run_encode<Config>(vw, value));
+        if constexpr(detail::root_table_v<T, F>) {
+            ValueWriter<F, RootSink> vw{{root}};
+            KOTATSU_EXPECTED_TRY(codec::detail::run_encode<F>(vw, value, options));
         } else {
-            TableValueWriter vw{
+            ValueWriter<F, TableSink> vw{
                 {root, std::string(detail::boxed_root_key)}
             };
-            KOTATSU_EXPECTED_TRY(codec::detail::run_encode<Config>(vw, value));
+            KOTATSU_EXPECTED_TRY(codec::detail::run_encode<F>(vw, value, options));
         }
         return root;
     }
 }
 
 /// Encodes `value` as TOML text (to_toml rendered through toml++).
-template <typename Config = void, typename T>
-auto to_string(const T& value) -> std::expected<std::string, rich_error> {
-    KOTATSU_EXPECTED_TRY_V(auto table, to_toml<Config>(value));
+template <typename F = toml::format, typename T>
+auto to_string(const T& value, const encode_options& options = {})
+    -> std::expected<std::string, rich_error> {
+    KOTATSU_EXPECTED_TRY_V(auto table, to_toml<F>(value, options));
     std::ostringstream out;
     out << table;
     return out.str();

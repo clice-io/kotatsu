@@ -1,9 +1,10 @@
 #pragma once
 
-// Attrs and config: how field and struct annotations, the behavior attrs and
-// the config knobs shape the document, and the protocol's errors for keyed
-// documents.
+// Attributes and formats: how field and struct annotations, the behavior
+// attributes, the format's knobs and the options shape the document, and the
+// protocol's errors for keyed documents.
 
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <map>
@@ -14,16 +15,14 @@
 #include <vector>
 
 #include "codec/harness/fixtures/attrs.h"
-#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/scalars.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/visit/kit.h"
 #include "fixtures/attrs.h"
-#include "fixtures/configs.h"
-#include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
+#include "fixtures/settings.h"
 
 namespace kotatsu::test {
 
@@ -50,14 +49,13 @@ void attrs(const Kit<B>& kit) {
     // whatever they are called, so names are checked where they travel, in a
     // keyed document, and the roundtrips run everywhere.
     auto renamed_root = [] {
-        return RenamedRoot{
-            {.user_name = 7, .display_name = "ada"}
-        };
+        return RenamedRoot{.user_name = 7, .display_name = "ada"};
     };
     roundtrip(kit, "rename_all_roundtrip", renamed_root);
-    using SnakeStrict = meta::annotate<UpperSnakeStrictTag>::type<RenameTarget>;
     auto policy_on_field = [] {
-        return Field<SnakeStrict>{{{.user_name = 7, .display_name = "ada"}}};
+        return SnakeStrict{
+            {.user_name = 7, .display_name = "ada"}
+        };
     };
     roundtrip(kit, "rename_all_on_field_roundtrip", policy_on_field);
     auto nested_rename = [] {
@@ -66,12 +64,22 @@ void attrs(const Kit<B>& kit) {
             .nested_info = {.user_name = 7, .total_score = 1.5F, .item_id = "abc"},
         };
     };
-    roundtrip<CamelConfig>(kit, "field_rename_roundtrip", nested_rename);
+    roundtrip<CamelSettings>(kit, "format_rename_all_roundtrip", nested_rename);
+    auto dashed = [] {
+        return DashedPair{.item_id = 2, .user_name = 7};
+    };
+    roundtrip(kit, "rename_all_policy_type_roundtrip", dashed);
     auto documented = [] {
         return Documented{.id = 7, .name = "ada"};
     };
     roundtrip(kit, "description_roundtrip", documented);
     if constexpr(B::caps.self_describing) {
+        encodes_as(kit, "rename_all_policy_type_encodes_as_plain", dashed, [] {
+            return Ints{
+                {"item-id",   2},
+                {"user-name", 7}
+            };
+        });
         encodes_as(kit, "rename_all_encodes_as_plain", renamed_root, [] {
             return RenameTargetCamel{.userName = 7, .displayName = "ada"};
         });
@@ -80,30 +88,37 @@ void attrs(const Kit<B>& kit) {
                 {.USER_NAME = 7, .DISPLAY_NAME = "ada"}
             };
         });
-        encodes_as<CamelConfig>(
+        encodes_as<CamelSettings>(
             kit,
-            "field_rename_encodes_as_plain",
+            "format_rename_all_encodes_as_plain",
             [] { return RenameAllTarget{.user_name = 7, .total_score = 1.5F, .item_id = "abc"}; },
             [] {
                 return RenameAllTargetCamel{.userName = 7, .totalScore = 1.5F, .itemId = "abc"};
             });
-        encodes_as<CamelConfig>(kit, "field_rename_reaches_nested_structs", nested_rename, [] {
-            return NestedRenameTargetCamel{
-                .requestId = 1,
-                .nestedInfo = {.userName = 7, .totalScore = 1.5F, .itemId = "abc"},
-            };
-        });
+        encodes_as<CamelSettings>(
+            kit,
+            "format_rename_all_reaches_nested_structs",
+            nested_rename,
+            [] {
+                return NestedRenameTargetCamel{
+                    .requestId = 1,
+                    .nestedInfo = {.userName = 7, .totalScore = 1.5F, .itemId = "abc"},
+                };
+            });
         auto mixed_rename = [] {
             return MixedRenameStruct{.user_id = 7, .total_score = 1.5F, .item_name = "x"};
         };
         auto mixed_rename_plain = [] {
             return MixedRenameStructCamel{.ID = 7, .totalScore = 1.5F, .itemName = "x"};
         };
-        encodes_as<CamelConfig>(kit, "rename_beats_field_rename", mixed_rename, mixed_rename_plain);
-        reads<MixedRenameStruct, CamelConfig>(kit,
-                                              "rename_beats_field_rename_reads",
-                                              mixed_rename_plain,
-                                              mixed_rename);
+        encodes_as<CamelSettings>(kit,
+                                  "rename_beats_format_rename_all",
+                                  mixed_rename,
+                                  mixed_rename_plain);
+        reads<MixedRenameStruct, CamelSettings>(kit,
+                                                "rename_beats_format_rename_all_reads",
+                                                mixed_rename_plain,
+                                                mixed_rename);
         encodes_as(kit, "description_is_transparent", documented, [] {
             return StrictIdName{.id = 7, .name = "ada"};
         });
@@ -113,7 +128,11 @@ void attrs(const Kit<B>& kit) {
     // document and in fbs's tables. bincode concatenates a nested struct's
     // fields either way, so there these cases hold whatever flatten does.
     auto outer = [] {
-        return Outer{.x = 1, .inner = {{.a = 2, .b = 3}}, .y = 4};
+        return Outer{
+            .x = 1,
+            .inner = {.a = 2, .b = 3},
+            .y = 4
+        };
     };
     auto outer_plain = [] {
         return OuterPlain{.x = 1, .a = 2, .b = 3, .y = 4};
@@ -121,7 +140,11 @@ void attrs(const Kit<B>& kit) {
     encodes_as(kit, "flatten_encodes_as_plain", outer, outer_plain);
     reads<Outer>(kit, "flatten_reads", outer_plain, outer);
     auto deep = [] {
-        return DeepOuter{.head = 1, .mid = {{.m = 2, .deep = {{.p = 3, .q = 4}}}}, .tail = 5};
+        return DeepOuter{
+            .head = 1,
+            .mid = {.m = 2, .deep = {.p = 3, .q = 4}},
+            .tail = 5
+        };
     };
     auto deep_plain = [] {
         return DeepOuterPlain{.head = 1, .m = 2, .p = 3, .q = 4, .tail = 5};
@@ -129,7 +152,9 @@ void attrs(const Kit<B>& kit) {
     encodes_as(kit, "deep_flatten_encodes_as_plain", deep, deep_plain);
     reads<DeepOuter>(kit, "deep_flatten_reads", deep_plain, deep);
     auto inner_rename = [] {
-        return FlattenOuterWithChildRename{{{.a = 1, .b = 2}}};
+        return FlattenOuterWithChildRename{
+            {.a = 1, .b = 2}
+        };
     };
     auto inner_rename_plain = [] {
         return FlattenOuterWithChildRenamePlain{.renamed_a = 1, .b = 2};
@@ -148,14 +173,14 @@ void attrs(const Kit<B>& kit) {
         [] {
             return FlattenOuterWithChildSkip{
                 .head = 1,
-                .inner = {{.keep_a = 2, .drop_b = 9, .keep_c = 3}},
+                .inner = {.keep_a = 2, .drop_b = 9, .keep_c = 3},
             };
         },
         inner_skip_plain);
     reads<FlattenOuterWithChildSkip>(kit, "flatten_keeps_inner_skip_reads", inner_skip_plain, [] {
         return FlattenOuterWithChildSkip{
             .head = 1,
-            .inner = {{.keep_a = 2, .drop_b = 0, .keep_c = 3}},
+            .inner = {.keep_a = 2, .drop_b = 0, .keep_c = 3},
         };
     });
 
@@ -177,98 +202,100 @@ void attrs(const Kit<B>& kit) {
     // The target is value-initialized before it is read: the explicit default
     // constructor of one of its members rejects `{}`.
     roundtrip(kit, "as_value_initialized_target_roundtrip", [] {
-        return Field<TallyAsHeld>{TallyAsHeld(Tally(std::vector<int>{1, 2}))};
+        return TallyAsHeld{Tally(std::vector<int>{1, 2})};
     });
-    using Decimal = meta::annotation<int, meta::behavior::with<DecimalText>>;
     auto decimal = [] {
-        return Field<Decimal>{42};
+        return Decimal{42};
     };
     encodes_as(kit, "with_encodes_as_plain", decimal, [] { return Field<std::string>{"42"}; });
     roundtrip(kit, "with_roundtrip", decimal);
     auto renamed_decimal = [] {
         return RenamedDecimal{.value = 42};
     };
-    encodes_as(kit, "annotation_of_an_annotation_encodes_as_both_say", renamed_decimal, [] {
+    encodes_as(kit, "rename_and_with_encode_as_both_say", renamed_decimal, [] {
         return RenamedDecimalPlain{.amount = "42"};
     });
-    roundtrip(kit, "annotation_of_an_annotation_roundtrip", renamed_decimal);
-    auto maybe_decimal = [] {
-        return Field<std::optional<Decimal>>{Decimal{42}};
-    };
-    encodes_as(kit, "with_in_optional_encodes_as_plain", maybe_decimal, [] {
-        return Field<std::optional<std::string>>{"42"};
-    });
-    roundtrip(kit, "with_in_optional_roundtrip", maybe_decimal);
+    roundtrip(kit, "rename_and_with_roundtrip", renamed_decimal);
     auto grant = [] {
         return AccessGrant{.level = Access::read_only, .count = 2};
     };
-    encodes_as(kit, "enum_string_encodes_as_plain", grant, [] {
+    encodes_as(kit, "enum_names_with_encodes_as_plain", grant, [] {
         return AccessGrantPlain{.level = "readOnly", .count = 2};
     });
-    roundtrip(kit, "enum_string_roundtrip", grant);
-    auto access_name = [] {
-        return AccessName{Access::full_control};
-    };
-    encodes_as(kit, "enum_string_root_encodes_as_plain", access_name, [] {
-        return std::string("fullControl");
-    });
-    roundtrip(kit, "enum_string_root_roundtrip", access_name);
+    roundtrip(kit, "enum_names_with_roundtrip", grant);
     write_fails(kit,
-                "enum_string_unnamed_value_fails",
-                [] { return Field<AccessName>{AccessName{static_cast<Access>(9)}}; },
+                "enum_names_unnamed_value_fails",
+                [] { return AccessName{static_cast<Access>(9)}; },
                 {.message = "enum value 9 has no reflected name", .path = "value"});
+    // A name is read back by matching it as spelled, whatever case the
+    // enumerator is declared in.
+    encodes_as(
+        kit,
+        "enum_names_spell_every_enumerator",
+        [] {
+            return std::vector<MixedName>{{Mixed::FullControl},
+                                          {Mixed::readOnly},
+                                          {Mixed::HTTPServer},
+                                          {Mixed::no_access}};
+        },
+        [] {
+            return std::vector<Field<std::string>>{{"fullControl"},
+                                                   {"readOnly"},
+                                                   {"httpServer"},
+                                                   {"noAccess"}};
+        });
+    roundtrip(kit, "enum_names_read_every_enumerator_back", [] {
+        return std::vector<MixedName>{{Mixed::FullControl},
+                                      {Mixed::readOnly},
+                                      {Mixed::HTTPServer},
+                                      {Mixed::no_access}};
+    });
+    // A repr names the enum wherever it stands, spelled by the rename_all of
+    // its own annotation when it has one.
+    encodes_as(
+        kit,
+        "enum_names_repr_encodes_as_plain",
+        [] { return Field<NamedAccess>{NamedAccess::read_only}; },
+        [] { return Field<std::string>{"read_only"}; });
+    roundtrip(kit, "enum_names_repr_roundtrip", [] {
+        return Field<NamedAccess>{NamedAccess::full_control};
+    });
+    encodes_as(
+        kit,
+        "enum_names_follow_the_enum_rename_all",
+        [] { return Field<CamelAccess>{CamelAccess::read_only}; },
+        [] { return Field<std::string>{"readOnly"}; });
+    roundtrip(kit, "enum_names_rename_all_roundtrip", [] {
+        return Field<CamelAccess>{CamelAccess::full_control};
+    });
+    // The values a write leaves out: each field at its default, but the
+    // score, which its predicate judges.
     auto matching = [] {
-        return Skippable{
+        return Omittable{
             .id = 1,
-            .note = std::nullopt,
-            .tags = {},
-            .generation = 0,
+            .note = "kept",
+            .tags = {9},
+            .generation = 7,
             .score = -5,
         };
     };
-    // A field skipped on decode is still in the document, written through
-    // its attrs: a positional decode reads past it the same way, and the
-    // field it decodes into keeps its value.
-    reads<CellSkippedOnDecode>(
+    // A predicate judges only the value being written: a decode reads the
+    // field whatever the value it decodes into holds, here the empty text the
+    // predicate matches.
+    reads<OmitsEmptyText>(
         kit,
-        "skip_if_on_decode_reads_past_its_as_field",
-        [] {
-            return CellSkippedOnDecodePlain{
-                .cell = {.x = 1, .y = 2},
-                .after = 7
-            };
-        },
-        [] { return CellSkippedOnDecode{.cell = {}, .after = 7}; });
-    // ...into a value-initialized one, here of a type `{}` cannot make.
-    reads<HeldSkippedOnDecode>(
-        kit,
-        "skip_if_on_decode_reads_past_a_value_initialized_field",
-        [] {
-            return HeldSkippedOnDecodePlain{
-                .held = {.list = {1, 2}, .count = 2},
-                .after = 7
-            };
-        },
-        [] {
-            return HeldSkippedOnDecode{.held = {{.list = ExplicitList(), .count = 0}}, .after = 7};
-        });
-    // A one-argument predicate judges the value being written: a decode
-    // reads the field whatever the value it decodes into holds, here the
-    // empty text the predicate matches.
-    reads<SkipsEmptyText>(
-        kit,
-        "one_argument_skip_if_reads_its_field",
+        "omit_if_reads_its_field",
         [] { return TextPlain{.text = "x"}; },
-        [] { return SkipsEmptyText{.text = std::string("x")}; });
+        [] { return OmitsEmptyText{.text = std::string("x")}; });
     if constexpr(B::caps.absent_fields) {
         // ...and, encoding, it leaves out the value it matches.
         encodes_as(
             kit,
-            "one_argument_skip_if_omits_matching_field",
-            [] { return SkipsEmptyText{.text = std::string()}; },
+            "omit_if_leaves_out_matching_field",
+            [] { return OmitsEmptyText{.text = std::string()}; },
             [] { return Empty{}; });
         auto kept = [] {
-            return Skippable{
+            return Omittable{
                 .id = 1,
                 .note = "n",
                 .tags = {1, 2},
@@ -276,9 +303,9 @@ void attrs(const Kit<B>& kit) {
                 .score = 7
             };
         };
-        encodes_as(kit, "skip_if_omits_matching_fields", matching, [] { return IdOnly{.id = 1}; });
-        encodes_as(kit, "skip_if_keeps_other_fields", kept, [] {
-            return SkippablePlain{
+        encodes_as(kit, "presence_omits_matching_fields", matching, [] { return IdOnly{.id = 1}; });
+        encodes_as(kit, "presence_keeps_other_fields", kept, [] {
+            return OmittablePlain{
                 .id = 1,
                 .note = "n",
                 .tags = {1, 2},
@@ -286,93 +313,96 @@ void attrs(const Kit<B>& kit) {
                 .score = 7
             };
         });
+        // A field's default is its initializer, not the empty value: an
+        // empty value that is not the default is written.
+        encodes_as(
+            kit,
+            "omit_if_default_compares_with_the_initializer",
+            [] {
+                return Omittable{
+                    .id = 1,
+                    .note = std::nullopt,
+                    .tags = {},
+                    .generation = 0,
+                    .score = 3,
+                };
+            },
+            [] {
+                return OmittablePlain{
+                    .id = 1,
+                    .note = std::nullopt,
+                    .tags = {},
+                    .generation = 0,
+                    .score = 3,
+                };
+            });
+        // The default is the field of a value-initialized struct, here one
+        // `{}` cannot make.
+        encodes_as(
+            kit,
+            "omit_if_default_value_initializes_its_struct",
+            [] { return CountBesideExplicit{.list = ExplicitList{1}, .count = 2}; },
+            [] { return ListPlain{.list = {1}}; });
         // A keyed decode never visits an absent field, which is left as the
         // value it decodes into holds it; what a slot decode reads for an
         // absent slot is the backend's own.
         if constexpr(B::caps.self_describing) {
-            reads<Skippable>(
+            reads<Omittable>(
                 kit,
-                "skip_if_absent_fields_left_alone",
+                "presence_absent_fields_left_alone",
                 [] { return IdOnly{.id = 1}; },
                 [] {
-                    return Skippable{.id = 1,
+                    return Omittable{.id = 1,
                                      .note = "kept",
                                      .tags = {9},
                                      .generation = 7,
                                      .score = 3};
                 });
+            // So a field left out at its default reads back as written.
+            roundtrip(kit, "omit_if_default_at_its_default_roundtrip", [] {
+                return Omittable{.id = 1};
+            });
         }
-        roundtrip(kit, "skip_if_roundtrip", kept);
+        roundtrip(kit, "presence_roundtrip", kept);
     } else {
-        // Nothing can mark a field absent, so skip_if omits nothing: a field
-        // it matches is written, and reads back over the initializer.
-        roundtrip(kit, "skip_if_matching_fields_roundtrip", matching);
+        // Nothing can mark a field absent, so presence omits nothing: a field
+        // it would leave out is written, and reads back as written.
+        encodes_as(kit, "presence_writes_matching_fields", matching, [] {
+            return OmittablePlain{
+                .id = 1,
+                .note = "kept",
+                .tags = {9},
+                .generation = 7,
+                .score = -5,
+            };
+        });
+        roundtrip(kit, "presence_matching_fields_roundtrip", matching);
     }
 
-    // omit_unstated_defaults leaves out a schema_default = false field where
-    // a field can be absent, and writes it where every field is written.
-    auto unstated = [] {
-        return WithUnstated{.id = 1, .seed = 7};
-    };
-    if constexpr(B::caps.absent_fields) {
-        encodes_as<OmitUnstatedConfig>(kit,
-                                       "omit_unstated_defaults_leaves_out_unstated_fields",
-                                       unstated,
-                                       [] { return IdOnly{.id = 1}; });
-    } else {
-        roundtrip<OmitUnstatedConfig>(kit, "omit_unstated_defaults_writes_every_field", unstated);
-    }
-
-    if constexpr(!B::caps.layout_computed) {
-        encodes_as<EnumStringConfig>(
-            kit,
-            "enum_repr_string_encodes_as_plain",
-            [] { return Access::read_only; },
-            [] { return std::string("read_only"); });
-        roundtrip<EnumStringConfig>(kit, "enum_repr_string_roundtrip", [] {
-            return Access::full_control;
-        });
-        encodes_as<EnumRenameConfig>(
-            kit,
-            "enum_rename_encodes_as_plain",
-            [] { return Access::read_only; },
-            [] { return std::string("readOnly"); });
-        roundtrip<EnumRenameConfig>(kit, "enum_rename_roundtrip", [] {
-            return Access::full_control;
-        });
-        write_fails<EnumStringConfig>(
-            kit,
-            "enum_repr_string_unnamed_value_fails",
-            [] { return Field<Access>{static_cast<Access>(9)}; },
-            {.message = "enum value 9 has no reflected name", .path = "value"});
-        encodes_as<NanStringConfig>(
-            kit,
-            "nan_string_encodes_as_names",
-            [] { return NonFinite::typical(); },
-            [] { return NonFiniteNames{.nan = "NaN", .inf = "Infinity", .neg_inf = "-Infinity"}; });
-    }
-    // nan_repr::Null shows only where Passthrough keeps the values; where
-    // Passthrough already writes null, the two configs write alike.
+    // A float that is not finite travels where the document has room for it,
+    // and fails to encode where it does not, rather than being written as
+    // something it does not read back as.
     if constexpr(B::caps.non_finite) {
         // In fields rather than an array: toml++ 3.4.0 lays an array out by
         // the log10 of each float, which is undefined for an infinity.
         roundtrip(kit, "infinity_roundtrip", [] { return Infinities::typical(); });
-        encodes_as<NanNullConfig>(
-            kit,
-            "nan_null_encodes_as_null",
-            [] { return NonFinite::typical(); },
-            [] { return NonFiniteNulls{}; });
+        // NaN equals nothing, so the case checks each value itself.
+        kit.add("nan_roundtrip", [] {
+            auto encoded = B::encode(NonFinite::typical());
+            ZASSERT(succeeds(encoded));
+            ZEST_CONTEXT("{}: {}", B::name, B::render(*encoded));
+            NonFinite decoded{};
+            ZASSERT(succeeds(B::decode(*encoded, decoded)));
+            ZEXPECT(std::isnan(decoded.nan));
+            ZEXPECT(decoded.inf == NonFinite::typical().inf);
+            ZEXPECT(decoded.neg_inf == NonFinite::typical().neg_inf);
+        });
     } else {
-        encodes_as(
-            kit,
-            "non_finite_encodes_as_null",
-            [] { return NonFinite::typical(); },
-            [] { return NonFiniteNulls{}; });
+        write_fails(kit,
+                    "non_finite_fails",
+                    [] { return NonFinite::typical(); },
+                    {.message = "", .path = "nan"});
     }
-    write_fails<NanErrorConfig>(kit,
-                                "nan_error_fails",
-                                [] { return NonFinite::typical(); },
-                                {.message = "NaN or Infinity is not allowed", .path = "nan"});
 
     if constexpr(B::caps.self_describing) {
         reads<AliasStruct>(
@@ -380,40 +410,22 @@ void attrs(const Kit<B>& kit) {
             "alias_reads",
             [] { return AliasPlain{.userId = 7, .name = "ada"}; },
             [] { return AliasStruct{.id = 7, .name = "ada"}; });
-        // The first field takes the value; the second is left missing.
-        read_fails<SharedAlias>(kit,
-                                "alias_shared_by_two_fields_fails",
-                                [] {
-                                    return Ints{
-                                        {"dup", 1}
-                                    };
-                                },
-                                {.message = "missing required field 'right'", .path = ""});
-        read_fails<CamelCollision, CamelConfig>(
-            kit,
-            "rename_collision_fails",
-            [] {
-                return Ints{
-                    {"userId", 1}
-                };
-            },
-            {.message = "missing required field 'userId'", .path = ""});
         reads<DefaultStruct>(
             kit,
-            "defaulted_absent_reads_default",
+            "optional_absent_keeps_its_value",
             [] { return DefaultStructAbsent{.version = "v1", .plain = 2}; },
             [] { return DefaultStruct{.with_default = 3, .version = "v1", .plain = 2}; });
         reads<DefaultStruct>(
             kit,
-            "defaulted_present_reads",
+            "optional_present_reads",
             [] { return DefaultStructPlain{.with_default = 9, .version = "v1", .plain = 2}; },
             [] { return DefaultStruct{.with_default = 9, .version = "v1", .plain = 2}; });
-        // Under defaulted_fields every field may be absent, in the structs
-        // nested inside too, and keeps its value.
+        // Under presence_all = optional every field may be absent, in the
+        // structs nested inside too, and keeps its value.
         using Sections = std::map<std::string, Ints>;
-        reads<Tunables, DefaultedConfig>(
+        reads<Tunables, AllOptionalSettings>(
             kit,
-            "defaulted_fields_config_reads_what_is_there",
+            "presence_all_format_reads_what_is_there",
             [] {
                 return Sections{
                     {"limits", {{"high", 20}}}
@@ -428,21 +440,32 @@ void attrs(const Kit<B>& kit) {
             });
         reads<TunablesHolder>(
             kit,
-            "defaulted_fields_on_a_field_reads_what_is_there",
+            "presence_all_on_a_field_reads_what_is_there",
+            [] {
+                return std::map<std::string, std::variant<int, Sections>>{
+                    {"count",    3                                              },
+                    {"tunables", Sections{{"limits", {{"high", 7}, {"low", 0}}}}},
+                };
+            },
+            [] {
+                return TunablesHolder{
+                    .tunables = {.threads = 4, .name = "worker", .limits = {.low = 0, .high = 7}},
+                    .count = 3,
+                };
+            });
+        // It goes no deeper: the members of the struct below keep theirs.
+        read_fails<TunablesHolder>(
+            kit,
+            "presence_all_on_a_field_stops_at_its_struct",
             [] {
                 return std::map<std::string, std::variant<int, Sections>>{
                     {"count",    3                                 },
                     {"tunables", Sections{{"limits", {{"low", 0}}}}},
                 };
             },
-            [] {
-                return TunablesHolder{
-                    .tunables = {{.threads = 4, .name = "worker", .limits = {.low = 0, .high = 9}}},
-                    .count = 3,
-                };
-            });
+            {.message = "missing required field 'high'", .path = "tunables.limits"});
         read_fails<TunablesHolder>(kit,
-                                   "defaulted_fields_on_a_field_holder_field_missing_fails",
+                                   "presence_all_on_a_field_holder_field_missing_fails",
                                    [] {
                                        return std::map<std::string, Sections>{
                                            {"tunables", {}}
@@ -505,28 +528,6 @@ void attrs(const Kit<B>& kit) {
             [] { return Point{.x = 1, .y = 2}; },
             [] { return Point{.x = 1, .y = 2}; },
             {});
-        // With detailed_error off, the unknown fields have no paths either.
-        reads_reporting<Layout, NoPathConfig>(
-            kit,
-            "unknown_fields_reported_without_path_when_detail_is_off",
-            [] {
-                return LayoutWithExtrasPlain{
-                    .id = 1,
-                    .origin = {.x = 1, .y = 2, .extra = true},
-                    .points = {{.x = 3, .y = 4, .extra = true}},
-                    .named = {},
-                    .stray = true,
-                };
-            },
-            [] {
-                return Layout{
-                    .id = 1,
-                    .origin = {.x = 1, .y = 2},
-                    .points = {{.x = 3, .y = 4}},
-                    .named = {},
-                };
-            },
-            {"unknown field 'stray'", "unknown field 'extra'", "unknown field 'extra'"});
         // A decode that fails keeps what it reported before.
         read_fails_reporting<Point>(
             kit,
@@ -543,7 +544,11 @@ void attrs(const Kit<B>& kit) {
                     {.x = 1, .y = 2, .extra = true}
                 };
             },
-            [] { return AliasedOrigin{{{.x = 1, .y = 2}}}; },
+            [] {
+                return AliasedOrigin{
+                    {.x = 1, .y = 2}
+                };
+            },
             {"unknown field 'extra' at anchor"});
         read_fails<AliasedOrigin>(
             kit,
@@ -578,19 +583,18 @@ void attrs(const Kit<B>& kit) {
             "unknown_field_fails",
             [] { return RenameTargetWithExtra{.user_name = 7, .display_name = "ada", .extra = 1}; },
             {.message = "unknown field 'extra'", .path = ""});
-        read_fails<Point, StrictConfig>(kit,
-                                        "unknown_field_under_config_fails",
-                                        with_extra,
-                                        {.message = "unknown field 'extra'", .path = ""});
-        read_in_field_fails<SnakeStrict>(kit,
-                                         "rename_all_on_field_denies_unknown_fails",
-                                         [] {
-                                             return RenameTargetUpperSnakeWithExtra{.USER_NAME = 7,
-                                                                                    .DISPLAY_NAME =
-                                                                                        "ada",
-                                                                                    .EXTRA = 1};
-                                         },
-                                         {.message = "unknown field 'EXTRA'", .path = "value"});
+        read_fails<Point, StrictSettings>(kit,
+                                          "unknown_field_under_options_fails",
+                                          with_extra,
+                                          {.message = "unknown field 'extra'", .path = ""});
+        read_fails<SnakeStrict>(kit,
+                                "rename_all_on_field_denies_unknown_fails",
+                                [] {
+                                    return Field<RenameTargetUpperSnakeWithExtra>{
+                                        {.USER_NAME = 7, .DISPLAY_NAME = "ada", .EXTRA = 1}
+                                    };
+                                },
+                                {.message = "unknown field 'EXTRA'", .path = "value"});
         // In a field, so a backend that routes roots by their declared shape
         // (toml) places the variant as it places the struct.
         encodes_as(
@@ -611,34 +615,27 @@ void attrs(const Kit<B>& kit) {
             [] { return AnnotatedWithInternal{.id = 7, .internal = "input", .value = 2.5F}; },
             [] { return AnnotatedStruct{.user_id = 7, .internal = "kept", .value = 2.5F}; });
 
-        if constexpr(!B::caps.layout_computed) {
-            read_in_field_fails_over<EnumStringConfig>(
-                kit,
-                "enum_repr_string_unknown_name_fails",
-                [] { return std::string("nope"); },
-                [] { return Access::full_control; },
-                {.message = "unknown enum value 'nope'", .path = "value"});
-            // nan_repr::String only encodes: the names do not read back. One
-            // name, so the path does not depend on the order of the keys.
-            read_in_field_fails<double, NanStringConfig>(kit,
-                                                         "nan_string_read_fails",
-                                                         [] { return std::string("NaN"); },
-                                                         {.message = "", .path = "value"});
-        }
+        read_in_field_fails_over(
+            kit,
+            "enum_names_repr_unknown_name_fails",
+            [] { return std::string("nope"); },
+            [] { return NamedAccess::full_control; },
+            {.message = "unknown enum value 'nope'", .path = "value"});
+        // A name matches only as it is spelled.
+        read_in_field_fails_over(
+            kit,
+            "enum_names_other_spelling_fails",
+            [] { return std::string("ReadOnly"); },
+            [] { return CamelAccess::full_control; },
+            {.message = "unknown enum value 'ReadOnly'", .path = "value"});
         // A name that does not read leaves the enum as it was. `count` starts
         // as the document has it, which toml reads before `level`.
         read_fails_over(
             kit,
-            "enum_string_unknown_name_fails",
+            "enum_names_unknown_name_fails",
             [] { return AccessGrantPlain{.level = "super_admin", .count = 1}; },
             [] { return AccessGrant{.level = Access::full_control, .count = 1}; },
             {.message = "unknown enum value 'super_admin'", .path = "level"});
-        read_fails_over(
-            kit,
-            "enum_string_root_unknown_name_fails",
-            [] { return std::string("super_admin"); },
-            [] { return AccessName{Access::full_control}; },
-            {.message = "unknown enum value 'super_admin'", .path = ""});
 
         // Leaf errors are the backend's to word; their paths are the protocol's.
         using Texts = std::map<std::string, std::string>;
@@ -652,10 +649,6 @@ void attrs(const Kit<B>& kit) {
                                    "nested_field_mismatch_fails",
                                    texts_for_point,
                                    {.message = "", .path = "value.x"});
-        read_in_field_fails<Point, NoPathConfig>(kit,
-                                                 "detailed_error_off_fails_without_path",
-                                                 texts_for_point,
-                                                 {.message = "", .path = ""});
         using IntOrText = std::variant<int, std::string>;
         read_in_field_fails<std::vector<int>>(kit,
                                               "element_mismatch_fails",

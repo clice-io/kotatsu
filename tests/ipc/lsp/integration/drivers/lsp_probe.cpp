@@ -41,18 +41,16 @@ struct Question {
     std::optional<bool> clamped;
 };
 
-KANNOTATION(left_out_if_none, skip_if = skip_when::none);
-
-template <typename T>
-using omittable = meta::annotate<left_out_if_none>::type<std::optional<T>>;
+/// What an answer leaves empty, it leaves out.
+KANNOTATE_TYPE(struct Answer, presence_all = omit_if_default);
 
 struct Answer {
-    omittable<std::string> uri;
-    omittable<std::string> path;
-    omittable<std::uint32_t> line;
-    omittable<std::uint32_t> character;
-    omittable<std::uint32_t> offset;
-    omittable<std::string> error;
+    std::optional<std::string> uri;
+    std::optional<std::string> path;
+    std::optional<std::uint32_t> line;
+    std::optional<std::uint32_t> character;
+    std::optional<std::uint32_t> offset;
+    std::optional<std::string> error;
 };
 
 Answer answer(const Question& question) {
@@ -105,12 +103,12 @@ int main() {
     using namespace kotatsu;
     std::string line;
     while(std::getline(std::cin, line)) {
-        auto question = codec::json::from_string<test::Question, ipc::lsp_config>(line);
+        auto question = codec::json::from_string<test::Question, ipc::lsp_format>(line);
         if(!question) {
             std::println(stderr, "[error] not a question: {}", question.error().to_string());
             return 1;
         }
-        auto answer = codec::json::to_string<ipc::lsp_config>(test::answer(*question));
+        auto answer = codec::json::to_string<ipc::lsp_format>(test::answer(*question));
         if(!answer) {
             std::println(stderr, "[error] {}", answer.error().to_string());
             return 1;

@@ -1,8 +1,14 @@
 #pragma once
 
+#include <array>
+#include <concepts>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 
 namespace kotatsu::naming {
 
@@ -129,48 +135,48 @@ constexpr std::string snake_to_upper(std::string_view text) {
     return snake;
 }
 
+/// The rename policies: each spells a declared name as a document writes it, in a constant
+/// expression, so the names a type travels under are computed once, at compile time. A
+/// document is read by matching the names so spelled, never by spelling back.
 namespace rename_policy {
 
 struct identity {
-    std::string operator()(bool, std::string_view value) const {
+    constexpr std::string operator()(std::string_view value) const {
         return std::string(value);
     }
 };
 
 struct lower_snake {
-    std::string operator()(bool, std::string_view value) const {
+    constexpr std::string operator()(std::string_view value) const {
         return normalize_to_lower_snake(value);
     }
 };
 
 struct lower_camel {
-    std::string operator()(bool is_serialize, std::string_view value) const {
-        if(is_serialize) {
-            return snake_to_camel(value, false);
-        }
-        return normalize_to_lower_snake(value);
+    constexpr std::string operator()(std::string_view value) const {
+        return snake_to_camel(value, false);
     }
 };
 
 struct upper_camel {
-    std::string operator()(bool is_serialize, std::string_view value) const {
-        if(is_serialize) {
-            return snake_to_camel(value, true);
-        }
-        return normalize_to_lower_snake(value);
+    constexpr std::string operator()(std::string_view value) const {
+        return snake_to_camel(value, true);
     }
 };
 
 struct upper_snake {
-    std::string operator()(bool is_serialize, std::string_view value) const {
-        if(is_serialize) {
-            return snake_to_upper(value);
-        }
-        return normalize_to_lower_snake(value);
+    constexpr std::string operator()(std::string_view value) const {
+        return snake_to_upper(value);
     }
 };
 
 }  // namespace rename_policy
+
+/// A rename policy: a type whose call operator spells a name, in a constant expression.
+template <typename Policy>
+concept renames = std::default_initializable<Policy> && requires(std::string_view name) {
+    { Policy{}(name) } -> std::convertible_to<std::string>;
+};
 
 /// The rename policies as values, for use in annotation specs
 /// (`rename_all = Casing::LowerCamel`).
@@ -182,24 +188,137 @@ enum class Casing : std::uint8_t {
     UpperSnake,
 };
 
+/// A rename policy as a value, which an annotation's spec holds: the function spelling a name
+/// as the policy does.
+using rename_fn = std::string (*)(std::string_view);
+
+/// Spells name as Policy does: Policy's rename_fn.
+template <renames Policy>
+constexpr std::string spell_with(std::string_view name) {
+    return std::string(Policy{}(name));
+}
+
+/// The rename_fn of the policy a Casing value names.
+constexpr rename_fn casing_fn(Casing casing) {
+    switch(casing) {
+        case Casing::Identity: return &spell_with<rename_policy::identity>;
+        case Casing::LowerSnake: return &spell_with<rename_policy::lower_snake>;
+        case Casing::LowerCamel: return &spell_with<rename_policy::lower_camel>;
+        case Casing::UpperCamel: return &spell_with<rename_policy::upper_camel>;
+        case Casing::UpperSnake: return &spell_with<rename_policy::upper_snake>;
+    }
+    std::unreachable();
+}
+
 namespace detail {
 
-template <Casing C>
-struct casing_policy;
+template <rename_fn Fn>
+struct fn_policy {
+    constexpr std::string operator()(std::string_view name) const {
+        return Fn(name);
+    }
+};
 
-// clang-format off
-template <> struct casing_policy<Casing::Identity> { using type = rename_policy::identity; };
-template <> struct casing_policy<Casing::LowerSnake> { using type = rename_policy::lower_snake; };
-template <> struct casing_policy<Casing::LowerCamel> { using type = rename_policy::lower_camel; };
-template <> struct casing_policy<Casing::UpperCamel> { using type = rename_policy::upper_camel; };
-template <> struct casing_policy<Casing::UpperSnake> { using type = rename_policy::upper_snake; };
+// Matched as template arguments rather than compared: GCC evaluates no
+// comparison of a function's address where sanitizers check null pointers.
 
-// clang-format on
+template <rename_fn Fn>
+struct policy_of {
+    using type = fn_policy<Fn>;
+};
+
+template <>
+struct policy_of<&spell_with<rename_policy::identity>> {
+    using type = rename_policy::identity;
+};
+
+template <>
+struct policy_of<&spell_with<rename_policy::lower_snake>> {
+    using type = rename_policy::lower_snake;
+};
+
+template <>
+struct policy_of<&spell_with<rename_policy::lower_camel>> {
+    using type = rename_policy::lower_camel;
+};
+
+template <>
+struct policy_of<&spell_with<rename_policy::upper_camel>> {
+    using type = rename_policy::upper_camel;
+};
+
+template <>
+struct policy_of<&spell_with<rename_policy::upper_snake>> {
+    using type = rename_policy::upper_snake;
+};
 
 }  // namespace detail
 
-/// The rename_policy type behind a Casing value.
-template <Casing C>
-using rename_policy_t = typename detail::casing_policy<C>::type;
+/// The rename policy whose rename_fn Fn is: the policy itself for those above, which share
+/// their name tables with a format naming them, else one calling Fn.
+template <rename_fn Fn>
+using rename_policy_of_t = typename detail::policy_of<Fn>::type;
+
+namespace detail {
+
+template <typename Policy, const auto& Names>
+struct renamed_table {
+    constexpr static std::size_t count = std::size(Names);
+
+    constexpr static std::size_t total = [] {
+        std::size_t size = 0;
+        for(std::string_view name: Names) {
+            size += std::string(Policy{}(name)).size();
+        }
+        return size;
+    }();
+
+    constexpr static std::array<char, total> chars = [] {
+        std::array<char, total> out{};
+        std::size_t at = 0;
+        for(std::string_view name: Names) {
+            for(char c: std::string(Policy{}(name))) {
+                out[at++] = c;
+            }
+        }
+        return out;
+    }();
+
+    constexpr static std::array<std::string_view, count> value = [] {
+        std::array<std::string_view, count> out{};
+        std::size_t at = 0;
+        for(std::size_t i = 0; i < count; ++i) {
+            const std::size_t size = std::string(Policy{}(Names[i])).size();
+            out[i] = std::string_view(chars.data() + at, size);
+            at += size;
+        }
+        return out;
+    }();
+};
+
+/// The identity policy spells the names as they are.
+template <const auto& Names>
+struct renamed_table<rename_policy::identity, Names> {
+    constexpr const static auto& value = Names;
+};
+
+}  // namespace detail
+
+/// Names, a std::array of names in static storage, each spelled by Policy: computed at compile
+/// time, an array of views into static storage.
+template <renames Policy, const auto& Names>
+constexpr const inline auto& renamed = detail::renamed_table<Policy, Names>::value;
+
+/// Whether `names` lists no name twice.
+constexpr bool distinct(std::span<const std::string_view> names) {
+    for(std::size_t i = 0; i < names.size(); ++i) {
+        for(std::size_t j = i + 1; j < names.size(); ++j) {
+            if(names[i] == names[j]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
 
 }  // namespace kotatsu::naming

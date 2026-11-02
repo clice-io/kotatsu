@@ -8,11 +8,13 @@
 
 #include "codec/json/harness/schema.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/schema.h"
 #include "kotatsu/codec/json/schema.h"
 #include "kotatsu/codec/macro.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::type_kind;
 
 namespace {
 
@@ -559,7 +561,7 @@ ZEST_CASE(combo_many_fields) {
                       R"("maximum":2147483647},)"
                       R"("d":{"type":"string"},)"
                       R"("e":{"type":"boolean"},)"
-                      R"("f":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
+                      R"("f":{"type":"number"}},)"
                       R"("required":["a","b","c","d","e","f"]})");
 }
 
@@ -610,8 +612,8 @@ ZEST_CASE(self_referential_struct) {
         []() -> const type_info& { return self_info; },
     };
     const static field_info self_fields[] = {
-        {"value", {}, 0, type_info_of<std::int32_t>, false, false},
-        {"next", {}, 0, []() -> const type_info& { return opt_self; }, false, false, true},
+        {"value", {}, 0, type_info::of<std::int32_t>,                   presence_kind::required},
+        {"next",  {}, 0, []() -> const type_info& { return opt_self; }, presence_kind::optional},
     };
     self_info.fields = {self_fields, 2};
 
@@ -626,10 +628,10 @@ ZEST_CASE(self_referential_struct) {
 
 ZEST_CASE(field_ordering_stability) {
     const static field_info ordered_fields[] = {
-        {"zebra",  {}, 0, type_info_of<std::string>,  false, false},
-        {"alpha",  {}, 0, type_info_of<std::int32_t>, false, false},
-        {"middle", {}, 0, type_info_of<bool>,         false, false},
-        {"beta",   {}, 0, type_info_of<double>,       false, false},
+        {"zebra",  {}, 0, type_info::of<std::string>,  presence_kind::required},
+        {"alpha",  {}, 0, type_info::of<std::int32_t>, presence_kind::required},
+        {"middle", {}, 0, type_info::of<bool>,         presence_kind::required},
+        {"beta",   {}, 0, type_info::of<double>,       presence_kind::required},
     };
     const static struct_type_info ordered_info = {
         {type_kind::structure, "ordered_struct"},
@@ -643,7 +645,7 @@ ZEST_CASE(field_ordering_stability) {
                       R"("zebra":{"type":"string"},)"
                       R"("alpha":{"type":"integer","minimum":-2147483648,"maximum":2147483647},)"
                       R"("middle":{"type":"boolean"},)"
-                      R"("beta":{"anyOf":[{"type":"number"},{"type":"null"}]}},)"
+                      R"("beta":{"type":"number"}},)"
                       R"("required":["zebra","alpha","middle","beta"]})");
 }
 
@@ -669,12 +671,12 @@ ZEST_CASE(mutual_recursion) {
     };
 
     const static field_info fields_a[] = {
-        {"value", {}, 0, type_info_of<std::int32_t>, false, false},
-        {"b", {}, 0, []() -> const type_info& { return opt_b; }, false, false, true},
+        {"value", {}, 0, type_info::of<std::int32_t>,                presence_kind::required},
+        {"b",     {}, 0, []() -> const type_info& { return opt_b; }, presence_kind::optional},
     };
     const static field_info fields_b[] = {
-        {"name", {}, 0, type_info_of<std::string>, false, false},
-        {"a", {}, 0, []() -> const type_info& { return opt_a; }, false, false, true},
+        {"name", {}, 0, type_info::of<std::string>,                 presence_kind::required},
+        {"a",    {}, 0, []() -> const type_info& { return opt_a; }, presence_kind::optional},
     };
     info_a.fields = {fields_a, 2};
     info_b.fields = {fields_b, 2};
@@ -698,4 +700,4 @@ ZEST_CASE(mutual_recursion) {
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

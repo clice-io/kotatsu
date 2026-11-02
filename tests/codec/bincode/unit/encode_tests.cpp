@@ -94,10 +94,11 @@ ZEST_CASE(write_length_takes_each_width_reader_reads) {
     for(const auto& expected: cases) {
         ZEST_CONTEXT("length {}", expected.length);
         std::vector<std::byte> buf;
-        bincode::Writer writer{buf};
+        bincode::Writer<bincode::format> writer{buf};
         writer.write_length(expected.length);
         ZEXPECT(writer.size == expected.size);
-        bincode::Reader reader{std::span<const std::byte>(buf.data(), writer.size)};
+        bincode::Reader<bincode::format> reader{
+            std::span<const std::byte>(buf.data(), writer.size)};
         std::uint64_t length = 0;
         ZASSERT(reader.read_length(length));
         ZEXPECT(length == expected.length);

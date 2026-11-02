@@ -28,8 +28,9 @@
 #include "fixtures/repr.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/fbs/fbs.h"
+#include "kotatsu/codec/macro.h"
 
 // The zero-copy views over a verified buffer: table_view, its bound_view,
 // and the array, map, tuple and variant views they hand out, their lookups,
@@ -234,9 +235,6 @@ struct CharKeyed {
 using test::OccurrenceKey;
 using test::StructKeyed;
 
-using Decimal = meta::annotation<int, meta::behavior::with<test::DecimalText>>;
-using PackedVersion = meta::annotation<test::Version, meta::behavior::with<test::VersionAsNumber>>;
-
 struct Reprs {
     test::Relation relation;
     test::HexId hex;
@@ -245,10 +243,19 @@ struct Reprs {
     std::vector<test::Lamport> stamps;
     std::map<test::Relation, std::int32_t> by_relation;
     std::map<std::string, test::Relation> relation_by_name;
-    PackedVersion packed;
-    std::optional<Decimal> maybe_decimal;
-    meta::annotation<std::int32_t, meta::behavior::as<std::int64_t>> widened;
+    KANNOTATE(&packed, with = type<test::VersionAsNumber>)
+    test::Version packed;
+    KANNOTATE(&widened, as = type<std::int64_t>)
+    std::int32_t widened;
     test::AccessGrant grant;
+};
+
+/// Two members of one C++ type, one of them represented as another: a view,
+/// finding a member by its type, cannot tell them apart.
+struct SameTypeTwoReprs {
+    KANNOTATE(&widened, as = type<std::int64_t>)
+    std::int32_t widened;
+    std::int32_t plain;
 };
 
 ZEST_SUITE(codec_fbs_proxy) {
@@ -343,13 +350,13 @@ ZEST_CASE(absent_nullable_fields_read_defaults) {
 
 ZEST_CASE(skipped_member_has_no_slot) {
     // The skipped member is not in the buffer, and the members after it
-    // read the slots after the one before it.
+    // read the slots after the one before it. Addressing the skipped member
+    // fails to compile: the view finds no slot for it.
     auto bytes = fbs::to_bytes(test::FlattenInnerWithSkip{.keep_a = 3, .drop_b = 999, .keep_c = 5});
     ZASSERT(bytes);
     auto root = table_view<test::FlattenInnerWithSkip>::from_bytes(*bytes);
     ZASSERT(root.valid());
     ZEXPECT(root[&test::FlattenInnerWithSkip::keep_a] == 3);
-    ZSTATIC_EXPECT(!viewable<test::FlattenInnerWithSkip, &test::FlattenInnerWithSkip::drop_b>);
     ZEXPECT(root[&test::FlattenInnerWithSkip::keep_c] == 5);
     ZEXPECT(root.has(&test::FlattenInnerWithSkip::keep_c));
     const bound_view bound(root);
@@ -365,7 +372,7 @@ ZEST_CASE(flattened_member_has_no_slot) {
 
     auto outer = fbs::to_bytes(test::Outer{
         .x = 1,
-        .inner = {{.a = 0x10000000, .b = 3}},
+        .inner = {.a = 0x10000000, .b = 3},
         .y = 4,
     });
     ZASSERT(outer);
@@ -379,7 +386,7 @@ ZEST_CASE(flattened_member_has_no_slot) {
 
     auto deep = fbs::to_bytes(test::DeepOuter{
         .head = 5,
-        .mid = {{.m = 6, .deep = {{.p = 7, .q = 8}}}},
+        .mid = {.m = 6, .deep = {.p = 7, .q = 8}},
         .tail = 9,
     });
     ZASSERT(deep);
@@ -858,8 +865,8 @@ ZEST_CASE(map_view_looks_up_struct_keys) {
 
 ZEST_CASE(views_read_what_reprs_and_attrs_carry) {
     // A view reads the representation the buffer holds: the repr's, a
-    // format-scoped repr's, a field adapter's over the type's own repr, an
-    // adapter's inside an optional, and as<> and enum_string rerouting.
+    // format-scoped repr's, a field adapter's over the type's own repr, and
+    // as<> and enum_names rerouting.
     Reprs input{
         .relation = test::Relation::references,
         .hex = {.v = 0xBEEF},
@@ -868,8 +875,7 @@ ZEST_CASE(views_read_what_reprs_and_attrs_carry) {
         .stamps = {{.tick = 7}, {.tick = 0}},
         .by_relation = {{test::Relation::defines, 10}, {test::Relation::references, 20}},
         .relation_by_name = {{"a", test::Relation::declares}, {"b", test::Relation::references}},
-        .packed = {{.major = 3, .minor = 14}},
-        .maybe_decimal = Decimal{12},
+        .packed = {.major = 3, .minor = 14},
         .widened = 1234,
         .grant = {.level = test::Access::full_control, .count = 2},
     };
@@ -887,7 +893,6 @@ ZEST_CASE(views_read_what_reprs_and_attrs_carry) {
     ZEXPECT(root[&Reprs::by_relation][102U] == 20);
     ZEXPECT(root[&Reprs::relation_by_name]["b"] == 102U);
     ZEXPECT(root[&Reprs::packed] == 3014U);
-    ZEXPECT(root[&Reprs::maybe_decimal] == "12");
     ZEXPECT(root[&Reprs::widened] == 1234);
     ZEXPECT(root[&Reprs::grant][&test::AccessGrant::level] == "fullControl");
 }
@@ -902,6 +907,14 @@ ZEST_CASE(from_verified_bytes_wraps_without_verifying) {
     ZEXPECT(root[&Profile::name] == "alice");
     auto as_bytes = std::as_bytes(std::span(*bytes));
     ZEXPECT(table_view<Profile>::from_verified_bytes(as_bytes)[&Profile::id] == 7);
+}
+
+ZEST_CASE(members_of_one_type_share_their_view) {
+    // Reprs' std::int32_t member is the only one of its type.
+    ZSTATIC_EXPECT((fbs::proxy_detail::members_share_view<Reprs, std::int32_t>()));
+    // A view would read `plain` as the eight bytes `widened` travels as: it
+    // does not build for such a struct.
+    ZSTATIC_EXPECT((!fbs::proxy_detail::members_share_view<SameTypeTwoReprs, std::int32_t>()));
 }
 
 };  // ZEST_SUITE(codec_fbs_proxy)

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -13,34 +14,13 @@
 
 #include "codec/harness/fixtures/containers.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
 #include "kotatsu/meta/compare.h"
-#include "kotatsu/meta/repr.h"
 #include "kotatsu/codec/bincode/bincode.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::codec {
 
 namespace {
-
-/// Skips its field on decode only.
-struct SkipOnDecode {
-    constexpr bool operator()(const int& /*value*/, bool is_serialize) const noexcept {
-        return !is_serialize;
-    }
-};
-
-struct Triple {
-    int first;
-    int second;
-    int third;
-};
-
-struct SkipsSecondOnDecode {
-    int first;
-    meta::annotation<int, meta::behavior::skip_if<SkipOnDecode>> second = 88;
-    int third;
-};
 
 /// A dynamic repr: with no kind to peek at, it frames what it writes, a
 /// magic number then the length-prefixed bytes, and reads that framing back.
@@ -67,10 +47,6 @@ std::vector<std::byte> bytes(std::initializer_list<unsigned> values) {
 
 }  // namespace
 
-}  // namespace kotatsu::codec
-
-namespace kotatsu::meta {
-
 template <>
 struct repr<codec::Page> {
     using type = std::uint8_t;
@@ -88,23 +64,19 @@ template <>
 struct repr<codec::Framed> {
     using type = dynamic;
 
-    template <typename Config>
-    static bool serialize(auto& vis, const codec::Framed& framed) {
-        return codec::encode_value<Config>(vis, codec::framed_magic) &&
-               codec::encode_value<Config>(vis, framed.bytes);
+    template <typename F>
+    static bool encode(auto& vis, const codec::Framed& framed) {
+        return codec::encode_value<F>(vis, codec::framed_magic) &&
+               codec::encode_value<F>(vis, framed.bytes);
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, codec::Framed& framed) {
+    template <typename F>
+    static bool decode(auto& vis, codec::Framed& framed) {
         std::uint8_t magic = 0;
-        return codec::decode_value<Config>(vis, magic) && magic == codec::framed_magic &&
-               codec::decode_value<Config>(vis, framed.bytes);
+        return codec::decode_value<F>(vis, magic) && magic == codec::framed_magic &&
+               codec::decode_value<F>(vis, framed.bytes);
     }
 };
-
-}  // namespace kotatsu::meta
-
-namespace kotatsu::codec {
 
 namespace {
 
@@ -133,6 +105,19 @@ ZEST_CASE(value_overload_value_initializes) {
     ZSTATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
     // A type with no default constructor has no value to decode into.
     ZSTATIC_EXPECT(!decodes_by_value<test::NoDefault>);
+}
+
+ZEST_CASE(octet_spans_decode_as_byte_spans) {
+    auto encoded = bincode::to_bytes(std::string("hello"));
+    ZASSERT(encoded);
+    std::vector<std::uint8_t> octets(encoded->size());
+    std::ranges::transform(*encoded, octets.begin(), [](std::byte b) {
+        return std::to_integer<std::uint8_t>(b);
+    });
+    std::string out;
+    ZASSERT(bincode::from_bytes(octets, out));
+    ZEXPECT(out == "hello");
+    ZEXPECT(bincode::from_bytes<std::string>(octets) == "hello");
 }
 
 ZEST_CASE(truncated_payload_fails) {
@@ -234,18 +219,6 @@ ZEST_CASE(trailing_bytes_fails) {
     auto status = bincode::from_bytes(*encoded, out);
     ZASSERT(!status);
     ZEXPECT(status.error().message == "trailing bytes");
-}
-
-ZEST_CASE(skip_if_on_decode_reads_past_the_field) {
-    // The field's bytes are there, so they are read and dropped, and the
-    // next field reads from where it belongs.
-    auto encoded = bincode::to_bytes(Triple{.first = 1, .second = 2, .third = 3});
-    ZASSERT(encoded);
-    SkipsSecondOnDecode out{};
-    ZASSERT(bincode::from_bytes(*encoded, out));
-    ZEXPECT(out.first == 1);
-    ZEXPECT(meta::annotated_value(out.second) == 88);
-    ZEXPECT(out.third == 3);
 }
 
 ZEST_CASE(dynamic_repr_reads_the_framing_it_writes) {

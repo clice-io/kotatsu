@@ -9,22 +9,22 @@
 #include <vector>
 
 #include "codec/harness/fixtures/attrs.h"
-#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
+#include "codec/harness/fixtures/settings.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/json/schema.h"
 #include "kotatsu/codec/macro.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 namespace {
 
-/// A non-reflectable class (raw kind unknown) whose meta::repr resolves to a
-/// struct with a defaulted member: the schema describes the representation's
-/// shape, but the defaults pass covers only types the decoder reads
-/// directly, so a repr-routed root stays unannotated.
+/// A non-reflectable class (raw kind unknown) whose codec::repr resolves to a
+/// struct with an optional member: the schema describes the representation's
+/// shape, but defaults are stated only for types the decoder reads
+/// directly, so a repr-routed root states none.
 class json_schema_reprd_root {
 public:
     int total() const {
@@ -36,8 +36,8 @@ private:
 };
 
 struct json_schema_reprd_repr {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> total = 5;
+    KANNOTATE(&total, presence = optional)
+    std::int32_t total = 5;
 };
 
 /// A declarative repr whose to() disagrees with a fresh representation
@@ -58,8 +58,8 @@ private:
 };
 
 struct json_schema_reprd_shifted_repr {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> n = 4;
+    KANNOTATE(&n, presence = optional)
+    std::int32_t n = 4;
 };
 
 /// An imperative repr with a struct representation: repr_decode's imperative
@@ -81,8 +81,8 @@ private:
 };
 
 struct json_schema_imperative_repr {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> n = 4;
+    KANNOTATE(&n, presence = optional)
+    std::int32_t n = 4;
 };
 
 }  // namespace
@@ -113,17 +113,17 @@ template <>
 struct repr<json_schema_imperative_root> {
     using type = json_schema_imperative_repr;
 
-    template <typename Config>
-    static bool serialize(auto& vis, const json_schema_imperative_root& v) {
-        return codec::encode_value<Config>(vis, type{.n = v.n()});
+    template <typename F>
+    static bool encode(auto& vis, const json_schema_imperative_root& v) {
+        return codec::encode_value<F>(vis, type{.n = v.n()});
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, json_schema_imperative_root& v) {
+    template <typename F>
+    static bool decode(auto& vis, json_schema_imperative_root& v) {
         // Seed the representation from the in-place value: an absent
         // property keeps it.
         type d{.n = v.n()};
-        if(!codec::decode_value<Config>(vis, d)) {
+        if(!codec::decode_value<F>(vis, d)) {
             return false;
         }
         v.set_n(d.n);
@@ -134,11 +134,11 @@ struct repr<json_schema_imperative_root> {
 namespace {
 
 struct defaults_leaf {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> threads = 4;
+    KANNOTATE(&threads, presence = optional)
+    std::int32_t threads = 4;
 
-    KANNOTATE(defaulted = true)
-    <std::string> name = "worker";
+    KANNOTATE(&name, presence = optional)
+    std::string name = "worker";
 };
 
 /// A member only value-initialization makes, beside one with a default.
@@ -152,28 +152,28 @@ struct defaults_explicit_holder {
 };
 
 struct defaults_root {
-    KANNOTATE(defaulted = true)
-    <bool> enabled = true;
+    KANNOTATE(&enabled, presence = optional)
+    bool enabled = true;
 
     defaults_leaf pool;
     defaults_leaf mirror;
 
     std::optional<std::int32_t> limit;
 
-    KANNOTATE(defaulted = true)
-    <std::vector<std::int32_t>> ids;
+    KANNOTATE(&ids, presence = optional)
+    std::vector<std::int32_t> ids;
 };
 
-struct defaults_skipped {
-    KANNOTATE(skip_if = skip_when::empty)
-    <std::vector<std::int32_t>> tags;
+struct defaults_omitted {
+    KANNOTATE(&tags, presence = omit_if_default)
+    std::vector<std::int32_t> tags;
 };
 
 enum class defaults_level : std::uint8_t { Low = 0, High = 1 };
 
 struct defaults_with_enum {
-    KANNOTATE(defaulted = true)
-    <defaults_level> log_level = defaults_level::High;
+    KANNOTATE(&log_level, presence = optional, with = type<codec::enum_names<>>)
+    defaults_level log_level = defaults_level::High;
 };
 
 struct defaults_shared_override {
@@ -187,61 +187,73 @@ struct defaults_engaged {
 };
 
 struct defaults_node {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> depth = 1;
+    KANNOTATE(&depth, presence = optional)
+    std::int32_t depth = 1;
 
     std::unique_ptr<defaults_node> next;
 };
 
 struct defaults_ref_sites {
-    KANNOTATE(defaulted = true)
-    <defaults_leaf> pool;
+    KANNOTATE(&pool, presence = optional)
+    defaults_leaf pool;
 
-    KANNOTATE(defaulted = true)
-    <defaults_leaf> mirror = {defaults_leaf{.threads = 9}};
+    KANNOTATE(&mirror, presence = optional)
+    defaults_leaf mirror = {defaults_leaf{.threads = 9}};
 };
 
 struct defaults_alt_a {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> depth = 3;
+    KANNOTATE(&depth, presence = optional)
+    std::int32_t depth = 3;
 
     std::string name;
 };
 
 struct defaults_alt_b {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> other = 9;
+    KANNOTATE(&other, presence = optional)
+    std::int32_t other = 9;
 };
 
 KANNOTATION(defaults_internal_annotation, tag = "kind", tag_names = {"a", "b"});
-using defaults_internal_variant =
-    annotate<defaults_internal_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
 
-struct defaults_variant_holder {
-    defaults_internal_variant shape;
+KANNOTATE_TYPE(struct defaults_internal_variant, defaults_internal_annotation);
+
+struct defaults_internal_variant : std::variant<defaults_alt_a, defaults_alt_b> {
+    using variant::variant;
 };
 
-KANNOTATION(defaults_adjacent_annotation, tag = "type", content = "value", tag_names = {"a", "b"});
-using defaults_adjacent_variant =
-    annotate<defaults_adjacent_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
+struct defaults_variant_holder {
+    KANNOTATE(&shape, defaults_internal_annotation)
+    std::variant<defaults_alt_a, defaults_alt_b> shape;
+};
 
-KANNOTATION(defaults_external_annotation, tagged = true, tag_names = {"a", "b"});
-using defaults_external_variant =
-    annotate<defaults_external_annotation>::type<std::variant<defaults_alt_a, defaults_alt_b>>;
+KANNOTATE_TYPE(struct defaults_adjacent_variant,
+               tag = "type",
+               content = "value",
+               tag_names = {"a", "b"});
+
+struct defaults_adjacent_variant : std::variant<defaults_alt_a, defaults_alt_b> {
+    using variant::variant;
+};
+
+KANNOTATE_TYPE(struct defaults_external_variant, tagged = true, tag_names = {"a", "b"});
+
+struct defaults_external_variant : std::variant<defaults_alt_a, defaults_alt_b> {
+    using variant::variant;
+};
 
 struct defaults_elem_a {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> alpha = 7;
+    KANNOTATE(&alpha, presence = optional)
+    std::int32_t alpha = 7;
 };
 
 struct defaults_elem_b {
-    KANNOTATE(defaulted = true)
-    <std::string> beta = "cell";
+    KANNOTATE(&beta, presence = optional)
+    std::string beta = "cell";
 };
 
 struct defaults_elem_c {
-    KANNOTATE(defaulted = true)
-    <bool> gamma = true;
+    KANNOTATE(&gamma, presence = optional)
+    bool gamma = true;
 };
 
 struct defaults_containers {
@@ -257,14 +269,15 @@ struct defaults_seq_override {
 };
 
 struct defaults_variant_override {
-    defaults_internal_variant shape{
+    KANNOTATE(&shape, defaults_internal_annotation)
+    std::variant<defaults_alt_a, defaults_alt_b> shape{
         defaults_alt_a{.depth = 8, .name = {}}
     };
 };
 
 struct defaults_cyclic {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> depth = 1;
+    KANNOTATE(&depth, presence = optional)
+    std::int32_t depth = 1;
 
     std::vector<defaults_cyclic> kids = {
         {.depth = 2, .kids = {}}
@@ -288,18 +301,51 @@ struct defaults_tuple_override {
 };
 
 struct renamed_defaults_child {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> first_value = 4;
+    KANNOTATE(&first_value, presence = optional)
+    std::int32_t first_value = 4;
 };
 
 struct renamed_defaults_holder {
-    KANNOTATE(rename_all = Casing::LowerCamel)
-    <renamed_defaults_child> child;
+    KANNOTATE(&child, rename_all = Casing::LowerCamel)
+    renamed_defaults_child child;
 };
 
-KANNOTATION(renamed_defaults_root_annotation, rename_all = Casing::LowerCamel);
-using renamed_defaults_root =
-    annotate<renamed_defaults_root_annotation>::type<renamed_defaults_child>;
+/// renamed_defaults_child in two scopes under one name: an internally tagged
+/// alternative, whose body is inlined, and, its fields renamed, a $def.
+struct defaults_two_scopes {
+    KANNOTATE(&choice, tag = "kind", tag_names = {"child", "b"})
+    std::variant<renamed_defaults_child, defaults_alt_b> choice;
+    KANNOTATE(&renamed, rename_all = Casing::LowerCamel)
+    renamed_defaults_child renamed;
+};
+
+/// Three levels: the middle one renames its own fields, which the leaf's do
+/// not take, and the leaf states no default for its secret, which no whole-
+/// object default above it states either.
+struct nested_defaults_leaf {
+    std::int32_t item_count = 1;
+    KANNOTATE(&secret, presence = optional, schema_default = false)
+    std::int32_t secret = 7;
+};
+
+KANNOTATE_TYPE(struct nested_defaults_middle, rename_all = Casing::LowerCamel);
+
+struct nested_defaults_middle {
+    KANNOTATE(&leaf_value, presence = optional)
+    nested_defaults_leaf leaf_value;
+};
+
+struct nested_defaults_root {
+    nested_defaults_middle middle;
+};
+
+/// renamed_defaults_child, its fields renamed wherever it stands.
+KANNOTATE_TYPE(struct renamed_defaults_root, rename_all = Casing::LowerCamel);
+
+struct renamed_defaults_root {
+    KANNOTATE(&first_value, presence = optional)
+    std::int32_t first_value = 4;
+};
 
 namespace json = kotatsu::codec::json;
 
@@ -329,27 +375,32 @@ ZEST_CASE(defaults_value_initialize) {
     ZEXPECT(zest::contains(nested, R"({"type":"null"}],"default":3})"));
 }
 
-ZEST_CASE(defaulted_fields_requires_nothing) {
+/// A format whose every field may be absent.
+struct all_optional_format : codec::extend<json::format> {
+    constexpr static std::optional<presence_kind> presence_all = presence_kind::optional;
+};
+
+ZEST_CASE(presence_all_requires_nothing) {
     // Every property may be absent and carries its default, nested ones too.
-    const auto result = json::schema_string<test::Tunables, test::DefaultedConfig>().value();
+    const auto result = json::schema_string<test::Tunables, all_optional_format>().value();
     ZEXPECT(!zest::contains(result, R"("required")"));
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":9})"));
 }
 
-ZEST_CASE(defaulted_fields_on_a_field_leaves_its_holder_required) {
+ZEST_CASE(presence_all_on_a_field_leaves_its_holder_required) {
     const auto result = json::schema_string<test::TunablesHolder>().value();
     // The field itself is the holder's to require.
     ZEXPECT(zest::contains(result, R"("required":["tunables","count"])"));
     ZEXPECT(!zest::contains(result, R"("required":["threads")"));
 }
 
-ZEST_CASE(defaults_skip_condition) {
-    // The empty vector triggers skip_if at encode time, so the default
-    // document has no such property to annotate from.
-    const auto result = json::schema_string<defaults_skipped>().value();
+ZEST_CASE(defaults_stated_where_presence_omits_them) {
+    // Written, the empty vector is left out; absent, it reads as the field's
+    // default all the same, which the schema states.
+    const auto result = json::schema_string<defaults_omitted>().value();
     ZEXPECT(zest::contains(result, R"("tags")"));
-    ZEXPECT(!zest::contains(result, R"("default")"));
+    ZEXPECT(zest::contains(result, R"("default":[])"));
 }
 
 ZEST_CASE(defaults_shared_def_shows_fresh_values) {
@@ -434,8 +485,8 @@ ZEST_CASE(defaults_engaged_optional) {
 }
 
 ZEST_CASE(defaults_recursive_root) {
-    // A self-referential root terminates: the pointer self-reference sits
-    // inside an anyOf wrapper, which is a leaf for the walk, and carries the
+    // A self-referential root terminates: the pointer self-reference is a
+    // reference to the root inside an anyOf wrapper, which carries the
     // disengaged pointer's null.
     const auto result = json::schema_string<defaults_node>().value();
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":1})"));
@@ -520,8 +571,9 @@ ZEST_CASE(defaults_variant_holder_override_stays_local) {
 ZEST_CASE(defaults_recursive_root_with_elements) {
     // A default instance may carry elements of the root type itself (the
     // element initializer bottoms out by overriding kids to empty); the
-    // pass never follows the emitted root self-reference, so it terminates
-    // and the per-element override leaks into no default.
+    // elements refer to the root, so the schema ends, and the root's body
+    // states T()'s values alone: the per-element override leaks into no
+    // default.
     const auto result = json::schema_string<defaults_cyclic>().value();
     ZEXPECT(zest::contains(result, R"("$ref":"#")"));
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":1})"));
@@ -530,7 +582,7 @@ ZEST_CASE(defaults_recursive_root_with_elements) {
 
 ZEST_CASE(defaults_repr_backed_root_unannotated) {
     // The decoder reads the representation, not a json_schema_reprd_root:
-    // the defaults pass covers only types decode reads directly, so the
+    // defaults are stated only for types decode reads directly, so the
     // repr-routed root keeps the representation's schema shape without any
     // default.
     const auto result = json::schema_string<json_schema_reprd_root>().value();
@@ -557,17 +609,39 @@ ZEST_CASE(defaults_declarative_repr_unannotated) {
 
 ZEST_CASE(defaults_follow_slot_rename_all) {
     // A rename_all spec on the field slot renames the child $def's
-    // properties; the fresh document is encoded under the same merged
-    // config, so the renamed property still pairs with its default.
+    // properties; the fresh document is encoded under the same scoped
+    // format, so the renamed property still pairs with its default.
     const auto result = json::schema_string<renamed_defaults_holder>().value();
     ZEXPECT(zest::contains(result, R"("firstValue")"));
     ZEXPECT(zest::contains(result, R"("maximum":2147483647,"default":4})"));
 }
 
+ZEST_CASE(defaults_one_struct_in_two_scopes) {
+    // Each body states the defaults of the scope it is written in, though
+    // both bear the struct's name.
+    const auto result = json::schema_string<defaults_two_scopes>().value();
+    ZEXPECT(zest::contains(
+        result,
+        R"("first_value":{"type":"integer","minimum":-2147483648,"maximum":2147483647,"default":4})"));
+    ZEXPECT(zest::contains(
+        result,
+        R"("firstValue":{"type":"integer","minimum":-2147483648,"maximum":2147483647,"default":4})"));
+}
+
+ZEST_CASE(defaults_keep_each_struct_s_own_names_at_every_depth) {
+    // The middle $def's leafValue default is the leaf as a document writes
+    // it: its fields keep their own names, and its secret is left out.
+    const auto result = json::schema_string<nested_defaults_root>().value();
+    ZEXPECT(zest::contains(result, R"("default":{"item_count":1})"));
+    ZEXPECT(!zest::contains(result, R"("itemCount")"));
+    ZEXPECT(!zest::contains(result, R"("secret":7)"));
+    ZEXPECT(!zest::contains(result, R"("default":7)"));
+}
+
 ZEST_CASE(defaults_annotated_root_rename_all) {
     // A structural annotation on the root itself shapes the fresh document
     // the same way it shapes the schema: the fresh root encodes under the
-    // resolution's merged config, so the renamed property still pairs with
+    // resolution's scoped format, so the renamed property still pairs with
     // its default.
     const auto result = json::schema_string<renamed_defaults_root>().value();
     ZEXPECT(zest::contains(result, R"("firstValue")"));
@@ -589,21 +663,20 @@ ZEST_CASE(defaults_imperative_repr_unannotated) {
                       R"("maximum":2147483647}}})");
 }
 
-struct defaults_enum_config {
-    [[maybe_unused]] constexpr static auto enum_repr = codec::enum_repr::String;
-    using field_rename = naming::rename_policy::lower_camel;
+struct defaults_enum_format : codec::extend<json::format> {
+    using rename_all = naming::rename_policy::lower_camel;
 };
 
-ZEST_CASE(defaults_enum_and_rename_with_config) {
-    // The default rides through the real encoder: the enum's String repr and
-    // the field rename both shape the annotated value and its property name.
-    const auto result = json::schema_string<defaults_with_enum, defaults_enum_config>().value();
-    ZEXPECT(zest::contains(result, R"("logLevel":{"enum":["Low","High"],"default":"High"})"));
+ZEST_CASE(defaults_enum_and_rename_with_format) {
+    // The default rides through the real encoder: the format's rename spells
+    // both the enumerators' names and the property's.
+    const auto result = json::schema_string<defaults_with_enum, defaults_enum_format>().value();
+    ZEXPECT(zest::contains(result, R"("logLevel":{"enum":["low","high"],"default":"high"})"));
 }
 
 ZEST_CASE(defaults_type_erased_absent) {
     // The type-erased entry has no T to default-construct, so no defaults.
-    const auto result = json::schema_string(type_info_of<defaults_root>()).value();
+    const auto result = json::schema_string(type_info::of<defaults_root>()).value();
     ZEXPECT(!zest::contains(result, R"("default")"));
 }
 
@@ -611,4 +684,4 @@ ZEST_CASE(defaults_type_erased_absent) {
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

@@ -10,8 +10,8 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
-#include "annotation.h"
 #include "struct.h"
 #include "kotatsu/support/ranges.h"
 #include "kotatsu/support/type_list.h"
@@ -113,7 +113,7 @@ enum class type_kind : std::uint8_t {
     string,
     /// Anything convertible to std::span<const std::byte>.
     bytes,
-    /// enum / enum class; serialized form follows Config's enum_repr.
+    /// enum / enum class: its underlying integer, or a name through codec::enum_names.
     enumeration,
 
     /// Homogeneous sequence ranges (vector, span, list, ...). std::array is
@@ -138,7 +138,7 @@ enum class type_kind : std::uint8_t {
 
     /// Not classifiable (or explicitly schema_opaque); codecs reject it.
     unknown = 254,
-    /// meta::dynamic — shape known only at runtime; schemas degrade to "any".
+    /// codec::dynamic — shape known only at runtime; schemas degrade to "any".
     any = 255,
 };
 
@@ -153,19 +153,35 @@ constexpr bool is_floating_kind(type_kind k) noexcept {
 template <typename T>
 constexpr inline bool schema_opaque = false;
 
-/// Marker representation for meta::repr: the shape is only known at runtime.
-/// Maps to type_kind::any, so schema output degrades to "any".
-struct dynamic {};
+/// Whether T stands for a value whose shape is known only at run time
+/// (codec::dynamic): its kind is any.
+template <typename T>
+constexpr inline bool runtime_shaped = false;
+
+namespace detail {
+
+template <typename... Ts>
+std::variant<Ts...> variant_base_of(const std::variant<Ts...>&);
+
+}  // namespace detail
+
+/// A class derived from a std::variant: a variant with a name of its own, which
+/// KANNOTATE_TYPE can tag, and which the codec reads and writes as its variant.
+template <typename T>
+concept derived_variant = !is_specialization_of<std::variant, T> &&
+                          requires(const T& value) { detail::variant_base_of(value); };
+
+/// The std::variant a derived_variant derives from.
+template <derived_variant T>
+using variant_base_t = decltype(detail::variant_base_of(std::declval<const T&>()));
 
 template <typename T>
 consteval type_kind kind_of() {
     if constexpr(!std::is_same_v<T, std::remove_cv_t<T>>) {
         return kind_of<std::remove_cv_t<T>>();
-    } else if constexpr(annotated_type<T>) {
-        return kind_of<typename T::annotated_type>();
     } else if constexpr(schema_opaque<T>) {
         return type_kind::unknown;
-    } else if constexpr(std::is_same_v<T, dynamic>) {
+    } else if constexpr(runtime_shaped<T>) {
         return type_kind::any;
     } else if constexpr(std::is_enum_v<T>) {
         return type_kind::enumeration;
@@ -197,7 +213,8 @@ consteval type_kind kind_of() {
                         is_specialization_of<std::shared_ptr, T> ||
                         is_specialization_of<std::weak_ptr, T>) {
         return type_kind::pointer;
-    } else if constexpr(is_specialization_of<std::variant, T> || is_expected_v<T>) {
+    } else if constexpr(is_specialization_of<std::variant, T> || derived_variant<T> ||
+                        is_expected_v<T>) {
         return type_kind::variant;
     } else if constexpr(tuple_like<T>) {
         return type_kind::tuple;

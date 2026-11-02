@@ -12,7 +12,8 @@
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/structs.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/macro.h"
 
 namespace kotatsu::test {
 
@@ -21,32 +22,36 @@ namespace kotatsu::test {
 // followed by the plain structs of the documents they encode to in a keyed
 // backend.
 
-struct ExternalShapeTag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::tagged = true,
-                              meta::dsl::tag_names = {"none", "number", "text", "point"});
+KANNOTATE_TYPE(struct ExternalShape,
+               tagged = true,
+               tag_names = {"none", "number", "text", "point"});
+
+struct ExternalShape : std::variant<std::monostate, int, std::string, Point> {
+    using variant::variant;
 };
 
-using ExternalShape =
-    meta::annotate<ExternalShapeTag>::type<std::variant<std::monostate, int, std::string, Point>>;
+KANNOTATE_TYPE(struct AdjacentShape,
+               tag = "t",
+               content = "c",
+               tag_names = {"none", "number", "text", "point"});
 
-struct AdjacentShapeTag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::tag = "t",
-                              meta::dsl::content = "c",
-                              meta::dsl::tag_names = {"none", "number", "text", "point"});
+struct AdjacentShape : std::variant<std::monostate, int, std::string, Point> {
+    using variant::variant;
 };
 
-using AdjacentShape =
-    meta::annotate<AdjacentShapeTag>::type<std::variant<std::monostate, int, std::string, Point>>;
+KANNOTATE_TYPE(struct InternalShape, tag = "kind", tag_names = {"circle", "rect", "segment"});
 
-struct InternalShapeTag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::tag = "kind",
-                              meta::dsl::tag_names = {"circle", "rect", "segment"});
+struct InternalShape : std::variant<Circle, Rect, Segment> {
+    using variant::variant;
 };
 
-using InternalShape = meta::annotate<InternalShapeTag>::type<std::variant<Circle, Rect, Segment>>;
+/// A monostate alternative under an internal tag is a unit variant: the tag
+/// alone.
+KANNOTATE_TYPE(struct InternalUnit, tag = "kind", tag_names = {"none", "circle"});
+
+struct InternalUnit : std::variant<std::monostate, Circle> {
+    using variant::variant;
+};
 
 /// The untagged variants the tagged ones become where tags do not apply.
 using BareShape = std::variant<std::monostate, int, std::string, Point>;
@@ -103,6 +108,10 @@ struct CircleWithExtraPlain {
     std::string extra;
 };
 
+struct KindPlain {
+    std::string kind;
+};
+
 struct RectPlain {
     std::string kind;
     double width;
@@ -150,12 +159,22 @@ struct TaggedWrapper {
     ExternalShape inner;
 };
 
-struct NestedTag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::tagged = true,
-                              meta::dsl::tag_names = {"plain", "wrapped"});
+KANNOTATE_TYPE(struct NestedTagged, tagged = true, tag_names = {"plain", "wrapped"});
+
+struct NestedTagged : std::variant<int, TaggedWrapper> {
+    using variant::variant;
 };
 
-using NestedTagged = meta::annotate<NestedTag>::type<std::variant<int, TaggedWrapper>>;
+/// Externally tagged without tag names: the alternatives' type names tag them.
+struct DefaultNamed {
+    KANNOTATE(&value, tagged = true)
+    std::variant<Circle, Rect> value;
+};
+
+/// DefaultNamed, its tags spelled by the rename_all of its annotation.
+struct DefaultNamedShouting {
+    KANNOTATE(&value, tagged = true, rename_all = Casing::UpperSnake)
+    std::variant<Circle, Rect> value;
+};
 
 }  // namespace kotatsu::test

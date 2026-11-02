@@ -1,6 +1,8 @@
 #pragma once
 
+#include <initializer_list>
 #include <source_location>
+#include <string_view>
 #include <type_traits>
 
 #include "kotatsu/support/string_ref.h"
@@ -143,8 +145,14 @@ constexpr auto type_name(bool qualified = false) {
     std::size_t start = name.find("type_name<") + 10;
     std::size_t end = name.rfind(">(");
     name = name.slice(start, end);
-    start = name.find(' ');
-    name = start == string_ref::npos ? name : name.drop_front(start + 1);
+    // MSVC names a class type with its key, `struct Foo`; `unsigned int` is
+    // a name of its own.
+    for(std::string_view key: {"class ", "struct ", "enum ", "union "}) {
+        if(name.starts_with(key)) {
+            name = name.drop_front(key.size());
+            break;
+        }
+    }
 #endif
     if(!qualified) {
         name = detail::unqualify_type_name(name);

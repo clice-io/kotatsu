@@ -23,11 +23,11 @@
 #include "kotatsu/support/function_traits.h"
 #include "kotatsu/support/tuple_traits.h"
 #include "kotatsu/support/type_list.h"
-#include "kotatsu/meta/repr.h"
-#include "kotatsu/meta/schema.h"
 #include "kotatsu/meta/struct.h"
 #include "kotatsu/meta/type_kind.h"
 #include "kotatsu/codec/fbs/type.h"
+#include "kotatsu/codec/repr.h"
+#include "kotatsu/codec/type_info.h"
 
 namespace kotatsu::codec::fbs {
 
@@ -78,16 +78,16 @@ private:
     const Table* table = nullptr;
 };
 
-/// Substitute a type by its resolved representation: annotation behavior attrs
-/// take precedence over the underlying type's meta::repr, and chained reprs
-/// are followed under the fbs format tag (meta::resolved_repr_t); identity
+/// Substitute a type by its resolved representation: an annotation's `with`
+/// or `as` takes precedence over the underlying type's codec::repr, and chained reprs
+/// are followed under fbs::format (codec::resolved_repr_t); identity
 /// when neither applies. Flatbuffers computes layout statically, so a dynamic
 /// representation is rejected here.
 template <typename T>
 constexpr auto apply_repr_impl() {
-    using repr_t = meta::resolved_repr_t<T, format>;
-    static_assert(!std::is_same_v<repr_t, meta::dynamic>,
-                  "flatbuffers computes layout statically; a meta::dynamic repr cannot be "
+    using repr_t = codec::resolved_repr_t<T, format>;
+    static_assert(!std::is_same_v<repr_t, codec::dynamic>,
+                  "flatbuffers computes layout statically; a codec::dynamic repr cannot be "
                   "used with the fbs backend");
     return std::type_identity<repr_t>{};
 }
@@ -96,7 +96,7 @@ template <typename T>
 using apply_repr_t = typename decltype(apply_repr_impl<T>())::type;
 
 /// The fully resolved view type of a member or element: representation
-/// substitution (behavior attrs, then chained reprs) and nullable-wrapper
+/// substitution (`with` or `as`, then chained reprs) and nullable-wrapper
 /// peeling (optional, smart pointers) interleave until a fixpoint, in
 /// whatever order they nest.
 template <typename T>
@@ -289,16 +289,16 @@ consteval field_layout field_layout_of() {
 }
 
 template <typename Object>
-using object_schema = meta::virtual_schema<Object, meta::format_config<format>>;
+using object_schema = codec::virtual_schema<Object, fbs::format>;
 
-/// The view type of a struct field slot: the type meta's resolver gives its
+/// The view type of a struct field slot: the type the codec's resolver gives its
 /// raw type and attrs, the type the dispatch wrote. A tagged variant is that
 /// variant itself; anything else still has its nullable wrappers peeled.
 template <typename Slot>
 consteval auto slot_view_impl() {
-    using resolved = decltype(meta::detail::resolve_node<std::remove_cv_t<typename Slot::raw_type>,
-                                                         typename Slot::attrs,
-                                                         meta::format_config<format>>());
+    using resolved = decltype(codec::detail::resolve_node<std::remove_cv_t<typename Slot::raw_type>,
+                                                          typename Slot::attrs,
+                                                          fbs::format>());
     if constexpr(std::is_same_v<typename resolved::tag_attrs, std::tuple<>>) {
         return std::type_identity<deep_clean_t<typename resolved::type>>{};
     } else {
@@ -317,11 +317,10 @@ using field_value_t = std::remove_cv_t<meta::field_type<Object, I>>;
 
 /// Whether Object's I-th field has a slot of its own, so the views address
 /// it: a skipped field has none, and a flattened field's own fields take the
-/// enclosing table's slots. Both are attrs of the field's type, so either
-/// every member of a type is addressable or none is.
+/// enclosing table's slots.
 template <typename Object, std::size_t I>
-constexpr bool addressable_field_v = !meta::field_spec_of<meta::field_type<Object, I>>.skip &&
-                                     !meta::field_spec_of<meta::field_type<Object, I>>.flatten;
+constexpr bool addressable_field_v =
+    !codec::field_spec_of<Object, I>.skip && !codec::field_spec_of<Object, I>.flatten;
 
 /// The types of Object's addressable members, each once.
 template <typename Object, typename Seq = std::make_index_sequence<meta::field_count<Object>()>>
@@ -338,11 +337,12 @@ struct member_types<Object, std::index_sequence<Is...>> {
 template <typename Object>
 using member_types_t = typename member_types<Object>::type;
 
-/// The indices of Object's fields of type M, in declaration order.
+/// The indices of Object's addressable fields of type M, in declaration order.
 template <typename Object, typename M>
 consteval auto member_fields() {
     constexpr auto typed = []<std::size_t... Is>(std::index_sequence<Is...>) {
-        return std::array<bool, sizeof...(Is)>{std::same_as<field_value_t<Object, Is>, M>...};
+        return std::array<bool, sizeof...(Is)>{
+            (std::same_as<field_value_t<Object, Is>, M> && addressable_field_v<Object, Is>)...};
     }(std::make_index_sequence<meta::field_count<Object>()>{});
     std::array<std::size_t, std::ranges::count(typed, true)> fields{};
     std::size_t next = 0;
@@ -356,12 +356,12 @@ consteval auto member_fields() {
 
 /// The slots of Object's fields of type M: a field's slot is the count of the
 /// slots the fields before it take — one each, none for a skipped one, a
-/// flattened one's own count — as meta's schema lays them out.
+/// flattened one's own count — as the codec's schema lays them out.
 template <typename Object, typename M>
 consteval auto member_slots() {
     constexpr auto taken = []<std::size_t... Is>(std::index_sequence<Is...>) {
         return std::array<std::size_t, sizeof...(Is)>{
-            type_list_size_v<typename meta::detail::single_field_slots<Object, Is>::type>...};
+            type_list_size_v<typename codec::detail::single_field_slots<Object, Is>::type>...};
     }(std::make_index_sequence<meta::field_count<Object>()>{});
     auto slots = member_fields<Object, M>();
     for(auto& slot: slots) {
@@ -515,9 +515,32 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
     }
 }
 
-/// The view type of Object's members of type M: they share their slot type.
+/// Whether Object's members of type M share the view type of their slots,
+/// which a view, finding a member by its C++ type, reads them all as.
+template <typename Object, typename M, std::size_t... Rs>
+consteval bool members_share_view(std::index_sequence<Rs...>) {
+    constexpr auto slots = member_slots<Object, M>();
+    return (std::same_as<slot_view_t<Object, slots[Rs]>, slot_view_t<Object, slots[0]>> && ...);
+}
+
 template <typename Object, typename M>
-using member_slot_view_t = slot_view_t<Object, member_slots<Object, M>()[0]>;
+consteval bool members_share_view() {
+    return members_share_view<Object, M>(
+        std::make_index_sequence<member_slots<Object, M>().size()>{});
+}
+
+template <typename Object, typename M>
+struct member_slot_view {
+    static_assert(members_share_view<Object, M>(),
+                  "fbs views find a member by its C++ type: members of one type that `as` or "
+                  "`with` represents differently cannot be told apart; give such a member a "
+                  "type of its own");
+    using type = slot_view_t<Object, member_slots<Object, M>()[0]>;
+};
+
+/// The view type of Object's members of type M, which share it.
+template <typename Object, typename M>
+using member_slot_view_t = typename member_slot_view<Object, M>::type;
 
 template <typename Object, typename M>
 using member_view_t = field_return_type_t<member_slot_view_t<Object, M>>;
@@ -558,10 +581,17 @@ private:
             meta::reflection<Object>::field_addrs(unknown.value));
         const void* address = std::addressof(unknown.value.*member);
         const auto fields = member_fields<Object, M>();
-        return static_cast<std::size_t>(
-            std::ranges::find(fields, address, [&](std::size_t i) { return addresses[i]; }) -
-            fields.begin());
+        const auto found =
+            std::ranges::find(fields, address, [&](std::size_t i) { return addresses[i]; });
+        if(found == fields.end()) {
+            member_has_no_slot();
+        }
+        return static_cast<std::size_t>(found - fields.begin());
     }
+
+    /// Not a constant expression: what a view reports, at compile time, for a member it cannot
+    /// address, a skipped or flattened one, which has no slot of its own.
+    static void member_has_no_slot() {}
 };
 
 /// table_view's access to Object's members of type M. table_view gathers one
@@ -704,25 +734,26 @@ bool verify_table(verifier_t& v, const Table* tbl) {
     if(!tbl->VerifyTableStart(v)) {
         return false;
     }
-    using detail::field_slot;
     bool ok;
     if constexpr(is_specialization_of<std::variant, T>) {
         detail::assert_slots_fit<std::variant_size_v<T> + 1>();
         // variant_view::get<I>() is reachable for every alternative
         // regardless of the stored tag, so every payload slot must verify.
-        ok = tbl->VerifyField<std::uint32_t>(v, field_slot(0), alignof(std::uint32_t)) &&
+        ok = tbl->VerifyField<std::uint32_t>(v, detail::field_slot(0), alignof(std::uint32_t)) &&
              [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                  return (verify_field<deep_clean_t<std::variant_alternative_t<Is, T>>>(
                              v,
                              tbl,
-                             field_slot(Is + 1)) &&
+                             detail::field_slot(Is + 1)) &&
                          ...);
              }(std::make_index_sequence<std::variant_size_v<T>>{});
     } else if constexpr(meta::tuple_like<T>) {
         detail::assert_slots_fit<std::tuple_size_v<T>>();
         ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             return (
-                verify_field<deep_clean_t<std::tuple_element_t<Is, T>>>(v, tbl, field_slot(Is)) &&
+                verify_field<deep_clean_t<std::tuple_element_t<Is, T>>>(v,
+                                                                        tbl,
+                                                                        detail::field_slot(Is)) &&
                 ...);
         }(std::make_index_sequence<std::tuple_size_v<T>>{});
     } else {
@@ -730,7 +761,7 @@ bool verify_table(verifier_t& v, const Table* tbl) {
         constexpr auto slot_count = type_list_size_v<typename object_schema<T>::slots>;
         detail::assert_slots_fit<slot_count>();
         ok = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            return (verify_field<slot_view_t<T, Is>>(v, tbl, field_slot(Is)) && ...);
+            return (verify_field<slot_view_t<T, Is>>(v, tbl, detail::field_slot(Is)) && ...);
         }(std::make_index_sequence<slot_count>{});
     }
     v.EndTable();

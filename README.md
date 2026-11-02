@@ -16,7 +16,7 @@ kotatsu is a C++23 async runtime with reflection-driven serialization, JSON-RPC 
 | [fs](docs/fs.md)           | Paths, files and directories on UTF-8 strings, synchronous                                                    |
 | [http](docs/http.md)       | An HTTP client on libcurl and the async runtime                                                               |
 | [ipc](docs/ipc.md)         | JSON-RPC peers over any transport, and the generated LSP 3.18 model                                           |
-| [meta](docs/meta.md)       | Compile-time reflection of structs and enums, and the attributes the codecs read                              |
+| [meta](docs/meta.md)       | Compile-time reflection of structs and enums, and the annotations modules define attributes for               |
 | [support](docs/support.md) | Containers, `outcome`, UTF-8 and UTF-16, and the traits the other modules share                               |
 | [sys](docs/sys.md)         | Environment, process spawning and system information, synchronous                                             |
 | [zest](docs/zest.md)       | A test framework that runs cases in worker processes, with checks that show both sides of a failed comparison |

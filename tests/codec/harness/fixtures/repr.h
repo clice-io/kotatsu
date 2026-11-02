@@ -1,6 +1,6 @@
 #pragma once
 
-// meta::repr fixtures the codec's tests use beyond tests/fixtures/repr.h:
+// codec::repr fixtures the codec's tests use beyond tests/fixtures/repr.h:
 // every form of the repr protocol, and the plain structs that describe the
 // documents they encode to. DynamicBox writes through the codec itself.
 
@@ -19,10 +19,11 @@
 #include "codec/harness/fixtures/containers.h"
 #include "fixtures/repr.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/repr.h"
 #include "kotatsu/meta/type_kind.h"
-#include "kotatsu/codec/visit/encode.h"
+#include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/encode.h"
+#include "kotatsu/codec/macro.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 
@@ -90,6 +91,8 @@ struct LineRange {
     auto operator==(const LineRange&) const -> bool = default;
 };
 
+KANNOTATE_TYPE(struct LineSpan, StrictCamelTag);
+
 struct LineSpan {
     int start_line = 0;
     int line_count = 0;
@@ -119,6 +122,31 @@ struct ViaExplicitBox {
     auto operator==(const ViaExplicitBox&) const -> bool = default;
 };
 
+/// An externally tagged variant with a repr declaring the variant it derives
+/// from: its tagging goes before the repr, probing as in a decode of its own.
+KANNOTATE_TYPE(struct TaggedOverRepr, tagged = true, tag_names = {"number", "text"});
+
+struct TaggedOverRepr : std::variant<int, std::string> {
+    using variant::variant;
+};
+
+/// What ScopedBox travels as, inside an untagged variant.
+struct BoxedCount {
+    int item_count = 0;
+
+    auto operator==(const BoxedCount&) const -> bool = default;
+};
+
+/// A struct whose rename_all names the members of what its repr declares,
+/// probing as in a decode of its own.
+KANNOTATE_TYPE(struct ScopedBox, rename_all = Casing::UpperCamel);
+
+struct ScopedBox {
+    std::variant<BoxedCount, int> value;
+
+    auto operator==(const ScopedBox&) const -> bool = default;
+};
+
 /// Adapters for behavior::with.
 struct VersionAsNumber {
     using type = std::uint32_t;
@@ -137,8 +165,8 @@ struct VersionAsNumber {
 struct Shout {
     using type = std::string;
 
-    template <typename Config>
-    static bool serialize(auto& vis, const std::string& text) {
+    template <typename F>
+    static bool encode(auto& vis, const std::string& text) {
         std::string encoded = text;
         for(char& c: encoded) {
             c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -146,8 +174,8 @@ struct Shout {
         return vis.visit_str(encoded);
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, std::string& text) {
+    template <typename F>
+    static bool decode(auto& vis, std::string& text) {
         std::string encoded;
         if(!vis.visit_str(encoded)) {
             return false;
@@ -161,6 +189,25 @@ struct Shout {
 };
 
 // Holders of values under a repr, and the plain structs of their documents.
+
+/// A field adapter over the type's own repr: the adapter decides.
+struct PackedVersion {
+    KANNOTATE(&value, with = type<VersionAsNumber>)
+    Version value;
+};
+
+/// A field adapter of the imperative form.
+struct Loud {
+    KANNOTATE(&value, with = type<Shout>)
+    std::string value;
+};
+
+/// A field's rename_all and deny_unknown_fields reach the alternatives of the
+/// tagged variant its type's repr declares.
+struct StrictLoad {
+    KANNOTATE(&value, StrictCamelTag)
+    LoadResult value;
+};
 
 struct Symbol {
     Relation rel;
@@ -238,7 +285,7 @@ struct LoadOkDocument {
 
 }  // namespace kotatsu::test
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 template <>
 struct repr<test::Relation> {
@@ -283,13 +330,13 @@ template <>
 struct repr<test::HexId> {
     using type = std::string;
 
-    template <typename Config>
-    static bool serialize(auto& vis, const test::HexId& h) {
+    template <typename F>
+    static bool encode(auto& vis, const test::HexId& h) {
         return vis.visit_str(std::format("{:08x}", h.v));
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, test::HexId& h) {
+    template <typename F>
+    static bool decode(auto& vis, test::HexId& h) {
         std::string text;
         if(!vis.visit_str(text)) {
             return false;
@@ -303,15 +350,14 @@ template <>
 struct repr<test::DynamicBox> {
     using type = dynamic;
 
-    template <typename Config>
-    static bool serialize(auto& vis, const test::DynamicBox& box) {
-        return std::visit([&](const auto& alt) { return codec::encode_value<Config>(vis, alt); },
-                          box.v);
+    template <typename F>
+    static bool encode(auto& vis, const test::DynamicBox& box) {
+        return std::visit([&](const auto& alt) { return codec::encode_value<F>(vis, alt); }, box.v);
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, test::DynamicBox& box) {
-        if(vis.peek_kind() == type_kind::string) {
+    template <typename F>
+    static bool decode(auto& vis, test::DynamicBox& box) {
+        if(vis.peek_kind() == meta::type_kind::string) {
             std::string text;
             if(!vis.visit_str(text)) {
                 return false;
@@ -369,17 +415,14 @@ struct repr<test::Lamport> {
 
 template <>
 struct repr<test::LineRange> {
-    using type = annotate<test::StrictCamelTag>::type<test::LineSpan>;
+    using type = test::LineSpan;
 
     static type to(const test::LineRange& r) {
-        return {
-            {.start_line = r.first, .line_count = r.last - r.first}
-        };
+        return {.start_line = r.first, .line_count = r.last - r.first};
     }
 
     static test::LineRange from(const type& span) {
-        const auto& s = annotated_value(span);
-        return {.first = s.start_line, .last = s.start_line + s.line_count};
+        return {.first = span.start_line, .last = span.start_line + span.line_count};
     }
 };
 
@@ -410,6 +453,32 @@ struct repr<test::ViaExplicitBox> {
 };
 
 template <>
+struct repr<test::TaggedOverRepr> {
+    using type = std::variant<int, std::string>;
+
+    static type to(const test::TaggedOverRepr& t) {
+        return t;
+    }
+
+    static test::TaggedOverRepr from(type v) {
+        return std::visit([](auto x) { return test::TaggedOverRepr{std::move(x)}; }, std::move(v));
+    }
+};
+
+template <>
+struct repr<test::ScopedBox> {
+    using type = std::variant<test::BoxedCount, int>;
+
+    static type to(const test::ScopedBox& b) {
+        return b.value;
+    }
+
+    static test::ScopedBox from(type v) {
+        return {.value = std::move(v)};
+    }
+};
+
+template <>
 struct repr<test::BoxedScalar> {
     using type = std::variant<std::int8_t, double>;
 
@@ -422,4 +491,4 @@ struct repr<test::BoxedScalar> {
     }
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

@@ -4,20 +4,20 @@
 #include "kotatsu/codec/bincode/encode.h"
 #include "kotatsu/codec/bincode/type.h"
 #include "kotatsu/codec/macro.h"
-#include "kotatsu/codec/visit/common.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::codec {
 
-template <typename Config>
-struct serialize_visit<bincode::Writer, RawValue, Config> {
-    static bool visit(bincode::Writer& vis, const RawValue& value) {
+template <typename Format>
+struct serialize_visit<bincode::Writer<Format>, raw_value> {
+    static bool visit(bincode::Writer<Format>& vis, const raw_value& value) {
         return vis.visit_str(value.data);
     }
 };
 
-template <typename Config>
-struct deserialize_visit<bincode::Reader, RawValue, Config> {
-    static bool visit(bincode::Reader& vis, RawValue& value) {
+template <typename Format>
+struct deserialize_visit<bincode::Reader<Format>, raw_value> {
+    static bool visit(bincode::Reader<Format>& vis, raw_value& value) {
         return vis.visit_str(value.data);
     }
 };

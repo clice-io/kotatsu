@@ -15,7 +15,7 @@
 #include "kotatsu/ipc/codec/bincode.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/codec/bincode/bincode.h"
-#include "kotatsu/codec/visit/common.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 
@@ -112,9 +112,9 @@ struct BincodeAdapter {
     static std::expected<Message, std::string> read(std::string_view payload) {
         codec::rich_error error;
         codec::scoped_context<codec::rich_error> guard(error);
-        codec::bincode::Reader reader{as_bytes(payload)};
+        codec::bincode::Reader<codec::bincode::format> reader{as_bytes(payload)};
         BincodeEnvelope envelope;
-        if(!codec::decode_value<codec::default_config<>>(reader, envelope)) {
+        if(!codec::decode_value(reader, envelope)) {
             return std::unexpected("not an envelope: " + error.to_string());
         }
         const auto rest = std::string(payload.substr(reader.pos));

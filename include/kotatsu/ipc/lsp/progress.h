@@ -64,7 +64,7 @@ private:
     /// receiver reads, a binary one included.
     template <typename Value>
     Result<void> send_progress(const Value& value) {
-        auto any = codec::dyn::to_dyn<lsp_config>(value);
+        auto any = codec::dyn::to_dyn<lsp_format>(value);
         if(!any) {
             return outcome_error(
                 Error(protocol::ErrorCode::InternalError, any.error().to_string()));

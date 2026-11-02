@@ -10,14 +10,16 @@
 #include "kotatsu/ipc/protocol.h"
 #include "kotatsu/support/naming.h"
 #include "kotatsu/support/outcome.h"
+#include "kotatsu/codec/json/format.h"
 
 namespace kotatsu::ipc {
 
 using Error = protocol::Error;
 
-/// LSP's member names: lower camel case, as JSONCodec writes them.
-struct lsp_config {
-    using field_rename = naming::rename_policy::lower_camel;
+/// The format LSP's messages travel in: JSON whose member names are in lower
+/// camel case, as JSONCodec writes them.
+struct lsp_format : codec::extend<codec::json::format> {
+    using rename_all = naming::rename_policy::lower_camel;
 };
 
 template <typename T>

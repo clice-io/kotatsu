@@ -57,12 +57,14 @@ const Entry* running = nullptr;
 struct CliOptions {
     Options zest;
 
-    cli::Help help;
+    KANNOTATE(&help, cli::help)
+    bool help = false;
 
-    KANNOTATE(cli::positional = true,
+    KANNOTATE(&test_filter_input,
+              cli::positional = true,
               cli::meta_var = "<PATTERN>",
               description = "positional fallback for test name filter")
-    <std::optional<std::string>> test_filter_input;
+    std::optional<std::string> test_filter_input;
 };
 
 struct FilterPatternSet {

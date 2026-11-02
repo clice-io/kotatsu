@@ -5,15 +5,16 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
 namespace kotatsu::codec {
 
-/// All visitor methods return bool (success/failure). Detailed error info and user context are
-/// propagated via thread_local sideband channels (error_sink, scoped_context), avoiding the
-/// overhead of passing std::expected through every call in the hot path.
+/// What a failed encode or decode reports. Visitor methods return bool; the error itself
+/// travels through scoped_context<rich_error>, a thread_local channel the entry point installs,
+/// avoiding the overhead of passing std::expected through every call in the hot path.
 struct rich_error {
     struct source_location {
         std::size_t line = 0;
@@ -112,8 +113,9 @@ struct UnknownFields {
 };
 
 /// RAII thread_local context slot. Each type T gets an independent thread_local pointer.
-/// Used directly for user context (e.g. scoped_context<EntityRegistry>), and internally by
-/// error_sink for error propagation.
+/// The codec keeps the error of the encode or decode under way, its options and the
+/// UnknownFields sink in one; a program passes data of its own to its reprs and
+/// serialize_visit specializations the same way.
 template <typename T>
 class scoped_context {
     inline static thread_local T* active = nullptr;
@@ -143,6 +145,32 @@ public:
         return false;
     }
 };
+
+namespace detail {
+
+/// Puts a step, a key or an element index, in front of error's path.
+template <typename Step>
+void prepend_step(rich_error& error, const Step& at) {
+    if constexpr(std::is_convertible_v<const Step&, std::string_view>) {
+        error.prepend_field(at);
+    } else {
+        error.prepend_index(at);
+    }
+}
+
+/// When a step fails, prepends where it was, a key or an element index, to
+/// the active error's path; returns ok.
+template <typename Step>
+bool trace_path(bool ok, const Step& at) {
+    if(!ok) {
+        if(auto* e = scoped_context<rich_error>::try_current()) {
+            prepend_step(*e, at);
+        }
+    }
+    return ok;
+}
+
+}  // namespace detail
 
 }  // namespace kotatsu::codec
 

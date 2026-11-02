@@ -389,8 +389,8 @@ ZEST_CASE(checked_before_crashing, crashes = true) {
 struct FixtureOptions {
     Options zest;
 
-    KANNOTATE(description = "make every worker fail to start")
-    <bool> fail_worker_start = false;
+    KANNOTATE(&fail_worker_start, description = "make every worker fail to start")
+    bool fail_worker_start = false;
 };
 
 }  // namespace

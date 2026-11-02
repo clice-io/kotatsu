@@ -13,15 +13,12 @@
 #include <vector>
 
 #include "codec/harness/fixtures/attrs.h"
-#include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "codec/harness/visit/kit.h"
-#include "fixtures/configs.h"
+#include "fixtures/settings.h"
 #include "fixtures/structs.h"
-#include "fixtures/tagged.h"
-#include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
 
 namespace kotatsu::test {
 
@@ -113,6 +110,11 @@ void variants(const Kit<B>& kit) {
                     {.kind = "rect", .width = 2, .height = 3}
                 };
             });
+        encodes_as(
+            kit,
+            "internal_monostate_encodes_as_the_tag",
+            [] { return Field<InternalUnit>{InternalUnit{std::monostate{}}}; },
+            [] { return Field<KindPlain>{{.kind = "none"}}; });
         encodes_as(kit, "tagged_in_struct_encodes_as_plain", holder, [] {
             return TaggedHolderPlain{
                 .name = "h",
@@ -121,15 +123,36 @@ void variants(const Kit<B>& kit) {
                 .in = {.kind = "circle", .radius = 1.5},
             };
         });
-        using DefaultNamed = meta::annotate<TaggedTag>::type<std::variant<Circle, Rect>>;
         encodes_as(
             kit,
             "default_tag_names_are_type_names",
-            [] { return Field<DefaultNamed>{DefaultNamed{Circle{.radius = 1.5}}}; },
+            [] { return DefaultNamed{Circle{.radius = 1.5}}; },
             [] { return Field<std::map<std::string, Circle>>{{{"Circle", {.radius = 1.5}}}}; });
+        // A rename_all spells them, the variant's own or else the format's.
+        encodes_as(
+            kit,
+            "default_tag_names_follow_rename_all",
+            [] {
+                return DefaultNamedShouting{
+                    Rect{.width = 2, .height = 3}
+                };
+            },
+            [] {
+                return Field<std::map<std::string, Rect>>{{{"RECT", {.width = 2, .height = 3}}}};
+            });
+        encodes_as<CamelSettings>(
+            kit,
+            "default_tag_names_follow_the_format_rename",
+            [] { return DefaultNamed{Circle{.radius = 1.5}}; },
+            [] { return Field<std::map<std::string, Circle>>{{{"circle", {.radius = 1.5}}}}; });
+        roundtrip<CamelSettings>(kit, "renamed_default_tag_names_roundtrip", [] {
+            return DefaultNamed{
+                Rect{.width = 2, .height = 3}
+            };
+        });
     }
     // Where a document is not human readable, each tagging travels as the
-    // bare variant: a positional backend always, a keyed one under a config
+    // bare variant: a positional backend always, a keyed one under a format
     // that says so.
     auto bare = [] {
         return TaggedHolderBare{
@@ -140,7 +163,7 @@ void variants(const Kit<B>& kit) {
         };
     };
     if constexpr(B::caps.self_describing) {
-        encodes_as<NotHumanReadableConfig>(kit, "not_human_readable_ignores_tags", holder, bare);
+        encodes_as<NotHumanReadableSettings>(kit, "not_human_readable_ignores_tags", holder, bare);
     } else {
         encodes_as(kit, "tags_ignored_encodes_as_bare", holder, bare);
     }
@@ -189,6 +212,9 @@ void variants(const Kit<B>& kit) {
             }
             return start;
         });
+    roundtrip(kit, "internal_monostate_roundtrip", [] {
+        return std::vector<InternalUnit>{InternalUnit{std::monostate{}}, Circle{.radius = 2}};
+    });
     roundtrip(kit, "tagged_nested_roundtrip", [] {
         return NestedTagged{
             TaggedWrapper{.id = "w", .inner = Point{.x = 1, .y = 2}}
@@ -292,7 +318,7 @@ void variants(const Kit<B>& kit) {
             },
             [] { return Field<AdjacentShape>{AdjacentShape(Point{.x = 1, .y = 2})}; },
             {"unknown field 'extra' at value.c"});
-        read_in_field_fails<AdjacentShape, StrictConfig>(
+        read_in_field_fails<AdjacentShape, StrictSettings>(
             kit,
             "adjacent_extra_field_denied_fails",
             [] { return AdjacentWithExtraPlain{.t = "number", .extra = true, .c = 5}; },
@@ -408,14 +434,24 @@ void variants(const Kit<B>& kit) {
                                                };
                                            },
                                            {.message = "", .path = "value"});
+        reads_in_field<InternalUnit>(
+            kit,
+            "internal_monostate_reads_the_tag",
+            [] { return KindPlain{.kind = "none"}; },
+            [] { return InternalUnit{std::monostate{}}; });
+        reads_in_field<InternalUnit>(
+            kit,
+            "internal_monostate_ignores_extra_fields",
+            [] { return CircleWithExtraPlain{.kind = "none", .radius = 1, .extra = "x"}; },
+            [] { return InternalUnit{std::monostate{}}; });
         reads_in_field<InternalShape>(
             kit,
             "internal_extra_field_ignored",
             [] { return CircleWithExtraPlain{.kind = "circle", .radius = 1, .extra = "x"}; },
             [] { return InternalShape(Circle{.radius = 1}); });
-        reads_in_field<InternalShape, CamelConfig>(
+        reads_in_field<InternalShape, CamelSettings>(
             kit,
-            "internal_alternatives_follow_field_rename",
+            "internal_alternatives_follow_rename_all",
             [] { return SegmentCamelPlain{.kind = "segment", .lineWidth = 7}; },
             [] { return InternalShape(Segment{.line_width = 7}); });
     }

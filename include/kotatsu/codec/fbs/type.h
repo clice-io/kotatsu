@@ -11,10 +11,10 @@
 #include <utility>
 
 #include "kotatsu/support/type_traits.h"
-#include "kotatsu/meta/repr.h"
 #include "kotatsu/meta/type_kind.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/format.h"
+#include "kotatsu/codec/repr.h"
 
 #if __has_include(<flatbuffers/flatbuffers.h>)
 #include "flatbuffers/flatbuffers.h"
@@ -41,13 +41,14 @@ using string_offset_t = offset_t<String>;
 
 using verifier_t = ::flatbuffers::Verifier;
 
-/// Format tag: scopes a meta::repr specialization to the flatbuffers backend
-/// (meta::repr<T, codec::fbs::format>).
+/// The flatbuffers backend's format, which its visitors carry and which
+/// scopes a repr to flatbuffers (codec::repr<T, codec::fbs::format>). The
+/// entry points take no format of their own: the layout is the type's alone.
 ///
 /// # Lowerings
 ///
 /// FlatBuffers binary built in two passes (allocate child offsets, then
-/// write tables); layout_computed=true, so meta::dynamic reprs are rejected
+/// write tables); layout_computed=true, so codec::dynamic reprs are rejected
 /// at compile time. Field slots use voffsets first_field=4, field_step=2 in
 /// declaration order; the buffer carries the "EVTO" identifier.
 /// - root → always a table: structures map directly, tuples and variants
@@ -82,7 +83,16 @@ using verifier_t = ::flatbuffers::Verifier;
 ///   as vector elements they degrade to boxed tables. A null payload leaves
 ///   the slot absent too, so an engaged optional<std::monostate> reads back
 ///   disengaged
-struct format {};
+struct format : codec::extend<codec::format> {
+    constexpr static bool human_readable = false;
+    /// The output layout is computed from the type at compile time, so a
+    /// codec::dynamic repr has no layout and is rejected.
+    constexpr static bool layout_computed = true;
+    /// An absent slot is how a null travels, and reads back as null, empty or
+    /// zero: a field a write left out at a default that is none of those
+    /// would not read back, so every field is written, whatever its presence.
+    constexpr static bool writes_every_field = true;
+};
 
 /// Whether reflection sees a nonempty struct's fields: past the reflection
 /// field limit meta::field_count() collapses to zero, indistinguishable from
@@ -93,34 +103,15 @@ constexpr bool fields_reflected_v = std::is_empty_v<T> || meta::field_count<T>()
 
 namespace detail {
 
-/// Static visitor traits shared by the fbs visitors the codec dispatch
-/// drives: a binary backend whose output layout is computed statically (so
-/// meta::dynamic reprs are rejected at compile time).
+/// What the fbs visitors the codec dispatch drives share: they carry
+/// fbs::format, which says what the backend can do.
 struct VisitorBase {
     using format = fbs::format;
-    constexpr static bool human_readable = false;
-    constexpr static bool layout_computed = true;
 };
 
 constexpr inline char buffer_identifier[] = "EVTO";
 constexpr voffset_t first_field = 4;
 constexpr voffset_t field_step = 2;
-
-/// FlatBuffers computes every slot's layout statically from the type, so a
-/// config knob that re-routes values to a different layout cannot apply.
-/// Rejecting them here keeps the layout a pure function of the type — which
-/// is also what lets the config-less zero-copy views and their verifier read
-/// any buffer this backend produced.
-template <typename Config>
-consteval void assert_config_layout_stable() {
-    static_assert(default_config<Config>::enum_repr == enum_repr::Integer,
-                  "the fbs backend cannot honor enum_repr::String: it would change every enum "
-                  "slot from an integer cell to a string offset; annotate individual fields "
-                  "with behavior::enum_string instead");
-    static_assert(default_config<Config>::nan_repr != nan_repr::String,
-                  "the fbs backend cannot honor nan_repr::String: a float slot's shape would "
-                  "depend on the value it holds");
-}
 
 /// Table lowerings walk a struct's reflected fields, so a nonempty struct
 /// past the reflection field limit would encode as an empty table and decode
@@ -257,8 +248,15 @@ consteval bool inline_struct() {
         // outright (assert_fields_reflected).
         return false;
     } else {
+        // A field's own annotation may replace its raw handling (with and as
+        // substitute the shape), so an annotated field cannot join a memcpy
+        // image at any nesting depth; the enclosing struct degrades to a
+        // table, where the dispatch applies the attrs. Its type's annotation
+        // carries no with or as: it keeps the field raw.
         return []<std::size_t... I>(std::index_sequence<I...>) {
-            return (inline_struct_field<meta::field_type<T, I>>() && ...);
+            return (
+                (!meta::field_annotated<T, I> && inline_struct_field<meta::field_type<T, I>>()) &&
+                ...);
         }(std::make_index_sequence<meta::field_count<T>()>{});
     }
 }
@@ -269,23 +267,14 @@ consteval bool inline_struct_field() {
     // meta::field_type yields const-qualified types, so strip cv before
     // matching.
     using U = std::remove_cv_t<T>;
-    if constexpr(meta::annotated_type<U>) {
-        // An annotation's attrs replace the field's raw handling (with/as
-        // substitute the shape, skip_if drops the slot), so an annotated
-        // field cannot join a memcpy image at any nesting depth; the
-        // enclosing struct degrades to a table, where the dispatch applies
-        // the attrs. Checked before the reflection branch: an annotation
-        // wrapping an aggregate is itself an aggregate that reflection
-        // would walk right through, hiding the attrs.
-        return false;
-    } else if constexpr(is_optional_v<U>) {
+    if constexpr(is_optional_v<U>) {
         // std::optional<int> is trivially copyable, yet not every byte image
         // is a valid optional: the engagement flag admits only two values,
         // and inline structs are verified for size/alignment alone. An
         // optional field keeps the enclosing struct table-shaped, where
         // disengagement is an absent slot instead of a raw flag byte.
         return false;
-    } else if constexpr(meta::has_repr<U, format>) {
+    } else if constexpr(codec::has_repr<U, format>) {
         // A repr replaces the raw layout, so the field cannot be part of an
         // inline struct's memcpy image; the enclosing type degrades to a
         // table, where the dispatch applies the repr.

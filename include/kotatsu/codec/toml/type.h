@@ -5,9 +5,9 @@
 #include <string_view>
 #include <type_traits>
 
-#include "kotatsu/meta/type_info.h"
 #include "kotatsu/meta/type_kind.h"
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/type_info.h"
 
 // kotatsu's TOML backend converts every toml++ failure into std::expected /
 // rich_error and never lets an exception escape, so toml++ is pinned to its
@@ -34,8 +34,9 @@ static_assert(!TOML_EXCEPTIONS, "toml++ must be in no-exceptions mode for kotats
 
 namespace kotatsu::codec::toml {
 
-/// Format tag: scopes a meta::repr specialization to the TOML backend
-/// (meta::repr<T, codec::toml::format>).
+/// The TOML backend's format, which a format of your own extends to say what
+/// it changes for TOML (codec::extend), and which scopes a repr to TOML
+/// (codec::repr<T, codec::toml::format>).
 ///
 /// # Lowerings
 ///
@@ -49,24 +50,20 @@ namespace kotatsu::codec::toml {
 /// - null: inside a table the key is omitted; inside an array it fails
 ///   (TOML arrays cannot hold null)
 /// - integers → TOML integer (int64); a uint64 above int64::max fails
-/// - float32/float64 → TOML float; nan_repr::Passthrough hands the raw
-///   value to toml++ (TOML has nan/inf literals)
+/// - float32/float64 → TOML float, NaN and the infinities as TOML's nan and inf
 /// - character → single-codepoint string (the char's value 0-255 encoded as
 ///   UTF-8); decode accepts exactly one codepoint ≤ 255
-/// - string → TOML string; one that is not UTF-8 follows Config's invalid_utf8
+/// - string → TOML string; one that is not UTF-8 follows the encode's invalid_utf8
 /// - bytes → array of integer octets; decode range-checks each into [0, 255]
-/// - enumeration → underlying integer, or the renamed name under
-///   enum_repr::String
+/// - enumeration → underlying integer; through codec::enum_names, the
+///   enumerator's name
 /// - array/set/tuple → TOML array
 /// - map → table; non-string keys go through MapKeyWriter/MapKeyReader as
 ///   their decimal string form
 /// - structure → table keyed by (renamed) field names
 /// - variant → shaped by the spec's tag_mode (see encode_tagged_variant in
-///   visit/encode.h); untagged variants emit the bare payload
-struct format {
-    /// Its documents are UTF-8 text.
-    constexpr static bool utf8 = true;
-};
+///   encode.h); untagged variants emit the bare payload
+struct format : codec::extend<codec::format> {};
 
 using Table = ::toml::table;
 using Array = ::toml::array;
@@ -78,12 +75,12 @@ constexpr inline std::string_view boxed_root_key = "__value";
 
 /// Whether a T value is the document's root table itself rather than a value
 /// boxed under boxed_root_key: judged on the representation the dispatch
-/// resolves (annotations and toml-scoped reprs included), with kind_of's
+/// resolves under F (annotations and F's reprs included), with kind_of's
 /// test, where str-like or tuple-like wins over reflection. A raw Table is
 /// its own root even though its range kind would box it.
-template <typename T>
+template <typename T, typename F>
 constexpr bool root_table_v = [] {
-    using R = meta::resolved_repr_t<T, format>;
+    using R = codec::resolved_repr_t<T, F>;
     constexpr auto kind = meta::kind_of<R>();
     return kind == meta::type_kind::structure || kind == meta::type_kind::map ||
            std::is_same_v<R, Table>;
@@ -92,8 +89,8 @@ constexpr bool root_table_v = [] {
 /// Whether T is a nullable root (an optional or pointer with no repr of its
 /// own): absent, it is the empty document; present, the root is routed by
 /// the value it wraps.
-template <typename T>
-constexpr bool nullable_root_v = std::is_same_v<meta::resolved_repr_t<T, format>, T> &&
+template <typename T, typename F>
+constexpr bool nullable_root_v = std::is_same_v<codec::resolved_repr_t<T, F>, T> &&
                                  (meta::kind_of<T>() == meta::type_kind::optional ||
                                   meta::kind_of<T>() == meta::type_kind::pointer);
 

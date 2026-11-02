@@ -8,8 +8,8 @@
 #include <utility>
 #include <variant>
 
-#include "annotation.h"
 #include "struct.h"
+#include "type_kind.h"
 #include "kotatsu/support/ranges.h"
 
 namespace kotatsu::meta::detail {
@@ -28,21 +28,25 @@ concept standard_integer =
 template <typename L, typename R>
 concept reflectable_pair = reflectable_class<L> && reflectable_class<R>;
 
-/// A std::variant, or an annotation of one.
+/// A std::variant, or a class derived from one.
 template <typename T>
-concept variant_like = is_specialization_of<std::variant, raw_type_t<std::remove_cvref_t<T>>>;
+concept variant_like = is_specialization_of<std::variant, std::remove_cvref_t<T>> ||
+                       derived_variant<std::remove_cvref_t<T>>;
 
 template <typename L, typename R>
 concept variant_pair = variant_like<L> && variant_like<R>;
 
+/// A std::optional, or a class derived from one: a value that may be absent.
 template <typename T>
-    requires variant_like<T>
-constexpr auto as_variant(const T& v) -> const raw_type_t<T>& {
-    if constexpr(annotated_type<T>) {
-        return annotated_value(v);
-    } else {
-        return v;
-    }
+concept optional_like = !is_expected_v<T> && requires(const T& value) {
+    { value.has_value() } -> std::convertible_to<bool>;
+    *value;
+};
+
+/// The std::variant v is.
+template <typename... Ts>
+constexpr auto as_variant(const std::variant<Ts...>& v) -> const std::variant<Ts...>& {
+    return v;
 }
 
 template <typename T>
@@ -75,8 +79,13 @@ constexpr auto integer_value(T value) {
 }
 
 struct eq_op {
+    // A variant or an optional declares == whenever its values' == is
+    // declared, though that one may not compile (a vector or variant of
+    // structs without ==): meta::eq compares them itself, so a range of them
+    // is compared element by element.
     template <typename A, typename B>
-    constexpr inline static bool comparable = eq_comparable_with<A, B>;
+    constexpr inline static bool comparable =
+        eq_comparable_with<A, B> && !variant_like<A> && !optional_like<std::remove_cvref_t<A>>;
 };
 
 struct lt_op {
@@ -374,6 +383,15 @@ constexpr bool compare_eq(const L& lhs, const R& rhs) {
             },
             vl,
             vr);
+    } else if constexpr(optional_like<L> && optional_like<R>) {
+        // Equal when both are empty, or both hold equal values. Compared here
+        // rather than with ==, which a std::optional declares whenever its
+        // values' == is declared, though that one may not compile (a vector
+        // or variant of structs without ==).
+        if(lhs.has_value() != rhs.has_value()) {
+            return false;
+        }
+        return !lhs.has_value() || compare_eq(*lhs, *rhs);
     } else if constexpr(eq_comparable_with<L, R>) {
         if constexpr(integer_like<L> && integer_like<R>) {
             return std::cmp_equal(integer_value(lhs), integer_value(rhs));

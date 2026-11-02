@@ -8,8 +8,8 @@
 #include <string_view>
 
 #include "kotatsu/ipc/protocol.h"
-#include "kotatsu/meta/repr.h"
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 
@@ -69,16 +69,16 @@ struct NotificationTraits<test::NoParams> {
 
 }  // namespace kotatsu::ipc::protocol
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 template <>
 struct repr<test::Unwritable> {
     using type = std::string;
 
-    template <typename Config>
-    static bool serialize(auto& /*vis*/, const test::Unwritable& /*value*/) {
+    template <typename F>
+    static bool encode(auto& /*vis*/, const test::Unwritable& /*value*/) {
         return codec::scoped_context<codec::rich_error>::fail(codec::rich_error("unwritable"));
     }
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

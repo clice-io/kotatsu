@@ -50,7 +50,7 @@ std::string value_token(const Arg& arg) {
         return choices_token(arg.field->choices, false);
     }
     if(arg.value_type->kind == meta::type_kind::enumeration) {
-        const auto names = static_cast<const meta::enum_type_info&>(*arg.value_type).member_names;
+        const auto names = static_cast<const codec::enum_type_info&>(*arg.value_type).member_names;
         if(!names.empty()) {
             return choices_token(names, true);
         }
@@ -81,11 +81,11 @@ std::string numbered(std::string_view token, std::uint32_t count) {
 /// A command being built, and the one it is a subcommand of: what finds a set of subcommands
 /// holding one that holds the set again, which no argv could end.
 struct Building {
-    const meta::type_info* type = nullptr;
+    const codec::type_info* type = nullptr;
     const Building* parent = nullptr;
 };
 
-CommandPtr make_command(const meta::type_info& type, const Building* parent);
+CommandPtr make_command(const codec::type_info& type, const Building* parent);
 
 /// Builds a command by the rules declaration.h states, which check_declaration() has held its
 /// struct to.
@@ -217,7 +217,7 @@ class Builder {
                          std::uint32_t group,
                          const std::vector<std::string_view>& keys,
                          const std::string& path) {
-        const auto& variant = static_cast<const meta::variant_type_info&>(*use.type);
+        const auto& variant = static_cast<const codec::variant_type_info&>(*use.type);
         Subcommands subcommands{.keys = keys,
                                 .path = path,
                                 .optional = use.optional,
@@ -229,7 +229,7 @@ class Builder {
                                          use.spec.hidden_sub.end());
             subcommands.names.push_back(std::move(word));
             subcommands.descriptions.push_back(
-                static_cast<const meta::struct_type_info&>(alternative).description);
+                static_cast<const codec::struct_type_info&>(alternative).description);
             subcommands.commands.push_back(make_command(alternative, &building));
         }
         command.subcommands = std::move(subcommands);
@@ -243,7 +243,7 @@ class Builder {
                       const std::string& path) {
         Subcommands subcommands{.keys = keys,
                                 .path = path,
-                                .optional = !use.spec.required,
+                                .optional = !use.required,
                                 .group = group};
         for(const auto& entry: use.spec.commands.registry().entries) {
             subcommands.names.push_back(entry.name);
@@ -256,24 +256,24 @@ class Builder {
 
     /// Adds the alternatives of an exclusive field as groups of the command's arguments, each
     /// headed by the field's description and its struct's.
-    void add_exclusive(const meta::field_info& field,
+    void add_exclusive(const codec::field_info& field,
                        const FieldUse& use,
                        std::uint32_t group,
                        const std::vector<std::string_view>& keys,
                        const std::string& path) {
         const auto index = static_cast<std::uint32_t>(command.exclusives.size());
-        const auto& variant = static_cast<const meta::variant_type_info&>(*use.type);
+        const auto& variant = static_cast<const codec::variant_type_info&>(*use.type);
         command.exclusives.push_back(Exclusive{
             .keys = keys,
             .group = group,
-            .required = use.spec.required,
+            .required = use.required,
             .first_args = std::vector<std::uint32_t>(variant.alternatives.size(), no_arg),
         });
         const auto title = field.description.empty() ? std::string(field.declared_name)
                                                      : std::string(field.description);
         for(std::uint32_t i = 0; i < variant.alternatives.size(); ++i) {
             const auto& alternative =
-                static_cast<const meta::struct_type_info&>(variant.alternatives[i]());
+                static_cast<const codec::struct_type_info&>(variant.alternatives[i]());
             const auto inner = static_cast<std::uint32_t>(command.groups.size());
             command.groups.push_back(Group{
                 .parent = group,
@@ -293,7 +293,7 @@ class Builder {
         }
     }
 
-    void add_struct(const meta::struct_type_info& type,
+    void add_struct(const codec::struct_type_info& type,
                     std::uint32_t group,
                     const std::vector<std::string_view>& keys,
                     const std::string& path) {
@@ -306,7 +306,7 @@ class Builder {
             switch(use.kind) {
                 case FieldUse::Kind::Group: {
                     const auto inner = static_cast<std::uint32_t>(command.groups.size());
-                    const auto& members = static_cast<const meta::struct_type_info&>(*use.type);
+                    const auto& members = static_cast<const codec::struct_type_info&>(*use.type);
                     // The struct's own, which a std::optional of it does not pass on.
                     const auto description =
                         field.description.empty() ? members.description : field.description;
@@ -333,7 +333,6 @@ class Builder {
                     arg.alternative = current_alternative;
                     arg.keys = std::move(field_keys);
                     arg.path = field_path;
-                    arg.help = field.description;
                     add_arg(std::move(arg));
                     break;
                 }
@@ -344,7 +343,7 @@ class Builder {
 public:
     Builder(Command& command, const Building& building) : command(command), building(building) {}
 
-    void build(const meta::struct_type_info& type) {
+    void build(const codec::struct_type_info& type) {
         command.type = &type;
         // The unknown option, then the input option, ids 1 and 2.
         command.options.push_back(Option::unknown(1));
@@ -369,7 +368,7 @@ public:
     }
 };
 
-CommandPtr make_command(const meta::type_info& type, const Building* parent) {
+CommandPtr make_command(const codec::type_info& type, const Building* parent) {
     for(const Building* outer = parent; outer != nullptr; outer = outer->parent) {
         if(outer->type == &type) {
             std::fprintf(stderr,
@@ -381,7 +380,7 @@ CommandPtr make_command(const meta::type_info& type, const Building* parent) {
     }
     const Building building{.type = &type, .parent = parent};
     CommandPtr command(new Command());
-    Builder(*command, building).build(static_cast<const meta::struct_type_info&>(type));
+    Builder(*command, building).build(static_cast<const codec::struct_type_info&>(type));
     return command;
 }
 
@@ -391,7 +390,7 @@ void CommandDeleter::operator()(Command* command) const {
     delete command;
 }
 
-CommandPtr build_command(const meta::type_info& type) {
+CommandPtr build_command(const codec::type_info& type) {
     return make_command(type, nullptr);
 }
 
@@ -431,7 +430,7 @@ bool present(const Command& command, const Node& root, std::uint32_t group) {
     return true;
 }
 
-std::string number_text(const meta::schema_number& number) {
+std::string number_text(const codec::schema_number& number) {
     return std::visit(
         []<typename N>(N value) -> std::string {
             if constexpr(std::same_as<N, std::monostate>) {

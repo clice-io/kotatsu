@@ -14,7 +14,7 @@ ZEST_SUITE(ipc_lsp_protocol_enum) {
 
 ZEST_CASE(unknown_string_enum_value) {
     auto content =
-        from_string<protocol::MarkupContent, lsp_config>(R"({"kind":"asciidoc","value":"body"})");
+        from_string<protocol::MarkupContent, lsp_format>(R"({"kind":"asciidoc","value":"body"})");
     ZASSERT(content);
     ZEXPECT(content->kind == "asciidoc");
     ZEXPECT(content->value == "body");
@@ -22,7 +22,7 @@ ZEST_CASE(unknown_string_enum_value) {
 
 ZEST_CASE(known_string_enum_value) {
     auto content =
-        from_string<protocol::MarkupContent, lsp_config>(R"({"kind":"markdown","value":"body"})");
+        from_string<protocol::MarkupContent, lsp_format>(R"({"kind":"markdown","value":"body"})");
     ZASSERT(content);
     ZEXPECT(content->kind == protocol::MarkupKind::Markdown);
 }
@@ -32,16 +32,16 @@ ZEST_CASE(string_enum_roundtrip) {
         .kind = protocol::MarkupKind::Markdown,
         .value = "body",
     };
-    auto serialized = codec::json::to_string<lsp_config>(content);
+    auto serialized = codec::json::to_string<lsp_format>(content);
     ZASSERT(serialized);
     ZEXPECT(*serialized == R"({"kind":"markdown","value":"body"})");
 }
 
 ZEST_CASE(unknown_value_roundtrip) {
     constexpr std::string_view payload = R"({"kind":"asciidoc","value":"body"})";
-    auto content = from_string<protocol::MarkupContent, lsp_config>(payload);
+    auto content = from_string<protocol::MarkupContent, lsp_format>(payload);
     ZASSERT(content);
-    auto serialized = codec::json::to_string<lsp_config>(*content);
+    auto serialized = codec::json::to_string<lsp_format>(*content);
     ZASSERT(serialized);
     ZEXPECT(*serialized == payload);
 }
@@ -50,13 +50,13 @@ ZEST_CASE(int_enum_unknown_encode) {
     protocol::ClientSymbolKindOptions options{
         .value_set = std::vector{protocol::SymbolKind::File, protocol::SymbolKind(9999)},
     };
-    auto serialized = codec::json::to_string<lsp_config>(options);
+    auto serialized = codec::json::to_string<lsp_format>(options);
     ZASSERT(serialized);
     ZEXPECT(*serialized == R"({"valueSet":[1,9999]})");
 }
 
 ZEST_CASE(string_literal_field_default) {
-    auto serialized = codec::json::to_string<lsp_config>(protocol::FullDocumentDiagnosticReport{});
+    auto serialized = codec::json::to_string<lsp_format>(protocol::FullDocumentDiagnosticReport{});
     ZASSERT(serialized);
     ZEXPECT(*serialized == R"({"kind":"full","items":[]})");
 }
@@ -83,7 +83,7 @@ ZEST_CASE(initialize_unknown_enum_values) {
         "trace": "compact"
     })";
 
-    auto params = from_string<protocol::InitializeParams, lsp_config>(payload);
+    auto params = from_string<protocol::InitializeParams, lsp_format>(payload);
     ZASSERT(params);
 
     auto& init = *params;

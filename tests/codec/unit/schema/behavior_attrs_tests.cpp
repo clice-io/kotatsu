@@ -7,10 +7,13 @@
 #include "fixtures/attrs.h"
 #include "fixtures/tagged.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::field_attrs_t;
+using meta::type_kind;
 
 using kotatsu::type_list_element_t;
 
@@ -18,9 +21,9 @@ namespace {
 
 namespace fx = ::kotatsu::test;
 
-ZEST_SUITE(meta_schema_behavior_attrs) {
+ZEST_SUITE(codec_schema_behavior_attrs) {
 
-ZEST_CASE(skip_if_and_as) {
+ZEST_CASE(omit_if_and_as) {
     ZSTATIC_EXPECT(virtual_schema<fx::BehaviorStruct>::fields.size() == 3U);
 
     constexpr auto& fields = virtual_schema<fx::BehaviorStruct>::fields;
@@ -29,15 +32,15 @@ ZEST_CASE(skip_if_and_as) {
     ZSTATIC_EXPECT(fields[1].name == "as_str");
     ZSTATIC_EXPECT(fields[2].name == "plain");
 
-    // skip_if is not a behavior provider
-    ZSTATIC_EXPECT(fields[0].has_skip_if);
+    // omit_if is not a behavior provider
+    ZSTATIC_EXPECT(fields[0].presence == presence_kind::omit_if);
 
     // as<string> is a behavior provider; encoded type becomes string
-    ZSTATIC_EXPECT(!fields[1].has_skip_if);
+    ZSTATIC_EXPECT(fields[1].presence == presence_kind::required);
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::string);
 
     // plain field: no behavior flags
-    ZSTATIC_EXPECT(!fields[2].has_skip_if);
+    ZSTATIC_EXPECT(fields[2].presence == presence_kind::required);
 }
 
 ZEST_CASE(with_adapter_type_info) {
@@ -56,30 +59,26 @@ ZEST_CASE(with_adapter_type_info) {
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::float32);
 }
 
-ZEST_CASE(enum_string) {
-    constexpr auto& fields = virtual_schema<fx::EnumStringStruct>::fields;
+ZEST_CASE(enum_names) {
+    constexpr auto& fields = virtual_schema<fx::EnumNamesStruct>::fields;
 
-    // enum_string encodes through a non-owning view; the field's type_info
-    // keeps the members, spelled through the policy.
+    // enum_names encodes through a non-owning view; the field's type_info
+    // keeps the members, as they are spelled.
     ZSTATIC_EXPECT(fields[0].type().kind == type_kind::enumeration);
-    ZEXPECT(static_cast<const enum_type_info&>(fields[0].type()).rename != nullptr);
-    ZEXPECT(zest::type_eq<resolved_repr_t<decltype(fx::EnumStringStruct::color_field)>,
-                          std::string_view>());
+    const auto& info = static_cast<const enum_type_info&>(fields[0].type());
+    ZEXPECT(info.named);
+    ZEXPECT(info.member_names[0] == "red");
+    using resolved =
+        decltype(detail::resolve_node<fx::Color, field_attrs_t<fx::EnumNamesStruct, 0>>());
+    ZEXPECT(zest::type_eq<typename resolved::type, std::string_view>());
 
     // Verify slot types
-    using slots = virtual_schema<fx::EnumStringStruct>::slots;
+    using slots = virtual_schema<fx::EnumNamesStruct>::slots;
     using slot0 = type_list_element_t<0, slots>;
     ZEXPECT(zest::type_eq<slot0::raw_type, fx::Color>());
 
     // plain int is unaffected
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::int32);
-}
-
-ZEST_CASE(enum_string_through_a_chain) {
-    // The members survive an as<> that resolves to the annotated enum.
-    constexpr auto& fields = virtual_schema<fx::EnumStringThroughAs>::fields;
-    ZSTATIC_EXPECT(fields[0].type().kind == type_kind::enumeration);
-    ZEXPECT(static_cast<const enum_type_info&>(fields[0].type()).rename != nullptr);
 }
 
 ZEST_CASE(tagged_variant) {
@@ -96,33 +95,33 @@ ZEST_CASE(tagged_variant) {
 ZEST_CASE(multi_attr_combination) {
     constexpr auto& fields = virtual_schema<fx::MultiAttrStruct>::fields;
 
-    // opt_with_default: has_default=true, has_skip_if=true
-    ZSTATIC_EXPECT(fields[0].has_default);
-    ZSTATIC_EXPECT(fields[0].has_skip_if);
+    // opt_omitted: presence by a predicate, description="Left out when empty."
+    ZSTATIC_EXPECT(fields[0].presence == presence_kind::omit_if);
+    ZSTATIC_EXPECT(fields[0].description == "Left out when empty.");
 
     // renamed_as: name="score", type->kind=string
     ZSTATIC_EXPECT(fields[1].name == "score");
     ZSTATIC_EXPECT(fields[1].type().kind == type_kind::string);
 }
 
-ZEST_CASE(skip_if_combined_with_behavior) {
-    // skip_if + as: both flags present
+ZEST_CASE(omit_if_combined_with_behavior) {
+    // omit_if + as: both present
     {
-        constexpr auto& fields = virtual_schema<fx::SkipIfAsStruct>::fields;
-        ZSTATIC_EXPECT(fields[0].has_skip_if);
+        constexpr auto& fields = virtual_schema<fx::OmitIfAsStruct>::fields;
+        ZSTATIC_EXPECT(fields[0].presence == presence_kind::omit_if);
         ZSTATIC_EXPECT(fields[0].type().kind == type_kind::string);
     }
 
-    // skip_if + with: both flags present, encoded type = string (from adapter)
+    // omit_if + with: both present, encoded type = string (from adapter)
     {
-        constexpr auto& fields = virtual_schema<fx::SkipIfWithStruct>::fields;
-        ZSTATIC_EXPECT(fields[0].has_skip_if);
+        constexpr auto& fields = virtual_schema<fx::OmitIfWithStruct>::fields;
+        ZSTATIC_EXPECT(fields[0].presence == presence_kind::omit_if);
         ZSTATIC_EXPECT(fields[0].type().kind == type_kind::string);
     }
 }
 
-};  // ZEST_SUITE(meta_schema_behavior_attrs)
+};  // ZEST_SUITE(codec_schema_behavior_attrs)
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

@@ -1,14 +1,16 @@
 #pragma once
 
-// Tagged-variant fixtures. The tags are written with meta's own spec API
-// rather than the codec's annotation macros, so meta's tests can use them.
+// Tagged-variant fixtures. The tags are written as KANNOTATE and
+// KANNOTATE_TYPE (in codec's macro sheet) expand to, with meta's own spec
+// API, so meta's tests can use them.
 
 #include <string>
+#include <type_traits>
 #include <variant>
 
 #include "fixtures/structs.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/attribute.h"
 
 namespace kotatsu::test {
 
@@ -21,35 +23,51 @@ struct TaggedIntRect {
     int height;
 };
 
-struct ExternalTag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::tagged = true, meta::dsl::tag_names = {"integer", "text"});
+[[maybe_unused]] constexpr inline auto InternalKindTag =
+    meta::make_annotation(codec::dsl::tag = "kind", codec::dsl::tag_names = {"circle", "rect"});
+
+struct ExternalTagged;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<ExternalTagged>) {
+    return meta::make_annotation(codec::dsl::tagged = true,
+                                 codec::dsl::tag_names = {"integer", "text"});
+}
+
+struct ExternalTagged : std::variant<int, std::string> {
+    using variant::variant;
 };
 
-struct InternalKindTag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::tag = "kind", meta::dsl::tag_names = {"circle", "rect"});
+struct InternalTagged;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<InternalTagged>) {
+    return InternalKindTag;
+}
+
+struct InternalTagged : std::variant<TaggedIntCircle, TaggedIntRect> {
+    using variant::variant;
 };
 
-struct AdjacentTag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::tag = "type",
-                              meta::dsl::content = "value",
-                              meta::dsl::tag_names = {"integer", "text"});
+struct AdjacentTagged;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<AdjacentTagged>) {
+    return meta::make_annotation(codec::dsl::tag = "type",
+                                 codec::dsl::content = "value",
+                                 codec::dsl::tag_names = {"integer", "text"});
+}
+
+struct AdjacentTagged : std::variant<int, std::string> {
+    using variant::variant;
 };
 
-struct TaggedTag {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::tagged = true);
+struct TaggedRoot;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<TaggedRoot>) {
+    return InternalKindTag;
+}
+
+struct TaggedRoot : std::variant<Circle, Rect> {
+    using variant::variant;
 };
-
-using ExternalTagged = meta::annotate<ExternalTag>::type<std::variant<int, std::string>>;
-
-using InternalTagged =
-    meta::annotate<InternalKindTag>::type<std::variant<TaggedIntCircle, TaggedIntRect>>;
-
-using AdjacentTagged = meta::annotate<AdjacentTag>::type<std::variant<int, std::string>>;
-
-using TaggedRoot = meta::annotate<InternalKindTag>::type<std::variant<Circle, Rect>>;
 
 struct TaggedFieldStruct {
     ExternalTagged ext;
@@ -58,7 +76,11 @@ struct TaggedFieldStruct {
 };
 
 struct TaggedVariantStruct {
-    meta::annotate<TaggedTag>::type<std::variant<int, std::string>> tv;
+    static consteval auto __kotatsu__annotation(meta::name_key<"tv">) {
+        return meta::make_annotation(codec::dsl::tagged = true);
+    }
+
+    std::variant<int, std::string> tv;
 };
 
 }  // namespace kotatsu::test

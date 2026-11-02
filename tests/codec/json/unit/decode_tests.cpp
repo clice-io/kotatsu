@@ -7,12 +7,12 @@
 #include <variant>
 #include <vector>
 
-#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "fixtures/attrs.h"
-#include "fixtures/configs.h"
+#include "fixtures/settings.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/compare.h"
 #include "kotatsu/codec/dyn/dyn.h"
@@ -32,6 +32,11 @@ constexpr std::string_view bom = "\xEF\xBB\xBF";
 template <typename T>
 concept decodes_by_value = requires(std::string_view text) { json::from_string<T>(text); };
 
+/// Field names in lower camel case.
+struct camel_format : codec::extend<json::format> {
+    using rename_all = naming::rename_policy::lower_camel;
+};
+
 ZEST_SUITE(codec_json_decode) {
 
 ZEST_CASE(value_overload_value_initializes) {
@@ -48,13 +53,23 @@ ZEST_CASE(value_overload_value_initializes) {
     ZSTATIC_EXPECT(!decodes_by_value<test::NoDefault>);
 }
 
-ZEST_CASE(value_overload_takes_config) {
-    auto result = json::from_string<test::RenameAllTarget, test::CamelConfig>(
+ZEST_CASE(value_overload_takes_format) {
+    auto result = json::from_string<test::RenameAllTarget, camel_format>(
         R"({"userName":2,"totalScore":1.5,"itemId":"abc"})");
     ZASSERT(result);
     ZEXPECT(result->user_name == 2);
     ZEXPECT(result->total_score == 1.5F);
     ZEXPECT(result->item_id == "abc");
+}
+
+ZEST_CASE(value_overload_takes_options_held_in_a_variable) {
+    // Not taken for the out-parameter overload, whose first argument is a
+    // format.
+    codec::decode_options options;
+    options.deny_unknown_fields = true;
+    auto result = json::from_string<test::Point>(R"({"x":1,"y":2,"z":3})", options);
+    ZASSERT(!result);
+    ZEXPECT(result.error().message == "unknown field 'z'");
 }
 
 ZEST_CASE(number_out_of_range_fails) {
@@ -392,12 +407,13 @@ ZEST_CASE(located_type_mismatch_fails) {
 
 ZEST_CASE(unknown_field_fails_at_its_key) {
     test::Point out{};
-    auto status = json::from_string<test::StrictConfig>(R"({
+    auto status = json::from_string(R"({
   "x": 1,
   "extra": true,
   "y": 2
 })",
-                                                        out);
+                                    out,
+                                    {.deny_unknown_fields = true});
     ZASSERT(!status);
     ZEXPECT(status.error().message == "unknown field 'extra'");
     ZASSERT(status.error().location);
@@ -462,19 +478,19 @@ ZEST_CASE(nested_type_mismatch_text_fails) {
 }
 
 ZEST_CASE(raw_value_alternative_takes_any_kind) {
-    // RawValue decodes through a dispatch override that accepts any value, so
+    // raw_value decodes through a dispatch override that accepts any value, so
     // probing never judges it by its declared shape.
-    std::variant<int, RawValue, bool> out;
+    std::variant<int, raw_value, bool> out;
     ZASSERT(json::from_string(R"("text")", out));
     ZASSERT(out.index() == 1U);
-    ZEXPECT(std::get<RawValue>(out).data == R"("text")");
+    ZEXPECT(std::get<raw_value>(out).data == R"("text")");
 
     ZASSERT(json::from_string("7", out));
     ZEXPECT(out.index() == 0U);
 }
 
 ZEST_CASE(optional_raw_value_alternative_takes_any_kind) {
-    std::variant<std::optional<RawValue>, int> out;
+    std::variant<std::optional<raw_value>, int> out;
     ZASSERT(json::from_string(R"("text")", out));
     ZASSERT(out.index() == 0U);
     const auto& raw = std::get<0>(out);

@@ -55,11 +55,12 @@ ZEST_CASE(encode_without_params_leaves_them_out) {
     ZEXPECT(*notification == R"({"jsonrpc":"2.0","method":"exit"})");
 }
 
-// The envelope is written around the params or result: a RawValue as it is.
+// The envelope is written around the params or result: a raw_value as it is.
 ZEST_CASE(encode_writes_the_members_in_order) {
     JSONCodec codec;
     auto request = codec.encode_request(7, "test/add", test::AddParams{.a = 1, .b = 2});
-    auto notification = codec.encode_notification("test/note", codec::RawValue{R"({"text":"hi"})"});
+    auto notification =
+        codec.encode_notification("test/note", codec::raw_value{R"({"text":"hi"})"});
     auto response = codec.encode_success_response("r\"1", std::vector{1, 2});
     ZASSERT(request.has_value());
     ZASSERT(notification.has_value());
@@ -72,7 +73,7 @@ ZEST_CASE(encode_writes_the_members_in_order) {
 // A method that returns nothing answers null.
 ZEST_CASE(encode_success_response_without_a_result_writes_null) {
     JSONCodec codec;
-    auto response = codec.encode_success_response(1, codec::RawValue{});
+    auto response = codec.encode_success_response(1, codec::raw_value{});
     ZASSERT(response.has_value());
     ZEXPECT(*response == R"({"jsonrpc":"2.0","id":1,"result":null})");
 }

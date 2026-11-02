@@ -16,24 +16,24 @@
 namespace kotatsu::codec {
 
 // Bincode serialization: write int64 directly (bincode only uses integer IDs)
-template <typename Config>
-struct serialize_visit<bincode::Writer, kotatsu::ipc::protocol::RequestID, Config> {
-    static bool visit(bincode::Writer& vis, const kotatsu::ipc::protocol::RequestID& id) {
+template <typename Format>
+struct serialize_visit<bincode::Writer<Format>, kotatsu::ipc::protocol::RequestID> {
+    static bool visit(bincode::Writer<Format>& vis, const kotatsu::ipc::protocol::RequestID& id) {
         auto* int_id = std::get_if<std::int64_t>(&id);
         if(!int_id) {
             return scoped_context<rich_error>::fail(
                 rich_error("bincode requires integer request ID"));
         }
-        return encode_value<Config>(vis, *int_id);
+        return encode_value(vis, *int_id);
     }
 };
 
 // Bincode deserialization: read int64 directly (visitor-based)
-template <typename Config>
-struct deserialize_visit<bincode::Reader, kotatsu::ipc::protocol::RequestID, Config> {
-    static bool visit(bincode::Reader& vis, kotatsu::ipc::protocol::RequestID& id) {
+template <typename Format>
+struct deserialize_visit<bincode::Reader<Format>, kotatsu::ipc::protocol::RequestID> {
+    static bool visit(bincode::Reader<Format>& vis, kotatsu::ipc::protocol::RequestID& id) {
         std::int64_t v = 0;
-        if(!decode_value<Config>(vis, v)) {
+        if(!decode_value(vis, v)) {
             return false;
         }
         id.emplace<std::int64_t>(v);
@@ -70,7 +70,7 @@ using message_prefix = std::variant<request_prefix, notification_prefix, success
 }  // namespace detail
 
 /// Messages in bincode. A message's params or result take the rest of its
-/// payload, without a length; a RawValue is taken to be bincode already, and
+/// payload, without a length; a raw_value is taken to be bincode already, and
 /// goes in and comes out as it is.
 struct BincodeCodec {
     /// Reads the message `payload` holds. The params or result keep the
@@ -118,8 +118,8 @@ struct BincodeCodec {
     template <typename T>
     Result<T> deserialize_value(const PayloadSlice& raw,
                                 protocol::ErrorCode code = protocol::ErrorCode::RequestFailed) {
-        if constexpr(std::is_same_v<T, codec::RawValue>) {
-            return codec::RawValue{std::string(raw.text())};
+        if constexpr(std::is_same_v<T, codec::raw_value>) {
+            return codec::raw_value{std::string(raw.text())};
         } else {
             const auto text = raw.text();
             T value{};
@@ -145,12 +145,12 @@ private:
         codec::rich_error error;
         codec::scoped_context<codec::rich_error> guard(error);
         std::vector<std::byte> bytes;
-        codec::bincode::Writer writer{bytes};
-        bool written = codec::encode_value<codec::default_config<>>(writer, prefix);
-        if constexpr(std::is_same_v<T, codec::RawValue>) {
+        codec::bincode::Writer<codec::bincode::format> writer{bytes};
+        bool written = codec::encode_value(writer, prefix);
+        if constexpr(std::is_same_v<T, codec::raw_value>) {
             std::memcpy(writer.claim(value->data.size()), value->data.data(), value->data.size());
         } else if constexpr(!std::is_void_v<T>) {
-            written = written && codec::encode_value<codec::default_config<>>(writer, *value);
+            written = written && codec::encode_value(writer, *value);
         }
         if(!written) {
             return outcome_error(codec_error(protocol::ErrorCode::InternalError, error));

@@ -27,45 +27,50 @@ namespace {
 
 struct Spliced {
     int id = 0;
-    RawValue payload;
+    raw_value payload;
 };
 
 /// Travels as "f<page>", and in json as the page itself: its json-scoped
-/// repr names json's own format tag.
+/// repr names json's own format.
 struct Folio {
     int page = 0;
 };
 
-/// A format tag no backend declares.
-struct OtherFormat {};
+/// A format no backend declares.
+struct OtherFormat : codec::extend<codec::format> {};
 
 /// Keys JSON escapes, which encode spells out as it compiles.
 struct OddlyNamed {
-    KANNOTATE(rename = R"(say "hi")")
-    <int> quoted = 1;
-    KANNOTATE(rename = R"(back\slash)")
-    <int> backslashed = 2;
-    KANNOTATE(rename = "tab\tand\x01")
-    <int> controlled = 3;
-    KANNOTATE(rename = "\b\f\n\r\x1f")
-    <int> shortened = 4;
-    KANNOTATE(rename = "del\x7f/caf\xC3\xA9")
-    <int> kept = 5;
+    KANNOTATE(&quoted, rename = R"(say "hi")")
+    int quoted = 1;
+    KANNOTATE(&backslashed, rename = R"(back\slash)")
+    int backslashed = 2;
+    KANNOTATE(&controlled, rename = "tab\tand\x01")
+    int controlled = 3;
+    KANNOTATE(&shortened, rename = "\b\f\n\r\x1f")
+    int shortened = 4;
+    KANNOTATE(&kept, rename = "del\x7f/caf\xC3\xA9")
+    int kept = 5;
 };
 
-/// Its first field is left out when empty, and the next one's key then
-/// opens the object.
+enum class Mood { calm, upset };
+
+struct MoodHolder {
+    Mood mood = Mood::calm;
+};
+
+/// Writes every enum by name, through a repr scoped to it.
+struct NamedEnums : extend<json::format> {};
+
+/// Its first field is left out at its default, empty, and the next one's key
+/// then opens the object.
 struct NoteFirst {
-    KANNOTATE(skip_if = skip_when::empty)
-    <std::string> note;
+    KANNOTATE(&note, presence = omit_if_default)
+    std::string note;
     int id = 1;
 };
 
 }  // namespace
-
-}  // namespace kotatsu::codec
-
-namespace kotatsu::meta {
 
 template <>
 struct repr<codec::Folio> {
@@ -80,6 +85,10 @@ struct repr<codec::Folio> {
     }
 };
 
+template <typename E>
+    requires std::is_enum_v<E>
+struct repr<E, codec::NamedEnums> : enum_names<> {};
+
 template <>
 struct repr<codec::Folio, codec::json::format> {
     using type = std::int64_t;
@@ -92,10 +101,6 @@ struct repr<codec::Folio, codec::json::format> {
         return {.page = static_cast<int>(page)};
     }
 };
-
-}  // namespace kotatsu::meta
-
-namespace kotatsu::codec {
 
 namespace {
 
@@ -243,13 +248,15 @@ ZEST_CASE(long_documents_grow_their_buffer) {
     }
     expected += "]";
     ZEXPECT(json::to_string(items) == expected);
-    ZEXPECT(json::to_string(items, 0) == expected);
+    ZEXPECT(json::to_string(items, {.initial_capacity = 0}) == expected);
 }
 
-ZEST_CASE(non_finite_writes_null) {
-    // JSON has no literal for them, so even nan_repr::Passthrough writes null.
-    ZEXPECT(json::to_string(test::NonFinite::typical()) ==
-            R"({"nan":null,"inf":null,"neg_inf":null})");
+ZEST_CASE(non_finite_fails) {
+    // JSON has no number for them.
+    auto encoded = json::to_string(test::NonFinite::typical());
+    ZASSERT(!encoded);
+    ZEXPECT(encoded.error().message == "JSON has no number for NaN or an infinity");
+    ZEXPECT(encoded.error().format_path() == "nan");
 }
 
 ZEST_CASE(byte_span_writes_numbers) {
@@ -265,7 +272,7 @@ ZEST_CASE(raw_value_splices_its_text) {
 
 ZEST_CASE(initial_capacity_does_not_change_output) {
     std::vector<int> values{7, 9};
-    ZEXPECT(json::to_string(values, 1) == "[7,9]");
+    ZEXPECT(json::to_string(values, {.initial_capacity = 1}) == "[7,9]");
 }
 
 ZEST_CASE(prettify_indents) {
@@ -334,8 +341,8 @@ ZEST_CASE(dyn_value_encodes_as_typed) {
 }
 
 ZEST_CASE(json_scoped_repr_applies_to_json_only) {
-    ZSTATIC_EXPECT(std::is_same_v<meta::resolved_repr_t<Folio, json::format>, std::int64_t>);
-    ZSTATIC_EXPECT(std::is_same_v<meta::resolved_repr_t<Folio, OtherFormat>, std::string>);
+    ZSTATIC_EXPECT(std::is_same_v<codec::resolved_repr_t<Folio, json::format>, std::int64_t>);
+    ZSTATIC_EXPECT(std::is_same_v<codec::resolved_repr_t<Folio, OtherFormat>, std::string>);
     auto text = json::to_string(test::Field<Folio>{{.page = 41}});
     ZASSERT(text);
     ZEXPECT(*text == R"({"value":41})");
@@ -351,6 +358,17 @@ ZEST_CASE(everything_lowering) {
     ZASSERT(document);
     ZEXPECT(zest::snapshot(test::Json::render(*document)));
     ZEXPECT(zest::snapshot(*document, "compact"));
+}
+
+ZEST_CASE(format_writes_every_enum_by_name) {
+    auto text = json::to_string<NamedEnums>(MoodHolder{.mood = Mood::upset});
+    ZASSERT(text);
+    ZEXPECT(*text == R"({"mood":"upset"})");
+    MoodHolder back;
+    ZASSERT(json::from_string<NamedEnums>(*text, back));
+    ZEXPECT(back.mood == Mood::upset);
+    // Under json::format it stays a number.
+    ZEXPECT(json::to_string(MoodHolder{.mood = Mood::upset}) == R"({"mood":1})");
 }
 
 };  // ZEST_SUITE(codec_json_encode)

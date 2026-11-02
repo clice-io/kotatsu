@@ -17,9 +17,9 @@
 #include <variant>
 #include <vector>
 
-#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "codec/harness/visit/kit.h"
@@ -330,6 +330,12 @@ void probing(const Kit<B>& kit) {
         "nested_widening_defers_to_outer_exact_match",
         [] { return 1000; },
         [] { return std::variant<Narrow, std::int64_t>{std::int64_t{1000}}; });
+    // A named variant takes the same passes as the bare one.
+    reads_in_field<std::variant<NamedNarrow, std::int64_t>>(
+        kit,
+        "named_nested_widening_defers_to_outer_exact_match",
+        [] { return 1000; },
+        [] { return std::variant<NamedNarrow, std::int64_t>{std::int64_t{1000}}; });
     reads_in_field<std::variant<Narrow, std::int64_t>>(
         kit,
         "nested_exact_match_wins",
@@ -431,7 +437,30 @@ void probing(const Kit<B>& kit) {
         "object_input_reaches_adjacent_nested_variant",
         [] { return AdjacentPlain<int>{.t = "number", .c = 1}; },
         [] { return std::variant<AdjacentShape, std::string>{AdjacentShape{1}}; });
-    reads_in_field<std::variant<ExternalShape, bool>, NotHumanReadableConfig>(
+    // Its tagging, not its repr, decides how a tagged variant probes.
+    reads_in_field<std::variant<TaggedOverRepr, std::map<std::string, int>>>(
+        kit,
+        "tagging_goes_before_a_repr_in_probing",
+        [] {
+            return std::map<std::string, int>{
+                {"number", 1}
+            };
+        },
+        [] { return std::variant<TaggedOverRepr, std::map<std::string, int>>{TaggedOverRepr{1}}; });
+    // A repr's representation probes under the scope it is read under.
+    reads_in_field<std::variant<ScopedBox, std::map<std::string, int>>>(
+        kit,
+        "repr_probes_under_its_scope",
+        [] {
+            return std::map<std::string, int>{
+                {"ItemCount", 42}
+            };
+        },
+        [] {
+            return std::variant<ScopedBox, std::map<std::string, int>>{
+                ScopedBox{.value = BoxedCount{.item_count = 42}}};
+        });
+    reads_in_field<std::variant<ExternalShape, bool>, NotHumanReadableSettings>(
         kit,
         "not_human_readable_probes_tagged_by_alternatives",
         [] { return 1; },

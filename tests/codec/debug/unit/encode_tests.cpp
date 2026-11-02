@@ -14,7 +14,7 @@
 #include <variant>
 #include <vector>
 
-#include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/enums.h"
 #include "kotatsu/zest/zest.h"
@@ -109,13 +109,6 @@ ZEST_CASE(float_special) {
     ZEXPECT(to_string(std::numeric_limits<double>::quiet_NaN()) == "nan");
     ZEXPECT(to_string(std::numeric_limits<double>::infinity()) == "inf");
     ZEXPECT(to_string(-std::numeric_limits<double>::infinity()) == "-inf");
-}
-
-ZEST_CASE(float_special_with_config) {
-    ZEXPECT(to_string<test::NanStringConfig>(std::numeric_limits<double>::quiet_NaN()) ==
-            R"("NaN")");
-    ZEXPECT(to_string<test::NanStringConfig>(std::numeric_limits<double>::infinity()) ==
-            R"("Infinity")");
 }
 
 ZEST_CASE(string_values) {

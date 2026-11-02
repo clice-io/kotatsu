@@ -8,10 +8,10 @@
 #include <utility>
 #include <variant>
 
+#include "kotatsu/codec/decode.h"
 #include "kotatsu/codec/dyn/dyn.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/decode.h"
-#include "kotatsu/codec/visit/encode.h"
+#include "kotatsu/codec/encode.h"
+#include "kotatsu/codec/format.h"
 
 namespace kotatsu::ipc::protocol {
 
@@ -81,15 +81,15 @@ struct CancelRequestParams {
 
 namespace kotatsu::codec {
 
-template <typename Vis, typename Config>
-struct serialize_visit<Vis, kotatsu::ipc::protocol::Error, Config> {
+template <typename Vis>
+struct serialize_visit<Vis, kotatsu::ipc::protocol::Error> {
     static bool visit(Vis& vis, const kotatsu::ipc::protocol::Error& error) {
         return vis.visit_struct(error, [&]<typename StructVis>(StructVis& sv) -> bool {
-            KOTATSU_CODEC_TRY(sv.visit_field(std::size_t(0), "code", [&](auto& fv) -> bool {
-                return encode_value<Config>(fv, error.code);
+            KOTATSU_CODEC_TRY(sv.visit_field(named_field{0, "code"}, [&](auto& fv) -> bool {
+                return encode_value(fv, error.code);
             }));
-            KOTATSU_CODEC_TRY(sv.visit_field(std::size_t(1), "message", [&](auto& fv) -> bool {
-                return encode_value<Config>(fv, error.message);
+            KOTATSU_CODEC_TRY(sv.visit_field(named_field{1, "message"}, [&](auto& fv) -> bool {
+                return encode_value(fv, error.message);
             }));
             // JSON-RPC lets an error without data leave the member out; a
             // visitor that writes every field has nothing to mark it absent.
@@ -98,27 +98,26 @@ struct serialize_visit<Vis, kotatsu::ipc::protocol::Error, Config> {
                     return true;
                 }
             }
-            return sv.visit_field(std::size_t(2), "data", [&](auto& fv) -> bool {
-                return encode_value<Config>(fv, error.data);
-            });
+            return sv.visit_field(named_field{2, "data"},
+                                  [&](auto& fv) -> bool { return encode_value(fv, error.data); });
         });
     }
 };
 
-template <typename Vis, typename Config>
-struct deserialize_visit<Vis, kotatsu::ipc::protocol::Error, Config> {
+template <typename Vis>
+struct deserialize_visit<Vis, kotatsu::ipc::protocol::Error> {
     static bool visit(Vis& vis, kotatsu::ipc::protocol::Error& error) {
         bool has_code = false;
         bool has_message = false;
         KOTATSU_CODEC_TRY(vis.visit_struct([&](std::string_view key, auto& fv) -> bool {
             if(key == "code") {
                 has_code = true;
-                return decode_value<Config>(fv, error.code);
+                return decode_value(fv, error.code);
             } else if(key == "message") {
                 has_message = true;
-                return decode_value<Config>(fv, error.message);
+                return decode_value(fv, error.message);
             } else if(key == "data") {
-                return decode_value<Config>(fv, error.data);
+                return decode_value(fv, error.data);
             } else {
                 return true;
             }

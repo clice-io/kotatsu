@@ -1,9 +1,11 @@
 #pragma once
 
-// meta::repr fixtures meta's tests read as well: reprs whose declared type
-// carries a behavior attr, struct policies or a tagging spec, an adapter
-// over a tagged variant, a repr scoped to every format tag, and a variant
-// whose type has a repr under a tagging spec.
+// codec::repr fixtures meta's tests read as well: reprs whose declared type
+// carries struct policies or a tagging spec, an adapter over a tagged
+// variant, a repr scoped to every format tag, and a variant whose type has a
+// repr under a tagging spec. The annotations are written as KANNOTATE and
+// KANNOTATE_TYPE (in codec's macro sheet) expand to, so meta's tests can use
+// them.
 
 #include <charconv>
 #include <cstdint>
@@ -13,24 +15,15 @@
 #include <variant>
 
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/repr.h"
+#include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/format.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 
-/// A repr whose declared type is itself annotated: the annotation's behavior
-/// attr decides the final repr, a double.
-struct BasisPoints {
-    int v = 0;
-
-    auto operator==(const BasisPoints&) const -> bool = default;
-};
-
-struct StrictCamelTag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::rename_all = naming::Casing::LowerCamel,
-                              meta::dsl::deny_unknown_fields = true);
-};
+[[maybe_unused]] constexpr inline auto StrictCamelTag =
+    meta::make_annotation(codec::dsl::rename_all = naming::Casing::LowerCamel,
+                          codec::dsl::deny_unknown_fields = true);
 
 /// A repr whose declared type is an adjacently tagged variant.
 struct LoadOk {
@@ -45,13 +38,17 @@ struct LoadErr {
     auto operator==(const LoadErr&) const -> bool = default;
 };
 
-struct LoadTag {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::tag = "status",
-                                                          meta::dsl::content = "value",
-                                                          meta::dsl::tag_names = {"ok", "err"});
-};
+struct TaggedLoad;
 
-using TaggedLoad = meta::annotate<LoadTag>::type<std::variant<LoadOk, LoadErr>>;
+constexpr auto __kotatsu__type_annotation(std::type_identity<TaggedLoad>) {
+    return meta::make_annotation(codec::dsl::tag = "status",
+                                 codec::dsl::content = "value",
+                                 codec::dsl::tag_names = {"ok", "err"});
+}
+
+struct TaggedLoad : std::variant<LoadOk, LoadErr> {
+    using variant::variant;
+};
 
 struct LoadResult {
     bool ok = true;
@@ -90,15 +87,17 @@ struct ChoiceText {
     }
 };
 
-struct ChoiceTag {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::tag = "t",
-                                                          meta::dsl::content = "c",
-                                                          meta::dsl::tag_names = {"num", "text"});
-};
+/// A tagging spec and a with-adapter on one field: the adapter decides.
+struct AdaptedChoice {
+    static consteval auto __kotatsu__annotation(meta::name_key<"value">) {
+        return meta::make_annotation(codec::dsl::tag = "t",
+                                     codec::dsl::content = "c",
+                                     codec::dsl::tag_names = {"num", "text"},
+                                     codec::dsl::with = meta::dsl::type<ChoiceText>);
+    }
 
-/// A tagging spec and a with-adapter on one annotation: the adapter decides.
-using AdaptedChoice = meta::annotate<ChoiceTag>::type<std::variant<int, std::string>,
-                                                      meta::behavior::with<ChoiceText>>;
+    std::variant<int, std::string> value;
+};
 
 /// A variant whose type has a repr (one text), and the same variant under a
 /// tagging spec: the tagging wins, so the tagged one travels as the variant.
@@ -110,24 +109,39 @@ struct Stamp {
 
 using StampOrNote = std::variant<Stamp, std::string>;
 
-struct StampTag {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::tag = "t",
-                                                          meta::dsl::content = "c",
-                                                          meta::dsl::tag_names = {"stamp", "note"});
-};
+[[maybe_unused]] constexpr inline auto StampTag =
+    meta::make_annotation(codec::dsl::tag = "t",
+                          codec::dsl::content = "c",
+                          codec::dsl::tag_names = {"stamp", "note"});
 
-using TaggedStampOrNote = meta::annotate<StampTag>::type<StampOrNote>;
+struct TaggedStampOrNote;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<TaggedStampOrNote>) {
+    return StampTag;
+}
+
+struct TaggedStampOrNote : StampOrNote {
+    using variant::variant;
+};
 
 /// StampOrNote's shape without its repr.
 struct StampTwin {
     int n = 0;
 };
 
-using TaggedStampTwinOrNote = meta::annotate<StampTag>::type<std::variant<StampTwin, std::string>>;
+struct TaggedStampTwinOrNote;
+
+constexpr auto __kotatsu__type_annotation(std::type_identity<TaggedStampTwinOrNote>) {
+    return StampTag;
+}
+
+struct TaggedStampTwinOrNote : std::variant<StampTwin, std::string> {
+    using variant::variant;
+};
 
 }  // namespace kotatsu::test
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 template <>
 struct repr<test::StampOrNote> {
@@ -151,19 +165,6 @@ struct repr<test::StampOrNote> {
 };
 
 template <>
-struct repr<test::BasisPoints> {
-    using type = annotation<int, behavior::as<double>>;
-
-    static type to(const test::BasisPoints& b) {
-        return b.v;
-    }
-
-    static test::BasisPoints from(const type& v) {
-        return {.v = annotated_value(v)};
-    }
-};
-
-template <>
 struct repr<test::LoadResult> {
     using type = test::TaggedLoad;
 
@@ -175,11 +176,10 @@ struct repr<test::LoadResult> {
     }
 
     static test::LoadResult from(const type& tagged) {
-        const auto& v = annotated_value(tagged);
-        if(const auto* ok = std::get_if<test::LoadOk>(&v)) {
+        if(const auto* ok = std::get_if<test::LoadOk>(&tagged)) {
             return {.ok = true, .bytes = ok->byte_count, .message = {}};
         }
-        return {.ok = false, .bytes = 0, .message = std::get<test::LoadErr>(v).message};
+        return {.ok = false, .bytes = 0, .message = std::get<test::LoadErr>(tagged).message};
     }
 };
 
@@ -198,8 +198,10 @@ struct repr<test::Journal> {
     }
 };
 
+/// Under a backend's format, not under the root format dyn reads and writes
+/// trees with.
 template <typename Format>
-    requires (!std::is_void_v<Format>)
+    requires (!std::is_void_v<Format> && !std::same_as<Format, codec::format>)
 struct repr<test::Journal, Format> {
     using type = std::int64_t;
 
@@ -212,4 +214,4 @@ struct repr<test::Journal, Format> {
     }
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

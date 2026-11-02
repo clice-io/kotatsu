@@ -981,9 +981,9 @@ void Peer<CodecT>::on_request(Callback&& callback) {
 
     using Ret = detail::callback_return_t<Callback>;
     static_assert(std::is_same_v<Ret, RequestResult<Params>> ||
-                      std::is_same_v<Ret, async::task<codec::RawValue, Error>>,
+                      std::is_same_v<Ret, async::task<codec::raw_value, Error>>,
                   "request callback return type should be RequestResult<Params> "
-                  "or async::task<codec::RawValue, Error>");
+                  "or async::task<codec::raw_value, Error>");
 
     on_request_impl(protocol::RequestTraits<Params>::method, std::forward<Callback>(callback));
 }
@@ -1024,7 +1024,7 @@ void Peer<CodecT>::on_request_impl(std::string_view method, Callback&& callback)
         auto answering = std::invoke(cb, context, *parsed_params);
         co_await async::yield(state.loop);
         auto result = co_await std::move(answering).or_fail();
-        // A RawValue result is already in the codec's encoding, and goes as
+        // A raw_value result is already in the codec's encoding, and goes as
         // it is; deserialize_value takes it back so.
         co_return co_await async::or_fail(state.codec.encode_success_response(request_id, result));
     };

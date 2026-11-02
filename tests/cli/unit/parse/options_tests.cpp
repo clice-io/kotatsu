@@ -3,9 +3,11 @@
 
 #include <cstdint>
 #include <expected>
+#include <format>
 #include <optional>
 #include <ranges>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -20,37 +22,45 @@ namespace {
 
 enum class Level : std::uint8_t { Trace, Debug, Info, Warn };
 
+/// Enumerators in several cases, and as generated code names them: with the `_` of a
+/// keyword-like name, and the `_` or `V` before a leading digit.
+enum class Hue : std::uint8_t { light_blue, GreenLight, Delete_, _2d, V3, HTTPServer };
+
+struct Hues {
+    Hue color = Hue::light_blue;
+};
+
 struct Options {
     bool verbose = false;
-    KANNOTATE(cli::count = true, cli::names = {"-v"})
-    <std::uint32_t> noise = 0;
+    KANNOTATE(&noise, cli::count = true, cli::names = {"-v"})
+    std::uint32_t noise = 0;
     int jobs = 1;
     double ratio = 0.5;
     std::string name;
     Level level = Level::Warn;
     std::optional<std::string> output;
     std::vector<std::string> include;
-    KANNOTATE(cli::comma = true)
-    <std::vector<std::string>> tags;
+    KANNOTATE(&tags, cli::comma = true)
+    std::vector<std::string> tags;
     std::vector<std::pair<std::string, std::string>> define;
     std::tuple<int, int> size = {0, 0};
-    KANNOTATE(cli::names = {"-o", "--out"})
-    <std::string> out;
-    KANNOTATE(cli::names = {"-I"}, cli::style = KVStyle::Joined)
-    <std::string> dir;
-    KANNOTATE(cli::names = {"--sep"}, cli::style = KVStyle::Separate)
-    <std::string> sep;
-    KANNOTATE(cli::required = true)
-    <std::string> must = "x";
+    KANNOTATE(&out, cli::names = {"-o", "--out"})
+    std::string out;
+    KANNOTATE(&dir, cli::names = {"-I"}, cli::style = KVStyle::Joined)
+    std::string dir;
+    KANNOTATE(&sep, cli::names = {"--sep"}, cli::style = KVStyle::Separate)
+    std::string sep;
+    KANNOTATE(&must, presence = required)
+    std::string must = "x";
     std::string x;
 };
 
 /// An option named with '=' beside one whose '=' form it is, declared first.
 struct Spelled {
-    KANNOTATE(cli::names = {"--x"})
-    <std::string> separate;
-    KANNOTATE(cli::names = {"--x="})
-    <std::string> joined;
+    KANNOTATE(&separate, cli::names = {"--x"})
+    std::string separate;
+    KANNOTATE(&joined, cli::names = {"--x="})
+    std::string joined;
 };
 
 struct Toggles {
@@ -59,30 +69,30 @@ struct Toggles {
 
 /// A command that names no option.
 struct Files {
-    KANNOTATE(cli::positional = true)
-    <std::vector<std::string>> files;
+    KANNOTATE(&files, cli::positional = true)
+    std::vector<std::string> files;
 };
 
 struct Tuned {
-    KANNOTATE(minimum = 1, maximum = 64, description = "Workers")
-    <int> jobs = 4;
-    KANNOTATE(choices = {"fast", "slow"})
-    <std::string> mode = "fast";
+    KANNOTATE(&jobs, minimum = 1, maximum = 64, description = "Workers")
+    int jobs = 4;
+    KANNOTATE(&mode, choices = {"fast", "slow"})
+    std::string mode = "fast";
     std::vector<std::string> include;
     std::string name;
 };
 
 struct Bounded {
-    KANNOTATE(minimum = 0, maximum = 1)
-    <double> ratio = 0;
-    KANNOTATE(cli::count = true, cli::names = {"-v"}, maximum = 3)
-    <std::uint32_t> noise = 0;
-    KANNOTATE(choices = {"a", "b"})
-    <std::pair<std::string, std::string>> pair;
-    KANNOTATE(cli::positional = true, choices = {"a", "b"})
-    <std::optional<std::string>> word;
-    KANNOTATE(cli::hidden = true)
-    <bool> secret = false;
+    KANNOTATE(&ratio, minimum = 0, maximum = 1)
+    double ratio = 0;
+    KANNOTATE(&noise, cli::count = true, cli::names = {"-v"}, maximum = 3)
+    std::uint32_t noise = 0;
+    KANNOTATE(&pair, choices = {"a", "b"})
+    std::pair<std::string, std::string> pair;
+    KANNOTATE(&word, cli::positional = true, choices = {"a", "b"})
+    std::optional<std::string> word;
+    KANNOTATE(&secret, cli::hidden = true)
+    bool secret = false;
 };
 
 template <typename T = Options>
@@ -139,6 +149,21 @@ ZEST_CASE(numbers_read_in_their_type) {
 ZEST_CASE(enum_reads_any_spelling_of_its_names) {
     ZEXPECT(parsed("--must y --level info").level == Level::Info);
     ZEXPECT(parsed("--must y --level Debug").level == Level::Debug);
+    auto color = [](std::string_view text) {
+        auto options = parse_line<Hues>(std::format("--color {}", text));
+        ZEXPECT(options.has_value());
+        return options.value_or(Hues{.color = static_cast<Hue>(255)}).color;
+    };
+    ZEXPECT(color("light-blue") == Hue::light_blue);
+    ZEXPECT(color("lightBlue") == Hue::light_blue);
+    ZEXPECT(color("LIGHT_BLUE") == Hue::light_blue);
+    ZEXPECT(color("greenLight") == Hue::GreenLight);
+    ZEXPECT(color("delete") == Hue::Delete_);
+    ZEXPECT(color("2d") == Hue::_2d);
+    ZEXPECT(color("3") == Hue::V3);
+    ZEXPECT(color("v3") == Hue::V3);
+    ZEXPECT(color("httpServer") == Hue::HTTPServer);
+    ZEXPECT(color("http-server") == Hue::HTTPServer);
 }
 
 ZEST_CASE(optional_given_holds_its_value) {

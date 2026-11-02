@@ -54,7 +54,7 @@ std::string help_of(const UsageEntry& entry) {
 }
 
 /// The numbers `field` takes: "1..64", "1..", "..64"; empty when unbounded.
-std::string range_of(const meta::field_info& field) {
+std::string range_of(const codec::field_info& field) {
     const auto minimum = number_text(field.minimum);
     const auto maximum = number_text(field.maximum);
     return minimum.empty() && maximum.empty() ? "" : std::format("{}..{}", minimum, maximum);
@@ -73,7 +73,7 @@ std::string text_of(const Node& node) {
 std::string default_of(const Command& command, const Arg& arg, const Node& defaults) {
     // A required argument has no default: the argv gives it.
     if(arg.shape == Shape::Flag || arg.shape == Shape::Count || arg.shape == Shape::Alias ||
-       arg.required() || !present(command, defaults, arg.group)) {
+       arg.required || !present(command, defaults, arg.group)) {
         return {};
     }
     const Node* node = find_node(defaults, arg.keys);
@@ -95,7 +95,7 @@ std::vector<UsageEntry> usage_entries(const Command& command, const Node& defaul
             .kind = arg.spec.positional || arg.spec.rest ? UsageEntry::Kind::Positional
                                                          : UsageEntry::Kind::Option,
             .usage = arg.usage,
-            .help = std::string(arg.help),
+            .help = std::string(arg.field->description),
             .group = std::string(heading(command, arg.group)),
             .repeatable =
                 !arg.spec.positional && !arg.spec.rest && (arg.list || arg.shape == Shape::Count),

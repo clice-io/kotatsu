@@ -104,10 +104,10 @@ int again(Again&) {
 
 [[maybe_unused]] const bool again_added = cli::add_command<Loop>(again);
 
-/// A cli::Commands field, an annotation itself, annotated again.
+/// A cli::Commands field, its type annotated already, annotated again.
 struct MustPick {
-    KANNOTATE(cli::required = true)
-    <cli::Commands<Top>> command;
+    KANNOTATE(&command, presence = required)
+    cli::Commands<Top> command;
 };
 
 ZEST_SUITE(cli_commands) {

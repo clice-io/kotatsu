@@ -7,7 +7,7 @@ Each page gives a module's purpose, its build targets, a short example and what 
 | Module                | What it is                                                                                                    |
 | --------------------- | ------------------------------------------------------------------------------------------------------------- |
 | [support](support.md) | Containers, `outcome`, UTF-8 and UTF-16, and the traits the other modules share                               |
-| [meta](meta.md)       | Compile-time reflection of structs and enums, and the attributes the codecs read                              |
+| [meta](meta.md)       | Compile-time reflection of structs and enums, and the annotations modules define attributes for               |
 | [codec](codec.md)     | Serialization driven by reflection: JSON, TOML, bincode, FlatBuffers and zero-copy blobs                      |
 | [fs](fs.md)           | Paths, files and directories on UTF-8 strings, synchronous                                                    |
 | [sys](sys.md)         | Environment, process spawning and system information, synchronous                                             |

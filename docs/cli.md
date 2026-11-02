@@ -1,13 +1,15 @@
 # cli
 
 `kotatsu::cli` reads a command line into a plain struct: every field is an
-option named after it, its type says what it takes, and the `cli::` entries of
-a `KANNOTATE`, the macro [codec](codec.md) uses, say anything more. A
-nested struct is a group of options, a `std::optional` of one is given all or
-nothing, and a `std::variant` of structs is a set of subcommands. `cli::parse`
-is a [codec](codec.md) decoder over the argv, so a type with a
-[meta](meta.md) `repr` reads as what it is represented by, and `cli::to_argv`
-is its encoder. The usage is rendered from the same struct.
+option named after it, its type says what it takes, and the `cli::` attributes
+of a `KANNOTATE`, the macro [codec](codec.md) uses, say anything more. An
+option may be left out unless its field's presence is required
+(`presence = required`). A nested struct is a group of options, a
+`std::optional` of one is given all or nothing, and a `std::variant` of structs
+is a set of subcommands. `cli::parse` is a [codec](codec.md) decoder over the
+argv under `cli::format`, so a type with a `codec::repr` reads as what it is
+represented by, and `cli::to_argv` is its encoder. The usage is rendered from
+the same struct.
 
 Underneath is `kotatsu::cli`'s option table, modelled on LLVM's `OptTable` and
 usable alone. cli reads argv only; config files are [codec](codec.md)'s.
@@ -36,11 +38,12 @@ namespace cli = kotatsu::cli;
 
 KANNOTATE_TYPE(struct Clone, description = "Clone a repository");
 struct Clone {
-    cli::Help help;
-    KANNOTATE(cli::positional = true, cli::meta_var = "<REPO>", description = "Repository URL")
-    <std::string> repo;
-    KANNOTATE(cli::names = {"-b", "--branch"}, cli::meta_var = "<BRANCH>")
-    <std::optional<std::string>> branch;
+    KANNOTATE(&help, cli::help)
+    bool help = false;
+    KANNOTATE(&repo, cli::positional = true, cli::meta_var = "<REPO>", description = "Repository URL")
+    std::string repo;
+    KANNOTATE(&branch, cli::names = {"-b", "--branch"}, cli::meta_var = "<BRANCH>")
+    std::optional<std::string> branch;
     std::uint32_t depth = 0;
 };
 
@@ -62,16 +65,16 @@ Adapted from `tests/cli/unit/parse/positional_tests.cpp` and `tests/cli/unit/usa
 
 ## Overview
 
-| Header                                          | Contents                                                                                                                                                            |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [cli.h](../include/kotatsu/cli/cli.h)           | The headers below but the table, `KANNOTATE` and `KANNOTATE_TYPE`                                                                                                   |
-| [spec.h](../include/kotatsu/cli/spec.h)         | `ArgSpec`, what a field's `cli::` entries say (`names`, `positional`, `rest`, `count`, `required`, `hidden`, `exclusive`, ...), `Help`, `Alias`                     |
-| [parse.h](../include/kotatsu/cli/parse.h)       | `parse<T>`, from a `string_list_ref` or any range of strings, and `parse_into`, onto options already held, each with a visit of the arguments it reads, and `Given` |
-| [commands.h](../include/kotatsu/cli/commands.h) | `Commands<Tag>`, a field of subcommands files add with `add_command`, which calling runs                                                                            |
-| [error.h](../include/kotatsu/cli/error.h)       | `Error`, its `Kind`, the argv span at fault, its subcommands and a suggestion, and `render`, under a `Style`                                                        |
-| [report.h](../include/kotatsu/cli/report.h)     | `report` and `print_usage`, in the style for a terminal (`style_for`)                                                                                               |
-| [usage.h](../include/kotatsu/cli/usage.h)       | `usage<T>`, the help text with defaults and ranges, and `usage_entries<T>`, its lines for a program to lay out itself                                               |
-| [to_argv.h](../include/kotatsu/cli/to_argv.h)   | `to_argv`: options written back as the argv that parses to them                                                                                                     |
+| Header                                          | Contents                                                                                                                                                                                                        |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [cli.h](../include/kotatsu/cli/cli.h)           | The headers below but the table, `KANNOTATE` and `KANNOTATE_TYPE`                                                                                                                                               |
+| [spec.h](../include/kotatsu/cli/spec.h)         | `ArgSpec`, what a field's `cli::` attributes say (`names`, `positional`, `rest`, `count`, `hidden`, `exclusive`, ...), the `cli::help` bundle, `Alias`                                                          |
+| [parse.h](../include/kotatsu/cli/parse.h)       | `parse<T>`, from a `string_list_ref` or any range of strings, and `parse_into`, onto options already held, each with a visit of the arguments it reads, and `Given`; `format`, the codec format they read under |
+| [commands.h](../include/kotatsu/cli/commands.h) | `Commands<Tag>`, a field of subcommands files add with `add_command`, which calling runs                                                                                                                        |
+| [error.h](../include/kotatsu/cli/error.h)       | `Error`, its `Kind`, the argv span at fault, its subcommands and a suggestion, and `render`, under a `Style`                                                                                                    |
+| [report.h](../include/kotatsu/cli/report.h)     | `report` and `print_usage`, in the style for a terminal (`style_for`)                                                                                                                                           |
+| [usage.h](../include/kotatsu/cli/usage.h)       | `usage<T>`, the help text with defaults and ranges, and `usage_entries<T>`, its lines for a program to lay out itself                                                                                           |
+| [to_argv.h](../include/kotatsu/cli/to_argv.h)   | `to_argv`: options written back as the argv that parses to them                                                                                                                                                 |
 
 ### Option table
 

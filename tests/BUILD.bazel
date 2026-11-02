@@ -12,6 +12,7 @@ cc_library(
     hdrs = glob(["fixtures/*.h"]),
     strip_include_prefix = "/tests",
     deps = [
+        "//:codec",
         "//:meta",
         "//:support",
     ],

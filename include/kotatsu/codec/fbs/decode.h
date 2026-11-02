@@ -13,11 +13,11 @@
 #include <vector>
 
 #include "kotatsu/support/expected_try.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/decode.h"
 #include "kotatsu/codec/fbs/proxy.h"
 #include "kotatsu/codec/fbs/type.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/context.h"
-#include "kotatsu/codec/visit/decode.h"
+#include "kotatsu/codec/format.h"
 
 namespace kotatsu::codec::fbs {
 
@@ -25,7 +25,7 @@ namespace decode_detail {
 
 // Readers bounds-check every raw buffer access against the verifier before
 // performing it, so decoding cannot read outside the buffer no matter how
-// the dispatch drives the visit (reprs, adapters, any Config). Table
+// the dispatch drives the visit (reprs, adapters, any format). Table
 // descents pair VerifyTableStart/EndTable, which also caps nesting depth —
 // cyclic offsets terminate instead of recursing forever.
 
@@ -104,8 +104,8 @@ struct TableFieldReader : detail::VisitorBase {
     verifier_t* verifier;
     std::size_t idx = 0;
 
-    template <typename Idx, typename F>
-    bool visit_field(Idx, std::string_view, F&& reader);
+    template <typename Field, typename F>
+    bool visit_field(Field field, F&& reader);
 
     template <typename F>
     bool visit_element(F&& reader);
@@ -295,9 +295,9 @@ private:
     }
 };
 
-template <typename Idx, typename F>
-bool TableFieldReader::visit_field(Idx, std::string_view, F&& reader) {
-    const voffset_t vid = detail::field_slot(Idx{});
+template <typename Field, typename F>
+bool TableFieldReader::visit_field(Field field, F&& reader) {
+    const voffset_t vid = detail::field_slot(field.index);
     FieldReader fr{.tbl = tbl, .slot = vid, .verifier = verifier};
     return reader(fr);
 }
@@ -489,7 +489,7 @@ bool MapReader::visit_entry(KF&& key_fn, VF&& val_fn) {
 
 }  // namespace decode_detail
 
-/// Decodes a buffer produced by to_bytes with the same T and Config, after
+/// Decodes a buffer produced by to_bytes with the same T, after
 /// checking the "EVTO" identifier. The buffer is fully verified while it is
 /// read: every scalar, offset, string, vector, and nested table access is
 /// bounds-checked before it happens, so corrupt, truncated, or malicious
@@ -498,35 +498,33 @@ bool MapReader::visit_entry(KF&& key_fn, VF&& val_fn) {
 /// terminates cyclic offsets), as are buffers at or above flatbuffers'
 /// maximum buffer size (just under 2 GiB).
 /// Overloads: std::byte / uint8_t spans, into an out-param or returning T.
-template <typename Config = void, typename T>
+template <typename T>
 auto from_bytes(std::span<const std::byte> buf, T& out) -> std::expected<void, rich_error> {
-    detail::assert_config_layout_stable<Config>();
-
     KOTATSU_EXPECTED_TRY_V(auto opened, detail::open_root(buf));
     if(!opened.root->VerifyTableStart(opened.verifier)) {
         return std::unexpected(rich_error("buffer verification failed: root table"));
     }
     decode_detail::RootReader vis(opened.root, &opened.verifier);
-    return codec::detail::run_decode<Config>(vis, out);
+    return codec::detail::run_decode<fbs::format>(vis, out);
 }
 
-template <typename Config = void, typename T>
+template <typename T>
 auto from_bytes(std::span<const std::uint8_t> buf, T& out) -> std::expected<void, rich_error> {
-    return from_bytes<Config>(std::as_bytes(buf), out);
+    return from_bytes(std::as_bytes(buf), out);
 }
 
-template <typename T, typename Config = void>
+template <typename T>
     requires std::is_default_constructible_v<T>
 auto from_bytes(std::span<const std::byte> buf) -> std::expected<T, rich_error> {
     auto value = T();
-    KOTATSU_EXPECTED_TRY(from_bytes<Config>(buf, value));
+    KOTATSU_EXPECTED_TRY(from_bytes(buf, value));
     return value;
 }
 
-template <typename T, typename Config = void>
+template <typename T>
     requires std::is_default_constructible_v<T>
 auto from_bytes(std::span<const std::uint8_t> buf) -> std::expected<T, rich_error> {
-    return from_bytes<T, Config>(std::as_bytes(buf));
+    return from_bytes<T>(std::as_bytes(buf));
 }
 
 }  // namespace kotatsu::codec::fbs

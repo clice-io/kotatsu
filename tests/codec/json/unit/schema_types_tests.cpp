@@ -11,15 +11,18 @@
 #include <variant>
 #include <vector>
 
-#include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/json/harness/schema.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/json/schema.h"
 #include "kotatsu/codec/macro.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::reflection;
+using meta::type_kind;
 
 namespace {
 
@@ -27,8 +30,12 @@ struct json_schema_opaque_root {};
 
 }  // namespace
 
+}  // namespace kotatsu::codec
+
 template <>
-constexpr inline bool schema_opaque<json_schema_opaque_root> = true;
+constexpr inline bool kotatsu::meta::schema_opaque<kotatsu::codec::json_schema_opaque_root> = true;
+
+namespace kotatsu::codec {
 
 namespace {
 
@@ -139,16 +146,26 @@ struct tagged_rect {
     double height;
 };
 
-KANNOTATION(root_internal_annotation, tag = "kind", tag_names = {"circle", "rect"});
-using root_internal_variant =
-    annotate<root_internal_annotation>::type<std::variant<tagged_circle, tagged_rect>>;
+KANNOTATE_TYPE(struct root_internal_variant, tag = "kind", tag_names = {"circle", "rect"});
 
-KANNOTATION(root_adjacent_annotation,
-            tag = "type",
-            content = "value",
-            tag_names = {"integer", "text"});
-using root_adjacent_variant =
-    annotate<root_adjacent_annotation>::type<std::variant<std::int32_t, std::string>>;
+struct root_internal_variant : std::variant<tagged_circle, tagged_rect> {
+    using variant::variant;
+};
+
+KANNOTATE_TYPE(struct internal_unit_variant, tag = "kind", tag_names = {"none", "circle"});
+
+struct internal_unit_variant : std::variant<std::monostate, tagged_circle> {
+    using variant::variant;
+};
+
+KANNOTATE_TYPE(struct root_adjacent_variant,
+               tag = "type",
+               content = "value",
+               tag_names = {"integer", "text"});
+
+struct root_adjacent_variant : std::variant<std::int32_t, std::string> {
+    using variant::variant;
+};
 
 struct map_str_struct {
     std::map<std::string, point2d> entries;
@@ -276,10 +293,9 @@ ZEST_CASE(root_integers) {
 }
 
 ZEST_CASE(root_floats) {
-    // The default nan_repr (Passthrough) hands non-finite values to the
-    // writer, which emits null — so even the default schema admits null.
+    // The encoder fails on a float that is not finite: a number it is.
     const auto schema =
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","anyOf":[{"type":"number"},{"type":"null"}]})";
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"number"})";
     ZEXPECT(json::schema_string<float>().value() == schema);
     ZEXPECT(json::schema_string<double>().value() == schema);
 }
@@ -318,7 +334,7 @@ ZEST_CASE(scalar_wrapper_integers) {
 
 ZEST_CASE(scalar_wrapper_floats) {
     const auto schema =
-        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"v":{"anyOf":[{"type":"number"},{"type":"null"}]}},"required":["v"]})";
+        R"({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"v":{"type":"number"}},"required":["v"]})";
     ZEXPECT(json::schema_string<s_f32>().value() == schema);
     ZEXPECT(json::schema_string<s_f64>().value() == schema);
 }
@@ -544,8 +560,8 @@ ZEST_CASE(variant_three_alts) {
 
 ZEST_CASE(variant_external_tag) {
     const static type_info_fn ext_alts[] = {
-        type_info_of<std::int32_t>,
-        type_info_of<std::string>,
+        type_info::of<std::int32_t>,
+        type_info::of<std::string>,
     };
     const static std::string_view ext_names[] = {"num", "text"};
     const static variant_type_info ext_var = {
@@ -564,8 +580,7 @@ ZEST_CASE(variant_external_tag) {
         {},
         0,
         ext_var_ref,
-        false,
-        false,
+        presence_kind::required,
     };
     const static struct_type_info ext_wrap = {
         {type_kind::structure, "ext_wrap"},
@@ -594,8 +609,8 @@ ZEST_CASE(variant_external_tag) {
 
 ZEST_CASE(variant_internal_tag) {
     const static type_info_fn int_alts[] = {
-        type_info_of<point2d>,
-        type_info_of<inner>,
+        type_info::of<point2d>,
+        type_info::of<inner>,
     };
     const static std::string_view int_names[] = {"point", "inner"};
     const static variant_type_info int_var = {
@@ -614,8 +629,7 @@ ZEST_CASE(variant_internal_tag) {
         {},
         0,
         int_var_ref,
-        false,
-        false,
+        presence_kind::required,
     };
     const static struct_type_info int_wrap = {
         {type_kind::structure, "int_wrap"},
@@ -643,8 +657,8 @@ ZEST_CASE(variant_internal_tag) {
 
 ZEST_CASE(variant_adjacent_tag) {
     const static type_info_fn adj_alts[] = {
-        type_info_of<std::int32_t>,
-        type_info_of<std::string>,
+        type_info::of<std::int32_t>,
+        type_info::of<std::string>,
     };
     const static std::string_view adj_names[] = {"num", "text"};
     const static variant_type_info adj_var = {
@@ -663,8 +677,7 @@ ZEST_CASE(variant_adjacent_tag) {
         {},
         0,
         adj_var_ref,
-        false,
-        false,
+        presence_kind::required,
     };
     const static struct_type_info adj_wrap = {
         {type_kind::structure, "adj_wrap"},
@@ -715,15 +728,29 @@ ZEST_CASE(root_internal_variant) {
                       R"("oneOf":[)"
                       R"({"type":"object",)"
                       R"("properties":{)"
-                      R"("radius":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+                      R"("radius":{"type":"number"},)"
                       R"("kind":{"const":"circle"}},)"
                       R"("required":["radius","kind"]},)"
                       R"({"type":"object",)"
                       R"("properties":{)"
-                      R"("width":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
-                      R"("height":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+                      R"("width":{"type":"number"},)"
+                      R"("height":{"type":"number"},)"
                       R"("kind":{"const":"rect"}},)"
                       R"("required":["width","height","kind"]}]})");
+}
+
+ZEST_CASE(internal_monostate_is_the_tag_alone) {
+    const auto result = json::schema_string<internal_unit_variant>().value();
+    ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
+                      R"("oneOf":[)"
+                      R"({"type":"object",)"
+                      R"("properties":{"kind":{"const":"none"}},)"
+                      R"("required":["kind"]},)"
+                      R"({"type":"object",)"
+                      R"("properties":{)"
+                      R"("radius":{"type":"number"},)"
+                      R"("kind":{"const":"circle"}},)"
+                      R"("required":["radius","kind"]}]})");
 }
 
 ZEST_CASE(root_adjacent_variant) {
@@ -747,7 +774,8 @@ ZEST_CASE(root_adjacent_variant) {
 
 ZEST_CASE(root_adjacent_variant_denies_other_keys) {
     // ...unless unknown fields are denied, as the decoder then does.
-    const auto result = json::schema_string<root_adjacent_variant, test::StrictConfig>().value();
+    const auto result =
+        json::schema_string<root_adjacent_variant>({.deny_unknown_fields = true}).value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("oneOf":[)"
                       R"({"type":"object",)"
@@ -780,7 +808,7 @@ ZEST_CASE(any_type_root) {
 ZEST_CASE(any_type_field) {
     const static type_info any_ti = {type_kind::any, "any"};
     const static field_info any_fields[] = {
-        {"data", {}, 0, []() -> const type_info& { return any_ti; }, false, false},
+        {"data", {}, 0, []() -> const type_info& { return any_ti; }, presence_kind::required},
     };
     const static struct_type_info any_struct = {
         {type_kind::structure, "with_any"},
@@ -994,8 +1022,8 @@ ZEST_CASE(empty_enum) {
 
 ZEST_CASE(variant_of_variant) {
     const static type_info_fn inner_alts[] = {
-        type_info_of<std::string>,
-        type_info_of<bool>,
+        type_info::of<std::string>,
+        type_info::of<bool>,
     };
     const static variant_type_info inner_var = {
         {type_kind::variant, "inner_variant"},
@@ -1007,7 +1035,7 @@ ZEST_CASE(variant_of_variant) {
     };
 
     const static type_info_fn outer_alts[] = {
-        type_info_of<std::int32_t>,
+        type_info::of<std::int32_t>,
         []() -> const type_info& { return inner_var; },
     };
     const static variant_type_info outer_var = {
@@ -1049,7 +1077,7 @@ ZEST_CASE(variant_with_monostate) {
 ZEST_CASE(bytes_field) {
     const static type_info bytes_ti = {type_kind::bytes, "bytes"};
     const static field_info bytes_fields[] = {
-        {"data", {}, 0, []() -> const type_info& { return bytes_ti; }, false, false},
+        {"data", {}, 0, []() -> const type_info& { return bytes_ti; }, presence_kind::required},
     };
     const static struct_type_info bytes_struct = {
         {type_kind::structure, "with_bytes"},
@@ -1071,4 +1099,4 @@ ZEST_CASE(bytes_field) {
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

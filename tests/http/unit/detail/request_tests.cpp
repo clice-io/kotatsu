@@ -35,19 +35,19 @@ struct Unencodable {};
 }  // namespace kotatsu::http
 
 #if KOTATSU_HTTP_HAS_CODEC_JSON
-namespace kotatsu::meta {
+namespace kotatsu::codec {
 
 template <>
 struct repr<http::Unencodable> {
     using type = std::string;
 
-    template <typename Config>
-    static bool serialize(auto&, const http::Unencodable&) {
+    template <typename F>
+    static bool encode(auto&, const http::Unencodable&) {
         return codec::scoped_context<codec::rich_error>::fail(codec::rich_error("refused"));
     }
 };
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec
 #endif
 
 namespace kotatsu::http {

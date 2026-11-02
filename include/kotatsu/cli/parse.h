@@ -18,14 +18,21 @@
 #include "kotatsu/cli/detail/declaration.h"
 #include "kotatsu/cli/error.h"
 #include "kotatsu/cli/spec.h"
+#include "kotatsu/support/naming.h"
 #include "kotatsu/support/numeric.h"
 #include "kotatsu/support/string_list_ref.h"
 #include "kotatsu/meta/enum.h"
-#include "kotatsu/meta/spelling.h"
-#include "kotatsu/meta/type_info.h"
-#include "kotatsu/codec/visit/decode.h"
+#include "kotatsu/codec/decode.h"
+#include "kotatsu/codec/type_info.h"
 
 namespace kotatsu::cli {
+
+/// How options are read from and written to an argv: a field the argv does not give keeps the
+/// value it has.
+struct format : codec::extend<codec::format> {
+    constexpr static std::optional<codec::presence_kind> presence_all =
+        codec::presence_kind::optional;
+};
 
 /// An argument parse() read, as its visit sees it once the options are decoded.
 struct Given {
@@ -65,13 +72,6 @@ struct Node {
     std::vector<Node> items = {};
 };
 
-/// How the options are decoded: a field the argv does not give keeps the value it has.
-struct DecodeConfig {
-    constexpr static bool defaulted_fields = true;
-};
-
-using decode_config = codec::default_config<DecodeConfig>;
-
 struct Command;
 
 /// Frees a command, a type complete only where it is built.
@@ -83,14 +83,14 @@ using CommandPtr = std::unique_ptr<Command, CommandDeleter>;
 
 /// Builds the command `type`, a struct, describes: its options, positional arguments, groups
 /// and subcommands, and their option table.
-CommandPtr build_command(const meta::type_info& type);
+CommandPtr build_command(const codec::type_info& type);
 
 /// The command of options `T`, which a mistake in them keeps from compiling. Built on first
 /// use.
 template <typename T>
 const Command& command_of() {
-    static_assert(check_declaration(meta::type_info_of<T, decode_config>()));
-    const static CommandPtr command = build_command(meta::type_info_of<T, decode_config>());
+    static_assert(check_declaration(codec::type_info::of<T, cli::format>()));
+    const static CommandPtr command = build_command(codec::type_info::of<T, cli::format>());
     return *command;
 }
 
@@ -131,7 +131,9 @@ struct Reader {
     const Node** last;
 
     constexpr static bool data_driven = true;
-    constexpr static bool human_readable = true;
+    using format = cli::format;
+    /// The parse checks the required arguments itself, and a help option skips the check.
+    constexpr static bool presence_checked = true;
 
     bool fail(std::string message) const {
         *last = &node;
@@ -293,15 +295,46 @@ struct Reader {
     }
 };
 
+/// How an argument spells enumerator `name`: in lower camel case, `light_blue` as
+/// `lightBlue`, without the `_` of a keyword-like name (`Delete_`) or the `_` or `V` that
+/// makes one starting with a digit an identifier (`_2d`, `V3`).
+inline std::string enum_text(std::string_view name) {
+    return naming::snake_to_camel(name, false);
+}
+
+/// What an argument and an enumerator compare by, so that any spelling of the name reads:
+/// its words in lower snake case (`lightBlue`, `light-blue`, `LIGHT_BLUE` and `light_blue`
+/// alike), without the `v` of a name that starts with a digit.
+inline std::string enum_key(std::string_view text) {
+    auto key = naming::normalize_to_lower_snake(text);
+    if(key.size() > 1 && key.front() == 'v' && naming::is_digit(key[1])) {
+        key.erase(0, 1);
+    }
+    return key;
+}
+
+/// The enumerator `text` names, in any of the spellings enum_key reads alike.
+template <typename Enum>
+std::optional<Enum> enum_from_text(std::string_view text) {
+    const auto key = enum_key(text);
+    const auto& names = meta::reflection<Enum>::member_names;
+    for(std::size_t i = 0; i < names.size(); ++i) {
+        if(enum_key(names[i]) == key) {
+            return meta::reflection<Enum>::member_values[i];
+        }
+    }
+    return std::nullopt;
+}
+
 template <typename Enum>
 std::string invalid_enum_value(std::string_view text) {
     std::string message = std::format("invalid enum value: {}", text);
-    const auto& names = meta::enum_strings<Enum>();
+    const auto& names = meta::reflection<Enum>::member_names;
     if(!names.empty()) {
         message += " (supported: ";
         for(std::size_t i = 0; i < names.size(); ++i) {
             message += i == 0 ? "" : ", ";
-            message += names[i];
+            message += enum_text(names[i]);
         }
         message += ")";
     }
@@ -323,7 +356,7 @@ std::expected<void, Error> parse_into(T& options, string_list_ref argv, Visit vi
     codec::rich_error error;
     codec::scoped_context<codec::rich_error> guard(error);
     detail::Reader reader{reading.root, &last};
-    if(!codec::decode_value<detail::decode_config>(reader, options)) {
+    if(!codec::decode_value(reader, options)) {
         return std::unexpected(detail::decode_error(reading, argv, last, error));
     }
     for(const auto& given: reading.given) {
@@ -378,15 +411,15 @@ std::expected<T, Error> parse(R&& argv) {
 
 namespace kotatsu::codec {
 
-/// An enum reads from any spelling of its name meta knows: `info`, `Info`, `INFO`.
-template <typename E, typename Config>
-    requires (std::is_enum_v<E> && !meta::has_repr<E, meta::format_of_t<cli::detail::Reader>>)
-struct deserialize_visit<cli::detail::Reader, E, Config> {
+/// An enum reads from any spelling of its name: `info`, `Info`, `INFO`.
+template <typename E>
+    requires (std::is_enum_v<E> && !codec::has_repr<E, cli::format>)
+struct deserialize_visit<cli::detail::Reader, E> {
     static bool visit(cli::detail::Reader& reader, E& out) {
         if(reader.node.kind != cli::detail::Node::Kind::Text) {
             return reader.fail_shape("a name");
         }
-        auto value = meta::map_string_to_enum<E>(reader.node.text);
+        auto value = cli::detail::enum_from_text<E>(reader.node.text);
         if(!value) {
             return reader.fail(cli::detail::invalid_enum_value<E>(reader.node.text));
         }

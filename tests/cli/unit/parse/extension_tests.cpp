@@ -1,5 +1,5 @@
 // What parse() offers beyond the fields themselves: aliases, a visit of the arguments in
-// order, the help option's stop, and values of types of their own through meta::repr.
+// order, the help option's stop, and values of types of their own through codec::repr.
 
 #include <expected>
 #include <optional>
@@ -17,14 +17,14 @@ namespace {
 
 struct Optimize {
     int level = 0;
-    KANNOTATE(cli::names = {"-O2"}, cli::forward = {"--level", "2"}, description = "--level 2")
-    <cli::Alias> o2;
+    KANNOTATE(&o2, cli::names = {"-O2"}, cli::forward = {"--level", "2"}, description = "--level 2")
+    cli::Alias o2;
 };
 
 struct Strict {
     unsigned level = 0;
-    KANNOTATE(cli::names = {"-Oneg"}, cli::forward = {"--level", "-1"})
-    <cli::Alias> neg;
+    KANNOTATE(&neg, cli::names = {"-Oneg"}, cli::forward = {"--level", "-1"})
+    cli::Alias neg;
 };
 
 struct Session {
@@ -52,9 +52,10 @@ struct Port {
 
 struct Server {
     Port port;
-    cli::Help help;
-    KANNOTATE(cli::required = true)
-    <std::string> host;
+    KANNOTATE(&help, cli::help)
+    bool help = false;
+    KANNOTATE(&host, presence = required)
+    std::string host;
 };
 
 /// What a visit sees of `given`: "session.handler=a", its values joined by ','.
@@ -77,11 +78,11 @@ std::expected<T, Error> parse_line(std::string_view line) {
 }  // namespace kotatsu::cli
 
 template <>
-struct kotatsu::meta::repr<kotatsu::cli::Port> {
+struct kotatsu::codec::repr<kotatsu::cli::Port> {
     using type = std::string;
 
-    template <typename Config>
-    static bool deserialize(auto& reader, kotatsu::cli::Port& port) {
+    template <typename F>
+    static bool decode(auto& reader, kotatsu::cli::Port& port) {
         std::string text;
         if(!reader.visit_str(text)) {
             return false;
@@ -95,8 +96,8 @@ struct kotatsu::meta::repr<kotatsu::cli::Port> {
         return true;
     }
 
-    template <typename Config>
-    static bool serialize(auto& writer, const kotatsu::cli::Port& port) {
+    template <typename F>
+    static bool encode(auto& writer, const kotatsu::cli::Port& port) {
         return writer.visit_str(std::to_string(port.number));
     }
 };

@@ -35,28 +35,38 @@ namespace protocol = ipc::protocol;
 
 struct Input {
     std::string type;
-    codec::RawValue value;
+    codec::raw_value value;
+};
+
+/// Holds for an empty optional: a write leaves it out. A predicate rather
+/// than `presence = omit_if_default`, which compares with ==, which raw_value
+/// has not.
+struct IsNone {
+    template <typename T>
+    bool operator()(const std::optional<T>& value) const {
+        return !value.has_value();
+    }
 };
 
 /// The value encoded again, or why it did not decode.
 struct Output {
-    KANNOTATE(skip_if = skip_when::none)
-    <std::optional<codec::RawValue>> value;
-    KANNOTATE(skip_if = skip_when::none)
-    <std::optional<std::string>> error;
+    KANNOTATE(&value, presence = type<IsNone>)
+    std::optional<codec::raw_value> value;
+    KANNOTATE(&error, presence = type<IsNone>)
+    std::optional<std::string> error;
 };
 
 template <typename T>
 Output roundtrip(std::string_view json) {
-    auto decoded = codec::json::from_string<T, ipc::lsp_config>(json);
+    auto decoded = codec::json::from_string<T, ipc::lsp_format>(json);
     if(!decoded) {
         return {.value = std::nullopt, .error = decoded.error().to_string()};
     }
-    auto encoded = codec::json::to_string<ipc::lsp_config>(*decoded);
+    auto encoded = codec::json::to_string<ipc::lsp_format>(*decoded);
     if(!encoded) {
         return {.value = std::nullopt, .error = encoded.error().to_string()};
     }
-    return {.value = codec::RawValue{std::move(*encoded)}, .error = std::nullopt};
+    return {.value = codec::raw_value{std::move(*encoded)}, .error = std::nullopt};
 }
 
 const std::unordered_map<std::string_view, Output (*)(std::string_view)> types = {

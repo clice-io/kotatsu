@@ -103,7 +103,7 @@ struct Strings {
     }
 };
 
-/// The values nan_repr decides about, with the documents its choices write.
+/// The floats that are not finite, which only some documents have room for.
 struct NonFinite {
     double nan;
     double inf;
@@ -128,18 +128,6 @@ struct Infinities {
             .neg_inf = -std::numeric_limits<double>::infinity(),
         };
     }
-};
-
-struct NonFiniteNulls {
-    std::nullptr_t nan;
-    std::nullptr_t inf;
-    std::nullptr_t neg_inf;
-};
-
-struct NonFiniteNames {
-    std::string nan;
-    std::string inf;
-    std::string neg_inf;
 };
 
 struct Bytes {

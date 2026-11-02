@@ -18,11 +18,11 @@
 #include <variant>
 #include <vector>
 
-#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/everything.h"
 #include "codec/harness/fixtures/scalars.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/visit/kit.h"
 #include "fixtures/recursive.h"
@@ -236,12 +236,12 @@ void values(const Kit<B>& kit) {
                     "c_string_not_utf8_fails",
                     [] { return Field<const char*>{"caf\xE9"}; },
                     {.message = "invalid UTF-8 in a string", .path = "value"});
-        encodes_as<ReplaceUTF8Config>(
+        encodes_as<ReplaceUTF8Settings>(
             kit,
             "map_key_not_utf8_replaced_encodes_as_replacement_character",
             [] { return Field<std::map<std::string, int>>{{{"caf\xE9", 1}}}; },
             [] { return Field<std::map<std::string, int>>{{{"caf\xEF\xBF\xBD", 1}}}; });
-        encodes_as<ReplaceUTF8Config>(
+        encodes_as<ReplaceUTF8Settings>(
             kit,
             "string_not_utf8_replaced_encodes_as_replacement_character",
             [] { return Field<std::string>{"caf\xE9!"}; },

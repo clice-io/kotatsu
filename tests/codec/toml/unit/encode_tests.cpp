@@ -46,10 +46,6 @@ struct Label {
 
 }  // namespace
 
-}  // namespace kotatsu::codec
-
-namespace kotatsu::meta {
-
 template <>
 struct repr<codec::Page> {
     using type = std::string;
@@ -75,10 +71,6 @@ struct repr<codec::Page, codec::toml::format> {
         return {.number = record.number};
     }
 };
-
-}  // namespace kotatsu::meta
-
-namespace kotatsu::codec {
 
 namespace {
 

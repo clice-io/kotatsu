@@ -1,7 +1,7 @@
 #pragma once
 
-// The shared protocol suite. The visit layer (visit/encode.h, visit/decode.h,
-// meta::repr, attrs, config) is one protocol shared by every backend, so its
+// The shared protocol suite. The core (encode.h, decode.h, codec::repr, the
+// attributes, formats and options) is one protocol shared by every backend, so its
 // behaviour is written once, in the area headers next to this one, and each
 // backend runs every area through a Kit over its adapter:
 //
@@ -17,8 +17,10 @@
 //
 // Each primitive below registers one case. Values come from factories,
 // `[] { return ...; }`: a case body must be copyable, and some values are
-// move-only. A plain value always encodes under the default config; Config
-// applies to the value under test only.
+// move-only. A plain value always encodes under the backend's format; the
+// settings a case names (Settings) apply to the value under test only: the
+// format knobs they declare, through kit_format_t, and the options, through
+// kit_encode_options and kit_decode_options.
 
 #include <algorithm>
 #include <concepts>
@@ -35,23 +37,91 @@
 #include "codec/harness/fixtures/structs.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/compare.h"
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/format.h"
 
 namespace kotatsu::test {
+
+namespace detail {
+
+template <typename Base, typename S>
+struct with_rename_all : Base {};
+
+template <typename Base, typename S>
+    requires requires { typename S::rename_all; }
+struct with_rename_all<Base, S> : Base {
+    using rename_all = typename S::rename_all;
+};
+
+template <typename Base, typename S>
+struct with_presence_all : Base {};
+
+template <typename Base, typename S>
+    requires requires { S::presence_all; }
+struct with_presence_all<Base, S> : Base {
+    constexpr static std::optional<codec::presence_kind> presence_all = S::presence_all;
+};
+
+template <typename Base, typename S>
+struct with_human_readable : Base {};
+
+template <typename Base, typename S>
+    requires requires { S::human_readable; }
+struct with_human_readable<Base, S> : Base {
+    constexpr static bool human_readable = S::human_readable;
+};
+
+template <typename Base, typename S>
+struct kit_format {
+    using type =
+        with_human_readable<with_presence_all<with_rename_all<codec::extend<Base>, S>, S>, S>;
+};
+
+template <typename Base>
+struct kit_format<Base, void> {
+    using type = Base;
+};
+
+}  // namespace detail
+
+/// The format a case runs under on the backend whose format is Base: Base, with
+/// the knobs the settings S declare (rename_all, presence_all, human_readable).
+template <typename Base, typename S>
+using kit_format_t = typename detail::kit_format<Base, S>::type;
+
+/// The encode options the settings S declare: invalid_utf8.
+template <typename S>
+codec::encode_options kit_encode_options() {
+    codec::encode_options options;
+    if constexpr(requires { S::invalid_utf8; }) {
+        options.invalid_utf8 = S::invalid_utf8;
+    }
+    return options;
+}
+
+/// The decode options the settings S declare: deny_unknown_fields.
+template <typename S>
+codec::decode_options kit_decode_options() {
+    codec::decode_options options;
+    if constexpr(requires { S::deny_unknown_fields; }) {
+        options.deny_unknown_fields = S::deny_unknown_fields;
+    }
+    return options;
+}
 
 /// What a backend's documents can carry. Declared by the adapter rather than
 /// derived from the library's traits, so the library does not judge itself.
 struct Caps {
     /// Keyed documents (json, toml, dyn): fields travel by name, so rename,
-    /// alias, defaulted, deny_unknown_fields and required fields apply;
+    /// alias, deny_unknown_fields and required fields apply;
     /// tagged variants take object shapes and untagged ones decode by
     /// probing; a map is an object, so its keys are text or numbers, never
     /// structs. A positional backend reads by slot or position with the type
     /// that wrote the document, and writes a map key as a value.
     bool self_describing = false;
-    /// A field can be absent from the document (a key or a slot), so skip_if
-    /// omits the field it matches. What reading an absent field yields
-    /// depends on how the backend visits fields; the cases say which.
+    /// A field can be absent from the document (a key or a slot), so its
+    /// presence can leave it out of a write. What reading an absent field
+    /// yields depends on how the backend visits fields; the cases say which.
     bool absent_fields = false;
     /// uint64 above int64's maximum encodes.
     bool full_uint64 = false;
@@ -59,11 +129,11 @@ struct Caps {
     /// map value or a field's value, rather than failing or reading as
     /// absent.
     bool nested_nulls = false;
-    /// NaN and infinities survive nan_repr::Passthrough.
+    /// NaN and the infinities encode, and read back; otherwise they fail to
+    /// encode.
     bool non_finite = false;
     /// The layout is a function of the type alone (fbs), so nothing that
-    /// shapes a document by the value or the config compiles:
-    /// enum_repr::String, nan_repr::String and meta::dynamic reprs.
+    /// shapes a document by the value compiles: codec::dynamic reprs.
     bool layout_computed = false;
     /// Documents come from outside the program, so decoding garbage is in
     /// scope: the hostile sweep applies.
@@ -72,14 +142,15 @@ struct Caps {
     /// dependency that fails on some garbage worse than by rejecting it. The
     /// case stays registered and reports itself skipped with this reason.
     std::string_view hostile_gap = {};
-    /// A format tag scopes meta::repr specializations to the backend.
-    bool format_tag = false;
+    /// The backend has a format of its own, which scopes codec::repr
+    /// specializations to it.
+    bool own_format = false;
     /// Documents are UTF-8 text, so a string must be UTF-8 to encode.
     bool utf8_text = false;
 };
 
 /// A backend adapter: its name and caps, its document type, encode and decode
-/// under a Config, and a readable rendering of a document for reports and
+/// under a Settings, and a readable rendering of a document for reports and
 /// snapshots.
 template <typename B>
 concept Backend = requires(const typename B::Encoded& encoded, int& out) {
@@ -127,16 +198,16 @@ inline void check_failure(const codec::rich_error& error, Failure failure) {
 /// its decoded value encodes to the same document. A start other than the
 /// value shows a decoder that leaves part of its target alone where it should
 /// have written it.
-template <typename Config = void, Backend B, typename Make, typename Start>
+template <typename Settings = void, Backend B, typename Make, typename Start>
 void roundtrip_over(const Kit<B>& kit, std::string name, Make make, Start start) {
     kit.add(std::move(name), [make, start] {
         auto value = make();
-        auto encoded = B::template encode<Config>(value);
+        auto encoded = B::template encode<Settings>(value);
         ZASSERT(succeeds(encoded));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*encoded));
         decltype(value) decoded = start();
-        ZASSERT(succeeds(B::template decode<Config>(*encoded, decoded)));
-        auto again = B::template encode<Config>(decoded);
+        ZASSERT(succeeds(B::template decode<Settings>(*encoded, decoded)));
+        auto again = B::template encode<Settings>(decoded);
         ZASSERT(succeeds(again));
         ZEXPECT(*again == *encoded);
         ZEXPECT(meta::eq(decoded, value));
@@ -144,43 +215,43 @@ void roundtrip_over(const Kit<B>& kit, std::string name, Make make, Start start)
 }
 
 /// roundtrip_over a value-initialized target.
-template <typename Config = void, Backend B, typename Make>
+template <typename Settings = void, Backend B, typename Make>
 void roundtrip(const Kit<B>& kit, std::string name, Make make) {
-    roundtrip_over<Config>(kit, std::move(name), make, [] { return decltype(make())(); });
+    roundtrip_over<Settings>(kit, std::move(name), make, [] { return decltype(make())(); });
 }
 
-/// make() under Config encodes to the document plain() encodes to.
-template <typename Config = void, Backend B, typename Make, typename Plain>
+/// make() under Settings encodes to the document plain() encodes to.
+template <typename Settings = void, Backend B, typename Make, typename Plain>
 void encodes_as(const Kit<B>& kit, std::string name, Make make, Plain plain) {
     kit.add(std::move(name), [make, plain] {
         auto expected = B::encode(plain());
         ZASSERT(succeeds(expected));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*expected));
-        auto encoded = B::template encode<Config>(make());
+        auto encoded = B::template encode<Settings>(make());
         ZASSERT(succeeds(encoded));
         ZEXPECT(*encoded == *expected);
     });
 }
 
-/// The document plain() encodes to decodes, under Config, into expect().
-template <typename T, typename Config = void, Backend B, typename Plain, typename Expect>
+/// The document plain() encodes to decodes, under Settings, into expect().
+template <typename T, typename Settings = void, Backend B, typename Plain, typename Expect>
 void reads(const Kit<B>& kit, std::string name, Plain plain, Expect expect) {
     kit.add(std::move(name), [plain, expect] {
         auto document = B::encode(plain());
         ZASSERT(succeeds(document));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
         auto decoded = T();
-        ZASSERT(succeeds(B::template decode<Config>(*document, decoded)));
+        ZASSERT(succeeds(B::template decode<Settings>(*document, decoded)));
         ZEXPECT(meta::eq(decoded, expect()));
     });
 }
 
 /// reads with the value in a field: the document of Field{plain()} decodes,
-/// under Config, into Field<V>{expect()}. A backend that routes roots
+/// under Settings, into Field<V>{expect()}. A backend that routes roots
 /// differently (toml) then reads the value as every other backend does.
-template <typename V, typename Config = void, Backend B, typename Plain, typename Expect>
+template <typename V, typename Settings = void, Backend B, typename Plain, typename Expect>
 void reads_in_field(const Kit<B>& kit, std::string name, Plain plain, Expect expect) {
-    reads<Field<V>, Config>(
+    reads<Field<V>, Settings>(
         kit,
         std::move(name),
         [plain] { return Field<decltype(plain())>{plain()}; },
@@ -205,7 +276,7 @@ inline std::vector<std::string> describe(const codec::UnknownFields& unknown) {
 
 /// reads with a codec::UnknownFields installed, which then holds the unknown
 /// fields `unknown` describes ("unknown field 'k' at a.b"), in any order.
-template <typename T, typename Config = void, Backend B, typename Plain, typename Expect>
+template <typename T, typename Settings = void, Backend B, typename Plain, typename Expect>
 void reads_reporting(const Kit<B>& kit,
                      std::string name,
                      Plain plain,
@@ -219,29 +290,29 @@ void reads_reporting(const Kit<B>& kit,
         codec::UnknownFields reported;
         codec::scoped_context<codec::UnknownFields> scope(reported);
         auto decoded = T();
-        ZASSERT(succeeds(B::template decode<Config>(*document, decoded)));
+        ZASSERT(succeeds(B::template decode<Settings>(*document, decoded)));
         ZEXPECT(meta::eq(decoded, expect()));
         ZEXPECT(detail::describe(reported) == unknown);
     });
 }
 
-/// The document plain() encodes to does not decode into T under Config.
-template <typename T, typename Config = void, Backend B, typename Plain>
+/// The document plain() encodes to does not decode into T under Settings.
+template <typename T, typename Settings = void, Backend B, typename Plain>
 void read_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failure) {
     kit.add(std::move(name), [plain, failure] {
         auto document = B::encode(plain());
         ZASSERT(succeeds(document));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
         auto decoded = T();
-        auto status = B::template decode<Config>(*document, decoded);
+        auto status = B::template decode<Settings>(*document, decoded);
         ZASSERT(!status);
         detail::check_failure(status.error(), failure);
     });
 }
 
-/// The document plain() encodes to does not decode, under Config, over
+/// The document plain() encodes to does not decode, under Settings, over
 /// start(), and the failed decode leaves the target as start() made it.
-template <typename Config = void, Backend B, typename Plain, typename Start>
+template <typename Settings = void, Backend B, typename Plain, typename Start>
 void read_fails_over(const Kit<B>& kit,
                      std::string name,
                      Plain plain,
@@ -252,7 +323,7 @@ void read_fails_over(const Kit<B>& kit,
         ZASSERT(succeeds(document));
         ZEST_CONTEXT("{}: {}", B::name, B::render(*document));
         auto decoded = start();
-        auto status = B::template decode<Config>(*document, decoded);
+        auto status = B::template decode<Settings>(*document, decoded);
         ZASSERT(!status);
         detail::check_failure(status.error(), failure);
         ZEXPECT(meta::eq(decoded, start()));
@@ -260,9 +331,9 @@ void read_fails_over(const Kit<B>& kit,
 }
 
 /// read_fails with the value in a field, as reads_in_field.
-template <typename V, typename Config = void, Backend B, typename Plain>
+template <typename V, typename Settings = void, Backend B, typename Plain>
 void read_in_field_fails(const Kit<B>& kit, std::string name, Plain plain, Failure failure) {
-    read_fails<Field<V>, Config>(
+    read_fails<Field<V>, Settings>(
         kit,
         std::move(name),
         [plain] { return Field<decltype(plain())>{plain()}; },
@@ -271,7 +342,7 @@ void read_in_field_fails(const Kit<B>& kit, std::string name, Plain plain, Failu
 
 /// read_fails with a codec::UnknownFields installed, which then holds the
 /// unknown fields `unknown` describes, as reads_reporting.
-template <typename T, typename Config = void, Backend B, typename Plain>
+template <typename T, typename Settings = void, Backend B, typename Plain>
 void read_fails_reporting(const Kit<B>& kit,
                           std::string name,
                           Plain plain,
@@ -285,7 +356,7 @@ void read_fails_reporting(const Kit<B>& kit,
         codec::UnknownFields reported;
         codec::scoped_context<codec::UnknownFields> scope(reported);
         auto decoded = T();
-        auto status = B::template decode<Config>(*document, decoded);
+        auto status = B::template decode<Settings>(*document, decoded);
         ZASSERT(!status);
         detail::check_failure(status.error(), failure);
         ZEXPECT(detail::describe(reported) == unknown);
@@ -294,13 +365,13 @@ void read_fails_reporting(const Kit<B>& kit,
 
 /// read_fails_over with the value in a field, as reads_in_field: the field
 /// starts as start() makes its value and keeps it.
-template <typename Config = void, Backend B, typename Plain, typename Start>
+template <typename Settings = void, Backend B, typename Plain, typename Start>
 void read_in_field_fails_over(const Kit<B>& kit,
                               std::string name,
                               Plain plain,
                               Start start,
                               Failure failure) {
-    read_fails_over<Config>(
+    read_fails_over<Settings>(
         kit,
         std::move(name),
         [plain] { return Field<decltype(plain())>{plain()}; },
@@ -308,11 +379,11 @@ void read_in_field_fails_over(const Kit<B>& kit,
         failure);
 }
 
-/// make() does not encode under Config.
-template <typename Config = void, Backend B, typename Make>
+/// make() does not encode under Settings.
+template <typename Settings = void, Backend B, typename Make>
 void write_fails(const Kit<B>& kit, std::string name, Make make, Failure failure) {
     kit.add(std::move(name), [make, failure] {
-        auto encoded = B::template encode<Config>(make());
+        auto encoded = B::template encode<Settings>(make());
         ZASSERT(!encoded);
         detail::check_failure(encoded.error(), failure);
     });

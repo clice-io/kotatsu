@@ -5,15 +5,18 @@
 #include <variant>
 #include <vector>
 
-#include "codec/harness/fixtures/configs.h"
+#include "codec/harness/fixtures/attrs.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/json/harness/schema.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/attrs.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/json/schema.h"
 #include "kotatsu/codec/macro.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::type_kind;
 
 namespace {
 
@@ -22,14 +25,14 @@ using test::casing_child;
 
 struct with_default {
     std::string name;
-    KANNOTATE(defaulted = true)
-    <std::int32_t> count;
+    KANNOTATE(&count, presence = optional)
+    std::int32_t count;
 };
 
 struct with_skip {
     std::string visible;
-    KANNOTATE(skip = true)
-    <std::int32_t> hidden;
+    KANNOTATE(&hidden, skip = true)
+    std::int32_t hidden;
 };
 
 struct base_fields {
@@ -38,47 +41,47 @@ struct base_fields {
 };
 
 struct with_flatten {
-    KANNOTATE(flatten = true)
-    <base_fields> base;
+    KANNOTATE(&base, flatten = true)
+    base_fields base;
     std::string extra;
 };
 
 struct with_rename {
-    KANNOTATE(rename = "my_field")
-    <std::int32_t> x;
+    KANNOTATE(&x, rename = "my_field")
+    std::int32_t x;
     std::string y;
 };
 
-struct with_skip_when {
+struct with_omitted {
     std::string name;
-    KANNOTATE(skip_if = skip_when::empty)
-    <std::vector<std::int32_t>> tags;
-    KANNOTATE(skip_if = skip_when::default_value)
-    <std::int32_t> count;
-    KANNOTATE(skip_if = type<pred::empty>)
-    <std::string> note;
+    KANNOTATE(&tags, presence = omit_if_default)
+    std::vector<std::int32_t> tags;
+    KANNOTATE(&count, presence = omit_if_default)
+    std::int32_t count;
+    KANNOTATE(&note, presence = type<test::IsEmptyText>)
+    std::string note;
 };
 
 struct repeated_child_annotation {
-    KANNOTATE(rename_all = Casing::LowerCamel)
-    <casing_child> left;
-    KANNOTATE(rename_all = Casing::LowerCamel)
-    <casing_child> right;
+    KANNOTATE(&left, rename_all = Casing::LowerCamel)
+    casing_child left;
+    KANNOTATE(&right, rename_all = Casing::LowerCamel)
+    casing_child right;
 };
 
 struct all_default {
-    KANNOTATE(defaulted = true)
-    <std::int32_t> x;
-    KANNOTATE(defaulted = true)
-    <std::string> y;
+    KANNOTATE(&x, presence = optional)
+    std::int32_t x;
+    KANNOTATE(&y, presence = optional)
+    std::string y;
 };
 
 struct skip_default {
     std::string name;
-    KANNOTATE(skip = true)
-    <std::int32_t> hidden;
-    KANNOTATE(defaulted = true)
-    <std::int32_t> count;
+    KANNOTATE(&hidden, skip = true)
+    std::int32_t hidden;
+    KANNOTATE(&count, presence = optional)
+    std::int32_t count;
 };
 
 struct base_with_opt {
@@ -87,72 +90,72 @@ struct base_with_opt {
 };
 
 struct flatten_opt {
-    KANNOTATE(flatten = true)
-    <base_with_opt> base;
+    KANNOTATE(&base, flatten = true)
+    base_with_opt base;
     std::string tag;
 };
 
 struct rename_base {
-    KANNOTATE(rename = "alpha")
-    <std::int32_t> a;
+    KANNOTATE(&a, rename = "alpha")
+    std::int32_t a;
     std::int32_t b;
 };
 
 struct flatten_rename {
-    KANNOTATE(flatten = true)
-    <rename_base> inner;
+    KANNOTATE(&inner, flatten = true)
+    rename_base inner;
     std::string extra;
 };
 
 struct bounded_fields {
-    KANNOTATE(minimum = 1, maximum = 64)
-    <std::uint32_t> workers;
+    KANNOTATE(&workers, minimum = 1, maximum = 64)
+    std::uint32_t workers;
     /// Looser than its type, whose bound stays.
-    KANNOTATE(minimum = -1000)
-    <std::int8_t> offset;
-    KANNOTATE(minimum = 0.5)
-    <double> ratio;
-    KANNOTATE(maximum = 10)
-    <std::optional<std::int32_t>> limit;
-    /// Nullable twice over: its own null, and nan_repr's.
-    KANNOTATE(minimum = 0.25)
-    <std::optional<double>> share;
+    KANNOTATE(&offset, minimum = -1000)
+    std::int8_t offset;
+    KANNOTATE(&ratio, minimum = 0.5)
+    double ratio;
+    KANNOTATE(&limit, maximum = 10)
+    std::optional<std::int32_t> limit;
+    /// Nullable through its own null.
+    KANNOTATE(&share, minimum = 0.25)
+    std::optional<double> share;
 };
 
 struct bounded_text {
-    KANNOTATE(minimum = 1)
-    <std::string> name;
+    KANNOTATE(&name, minimum = 1)
+    std::string name;
 };
 
 struct fractional_bound_on_integer {
-    KANNOTATE(maximum = 2.5)
-    <std::int32_t> count;
+    KANNOTATE(&count, maximum = 2.5)
+    std::int32_t count;
 };
 
 struct chosen_fields {
-    KANNOTATE(choices = {"off", "on", "auto"})
-    <std::string> readonly;
-    KANNOTATE(choices = {"a", "b"})
-    <std::optional<std::string>> mode;
+    KANNOTATE(&readonly, choices = {"off", "on", "auto"})
+    std::string readonly;
+    KANNOTATE(&mode, choices = {"a", "b"})
+    std::optional<std::string> mode;
 };
 
 struct chosen_number {
-    KANNOTATE(choices = {"1"})
-    <std::int32_t> count;
+    KANNOTATE(&count, choices = {"1"})
+    std::int32_t count;
 };
 
 struct machine_section {
-    KANNOTATE(defaulted = true, schema_default = false)
-    <std::uint32_t> workers = 8;
-    KANNOTATE(defaulted = true)
-    <std::uint32_t> retries = 3;
+    KANNOTATE(&workers, presence = optional, schema_default = false)
+    std::uint32_t workers = 8;
+    KANNOTATE(&retries, presence = optional)
+    std::uint32_t retries = 3;
 };
 
 struct machine_root {
-    KANNOTATE(defaulted = true)
-    <machine_section> section;
-    KANNOTATE(defaulted = true, schema_default = false)
-    <std::uint32_t> jobs = 8;
+    KANNOTATE(&section, presence = optional)
+    machine_section section;
+    KANNOTATE(&jobs, presence = optional, schema_default = false)
+    std::uint32_t jobs = 8;
 };
 
 enum class level_kind : std::uint8_t {
@@ -162,54 +165,47 @@ enum class level_kind : std::uint8_t {
 
 /// Sections in an array, which carries their encoded objects as its default.
 struct machine_sections {
-    KANNOTATE(defaulted = true)
-    <std::vector<machine_section>> sections = {machine_section{}};
+    KANNOTATE(&sections, presence = optional)
+    std::vector<machine_section> sections = {machine_section{}};
 };
 
 struct bounded_enum {
-    KANNOTATE(maximum = 1)
-    <level_kind> level;
+    KANNOTATE(&level, maximum = 1)
+    level_kind level;
 };
 
 struct wide_bounds {
-    KANNOTATE(minimum = -1, maximum = ~0ULL)
-    <std::uint64_t> count;
+    KANNOTATE(&count, minimum = -1, maximum = ~0ULL)
+    std::uint64_t count;
 };
 
 struct aliased_required {
-    KANNOTATE(alias = {"legacy"})
-    <std::int32_t> value;
+    KANNOTATE(&value, alias = {"legacy"})
+    std::int32_t value;
 };
 
 /// A required field whose default a schema would leave unstated.
 struct unstated_required {
-    KANNOTATE(schema_default = false)
-    <std::uint32_t> seed = 1;
+    KANNOTATE(&seed, schema_default = false)
+    std::uint32_t seed = 1;
 };
 
-/// Two fields answering to "dup", and an alias taking another field's name.
-struct shared_alias {
-    KANNOTATE(alias = {"dup"})
-    <std::int32_t> left;
-    KANNOTATE(alias = {"dup"})
-    <std::int32_t> right;
+struct enum_names_field {
+    KANNOTATE(&level, with = type<enum_names<naming::rename_policy::lower_camel>>)
+    level_kind level;
 };
 
-struct alias_on_a_name {
-    KANNOTATE(alias = {"right"})
-    <std::int32_t> left;
-    std::int32_t right;
-};
-
-struct enum_string_field {
-    KANNOTATE(enum_string = type<naming::rename_policy::lower_camel>)
-    <level_kind> level;
+/// Bounds on an enum spelled by name.
+struct bounded_named_enum {
+    KANNOTATE(&level, maximum = 1, with = type<enum_names<>>)
+    level_kind level;
 };
 
 struct keyed_maps {
     std::map<std::int32_t, std::int32_t> by_id;
     std::map<std::uint8_t, std::int32_t> by_byte;
     std::map<level_kind, std::int32_t> by_level;
+    std::map<test::named_color, std::int32_t> by_color;
 };
 
 struct char_field {
@@ -217,51 +213,51 @@ struct char_field {
 };
 
 struct desc_scalar {
-    KANNOTATE(description = "Number of worker threads.")
-    <std::int32_t> threads;
+    KANNOTATE(&threads, description = "Number of worker threads.")
+    std::int32_t threads;
     std::string name;
 };
 
 struct desc_optional {
-    KANNOTATE(description = "Optional display label.")
-    <std::optional<std::string>> label;
+    KANNOTATE(&label, description = "Optional display label.")
+    std::optional<std::string> label;
 };
 
 struct desc_struct_ref {
-    KANNOTATE(description = "Anchor position.")
-    <point2d> anchor;
+    KANNOTATE(&anchor, description = "Anchor position.")
+    point2d anchor;
 };
 
 struct desc_base {
-    KANNOTATE(description = "Inherited counter.")
-    <std::int32_t> count;
+    KANNOTATE(&count, description = "Inherited counter.")
+    std::int32_t count;
 };
 
 struct desc_flatten {
-    KANNOTATE(flatten = true)
-    <desc_base> base;
+    KANNOTATE(&base, flatten = true)
+    desc_base base;
     std::string tag;
 };
 
 struct desc_rename {
-    KANNOTATE(rename = "max_size", description = "Maximum size in bytes.")
-    <std::int32_t> size;
+    KANNOTATE(&size, rename = "max_size", description = "Maximum size in bytes.")
+    std::int32_t size;
 };
 
 struct desc_default {
-    KANNOTATE(defaulted = true, description = "Retry limit.")
-    <std::int32_t> retries;
+    KANNOTATE(&retries, presence = optional, description = "Retry limit.")
+    std::int32_t retries;
 };
 
 struct desc_shared_ref {
     point2d origin;
-    KANNOTATE(description = "Anchor position.")
-    <point2d> anchor;
+    KANNOTATE(&anchor, description = "Anchor position.")
+    point2d anchor;
 };
 
 struct desc_tagged_circle {
-    KANNOTATE(description = "Radius in meters.")
-    <double> radius;
+    KANNOTATE(&radius, description = "Radius in meters.")
+    double radius;
 };
 
 struct desc_tagged_rect {
@@ -269,9 +265,11 @@ struct desc_tagged_rect {
     double height;
 };
 
-KANNOTATION(desc_internal_annotation, tag = "kind", tag_names = {"circle", "rect"});
-using desc_internal_variant =
-    annotate<desc_internal_annotation>::type<std::variant<desc_tagged_circle, desc_tagged_rect>>;
+KANNOTATE_TYPE(struct desc_internal_variant, tag = "kind", tag_names = {"circle", "rect"});
+
+struct desc_internal_variant : std::variant<desc_tagged_circle, desc_tagged_rect> {
+    using variant::variant;
+};
 
 namespace json = kotatsu::codec::json;
 
@@ -302,8 +300,8 @@ ZEST_CASE(all_default_fields) {
 
 ZEST_CASE(deny_unknown_struct) {
     const static field_info deny_fields[] = {
-        {"name",  {}, 0, type_info_of<std::string>,  false, false},
-        {"count", {}, 0, type_info_of<std::int32_t>, false, false},
+        {"name",  {}, 0, type_info::of<std::string>,  presence_kind::required},
+        {"count", {}, 0, type_info::of<std::int32_t>, presence_kind::required},
     };
     const static struct_type_info deny_info = {
         {type_kind::structure, "deny_struct"},
@@ -343,10 +341,10 @@ ZEST_CASE(skip_and_default) {
                       R"("required":["name"]})");
 }
 
-// A field the encoder may omit (built-in skip_when or a custom skip_if
-// predicate) is never required — the decoder accepts its absence.
-ZEST_CASE(skip_if_fields_not_required) {
-    const auto result = json::schema_string<with_skip_when>().value();
+// A field the encoder may omit (at its default, or where its predicate holds)
+// is never required — the decoder accepts its absence.
+ZEST_CASE(omitted_fields_not_required) {
+    const auto result = json::schema_string<with_omitted>().value();
     ZEXPECT(result == R"({"$schema":"https://json-schema.org/draft/2020-12/schema",)"
                       R"("type":"object",)"
                       R"("properties":{)"
@@ -354,11 +352,11 @@ ZEST_CASE(skip_if_fields_not_required) {
                       R"("tags":{"type":"array",)"
                       R"("items":{"type":"integer",)"
                       R"("minimum":-2147483648,)"
-                      R"("maximum":2147483647}},)"
+                      R"("maximum":2147483647},"default":[]},)"
                       R"("count":{"type":"integer",)"
                       R"("minimum":-2147483648,)"
-                      R"("maximum":2147483647},)"
-                      R"("note":{"type":"string"}},)"
+                      R"("maximum":2147483647,"default":0},)"
+                      R"("note":{"type":"string","default":""}},)"
                       R"("required":["name"]})");
 }
 
@@ -446,11 +444,11 @@ ZEST_CASE(bounds_join_the_number_schema) {
     // Looser, they leave them.
     ZEXPECT(zest::contains(result, R"("offset":{"type":"integer","minimum":-128,"maximum":127})"));
     // A float or a nullable takes them in its number branch.
-    ZEXPECT(zest::contains(result, R"("ratio":{"anyOf":[{"type":"number","minimum":0.5},)"));
+    ZEXPECT(zest::contains(result, R"("ratio":{"type":"number","minimum":0.5})"));
     ZEXPECT(zest::contains(result, R"("minimum":-2147483648,"maximum":10},{"type":"null"}])"));
-    ZEXPECT(zest::contains(
-        result,
-        R"("share":{"anyOf":[{"anyOf":[{"type":"number","minimum":0.25},{"type":"null"}]},)"));
+    ZEXPECT(
+        zest::contains(result,
+                       R"("share":{"anyOf":[{"type":"number","minimum":0.25},{"type":"null"}],)"));
 }
 
 ZEST_CASE(bound_on_a_field_that_is_no_number_fails) {
@@ -493,7 +491,7 @@ ZEST_CASE(bounds_on_an_enum_join_its_integer) {
     const auto result = json::schema_string<bounded_enum>().value();
     ZEXPECT(zest::contains(result, R"("level":{"type":"integer","minimum":0,"maximum":1})"));
     // Spelled by name, it is not a number.
-    auto named = json::schema_string<bounded_enum, test::EnumStringConfig>();
+    auto named = json::schema_string<bounded_named_enum>();
     ZASSERT(!named);
     ZEXPECT(named.error().message == "minimum or maximum on field 'level', which is not a number");
 }
@@ -524,18 +522,9 @@ ZEST_CASE(unstated_default_on_a_required_field_fails) {
     ZEXPECT(result.error().message == "schema_default = false on field 'seed', which is required");
 }
 
-ZEST_CASE(a_name_two_fields_answer_to_fails) {
-    // The decoder gives the key to the first field answering to it.
-    auto shared = json::schema_string<shared_alias>();
-    ZASSERT(!shared);
-    ZEXPECT(shared.error().message == "field 'right' answers to 'dup', as another field does");
-    auto taken = json::schema_string<alias_on_a_name>();
-    ZASSERT(!taken);
-    ZEXPECT(taken.error().message == "field 'right' answers to 'right', as another field does");
-}
-
 ZEST_CASE(alias_is_allowed_where_unknown_fields_are_denied) {
-    const auto result = json::schema_string<aliased_required, test::StrictConfig>().value();
+    const auto result =
+        json::schema_string<aliased_required>({.deny_unknown_fields = true}).value();
     ZEXPECT(zest::contains(result, R"("legacy":{"type":"integer")"));
     ZEXPECT(zest::contains(result, R"("additionalProperties":false)"));
 }
@@ -550,8 +539,8 @@ ZEST_CASE(alias_is_a_property_and_satisfies_required) {
                       R"("allOf":[{"anyOf":[{"required":["value"]},{"required":["legacy"]}]}]})");
 }
 
-ZEST_CASE(field_enum_string_lists_its_members) {
-    const auto result = json::schema_string<enum_string_field>().value();
+ZEST_CASE(field_enum_names_lists_its_members) {
+    const auto result = json::schema_string<enum_names_field>().value();
     ZEXPECT(zest::contains(result, R"("level":{"enum":["lowLevel","highLevel"]})"));
 }
 
@@ -563,12 +552,11 @@ ZEST_CASE(map_keys_spell_what_they_decode_from) {
     ZEXPECT(zest::contains(
         result,
         R"("by_byte":{"type":"object","additionalProperties":{"type":"integer","minimum":-2147483648,"maximum":2147483647},"propertyNames":{"pattern":"^[0-9]+$"}})"));
-    // An enum key spells its number, or its name under enum_repr::String.
+    // An enum key spells its number, or its name through enum_names.
     ZEXPECT(zest::contains(
         result,
         R"("by_level":{"type":"object","additionalProperties":{"type":"integer","minimum":-2147483648,"maximum":2147483647},"propertyNames":{"pattern":"^[0-9]+$"}})"));
-    const auto named = json::schema_string<keyed_maps, test::EnumStringConfig>().value();
-    ZEXPECT(zest::contains(named, R"("propertyNames":{"enum":["low_level","high_level"]})"));
+    ZEXPECT(zest::contains(result, R"("propertyNames":{"enum":["red","green","blue"]})"));
 }
 
 ZEST_CASE(char_is_one_code_point_up_to_ff) {
@@ -683,14 +671,14 @@ ZEST_CASE(description_in_internal_tagged_alternative) {
                       R"("oneOf":[)"
                       R"({"type":"object",)"
                       R"("properties":{)"
-                      R"("radius":{"anyOf":[{"type":"number"},{"type":"null"}],)"
+                      R"("radius":{"type":"number",)"
                       R"("description":"Radius in meters."},)"
                       R"("kind":{"const":"circle"}},)"
                       R"("required":["radius","kind"]},)"
                       R"({"type":"object",)"
                       R"("properties":{)"
-                      R"("width":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
-                      R"("height":{"anyOf":[{"type":"number"},{"type":"null"}]},)"
+                      R"("width":{"type":"number"},)"
+                      R"("height":{"type":"number"},)"
                       R"("kind":{"const":"rect"}},)"
                       R"("required":["width","height","kind"]}]})");
 }
@@ -699,4 +687,4 @@ ZEST_CASE(description_in_internal_tagged_alternative) {
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

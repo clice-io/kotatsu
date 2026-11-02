@@ -18,9 +18,14 @@
 #include "fixtures/structs.h"
 #include "fixtures/tagged.h"
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/meta/schema.h"
+#include "kotatsu/codec/type_info.h"
 
-namespace kotatsu::meta {
+namespace kotatsu::codec {
+
+using meta::attrs_of_t;
+using meta::kind_of;
+using meta::make_annotation;
+using meta::type_kind;
 
 namespace {
 
@@ -29,7 +34,7 @@ namespace fx = ::kotatsu::test;
 /// Annotated above it, as KANNOTATE_TYPE (in codec's macro sheet) writes it.
 struct Described;
 
-constexpr auto kotatsu_type_annotation(std::type_identity<Described>) {
+constexpr auto __kotatsu__type_annotation(std::type_identity<Described>) {
     return make_annotation(dsl::description = "A described struct");
 }
 
@@ -44,40 +49,40 @@ enum class Lamp : std::uint8_t { Off, On };
 
 /// Annotated after its definition, as KANNOTATE_TYPE writes it for a type declared
 /// already.
-constexpr auto kotatsu_type_annotation(std::type_identity<Lamp>) {
+constexpr auto __kotatsu__type_annotation(std::type_identity<Lamp>) {
     return make_annotation(dsl::description = "A lamp");
 }
 
-ZEST_SUITE(meta_schema_type_info) {
+ZEST_SUITE(codec_schema_type_info) {
 
 ZEST_CASE(struct_description_comes_from_its_annotation) {
     const auto& described =
-        static_cast<const struct_type_info&>(type_info_of<Described, default_config>());
+        static_cast<const struct_type_info&>(type_info::of<Described, codec::format>());
     ZEXPECT(described.description == "A described struct");
 }
 
 ZEST_CASE(derived_struct_takes_no_annotation_of_its_base) {
-    ZEXPECT(zest::type_eq<type_attrs_t<DerivedFromDescribed>, std::tuple<>>());
+    ZEXPECT(zest::type_eq<attrs_of_t<DerivedFromDescribed>, std::tuple<>>());
 }
 
 ZEST_CASE(enum_annotated_after_its_definition_is_found) {
-    ZSTATIC_EXPECT(spec_of<type_attrs_t<Lamp>>.description == "A lamp");
+    ZSTATIC_EXPECT(spec_of<field_spec, attrs_of_t<Lamp>>.description == "A lamp");
 }
 
 ZEST_CASE(scalars_have_their_kind) {
-    ZSTATIC_EXPECT(type_info_of<int, default_config>().kind == type_kind::int32);
-    ZSTATIC_EXPECT(type_info_of<std::uint64_t, default_config>().kind == type_kind::uint64);
-    ZSTATIC_EXPECT(type_info_of<double, default_config>().kind == type_kind::float64);
-    ZSTATIC_EXPECT(type_info_of<bool, default_config>().kind == type_kind::boolean);
-    ZSTATIC_EXPECT(type_info_of<std::string, default_config>().kind == type_kind::string);
-    ZSTATIC_EXPECT(type_info_of<fx::Color, default_config>().kind == type_kind::enumeration);
+    ZSTATIC_EXPECT(type_info::of<int, codec::format>().kind == type_kind::int32);
+    ZSTATIC_EXPECT(type_info::of<std::uint64_t, codec::format>().kind == type_kind::uint64);
+    ZSTATIC_EXPECT(type_info::of<double, codec::format>().kind == type_kind::float64);
+    ZSTATIC_EXPECT(type_info::of<bool, codec::format>().kind == type_kind::boolean);
+    ZSTATIC_EXPECT(type_info::of<std::string, codec::format>().kind == type_kind::string);
+    ZSTATIC_EXPECT(type_info::of<fx::Color, codec::format>().kind == type_kind::enumeration);
 }
 
 ZEST_CASE(compound_types) {
     // vector<int> -> array with int32 element
     {
         constexpr auto arr =
-            static_cast<const array_type_info&>(type_info_of<std::vector<int>, default_config>());
+            static_cast<const array_type_info&>(type_info::of<std::vector<int>, codec::format>());
         ZSTATIC_EXPECT(arr.kind == type_kind::array);
         constexpr auto elem = arr.element();
         ZSTATIC_EXPECT(elem.kind == type_kind::int32);
@@ -86,7 +91,7 @@ ZEST_CASE(compound_types) {
     // set<int> -> set with int32 element
     {
         constexpr auto s =
-            static_cast<const array_type_info&>(type_info_of<std::set<int>, default_config>());
+            static_cast<const array_type_info&>(type_info::of<std::set<int>, codec::format>());
         ZSTATIC_EXPECT(s.kind == type_kind::set);
         constexpr auto elem = s.element();
         ZSTATIC_EXPECT(elem.kind == type_kind::int32);
@@ -95,7 +100,7 @@ ZEST_CASE(compound_types) {
     // map<string, int> -> map with string key, int32 value
     {
         constexpr auto m = static_cast<const map_type_info&>(
-            type_info_of<std::map<std::string, int>, default_config>());
+            type_info::of<std::map<std::string, int>, codec::format>());
         ZSTATIC_EXPECT(m.kind == type_kind::map);
         constexpr auto k = m.key();
         constexpr auto v = m.value();
@@ -106,7 +111,7 @@ ZEST_CASE(compound_types) {
     // optional<int> -> optional with int32 inner
     {
         constexpr auto opt = static_cast<const optional_type_info&>(
-            type_info_of<std::optional<int>, default_config>());
+            type_info::of<std::optional<int>, codec::format>());
         ZSTATIC_EXPECT(opt.kind == type_kind::optional);
         constexpr auto inner = opt.inner();
         ZSTATIC_EXPECT(inner.kind == type_kind::int32);
@@ -115,7 +120,7 @@ ZEST_CASE(compound_types) {
     // unique_ptr<int> -> pointer with int32 inner
     {
         constexpr auto ptr = static_cast<const optional_type_info&>(
-            type_info_of<std::unique_ptr<int>, default_config>());
+            type_info::of<std::unique_ptr<int>, codec::format>());
         ZSTATIC_EXPECT(ptr.kind == type_kind::pointer);
         constexpr auto inner = ptr.inner();
         ZSTATIC_EXPECT(inner.kind == type_kind::int32);
@@ -124,7 +129,7 @@ ZEST_CASE(compound_types) {
     // shared_ptr<string> -> pointer with string inner
     {
         constexpr auto ptr = static_cast<const optional_type_info&>(
-            type_info_of<std::shared_ptr<std::string>, default_config>());
+            type_info::of<std::shared_ptr<std::string>, codec::format>());
         ZSTATIC_EXPECT(ptr.kind == type_kind::pointer);
         constexpr auto inner = ptr.inner();
         ZSTATIC_EXPECT(inner.kind == type_kind::string);
@@ -133,7 +138,7 @@ ZEST_CASE(compound_types) {
     // variant<int, string> -> variant with 2 alternatives
     {
         constexpr auto var = static_cast<const variant_type_info&>(
-            type_info_of<std::variant<int, std::string>, default_config>());
+            type_info::of<std::variant<int, std::string>, codec::format>());
         ZSTATIC_EXPECT(var.kind == type_kind::variant);
         ZSTATIC_EXPECT(var.alternatives.size() == 2U);
         constexpr auto alt0 = var.alternatives[0]();
@@ -145,7 +150,7 @@ ZEST_CASE(compound_types) {
     // pair<int, float> -> tuple with 2 elements
     {
         constexpr auto tup = static_cast<const tuple_type_info&>(
-            type_info_of<std::pair<int, float>, default_config>());
+            type_info::of<std::pair<int, float>, codec::format>());
         ZSTATIC_EXPECT(tup.kind == type_kind::tuple);
         ZSTATIC_EXPECT(tup.elements.size() == 2U);
         constexpr auto e0 = tup.elements[0]();
@@ -157,7 +162,7 @@ ZEST_CASE(compound_types) {
     // tuple<int, double, string> -> tuple with 3 elements
     {
         constexpr auto tup = static_cast<const tuple_type_info&>(
-            type_info_of<std::tuple<int, double, std::string>, default_config>());
+            type_info::of<std::tuple<int, double, std::string>, codec::format>());
         ZSTATIC_EXPECT(tup.kind == type_kind::tuple);
         ZSTATIC_EXPECT(tup.elements.size() == 3U);
         constexpr auto e0 = tup.elements[0]();
@@ -170,7 +175,7 @@ ZEST_CASE(compound_types) {
 
     // SimpleStruct -> structure
     {
-        constexpr auto info = type_info_of<fx::SimpleStruct, default_config>();
+        constexpr auto info = type_info::of<fx::SimpleStruct, codec::format>();
         ZSTATIC_EXPECT(info.kind == type_kind::structure);
     }
 }
@@ -179,7 +184,7 @@ ZEST_CASE(nested_type_info) {
     // vector<optional<int>> -> array -> optional -> int32
     {
         constexpr auto arr = static_cast<const array_type_info&>(
-            type_info_of<std::vector<std::optional<int>>, default_config>());
+            type_info::of<std::vector<std::optional<int>>, codec::format>());
         ZSTATIC_EXPECT(arr.kind == type_kind::array);
         constexpr auto elem_base = arr.element();
         ZSTATIC_EXPECT(elem_base.kind == type_kind::optional);
@@ -191,7 +196,7 @@ ZEST_CASE(nested_type_info) {
     // map<string, vector<int>> -> map -> string key, array value -> int32 element
     {
         constexpr auto m = static_cast<const map_type_info&>(
-            type_info_of<std::map<std::string, std::vector<int>>, default_config>());
+            type_info::of<std::map<std::string, std::vector<int>>, codec::format>());
         ZSTATIC_EXPECT(m.kind == type_kind::map);
         constexpr auto k = m.key();
         ZSTATIC_EXPECT(k.kind == type_kind::string);
@@ -205,7 +210,7 @@ ZEST_CASE(nested_type_info) {
     // set<vector<string>> -> set -> array -> string
     {
         constexpr auto s = static_cast<const array_type_info&>(
-            type_info_of<std::set<std::vector<std::string>>, default_config>());
+            type_info::of<std::set<std::vector<std::string>>, codec::format>());
         ZSTATIC_EXPECT(s.kind == type_kind::set);
         constexpr auto elem_base = s.element();
         ZSTATIC_EXPECT(elem_base.kind == type_kind::array);
@@ -217,7 +222,7 @@ ZEST_CASE(nested_type_info) {
     // unique_ptr<vector<int>> -> pointer -> array -> int32
     {
         constexpr auto ptr = static_cast<const optional_type_info&>(
-            type_info_of<std::unique_ptr<std::vector<int>>, default_config>());
+            type_info::of<std::unique_ptr<std::vector<int>>, codec::format>());
         ZSTATIC_EXPECT(ptr.kind == type_kind::pointer);
         constexpr auto inner_base = ptr.inner();
         ZSTATIC_EXPECT(inner_base.kind == type_kind::array);
@@ -230,7 +235,7 @@ ZEST_CASE(nested_type_info) {
 ZEST_CASE(annotated_type_info) {
     {
         constexpr auto si =
-            static_cast<const struct_type_info&>(type_info_of<fx::RenamedRoot, default_config>());
+            static_cast<const struct_type_info&>(type_info::of<fx::RenamedRoot, codec::format>());
         ZSTATIC_EXPECT(si.kind == type_kind::structure);
         ZSTATIC_EXPECT(si.fields.size() == 2U);
         ZSTATIC_EXPECT(si.fields[0].name == "userName");
@@ -240,7 +245,7 @@ ZEST_CASE(annotated_type_info) {
 
     {
         constexpr auto si =
-            static_cast<const struct_type_info&>(type_info_of<fx::StrictRoot, default_config>());
+            static_cast<const struct_type_info&>(type_info::of<fx::StrictRoot, codec::format>());
         ZSTATIC_EXPECT(si.kind == type_kind::structure);
         ZSTATIC_EXPECT(si.fields.size() == 2U);
         ZSTATIC_EXPECT(si.deny_unknown);
@@ -248,7 +253,7 @@ ZEST_CASE(annotated_type_info) {
 
     {
         constexpr auto var =
-            static_cast<const variant_type_info&>(type_info_of<fx::TaggedRoot, default_config>());
+            static_cast<const variant_type_info&>(type_info::of<fx::TaggedRoot, codec::format>());
         ZSTATIC_EXPECT(var.kind == type_kind::variant);
         ZSTATIC_EXPECT(var.tagging == tag_mode::internal);
         ZSTATIC_EXPECT(var.alternatives.size() == 2U);
@@ -265,7 +270,7 @@ ZEST_CASE(annotated_type_info) {
 
     {
         constexpr auto ei = static_cast<const enum_type_info&>(
-            type_info_of<fx::HugeUnsignedEnum, default_config>());
+            type_info::of<fx::HugeUnsignedEnum, codec::format>());
         ZSTATIC_EXPECT(ei.kind == type_kind::enumeration);
         ZSTATIC_EXPECT(ei.underlying_kind == type_kind::uint64);
         ZSTATIC_EXPECT(ei.member_names.size() == 2U);
@@ -276,7 +281,7 @@ ZEST_CASE(annotated_type_info) {
 
 ZEST_CASE(recursive_tree_node) {
     constexpr auto si =
-        static_cast<const struct_type_info&>(type_info_of<fx::TreeNode, default_config>());
+        static_cast<const struct_type_info&>(type_info::of<fx::TreeNode, codec::format>());
     ZSTATIC_EXPECT(si.kind == type_kind::structure);
     ZSTATIC_EXPECT(si.fields.size() == 2U);
 
@@ -296,7 +301,7 @@ ZEST_CASE(recursive_tree_node) {
 
 ZEST_CASE(recursive_linked_list_unique_ptr) {
     constexpr auto si =
-        static_cast<const struct_type_info&>(type_info_of<fx::LinkedNode, default_config>());
+        static_cast<const struct_type_info&>(type_info::of<fx::LinkedNode, codec::format>());
     ZSTATIC_EXPECT(si.kind == type_kind::structure);
     ZSTATIC_EXPECT(si.fields.size() == 2U);
 
@@ -316,7 +321,7 @@ ZEST_CASE(recursive_linked_list_unique_ptr) {
 
 ZEST_CASE(recursive_shared_ptr_with_vector) {
     constexpr auto si =
-        static_cast<const struct_type_info&>(type_info_of<fx::SharedNode, default_config>());
+        static_cast<const struct_type_info&>(type_info::of<fx::SharedNode, codec::format>());
     ZSTATIC_EXPECT(si.kind == type_kind::structure);
     ZSTATIC_EXPECT(si.fields.size() == 3U);
 
@@ -346,7 +351,7 @@ ZEST_CASE(recursive_shared_ptr_with_vector) {
 
 ZEST_CASE(recursive_optional_vector) {
     constexpr auto si =
-        static_cast<const struct_type_info&>(type_info_of<fx::OptionalRecursive, default_config>());
+        static_cast<const struct_type_info&>(type_info::of<fx::OptionalRecursive, codec::format>());
     ZSTATIC_EXPECT(si.kind == type_kind::structure);
     ZSTATIC_EXPECT(si.fields.size() == 2U);
 
@@ -368,7 +373,7 @@ ZEST_CASE(recursive_optional_vector) {
 
 ZEST_CASE(recursive_map_values) {
     constexpr auto si =
-        static_cast<const struct_type_info&>(type_info_of<fx::MapRecursive, default_config>());
+        static_cast<const struct_type_info&>(type_info::of<fx::MapRecursive, codec::format>());
     ZSTATIC_EXPECT(si.kind == type_kind::structure);
     ZSTATIC_EXPECT(si.fields.size() == 2U);
 
@@ -389,7 +394,7 @@ ZEST_CASE(recursive_map_values) {
 
 ZEST_CASE(recursive_variant_tree) {
     constexpr auto si =
-        static_cast<const struct_type_info&>(type_info_of<fx::VariantBranch, default_config>());
+        static_cast<const struct_type_info&>(type_info::of<fx::VariantBranch, codec::format>());
     ZSTATIC_EXPECT(si.kind == type_kind::structure);
     ZSTATIC_EXPECT(si.fields.size() == 1U);
 
@@ -404,7 +409,7 @@ ZEST_CASE(recursive_variant_tree) {
     constexpr auto var = static_cast<const variant_type_info&>(arr.element());
     ZSTATIC_EXPECT(var.alternatives.size() == 2U);
 
-    constexpr auto leaf_info = type_info_of<fx::VariantLeaf, default_config>();
+    constexpr auto leaf_info = type_info::of<fx::VariantLeaf, codec::format>();
     constexpr auto alt0 = var.alternatives[0]();
     constexpr auto alt1 = var.alternatives[1]();
     ZSTATIC_EXPECT(alt0.kind == type_kind::structure);
@@ -415,7 +420,7 @@ ZEST_CASE(recursive_variant_tree) {
 
 ZEST_CASE(recursive_mixed_deep) {
     constexpr auto si =
-        static_cast<const struct_type_info&>(type_info_of<fx::MixedRecursive, default_config>());
+        static_cast<const struct_type_info&>(type_info::of<fx::MixedRecursive, codec::format>());
     ZSTATIC_EXPECT(si.kind == type_kind::structure);
     ZSTATIC_EXPECT(si.fields.size() == 3U);
 
@@ -454,40 +459,42 @@ ZEST_CASE(recursive_mixed_deep) {
 ZEST_CASE(disabled_range_type_info_is_unknown) {
     ZSTATIC_EXPECT(kind_of<fx::DisabledRange>() == type_kind::unknown);
 
-    constexpr auto info = type_info_of<fx::DisabledRange, default_config>();
+    constexpr auto info = type_info::of<fx::DisabledRange, codec::format>();
     ZSTATIC_EXPECT(info.kind == type_kind::unknown);
 }
 
 ZEST_CASE(cv_canonicalization_all_kinds) {
     // scalars
-    static_assert(&type_info_of<int>() == &type_info_of<const int>());
-    static_assert(&type_info_of<int>() == &type_info_of<volatile int>());
-    static_assert(&type_info_of<int>() == &type_info_of<const volatile int>());
-    static_assert(&type_info_of<std::string>() == &type_info_of<const std::string>());
-    static_assert(&type_info_of<bool>() == &type_info_of<const bool>());
+    static_assert(&type_info::of<int>() == &type_info::of<const int>());
+    static_assert(&type_info::of<int>() == &type_info::of<volatile int>());
+    static_assert(&type_info::of<int>() == &type_info::of<const volatile int>());
+    static_assert(&type_info::of<std::string>() == &type_info::of<const std::string>());
+    static_assert(&type_info::of<bool>() == &type_info::of<const bool>());
 
     // enum
-    static_assert(&type_info_of<fx::Color>() == &type_info_of<const fx::Color>());
+    static_assert(&type_info::of<fx::Color>() == &type_info::of<const fx::Color>());
 
     // containers: array / set / map / optional / pointer
-    static_assert(&type_info_of<std::vector<int>>() == &type_info_of<const std::vector<int>>());
-    static_assert(&type_info_of<std::set<int>>() == &type_info_of<const std::set<int>>());
-    static_assert(&type_info_of<std::map<std::string, int>>() ==
-                  &type_info_of<const std::map<std::string, int>>());
-    static_assert(&type_info_of<std::optional<int>>() == &type_info_of<const std::optional<int>>());
-    static_assert(&type_info_of<std::unique_ptr<int>>() ==
-                  &type_info_of<const std::unique_ptr<int>>());
+    static_assert(&type_info::of<std::vector<int>>() == &type_info::of<const std::vector<int>>());
+    static_assert(&type_info::of<std::set<int>>() == &type_info::of<const std::set<int>>());
+    static_assert(&type_info::of<std::map<std::string, int>>() ==
+                  &type_info::of<const std::map<std::string, int>>());
+    static_assert(&type_info::of<std::optional<int>>() ==
+                  &type_info::of<const std::optional<int>>());
+    static_assert(&type_info::of<std::unique_ptr<int>>() ==
+                  &type_info::of<const std::unique_ptr<int>>());
 
     // structure (including recursive)
-    static_assert(&type_info_of<fx::SimpleStruct>() == &type_info_of<const fx::SimpleStruct>());
-    static_assert(&type_info_of<fx::TreeNode>() == &type_info_of<const fx::TreeNode>());
-    static_assert(&type_info_of<fx::MixedRecursive>() == &type_info_of<const fx::MixedRecursive>());
+    static_assert(&type_info::of<fx::SimpleStruct>() == &type_info::of<const fx::SimpleStruct>());
+    static_assert(&type_info::of<fx::TreeNode>() == &type_info::of<const fx::TreeNode>());
+    static_assert(&type_info::of<fx::MixedRecursive>() ==
+                  &type_info::of<const fx::MixedRecursive>());
 
     // variant / tuple
     using V = std::variant<int, std::string>;
-    static_assert(&type_info_of<V>() == &type_info_of<const V>());
+    static_assert(&type_info::of<V>() == &type_info::of<const V>());
     using TupT = std::tuple<int, std::string, double>;
-    static_assert(&type_info_of<TupT>() == &type_info_of<const TupT>());
+    static_assert(&type_info::of<TupT>() == &type_info::of<const TupT>());
 }
 
 ZEST_CASE(value_copy_all_kinds) {
@@ -503,7 +510,7 @@ ZEST_CASE(value_copy_all_kinds) {
     // array
     {
         constexpr auto arr =
-            static_cast<const array_type_info&>(type_info_of<std::vector<int>, default_config>());
+            static_cast<const array_type_info&>(type_info::of<std::vector<int>, codec::format>());
         static_assert(arr.kind == type_kind::array);
         constexpr auto elem = arr.element();
         static_assert(elem.kind == type_kind::int32);
@@ -512,7 +519,7 @@ ZEST_CASE(value_copy_all_kinds) {
     // map
     {
         constexpr auto m = static_cast<const map_type_info&>(
-            type_info_of<std::map<std::string, int>, default_config>());
+            type_info::of<std::map<std::string, int>, codec::format>());
         static_assert(m.kind == type_kind::map);
         constexpr auto k = m.key();
         constexpr auto v = m.value();
@@ -523,7 +530,7 @@ ZEST_CASE(value_copy_all_kinds) {
     // optional
     {
         constexpr auto opt = static_cast<const optional_type_info&>(
-            type_info_of<std::optional<int>, default_config>());
+            type_info::of<std::optional<int>, codec::format>());
         static_assert(opt.kind == type_kind::optional);
         constexpr auto inner = opt.inner();
         static_assert(inner.kind == type_kind::int32);
@@ -532,7 +539,7 @@ ZEST_CASE(value_copy_all_kinds) {
     // tuple
     {
         constexpr auto tup = static_cast<const tuple_type_info&>(
-            type_info_of<std::tuple<int, std::string>, default_config>());
+            type_info::of<std::tuple<int, std::string>, codec::format>());
         static_assert(tup.kind == type_kind::tuple);
         static_assert(tup.elements.size() == 2U);
         constexpr auto e0 = tup.elements[0]();
@@ -544,7 +551,7 @@ ZEST_CASE(value_copy_all_kinds) {
     // variant
     {
         constexpr auto var = static_cast<const variant_type_info&>(
-            type_info_of<std::variant<int, std::string>, default_config>());
+            type_info::of<std::variant<int, std::string>, codec::format>());
         static_assert(var.kind == type_kind::variant);
         static_assert(var.alternatives.size() == 2U);
         constexpr auto alt0 = var.alternatives[0]();
@@ -556,7 +563,7 @@ ZEST_CASE(value_copy_all_kinds) {
     // plain structure
     {
         constexpr auto s =
-            static_cast<const struct_type_info&>(type_info_of<fx::SimpleStruct, default_config>());
+            static_cast<const struct_type_info&>(type_info::of<fx::SimpleStruct, codec::format>());
         static_assert(s.kind == type_kind::structure);
         static_assert(s.fields.size() == 3U);
         constexpr auto f0_type = s.fields[0].type();
@@ -573,7 +580,7 @@ ZEST_CASE(value_copy_all_kinds) {
     // level, copying into a local constexpr at each step.
     {
         constexpr auto tree =
-            static_cast<const struct_type_info&>(type_info_of<fx::TreeNode, default_config>());
+            static_cast<const struct_type_info&>(type_info::of<fx::TreeNode, codec::format>());
         static_assert(tree.kind == type_kind::structure);
         static_assert(tree.fields.size() == 2U);
 
@@ -592,7 +599,7 @@ ZEST_CASE(value_copy_all_kinds) {
     // map<string, vector<self>>). Copy at every level.
     {
         constexpr auto mx = static_cast<const struct_type_info&>(
-            type_info_of<fx::MixedRecursive, default_config>());
+            type_info::of<fx::MixedRecursive, codec::format>());
         static_assert(mx.kind == type_kind::structure);
         static_assert(mx.fields.size() == 3U);
 
@@ -617,18 +624,18 @@ ZEST_CASE(value_copy_all_kinds) {
 }
 
 ZEST_CASE(recursive_self_pointer_identity) {
-    // The reference returned by a recursive field must alias type_info_of<Self>().
-    constexpr auto& tree = type_info_of<fx::TreeNode>();
+    // The reference returned by a recursive field must alias type_info::of<Self>().
+    constexpr auto& tree = type_info::of<fx::TreeNode>();
     constexpr auto& tree_si = static_cast<const struct_type_info&>(tree);
     constexpr auto& children_arr = static_cast<const array_type_info&>(tree_si.fields[1].type());
     ZSTATIC_EXPECT(&children_arr.element() == &tree);
 
-    constexpr auto& linked = type_info_of<fx::LinkedNode>();
+    constexpr auto& linked = type_info::of<fx::LinkedNode>();
     constexpr auto& linked_si = static_cast<const struct_type_info&>(linked);
     constexpr auto& next_ptr = static_cast<const optional_type_info&>(linked_si.fields[1].type());
     ZSTATIC_EXPECT(&next_ptr.inner() == &linked);
 
-    constexpr auto& mx = type_info_of<fx::MixedRecursive>();
+    constexpr auto& mx = type_info::of<fx::MixedRecursive>();
     constexpr auto& mx_si = static_cast<const struct_type_info&>(mx);
     // deep: optional<unique_ptr<Self>>
     constexpr auto& deep_opt = static_cast<const optional_type_info&>(mx_si.fields[1].type());
@@ -641,9 +648,8 @@ ZEST_CASE(recursive_self_pointer_identity) {
 }
 
 ZEST_CASE(virtual_schema_recursive_fields_are_usable) {
-    // Drives the same code path as type_info_of but through virtual_schema, which
-    // previously routed through struct_info_node. Verifies fields/count are
-    // instantiable and consistent for recursive types.
+    // The path type_info::of takes, entered through virtual_schema: its fields
+    // are instantiable and consistent for recursive types.
     using TS = virtual_schema<fx::TreeNode>;
     ZSTATIC_EXPECT(TS::fields.size() == 2U);
     ZSTATIC_EXPECT(TS::fields.size() == 2U);
@@ -665,8 +671,8 @@ ZEST_CASE(virtual_schema_recursive_fields_are_usable) {
 ZEST_CASE(recursive_cv_shares_storage) {
     // Combines recursion with cv canonicalization: const T and T must resolve to
     // the exact same type_info object even for self-referential structs.
-    constexpr auto& non_cv = type_info_of<fx::TreeNode>();
-    constexpr auto& with_cv = type_info_of<const fx::TreeNode>();
+    constexpr auto& non_cv = type_info::of<fx::TreeNode>();
+    constexpr auto& with_cv = type_info::of<const fx::TreeNode>();
     ZSTATIC_EXPECT(&non_cv == &with_cv);
 
     constexpr auto& tree_si = static_cast<const struct_type_info&>(non_cv);
@@ -674,8 +680,8 @@ ZEST_CASE(recursive_cv_shares_storage) {
     ZSTATIC_EXPECT(&arr.element() == &with_cv);
 }
 
-};  // ZEST_SUITE(meta_schema_type_info)
+};  // ZEST_SUITE(codec_schema_type_info)
 
 }  // namespace
 
-}  // namespace kotatsu::meta
+}  // namespace kotatsu::codec

@@ -18,7 +18,7 @@ struct Toml {
     /// visit_uint fails above int64's maximum. Not nested_nulls: TOML has no
     /// null, so the writer omits a null field or map value, which then reads
     /// back as absent, and fails on a null array element. non_finite: TOML has
-    /// nan and inf literals, which nan_repr::Passthrough writes.
+    /// nan and inf literals.
     constexpr static Caps caps{
         .self_describing = true,
         .absent_fields = true,
@@ -28,19 +28,24 @@ struct Toml {
             "toml++ v3.4.0 asserts, and under NDEBUG assumes the impossible, on a "
             "table header whose key starts with a character no key may start with "
             "([`a]), which the sweep reaches; run it once toml++ rejects that header",
-        .format_tag = true,
+        .own_format = true,
         .utf8_text = true,
     };
     using Encoded = std::string;
 
-    template <typename Config = void, typename T>
+    template <typename Settings = void, typename T>
     static auto encode(const T& value) {
-        return codec::toml::to_string<Config>(value);
+        return codec::toml::to_string<kit_format_t<codec::toml::format, Settings>>(
+            value,
+            kit_encode_options<Settings>());
     }
 
-    template <typename Config = void, typename T>
+    template <typename Settings = void, typename T>
     static auto decode(const Encoded& text, T& out) {
-        return codec::toml::from_string<Config>(text, out);
+        return codec::toml::from_string<kit_format_t<codec::toml::format, Settings>>(
+            text,
+            out,
+            kit_decode_options<Settings>());
     }
 
     /// The text as it is: toml++ already writes one key per line.

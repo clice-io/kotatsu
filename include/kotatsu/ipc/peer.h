@@ -13,7 +13,7 @@
 #include "kotatsu/ipc/logger.h"
 #include "kotatsu/ipc/transport.h"
 #include "kotatsu/async/async.h"
-#include "kotatsu/codec/visit/common.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::ipc {
 
@@ -129,8 +129,8 @@ struct request_options {
 /// its own.
 ///
 /// A handler returns RequestResult<Params> or, for a result it has encoded
-/// itself, async::task<codec::RawValue, Error>; a request whose result type is
-/// codec::RawValue gets the result as the codec wrote it.
+/// itself, async::task<codec::raw_value, Error>; a request whose result type is
+/// codec::raw_value gets the result as the codec wrote it.
 ///
 /// A request is handled in two steps. First the peer calls the handler as it
 /// dispatches the request, in the order the messages were read, notifications

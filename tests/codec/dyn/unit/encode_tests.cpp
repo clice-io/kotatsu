@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -10,6 +11,7 @@
 #include "codec/harness/fixtures/structs.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/codec/dyn/dyn.h"
+#include "kotatsu/codec/json/format.h"
 
 namespace kotatsu::codec {
 
@@ -58,6 +60,19 @@ ZEST_CASE(fields_follow_declaration_order) {
         names += name + ' ';
     }
     ZEXPECT(names == "name age addr ");
+}
+
+ZEST_CASE(strings_stay_as_they_are_under_a_text_format) {
+    // A tree holds strings as values: the text backend they are written to
+    // checks them, under its options, not the tree.
+    const std::string bytes = "a\xff";
+    const std::map<std::string, std::string> keyed{
+        {bytes, bytes}
+    };
+    ZEXPECT(dyn::to_dyn<json::format>(bytes) == dyn::Value(bytes));
+    ZEXPECT(dyn::to_dyn<json::format>(keyed) == (dyn::Value{
+                                                    {bytes, bytes}
+    }));
 }
 
 ZEST_CASE(char_writes_its_codepoint) {

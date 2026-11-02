@@ -14,7 +14,7 @@ namespace kotatsu::ipc {
 
 /// JSON-RPC messages in JSON, members named as LSP names them. A value goes
 /// into a message encoded as what it is: JSON text encoded already goes as a
-/// codec::RawValue, as it is, where a string goes as a JSON string.
+/// codec::raw_value, as it is, where a string goes as a JSON string.
 struct JSONCodec {
     /// Reads the message `payload` holds. The params or result keep the
     /// payload instead of a copy of their text.
@@ -48,7 +48,7 @@ struct JSONCodec {
         return std::move(out).finish();
     }
 
-    /// An empty RawValue result, which no JSON is, is written as null: the
+    /// An empty raw_value result, which no JSON is, is written as null: the
     /// result of a method that returns nothing.
     template <typename T>
     Result<std::string> encode_success_response(const protocol::RequestID& id, const T& result) {
@@ -63,7 +63,7 @@ struct JSONCodec {
                                               const Error& error);
 
     /// Decodes the slice in place, writing simdjson's padding after it; a
-    /// RawValue takes its text as it is, checked as parse_message checks a
+    /// raw_value takes its text as it is, checked as parse_message checks a
     /// message. Empty params, those of a method that takes none, read as
     /// null, or as an object without members.
     template <typename T>
@@ -72,23 +72,23 @@ struct JSONCodec {
         if(raw.size == 0) {
             constexpr bool null =
                 std::is_same_v<T, protocol::null> || std::is_same_v<T, codec::dyn::Value>;
-            return unwrap(codec::json::from_string<T, lsp_config>(null ? "null" : "{}"), code);
+            return unwrap(codec::json::from_string<T, lsp_format>(null ? "null" : "{}"), code);
         }
-        if constexpr(std::is_same_v<T, codec::RawValue>) {
-            return codec::RawValue{std::string(raw.text())};
+        if constexpr(std::is_same_v<T, codec::raw_value>) {
+            return codec::raw_value{std::string(raw.text())};
         } else {
-            return unwrap(codec::json::from_padded_string<T, lsp_config>(pad(raw)), code);
+            return unwrap(codec::json::from_padded_string<T, lsp_format>(pad(raw)), code);
         }
     }
 
 private:
-    /// Writes a message, its text and its values in the codec's config, into
+    /// Writes a message, its text and its values in the codec's format, into
     /// one buffer, so that no value is copied into its message.
     struct MessageWriter {
         codec::rich_error error;
         codec::scoped_context<codec::rich_error> guard{error};
         codec::json::StringBuilder builder{codec::json::default_capacity};
-        codec::json::ValueWriter values{builder};
+        codec::json::ValueWriter<lsp_format> values{builder};
         bool written = true;
 
         MessageWriter& text(std::string_view raw) {
@@ -98,8 +98,7 @@ private:
 
         template <typename T>
         MessageWriter& value(const T& member) {
-            written =
-                written && codec::encode_value<codec::default_config<lsp_config>>(values, member);
+            written = written && codec::encode_value(values, member);
             return *this;
         }
 

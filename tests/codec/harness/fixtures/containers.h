@@ -66,6 +66,11 @@ struct PointerOr {
     }
 };
 
+/// A named untagged variant, which probes as the std::variant it is.
+struct NamedNarrow : std::variant<std::int8_t, double> {
+    using variant::variant;
+};
+
 /// Every nullable kind, and one nullable in another, engaged or empty.
 struct Nullables {
     std::optional<int> number;

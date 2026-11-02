@@ -22,41 +22,41 @@ struct Serve {
 
 struct Options {
     bool verbose = false;
-    KANNOTATE(cli::count = true, cli::names = {"-v"})
-    <std::uint32_t> noise = 0;
-    KANNOTATE(cli::names = {"-j", "--jobs"})
-    <int> jobs = 0;
+    KANNOTATE(&noise, cli::count = true, cli::names = {"-v"})
+    std::uint32_t noise = 0;
+    KANNOTATE(&jobs, cli::names = {"-j", "--jobs"})
+    int jobs = 0;
     Level level = Level::Info;
     std::optional<std::string> output;
     std::vector<std::string> include;
-    KANNOTATE(cli::comma = true)
-    <std::vector<std::string>> tags;
+    KANNOTATE(&tags, cli::comma = true)
+    std::vector<std::string> tags;
     std::vector<std::pair<std::string, std::string>> define;
-    KANNOTATE(cli::names = {"-I"}, cli::style = KVStyle::Joined)
-    <std::string> dir;
-    KANNOTATE(cli::names = {"--sep"}, cli::style = KVStyle::Separate)
-    <std::string> sep;
-    KANNOTATE(cli::positional = true)
-    <std::vector<std::string>> paths;
+    KANNOTATE(&dir, cli::names = {"-I"}, cli::style = KVStyle::Joined)
+    std::string dir;
+    KANNOTATE(&sep, cli::names = {"--sep"}, cli::style = KVStyle::Separate)
+    std::string sep;
+    KANNOTATE(&paths, cli::positional = true)
+    std::vector<std::string> paths;
     std::optional<std::variant<Serve>> command;
 };
 
 struct Values {
     std::vector<bool> seen;
-    KANNOTATE(cli::positional = true)
-    <bool> on = true;
-    KANNOTATE(cli::positional = true)
-    <std::optional<std::string>> word;
+    KANNOTATE(&on, cli::positional = true)
+    bool on = true;
+    KANNOTATE(&word, cli::positional = true)
+    std::optional<std::string> word;
 };
 
 struct Service {
-    KANNOTATE(tagged = true, tag_names = {"up"})
-    <std::variant<Serve>> command;
+    KANNOTATE(&command, tagged = true, tag_names = {"up"})
+    std::variant<Serve> command;
 };
 
 struct Run {
-    KANNOTATE(cli::rest = true)
-    <std::vector<std::string>> command;
+    KANNOTATE(&command, cli::rest = true)
+    std::vector<std::string> command;
 };
 
 ZEST_SUITE(cli_to_argv) {
@@ -64,6 +64,14 @@ ZEST_SUITE(cli_to_argv) {
 ZEST_CASE(defaults_write_their_values) {
     ZEXPECT(cli::to_argv(Options{}) ==
             (std::vector<std::string>{"-j=0", "--level=info", "-I", "--sep", ""}));
+}
+
+ZEST_CASE(unnamed_enum_value_writes_empty_text) {
+    // A value no enumerator names has no text: the argv stays whole.
+    Options options;
+    options.level = static_cast<Level>(7);
+    ZEXPECT(cli::to_argv(options) ==
+            (std::vector<std::string>{"-j=0", "--level=", "-I", "--sep", ""}));
 }
 
 ZEST_CASE(each_shape_writes_the_form_it_reads) {

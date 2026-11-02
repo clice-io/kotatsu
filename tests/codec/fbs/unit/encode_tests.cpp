@@ -1,4 +1,5 @@
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -19,16 +20,17 @@
 #include "codec/fbs/harness/backend.h"
 #include "codec/fbs/harness/struct_keys.h"
 #include "codec/harness/fixtures/attrs.h"
-#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/enums.h"
 #include "codec/harness/fixtures/everything.h"
 #include "codec/harness/fixtures/repr.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/repr.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/fbs/fbs.h"
+#include "kotatsu/codec/macro.h"
 
 // What the fbs encoder writes: which structs inline and which become tables,
 // the slot layout of tables, tuples, variants, vectors and maps, and the
@@ -110,8 +112,8 @@ struct Marker {
 /// is what travels.
 enum class ProbeKind : std::uint8_t { heat, light };
 
-/// Aggregate whose annotation derives from it: reflection walks straight
-/// through the annotation, so only the annotation guard keeps the adapter.
+/// An aggregate a field adapts: reflection sees only an int32 cell in it, so
+/// only the annotation guard keeps the adapter.
 struct Calibration {
     std::int32_t code = 0;
 
@@ -131,10 +133,6 @@ struct CalibrationText {
 };
 
 }  // namespace
-
-}  // namespace kotatsu::codec
-
-namespace kotatsu::meta {
 
 template <>
 struct repr<codec::ByteBag> {
@@ -214,10 +212,6 @@ struct repr<codec::ProbeKind, codec::fbs::format> {
         return static_cast<codec::ProbeKind>(v);
     }
 };
-
-}  // namespace kotatsu::meta
-
-namespace kotatsu::codec {
 
 namespace {
 
@@ -320,8 +314,26 @@ struct CellProbe {
     auto operator==(const CellProbe&) const -> bool = default;
 };
 
+/// Its type annotation names its members, which changes none of its bytes.
+KANNOTATE_TYPE(struct NamedPoint, rename_all = Casing::UpperCamel);
+
+struct NamedPoint {
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+
+    auto operator==(const NamedPoint&) const -> bool = default;
+};
+
+struct HoldsNamedPoint {
+    NamedPoint at;
+    std::int32_t id = 0;
+
+    auto operator==(const HoldsNamedPoint&) const -> bool = default;
+};
+
 struct AdaptedProbe {
-    meta::annotation<Calibration, meta::behavior::with<CalibrationText>> cal;
+    KANNOTATE(&cal, with = type<CalibrationText>)
+    Calibration cal;
 
     auto operator==(const AdaptedProbe&) const -> bool = default;
 };
@@ -444,9 +456,13 @@ struct OccurrenceKeyHash {
 };
 
 /// A string keeps it a table, whose fields the protocol visits one by one.
+enum class Unit : std::uint8_t { celsius, kelvin };
+
+/// Its unit travels as a name, which a value no enumerator has does not have.
 struct LabelledReading {
     double value = 0;
-    std::string unit;
+    KANNOTATE(&unit, with = type<codec::enum_names<>>)
+    Unit unit = Unit::celsius;
 };
 
 using NumberedReading = std::tuple<int, LabelledReading>;
@@ -564,14 +580,14 @@ ZEST_CASE(engaged_optional_of_a_null_reads_back_disengaged) {
 ZEST_CASE(absent_slot_reads_as_null) {
     // A slot decode visits every slot, and an absent one is how a null
     // travels: whatever the target held, the field reads as null, empty or
-    // zero. Skippable's initializers are none of those.
+    // zero. Omittable's initializers are none of those.
     auto bytes = fbs::to_bytes(test::IdOnly{.id = 1});
     ZASSERT(bytes);
-    test::Skippable decoded{};
+    test::Omittable decoded{};
     ZASSERT(fbs::from_bytes(*bytes, decoded));
     ZEXPECT(meta::eq(
         decoded,
-        test::Skippable{.id = 1, .note = std::nullopt, .tags = {}, .generation = 0, .score = 0}));
+        test::Omittable{.id = 1, .note = std::nullopt, .tags = {}, .generation = 0, .score = 0}));
 }
 
 ZEST_CASE(empty_nullable_leaves_its_slot_absent) {
@@ -812,6 +828,24 @@ ZEST_CASE(members_that_keep_a_struct_a_table) {
     ZSTATIC_EXPECT(!fbs::can_inline_struct_v<HoldsOverLimit>);
 }
 
+ZEST_CASE(a_member_type_s_annotation_keeps_a_struct_inline) {
+    // Only a field's own annotation can replace its raw member.
+    ZSTATIC_EXPECT(fbs::can_inline_struct_v<HoldsNamedPoint>);
+    const Placed<HoldsNamedPoint> input{
+        .entries = {{.at = {.x = 1, .y = 2}, .id = 3}},
+        .solo = {.at = {.x = 4, .y = 5}, .id = 6},
+    };
+    auto bytes = fbs::to_bytes(input);
+    ZASSERT(bytes);
+    const auto* solo = root_of(*bytes)->GetStruct<const HoldsNamedPoint*>(slot(1));
+    ZASSERT(solo != nullptr);
+    ZEXPECT(*solo == input.solo);
+    auto decoded = fbs::from_bytes<Placed<HoldsNamedPoint>>(*bytes);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->entries == input.entries);
+    ZEXPECT(decoded->solo == input.solo);
+}
+
 ZEST_CASE(table_shaped_structs_roundtrip) {
     const Placed<WithOptional> optional{
         .entries = {{.cached = 7, .id = 1}, {.cached = std::nullopt, .id = 2}},
@@ -960,18 +994,14 @@ ZEST_CASE(inline_struct_with_default_initializers_stays_inline) {
 }
 
 ZEST_CASE(string_repr_elements_are_strings) {
-    // An iterable class and an adapted int both travel as strings, so the
-    // vector is one of strings, not of their raw shape.
-    using Decimal = meta::annotation<int, meta::behavior::with<test::DecimalText>>;
-
+    // An iterable class travels as a string, so the vector is one of strings,
+    // not of its raw shape.
     struct Lists {
         std::vector<IdSet> groups;
-        std::vector<Decimal> numbers;
     };
 
     const Lists input{
         .groups = {IdSet{{10, 20}}, IdSet{}, IdSet{{7}}},
-        .numbers = {12, -3},
     };
     auto bytes = fbs::to_bytes(input);
     ZASSERT(bytes);
@@ -980,14 +1010,9 @@ ZEST_CASE(string_repr_elements_are_strings) {
     ZASSERT(groups != nullptr);
     ZASSERT(groups->size() == 3U);
     ZEXPECT(groups->Get(0)->str() == "10,20");
-    const auto* numbers = root->GetPointer<const fbs::Vector<fbs::offset_t<fbs::String>>*>(slot(1));
-    ZASSERT(numbers != nullptr);
-    ZASSERT(numbers->size() == 2U);
-    ZEXPECT(numbers->Get(1)->str() == "-3");
     auto decoded = fbs::from_bytes<Lists>(*bytes);
     ZASSERT(decoded);
     ZEXPECT(decoded->groups == input.groups);
-    ZEXPECT(meta::eq(decoded->numbers, input.numbers));
 }
 
 ZEST_CASE(table_repr_elements_are_tables) {
@@ -1064,62 +1089,58 @@ ZEST_CASE(format_scoped_repr_elements_are_scalars) {
 ZEST_CASE(nested_table_encode_error_fails) {
     // An error inside a nested table fails the encode instead of leaving a
     // null offset for the builder to trip over.
-    const LabelledReading bad{.value = std::numeric_limits<double>::quiet_NaN(), .unit = "c"};
+    const LabelledReading bad{.value = 1, .unit = static_cast<Unit>(9)};
 
     ReadingLog element;
     element.readings = {{}, bad};
-    auto in_element = fbs::to_bytes<test::NanErrorConfig>(element);
+    auto in_element = fbs::to_bytes(element);
     ZASSERT(!in_element);
-    ZEXPECT(in_element.error().message == "NaN or Infinity is not allowed");
-    ZEXPECT(in_element.error().format_path() == "readings[1].value");
+    ZEXPECT(in_element.error().message == "enum value 9 has no reflected name");
+    ZEXPECT(in_element.error().format_path() == "readings[1].unit");
 
     ReadingLog map_value;
     map_value.by_name = {
         {"a", bad}
     };
-    auto in_map_value = fbs::to_bytes<test::NanErrorConfig>(map_value);
+    auto in_map_value = fbs::to_bytes(map_value);
     ZASSERT(!in_map_value);
-    ZEXPECT(in_map_value.error().message == "NaN or Infinity is not allowed");
+    ZEXPECT(in_map_value.error().message == "enum value 9 has no reflected name");
 
     ReadingLog tuple_field;
     tuple_field.numbered = {1, bad};
-    auto in_tuple_field = fbs::to_bytes<test::NanErrorConfig>(tuple_field);
+    auto in_tuple_field = fbs::to_bytes(tuple_field);
     ZASSERT(!in_tuple_field);
-    ZEXPECT(in_tuple_field.error().message == "NaN or Infinity is not allowed");
-    ZEXPECT(in_tuple_field.error().format_path() == "numbered[1].value");
+    ZEXPECT(in_tuple_field.error().message == "enum value 9 has no reflected name");
+    ZEXPECT(in_tuple_field.error().format_path() == "numbered[1].unit");
 
     ReadingLog tuple_element;
     tuple_element.numbered_list = {
         NumberedReading{1, {} },
         NumberedReading{2, bad}
     };
-    auto in_tuple_element = fbs::to_bytes<test::NanErrorConfig>(tuple_element);
+    auto in_tuple_element = fbs::to_bytes(tuple_element);
     ZASSERT(!in_tuple_element);
-    ZEXPECT(in_tuple_element.error().message == "NaN or Infinity is not allowed");
-    ZEXPECT(in_tuple_element.error().format_path() == "numbered_list[1][1].value");
+    ZEXPECT(in_tuple_element.error().message == "enum value 9 has no reflected name");
+    ZEXPECT(in_tuple_element.error().format_path() == "numbered_list[1][1].unit");
 
-    auto in_root_tuple =
-        fbs::to_bytes<test::NanErrorConfig>(std::tuple<int, LabelledReading>{1, bad});
+    auto in_root_tuple = fbs::to_bytes(std::tuple<int, LabelledReading>{1, bad});
     ZASSERT(!in_root_tuple);
-    ZEXPECT(in_root_tuple.error().format_path() == "[1].value");
+    ZEXPECT(in_root_tuple.error().format_path() == "[1].unit");
 }
 
-ZEST_CASE(nan_repr_does_not_reach_inline_structs) {
-    // Known gap: an inline struct travels as its image, so the protocol never
-    // sees its floats, and nan_repr::Error and nan_repr::Null do not apply to
-    // them. The layout depends on the type alone, so the struct cannot turn
-    // into a table under a config; whether such configs should be rejected
-    // for types holding inline floats, or checked against the image, is open.
-    // The case pins today's behaviour.
-    ZSTATIC_EXPECT(fbs::can_inline_struct_v<Reading>);
+ZEST_CASE(non_finite_floats_travel_as_they_are) {
+    // A float cell holds NaN and the infinities, loose or in an inline
+    // struct's image.
     const double nan = std::numeric_limits<double>::quiet_NaN();
-    auto inline_error = fbs::to_bytes<test::NanErrorConfig>(test::Field<Reading>{
-        {.value = nan, .error = 0}
-    });
-    ZEXPECT(inline_error.has_value());
-    auto loose_error = fbs::to_bytes<test::NanErrorConfig>(test::Field<double>{nan});
-    ZASSERT(!loose_error);
-    ZEXPECT(loose_error.error().message == "NaN or Infinity is not allowed");
+    ZEXPECT(fbs::to_bytes(test::Field<Reading>{
+                              {.value = nan, .error = 0}
+    })
+                .has_value());
+    auto loose = fbs::to_bytes(test::Field<double>{nan});
+    ZASSERT(loose);
+    test::Field<double> back{};
+    ZASSERT(fbs::from_bytes(*loose, back));
+    ZEXPECT(std::isnan(back.value));
 }
 
 };  // ZEST_SUITE(codec_fbs_encode)

@@ -2,18 +2,20 @@
 
 #include <cstdint>
 
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/format.h"
 
 namespace kotatsu::codec::bincode {
 
-/// Format tag: scopes a meta::repr specialization to the bincode backend
-/// (meta::repr<T, codec::bincode::format>).
+/// The bincode backend's format, which a format of your own extends to say
+/// what it changes for bincode (codec::extend), and which scopes a repr to
+/// bincode (codec::repr<T, codec::bincode::format>).
 ///
 /// # Lowerings
 ///
 /// Non-self-describing little-endian binary: no field names, no type tags,
 /// and no markers beyond the prefixes listed below, so decode must run with
-/// exactly the type and config that encoded the bytes. human_readable is
+/// exactly the type and format that encoded the bytes. human_readable is
 /// false, so variants are never name-tagged. Byte-level details live on
 /// Writer (encode.h) and Reader (decode.h).
 /// - null (and disengaged optional/pointer) → one 0x00 byte; decode rejects
@@ -25,15 +27,15 @@ namespace kotatsu::codec::bincode {
 ///   LE bit pattern
 /// - character → one byte
 /// - string / bytes → byte length (see below) + raw bytes
-/// - enumeration → underlying integer (8 bytes), or a length-prefixed name
-///   string under enum_repr::String
+/// - enumeration → underlying integer (8 bytes); through codec::enum_names, a
+///   length-prefixed name string
 /// - array/set/map → element count (see below), then elements back to back
 ///   (maps: key, value, key, value, ...)
 /// - tuple/structure → fields concatenated in declaration order, no prefix;
-///   skip_if omits nothing, since no marker could say a field is absent
+///   presence omits nothing, since no marker could say a field is absent
 /// - variant → u32 LE alternative index + payload
 /// - optional/pointer → presence byte (0x00 / 0x01) + payload when engaged
-/// - RawValue → its text as bytes (length + raw)
+/// - raw_value → its text as bytes (length + raw)
 /// - dyn::Value → its ValueKind as one byte, then what it holds as above (an
 ///   array as a sequence of Values, an object as a map from strings to
 ///   Values); decode rejects an unknown kind and nesting deeper than 1024
@@ -41,7 +43,12 @@ namespace kotatsu::codec::bincode {
 /// A length or count below 251 is one byte. A larger one is a marker byte,
 /// 251, 252 or 253, and the value as a u16, u32 or u64 LE; decode rejects
 /// the bytes 254 and 255 in its place.
-struct format {};
+struct format : codec::extend<codec::format> {
+    constexpr static bool human_readable = false;
+    /// Struct fields are concatenated with no marker, so presence never omits
+    /// one: decode reads every field in order.
+    constexpr static bool writes_every_field = true;
+};
 
 namespace detail {
 

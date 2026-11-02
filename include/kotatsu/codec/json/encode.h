@@ -12,20 +12,20 @@
 #include <type_traits>
 
 #include "kotatsu/support/expected_try.h"
+#include "kotatsu/codec/context.h"
+#include "kotatsu/codec/encode.h"
+#include "kotatsu/codec/format.h"
 #include "kotatsu/codec/json/string_builder.h"
 #include "kotatsu/codec/json/type.h"
-#include "kotatsu/codec/visit/common.h"
-#include "kotatsu/codec/visit/config.h"
-#include "kotatsu/codec/visit/context.h"
-#include "kotatsu/codec/visit/encode.h"
-#include "kotatsu/codec/visit/map_key.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::codec::json {
 
+template <typename Format>
 struct ValueWriter {
     StringBuilder& builder;
-    using format = json::format;
-    constexpr static bool human_readable = true;
+    using format = Format;
+    constexpr static bool utf8 = true;
 
     bool visit_bool(bool v) {
         builder.append_bool(v);
@@ -46,12 +46,14 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_float(T v) {
+        // Judged as written: a finite long double beyond double's range is
+        // an infinity in the document.
         double d = static_cast<double>(v);
-        if(std::isfinite(d)) {
-            builder.append_number(d);
-        } else {
-            builder.append_null();
+        if(!std::isfinite(d)) {
+            return scoped_context<rich_error>::fail(
+                rich_error("JSON has no number for NaN or an infinity"));
         }
+        builder.append_number(d);
         return true;
     }
 
@@ -101,11 +103,11 @@ struct ValueWriter {
 
 namespace detail {
 
-/// `,"name":`, the key of a member that follows another, for a field whose
-/// name is known at compile time.
+/// `,"name":`, the key of a member that follows another, for a reflected
+/// field, whose name is known at compile time.
 template <typename Field>
 constexpr auto member_key = [] {
-    constexpr std::string_view name = FieldName<Field>::value;
+    constexpr std::string_view name = Field::name;
     std::array<char, escaped_size(name) + 4> key{};
     key[0] = ',';
     key[1] = '"';
@@ -117,18 +119,20 @@ constexpr auto member_key = [] {
 
 }  // namespace detail
 
+template <typename Format>
 struct StructWriter {
     StringBuilder& builder;
     bool first = true;
 
     template <typename F>
-    bool visit_field(std::size_t /*index*/, std::string_view name, F&& writer);
+    bool visit_field(named_field field, F&& writer);
 
-    /// A field's key, written as one piece the compiler spells out.
-    template <typename Field, typename F>
-    bool visit_field(std::size_t /*index*/, FieldName<Field> /*name*/, F&& writer);
+    /// A reflected field's key, written as one piece the compiler spells out.
+    template <typename T, std::size_t I, typename Scope, typename F>
+    bool visit_field(codec::field<T, I, Scope> field, F&& writer);
 };
 
+template <typename Format>
 struct SeqWriter {
     StringBuilder& builder;
     bool first = true;
@@ -147,6 +151,7 @@ struct KeySink {
     }
 };
 
+template <typename Format>
 struct MapWriter {
     StringBuilder& builder;
     bool first = true;
@@ -155,94 +160,104 @@ struct MapWriter {
     bool visit_entry(KF&& key_fn, VF&& value_fn);
 };
 
+template <typename Format>
 template <typename T, typename Body>
-bool ValueWriter::visit_struct(const T&, Body&& body) {
+bool ValueWriter<Format>::visit_struct(const T&, Body&& body) {
     builder.put('{');
-    StructWriter sw{builder};
+    StructWriter<Format> sw{builder};
     KOTATSU_CODEC_TRY(body(sw));
     builder.put('}');
     return true;
 }
 
+template <typename Format>
 template <typename Container, typename Body>
-bool ValueWriter::visit_seq(const Container&, Body&& body) {
+bool ValueWriter<Format>::visit_seq(const Container&, Body&& body) {
     builder.put('[');
-    SeqWriter sw{builder};
+    SeqWriter<Format> sw{builder};
     KOTATSU_CODEC_TRY(body(sw));
     builder.put(']');
     return true;
 }
 
+template <typename Format>
 template <typename Container, typename Body>
-bool ValueWriter::visit_map(const Container&, Body&& body) {
+bool ValueWriter<Format>::visit_map(const Container&, Body&& body) {
     builder.put('{');
-    MapWriter mw{builder};
+    MapWriter<Format> mw{builder};
     KOTATSU_CODEC_TRY(body(mw));
     builder.put('}');
     return true;
 }
 
+template <typename Format>
 template <typename T, typename Body>
-bool ValueWriter::visit_tuple(const T& value, Body&& body) {
+bool ValueWriter<Format>::visit_tuple(const T& value, Body&& body) {
     return visit_seq(value, std::forward<Body>(body));
 }
 
+template <typename Format>
 template <typename F>
-bool StructWriter::visit_field(std::size_t /*index*/, std::string_view name, F&& writer) {
+bool StructWriter<Format>::visit_field(named_field field, F&& writer) {
     if(!first)
         builder.put(',');
     first = false;
-    builder.append_string(name);
+    builder.append_string(field.name);
     builder.put(':');
-    ValueWriter vw{builder};
+    ValueWriter<Format> vw{builder};
     return writer(vw);
 }
 
-template <typename Field, typename F>
-bool StructWriter::visit_field(std::size_t /*index*/, FieldName<Field> /*name*/, F&& writer) {
-    constexpr auto& key = detail::member_key<Field>;
+template <typename Format>
+template <typename T, std::size_t I, typename Scope, typename F>
+bool StructWriter<Format>::visit_field(codec::field<T, I, Scope> /*field*/, F&& writer) {
+    constexpr auto& key = detail::member_key<codec::field<T, I, Scope>>;
     if(first) {
         builder.append_raw<key.size() - 1>(key.data() + 1);
     } else {
         builder.append_raw<key.size()>(key.data());
     }
     first = false;
-    ValueWriter vw{builder};
+    ValueWriter<Format> vw{builder};
     return writer(vw);
 }
 
+template <typename Format>
 template <typename F>
-bool SeqWriter::visit_element(F&& writer) {
+bool SeqWriter<Format>::visit_element(F&& writer) {
     if(!first)
         builder.put(',');
     first = false;
-    ValueWriter vw{builder};
+    ValueWriter<Format> vw{builder};
     return writer(vw);
 }
 
+template <typename Format>
 template <typename KF, typename VF>
-bool MapWriter::visit_entry(KF&& key_fn, VF&& value_fn) {
+bool MapWriter<Format>::visit_entry(KF&& key_fn, VF&& value_fn) {
     if(!first)
         builder.put(',');
     first = false;
-    MapKeyWriter<KeySink, format> kw{{builder}};
+    MapKeyWriter<KeySink, Format, true> kw{{builder}};
     KOTATSU_CODEC_TRY(key_fn(kw));
     builder.put(':');
-    ValueWriter vw{builder};
+    ValueWriter<Format> vw{builder};
     return value_fn(vw);
 }
 
 /// The room to_string starts with, unless told how much.
 constexpr std::size_t default_capacity = 1024;
 
-/// Encodes `value` as compact JSON text; use json::prettify for indented
-/// output.
-template <typename Config = void, typename T>
-auto to_string(const T& value, std::optional<std::size_t> initial_capacity = std::nullopt)
+/// Encodes `value` as compact JSON text under the format F; use json::prettify
+/// for indented output.
+template <typename F = json::format, typename T>
+auto to_string(const T& value, const json::encode_options& options = {})
     -> std::expected<std::string, rich_error> {
-    StringBuilder builder(initial_capacity.value_or(default_capacity));
-    ValueWriter vis{builder};
-    KOTATSU_EXPECTED_TRY(codec::detail::run_encode<Config>(vis, value));
+    static_assert(codec::extends<F, json::format>,
+                  "a JSON format extends json::format: codec::extend<json::format>");
+    StringBuilder builder(options.initial_capacity.value_or(default_capacity));
+    ValueWriter<F> vis{builder};
+    KOTATSU_EXPECTED_TRY(codec::detail::run_encode<F>(vis, value, options.common()));
     return std::move(builder).take();
 }
 

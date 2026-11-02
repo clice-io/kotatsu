@@ -2,7 +2,7 @@
 #include <utility>
 
 #include "kotatsu/zest/zest.h"
-#include "kotatsu/codec/visit/context.h"
+#include "kotatsu/codec/context.h"
 
 namespace kotatsu::codec {
 

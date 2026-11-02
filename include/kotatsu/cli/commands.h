@@ -13,7 +13,7 @@
 #include "kotatsu/cli/spec.h"
 #include "kotatsu/cli/to_argv.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/type_info.h"
+#include "kotatsu/codec/type_info.h"
 
 namespace kotatsu::cli {
 
@@ -32,7 +32,7 @@ struct CommandEntry {
     std::string name;
     std::string_view description;
     bool hidden = false;
-    const meta::type_info* type = nullptr;
+    const codec::type_info* type = nullptr;
     void* (*make)() = nullptr;
     void (*destroy)(void*) = nullptr;
     bool (*decode)(Reader& reader, void* value) = nullptr;
@@ -69,24 +69,36 @@ const CommandRegistry& sealed_registry() {
     return commands;
 }
 
-template <typename Tag>
-struct commands_tag {
-    constexpr static auto entries = meta::make_annotation(
-        meta::dsl::member_proxy<&ArgSpec::commands>{} = CommandSet{true, &sealed_registry<Tag>});
-};
+}  // namespace detail
 
-/// What a cli::Commands field is: the struct of the subcommand the argv names, its type erased.
+/// A field of subcommands that files add to themselves, rather than a std::variant naming
+/// them all: `Tag` names the set and its `signature`, the type of the callback each adds,
+/// `int(Context&)` say. The field holds the struct of the one the argv names, its type erased,
+/// which `get_if<T>()` returns, and is empty (false) when it names none, which
+/// `presence = required` on the field makes an error; calling it runs that one's callback, and
+/// `name()` is its word. A subcommand the argv names is read afresh: parse_into() keeps none of
+/// one held before.
+///
+///     struct Top { using signature = int(Context&); };
+///     struct Options {
+///         KANNOTATE(&help, cli::help)
+///         bool help = false;
+///         cli::Commands<Top> command;
+///     };
+///     // serve.cc
+///     int run(Serve& serve, Context& context);
+///     const auto added = cli::add_command<Top>(run);
 template <typename Tag>
-class ErasedCommand {
+class Commands {
 public:
     using signature = typename Tag::signature;
 
-    ErasedCommand() = default;
+    Commands() = default;
 
-    ErasedCommand(ErasedCommand&& other) noexcept :
+    Commands(Commands&& other) noexcept :
         entry(std::exchange(other.entry, nullptr)), value(std::move(other.value)) {}
 
-    ErasedCommand& operator=(ErasedCommand&& other) noexcept {
+    Commands& operator=(Commands&& other) noexcept {
         entry = std::exchange(other.entry, nullptr);
         value = std::move(other.value);
         return *this;
@@ -106,7 +118,7 @@ public:
     /// The struct held, if it is a `T`; null when it is another, or none.
     template <typename T>
     T* get_if() const {
-        return entry != nullptr && entry->type == &meta::type_info_of<T, decode_config>()
+        return entry != nullptr && entry->type == &codec::type_info::of<T, cli::format>()
                    ? static_cast<T*>(value.get())
                    : nullptr;
     }
@@ -125,32 +137,21 @@ private:
         return call(entry->callback, value.get(), std::forward<CallArgs>(args)...);
     }
 
-    template <typename, typename, typename>
+    template <typename, typename>
     friend struct codec::deserialize_visit;
-    template <typename, typename, typename>
+    template <typename, typename>
     friend struct codec::serialize_visit;
 
-    const CommandEntry* entry = nullptr;
+    const detail::CommandEntry* entry = nullptr;
     std::unique_ptr<void, void (*)(void*)> value{nullptr, [](void*) {}};
 };
 
-}  // namespace detail
-
-/// A field of subcommands that files add to themselves, rather than a std::variant naming
-/// them all: `Tag` names the set and its `signature`, the type of the callback each adds,
-/// `int(Context&)` say. The field holds the struct of the one the argv names, which `get_if<T>()`
-/// returns, and is empty (false) when it names none, which `cli::required = true` on the field
-/// makes an error; calling it runs that one's callback, and `name()` is its word. A subcommand
-/// the argv names is read afresh: parse_into() keeps none of one held before.
-///
-///     struct Top { using signature = int(Context&); };
-///     struct Options { cli::Help help; cli::Commands<Top> command; };
-///     // serve.cc
-///     int run(Serve& serve, Context& context);
-///     const auto added = cli::add_command<Top>(run);
+/// A Commands field takes the set `Tag` names: the subcommands every file added to it.
 template <typename Tag>
-using Commands =
-    meta::annotate<detail::commands_tag<Tag>>::template type<detail::ErasedCommand<Tag>>;
+consteval auto __kotatsu__type_annotation(std::type_identity<Commands<Tag>>) {
+    return meta::make_annotation(meta::dsl::member_proxy<&ArgSpec::commands>{} =
+                                     detail::CommandSet{true, &detail::sealed_registry<Tag>});
+}
 
 /// Adds the subcommand `T`, run by `run`, to the set `Tag` names, under `info.name` or `T`'s
 /// name in kebab case, and returns true. Call it to initialize a variable at namespace scope, in
@@ -160,24 +161,21 @@ template <typename Tag, typename T, typename R, typename... Args>
 bool add_command(R (*run)(T&, Args...), CommandInfo info = {}) {
     static_assert(std::is_same_v<typename Tag::signature, R(Args...)>,
                   "cli: a subcommand's callback takes its struct, then the set's signature");
-    static_assert(detail::check_declaration(meta::type_info_of<T, detail::decode_config>()));
+    static_assert(detail::check_declaration(codec::type_info::of<T, cli::format>()));
     using callback_t = R (*)(T&, Args...);
-    const auto& type = meta::type_info_of<T, detail::decode_config>();
+    const auto& type = codec::type_info::of<T, cli::format>();
     detail::registry<Tag>().add(detail::CommandEntry{
         .name = info.name.empty() ? detail::kebab(type.type_name) : std::string(info.name),
-        .description = static_cast<const meta::struct_type_info&>(type).description,
+        .description = static_cast<const codec::struct_type_info&>(type).description,
         .hidden = info.hidden,
         .type = &type,
         .make = []() -> void* { return new T(); },
         .destroy = [](void* value) { delete static_cast<T*>(value); },
-        .decode =
-            [](detail::Reader& reader, void* value) {
-                return codec::decode_value<detail::decode_config>(reader, *static_cast<T*>(value));
-            },
+        .decode = [](detail::Reader& reader,
+                     void* value) { return codec::decode_value(reader, *static_cast<T*>(value)); },
         .encode =
             [](detail::Writer& writer, const void* value) {
-                return codec::encode_value<detail::decode_config>(writer,
-                                                                  *static_cast<const T*>(value));
+                return codec::encode_value(writer, *static_cast<const T*>(value));
             },
         .callback = reinterpret_cast<void (*)()>(run),
         .invoke =
@@ -194,9 +192,9 @@ bool add_command(R (*run)(T&, Args...), CommandInfo info = {}) {
 namespace kotatsu::codec {
 
 /// A set of subcommands reads the one the argv names, into a value of its struct.
-template <typename Tag, typename Config>
-struct deserialize_visit<cli::detail::Reader, cli::detail::ErasedCommand<Tag>, Config> {
-    static bool visit(cli::detail::Reader& reader, cli::detail::ErasedCommand<Tag>& out) {
+template <typename Tag>
+struct deserialize_visit<cli::detail::Reader, cli::Commands<Tag>> {
+    static bool visit(cli::detail::Reader& reader, cli::Commands<Tag>& out) {
         if(reader.node.kind != cli::detail::Node::Kind::Variant) {
             return reader.fail_shape("a subcommand");
         }
@@ -209,9 +207,9 @@ struct deserialize_visit<cli::detail::Reader, cli::detail::ErasedCommand<Tag>, C
 };
 
 /// A set of subcommands writes the one it holds, as a subcommand of a variant.
-template <typename Tag, typename Config>
-struct serialize_visit<cli::detail::Writer, cli::detail::ErasedCommand<Tag>, Config> {
-    static bool visit(cli::detail::Writer& writer, const cli::detail::ErasedCommand<Tag>& value) {
+template <typename Tag>
+struct serialize_visit<cli::detail::Writer, cli::Commands<Tag>> {
+    static bool visit(cli::detail::Writer& writer, const cli::Commands<Tag>& value) {
         if(!value) {
             return writer.visit_null();
         }

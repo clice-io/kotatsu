@@ -252,12 +252,12 @@ std::expected<URI, std::string> URI::from_file_path(std::string_view path) {
         return std::unexpected("path is empty");
     }
 
-    std::string normalized_storage;
+    std::string normalized_copy;
     std::string_view normalized_path = path;
     if(path.find('\\') != std::string_view::npos) [[unlikely]] {
-        normalized_storage.assign(path);
-        std::ranges::replace(normalized_storage, '\\', '/');
-        normalized_path = normalized_storage;
+        normalized_copy.assign(path);
+        std::ranges::replace(normalized_copy, '\\', '/');
+        normalized_path = normalized_copy;
     }
 
     // "C:foo" is drive-relative on Windows; only "C:/foo" is absolute.
@@ -322,11 +322,11 @@ std::expected<URI, std::string> URI::from_file_path(std::string_view path) {
 
     // Windows drive path "C:/..." is represented as "/C:/..." in file URIs.
     if(is_windows_drive_absolute(normalized_path)) [[unlikely]] {
-        if(normalized_storage.empty()) {
-            normalized_storage.assign(normalized_path);
+        if(normalized_copy.empty()) {
+            normalized_copy.assign(normalized_path);
         }
-        normalized_storage.insert(normalized_storage.begin(), '/');
-        normalized_path = normalized_storage;
+        normalized_copy.insert(normalized_copy.begin(), '/');
+        normalized_path = normalized_copy;
     }
     const std::string encoded_path = percent_encode(normalized_path, false);
 

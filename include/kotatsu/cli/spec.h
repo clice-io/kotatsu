@@ -5,7 +5,7 @@
 #include <string_view>
 
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/spec.h"
+#include "kotatsu/codec/attribute.h"
 
 namespace kotatsu::cli {
 
@@ -21,7 +21,7 @@ enum class KVStyle : std::uint8_t {
 
 /// How many arguments a positional list takes when it is given: `min` to `max`. A number is
 /// exactly that many; the default is one or more. Whether it may be left out altogether is
-/// `required`'s to say.
+/// its field's presence's to say.
 struct ArgNum {
     constexpr static std::uint32_t unbounded = std::numeric_limits<std::uint32_t>::max();
 
@@ -50,7 +50,7 @@ struct CommandSet {
 
 }  // namespace detail
 
-/// What a field's `cli::` annotation entries say about it on a command line, beside the
+/// What a field's `cli::` attributes say about it on a command line, beside the
 /// `description` its help is. A field without them is an option all the same, named after it.
 struct ArgSpec {
     /// The names it is given by, as written: "-o", "--output", "/out". Without, its declared
@@ -66,8 +66,6 @@ struct ArgSpec {
     bool rest = false;
     /// Whether a flag counts how often it is given (`-v -v -v`) rather than whether it is.
     bool count = false;
-    /// Whether it must be given. A positional scalar must be, unless it is a std::optional.
-    bool required = false;
     /// Whether giving it ends the parse: nothing after it is read, and nothing required is
     /// checked. The help option's does.
     bool stop = false;
@@ -99,13 +97,12 @@ struct ArgSpec {
     }
 };
 
-/// The entries of ArgSpec in a KANNOTATE: `cli::names = {"-o", "--output"}`.
+/// The attributes of ArgSpec in a KANNOTATE: `cli::names = {"-o", "--output"}`.
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::names> names{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::meta_var> meta_var{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::positional> positional{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::rest> rest{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::count> count{};
-[[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::required> required{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::stop> stop{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::style> style{};
 [[maybe_unused]] constexpr inline meta::dsl::member_proxy<&ArgSpec::comma> comma{};
@@ -121,19 +118,15 @@ struct Alias {
     constexpr bool operator==(const Alias&) const = default;
 };
 
-namespace detail {
-
-struct help_tag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::description = "display this help and exit",
-                              names = {"-h", "--help"},
-                              stop = true);
-};
-
-}  // namespace detail
-
-/// The standard help option, `-h` and `--help`: given, it ends the parse where it stands, so
-/// that nothing required is missed, and the caller finds it set and prints the usage.
-using Help = meta::annotate<detail::help_tag>::type<bool>;
+/// The standard help option, `-h` and `--help`, as a bundle of attributes: given, it ends the
+/// parse where it stands, so that nothing required is missed, and the caller finds it set and
+/// prints the usage.
+///
+///     KANNOTATE(&help, cli::help)
+///     bool help = false;
+[[maybe_unused]] constexpr inline auto help =
+    meta::make_annotation(codec::dsl::description = "display this help and exit",
+                          names = {"-h", "--help"},
+                          stop = true);
 
 }  // namespace kotatsu::cli

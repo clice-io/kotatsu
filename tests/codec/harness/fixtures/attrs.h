@@ -10,6 +10,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -19,9 +20,33 @@
 #include "codec/harness/fixtures/structs.h"
 #include "fixtures/attrs.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
+#include "kotatsu/codec/attribute.h"
+#include "kotatsu/codec/macro.h"
 
 namespace kotatsu::test {
+
+/// A rename policy of the program's own: words joined by dashes.
+struct Dashed {
+    constexpr std::string operator()(std::string_view name) const {
+        std::string out(name);
+        for(auto& c: out) {
+            if(c == '_') {
+                c = '-';
+            }
+        }
+        return out;
+    }
+};
+
+/// Its fields spelled by a policy type.
+KANNOTATE_TYPE(struct DashedPair, rename_all = type<Dashed>);
+
+struct DashedPair {
+    int item_id;
+    int user_name;
+
+    auto operator==(const DashedPair&) const -> bool = default;
+};
 
 struct AnnotatedPlain {
     int id;
@@ -57,7 +82,8 @@ struct DeepOuterPlain {
 
 struct FlattenInnerWithSkip {
     int keep_a;
-    meta::annotate<Skip>::type<int> drop_b;
+    KANNOTATE(&drop_b, skip = true)
+    int drop_b;
     int keep_c;
 
     auto operator==(const FlattenInnerWithSkip&) const -> bool = default;
@@ -65,7 +91,8 @@ struct FlattenInnerWithSkip {
 
 struct FlattenOuterWithChildSkip {
     int head;
-    meta::annotate<Flatten>::type<FlattenInnerWithSkip> inner;
+    KANNOTATE(&inner, flatten = true)
+    FlattenInnerWithSkip inner;
 };
 
 struct FlattenOuterWithChildSkipPlain {
@@ -74,19 +101,17 @@ struct FlattenOuterWithChildSkipPlain {
     int keep_c;
 };
 
-struct RenameToRenamedA {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "renamed_a");
-};
-
 struct FlattenInnerWithRename {
-    meta::annotate<RenameToRenamedA>::type<int> a;
+    KANNOTATE(&a, rename = "renamed_a")
+    int a;
     int b;
 
     auto operator==(const FlattenInnerWithRename&) const -> bool = default;
 };
 
 struct FlattenOuterWithChildRename {
-    meta::annotate<Flatten>::type<FlattenInnerWithRename> inner;
+    KANNOTATE(&inner, flatten = true)
+    FlattenInnerWithRename inner;
 };
 
 struct FlattenOuterWithChildRenamePlain {
@@ -117,10 +142,9 @@ struct RenameTargetWithExtra {
 };
 
 /// On a field, a struct-level annotation's policies apply inside it.
-struct UpperSnakeStrictTag {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::rename_all = naming::Casing::UpperSnake,
-                              meta::dsl::deny_unknown_fields = true);
+struct SnakeStrict {
+    KANNOTATE(&value, rename_all = Casing::UpperSnake, deny_unknown_fields = true)
+    RenameTarget value;
 };
 
 struct RenameTargetUpperSnake {
@@ -134,9 +158,13 @@ struct RenameTargetUpperSnakeWithExtra {
     int EXTRA;
 };
 
-/// rename_all merges into the config only at a reflected struct; an untagged
+/// rename_all merges into the format only at a reflected struct; an untagged
 /// variant is not one, so its alternatives keep their names.
-using CamelChoice = meta::annotate<RenameAllCamelTag>::type<std::variant<RenameTarget, int>>;
+KANNOTATE_TYPE(struct CamelChoice, rename_all = Casing::LowerCamel);
+
+struct CamelChoice : std::variant<RenameTarget, int> {
+    using variant::variant;
+};
 
 struct RenameAllTargetCamel {
     int userName;
@@ -192,13 +220,10 @@ struct ExtraBeforeTextPlain {
     std::int32_t y;
 };
 
-struct AliasAnchor {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::alias = {"anchor"});
-};
-
 /// A field the document may name by an alias.
 struct AliasedOrigin {
-    meta::annotate<AliasAnchor>::type<Point> origin;
+    KANNOTATE(&origin, alias = {"anchor"})
+    Point origin;
 };
 
 template <typename T>
@@ -231,57 +256,25 @@ struct Tunables {
     auto operator==(const Tunables&) const -> bool = default;
 };
 
-struct DefaultedFieldsTag {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::defaulted_fields = true);
-};
-
-/// defaulted_fields on a field reaches the struct below it, not the one
-/// holding it.
+/// presence_all on a field reaches the members of the struct below it, not
+/// the one holding it, nor the structs further down.
 struct TunablesHolder {
-    meta::annotate<DefaultedFieldsTag>::type<Tunables> tunables;
+    KANNOTATE(&tunables, presence_all = optional)
+    Tunables tunables;
     int count;
 };
 
-/// A field whose default a schema leaves unstated.
-struct UnstatedDefault {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::schema_default = false);
-};
-
-struct WithUnstated {
-    int id;
-    meta::annotate<UnstatedDefault>::type<int> seed;
-};
-
-/// Two fields answering to one name.
-struct AliasDup {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::alias = {"dup"});
-};
-
-struct SharedAlias {
-    meta::annotate<AliasDup>::type<int> left;
-    meta::annotate<AliasDup>::type<int> right;
-};
-
-/// Two fields that lower_camel renames to one name.
-struct CamelCollision {
-    int user_id;
-    int userId;
-};
-
-struct DescribeId {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::description = "Numeric identifier.");
-};
-
 struct Documented {
-    meta::annotate<DescribeId>::type<int> id;
+    KANNOTATE(&id, description = "Numeric identifier.")
+    int id;
     std::string name;
 };
 
 /// A skipped field needs no codec support for its type.
 struct SkipsRawPointer {
     int id;
-    meta::annotate<Skip>::type<int*> raw;
+    KANNOTATE(&raw, skip = true)
+    int* raw;
 };
 
 /// Travels as its decimal text (behavior::with).
@@ -299,15 +292,16 @@ struct DecimalText {
     }
 };
 
-struct amount_tag {
-    constexpr static auto entries = meta::make_annotation(meta::dsl::rename = "amount");
+/// Travels as decimal text, in a field.
+struct Decimal {
+    KANNOTATE(&value, with = type<DecimalText>)
+    int value;
 };
 
-/// An annotation of an annotation: renamed by the outer one, and travelling as decimal text
-/// by the inner one.
+/// Renamed, and travelling as decimal text, by one annotation.
 struct RenamedDecimal {
-    meta::annotate<amount_tag>::type<meta::annotation<int, meta::behavior::with<DecimalText>>>
-        value;
+    KANNOTATE(&value, rename = "amount", with = type<DecimalText>)
+    int value;
 };
 
 struct RenamedDecimalPlain {
@@ -377,12 +371,18 @@ struct Tally {
     auto operator==(const Tally&) const -> bool = default;
 };
 
-using TallyAsHeld = meta::annotation<Tally, meta::behavior::as<HoldsExplicit>>;
+struct TallyAsHeld {
+    KANNOTATE(&value, as = type<HoldsExplicit>)
+    Tally value;
+};
 
 struct AsTargets {
-    meta::annotation<UserId, meta::behavior::as<std::string>> owner;
-    meta::annotation<Samples, meta::behavior::as<std::vector<int>>> samples;
-    meta::annotation<GridIndex, meta::behavior::as<Point>> cell;
+    KANNOTATE(&owner, as = type<std::string>)
+    UserId owner;
+    KANNOTATE(&samples, as = type<std::vector<int>>)
+    Samples samples;
+    KANNOTATE(&cell, as = type<Point>)
+    GridIndex cell;
 };
 
 struct AsTargetsPlain {
@@ -391,67 +391,38 @@ struct AsTargetsPlain {
     Point cell;
 };
 
-/// Skips its field on decode only, whatever the value.
-struct SkipCellOnDecode {
-    bool operator()(const GridIndex& /*cell*/, bool is_serialize) const {
-        return !is_serialize;
-    }
-};
-
-/// A field that travels as another type and is skipped on decode: the
-/// document still holds it, written as that other type.
-struct CellSkippedOnDecode {
-    meta::
-        annotation<GridIndex, meta::behavior::as<Point>, meta::behavior::skip_if<SkipCellOnDecode>>
-            cell;
-    int after = 0;
-};
-
-struct CellSkippedOnDecodePlain {
-    Point cell;
-    int after;
-};
-
-/// Skips its field on decode only, whatever the value.
-struct SkipHeldOnDecode {
-    bool operator()(const HoldsExplicit& /*held*/, bool is_serialize) const {
-        return !is_serialize;
-    }
-};
-
-/// A field skipped on decode whose type only value-initialization makes: a
-/// positional decode reads past it into a value of its own.
-struct HeldSkippedOnDecode {
-    meta::annotation<HoldsExplicit, meta::behavior::skip_if<SkipHeldOnDecode>> held;
-    int after = 0;
-};
-
-struct HeldSkippedOnDecodePlain {
-    HoldsExplicit held;
-    int after;
-};
-
-/// Skips an empty text. It takes only the value, so it speaks for encoding.
+/// Holds for an empty text: a write leaves it out.
 struct IsEmptyText {
     bool operator()(const std::string& text) const {
         return text.empty();
     }
 };
 
-struct SkipsEmptyText {
-    meta::annotation<std::string, meta::behavior::skip_if<IsEmptyText>> text;
+struct OmitsEmptyText {
+    KANNOTATE(&text, presence = type<IsEmptyText>)
+    std::string text;
 };
 
 struct TextPlain {
     std::string text;
 };
 
-using AccessName =
-    meta::annotation<Access, meta::behavior::enum_string<naming::rename_policy::lower_camel>>;
+/// Travels as its enumerator's name, in lowerCamel, in a field.
+struct AccessName {
+    KANNOTATE(&value, with = type<codec::enum_names<naming::rename_policy::lower_camel>>)
+    Access value;
+};
 
 struct AccessGrant {
-    AccessName level;
+    KANNOTATE(&level, with = type<codec::enum_names<naming::rename_policy::lower_camel>>)
+    Access level;
     int count;
+};
+
+/// Mixed's enumerators in lower camel case.
+struct MixedName {
+    KANNOTATE(&value, with = type<codec::enum_names<naming::rename_policy::lower_camel>>)
+    Mixed value;
 };
 
 struct AccessGrantPlain {
@@ -459,55 +430,53 @@ struct AccessGrantPlain {
     int count;
 };
 
-/// Skips a negative value when encoding; decoding never skips.
+/// Holds for a negative value: a write leaves it out.
 struct IsNegative {
-    constexpr bool operator()(const int& value, bool is_serialize) const {
-        return is_serialize && value < 0;
+    constexpr bool operator()(const int& value) const {
+        return value < 0;
     }
 };
 
-struct SkipWhenNone {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::skip_if = meta::skip_when::none);
-};
-
-struct SkipWhenEmpty {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::skip_if = meta::skip_when::empty);
-};
-
-struct SkipWhenDefault {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::skip_if = meta::skip_when::default_value);
-};
-
-struct SkipIfNegative {
-    constexpr static auto entries =
-        meta::make_annotation(meta::dsl::skip_if = meta::dsl::type<IsNegative>);
-};
-
-/// Every skip condition: the built-in ones and a predicate. The initializers
-/// are not what a skip condition matches, so a decoder that resets a field it
-/// did not read shows.
-struct Skippable {
+/// Every way a write leaves a field out: at its default, and where a
+/// predicate holds. The defaults are not the empty values, so a write that
+/// compares with those, or a decoder that resets a field it did not read,
+/// shows.
+struct Omittable {
     int id;
-    meta::annotate<SkipWhenNone>::type<std::optional<std::string>> note = "kept";
-    meta::annotate<SkipWhenEmpty>::type<std::vector<int>> tags = std::vector<int>{9};
-    meta::annotate<SkipWhenDefault>::type<int> generation = 7;
-    meta::annotate<SkipIfNegative>::type<int> score = 3;
+    KANNOTATE(&note, presence = omit_if_default)
+    std::optional<std::string> note = "kept";
+    KANNOTATE(&tags, presence = omit_if_default)
+    std::vector<int> tags = std::vector<int>{9};
+    KANNOTATE(&generation, presence = omit_if_default)
+    int generation = 7;
+    KANNOTATE(&score, presence = type<IsNegative>)
+    int score = 3;
 };
 
-struct SkippablePlain {
+struct OmittablePlain {
     int id;
-    std::string note;
+    std::optional<std::string> note;
     std::vector<int> tags;
     int generation;
     int score;
 };
 
-/// Skippable with every skippable field left out.
+/// Omittable with every omittable field left out.
 struct IdOnly {
     int id;
+};
+
+/// Left out at its default, beside a list only value-initialization makes:
+/// the default is the field of a value-initialized struct, which `{}` cannot
+/// make.
+struct CountBesideExplicit {
+    ExplicitList list;
+    KANNOTATE(&count, presence = omit_if_default)
+    int count = 2;
+};
+
+struct ListPlain {
+    std::vector<int> list;
 };
 
 }  // namespace kotatsu::test

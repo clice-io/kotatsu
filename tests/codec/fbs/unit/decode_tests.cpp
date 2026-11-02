@@ -20,9 +20,10 @@
 #include "codec/harness/fixtures/structs.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/meta/attrs.h"
 #include "kotatsu/meta/compare.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/fbs/fbs.h"
+#include "kotatsu/codec/macro.h"
 
 // What the fbs decoders do with bytes that did not come from to_bytes. The
 // eager from_bytes verifies every access while it reads; table_view
@@ -67,10 +68,6 @@ struct HoldsLabeledCount {
 
 }  // namespace
 
-}  // namespace kotatsu::codec
-
-namespace kotatsu::meta {
-
 template <>
 struct repr<codec::GreedySeq> {
     using type = std::vector<std::int32_t>;
@@ -79,8 +76,8 @@ struct repr<codec::GreedySeq> {
         return g.nums;
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, codec::GreedySeq& g) {
+    template <typename F>
+    static bool decode(auto& vis, codec::GreedySeq& g) {
         g.nums.clear();
         return vis.visit_seq(g.nums, [&](auto& sv) -> bool {
             for(std::size_t i = 0; i < 4; ++i) {
@@ -103,8 +100,8 @@ struct repr<codec::GreedyMap> {
         return g.entries;
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, codec::GreedyMap& g) {
+    template <typename F>
+    static bool decode(auto& vis, codec::GreedyMap& g) {
         g.entries.clear();
         return vis.visit_map(g.entries, [&](auto& mv) -> bool {
             for(std::size_t i = 0; i < 4; ++i) {
@@ -129,18 +126,14 @@ struct repr<codec::LabeledCount> {
         return {c.count, c.label};
     }
 
-    template <typename Config>
-    static bool deserialize(auto& vis, codec::LabeledCount& c) {
+    template <typename F>
+    static bool decode(auto& vis, codec::LabeledCount& c) {
         return vis.visit_tuple(c, [&](auto& sv) -> bool {
             return sv.visit_element([&](auto& ev) -> bool { return ev.visit_int(c.count); }) &&
                    sv.visit_element([&](auto& ev) -> bool { return ev.visit_str(c.label); });
         });
     }
 };
-
-}  // namespace kotatsu::meta
-
-namespace kotatsu::codec {
 
 namespace {
 
@@ -161,6 +154,10 @@ struct Inner {
 };
 
 enum class Grade : std::int32_t { low, mid, high };
+
+/// Read by its name: the one member of its type, as a view finds members by
+/// their type.
+enum class Shade : std::int32_t { dim, bright };
 
 /// One field of every layout the verifier classifies: scalar, enum, char,
 /// byte and long double cells, strings, string, table, scalar and
@@ -191,9 +188,10 @@ struct Rich {
     std::set<std::int32_t> uniq;
     std::variant<std::monostate, Inner> maybe;
     std::tuple<std::int32_t, std::array<std::int32_t, 3>> mixed;
-    meta::annotation<std::int32_t, meta::behavior::as<std::int64_t>> widened{0};
-    meta::annotation<Grade, meta::behavior::enum_string<naming::rename_policy::identity>>
-        level_name{Grade::low};
+    KANNOTATE(&widened, as = type<std::int64_t>)
+    std::int16_t widened = 0;
+    KANNOTATE(&level_name, with = type<codec::enum_names<>>)
+    Shade level_name = Shade::dim;
 
     auto operator==(const Rich&) const -> bool = default;
 };
@@ -222,8 +220,8 @@ auto make_rich() -> Rich {
         .uniq = {5, 9},
         .maybe = Inner{.a = 1, .name = "table payload"},
         .mixed = {11, {21, 22, 23}},
-        .widened = {1234},
-        .level_name = {Grade::high},
+        .widened = 1234,
+        .level_name = Shade::bright,
     };
 }
 

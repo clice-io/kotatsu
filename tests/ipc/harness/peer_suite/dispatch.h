@@ -12,7 +12,7 @@
 #include "ipc/harness/peer_fixture.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/async/async.h"
-#include "kotatsu/codec/visit/common.h"
+#include "kotatsu/codec/repr.h"
 
 namespace kotatsu::test {
 
@@ -168,8 +168,8 @@ void peer_dispatch(const PeerKit<A>& kit) {
     // The handler wrote its result itself; the requester gets it as it is.
     kit.add("raw_value_result_is_sent_as_it_is", [](Fixture& f) {
         f.peer.on_request(
-            [](Context&, const AddParams& params) -> async::task<codec::RawValue, ipc::Error> {
-                co_return codec::RawValue{A::encode(AddResult{.sum = params.a + params.b})};
+            [](Context&, const AddParams& params) -> async::task<codec::raw_value, ipc::Error> {
+                co_return codec::raw_value{A::encode(AddResult{.sum = params.a + params.b})};
             });
         f.remote.send(request<A>(1, "test/add", AddParams{.a = 10, .b = 20}));
         f.remote.end_input();

@@ -7,13 +7,13 @@
 #include <vector>
 
 #include "codec/harness/fixtures/attrs.h"
-#include "codec/harness/fixtures/configs.h"
 #include "codec/harness/fixtures/containers.h"
 #include "codec/harness/fixtures/repr.h"
+#include "codec/harness/fixtures/settings.h"
 #include "codec/harness/fixtures/structs.h"
 #include "codec/harness/fixtures/tagged.h"
 #include "fixtures/attrs.h"
-#include "fixtures/configs.h"
+#include "fixtures/settings.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/meta/compare.h"
 #include "kotatsu/codec/toml/toml.h"
@@ -28,6 +28,11 @@ concept decodes_by_value = requires(std::string_view text) { toml::from_string<T
 
 /// The UTF-8 byte order mark, which toml++ skips before the text.
 constexpr std::string_view bom = "\xEF\xBB\xBF";
+
+/// Field names in lower camel case.
+struct camel_format : codec::extend<toml::format> {
+    using rename_all = naming::rename_policy::lower_camel;
+};
 
 ZEST_SUITE(codec_toml_decode) {
 
@@ -48,8 +53,8 @@ list = [1, 2]
     ZSTATIC_EXPECT(!decodes_by_value<test::NoDefault>);
 }
 
-ZEST_CASE(value_overload_takes_config) {
-    auto result = toml::from_string<test::RenameAllTarget, test::CamelConfig>(R"(
+ZEST_CASE(value_overload_takes_format) {
+    auto result = toml::from_string<test::RenameAllTarget, camel_format>(R"(
 itemId = 'abc'
 totalScore = 1.5
 userName = 2
@@ -154,12 +159,13 @@ zip = "wrong"
 
 ZEST_CASE(unknown_field_fails_at_its_key) {
     test::Point out{};
-    auto status = toml::from_string<test::StrictConfig>(R"(
+    auto status = toml::from_string(R"(
 x = 1
 y = 2
 extra = true
 )",
-                                                        out);
+                                    out,
+                                    {.deny_unknown_fields = true});
     ZASSERT(!status);
     ZEXPECT(status.error().message == "unknown field 'extra'");
     ZASSERT(status.error().location);
