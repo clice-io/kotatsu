@@ -253,7 +253,8 @@ constexpr std::size_t default_capacity = 1024;
 template <typename F = json::format, typename T>
 auto to_string(const T& value, const json::encode_options& options = {})
     -> std::expected<std::string, rich_error> {
-    static_assert(std::derived_from<F, json::format>, "a JSON format extends json::format");
+    static_assert(codec::extends<F, json::format>,
+                  "a JSON format extends json::format: codec::extend<json::format>");
     StringBuilder builder(options.initial_capacity.value_or(default_capacity));
     ValueWriter<F> vis{builder};
     KOTATSU_EXPECTED_TRY(codec::detail::run_encode<F>(vis, value, options.common()));

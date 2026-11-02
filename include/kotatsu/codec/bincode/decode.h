@@ -337,10 +337,11 @@ bool MapAccess<Format>::visit_entry(KF&& key_reader, VF&& value_reader) {
 /// Decodes a bincode buffer produced by to_bytes with the same T and format F
 /// into `out` (or, in the value-returning overload, into a value-initialized
 /// T). The whole buffer must be consumed; leftover bytes are an error.
+/// Overloads: std::byte / uint8_t spans, into an out-param or returning T.
 template <typename F = bincode::format, typename T>
 auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, rich_error> {
-    static_assert(std::derived_from<F, bincode::format>,
-                  "a bincode format extends bincode::format");
+    static_assert(codec::extends<F, bincode::format>,
+                  "a bincode format extends bincode::format: codec::extend<bincode::format>");
     static_assert(!F::human_readable,
                   "a binary backend writes no names: its format cannot be human readable");
     Reader<F> r{data};

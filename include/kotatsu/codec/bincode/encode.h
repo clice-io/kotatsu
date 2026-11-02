@@ -198,8 +198,8 @@ struct Writer {
 /// the same T and F: the bytes describe nothing of themselves.
 template <typename F = bincode::format, typename T>
 auto to_bytes(const T& value) -> std::expected<std::vector<std::byte>, rich_error> {
-    static_assert(std::derived_from<F, bincode::format>,
-                  "a bincode format extends bincode::format");
+    static_assert(codec::extends<F, bincode::format>,
+                  "a bincode format extends bincode::format: codec::extend<bincode::format>");
     static_assert(!F::human_readable,
                   "a binary backend writes no names: its format cannot be human readable");
     std::vector<std::byte> buf;

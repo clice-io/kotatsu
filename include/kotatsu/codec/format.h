@@ -40,6 +40,27 @@ struct extend : Base {
     using base = Base;
 };
 
+namespace detail {
+
+template <typename F, typename Base>
+consteval bool on_chain() {
+    if constexpr(std::is_same_v<F, Base>) {
+        return true;
+    } else if constexpr(requires { typename F::base; }) {
+        return on_chain<typename F::base, Base>();
+    } else {
+        return false;
+    }
+}
+
+}  // namespace detail
+
+/// Whether F is Base or extends it, along the chain of codec::extend the reprs are looked up
+/// by: a format derived from Base by hand inherits Base's base, which leaves Base, and the
+/// reprs scoped to it, off its chain.
+template <typename F, typename Base>
+concept extends = detail::on_chain<F, Base>();
+
 /// What a backend whose documents are UTF-8 text (json, toml) does with a
 /// string that is not UTF-8. Decoding never meets one: those backends' parsers
 /// reject a document that is not UTF-8.

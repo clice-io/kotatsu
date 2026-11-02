@@ -826,7 +826,8 @@ inline std::expected<dyn::Value, rich_error> schema(const codec::type_info& root
 /// checks none of them.
 template <typename T, typename F = json::format>
 std::expected<dyn::Value, rich_error> schema(const schema_options& options = {}) {
-    static_assert(std::derived_from<F, json::format>, "a JSON format extends json::format");
+    static_assert(codec::extends<F, json::format>,
+                  "a JSON format extends json::format: codec::extend<json::format>");
     const auto& root = codec::type_info::of<T, F>();
     if constexpr(std::is_default_constructible_v<T> &&
                  meta::kind_of<codec::resolved_repr_t<T, F>>() != meta::type_kind::unknown &&

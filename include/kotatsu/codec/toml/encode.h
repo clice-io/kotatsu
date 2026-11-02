@@ -227,7 +227,8 @@ bool MapWriter<Format>::visit_entry(KF&& key_fn, VF&& value_fn) {
 template <typename F = toml::format, typename T>
 auto to_toml(const T& value, const encode_options& options = {})
     -> std::expected<Table, rich_error> {
-    static_assert(std::derived_from<F, toml::format>, "a TOML format extends toml::format");
+    static_assert(codec::extends<F, toml::format>,
+                  "a TOML format extends toml::format: codec::extend<toml::format>");
     // Root routing follows the representation the codec dispatch resolves
     // (annotations and toml-scoped codec::repr included), not the declared
     // type: a struct whose repr is a scalar is boxed under the root key, and

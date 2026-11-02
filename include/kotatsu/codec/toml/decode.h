@@ -292,7 +292,8 @@ inline auto parse_table(std::string_view text) -> std::expected<Table, rich_erro
 template <typename F = toml::format, typename T>
 auto from_toml(const Table& tbl, T& out, const decode_options& options = {})
     -> std::expected<void, rich_error> {
-    static_assert(std::derived_from<F, toml::format>, "a TOML format extends toml::format");
+    static_assert(codec::extends<F, toml::format>,
+                  "a TOML format extends toml::format: codec::extend<toml::format>");
     ValueReader<F> reader{detail::select_root_node<T, F>(tbl)};
     return codec::detail::run_decode<F>(reader, out, options);
 }

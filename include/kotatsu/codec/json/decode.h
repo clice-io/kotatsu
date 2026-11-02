@@ -538,7 +538,8 @@ template <typename F = json::format, typename T>
     requires std::derived_from<F, codec::format>
 auto from_padded_string(padded_string_view json, T& out, const decode_options& options = {})
     -> std::expected<void, rich_error> {
-    static_assert(std::derived_from<F, json::format>, "a JSON format extends json::format");
+    static_assert(codec::extends<F, json::format>,
+                  "a JSON format extends json::format: codec::extend<json::format>");
     detail::ParsedDocument document;
     KOTATSU_EXPECTED_TRY(document.parse(json));
     Reader<F> r{document.doc, json.data(), json.size()};
