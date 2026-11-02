@@ -7,9 +7,10 @@ option may be left out unless its field's presence is required
 (`presence = required`). A nested struct is a group of options, a
 `std::optional` of one is given all or nothing, and a `std::variant` of structs
 is a set of subcommands. Every command, the program's and each subcommand's,
-takes `-h` and `--help` without a field for it: `cli::parse` then stops and
-says which command's usage was asked for, a `cli::Help`, beside the options and
-an `Error` in the `cli::Parsed` it returns. It is a [codec](codec.md) decoder
+takes `-h` and `--help` without a field for it, each unless an option of its own
+takes that name: `cli::parse` then stops and says which command's usage was
+asked for, a `cli::Help`, beside the options and an `Error` in the
+`cli::Parsed` it returns. It is a [codec](codec.md) decoder
 over the argv under `cli::format`, so a type with a `codec::repr` reads as what
 it is represented by, and `cli::to_argv` is its encoder. The usage, its line
 included, is rendered from the same struct.

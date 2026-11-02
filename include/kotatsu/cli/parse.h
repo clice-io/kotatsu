@@ -216,7 +216,8 @@ struct Reader {
 
     constexpr static bool data_driven = true;
     using format = cli::format;
-    /// The parse checks the required arguments itself, and a help option skips the check.
+    /// The parse checks the required arguments itself, unless an option that ends it skips the
+    /// check, and a usage decodes the defaults of a subcommand from no arguments at all.
     constexpr static bool presence_checked = true;
 
     bool fail(std::string message) const {
@@ -477,9 +478,11 @@ Parsed<T> parse(string_list_ref argv, Visit visit) {
 /// Parses `argv`, the arguments after the program's name, into the options `T` declares: a
 /// reflectable struct, each field an option, a positional argument (`cli::positional`), a
 /// group of them (a struct), or subcommands (a std::variant of structs). A field the argv does
-/// not give keeps the value it starts with. Every command, the program's and each subcommand,
-/// takes -h and --help besides, unless it names an option so itself: given, the parse ends
-/// there and asks for the usage of that command (Help).
+/// not give keeps the value it starts with. Every command, the program's and each subcommand's,
+/// takes -h and --help besides, each unless it names an option so itself: given, the parse ends
+/// there and asks for the usage of that command (Help). The arguments before it are read as
+/// ever, an unknown option or a value out of its field's range failing the parse, but none is
+/// decoded: one its field's type cannot take, "--jobs many", goes unnoticed.
 template <typename T>
 Parsed<T> parse(string_list_ref argv) {
     return parse<T>(argv, [](T&, const Given&) {});

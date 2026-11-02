@@ -87,6 +87,26 @@ struct Run {
     std::vector<std::string> command;
 };
 
+/// Commands taking one of the help's names, or both, with options of their own.
+struct NamesH {
+    KANNOTATE(&host, cli::names = {"-h", "--host"})
+    std::string host;
+};
+
+struct SlashH {
+    KANNOTATE(&host, cli::names = {"/h"})
+    std::string host;
+};
+
+struct HelpField {
+    bool help = false;
+};
+
+struct BothNames {
+    KANNOTATE(&help, cli::names = {"-h", "--help"})
+    bool help = false;
+};
+
 ZEST_SUITE(cli_usage) {
 
 ZEST_CASE(usage_lists_options_with_their_help) {
@@ -193,6 +213,27 @@ ZEST_CASE(choices_are_the_value_token) {
 
 ZEST_CASE(help_says_default_and_range) {
     ZEXPECT(cli::usage<Tuned>("tuned").contains("Workers [default: 4] [range: 1..64]"));
+}
+
+ZEST_CASE(help_entry_lists_the_names_the_command_leaves_it) {
+    const auto names_h = cli::usage_entries<NamesH>();
+    ZASSERT(names_h.size() == 2U);
+    ZEXPECT(names_h[0].usage == "--help");
+    ZEXPECT(names_h[1].usage == "-h|--host <value>");
+    const auto slash_h = cli::usage_entries<SlashH>();
+    ZASSERT(slash_h.size() == 2U);
+    ZEXPECT(slash_h[0].usage == "--help");
+    const auto help_field = cli::usage_entries<HelpField>();
+    ZASSERT(help_field.size() == 2U);
+    ZEXPECT(help_field[0].usage == "-h");
+    ZEXPECT(help_field[1].usage == "--help");
+}
+
+ZEST_CASE(command_taking_both_names_lists_no_help_entry) {
+    const auto entries = cli::usage_entries<BothNames>();
+    ZASSERT(entries.size() == 1U);
+    ZEXPECT(entries[0].usage == "-h|--help");
+    ZEXPECT(entries[0].help.empty());
 }
 
 ZEST_CASE(required_option_has_no_default) {

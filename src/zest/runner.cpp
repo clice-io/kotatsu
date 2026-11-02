@@ -314,9 +314,8 @@ int run_cli(int argc, char** argv) {
     // The arguments after the program's name.
     auto parsed = cli::parse<CliOptions>(
         std::span(argv, static_cast<std::size_t>(argc)).subspan(std::min(argc, 1)));
-    if(auto help = parsed.help()) {
-        cli::print_usage<CliOptions>(argc > 0 ? fs::path::stem(argv[0]) : "tests",
-                                     help->subcommands);
+    if(parsed.help()) {
+        cli::print_usage<CliOptions>(argc > 0 ? fs::path::stem(argv[0]) : "tests");
         return 0;
     }
     if(auto error = parsed.error()) {

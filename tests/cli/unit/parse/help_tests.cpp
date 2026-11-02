@@ -3,6 +3,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -23,7 +24,14 @@ struct Index {
 };
 
 struct Serve {
+    KANNOTATE(&port, maximum = 65535)
     int port = 0;
+};
+
+/// A subcommand naming -h an option of its own, which its help yields to.
+struct Remote {
+    KANNOTATE(&host, cli::names = {"-h", "--host"})
+    std::string host;
 };
 
 struct Tool {
@@ -31,7 +39,7 @@ struct Tool {
     std::string config;
     KANNOTATE(&path, cli::positional = true)
     std::string path;
-    std::variant<Serve, Index> command;
+    std::variant<Serve, Index, Remote> command;
 };
 
 struct Top {
@@ -70,10 +78,15 @@ struct Run {
     std::vector<std::string> command;
 };
 
-/// A command naming -h an option of its own, which the help yields to.
-struct Remote {
-    KANNOTATE(&host, cli::names = {"-h", "--host"})
+/// A command whose option "/h" takes -h too, which the help yields to.
+struct Slash {
+    KANNOTATE(&host, cli::names = {"/h"})
     std::string host;
+};
+
+/// A command with a field named help, which takes --help, leaving the help -h.
+struct HelpField {
+    bool help = false;
 };
 
 /// A command naming both of the help's names itself, which so takes no help.
@@ -84,7 +97,7 @@ struct OwnHelp {
 
 template <typename T>
 Parsed<T> parse_line(std::string_view line) {
-    return cli::parse<T>(line.empty() ? std::vector<std::string>{} : test::split(line));
+    return cli::parse<T>(test::split(line));
 }
 
 ZEST_SUITE(cli_parse_help) {
@@ -110,10 +123,23 @@ ZEST_CASE(help_ends_the_parse_before_what_follows_and_what_is_required) {
 }
 
 ZEST_CASE(error_before_help_fails) {
-    auto tool = parse_line<Tool>("--bogus --help");
+    auto tool = parse_line<Tool>("--config c a.cc serve --bogus --help");
     ZASSERT(tool.error() != nullptr);
-    ZEXPECT(tool.error()->kind == Error::Kind::UnknownOption);
+    ZEXPECT(tool.error()->message == "unknown option '--bogus'");
+    ZEXPECT(tool.error()->subcommands == (std::vector<std::string>{"serve"}));
     ZEXPECT(tool.help() == nullptr);
+}
+
+ZEST_CASE(value_out_of_range_before_help_fails) {
+    auto tool = parse_line<Tool>("serve --port 70000 --help");
+    ZASSERT(tool.error() != nullptr);
+    ZEXPECT(tool.error()->kind == Error::Kind::InvalidValue);
+}
+
+ZEST_CASE(value_before_help_is_not_decoded) {
+    auto tool = parse_line<Tool>("serve --port many --help");
+    ZASSERT(tool.help() != nullptr);
+    ZEXPECT(tool.help()->subcommands == (std::vector<std::string>{"serve"}));
 }
 
 ZEST_CASE(help_of_a_subcommand_names_it) {
@@ -152,10 +178,25 @@ ZEST_CASE(help_of_a_subcommand_under_an_added_one_names_all) {
     ZEXPECT(daemon.help()->subcommands == (std::vector<std::string>{"group", "index", "stats"}));
 }
 
-ZEST_CASE(help_after_the_dash_dash_is_an_argument) {
+ZEST_CASE(help_after_the_dash_dash_is_the_rest) {
     auto run = parse_line<Run>("--jobs 2 -- --help");
     ZASSERT(run.has_value());
     ZEXPECT(run->command == (std::vector<std::string>{"--help"}));
+}
+
+ZEST_CASE(help_after_the_dash_dash_is_a_positional_argument) {
+    auto daemon = parse_line<Daemon>("--jobs 2 start -- -h");
+    ZASSERT(daemon.has_value());
+    ZASSERT(daemon->command.get_if<Start>() != nullptr);
+    ZEXPECT(daemon->command.get_if<Start>()->name == "-h");
+}
+
+ZEST_CASE(help_is_visited_by_no_visit) {
+    int visits = 0;
+    auto run =
+        cli::parse<Run>(test::split("--jobs 2 --help"), [&](Run&, const Given&) { ++visits; });
+    ZEXPECT(run.help() != nullptr);
+    ZEXPECT(visits == 0);
 }
 
 ZEST_CASE(help_is_suggested_for_a_name_near_it) {
@@ -181,28 +222,37 @@ ZEST_CASE(parse_into_without_help_or_error_has_a_value) {
     ZEXPECT(run.jobs == 3);
 }
 
-ZEST_CASE(option_named_h_keeps_its_name) {
-    auto remote = parse_line<Remote>("-h example.com");
-    ZASSERT(remote.has_value());
-    ZEXPECT(remote->host == "example.com");
-    ZEXPECT(parse_line<Remote>("--help").help() != nullptr);
+ZEST_CASE(subcommand_s_option_named_h_keeps_its_name) {
+    auto tool = parse_line<Tool>("--config c a.cc remote -h example.com");
+    ZASSERT(tool.has_value());
+    ZASSERT(tool->command.index() == 2U);
+    ZEXPECT(std::get<Remote>(tool->command).host == "example.com");
 }
 
-ZEST_CASE(help_yielding_a_name_lists_the_other) {
-    const auto entries = cli::usage_entries<Remote>();
-    ZASSERT(entries.size() == 2U);
-    ZEXPECT(entries[0].usage == "--help");
-    ZEXPECT(entries[1].usage == "-h|--host <value>");
+ZEST_CASE(subcommand_naming_h_takes_the_long_name) {
+    auto tool = parse_line<Tool>("remote --help");
+    ZASSERT(tool.help() != nullptr);
+    ZEXPECT(tool.help()->subcommands == (std::vector<std::string>{"remote"}));
+}
+
+ZEST_CASE(option_taking_h_under_another_prefix_keeps_it) {
+    auto slash = parse_line<Slash>("-h example.com");
+    ZASSERT(slash.has_value());
+    ZEXPECT(slash->host == "example.com");
+    ZEXPECT(parse_line<Slash>("--help").help() != nullptr);
+}
+
+ZEST_CASE(field_named_help_keeps_the_long_name) {
+    auto field = parse_line<HelpField>("--help");
+    ZASSERT(field.has_value());
+    ZEXPECT(field->help);
+    ZEXPECT(parse_line<HelpField>("-h").help() != nullptr);
 }
 
 ZEST_CASE(command_naming_both_takes_no_help) {
     auto own = parse_line<OwnHelp>("--help");
     ZASSERT(own.has_value());
     ZEXPECT(own->help);
-    const auto entries = cli::usage_entries<OwnHelp>();
-    ZASSERT(entries.size() == 1U);
-    ZEXPECT(entries[0].usage == "-h|--help");
-    ZEXPECT(entries[0].help.empty());
 }
 
 };  // ZEST_SUITE(cli_parse_help)

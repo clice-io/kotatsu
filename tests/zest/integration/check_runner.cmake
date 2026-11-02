@@ -347,7 +347,7 @@ expect_no_output("${escape}[")
 run_fixture("${CLI}" --help)
 expect_code(0)
 # The usage is of the program by its file name.
-get_filename_component(cli_name "${CLI}" NAME_WE)
+get_filename_component(cli_name "${CLI}" NAME_WLE)
 expect_output("usage: ${cli_name} [<PATTERN>] [OPTIONS]")
 expect_output("--test-filter")
 expect_no_output("${escape}[")

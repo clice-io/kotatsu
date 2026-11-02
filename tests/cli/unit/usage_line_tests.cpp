@@ -1,11 +1,12 @@
 // The line a usage says calls its command: the program, the subcommands' words, the positional
 // arguments and the required options, [OPTIONS], the rest and the subcommand's placeholder; at
-// every level a program reaches, with that level's defaults. Then the lines clice wrote by hand
-// before they were generated.
+// every level a program reaches, with that level's defaults. And clice's commands, whose lines
+// are those its users know.
 
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -109,6 +110,41 @@ struct MustPick {
     std::variant<ByName, ByIndex> by;
 };
 
+/// An alternative whose first argument a usage leaves out.
+struct ByLegacy {
+    KANNOTATE(&legacy, cli::hidden = true)
+    bool legacy = false;
+    std::string name;
+};
+
+struct ById {
+    std::string id;
+};
+
+struct Quiet {
+    KANNOTATE(&by, cli::exclusive = true, presence = required)
+    std::variant<ByLegacy, ById> by;
+};
+
+struct WithRest {
+    KANNOTATE(&command, cli::rest = true)
+    std::vector<std::string> command;
+};
+
+struct Pass {
+    KANNOTATE(&how, cli::exclusive = true)
+    std::variant<WithRest, BySpec> how;
+};
+
+struct Shapes {
+    KANNOTATE(&size, presence = required)
+    std::tuple<int, int> size;
+    KANNOTATE(&tags, presence = required, cli::comma = true)
+    std::vector<std::string> tags;
+    KANNOTATE(&force, presence = required)
+    bool force = false;
+};
+
 KANNOTATE_TYPE(struct Stats, description = "Index statistics");
 
 struct Stats {
@@ -163,14 +199,15 @@ int run_index(Index&) {
 /// The line `usage` says calls its command.
 std::string line_of(const std::string& usage) {
     constexpr std::string_view prefix = "usage: ";
-    const auto begin = usage.find(prefix) + prefix.size();
+    const auto at = usage.find(prefix);
+    ZASSERT(at != std::string::npos);
+    const auto begin = at + prefix.size();
     return usage.substr(begin, usage.find('\n', begin) - begin);
 }
 
 namespace clice {
 
-// clice's commands as they were declared when their usage lines were written by hand: what they
-// take, without what each does.
+// clice's commands, what each takes without what it does.
 
 struct Subcommands {
     using signature = int();
@@ -375,7 +412,20 @@ ZEST_CASE(optional_exclusive_field_of_options_is_left_to_them) {
     ZEXPECT(line_of(cli::usage<Pick>("tool")) == "tool [OPTIONS]");
 }
 
-ZEST_CASE(alternative_without_what_it_requires_is_its_first_option) {
+ZEST_CASE(alternative_requiring_nothing_is_its_first_shown_argument) {
+    ZEXPECT(line_of(cli::usage<Quiet>("tool")) == "tool (--name <value> | --id <value>) [OPTIONS]");
+}
+
+ZEST_CASE(alternative_taking_the_rest_is_written_where_the_field_is) {
+    ZEXPECT(line_of(cli::usage<Pass>("tool")) == "tool [-- <value>... | --spec <FILE>] [OPTIONS]");
+}
+
+ZEST_CASE(required_options_of_every_shape_are_written) {
+    ZEXPECT(line_of(cli::usage<Shapes>("tool")) ==
+            "tool --size <value1> <value2> --tags,<value>[,<value>...] --force [OPTIONS]");
+}
+
+ZEST_CASE(required_exclusive_field_of_options_is_their_first_ones) {
     ZEXPECT(line_of(cli::usage<MustPick>("tool")) ==
             "tool (--name <value> | --index <value>) [OPTIONS]");
 }
@@ -417,6 +467,10 @@ ZEST_CASE(subcommand_under_an_added_one_follows_both_words) {
 
 ZEST_CASE(word_naming_no_subcommand_ends_the_program, crashes = true) {
     static_cast<void>(cli::usage<App>("app", {"index", "bogus"}));
+}
+
+ZEST_CASE(word_past_a_command_without_subcommands_ends_the_program, crashes = true) {
+    static_cast<void>(cli::usage<App>("app", {"stats", "more"}));
 }
 
 ZEST_CASE(lines_are_those_clice_wrote) {

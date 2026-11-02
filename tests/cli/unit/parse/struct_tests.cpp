@@ -35,6 +35,8 @@ KANNOTATE_TYPE(struct Serve, description = "Start the server");
 
 struct Serve {
     int port = 0;
+    KANNOTATE(&version, cli::stop = true)
+    bool version = false;
 };
 
 struct ProjectFiles {
@@ -155,6 +157,13 @@ ZEST_CASE(unknown_word_where_a_subcommand_may_go_fails) {
     auto query = parse_line<Query>("nope");
     ZASSERT(query.error() != nullptr);
     ZEXPECT(query.error()->kind == Error::Kind::UnknownSubcommand);
+}
+
+ZEST_CASE(subcommand_s_stop_option_skips_what_the_command_requires) {
+    auto daemon = parse_line<Daemon>("serve --version --bogus");
+    ZASSERT(daemon.has_value());
+    ZASSERT(daemon->command.index() == 0U);
+    ZEXPECT(std::get<Serve>(daemon->command).version);
 }
 
 ZEST_CASE(command_s_required_option_left_out_fails_at_the_subcommand) {

@@ -78,6 +78,16 @@ std::string numbered(std::string_view token, std::uint32_t count) {
     return numbered_tokens;
 }
 
+/// Whether an option named `spelling` takes the argument `name`: under one of the prefixes it
+/// accepts, "/h" taking "-h" as well.
+bool takes(std::string_view spelling, std::string_view name) {
+    const auto stem = spelling.substr(spelling.starts_with("--") ? 2 : 1);
+    return std::ranges::any_of(prefixes_of(spelling), [&](std::string_view prefix) {
+        return name.size() == prefix.size() + stem.size() && name.starts_with(prefix) &&
+               name.ends_with(stem);
+    });
+}
+
 /// A command being built, and the one it is a subcommand of: what finds a set of subcommands
 /// holding one that holds the set again, which no argv could end.
 struct Building {
@@ -363,10 +373,12 @@ public:
         command.arg_of = {no_arg, no_arg, no_arg};
         add_struct(type, no_group, {}, "");
         name_equals_forms();
-        // -h and --help ask for the usage, each unless the command names an option so itself.
+        // -h and --help ask for the usage, each unless an option of the command takes it itself.
         std::vector<std::string_view> help_names;
         for(const std::string_view name: {"-h", "--help"}) {
-            if(std::ranges::find(command.spellings, name) == command.spellings.end()) {
+            if(std::ranges::none_of(command.spellings, [&](std::string_view spelling) {
+                   return takes(spelling, name);
+               })) {
                 add_option(NameForm{.name = std::string(name), .kind = OptionKind::Flag}, help_arg);
                 help_names.push_back(name);
             }

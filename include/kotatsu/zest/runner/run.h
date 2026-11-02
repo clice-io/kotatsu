@@ -3,6 +3,7 @@
 #include <string>
 
 #include "kotatsu/cli/spec.h"
+#include "kotatsu/codec/attribute.h"
 #include "kotatsu/codec/macro.h"
 
 namespace kotatsu::zest {
@@ -83,8 +84,9 @@ struct Options {
 ///     }
 ///
 /// Returns 0 once it has printed the usage for `-h` or `--help`, under the
-/// program's file name, 2 for options that do not parse, 1 for a positional
-/// filter given with `--test-filter`, and otherwise what run_tests() returns.
+/// program's file name without its extension, 2 for options that do not
+/// parse, 1 for a positional filter given with `--test-filter`, and otherwise
+/// what run_tests() returns.
 int run_cli(int argc, char** argv);
 
 /// Run all registered tests with explicit configuration. `argc`/`argv` are the

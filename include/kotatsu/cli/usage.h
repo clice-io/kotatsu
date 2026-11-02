@@ -47,17 +47,27 @@ struct UsageEntry {
 
 namespace detail {
 
-/// The options naming `subcommands`, outermost first, under `command`, and nothing more: what
-/// a decode reads into options that hold those subcommands and their defaults.
-Node subcommand_path(const Command& command, string_list_ref subcommands);
+struct Subcommands;
 
-/// The options a default-constructed `T` holds once it holds `subcommands`, which a usage says
-/// the defaults of; none for a `T` that is not default-constructible, or a field whose value
-/// does not write.
+/// Where subcommands lead from the command of a program's options: the command they name, the
+/// fields of subcommands on the way, outermost first, and the options naming them and nothing
+/// more, which a decode reads into options that hold those subcommands.
+struct Path {
+    const Command* command = nullptr;
+    std::vector<const Subcommands*> fields = {};
+    Node options = {};
+};
+
+/// The path `subcommands` take from `command`, each a subcommand of the one before; a word
+/// naming none ends the program, its caller having passed subcommands the options lack.
+Path path_of(const Command& command, string_list_ref subcommands);
+
+/// The options a default-constructed `T` holds once it holds the subcommands `path` names,
+/// which a usage says the defaults of; none for a `T` that is not default-constructible, or a
+/// field whose value does not write.
 template <typename T>
-Node defaults_of(string_list_ref subcommands, std::deque<std::string>& texts) {
+Node defaults_of(const Node& path, std::deque<std::string>& texts) {
     if constexpr(std::is_default_constructible_v<T>) {
-        const Node path = subcommand_path(command_of<T>(), subcommands);
         T options{};
         const Node* last = nullptr;
         codec::rich_error error;
@@ -73,7 +83,7 @@ Node defaults_of(string_list_ref subcommands, std::deque<std::string>& texts) {
 
 std::vector<UsageEntry> usage_entries(const Command& command, const Node& defaults);
 
-std::string usage(const Command& command,
+std::string usage(const Path& path,
                   const Node& defaults,
                   std::string_view program,
                   string_list_ref subcommands,
@@ -104,9 +114,10 @@ template <typename T>
 std::string usage(std::string_view program,
                   string_list_ref subcommands = {},
                   const Style& style = {}) {
+    const auto path = detail::path_of(detail::command_of<T>(), subcommands);
     std::deque<std::string> texts;
-    return detail::usage(detail::command_of<T>(),
-                         detail::defaults_of<T>(subcommands, texts),
+    return detail::usage(path,
+                         detail::defaults_of<T>(path.options, texts),
                          program,
                          subcommands,
                          style);

@@ -4,8 +4,8 @@
 #include <limits>
 #include <string_view>
 
+#include "kotatsu/support/config.h"
 #include "kotatsu/meta/annotation.h"
-#include "kotatsu/codec/attribute.h"
 
 namespace kotatsu::cli {
 

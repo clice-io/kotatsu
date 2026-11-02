@@ -114,40 +114,43 @@ bool unconditional(const Command& command, std::uint32_t group, std::uint32_t ou
     return true;
 }
 
-/// How a usage line writes `arg` when the arguments of `outer` are there: a positional argument
-/// or the rest, in brackets unless required; an option when required; else nothing.
-std::string line_part(const Command& command, const Arg& arg, std::uint32_t outer) {
-    const bool required = arg.required && unconditional(command, arg.group, outer);
-    if(!arg.spec.positional && !arg.spec.rest) {
-        return required ? arg.synopsis : "";
+/// How a usage line writes `arg`, whether `required` there: a positional argument or the rest,
+/// in brackets unless required; an option when required, else nothing.
+std::string line_part(const Arg& arg, bool required) {
+    if(required) {
+        return arg.synopsis;
     }
-    return required ? arg.synopsis : std::format("[{}]", arg.synopsis);
+    return arg.spec.positional || arg.spec.rest ? std::format("[{}]", arg.synopsis) : "";
 }
 
 /// How a usage line writes exclusive field `index`: its alternatives, each by its positional
-/// arguments, the rest and its required options, else by its first argument; "(...)" when it is
-/// required, "[...]" when one of them takes positional arguments, and nothing otherwise.
+/// arguments, the rest and its required options when it requires one, else by its first
+/// argument, which picks it as any does; "(...)" when the field is required, "[...]" when an
+/// alternative takes positional arguments, and nothing otherwise.
 std::string exclusive_part(const Command& command, std::uint32_t index) {
     const auto& exclusive = command.exclusives[index];
     bool positional = false;
     std::vector<std::string> alternatives;
-    for(std::uint32_t i = 0; i < exclusive.alternatives.size(); ++i) {
-        const auto alternative = exclusive.alternatives[i];
+    for(const auto alternative: exclusive.alternatives) {
         std::vector<std::string> parts;
+        std::string first;
+        bool requires_one = false;
         for(const auto& arg: command.args) {
             if(arg.alternative != alternative || arg.spec.hidden) {
                 continue;
             }
             positional = positional || arg.spec.positional || arg.spec.rest;
-            if(auto part = line_part(command, arg, alternative); !part.empty()) {
+            const bool required = arg.required && unconditional(command, arg.group, alternative);
+            requires_one = requires_one || required;
+            first = first.empty() ? arg.synopsis : first;
+            if(auto part = line_part(arg, required); !part.empty()) {
                 parts.push_back(std::move(part));
             }
         }
-        if(parts.empty() && exclusive.first_args[i] != no_arg) {
-            parts.push_back(command.args[exclusive.first_args[i]].synopsis);
-        }
-        if(!parts.empty()) {
+        if(requires_one) {
             alternatives.push_back(join(parts, " "));
+        } else if(!first.empty()) {
+            alternatives.push_back(std::move(first));
         }
     }
     const auto text = join(alternatives, " | ");
@@ -157,10 +160,13 @@ std::string exclusive_part(const Command& command, std::uint32_t index) {
     return positional ? std::format("[{}]", text) : "";
 }
 
-/// The line that calls `command`, reached by `words` in `program`: "tool serve <PATH> [OPTIONS]".
-std::string usage_line(const Command& command, std::string_view program, string_list_ref words) {
+/// The line that calls `command`, the subcommands `subcommands` name in `program`: "tool serve
+/// <PATH> [OPTIONS]".
+std::string usage_line(const Command& command,
+                       std::string_view program,
+                       string_list_ref subcommands) {
     std::vector<std::string> parts = {std::string(program)};
-    for(const auto word: words) {
+    for(const auto word: subcommands) {
         parts.emplace_back(word);
     }
     bool options = !command.help_usage.empty();
@@ -178,7 +184,7 @@ std::string usage_line(const Command& command, std::string_view program, string_
                 part = exclusive_part(command, exclusive);
             }
         } else if(!arg.spec.rest) {
-            part = line_part(command, arg, no_group);
+            part = line_part(arg, arg.required && unconditional(command, arg.group));
         }
         if(!part.empty()) {
             parts.push_back(std::move(part));
@@ -187,9 +193,11 @@ std::string usage_line(const Command& command, std::string_view program, string_
     if(options) {
         parts.emplace_back("[OPTIONS]");
     }
-    if(command.rest && command.args[*command.rest].alternative == no_group &&
-       !command.args[*command.rest].spec.hidden) {
-        parts.push_back(line_part(command, command.args[*command.rest], no_group));
+    if(command.rest) {
+        const auto& rest = command.args[*command.rest];
+        if(rest.alternative == no_group && !rest.spec.hidden) {
+            parts.push_back(line_part(rest, rest.required && unconditional(command, rest.group)));
+        }
     }
     if(command.subcommands) {
         const auto& subcommands = *command.subcommands;
@@ -204,18 +212,19 @@ std::string usage_line(const Command& command, std::string_view program, string_
 
 }  // namespace
 
-Node subcommand_path(const Command& command, string_list_ref subcommands) {
-    Node root;
-    Node* node = &root;
-    const Command* at = &command;
+Path path_of(const Command& command, string_list_ref subcommands) {
+    Path path{.command = &command};
+    Node* node = &path.options;
     for(const auto word: subcommands) {
-        const auto index = subcommand_index(*at, word);
-        Node& variant = make_node(*node, at->subcommands->keys, Node::Kind::Variant);
+        const auto index = subcommand_index(*path.command, word);
+        const auto& field = *path.command->subcommands;
+        Node& variant = make_node(*node, field.keys, Node::Kind::Variant);
         variant.count = index;
         node = &variant.items.emplace_back(Node{.kind = Node::Kind::Object});
-        at = at->subcommands->commands[index].get();
+        path.fields.push_back(&field);
+        path.command = field.commands[index].get();
     }
-    return root;
+    return path;
 }
 
 std::vector<UsageEntry> usage_entries(const Command& command, const Node& defaults) {
@@ -259,24 +268,21 @@ std::vector<UsageEntry> usage_entries(const Command& command, const Node& defaul
     return entries;
 }
 
-std::string usage(const Command& root,
+std::string usage(const Path& path,
                   const Node& defaults,
                   std::string_view program,
                   string_list_ref subcommands,
                   const Style& style) {
-    // The command the words name, and its options as `defaults` holds them: none when they hold
-    // no defaults at all.
+    // The options of the command the path names as `defaults` holds them: none when they hold no
+    // defaults at all.
     const Node none;
-    const Command* at = &root;
     const Node* held = &defaults;
-    for(const auto word: subcommands) {
-        const auto index = subcommand_index(*at, word);
-        const Node* variant = find_node(*held, at->subcommands->keys);
+    for(const auto* field: path.fields) {
+        const Node* variant = find_node(*held, field->keys);
         held = variant != nullptr ? &variant->items.front() : &none;
-        at = at->subcommands->commands[index].get();
     }
-    const auto& command = *at;
-    const auto synopsis = usage_line(command, program, subcommands);
+    const auto& command = *path.command;
+    const auto line = usage_line(command, program, subcommands);
 
     const auto entries = usage_entries(command, *held);
     std::string out;
@@ -285,12 +291,11 @@ std::string usage(const Command& root,
                            : std::string(command.type->description);
         out += "\n\n";
     }
-    out += style.color
-               ? std::format("{} {}", paint(ansi_heading, "Usage"), paint(ansi_bold, synopsis))
-               : std::format("usage: {}", synopsis);
+    out += style.color ? std::format("{} {}", paint(ansi_heading, "Usage"), paint(ansi_bold, line))
+                       : std::format("usage: {}", line);
     out += "\n";
 
-    auto line = [&](const UsageEntry& entry) {
+    auto write_entry = [&](const UsageEntry& entry) {
         const auto syntax = style.color ? paint(ansi_syntax, entry.usage) : entry.usage;
         const auto help = style.color ? paint(ansi_help, help_of(entry)) : help_of(entry);
         out += lay_out(syntax, entry.usage.size(), help, style.help_column);
@@ -320,7 +325,7 @@ std::string usage(const Command& root,
         out += "\n";
         for(const auto& entry: entries) {
             if(entry.kind != UsageEntry::Kind::Subcommand && entry.group == title) {
-                line(entry);
+                write_entry(entry);
             }
         }
     }
