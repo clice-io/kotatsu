@@ -1,3 +1,5 @@
+#include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -26,6 +28,25 @@ struct Camel {
 struct HoldsCamel {
     KANNOTATE(&inner, rename_all = Casing::UpperSnake)
     Camel inner;
+};
+
+struct Plain {
+    int item_count = 1;
+};
+
+/// A field's struct attributes reach through an optional or a pointer to the
+/// struct it holds, as they reach the struct a repr declares: under the
+/// struct's own annotation, a scope nearer to it.
+struct HoldsWrapped {
+    KANNOTATE(&maybe, rename_all = Casing::UpperSnake, deny_unknown_fields = true)
+    std::optional<Plain> maybe = Plain{};
+    KANNOTATE(&owned, rename_all = Casing::UpperSnake, deny_unknown_fields = true)
+    std::unique_ptr<Plain> owned = std::make_unique<Plain>();
+};
+
+/// A format under which every struct denies the keys it does not know.
+struct StrictFormat : extend<json::format> {
+    constexpr static bool deny_unknown_fields = true;
 };
 
 /// Its fields shout, the flattened struct's keep their own spelling.
@@ -162,6 +183,31 @@ ZEST_CASE(field_attributes_stand_over_the_type_s) {
     ZASSERT(schema);
     ZEXPECT(zest::contains(*schema, R"("ITEM_COUNT")"));
     ZEXPECT(!zest::contains(*schema, R"("itemCount")"));
+}
+
+ZEST_CASE(field_attributes_reach_through_wrappers) {
+    const auto text = json::to_string(HoldsWrapped{});
+    ZEXPECT(text == R"({"maybe":{"ITEM_COUNT":1},"owned":{"ITEM_COUNT":1}})");
+    HoldsWrapped back;
+    back.maybe.reset();
+    back.owned.reset();
+    ZASSERT(json::from_string(*text, back));
+    ZASSERT(back.maybe.has_value());
+    ZASSERT(back.owned != nullptr);
+    ZEXPECT(back.maybe->item_count == 1);
+    ZEXPECT(back.owned->item_count == 1);
+    ZEXPECT(!json::from_string(R"({"owned":{"ITEM_COUNT":1,"extra":2}})", back));
+    const auto schema = json::schema_string<HoldsWrapped>();
+    ZASSERT(schema);
+    ZEXPECT(zest::contains(*schema, R"("ITEM_COUNT")"));
+    ZEXPECT(!zest::contains(*schema, R"("item_count")"));
+}
+
+ZEST_CASE(a_format_denies_unknown_keys_at_every_depth) {
+    HoldsCamel out;
+    ZEXPECT(json::from_string<StrictFormat>(R"({"inner":{"ITEM_COUNT":1}})", out));
+    ZEXPECT(!json::from_string<StrictFormat>(R"({"inner":{"ITEM_COUNT":1,"extra":2}})", out));
+    ZEXPECT(!json::from_string<StrictFormat>(R"({"inner":{"ITEM_COUNT":1},"extra":2})", out));
 }
 
 ZEST_CASE(flattened_fields_keep_their_own_spelling) {

@@ -463,7 +463,7 @@ bool decode_internally_tagged(Vis& vis, std::variant<Ts...>& var) {
     constexpr std::size_t npos = sizeof...(Ts);
     // The variant's own deny_unknown_fields reaches every alternative's keys.
     constexpr bool variant_denies =
-        SpecAttr::value.deny_unknown_fields || format_denies_unknown<Format>();
+        SpecAttr::value.deny_unknown_fields || Format::deny_unknown_fields;
 
     std::size_t idx = peek_tag_index(vis, tag_key, names);
     if(idx != npos) {
@@ -539,7 +539,7 @@ bool decode_adjacently_tagged(Vis& vis, std::variant<Ts...>& var) {
     constexpr auto names = resolve_tag_names<SpecAttr, Format, Ts...>();
     constexpr std::size_t npos = sizeof...(Ts);
     constexpr bool variant_denies =
-        SpecAttr::value.deny_unknown_fields || format_denies_unknown<Format>();
+        SpecAttr::value.deny_unknown_fields || Format::deny_unknown_fields;
 
     std::size_t idx = peek_tag_index(vis, tag_key, names);
 

@@ -28,6 +28,10 @@ struct format {
     using rename_all = naming::rename_policy::identity;
     /// The presence of every struct field nothing else gives one; unset, its kind decides.
     constexpr static std::optional<presence_kind> presence_all = std::nullopt;
+    /// Whether every struct, and every tagged variant, read under it denies the keys it does
+    /// not know, as its own deny_unknown_fields does; decode_options::deny_unknown_fields
+    /// denies them for one decode.
+    constexpr static bool deny_unknown_fields = false;
     /// Whether documents carry names, a struct's fields and a variant's tags: true but for a
     /// binary backend's format. A format may turn it off, never on.
     constexpr static bool human_readable = true;

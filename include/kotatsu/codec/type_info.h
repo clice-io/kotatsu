@@ -426,17 +426,6 @@ using built_fields_t = std::array<field_info, type_list_size_v<build_slots_t<T>>
 template <typename T, typename Format>
 constexpr built_fields_t<T> build_fields(std::size_t base_offset = 0);
 
-/// Whether the format denies unknown fields: a struct's deny_unknown_fields,
-/// scoped in by node_format_t on the way down.
-template <typename Format>
-constexpr bool format_denies_unknown() {
-    if constexpr(requires { Format::deny_unknown_fields; }) {
-        return Format::deny_unknown_fields;
-    } else {
-        return false;
-    }
-}
-
 /// Rejects an alternative of an internally tagged variant whose fields
 /// cannot sit beside the tag: one that is not a struct, or a struct that
 /// travels as another type, through a codec::repr. A std::monostate is a unit
@@ -484,7 +473,7 @@ struct variant_info_node<std::variant<Ts...>, TagAttrs, Format> {
         spec.tag,
         spec.content,
         {alt_names.data(),         has_tag ? alt_names.size() : 0        },
-        spec.deny_unknown_fields || format_denies_unknown<Format>(),
+        spec.deny_unknown_fields || Format::deny_unknown_fields,
     };
 };
 
@@ -575,7 +564,7 @@ struct info_node<T, TagAttrs, Format, meta::type_kind::structure> {
 
     constexpr inline static struct_type_info value = {
         {meta::type_kind::structure, meta::type_name<T>()},
-        format_denies_unknown<Format>(),
+        Format::deny_unknown_fields,
         fields,
         spec_of<field_spec, meta::attrs_of_t<T>>.description,
     };

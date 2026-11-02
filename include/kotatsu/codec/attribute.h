@@ -525,11 +525,12 @@ struct scope {
                        naming::rename_policy_of_t<&naming::spell_with<typename Base::rename_all>>>,
         void,
         Rename>;
+    constexpr static bool deny = DenyUnknown && !Base::deny_unknown_fields;
     constexpr static std::uint8_t presence =
         Presence == presence_code(Base::presence_all) ? 0 : Presence;
-    using type = std::conditional_t<std::is_void_v<rename> && !DenyUnknown && presence == 0,
+    using type = std::conditional_t<std::is_void_v<rename> && !deny && presence == 0,
                                     Base,
-                                    scoped_format<Base, rename, DenyUnknown, presence>>;
+                                    scoped_format<Base, rename, deny, presence>>;
 };
 
 /// A scope entered within another, as the type a repr declares is within its type's: one
@@ -559,17 +560,34 @@ consteval auto rename_in() {
     }
 }
 
+/// Whether struct attributes scope a node of type T: a reflectable struct, whose members they
+/// name and mark, an enum, whose names an enum_names repr spells by its rename_all, or an
+/// optional or a smart pointer holding one, which they reach through as they reach the type a
+/// repr declares, the struct's own annotation a scope nearer to it.
+template <typename T>
+consteval bool takes_scope() {
+    if constexpr(meta::reflectable_class<T> || std::is_enum_v<T>) {
+        return true;
+    } else if constexpr(meta::kind_of<T>() == meta::type_kind::optional) {
+        return takes_scope<typename T::value_type>();
+    } else if constexpr(meta::kind_of<T>() == meta::type_kind::pointer &&
+                        requires { typename T::element_type; }) {
+        return takes_scope<typename T::element_type>();
+    } else {
+        return false;
+    }
+}
+
 }  // namespace detail
 
 /// The format a node of type T carrying Attrs, a field's attrs or its type's, is read and
 /// written under: Format scoped by the struct attributes of Attrs (rename_all,
-/// deny_unknown_fields, presence_all) when T is a reflectable struct, whose members they name
-/// and mark, or an enum, whose names an enum_names repr spells by its rename_all; Format on
-/// every other node. The dispatch and type_info both scope through it, so that type_info
-/// describes the documents the codec reads and writes.
+/// deny_unknown_fields, presence_all) when they reach a struct or an enum (detail::takes_scope);
+/// Format on every other node. The dispatch and type_info both scope through it, so that
+/// type_info describes the documents the codec reads and writes.
 template <typename Format, typename T, typename Attrs>
 using node_format_t = std::conditional_t<
-    meta::reflectable_class<T> || std::is_enum_v<T>,
+    detail::takes_scope<T>(),
     typename detail::scope<Format,
                            typename decltype(detail::rename_in<Attrs>())::type,
                            spec_of<struct_spec, Attrs>.deny_unknown_fields,
