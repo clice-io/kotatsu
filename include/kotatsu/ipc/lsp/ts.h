@@ -35,6 +35,15 @@ struct LiteralText {
     }
 };
 
+/// The presence of the `undefined | T` types: one that holds nothing is left
+/// out, whatever the struct holding it starts as.
+struct HoldsNothing {
+    template <typename T>
+    constexpr bool operator()(const T& value) const {
+        return !value;
+    }
+};
+
 }  // namespace detail
 
 /// `T | null`: null or a value, but present. Unlike a plain std::optional, a
@@ -74,7 +83,7 @@ struct optional_bool {
 };
 
 consteval auto __kotatsu__type_annotation(std::type_identity<optional_bool>) {
-    return meta::make_annotation(codec::dsl::presence = codec::presence_kind::omit_if_default);
+    return meta::make_annotation(codec::dsl::presence = meta::dsl::type<detail::HoldsNothing>);
 }
 
 /// `undefined | T`.
@@ -98,7 +107,7 @@ struct optional : std::optional<T> {
 
 template <typename T>
 consteval auto __kotatsu__type_annotation(std::type_identity<optional<T>>) {
-    return meta::make_annotation(codec::dsl::presence = codec::presence_kind::omit_if_default);
+    return meta::make_annotation(codec::dsl::presence = meta::dsl::type<detail::HoldsNothing>);
 }
 
 /// `undefined | T` for a T that has null among its values (a nullable<U>, or
@@ -124,7 +133,7 @@ struct optional_nullable : std::optional<T> {
 
 template <typename T>
 consteval auto __kotatsu__type_annotation(std::type_identity<optional_nullable<T>>) {
-    return meta::make_annotation(codec::dsl::presence = codec::presence_kind::omit_if_default);
+    return meta::make_annotation(codec::dsl::presence = meta::dsl::type<detail::HoldsNothing>);
 }
 
 /// `undefined | T` where T is the enclosing structure itself, which a
@@ -140,7 +149,7 @@ struct optional_ptr : std::unique_ptr<T> {
 
 template <typename T>
 consteval auto __kotatsu__type_annotation(std::type_identity<optional_ptr<T>>) {
-    return meta::make_annotation(codec::dsl::presence = codec::presence_kind::omit_if_default);
+    return meta::make_annotation(codec::dsl::presence = meta::dsl::type<detail::HoldsNothing>);
 }
 
 /// `A | B | ...`, decoded as the first alternative the input fits.

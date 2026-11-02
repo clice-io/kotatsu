@@ -384,6 +384,24 @@ ZEST_CASE(optional_nullable_member_roundtrips_through_dyn) {
     }
 }
 
+/// Members that start out holding something.
+struct StartsHolding {
+    protocol::optional<protocol::integer> limit = 5;
+    protocol::optional_nullable<protocol::nullable<protocol::integer>> extra =
+        protocol::nullable<protocol::integer>{1};
+    protocol::optional_bool flag = true;
+};
+
+ZEST_CASE(undefined_members_that_hold_nothing_are_left_out) {
+    // Whatever the struct starts as: an empty `undefined | T` is undefined.
+    StartsHolding cleared;
+    cleared.limit.reset();
+    cleared.extra.reset();
+    cleared.flag = false;
+    ZEXPECT(to_string<lsp_format>(cleared) == "{}");
+    ZEXPECT(to_string<lsp_format>(StartsHolding{}) == R"({"limit":5,"extra":1,"flag":true})");
+}
+
 struct NullableMembers {
     protocol::nullable<protocol::integer> required;
     protocol::optional_nullable<protocol::nullable<protocol::integer>> optional;
