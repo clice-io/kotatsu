@@ -667,9 +667,16 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
     }
 }
 
+/// Whether T is read as an untagged std::variant: one, or a class derived
+/// from one whose type annotation tags it not.
+template <typename Format, typename T>
+constexpr bool untagged_variant_v =
+    is_specialization_of<std::variant, T> ||
+    (meta::derived_variant<T> && !resolves_to_tagged_variant<T, Format>);
+
 /// True when this alternative decodes through decode_untagged_variant itself —
-/// no dispatch override, a bare std::variant possibly behind nullable
-/// wrappers (which are transparent to non-null input) or declarative repr
+/// no dispatch override, an untagged variant (untagged_variant_v) possibly
+/// behind nullable wrappers (which are transparent to non-null input) or declarative repr
 /// chain links (whose from() conversion runs after the variant is read) — so
 /// probing it re-enters the pass structure below and the outer pass level
 /// must flow into it. An imperative repr decodes through its own body
@@ -692,7 +699,7 @@ constexpr bool probes_as_untagged_variant() {
                       is_specialization_of<std::shared_ptr, T>)
         return probes_as_untagged_variant<Format, Vis, typename T::element_type>();
     else
-        return is_specialization_of<std::variant, T>;
+        return untagged_variant_v<Format, T>;
 }
 
 template <typename Format, typename Vis, typename... Ts>
@@ -714,7 +721,8 @@ bool nested_alternative_pass(Vis& vis, T& out, meta::type_kind src_kind, bool wi
         KOTATSU_CODEC_TRY(nested_alternative_pass<Format>(vis, declared, src_kind, widen));
         out = chosen::from(std::move(declared));
         return true;
-    } else if constexpr(is_specialization_of<std::variant, T>) {
+    } else if constexpr(untagged_variant_v<Format, T>) {
+        // A class derived from a std::variant binds to it.
         return untagged_variant_pass<Format>(vis, out, src_kind, widen);
     } else {
         if(src_kind == meta::type_kind::null)

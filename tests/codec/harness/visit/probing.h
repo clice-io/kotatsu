@@ -330,6 +330,12 @@ void probing(const Kit<B>& kit) {
         "nested_widening_defers_to_outer_exact_match",
         [] { return 1000; },
         [] { return std::variant<Narrow, std::int64_t>{std::int64_t{1000}}; });
+    // A named variant takes the same passes as the bare one.
+    reads_in_field<std::variant<NamedNarrow, std::int64_t>>(
+        kit,
+        "named_nested_widening_defers_to_outer_exact_match",
+        [] { return 1000; },
+        [] { return std::variant<NamedNarrow, std::int64_t>{std::int64_t{1000}}; });
     reads_in_field<std::variant<Narrow, std::int64_t>>(
         kit,
         "nested_exact_match_wins",

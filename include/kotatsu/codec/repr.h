@@ -43,9 +43,11 @@ struct dynamic {};
 ///         static bool decode(auto& vis, Weird& w);
 ///     };
 ///
-/// The visitor carries the format the value is read or written under, which
+/// The visitor carries the format the encode or decode runs under, which
 /// codec::encode_value(vis, part) and codec::decode_value(vis, part) apply
-/// to the values the body is made of.
+/// to the values the body is made of. The struct attributes of a field
+/// holding T (rename_all, deny_unknown_fields, presence_all) reach the
+/// members of a declared representation, not those of a body's parts.
 ///
 /// Use `using type = dynamic;` when the shape is only known at runtime:
 /// schema output degrades to "any", and layout-computed backends
