@@ -62,6 +62,13 @@ struct Options {
     int jobs = 0;
 };
 
+KANNOTATE_TYPE(class Settings, description = "Downstream settings");
+
+class Settings {
+public:
+    int depth = 0;
+};
+
 enum class Level : std::uint8_t;
 KANNOTATE_TYPE(Level, description = "How loud");
 
@@ -178,6 +185,12 @@ ZEST_CASE(annotate_type_declares_the_struct_where_it_is_written) {
         std::string_view("Downstream options"));
     ZSTATIC_EXPECT(
         codec::spec_of<codec::field_spec, meta::attrs_of_t<::Options>>.description.empty());
+}
+
+ZEST_CASE(annotate_type_declares_a_class_where_it_is_written) {
+    ZSTATIC_EXPECT(
+        codec::spec_of<codec::field_spec, meta::attrs_of_t<downstream::Settings>>.description ==
+        std::string_view("Downstream settings"));
 }
 
 ZEST_CASE(annotate_type_follows_an_opaque_enum_declaration) {

@@ -164,7 +164,8 @@ Node write_options(const T& options, std::deque<std::string>& texts, bool lenien
 }  // namespace detail
 
 /// The argv parse() reads back as `options`: each option and positional argument with a
-/// value, in declaration order, then the subcommand and its own.
+/// value, in declaration order, then the subcommand and its own. With a subcommand, the
+/// command's arguments are those that go with it alone (cli::global), as parse() reads no other.
 template <typename T>
 std::vector<std::string> to_argv(const T& options) {
     std::deque<std::string> texts;

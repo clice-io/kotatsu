@@ -134,15 +134,18 @@ constexpr FieldUse use_of(const codec::field_info& field) {
     return use;
 }
 
-/// A name an option registers, read off its declaration rather than built: `dashes` and `stem`,
-/// '_' in the stem spelled '-' when the name is generated from a declared one, then `suffix`,
-/// '=' or ',' or none. Building no string keeps the check of a declaration cheap enough for a
-/// compiler's constant evaluation.
+/// A name an option registers, read off its declaration rather than built: `dashes` and
+/// `stem`, then `suffix`, '=' or ',' or none. A name generated from a declared one alone starts
+/// with dashes, and spells each '_' in its stem '-'. Building no string keeps the check of a
+/// declaration cheap enough for a compiler's constant evaluation.
 struct Spelling {
     std::string_view dashes = {};
     std::string_view stem = {};
-    bool generated = false;
     char suffix = '\0';
+
+    constexpr bool generated() const {
+        return !dashes.empty();
+    }
 
     constexpr std::size_t size() const {
         return dashes.size() + stem.size() + (suffix == '\0' ? 0 : 1);
@@ -156,7 +159,21 @@ struct Spelling {
         if(index == stem.size()) {
             return suffix;
         }
-        return generated && stem[index] == '_' ? '-' : stem[index];
+        return generated() && stem[index] == '_' ? '-' : stem[index];
+    }
+
+    /// Passes `take` each character in turn.
+    template <typename F>
+    constexpr void each(F&& take) const {
+        for(char c: dashes) {
+            take(c);
+        }
+        for(char c: stem) {
+            take(generated() && c == '_' ? '-' : c);
+        }
+        if(suffix != '\0') {
+            take(suffix);
+        }
     }
 
     constexpr bool operator==(const Spelling& other) const {
@@ -173,10 +190,8 @@ struct Spelling {
     }
 
     std::string text() const {
-        std::string text(size(), '\0');
-        for(std::size_t i = 0; i < text.size(); ++i) {
-            text[i] = (*this)[i];
-        }
+        std::string text;
+        each([&](char c) { text.push_back(c); });
         return text;
     }
 };
@@ -199,14 +214,12 @@ struct NameForm {
 /// its declared name with '_' spelled '-', after "-" when one letter long and "--" otherwise.
 template <typename F>
 constexpr void name_forms(const FieldUse& use, std::string_view declared, F&& add) {
-    auto each_name = [&](auto&& form) {
+    auto each_name = [&](auto&& take) {
         if(use.spec.names.empty()) {
-            form(Spelling{.dashes = declared.size() == 1 ? "-" : "--",
-                          .stem = declared,
-                          .generated = true});
+            take(Spelling{.dashes = declared.size() == 1 ? "-" : "--", .stem = declared});
         }
         for(auto name: use.spec.names) {
-            form(Spelling{.stem = name});
+            take(Spelling{.stem = name});
         }
     };
     switch(use.shape) {
@@ -237,8 +250,8 @@ constexpr void name_forms(const FieldUse& use, std::string_view declared, F&& ad
     each_name([&](const Spelling& name) {
         // A generated name of a Joined option takes its value after '='.
         const bool joins =
-            name.generated ? !has_style(style, KVStyle::Separate) : joined_name(style, name.stem);
-        if(joins && !name.generated) {
+            name.generated() ? !has_style(style, KVStyle::Separate) : joined_name(style, name.stem);
+        if(joins && !name.generated()) {
             add(NameForm{.name = name, .kind = OptionKind::Joined});
             return;
         }
@@ -298,18 +311,8 @@ class DeclarationCheck {
         std::uint64_t hash = 0xcbf29ce484222325;
 
         constexpr explicit Name(const Spelling& spelling) : spelling(spelling) {
-            auto mix = [&](char c) {
-                hash = (hash ^ static_cast<unsigned char>(c)) * 0x100000001b3;
-            };
-            for(char c: spelling.dashes) {
-                mix(c);
-            }
-            for(char c: spelling.stem) {
-                mix(spelling.generated && c == '_' ? '-' : c);
-            }
-            if(spelling.suffix != '\0') {
-                mix(spelling.suffix);
-            }
+            spelling.each(
+                [&](char c) { hash = (hash ^ static_cast<unsigned char>(c)) * 0x100000001b3; });
         }
 
         constexpr bool operator==(const Name& other) const {
@@ -327,6 +330,10 @@ class DeclarationCheck {
     /// that alternative has a positional argument.
     bool in_alternative = false;
     bool alternative_positional = false;
+    /// Whether a field of subcommands must be given wherever the command is read, and whether an
+    /// argument neither goes with a subcommand nor stops the parse: one never given then.
+    bool required_subcommands = false;
+    bool own_argument = false;
 
     constexpr void claim_subcommands() {
         if(subcommands) {
@@ -370,7 +377,7 @@ class DeclarationCheck {
     /// An exclusive field's alternatives join the command's arguments; one holds no
     /// subcommands and no exclusive field of its own, and one alternative alone has positional
     /// arguments, which the argv then gives to it.
-    constexpr void check_exclusive(const codec::variant_type_info& variant) {
+    constexpr void check_exclusive(const codec::variant_type_info& variant, bool global) {
         if(variant.tagging != codec::tag_mode::none) {
             KOTATSU_THROW("cli: an exclusive field is untagged");
         }
@@ -381,7 +388,7 @@ class DeclarationCheck {
                 KOTATSU_THROW("cli: an alternative of an exclusive field is a struct");
             }
             alternative_positional = false;
-            add_struct(static_cast<const codec::struct_type_info&>(alternative()));
+            add_struct(static_cast<const codec::struct_type_info&>(alternative()), global, true);
             positional += alternative_positional ? 1 : 0;
         }
         in_alternative = false;
@@ -424,9 +431,12 @@ class DeclarationCheck {
         }
     }
 
-    constexpr void add_struct(const codec::struct_type_info& type) {
+    /// Adds the fields of `type`, a struct whose arguments go with a subcommand when `global`,
+    /// and which the command may be read without when `conditional`.
+    constexpr void add_struct(const codec::struct_type_info& type, bool global, bool conditional) {
         for(const auto& field: type.fields) {
             const auto use = use_of(field);
+            const bool field_global = global || use.spec.global;
             if(use.spec.exclusive && use.kind != FieldUse::Kind::Exclusive) {
                 KOTATSU_THROW("cli: an exclusive field is a std::variant of structs");
             }
@@ -438,24 +448,41 @@ class DeclarationCheck {
             }
             switch(use.kind) {
                 case FieldUse::Kind::Group:
-                    add_struct(static_cast<const codec::struct_type_info&>(*use.type));
+                    add_struct(static_cast<const codec::struct_type_info&>(*use.type),
+                               field_global,
+                               conditional || use.optional);
                     break;
                 case FieldUse::Kind::Subcommands:
                     check_subcommands(static_cast<const codec::variant_type_info&>(*use.type), use);
+                    required_subcommands = required_subcommands || (!use.optional && !conditional);
                     break;
                 // The subcommands of a set are checked where their files add them.
-                case FieldUse::Kind::Commands: claim_subcommands(); break;
-                case FieldUse::Kind::Exclusive:
-                    check_exclusive(static_cast<const codec::variant_type_info&>(*use.type));
+                case FieldUse::Kind::Commands:
+                    claim_subcommands();
+                    required_subcommands = required_subcommands || (use.required && !conditional);
                     break;
-                case FieldUse::Kind::Arg: check_arg(field, use); break;
+                case FieldUse::Kind::Exclusive:
+                    check_exclusive(static_cast<const codec::variant_type_info&>(*use.type),
+                                    field_global);
+                    break;
+                case FieldUse::Kind::Arg:
+                    check_arg(field, use);
+                    // An alias is given as what it stands for.
+                    own_argument = own_argument ||
+                                   (!field_global && !use.spec.stop && use.shape != Shape::Alias);
+                    break;
             }
         }
     }
 
 public:
     constexpr void check(const codec::struct_type_info& type) {
-        add_struct(type);
+        add_struct(type, false, false);
+        if(required_subcommands && own_argument) {
+            KOTATSU_THROW(
+                "cli: beside a subcommand that must be given, an argument is cli::global or "
+                "stops the parse");
+        }
         // An '=' form yields to an option named so, unless it is the only form of its own.
         for(const auto& form: equals_forms) {
             const Name name(form.name);

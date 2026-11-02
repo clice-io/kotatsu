@@ -2,19 +2,20 @@
 
 `kotatsu::cli` reads a command line into a plain struct: every field is an
 option named after it, its type says what it takes, and the `cli::` attributes
-of a `KANNOTATE`, the macro [codec](codec.md) uses, say anything more. An
-option may be left out unless its field's presence is required
-(`presence = required`). A nested struct is a group of options, a
-`std::optional` of one is given all or nothing, and a `std::variant` of structs
-is a set of subcommands, whose word conflicts with an argument of the command
-given before it, unless the argument is `cli::global`. Every command, the program's and each subcommand's,
+of a `KANNOTATE`, the macro [codec](codec.md) uses, say anything more. An option
+may be left out unless its field's presence is required (`presence = required`).
+A nested struct is a group of options, a `std::optional` of one is given all or
+nothing, and a `std::variant` of structs is a set of subcommands, as is a
+`cli::Commands`. A subcommand's word conflicts with an argument of its command
+given before it, unless the argument is `cli::global`, and only those are
+required with a subcommand. Every command, the program's and each subcommand's,
 takes `-h` and `--help` without a field for it, each unless an option of its own
 takes that name: `cli::parse` then stops and says which command's usage was
-asked for, a `cli::Help`, beside the options and an `Error` in the
-`cli::Parsed` it returns. It is a [codec](codec.md) decoder
-over the argv under `cli::format`, so a type with a `codec::repr` reads as what
-it is represented by, and `cli::to_argv` is its encoder. The usage, its line
-included, is rendered from the same struct.
+asked for, a `cli::Help`, beside the options and an `Error` in the `cli::Parsed`
+it returns. It is a [codec](codec.md) decoder over the argv under `cli::format`,
+so a type with a `codec::repr` reads as what it is represented by, and
+`cli::to_argv` is its encoder. The usage, its line included, is rendered from
+the same struct.
 
 Underneath is `kotatsu::cli`'s option table, modelled on LLVM's `OptTable` and
 usable alone. cli reads argv only; config files are [codec](codec.md)'s.

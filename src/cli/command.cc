@@ -107,11 +107,6 @@ class Builder {
     /// The '=' forms of the names, named once every field has named its own.
     std::vector<std::pair<NameForm, std::uint32_t>> equals_forms;
 
-    /// Whether the arguments of `group` go with a subcommand.
-    bool global_in(std::uint32_t group) const {
-        return group != no_group && command.groups[group].global;
-    }
-
     void add_option(std::string name, OptionKind kind, std::uint32_t arg) {
         const auto id = static_cast<std::uint32_t>(command.options.size() + 1);
         const auto& spelling = command.spellings.emplace_back(std::move(name));
@@ -172,17 +167,16 @@ class Builder {
         }
         // The first name writes the option: after '=' when it has an '=' form, which reads
         // back any value.
+        // An '=' form follows its name's own one, unless it is the name's only form.
         const auto& first = forms.front();
         const auto first_name = first.name.text();
         auto write = first.name;
-        auto equals = first.name;
         if(first.role != NameForm::Role::Own) {
             write.suffix = '\0';
         }
-        equals.suffix = '=';
         arg.write_name = write.text();
         if(first.role != NameForm::Role::Own ||
-           (forms.size() > 1 && forms[1].role != NameForm::Role::Own && forms[1].name == equals)) {
+           (forms.size() > 1 && forms[1].role != NameForm::Role::Own)) {
             arg.form = Form::Equals;
         } else if(first.kind == OptionKind::Joined || first.kind == OptionKind::CommaJoined) {
             arg.form = Form::Joined;
@@ -292,11 +286,11 @@ class Builder {
     void add_exclusive(const codec::field_info& field,
                        const FieldUse& use,
                        std::uint32_t group,
+                       bool global,
                        const std::vector<std::string_view>& keys,
                        const std::string& path) {
         const auto index = static_cast<std::uint32_t>(command.exclusives.size());
         const auto& variant = static_cast<const codec::variant_type_info&>(*use.type);
-        const bool global = use.spec.global || global_in(group);
         command.exclusives.push_back(Exclusive{
             .keys = keys,
             .group = group,
@@ -339,6 +333,8 @@ class Builder {
             const auto field_path = path.empty() ? std::string(field.declared_name)
                                                  : std::format("{}.{}", path, field.declared_name);
             const auto use = use_of(field);
+            const bool global =
+                use.spec.global || (group != no_group && command.groups[group].global);
             switch(use.kind) {
                 case FieldUse::Kind::Group: {
                     const auto inner = static_cast<std::uint32_t>(command.groups.size());
@@ -348,7 +344,7 @@ class Builder {
                         field.description.empty() ? members.description : field.description;
                     command.groups.push_back(Group{.parent = group,
                                                    .optional = use.optional,
-                                                   .global = use.spec.global || global_in(group),
+                                                   .global = global,
                                                    .keys = field_keys,
                                                    .description = std::string(description)});
                     add_struct(members, inner, field_keys, field_path);
@@ -358,7 +354,7 @@ class Builder {
                     add_subcommands(use, group, field_keys, field_path);
                     break;
                 case FieldUse::Kind::Exclusive:
-                    add_exclusive(field, use, group, field_keys, field_path);
+                    add_exclusive(field, use, group, global, field_keys, field_path);
                     break;
                 case FieldUse::Kind::Commands:
                     add_commands(use, group, field_keys, field_path);
@@ -368,7 +364,7 @@ class Builder {
                     arg.field = &field;
                     arg.group = group;
                     arg.alternative = current_alternative;
-                    arg.global = use.spec.global || global_in(group);
+                    arg.global = global;
                     arg.keys = std::move(field_keys);
                     arg.path = field_path;
                     add_arg(std::move(arg));

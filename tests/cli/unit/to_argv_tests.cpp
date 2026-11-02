@@ -54,6 +54,13 @@ struct Service {
     std::variant<Serve> command;
 };
 
+struct Remote {
+    KANNOTATE(&host, cli::global = true)
+    std::string host;
+    int retries = 0;
+    std::optional<std::variant<Serve>> command;
+};
+
 struct Run {
     KANNOTATE(&command, cli::rest = true)
     std::vector<std::string> command;
@@ -88,7 +95,6 @@ ZEST_CASE(each_shape_writes_the_form_it_reads) {
     options.dir = std::string("inc");
     options.sep = std::string("s");
     options.paths = std::vector<std::string>{"f.cc"};
-    options.command = Serve{.port = 8};
     ZEXPECT(cli::to_argv(options) == (std::vector<std::string>{"--verbose",
                                                                "-v",
                                                                "-v",
@@ -104,9 +110,7 @@ ZEST_CASE(each_shape_writes_the_form_it_reads) {
                                                                "-Iinc",
                                                                "--sep",
                                                                "s",
-                                                               "f.cc",
-                                                               "serve",
-                                                               "--port=8"}));
+                                                               "f.cc"}));
 }
 
 ZEST_CASE(written_argv_parses_back) {
@@ -121,6 +125,19 @@ ZEST_CASE(written_argv_parses_back) {
     ZEXPECT(back->level == Level::Warn);
     ZEXPECT(back->include == options.include);
     ZEXPECT(back->paths == options.paths);
+}
+
+// Before a subcommand, only what goes with it: parse() reads no other argument of the command
+// there.
+ZEST_CASE(subcommand_follows_the_arguments_that_go_with_it) {
+    const Remote remote{.host = "h", .retries = 3, .command = Serve{.port = 8}};
+    const auto argv = cli::to_argv(remote);
+    ZEXPECT(argv == (std::vector<std::string>{"--host=h", "serve", "--port=8"}));
+    auto back = cli::parse<Remote>(argv);
+    ZASSERT(back.has_value());
+    ZEXPECT(back->host == std::string("h"));
+    ZASSERT(back->command.has_value());
+    ZEXPECT(std::get<Serve>(*back->command).port == 8);
 }
 
 ZEST_CASE(rest_writes_after_dash_dash) {

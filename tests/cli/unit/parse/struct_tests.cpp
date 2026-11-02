@@ -84,6 +84,50 @@ struct Grouped {
     KANNOTATE(&shared, cli::global = true)
     Shared shared;
     bool own = false;
+    std::optional<std::variant<Serve>> command;
+};
+
+struct ByName {
+    std::string name;
+};
+
+struct ById {
+    int id = 0;
+};
+
+/// An exclusive field of the command's own job, and a global one.
+struct Picked {
+    KANNOTATE(&target, cli::exclusive = true, presence = required)
+    std::variant<ByName, ById> target;
+    std::optional<std::variant<Serve>> command;
+};
+
+struct PickedGlobal {
+    KANNOTATE(&target, cli::exclusive = true, presence = required, cli::global = true)
+    std::variant<ByName, ById> target;
+    std::optional<std::variant<Serve>> command;
+};
+
+/// A global group given all or nothing.
+struct Connected {
+    KANNOTATE(&remote, cli::global = true)
+    std::optional<Remote> remote;
+    std::variant<Serve> command;
+};
+
+struct Nested {
+    bool deep = false;
+    std::optional<std::variant<Serve>> operation;
+};
+
+struct Outer {
+    std::variant<Nested> command;
+};
+
+/// An option of the command's own that ends the parse.
+struct Versioned {
+    KANNOTATE(&version, cli::stop = true)
+    bool version = false;
     std::variant<Serve> command;
 };
 
@@ -186,9 +230,69 @@ ZEST_CASE(global_group_goes_with_a_subcommand) {
     auto grouped = parse_line<Grouped>("--level 2 serve");
     ZASSERT(grouped.has_value());
     ZEXPECT(grouped->shared.level == 2);
-    auto own = parse_line<Grouped>("--own serve");
+    ZEXPECT(grouped->command.has_value());
+}
+
+ZEST_CASE(option_beside_a_global_group_before_a_subcommand_fails) {
+    auto own = parse_line<Grouped>("--level 2 --own serve");
     ZASSERT(own.error() != nullptr);
     ZEXPECT(own.error()->kind == Error::Kind::Conflict);
+    ZEXPECT(own.error()->message == "subcommand 'serve' cannot be used with --own");
+}
+
+ZEST_CASE(exclusive_field_before_a_subcommand_fails) {
+    auto picked = parse_line<Picked>("--name a serve");
+    ZASSERT(picked.error() != nullptr);
+    ZEXPECT(picked.error()->kind == Error::Kind::Conflict);
+}
+
+ZEST_CASE(exclusive_field_is_not_required_with_a_subcommand) {
+    auto picked = parse_line<Picked>("serve");
+    ZASSERT(picked.has_value());
+    ZEXPECT(picked->command.has_value());
+}
+
+ZEST_CASE(global_exclusive_field_goes_with_a_subcommand) {
+    auto picked = parse_line<PickedGlobal>("--id 1 serve");
+    ZASSERT(picked.has_value());
+    ZASSERT(picked->target.index() == 1U);
+    ZEXPECT(std::get<ById>(picked->target).id == 1);
+}
+
+ZEST_CASE(global_exclusive_field_left_out_before_a_subcommand_fails) {
+    auto picked = parse_line<PickedGlobal>("serve");
+    ZASSERT(picked.error() != nullptr);
+    ZEXPECT(picked.error()->kind == Error::Kind::MissingRequired);
+    ZEXPECT(picked.error()->message.starts_with("one of "));
+}
+
+ZEST_CASE(global_group_short_of_its_required_option_fails_at_the_subcommand) {
+    auto connected = parse_line<Connected>("--port 1 serve");
+    ZASSERT(connected.error() != nullptr);
+    ZEXPECT(connected.error()->kind == Error::Kind::MissingRequired);
+    ZEXPECT(connected.error()->message == "required option --host <value> is missing");
+}
+
+ZEST_CASE(conflict_in_a_subcommand_names_it) {
+    auto outer = parse_line<Outer>("nested --deep serve");
+    ZASSERT(outer.error() != nullptr);
+    ZEXPECT(outer.error()->kind == Error::Kind::Conflict);
+    ZEXPECT(outer.error()->begin == 2U);
+    ZEXPECT(outer.error()->end == 3U);
+    ZEXPECT(outer.error()->subcommands == (std::vector<std::string>{"nested"}));
+}
+
+// The conflict comes before the help in the argv, as an error there would.
+ZEST_CASE(command_s_option_before_a_subcommand_fails_before_its_help) {
+    auto indexer = parse_line<Indexer>("--json serve --help");
+    ZASSERT(indexer.error() != nullptr);
+    ZEXPECT(indexer.error()->kind == Error::Kind::Conflict);
+}
+
+ZEST_CASE(stop_option_before_a_subcommand_ends_the_parse) {
+    auto versioned = parse_line<Versioned>("--version serve");
+    ZASSERT(versioned.has_value());
+    ZEXPECT(versioned->version);
 }
 
 ZEST_CASE(missing_subcommand_fails) {

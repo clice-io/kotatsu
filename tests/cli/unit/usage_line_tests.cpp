@@ -166,6 +166,7 @@ struct Index {
 };
 
 struct App {
+    KANNOTATE(&verbose, cli::global = true)
     bool verbose = false;
     std::variant<Index, Stats> command;
 };

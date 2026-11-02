@@ -122,6 +122,12 @@ int again(Again&) {
 
 [[maybe_unused]] const bool again_added = cli::add_command<Loop>(again);
 
+/// A command with a job of its own, beside the subcommands of a set.
+struct Lister {
+    bool all = false;
+    cli::Commands<Top> command;
+};
+
 /// A cli::Commands field, its type annotated already, annotated again.
 struct MustPick {
     KANNOTATE(&command, presence = required)
@@ -129,6 +135,13 @@ struct MustPick {
 };
 
 ZEST_SUITE(cli_commands) {
+
+ZEST_CASE(command_s_option_before_an_added_subcommand_fails) {
+    auto lister = cli::parse<Lister>(std::vector<std::string>{"--all", "build"});
+    ZASSERT(lister.error() != nullptr);
+    ZEXPECT(lister.error()->kind == Error::Kind::Conflict);
+    ZEXPECT(lister.error()->message == "subcommand 'build' cannot be used with --all");
+}
 
 ZEST_CASE(word_picks_an_added_subcommand) {
     auto tool = cli::parse<Tool>(std::vector<std::string>{"--verbose", "build", "--jobs", "3"});

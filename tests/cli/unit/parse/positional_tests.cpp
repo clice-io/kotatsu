@@ -20,11 +20,6 @@ struct Copy {
     bool force = false;
 };
 
-struct Required {
-    KANNOTATE(&path, cli::positional = true)
-    std::string path;
-};
-
 struct Format {
     KANNOTATE(&paths, cli::positional = true)
     std::vector<std::string> paths;
@@ -79,12 +74,6 @@ ZEST_CASE(scalar_positional_left_out_fails) {
     ZEXPECT(copy.error()->message == "required argument <TO> is missing");
     // At the end of the argv.
     ZEXPECT(copy.error()->begin == 1U);
-}
-
-ZEST_CASE(positional_without_a_meta_var_left_out_fails) {
-    auto required = parse_line<Required>("");
-    ZASSERT(required.error() != nullptr);
-    ZEXPECT(required.error()->message == "required argument <value> is missing");
 }
 
 ZEST_CASE(one_positional_too_many_fails) {

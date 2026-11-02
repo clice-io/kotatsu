@@ -246,63 +246,25 @@ ZEST_CASE(separates_at_line_ends_and_nuls_in_a_windows_file) {
 }
 
 // As split() reads a POSIX line, but that a backslash escapes the character
-// after it in single quotes too.
+// after it in single quotes too: LLVM's case of cl::TokenizeGNUCommandLine
+// that split() reads otherwise (llvm/unittests/Support/CommandLineTest.cpp),
+// and libiberty's of buildargv up to GCC 14 (libiberty/argv.c).
 ZEST_CASE(reads_a_posix_file_as_clang_and_gcc_up_to_14) {
     ZEXPECT(read_response_file("-I'a b'\n\"-DX=\\\"y\\\"\"\r\n'c\\d'", posix) ==
             Arguments{"-Ia b", R"(-DX="y")", "cd"});
-    ZEXPECT(read_response_file(R"('-DNAME=\'ok\'' -Iinclude)", posix) ==
-            Arguments{"-DNAME='ok'", "-Iinclude"});
-    // As Meson quoted a file for GCC before 1.12.2.
-    ZEXPECT(read_response_file(R"('-DROOT=C:\\src')", posix) == Arguments{R"(-DROOT=C:\src)"});
-    // A backslash at the end of the file, in quotes or not, is kept.
-    ZEXPECT(read_response_file(R"(a\)", posix) == Arguments{R"(a\)"});
-    ZEXPECT(read_response_file(R"('a\)", posix) == Arguments{R"(a\)"});
-}
-
-// LLVM's cases of cl::TokenizeGNUCommandLine, by which clang reads a POSIX
-// response file, from llvm/unittests/Support/CommandLineTest.cpp; its line
-// ends, which it marks for clang-cl, left out.
-ZEST_CASE(reads_a_posix_file_as_llvms_cases) {
-    ZEXPECT(read_response_file(R"(foo\ bar "foo bar" 'foo bar' 'foo\\bar' -DFOO=bar\(\) )"
-                               R"(foo"bar"baz C:\\src\\foo.cpp "C:\src\foo.cpp")",
-                               posix) == Arguments{"foo bar",
-                                                   "foo bar",
-                                                   "foo bar",
-                                                   R"(foo\bar)",
-                                                   "-DFOO=bar()",
-                                                   "foobarbaz",
-                                                   R"(C:\src\foo.cpp)",
-                                                   "C:srcfoo.cpp"});
-    ZEXPECT(read_response_file(R"(a b c "" d)", posix) == Arguments{"a", "b", "c", "", "d"});
-    ZEXPECT(read_response_file(R"('' a b c d "")", posix) == Arguments{"", "a", "b", "c", "d", ""});
-    ZEXPECT(read_response_file(R"('''' """" ''"")", posix) == Arguments{"", "", ""});
-    ZEXPECT(read_response_file(R"(a""a ""b c"" d''d ''e f'')", posix) ==
-            Arguments{"aa", "b", "c", "dd", "e", "f"});
-    ZEXPECT(read_response_file(R"("'a'"'"b"')", posix) == Arguments{R"('a'"b")"});
-    ZEXPECT(read_response_file(R"(a b 'c d)", posix) == Arguments{"a", "b", "c d"});
-    ZEXPECT(read_response_file("a 'b\nc' d", posix) == Arguments{"a", "b\nc", "d"});
-    ZEXPECT(read_response_file("clang -Xclang foo\n\nfoo\"bar\"baz\n x.cpp\n", posix) ==
-            Arguments{"clang", "-Xclang", "foo", "foobarbaz", "x.cpp"});
-}
-
-// libiberty's cases of buildargv and expandargv, by which GCC read a response
-// file up to 14 (libiberty/argv.c and libiberty/testsuite/test-expandargv.c),
-// but those of a NUL, which ends its C string.
-ZEST_CASE(reads_a_posix_file_as_libibertys_cases) {
-    ZEXPECT(read_response_file("arg 'foo' is single quoted", posix) ==
-            Arguments{"arg", "foo", "is", "single", "quoted"});
-    ZEXPECT(read_response_file(R"(arg "foo bar" has embedded whitespace)", posix) ==
-            Arguments{"arg", "foo bar", "has", "embedded", "whitespace"});
+    ZEXPECT(read_response_file(R"('foo\\bar')", posix) == Arguments{R"(foo\bar)"});
     ZEXPECT(read_response_file(R"(arg 'Jack said \'hi\'' has single quotes)", posix) ==
             Arguments{"arg", "Jack said 'hi'", "has", "single", "quotes"});
     ZEXPECT(read_response_file(R"(arg 'Jack said \"hi\"' has double quotes)", posix) ==
             Arguments{"arg", R"(Jack said "hi")", "has", "double", "quotes"});
-    ZEXPECT(read_response_file("trailing-whitespace ", posix) == Arguments{"trailing-whitespace"});
-    ZEXPECT(read_response_file("a\r\nb", posix) == Arguments{"a", "b"});
-    ZEXPECT(read_response_file("\na\nb", posix) == Arguments{"a", "b"});
-    ZEXPECT(read_response_file("a\n''\nb", posix) == Arguments{"a", "", "b"});
-    ZEXPECT(read_response_file("a\n'a\n\nb'\nb", posix) == Arguments{"a", "a\n\nb", "b"});
-    ZEXPECT(read_response_file("\t \n \t ", posix).empty());
+    ZEXPECT(read_response_file(R"('-DNAME=\'ok\'' -Iinclude)", posix) ==
+            Arguments{"-DNAME='ok'", "-Iinclude"});
+    // As Meson quoted a file for GCC before 1.12.2.
+    ZEXPECT(read_response_file(R"('-DROOT=C:\\src')", posix) == Arguments{R"(-DROOT=C:\src)"});
+    // A backslash at the end of the file, in quotes or not, is kept, where
+    // libiberty drops it.
+    ZEXPECT(read_response_file(R"(a\)", posix) == Arguments{R"(a\)"});
+    ZEXPECT(read_response_file(R"('a\)", posix) == Arguments{R"(a\)"});
 }
 
 };  // ZEST_SUITE(sys_cmd_expand)

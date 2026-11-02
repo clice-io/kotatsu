@@ -51,6 +51,54 @@ struct GeneratedTwice {
     bool other = false;
 };
 
+/// A declared name that is a generated one but for '_', which only a generated name spells '-'.
+struct UnderscoreGiven {
+    bool log_level = false;
+    KANNOTATE(&other, cli::names = {"--log_level"})
+    bool other = false;
+};
+
+/// A comma option whose generated name another field gives with its comma.
+struct CommaTwice {
+    KANNOTATE(&include, cli::comma = true)
+    std::vector<std::string> include;
+    KANNOTATE(&other, cli::names = {"--include,"}, cli::comma = true)
+    std::vector<std::string> other;
+};
+
+/// An alias standing for one whose name is generated.
+struct GeneratedLoop {
+    KANNOTATE(&fast_mode, cli::forward = {"--other"})
+    cli::Alias fast_mode;
+    KANNOTATE(&other, cli::names = {"--other"}, cli::forward = {"--fast-mode"})
+    cli::Alias other;
+};
+
+struct JoinedLevel {
+    KANNOTATE(&level, cli::style = KVStyle::Joined)
+    std::string level;
+};
+
+/// Two options of one generated name that each take only its '=' form.
+struct JoinedTwice {
+    JoinedLevel first;
+    JoinedLevel second;
+};
+
+/// An option of a command whose subcommand must be given, which no argv can give.
+struct OwnBesideRequired {
+    bool verbose = false;
+    std::variant<Serve> command;
+};
+
+struct GlobalBesideRequired {
+    KANNOTATE(&verbose, cli::global = true)
+    bool verbose = false;
+    KANNOTATE(&version, cli::stop = true)
+    bool version = false;
+    std::variant<Serve> command;
+};
+
 struct Inner {
     bool verbose = false;
 };
@@ -326,6 +374,31 @@ ZEST_CASE(two_options_of_one_name_do_not_compile) {
 
 ZEST_CASE(generated_name_another_field_gives_does_not_compile) {
     ZSTATIC_EXPECT(!declared<GeneratedTwice>);
+}
+
+ZEST_CASE(declared_name_with_an_underscore_is_not_the_generated_one) {
+    ZSTATIC_EXPECT(declared<UnderscoreGiven>);
+}
+
+ZEST_CASE(comma_name_another_field_gives_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<CommaTwice>);
+}
+
+ZEST_CASE(alias_of_a_generated_alias_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<GeneratedLoop>);
+}
+
+ZEST_CASE(two_only_equals_forms_of_one_name_do_not_compile) {
+    ZSTATIC_EXPECT(!declared<JoinedTwice>);
+}
+
+ZEST_CASE(own_option_beside_a_required_subcommand_does_not_compile) {
+    ZSTATIC_EXPECT(!declared<OwnBesideRequired>);
+}
+
+// A global option goes with the subcommand, and one that stops the parse needs none.
+ZEST_CASE(global_and_stop_options_beside_a_required_subcommand_compile) {
+    ZSTATIC_EXPECT(declared<GlobalBesideRequired>);
 }
 
 ZEST_CASE(group_naming_an_option_of_its_command_does_not_compile) {

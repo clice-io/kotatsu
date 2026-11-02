@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "kotatsu/zest/zest.h"
@@ -25,13 +26,15 @@ struct Point {
 /// Assigns, constructs and compares wrapper `W` of a T, given two values of
 /// it; the comparisons are the wrapper's own.
 template <template <typename> typename W, typename T>
-void check_wrapper(T first, T second) {
+void check_wrapper(std::string_view kind, T first, T second) {
+    ZEST_CONTEXT("{}", kind);
     W<T> wrapper;
     wrapper = first;
     ZASSERT(wrapper.has_value());
     ZEXPECT(*wrapper == first);
     const T lvalue = second;
     wrapper = lvalue;
+    ZASSERT(wrapper.has_value());
     ZEXPECT(*wrapper == second);
     wrapper = {};
     ZEXPECT(!wrapper.has_value());
@@ -61,13 +64,13 @@ void check_wrapper(T first, T second) {
 
 template <template <typename> typename W>
 void check_every_kind() {
-    check_wrapper<W>(true, false);
-    check_wrapper<W, integer>(1, 2);
-    check_wrapper<W, uinteger>(1U, 2U);
-    check_wrapper<W, decimal>(0.5, 1.5);
-    check_wrapper<W>(Severity::Error, Severity::Warning);
-    check_wrapper<W, string>("a", "b");
-    check_wrapper<W>(Point{.line = 1}, Point{.column = 2});
+    check_wrapper<W>("bool", true, false);
+    check_wrapper<W, integer>("integer", 1, 2);
+    check_wrapper<W, uinteger>("uinteger", 1U, 2U);
+    check_wrapper<W, decimal>("decimal", 0.5, 1.5);
+    check_wrapper<W>("enum", Severity::Error, Severity::Warning);
+    check_wrapper<W, string>("string", "a", "b");
+    check_wrapper<W>("struct", Point{.line = 1}, Point{.column = 2});
 }
 
 ZEST_SUITE(ipc_lsp_ts) {
@@ -99,6 +102,21 @@ ZEST_CASE(assigned_value_converts_to_t) {
     ZEXPECT(*point == (Point{.line = 3, .column = 4}));
 }
 
+ZEST_CASE(optional_of_another_t_converts_on_assignment) {
+    optional<decimal> number;
+    number = std::optional<int>(1);
+    ZASSERT(number.has_value());
+    ZEXPECT(*number == 1.0);
+    number = optional<integer>(2);
+    ZASSERT(number.has_value());
+    ZEXPECT(*number == 2.0);
+    // A T that converts only explicitly, as std::optional assigns it.
+    optional<string> text;
+    text = std::optional<std::string_view>("view");
+    ZASSERT(text.has_value());
+    ZEXPECT(*text == "view");
+}
+
 ZEST_CASE(wrappers_of_one_t_assign_each_other) {
     optional<integer> value = 1;
     nullable<integer> null;
@@ -113,6 +131,23 @@ ZEST_CASE(protocol_field_takes_its_enum) {
     Diagnostic diagnostic;
     diagnostic.severity = DiagnosticSeverity::Warning;
     ZEXPECT((diagnostic.severity == DiagnosticSeverity::Warning));
+}
+
+// `undefined | null | T`: a value, a present null, or absent.
+ZEST_CASE(protocol_field_of_a_nullable_takes_each_state) {
+    SignatureHelp help;
+    help.active_parameter = 2U;
+    ZASSERT(help.active_parameter.has_value());
+    ZEXPECT(help.active_parameter->has_value());
+    ZEXPECT((*help.active_parameter == 2U));
+    help.active_parameter = nullable<uinteger>();
+    ZASSERT(help.active_parameter.has_value());
+    ZEXPECT(!help.active_parameter->has_value());
+    help.active_parameter = std::nullopt;
+    ZEXPECT(!help.active_parameter.has_value());
+    help.active_parameter = 3U;
+    help.active_parameter = {};
+    ZEXPECT(!help.active_parameter.has_value());
 }
 
 };  // ZEST_SUITE(ipc_lsp_ts)

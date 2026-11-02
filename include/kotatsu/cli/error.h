@@ -34,8 +34,8 @@ struct Error {
         /// A required option or positional argument left out.
         MissingRequired,
         /// Arguments of two alternatives of a cli::exclusive field: `--spec` beside `<LOCATOR>`;
-        /// or a subcommand's word after an argument of the command that does not go with a
-        /// subcommand, not being cli::global: `index --json stats`.
+        /// or a subcommand's word after an argument of its command that is not cli::global:
+        /// `index --json stats`.
         Conflict,
         /// A word where a subcommand goes that names none.
         UnknownSubcommand,

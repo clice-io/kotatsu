@@ -1,7 +1,7 @@
 load("//bazel:defs.bzl", "kotatsu_library")
 
 # For the tests: the npm packages the integration tests import, the LSP
-# metamodel the LSP ones read, and the macro sheet codec's reads.
+# metamodel the LSP ones read, and the macro sheet codec's system tests read.
 exports_files([
     "MODULE.bazel",
     "include/kotatsu/codec/macro.h",

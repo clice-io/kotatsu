@@ -36,14 +36,14 @@ struct LiteralText {
     }
 };
 
-/// Whether the std::optional<T> wrappers below assign a U to their value, as
-/// std::optional does: not when U is such an optional, nor a T when T is a
-/// scalar, which the copy and move assignments take through a constructor,
-/// so that `value = {}` empties it.
+/// Whether the std::optional<T> wrappers below take a U by std::optional's
+/// assignments: what it assigns, but such an optional, which the copy and move
+/// assignments take, and for a scalar T a T, which they take through a
+/// constructor, so that `value = {}` empties it.
 template <typename T, typename U>
-concept assigns_value = !std::derived_from<std::remove_cvref_t<U>, std::optional<T>> &&
-                        !(std::is_scalar_v<T> && std::same_as<std::decay_t<U>, T>) &&
-                        std::is_constructible_v<T, U> && std::is_assignable_v<T&, U>;
+concept base_assigns = !std::derived_from<std::remove_cvref_t<U>, std::optional<T>> &&
+                       !(std::is_scalar_v<T> && std::same_as<std::decay_t<U>, T>) &&
+                       std::is_assignable_v<std::optional<T>&, U>;
 
 /// The presence of the `undefined | T` types: one that holds nothing is left
 /// out, whatever the struct holding it starts as.
@@ -66,11 +66,11 @@ struct nullable : std::optional<T> {
 
     constexpr nullable(std::optional<T> value) : std::optional<T>(std::move(value)) {}
 
-    /// std::optional's assignment of a value. Its other assignments stay
-    /// hidden: its copy and move would take what this type's own take, what a
-    /// constructor converts (a scalar T, std::nullopt, `{}`), neither better.
+    /// std::optional's assignments, but its copy and move, which would take what
+    /// this type's own take through a constructor (a scalar T, `{}`), neither
+    /// better.
     template <typename U = T>
-        requires detail::assigns_value<T, U>
+        requires detail::base_assigns<T, U>
     constexpr nullable& operator=(U&& value) {
         std::optional<T>::operator=(std::forward<U>(value));
         return *this;
@@ -114,11 +114,11 @@ struct optional : std::optional<T> {
 
     constexpr optional(std::optional<T> value) : std::optional<T>(std::move(value)) {}
 
-    /// std::optional's assignment of a value. Its other assignments stay
-    /// hidden: its copy and move would take what this type's own take, what a
-    /// constructor converts (a scalar T, std::nullopt, `{}`), neither better.
+    /// std::optional's assignments, but its copy and move, which would take what
+    /// this type's own take through a constructor (a scalar T, `{}`), neither
+    /// better.
     template <typename U = T>
-        requires detail::assigns_value<T, U>
+        requires detail::base_assigns<T, U>
     constexpr optional& operator=(U&& value) {
         std::optional<T>::operator=(std::forward<U>(value));
         return *this;
@@ -149,11 +149,11 @@ struct optional_nullable : std::optional<T> {
 
     constexpr optional_nullable(std::optional<T> value) : std::optional<T>(std::move(value)) {}
 
-    /// std::optional's assignment of a value. Its other assignments stay
-    /// hidden: its copy and move would take what this type's own take, what a
-    /// constructor converts (a scalar T, std::nullopt, `{}`), neither better.
+    /// std::optional's assignments, but its copy and move, which would take what
+    /// this type's own take through a constructor (a scalar T, `{}`), neither
+    /// better.
     template <typename U = T>
-        requires detail::assigns_value<T, U>
+        requires detail::base_assigns<T, U>
     constexpr optional_nullable& operator=(U&& value) {
         std::optional<T>::operator=(std::forward<U>(value));
         return *this;
