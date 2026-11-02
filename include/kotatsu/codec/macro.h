@@ -106,18 +106,24 @@
                       ::kotatsu::meta::detail::member_key_t<#member>>,                             \
                   "KANNOTATE_FIELD: write it in the namespace of the class whose field it names")
 
-// Whether the first token of a KANNOTATE_TYPE argument is `struct` or `class`:
-// pasted onto KOTATSU_CLASS_KEY_, it makes a macro that puts 1 second, and any
-// other first token leaves an identifier that puts 0 second.
-#define KOTATSU_CLASS_KEY_struct ~, 1,
-#define KOTATSU_CLASS_KEY_class ~, 1,
+// `annotated` as a declaration when its first token is `struct` or `class`, which only pasting
+// tells: pasted onto KOTATSU_CLASS_KEY_, that token makes a macro that puts KOTATSU_KEEP second,
+// and any other one an identifier, after which KOTATSU_DROP comes second. The macros pasting
+// makes are named in full after the ones KOTATSU_SECOND picks between, where it drops them, so
+// that what an expansion reaches is named in it, as a tool collecting the macros a module uses
+// reads them.
+#define KOTATSU_CLASS_KEY_struct ~, KOTATSU_KEEP,
+#define KOTATSU_CLASS_KEY_class ~, KOTATSU_KEEP,
+#define KOTATSU_KEEP(...) __VA_ARGS__
+#define KOTATSU_DROP(...)
 #define KOTATSU_SECOND_IMPL(first, second, ...) second
 #define KOTATSU_SECOND(...) KOTATSU_SECOND_IMPL(__VA_ARGS__)
-#define KOTATSU_DECLARES(annotated)                                                                \
-    KOTATSU_SECOND(KOTATSU_CONCAT(KOTATSU_CLASS_KEY_, annotated), 0, ~)
-#define KOTATSU_WHEN_0(...)
-#define KOTATSU_WHEN_1(...) __VA_ARGS__
-#define KOTATSU_WHEN(condition) KOTATSU_CONCAT(KOTATSU_WHEN_, condition)
+#define KOTATSU_DECLARATION(annotated)                                                             \
+    KOTATSU_SECOND(KOTATSU_CONCAT(KOTATSU_CLASS_KEY_, annotated),                                  \
+                   KOTATSU_DROP,                                                                   \
+                   KOTATSU_CLASS_KEY_struct,                                                       \
+                   KOTATSU_CLASS_KEY_class)                                                        \
+    (annotated;)
 
 /// Annotates a type, wherever a value of it is: a document's root, an element,
 /// a field. It takes the type's description, the presence of a field of it,
@@ -148,8 +154,8 @@
 /// must be seen, as a template specialization must. A class derived from the
 /// type does not take the annotation.
 #define KANNOTATE_TYPE(annotated, ...)                                                             \
-    KOTATSU_WHEN(KOTATSU_DECLARES(annotated))(annotated;) [[maybe_unused]] constexpr auto          \
-        __kotatsu__type_annotation(::std::type_identity<annotated>) {                              \
+    KOTATSU_DECLARATION(annotated)                                                                 \
+    [[maybe_unused]] constexpr auto __kotatsu__type_annotation(::std::type_identity<annotated>) {  \
         return KOTATSU_ANNOTATION_ATTRIBUTES(__VA_ARGS__);                                         \
     }                                                                                              \
     static_assert(::kotatsu::meta::detail::has_type_annotation<annotated>,                         \
