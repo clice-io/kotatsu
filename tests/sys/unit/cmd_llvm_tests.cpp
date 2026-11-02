@@ -100,7 +100,8 @@ std::string swap_line_ends(std::string_view line) {
 
 ZEST_SUITE(sys_cmd_llvm) {
 
-// But that LLVM's GNU tokenizer takes escapes in single quotes.
+// But that LLVM's GNU tokenizer, which reads a response file so, takes escapes
+// in single quotes.
 ZEST_CASE(posix_reads_as_llvms_gnu_tokenizer) {
     compare(
         "ab \t\r\n\0\"'\\"sv,
@@ -138,6 +139,13 @@ ZEST_CASE(windows_reads_arguments_as_llvms_windows_tokenizer) {
             }
             return arguments;
         });
+}
+
+ZEST_CASE(a_posix_file_reads_as_llvms_gnu_tokenizer) {
+    compare(
+        "ab \t\r\n\0\"'\\"sv,
+        [](std::string_view text) { return read_response_file(text, Quoting::POSIX); },
+        test::tokenize_gnu_command_line);
 }
 
 ZEST_CASE(a_windows_file_reads_as_llvms_windows_tokenizer) {

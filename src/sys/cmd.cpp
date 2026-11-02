@@ -134,7 +134,8 @@ bool split_view::iterator::separates(char c) const {
         case Reading::Windows: return c == ' ' || c == '\t';
         case Reading::WindowsFile:
             return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\0';
-        case Reading::POSIX: return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+        case Reading::POSIX:
+        case Reading::POSIXFile: return c == ' ' || c == '\t' || c == '\r' || c == '\n';
     }
     std::unreachable();
 }
@@ -156,7 +157,7 @@ split_view::iterator& split_view::iterator::operator++() {
     auto start = at;
     while(at < rest.size() && !separates(rest[at])) {
         char c = rest[at];
-        if(c == '"' || (reading == Reading::POSIX && (c == '\'' || c == '\\'))) {
+        if(c == '"' || (posix() && (c == '\'' || c == '\\'))) {
             break;
         }
         // Windows backslashes are literal but before a quote; a program's,
@@ -176,7 +177,7 @@ split_view::iterator& split_view::iterator::operator++() {
         argument = rest.substr(start, at - start);
     } else {
         unquoted.assign(rest.substr(start, at - start));
-        at = reading == Reading::POSIX ? unquote_posix(at) : unquote_windows(at);
+        at = posix() ? unquote_posix(at) : unquote_windows(at);
     }
     program = false;
     rest.remove_prefix(at);
@@ -208,7 +209,7 @@ std::size_t split_view::iterator::unquote_posix(std::size_t at) {
     char quote = 0;
     for(; at < rest.size() && (quote != 0 || !separates(rest[at])); ++at) {
         char c = rest[at];
-        if(quote == '\'') {
+        if(quote == '\'' && reading == Reading::POSIX) {
             if(c == '\'') {
                 quote = 0;
             } else {
@@ -290,7 +291,7 @@ void expand_view::iterator::settle() {
         using Reading = split_view::iterator::Reading;
         file.arguments = split_view::iterator(file.text,
                                               quoting == Quoting::Windows ? Reading::WindowsFile
-                                                                          : Reading::POSIX);
+                                                                          : Reading::POSIXFile);
     }
 }
 
