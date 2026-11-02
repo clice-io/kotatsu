@@ -200,10 +200,10 @@ std::string usage_line(const Command& command,
         }
     }
     if(command.subcommands) {
-        const auto& subcommands = *command.subcommands;
+        const auto& field = *command.subcommands;
         const std::string placeholder =
-            subcommands.meta_var.empty() ? "<command>" : std::string(subcommands.meta_var);
-        parts.push_back(!subcommands.optional && unconditional(command, subcommands.group)
+            field.meta_var.empty() ? "<command>" : std::string(field.meta_var);
+        parts.push_back(!field.optional && unconditional(command, field.group)
                             ? placeholder
                             : std::format("[{}]", placeholder));
     }

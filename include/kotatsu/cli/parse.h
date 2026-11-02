@@ -68,9 +68,9 @@ public:
         requires (!std::is_void_v<T>)
         : state(std::in_place_index<0>, std::move(options)) {}
 
-    Parsed(Help help) : state(std::in_place_index<1>, std::move(help)) {}
+    Parsed(Help request) : state(std::in_place_index<1>, std::move(request)) {}
 
-    Parsed(Error error) : state(std::in_place_index<2>, std::move(error)) {}
+    Parsed(Error reason) : state(std::in_place_index<2>, std::move(reason)) {}
 
     /// Whether the argv gives options, neither asking for help nor failing to parse.
     bool has_value() const {
