@@ -667,24 +667,26 @@ constexpr bool kind_compatible(meta::type_kind src, bool widen) {
     }
 }
 
-/// Whether T is read as an untagged std::variant: one, or a class derived
-/// from one whose type annotation tags it not.
-template <typename Format, typename T>
-constexpr bool untagged_variant_v =
-    is_specialization_of<std::variant, T> ||
-    (meta::derived_variant<T> && !resolves_to_tagged_variant<T, Format>);
-
 /// True when this alternative decodes through decode_untagged_variant itself —
-/// no dispatch override, an untagged variant (untagged_variant_v) possibly
+/// no dispatch override, a variant or a class derived from one, possibly
 /// behind nullable wrappers (which are transparent to non-null input) or declarative repr
 /// chain links (whose from() conversion runs after the variant is read) — so
 /// probing it re-enters the pass structure below and the outer pass level
 /// must flow into it. An imperative repr decodes through its own body
-/// instead, so its inner behavior is opaque to the pass structure.
+/// instead, so its inner behavior is opaque to the pass structure. The type
+/// annotation goes first, as in decode_with_attrs: `with` and `as` are opaque
+/// too, and a tagged variant is read untagged only where decode_tagged_variant
+/// reads no tags, its repr aside.
 template <typename Format, typename Vis, typename T>
 constexpr bool probes_as_untagged_variant() {
+    using attrs = meta::attrs_of_t<T>;
     if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T>::visit(v, out); })
         return false;
+    else if constexpr(tuple_has_spec_v<attrs, behavior::with> ||
+                      tuple_has_spec_v<attrs, behavior::as>)
+        return false;
+    else if constexpr(spec_of<struct_spec, attrs>.tagging != tag_mode::none)
+        return has_native_variant<Vis> || !Format::human_readable;
     else if constexpr(has_repr<T, Format>) {
         using chosen = repr_for<T, Format>;
         if constexpr(
@@ -699,7 +701,7 @@ constexpr bool probes_as_untagged_variant() {
                       is_specialization_of<std::shared_ptr, T>)
         return probes_as_untagged_variant<Format, Vis, typename T::element_type>();
     else
-        return untagged_variant_v<Format, T>;
+        return taggable<T>;
 }
 
 template <typename Format, typename Vis, typename... Ts>
@@ -715,13 +717,14 @@ bool
 /// link here always has the declarative from() decode path.
 template <typename Format, typename Vis, typename T>
 bool nested_alternative_pass(Vis& vis, T& out, meta::type_kind src_kind, bool widen) {
-    if constexpr(has_repr<T, Format>) {
+    if constexpr(has_repr<T, Format> &&
+                 spec_of<struct_spec, meta::attrs_of_t<T>>.tagging == tag_mode::none) {
         using chosen = repr_for<T, Format>;
         auto declared = declared_repr_t<chosen>();
         KOTATSU_CODEC_TRY(nested_alternative_pass<Format>(vis, declared, src_kind, widen));
         out = chosen::from(std::move(declared));
         return true;
-    } else if constexpr(untagged_variant_v<Format, T>) {
+    } else if constexpr(taggable<T>) {
         // A class derived from a std::variant binds to it.
         return untagged_variant_pass<Format>(vis, out, src_kind, widen);
     } else {

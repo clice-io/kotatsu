@@ -122,6 +122,14 @@ struct ViaExplicitBox {
     auto operator==(const ViaExplicitBox&) const -> bool = default;
 };
 
+/// An externally tagged variant with a repr declaring the variant it derives
+/// from: its tagging goes before the repr, probing as in a decode of its own.
+KANNOTATE_TYPE(struct TaggedOverRepr, tagged = true, tag_names = {"number", "text"});
+
+struct TaggedOverRepr : std::variant<int, std::string> {
+    using variant::variant;
+};
+
 /// Adapters for behavior::with.
 struct VersionAsNumber {
     using type = std::uint32_t;
@@ -418,6 +426,19 @@ struct repr<test::ViaExplicitBox> {
 
     static test::ViaExplicitBox from(type b) {
         return {.value = std::visit([](auto v) { return static_cast<double>(v); }, b.v)};
+    }
+};
+
+template <>
+struct repr<test::TaggedOverRepr> {
+    using type = std::variant<int, std::string>;
+
+    static type to(const test::TaggedOverRepr& t) {
+        return t;
+    }
+
+    static test::TaggedOverRepr from(type v) {
+        return std::visit([](auto x) { return test::TaggedOverRepr{std::move(x)}; }, std::move(v));
     }
 };
 

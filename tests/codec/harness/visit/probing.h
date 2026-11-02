@@ -437,6 +437,16 @@ void probing(const Kit<B>& kit) {
         "object_input_reaches_adjacent_nested_variant",
         [] { return AdjacentPlain<int>{.t = "number", .c = 1}; },
         [] { return std::variant<AdjacentShape, std::string>{AdjacentShape{1}}; });
+    // Its tagging, not its repr, decides how a tagged variant probes.
+    reads_in_field<std::variant<TaggedOverRepr, std::map<std::string, int>>>(
+        kit,
+        "tagging_goes_before_a_repr_in_probing",
+        [] {
+            return std::map<std::string, int>{
+                {"number", 1}
+            };
+        },
+        [] { return std::variant<TaggedOverRepr, std::map<std::string, int>>{TaggedOverRepr{1}}; });
     reads_in_field<std::variant<ExternalShape, bool>, NotHumanReadableSettings>(
         kit,
         "not_human_readable_probes_tagged_by_alternatives",
