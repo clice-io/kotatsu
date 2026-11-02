@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -35,6 +36,15 @@ struct LiteralText {
     }
 };
 
+/// Whether the std::optional<T> wrappers below assign a U to their value, as
+/// std::optional does: not when U is such an optional, nor a T when T is a
+/// scalar, which the copy and move assignments take through a constructor,
+/// so that `value = {}` empties it.
+template <typename T, typename U>
+concept assigns_value = !std::derived_from<std::remove_cvref_t<U>, std::optional<T>> &&
+                        !(std::is_scalar_v<T> && std::same_as<std::decay_t<U>, T>) &&
+                        std::is_constructible_v<T, U> && std::is_assignable_v<T&, U>;
+
 /// The presence of the `undefined | T` types: one that holds nothing is left
 /// out, whatever the struct holding it starts as.
 struct HoldsNothing {
@@ -51,11 +61,20 @@ struct HoldsNothing {
 template <typename T>
 struct nullable : std::optional<T> {
     using std::optional<T>::optional;
-    using std::optional<T>::operator=;
 
     constexpr nullable() = default;
 
     constexpr nullable(std::optional<T> value) : std::optional<T>(std::move(value)) {}
+
+    /// std::optional's assignment of a value. Its other assignments stay
+    /// hidden: its copy and move would take what this type's own take, what a
+    /// constructor converts (a scalar T, std::nullopt, `{}`), neither better.
+    template <typename U = T>
+        requires detail::assigns_value<T, U>
+    constexpr nullable& operator=(U&& value) {
+        std::optional<T>::operator=(std::forward<U>(value));
+        return *this;
+    }
 
     /// std::optional's comparisons all match two of these, none better.
     template <std::same_as<nullable> L, std::same_as<nullable> R>
@@ -90,11 +109,20 @@ consteval auto __kotatsu__type_annotation(std::type_identity<optional_bool>) {
 template <typename T>
 struct optional : std::optional<T> {
     using std::optional<T>::optional;
-    using std::optional<T>::operator=;
 
     constexpr optional() = default;
 
     constexpr optional(std::optional<T> value) : std::optional<T>(std::move(value)) {}
+
+    /// std::optional's assignment of a value. Its other assignments stay
+    /// hidden: its copy and move would take what this type's own take, what a
+    /// constructor converts (a scalar T, std::nullopt, `{}`), neither better.
+    template <typename U = T>
+        requires detail::assigns_value<T, U>
+    constexpr optional& operator=(U&& value) {
+        std::optional<T>::operator=(std::forward<U>(value));
+        return *this;
+    }
 
     /// std::optional's comparisons all match two of these, none better.
     template <std::same_as<optional> L, std::same_as<optional> R>
@@ -116,11 +144,20 @@ consteval auto __kotatsu__type_annotation(std::type_identity<optional<T>>) {
 template <typename T>
 struct optional_nullable : std::optional<T> {
     using std::optional<T>::optional;
-    using std::optional<T>::operator=;
 
     constexpr optional_nullable() = default;
 
     constexpr optional_nullable(std::optional<T> value) : std::optional<T>(std::move(value)) {}
+
+    /// std::optional's assignment of a value. Its other assignments stay
+    /// hidden: its copy and move would take what this type's own take, what a
+    /// constructor converts (a scalar T, std::nullopt, `{}`), neither better.
+    template <typename U = T>
+        requires detail::assigns_value<T, U>
+    constexpr optional_nullable& operator=(U&& value) {
+        std::optional<T>::operator=(std::forward<U>(value));
+        return *this;
+    }
 
     /// std::optional's comparisons all match two of these, none better.
     template <std::same_as<optional_nullable> L, std::same_as<optional_nullable> R>
