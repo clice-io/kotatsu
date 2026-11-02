@@ -381,7 +381,8 @@ ZEST_CASE(struct_attributes_fold_into_values_and_derive_tagging) {
                    tag_mode::external);
 
     constexpr const struct_spec& config = meta::spec_attr<config_struct_tag, struct_spec>::value;
-    ZSTATIC_EXPECT(config.rename_all == naming::casing_fn(naming::Casing::LowerCamel));
+    ZEXPECT(zest::type_eq<naming::rename_policy_of_t<*config.rename_all>,
+                          naming::rename_policy::lower_camel>());
     ZSTATIC_EXPECT(config.deny_unknown_fields);
     ZSTATIC_EXPECT(config.tagging == tag_mode::none);
 

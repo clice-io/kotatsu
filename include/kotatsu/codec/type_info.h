@@ -204,8 +204,9 @@ constexpr auto resolve_tag_names() {
         return names;
     } else {
         using policy = typename decltype([] {
-            if constexpr(SpecAttr::value.rename_all != nullptr) {
-                return std::type_identity<naming::rename_policy_of_t<SpecAttr::value.rename_all>>{};
+            if constexpr(SpecAttr::value.rename_all.has_value()) {
+                return std::type_identity<
+                    naming::rename_policy_of_t<*SpecAttr::value.rename_all>>{};
             } else {
                 return std::type_identity<typename Format::rename_all>{};
             }
@@ -242,7 +243,7 @@ constexpr bool dispatch_attr_v =
 template <typename Tag>
 constexpr bool dispatch_attr_v<meta::spec_attr<Tag, struct_spec>> =
     meta::spec_attr<Tag, struct_spec>::value.tagging != tag_mode::none ||
-    meta::spec_attr<Tag, struct_spec>::value.rename_all != nullptr ||
+    meta::spec_attr<Tag, struct_spec>::value.rename_all.has_value() ||
     meta::spec_attr<Tag, struct_spec>::value.deny_unknown_fields ||
     meta::spec_attr<Tag, struct_spec>::value.presence_all.has_value();
 
@@ -579,6 +580,18 @@ struct info_node<T, TagAttrs, Format, meta::type_kind::structure> {
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::enumeration> : enum_info_node<T> {};
 
+/// The name field I of T is written under in Format: its rename, else its
+/// declared name as Format's rename_all spells it.
+template <typename T, typename Format, std::size_t I>
+consteval std::string_view field_name_in() {
+    constexpr const field_spec& spec = field_spec_of<T, I>;
+    if constexpr(spec.rename.empty()) {
+        return naming::renamed<typename Format::rename_all, meta::reflection<T>::field_names>[I];
+    } else {
+        return spec.rename;
+    }
+}
+
 template <typename T, typename Format, std::size_t I>
 constexpr field_info make_field_info(std::size_t base_offset) {
     using raw_t = std::remove_cv_t<meta::field_type<T, I>>;
@@ -587,10 +600,7 @@ constexpr field_info make_field_info(std::size_t base_offset) {
     constexpr const field_spec& spec = field_spec_of<T, I>;
 
     return field_info{
-        .name = spec.rename.empty()
-                    ? std::string_view(naming::renamed<typename Format::rename_all,
-                                                       meta::reflection<T>::field_names>[I])
-                    : spec.rename,
+        .name = field_name_in<T, Format, I>(),
         .aliases = spec.alias,
         .offset = base_offset + meta::field_offset<T>(I),
         .type = &resolved::info,

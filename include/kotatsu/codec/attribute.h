@@ -161,9 +161,9 @@ enum class tag_mode : std::uint8_t {
 /// different serialized schemas).
 struct struct_spec {
     /// How the struct's fields, the enum's enumerators or the variant's default tags are
-    /// spelled, as a rename policy's function; unset (null), as the format says, so that
-    /// Identity keeps them as declared under a format that renames.
-    naming::rename_fn rename_all = nullptr;
+    /// spelled, as a rename policy's function; unset, as the format says, so that Identity
+    /// keeps them as declared under a format that renames.
+    std::optional<naming::rename_fn> rename_all = {};
     /// Reject unknown keys during deserialization.
     bool deny_unknown_fields = false;
     /// The presence of every field the field's own annotation leaves unset.
@@ -388,14 +388,16 @@ struct rename_all_proxy {
     constexpr auto operator=(naming::Casing casing) const {
         return meta::dsl::value_component<attribute::rename_all,
                                           &struct_spec::rename_all,
-                                          naming::rename_fn>{naming::casing_fn(casing)};
+                                          std::optional<naming::rename_fn>>{
+            naming::casing_fn(casing)};
     }
 
     template <naming::renames Policy>
     constexpr auto operator=(std::type_identity<Policy>) const {
         return meta::dsl::value_component<attribute::rename_all,
                                           &struct_spec::rename_all,
-                                          naming::rename_fn>{&naming::spell_with<Policy>};
+                                          std::optional<naming::rename_fn>>{
+            &naming::spell_with<Policy>};
     }
 };
 
@@ -478,13 +480,13 @@ constexpr std::uint8_t presence_code(std::optional<presence_kind> presence) {
 // member only when the attribute is set, so that Base's shows through
 // otherwise.
 
-template <typename Base, naming::rename_fn RenameAll>
+template <typename Base, typename Rename>
 struct rename_layer : Base {
-    using rename_all = naming::rename_policy_of_t<RenameAll>;
+    using rename_all = Rename;
 };
 
 template <typename Base>
-struct rename_layer<Base, nullptr> : Base {};
+struct rename_layer<Base, void> : Base {};
 
 template <typename Base, bool DenyUnknown>
 struct deny_layer : Base {
@@ -506,23 +508,26 @@ struct presence_layer<Base, 0> : Base {};
 /// The format a struct's own attributes make of Base, the format around the struct: Base
 /// under a layer for each of them. Base stays the format the struct's members are read and
 /// written under (members_format_t), and the one whose reprs apply.
-template <typename Base, naming::rename_fn RenameAll, bool DenyUnknown, std::uint8_t Presence>
+template <typename Base, typename Rename, bool DenyUnknown, std::uint8_t Presence>
 struct scoped_format :
-    presence_layer<deny_layer<rename_layer<Base, RenameAll>, DenyUnknown>, Presence> {
+    presence_layer<deny_layer<rename_layer<Base, Rename>, DenyUnknown>, Presence> {
     using base = Base;
 };
 
-/// The scope of a struct whose attributes say RenameAll, DenyUnknown and Presence, under
+/// The scope of a struct whose attributes say Rename, DenyUnknown and Presence, under
 /// Base: Base scoped by those that differ from what Base says, or Base itself when none does,
 /// so that a struct whose annotation restates the format shares the format's type_info, and
 /// its $def.
-template <typename Base, naming::rename_fn RenameAll, bool DenyUnknown, std::uint8_t Presence>
+template <typename Base, typename Rename, bool DenyUnknown, std::uint8_t Presence>
 struct scope {
-    constexpr static naming::rename_fn rename =
-        RenameAll == &naming::spell_with<typename Base::rename_all> ? nullptr : RenameAll;
+    using rename = std::conditional_t<
+        std::is_same_v<Rename,
+                       naming::rename_policy_of_t<&naming::spell_with<typename Base::rename_all>>>,
+        void,
+        Rename>;
     constexpr static std::uint8_t presence =
         Presence == presence_code(Base::presence_all) ? 0 : Presence;
-    using type = std::conditional_t<rename == nullptr && !DenyUnknown && presence == 0,
+    using type = std::conditional_t<std::is_void_v<rename> && !DenyUnknown && presence == 0,
                                     Base,
                                     scoped_format<Base, rename, DenyUnknown, presence>>;
 };
@@ -531,17 +536,28 @@ struct scope {
 /// scope of the outer one's Base, the inner rename or presence over the outer, deny_unknown
 /// kept once either sets it, so that equal scopes are one type.
 template <typename Base,
-          naming::rename_fn R0,
+          typename R0,
           bool D0,
           std::uint8_t P0,
-          naming::rename_fn RenameAll,
+          typename Rename,
           bool DenyUnknown,
           std::uint8_t Presence>
-struct scope<scoped_format<Base, R0, D0, P0>, RenameAll, DenyUnknown, Presence> :
+struct scope<scoped_format<Base, R0, D0, P0>, Rename, DenyUnknown, Presence> :
     scope<Base,
-          RenameAll != nullptr ? RenameAll : R0,
+          std::conditional_t<std::is_void_v<Rename>, R0, Rename>,
           D0 || DenyUnknown,
           Presence != 0 ? Presence : P0> {};
+
+/// The rename policy Attrs' struct spec states, void when it states none.
+template <typename Attrs>
+consteval auto rename_in() {
+    if constexpr(spec_of<struct_spec, Attrs>.rename_all.has_value()) {
+        return std::type_identity<
+            naming::rename_policy_of_t<*spec_of<struct_spec, Attrs>.rename_all>>{};
+    } else {
+        return std::type_identity<void>{};
+    }
+}
 
 }  // namespace detail
 
@@ -555,7 +571,7 @@ template <typename Format, typename T, typename Attrs>
 using node_format_t = std::conditional_t<
     meta::reflectable_class<T> || std::is_enum_v<T>,
     typename detail::scope<Format,
-                           spec_of<struct_spec, Attrs>.rename_all,
+                           typename decltype(detail::rename_in<Attrs>())::type,
                            spec_of<struct_spec, Attrs>.deny_unknown_fields,
                            detail::presence_code(spec_of<struct_spec, Attrs>.presence_all)>::type,
     Format>;
@@ -568,8 +584,8 @@ struct members_format {
     using type = Format;
 };
 
-template <typename Base, naming::rename_fn RenameAll, bool DenyUnknown, std::uint8_t Presence>
-struct members_format<detail::scoped_format<Base, RenameAll, DenyUnknown, Presence>> {
+template <typename Base, typename Rename, bool DenyUnknown, std::uint8_t Presence>
+struct members_format<detail::scoped_format<Base, Rename, DenyUnknown, Presence>> {
     using type = Base;
 };
 

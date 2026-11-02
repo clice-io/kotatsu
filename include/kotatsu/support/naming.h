@@ -219,29 +219,45 @@ struct fn_policy {
     }
 };
 
+// Matched as template arguments rather than compared: GCC evaluates no
+// comparison of a function's address where sanitizers check null pointers.
+
 template <rename_fn Fn>
-consteval auto policy_of() {
-    if constexpr(Fn == &spell_with<rename_policy::identity>) {
-        return std::type_identity<rename_policy::identity>{};
-    } else if constexpr(Fn == &spell_with<rename_policy::lower_snake>) {
-        return std::type_identity<rename_policy::lower_snake>{};
-    } else if constexpr(Fn == &spell_with<rename_policy::lower_camel>) {
-        return std::type_identity<rename_policy::lower_camel>{};
-    } else if constexpr(Fn == &spell_with<rename_policy::upper_camel>) {
-        return std::type_identity<rename_policy::upper_camel>{};
-    } else if constexpr(Fn == &spell_with<rename_policy::upper_snake>) {
-        return std::type_identity<rename_policy::upper_snake>{};
-    } else {
-        return std::type_identity<fn_policy<Fn>>{};
-    }
-}
+struct policy_of {
+    using type = fn_policy<Fn>;
+};
+
+template <>
+struct policy_of<&spell_with<rename_policy::identity>> {
+    using type = rename_policy::identity;
+};
+
+template <>
+struct policy_of<&spell_with<rename_policy::lower_snake>> {
+    using type = rename_policy::lower_snake;
+};
+
+template <>
+struct policy_of<&spell_with<rename_policy::lower_camel>> {
+    using type = rename_policy::lower_camel;
+};
+
+template <>
+struct policy_of<&spell_with<rename_policy::upper_camel>> {
+    using type = rename_policy::upper_camel;
+};
+
+template <>
+struct policy_of<&spell_with<rename_policy::upper_snake>> {
+    using type = rename_policy::upper_snake;
+};
 
 }  // namespace detail
 
 /// The rename policy whose rename_fn Fn is: the policy itself for those above, which share
 /// their name tables with a format naming them, else one calling Fn.
 template <rename_fn Fn>
-using rename_policy_of_t = typename decltype(detail::policy_of<Fn>())::type;
+using rename_policy_of_t = typename detail::policy_of<Fn>::type;
 
 namespace detail {
 

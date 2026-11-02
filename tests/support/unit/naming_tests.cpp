@@ -106,14 +106,17 @@ ZEST_CASE(policies_spell_names_at_compile_time) {
 }
 
 ZEST_CASE(casing_names_its_policy) {
-    ZSTATIC_EXPECT(casing_fn(Casing::Identity) == &spell_with<rename_policy::identity>);
-    ZSTATIC_EXPECT(casing_fn(Casing::LowerSnake) == &spell_with<rename_policy::lower_snake>);
-    ZSTATIC_EXPECT(casing_fn(Casing::LowerCamel) == &spell_with<rename_policy::lower_camel>);
-    ZSTATIC_EXPECT(casing_fn(Casing::UpperCamel) == &spell_with<rename_policy::upper_camel>);
-    ZSTATIC_EXPECT(casing_fn(Casing::UpperSnake) == &spell_with<rename_policy::upper_snake>);
-    // A policy's rename_fn names the policy again.
+    // A casing's rename_fn names its policy again.
+    ZEXPECT(
+        zest::type_eq<rename_policy_of_t<casing_fn(Casing::Identity)>, rename_policy::identity>());
+    ZEXPECT(zest::type_eq<rename_policy_of_t<casing_fn(Casing::LowerSnake)>,
+                          rename_policy::lower_snake>());
+    ZEXPECT(zest::type_eq<rename_policy_of_t<casing_fn(Casing::LowerCamel)>,
+                          rename_policy::lower_camel>());
     ZEXPECT(zest::type_eq<rename_policy_of_t<casing_fn(Casing::UpperCamel)>,
                           rename_policy::upper_camel>());
+    ZEXPECT(zest::type_eq<rename_policy_of_t<casing_fn(Casing::UpperSnake)>,
+                          rename_policy::upper_snake>());
 }
 
 ZEST_CASE(renamed_spells_a_table_into_static_storage) {
