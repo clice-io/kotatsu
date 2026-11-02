@@ -43,10 +43,7 @@ namespace kotatsu::codec::json {
 /// - variant → shaped by the spec's tag_mode (see encode_tagged_variant in
 ///   encode.h); untagged variants emit the bare payload
 /// - raw_value → spliced into the output verbatim; an empty raw_value is `null`
-struct format : codec::extend<codec::format> {
-    /// Its documents are UTF-8 text.
-    constexpr static bool utf8 = true;
-};
+struct format : codec::extend<codec::format> {};
 
 /// How one encode to JSON goes, decided at run time: codec::encode_options,
 /// and the room the text starts with. Its members are its own, so that

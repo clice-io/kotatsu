@@ -506,11 +506,13 @@ std::expected<void, rich_error> run_encode(Vis& vis,
 /// toml, dyn): a string as it is, an integer as its decimal text, handed to
 /// Sink::emit as a string_view valid for that call alone. It carries the
 /// backend's Format, so that the reprs scoped to it apply to keys as to
-/// values; MapKeyReader reads the keys back.
-template <typename Sink, typename Format>
+/// values, and writes UTF-8 text when Utf8 says (writes_utf8); MapKeyReader
+/// reads the keys back.
+template <typename Sink, typename Format, bool Utf8>
 struct MapKeyWriter {
     Sink sink;
     using format = Format;
+    constexpr static bool utf8 = Utf8;
 
     template <typename T>
     bool visit_str(const T& v) {

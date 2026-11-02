@@ -177,7 +177,7 @@ template <typename Format>
 template <typename KF, typename VF>
 bool MapWriter<Format>::visit_entry(KF&& key_fn, VF&& value_fn) {
     std::string key;
-    MapKeyWriter<StringKeySink, Format> kw{{key}};
+    MapKeyWriter<StringKeySink, Format, false> kw{{key}};
     KOTATSU_CODEC_TRY(key_fn(kw));
     dyn::Value val;
     ValueWriter<Format> vw{val};

@@ -73,6 +73,7 @@ template <typename Format, typename Sink>
 struct ValueWriter {
     Sink sink;
     using format = Format;
+    constexpr static bool utf8 = true;
 
     bool visit_null() {
         return sink.emit_null();
@@ -213,7 +214,7 @@ template <typename Format>
 template <typename KF, typename VF>
 bool MapWriter<Format>::visit_entry(KF&& key_fn, VF&& value_fn) {
     std::string key;
-    MapKeyWriter<StringKeySink, Format> kw{{key}};
+    MapKeyWriter<StringKeySink, Format, true> kw{{key}};
     KOTATSU_CODEC_TRY(key_fn(kw));
     ValueWriter<Format, TableSink> vw{
         {tbl, std::move(key)}

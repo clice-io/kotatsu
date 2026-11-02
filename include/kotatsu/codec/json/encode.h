@@ -25,6 +25,7 @@ template <typename Format>
 struct ValueWriter {
     StringBuilder& builder;
     using format = Format;
+    constexpr static bool utf8 = true;
 
     bool visit_bool(bool v) {
         builder.append_bool(v);
@@ -237,7 +238,7 @@ bool MapWriter<Format>::visit_entry(KF&& key_fn, VF&& value_fn) {
     if(!first)
         builder.put(',');
     first = false;
-    MapKeyWriter<KeySink, Format> kw{{builder}};
+    MapKeyWriter<KeySink, Format, true> kw{{builder}};
     KOTATSU_CODEC_TRY(key_fn(kw));
     builder.put(':');
     ValueWriter<Format> vw{builder};
