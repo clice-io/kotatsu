@@ -1,7 +1,6 @@
 // What parse() offers beyond the fields themselves: aliases, a visit of the arguments in
-// order, the help option's stop, and values of types of their own through codec::repr.
+// order, an option that ends the parse, and values of types of their own through codec::repr.
 
-#include <expected>
 #include <optional>
 #include <string>
 #include <variant>
@@ -52,8 +51,8 @@ struct Port {
 
 struct Server {
     Port port;
-    KANNOTATE(&help, cli::help)
-    bool help = false;
+    KANNOTATE(&version, cli::stop = true)
+    bool version = false;
     KANNOTATE(&host, presence = required)
     std::string host;
 };
@@ -69,7 +68,7 @@ std::string seen(const Given& given) {
 }
 
 template <typename T>
-std::expected<T, Error> parse_line(std::string_view line) {
+Parsed<T> parse_line(std::string_view line) {
     return cli::parse<T>(line.empty() ? std::vector<std::string>{} : test::split(line));
 }
 
@@ -116,11 +115,11 @@ ZEST_CASE(alias_reads_as_what_it_stands_for) {
 
 ZEST_CASE(alias_standing_for_a_bad_value_fails_at_the_alias) {
     auto options = parse_line<Strict>("--level 1 -Oneg");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().kind == Error::Kind::InvalidValue);
-    ZEXPECT(options.error().message == "invalid integer value: -1");
-    ZEXPECT(options.error().begin == 2U);
-    ZEXPECT(options.error().end == 3U);
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->kind == Error::Kind::InvalidValue);
+    ZEXPECT(options.error()->message == "invalid integer value: -1");
+    ZEXPECT(options.error()->begin == 2U);
+    ZEXPECT(options.error()->end == 3U);
 }
 
 ZEST_CASE(visit_sees_the_arguments_in_order) {
@@ -142,10 +141,10 @@ ZEST_CASE(visit_sees_a_subcommand_s_arguments_under_it) {
     ZEXPECT(order == (std::vector<std::string>{"name=n", "command=serve", "command.port=8"}));
 }
 
-ZEST_CASE(help_stops_before_the_required_are_checked) {
-    auto server = parse_line<Server>("--help");
+ZEST_CASE(stop_option_ends_before_the_required_are_checked) {
+    auto server = parse_line<Server>("--version --bogus");
     ZASSERT(server.has_value());
-    ZEXPECT(server->help);
+    ZEXPECT(server->version);
 }
 
 ZEST_CASE(repr_reads_a_value_of_its_own) {
@@ -156,10 +155,10 @@ ZEST_CASE(repr_reads_a_value_of_its_own) {
 
 ZEST_CASE(repr_refusing_a_value_fails_at_it) {
     auto server = parse_line<Server>("--host h --port eighty");
-    ZASSERT(!server.has_value());
-    ZEXPECT(server.error().kind == Error::Kind::InvalidValue);
-    ZEXPECT(server.error().message == "not a port: eighty");
-    ZEXPECT(server.error().begin == 3U);
+    ZASSERT(server.error() != nullptr);
+    ZEXPECT(server.error()->kind == Error::Kind::InvalidValue);
+    ZEXPECT(server.error()->message == "not a port: eighty");
+    ZEXPECT(server.error()->begin == 3U);
 }
 
 };  // ZEST_SUITE(cli_parse_extension)

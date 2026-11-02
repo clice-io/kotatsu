@@ -1,9 +1,9 @@
 #pragma once
 
+#include <cassert>
 #include <concepts>
 #include <cstdint>
 #include <deque>
-#include <expected>
 #include <format>
 #include <memory>
 #include <optional>
@@ -32,6 +32,90 @@ namespace kotatsu::cli {
 struct format : codec::extend<codec::format> {
     constexpr static std::optional<codec::presence_kind> presence_all =
         codec::presence_kind::optional;
+};
+
+/// The usage an argv asks for with -h or --help, which every command takes: of the command it
+/// names by the subcommands it gives before the option, outermost first; of the program's own
+/// when it gives none.
+struct Help {
+    std::vector<std::string> subcommands = {};
+};
+
+/// What parse() makes of an argv: the options it gives, the Help it asks for, or the Error it
+/// does not parse with. parse_into(), which reads onto options the caller holds, makes a
+/// `Parsed<void>`, without options.
+///
+///     auto options = cli::parse<Options>(argv);
+///     if(auto help = options.help()) {
+///         cli::print_usage<Options>("tool", help->subcommands);
+///         return 0;
+///     }
+///     if(auto error = options.error()) {
+///         cli::report(*error);
+///         return 2;
+///     }
+///     run(*options);
+template <typename T>
+class Parsed {
+    using value_type = std::conditional_t<std::is_void_v<T>, std::monostate, T>;
+
+public:
+    Parsed()
+        requires std::is_void_v<T>
+    = default;
+
+    Parsed(value_type options)
+        requires (!std::is_void_v<T>)
+        : state(std::in_place_index<0>, std::move(options)) {}
+
+    Parsed(Help help) : state(std::in_place_index<1>, std::move(help)) {}
+
+    Parsed(Error error) : state(std::in_place_index<2>, std::move(error)) {}
+
+    /// Whether the argv gives options, neither asking for help nor failing to parse.
+    bool has_value() const {
+        return state.index() == 0;
+    }
+
+    explicit operator bool() const {
+        return has_value();
+    }
+
+    /// The help the argv asks for, or null.
+    const Help* help() const {
+        return std::get_if<1>(&state);
+    }
+
+    /// Why the argv does not parse, or null.
+    const Error* error() const {
+        return std::get_if<2>(&state);
+    }
+
+    /// The options, which there must be.
+    value_type& operator*()
+        requires (!std::is_void_v<T>) {
+        assert(has_value());
+        return *std::get_if<0>(&state);
+    }
+
+    const value_type& operator*() const
+        requires (!std::is_void_v<T>) {
+        assert(has_value());
+        return *std::get_if<0>(&state);
+    }
+
+    value_type* operator->()
+        requires (!std::is_void_v<T>) {
+        return &**this;
+    }
+
+    const value_type* operator->() const
+        requires (!std::is_void_v<T>) {
+        return &**this;
+    }
+
+private:
+    std::variant<value_type, Help, Error> state;
 };
 
 /// An argument parse() read, as its visit sees it once the options are decoded.
@@ -109,8 +193,8 @@ struct Reading {
     std::vector<std::uint32_t> subcommand_words;
 };
 
-/// Reads `argv` as `command` takes it into `reading`, or says why it does not parse.
-std::optional<Error> read(const Command& command, string_list_ref argv, Reading& reading);
+/// Reads `argv` as `command` takes it into `reading`, unless it asks for help or does not parse.
+Parsed<void> read(const Command& command, string_list_ref argv, Reading& reading);
 
 /// The error of a decode that failed with `error` once it read `last`.
 Error decode_error(const Reading& reading,
@@ -347,17 +431,17 @@ std::string invalid_enum_value(std::string_view text) {
 /// options alone do not keep, such as the order of the occurrences of two options.
 template <typename T, typename Visit>
     requires std::invocable<Visit&, T&, const Given&>
-std::expected<void, Error> parse_into(T& options, string_list_ref argv, Visit visit) {
+Parsed<void> parse_into(T& options, string_list_ref argv, Visit visit) {
     detail::Reading reading;
-    if(auto err = detail::read(detail::command_of<T>(), argv, reading)) {
-        return std::unexpected(std::move(*err));
+    if(auto read = detail::read(detail::command_of<T>(), argv, reading); !read) {
+        return read;
     }
     const detail::Node* last = nullptr;
     codec::rich_error error;
     codec::scoped_context<codec::rich_error> guard(error);
     detail::Reader reader{reading.root, &last};
     if(!codec::decode_value(reader, options)) {
-        return std::unexpected(detail::decode_error(reading, argv, last, error));
+        return detail::decode_error(reading, argv, last, error);
     }
     for(const auto& given: reading.given) {
         visit(options, given);
@@ -369,19 +453,23 @@ std::expected<void, Error> parse_into(T& options, string_list_ref argv, Visit vi
 /// config file first, say, that the command line then overrides. A list, a variant or a
 /// cli::Commands field the argv gives is replaced, not merged with what it held, and a required
 /// option counts as given only when the argv gives it. On an error, `options` may hold part of
-/// what was read.
+/// what was read; on help, nothing of it.
 template <typename T>
-std::expected<void, Error> parse_into(T& options, string_list_ref argv) {
+Parsed<void> parse_into(T& options, string_list_ref argv) {
     return parse_into(options, argv, [](T&, const Given&) {});
 }
 
 /// parse(), then `visit(options, given)` for each argument it read, in order.
 template <typename T, typename Visit>
     requires std::invocable<Visit&, T&, const Given&>
-std::expected<T, Error> parse(string_list_ref argv, Visit visit) {
+Parsed<T> parse(string_list_ref argv, Visit visit) {
     T options{};
-    if(auto read = parse_into(options, argv, std::move(visit)); !read) {
-        return std::unexpected(std::move(read.error()));
+    auto read = parse_into(options, argv, std::move(visit));
+    if(auto help = read.help()) {
+        return *help;
+    }
+    if(auto error = read.error()) {
+        return *error;
     }
     return options;
 }
@@ -389,9 +477,11 @@ std::expected<T, Error> parse(string_list_ref argv, Visit visit) {
 /// Parses `argv`, the arguments after the program's name, into the options `T` declares: a
 /// reflectable struct, each field an option, a positional argument (`cli::positional`), a
 /// group of them (a struct), or subcommands (a std::variant of structs). A field the argv does
-/// not give keeps the value it starts with.
+/// not give keeps the value it starts with. Every command, the program's and each subcommand,
+/// takes -h and --help besides, unless it names an option so itself: given, the parse ends
+/// there and asks for the usage of that command (Help).
 template <typename T>
-std::expected<T, Error> parse(string_list_ref argv) {
+Parsed<T> parse(string_list_ref argv) {
     return parse<T>(argv, [](T&, const Given&) {});
 }
 
@@ -399,7 +489,7 @@ std::expected<T, Error> parse(string_list_ref argv) {
 template <typename T, std::ranges::input_range R>
     requires (!std::convertible_to<R, string_list_ref> &&
               std::convertible_to<std::ranges::range_reference_t<R>, std::string_view>)
-std::expected<T, Error> parse(R&& argv) {
+Parsed<T> parse(R&& argv) {
     std::vector<std::string> copy;
     for(auto&& argument: argv) {
         copy.emplace_back(std::string_view(argument));

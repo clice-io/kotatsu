@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <string_view>
 
 #include "kotatsu/cli/spec.h"
 #include "kotatsu/codec/macro.h"
@@ -83,12 +82,10 @@ struct Options {
 ///         return kotatsu::zest::run_cli(argc, argv);
 ///     }
 ///
-/// Returns 0 once it has printed the usage for `-h` or `--help`, 2 for options
-/// that do not parse, 1 for a positional filter given with `--test-filter`, and
-/// otherwise what run_tests() returns.
-int run_cli(int argc,
-            char** argv,
-            std::string_view command_overview = "unitest [options] Run unit tests");
+/// Returns 0 once it has printed the usage for `-h` or `--help`, under the
+/// program's file name, 2 for options that do not parse, 1 for a positional
+/// filter given with `--test-filter`, and otherwise what run_tests() returns.
+int run_cli(int argc, char** argv);
 
 /// Run all registered tests with explicit configuration. `argc`/`argv` are the
 /// program's own; tests re-execute the program with them.

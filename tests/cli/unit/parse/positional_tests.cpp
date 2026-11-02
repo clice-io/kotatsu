@@ -1,6 +1,5 @@
 // Positional arguments, filled in declaration order, and the arguments after "--".
 
-#include <expected>
 #include <optional>
 #include <string>
 #include <vector>
@@ -54,7 +53,7 @@ struct Run {
 };
 
 template <typename T>
-std::expected<T, Error> parse_line(std::string_view line) {
+Parsed<T> parse_line(std::string_view line) {
     return cli::parse<T>(line.empty() ? std::vector<std::string>{} : test::split(line));
 }
 
@@ -70,25 +69,25 @@ ZEST_CASE(positionals_fill_in_declaration_order) {
 
 ZEST_CASE(scalar_positional_left_out_fails) {
     auto copy = parse_line<Copy>("a");
-    ZASSERT(!copy.has_value());
-    ZEXPECT(copy.error().kind == Error::Kind::MissingRequired);
-    ZEXPECT(copy.error().message == "expected 1 input argument, got 0");
+    ZASSERT(copy.error() != nullptr);
+    ZEXPECT(copy.error()->kind == Error::Kind::MissingRequired);
+    ZEXPECT(copy.error()->message == "expected 1 input argument, got 0");
     // At the end of the argv.
-    ZEXPECT(copy.error().begin == 1U);
+    ZEXPECT(copy.error()->begin == 1U);
 }
 
 ZEST_CASE(one_positional_too_many_fails) {
     auto copy = parse_line<Copy>("a b c");
-    ZASSERT(!copy.has_value());
-    ZEXPECT(copy.error().kind == Error::Kind::UnexpectedArgument);
-    ZEXPECT(copy.error().message == "unexpected input argument c: expected 2 input arguments");
-    ZEXPECT(copy.error().begin == 2U);
+    ZASSERT(copy.error() != nullptr);
+    ZEXPECT(copy.error()->kind == Error::Kind::UnexpectedArgument);
+    ZEXPECT(copy.error()->message == "unexpected input argument c: expected 2 input arguments");
+    ZEXPECT(copy.error()->begin == 2U);
 }
 
 ZEST_CASE(positional_without_a_field_fails) {
     auto run = parse_line<Run>("a");
-    ZASSERT(!run.has_value());
-    ZEXPECT(run.error().message == "unexpected input argument a");
+    ZASSERT(run.error() != nullptr);
+    ZEXPECT(run.error()->message == "unexpected input argument a");
 }
 
 ZEST_CASE(list_takes_any_number) {
@@ -112,20 +111,20 @@ ZEST_CASE(counted_list_may_be_left_out) {
 
 ZEST_CASE(counted_list_short_of_its_count_fails) {
     auto one = parse_line<Pair>("a");
-    ZASSERT(!one.has_value());
-    ZEXPECT(one.error().message == "expected 2 input arguments, got 1");
+    ZASSERT(one.error() != nullptr);
+    ZEXPECT(one.error()->message == "expected 2 input arguments, got 1");
 }
 
 ZEST_CASE(counted_list_past_its_count_fails) {
     auto three = parse_line<Pair>("a b c");
-    ZASSERT(!three.has_value());
-    ZEXPECT(three.error().message == "unexpected input argument c: expected 2 input arguments");
+    ZASSERT(three.error() != nullptr);
+    ZEXPECT(three.error()->message == "unexpected input argument c: expected 2 input arguments");
 }
 
 ZEST_CASE(ranged_list_says_its_range) {
     auto none = parse_line<Few>("-k");
-    ZASSERT(!none.has_value());
-    ZEXPECT(none.error().message == "expected 1 to 3 input arguments, got 0");
+    ZASSERT(none.error() != nullptr);
+    ZEXPECT(none.error()->message == "expected 1 to 3 input arguments, got 0");
 }
 
 ZEST_CASE(optional_positional_may_be_left_out) {

@@ -2,7 +2,6 @@
 // cannot take fails.
 
 #include <cstdint>
-#include <expected>
 #include <format>
 #include <optional>
 #include <ranges>
@@ -96,7 +95,7 @@ struct Bounded {
 };
 
 template <typename T = Options>
-std::expected<T, Error> parse_line(std::string_view line) {
+Parsed<T> parse_line(std::string_view line) {
     return cli::parse<T>(test::split(line));
 }
 
@@ -152,7 +151,7 @@ ZEST_CASE(enum_reads_any_spelling_of_its_names) {
     auto color = [](std::string_view text) {
         auto options = parse_line<Hues>(std::format("--color {}", text));
         ZEXPECT(options.has_value());
-        return options.value_or(Hues{.color = static_cast<Hue>(255)}).color;
+        return options ? options->color : static_cast<Hue>(255);
     };
     ZEXPECT(color("light-blue") == Hue::light_blue);
     ZEXPECT(color("lightBlue") == Hue::light_blue);
@@ -182,8 +181,8 @@ ZEST_CASE(comma_list_takes_its_values_after_its_comma) {
 
 ZEST_CASE(comma_list_without_its_comma_fails) {
     auto options = parse_line("--must y --tags=a");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().kind == Error::Kind::UnknownOption);
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->kind == Error::Kind::UnknownOption);
 }
 
 ZEST_CASE(tuple_takes_a_value_for_each_element) {
@@ -200,8 +199,8 @@ ZEST_CASE(explicit_names_are_the_option_s_names) {
 
 ZEST_CASE(field_name_beside_explicit_names_fails) {
     auto options = parse_line("--must y --out-file a");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().kind == Error::Kind::UnknownOption);
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->kind == Error::Kind::UnknownOption);
 }
 
 ZEST_CASE(joined_style_takes_its_value_joined) {
@@ -214,8 +213,8 @@ ZEST_CASE(separate_style_takes_its_value_separate) {
 
 ZEST_CASE(separate_style_value_after_equals_fails) {
     auto options = parse_line("--must y --sep=v");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().kind == Error::Kind::UnknownOption);
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->kind == Error::Kind::UnknownOption);
 }
 
 ZEST_CASE(empty_value_is_a_value) {
@@ -226,47 +225,47 @@ ZEST_CASE(empty_value_is_a_value) {
 
 ZEST_CASE(required_option_missing_fails) {
     auto options = parse_line("--jobs 2");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().kind == Error::Kind::MissingRequired);
-    ZEXPECT(options.error().message == "required option --must <value> is missing");
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->kind == Error::Kind::MissingRequired);
+    ZEXPECT(options.error()->message == "required option --must <value> is missing");
 }
 
 ZEST_CASE(unknown_option_fails) {
     auto options = parse_line("--must y --bogus");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().kind == Error::Kind::UnknownOption);
-    ZEXPECT(options.error().message == "unknown option '--bogus'");
-    ZEXPECT(options.error().begin == 2U);
-    ZEXPECT(options.error().end == 3U);
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->kind == Error::Kind::UnknownOption);
+    ZEXPECT(options.error()->message == "unknown option '--bogus'");
+    ZEXPECT(options.error()->begin == 2U);
+    ZEXPECT(options.error()->end == 3U);
 }
 
 ZEST_CASE(missing_value_fails) {
     auto options = parse_line("--must y --jobs");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().kind == Error::Kind::MissingValue);
-    ZEXPECT(options.error().message == "missing argument value");
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->kind == Error::Kind::MissingValue);
+    ZEXPECT(options.error()->message == "missing argument value");
 }
 
 ZEST_CASE(value_of_the_wrong_type_fails_at_the_value) {
     auto options = parse_line("--must y --jobs many");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().kind == Error::Kind::InvalidValue);
-    ZEXPECT(options.error().message == "invalid integer value: many");
-    ZEXPECT(options.error().begin == 3U);
-    ZEXPECT(options.error().end == 4U);
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->kind == Error::Kind::InvalidValue);
+    ZEXPECT(options.error()->message == "invalid integer value: many");
+    ZEXPECT(options.error()->begin == 3U);
+    ZEXPECT(options.error()->end == 4U);
 }
 
 ZEST_CASE(value_joined_to_its_name_fails_at_the_argument) {
     auto options = parse_line("--must y --jobs=many");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().begin == 2U);
-    ZEXPECT(options.error().end == 3U);
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->begin == 2U);
+    ZEXPECT(options.error()->end == 3U);
 }
 
 ZEST_CASE(enum_of_another_name_fails) {
     auto options = parse_line("--must y --level loud");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().message ==
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->message ==
             "invalid enum value: loud (supported: trace, debug, info, warn)");
 }
 
@@ -294,15 +293,15 @@ ZEST_CASE(bool_value_reads_its_spellings) {
 
 ZEST_CASE(bool_value_of_another_spelling_fails) {
     auto toggles = parse_line<Toggles>("--seen maybe");
-    ZASSERT(!toggles.has_value());
-    ZEXPECT(toggles.error().message == "invalid boolean value: maybe");
-    ZEXPECT(toggles.error().begin == 1U);
+    ZASSERT(toggles.error() != nullptr);
+    ZEXPECT(toggles.error()->message == "invalid boolean value: maybe");
+    ZEXPECT(toggles.error()->begin == 1U);
 }
 
 ZEST_CASE(dash_word_in_a_command_without_options_fails) {
     auto files = parse_line<Files>("--force a");
-    ZASSERT(!files.has_value());
-    ZEXPECT(files.error().kind == Error::Kind::UnknownOption);
+    ZASSERT(files.error() != nullptr);
+    ZEXPECT(files.error()->kind == Error::Kind::UnknownOption);
 }
 
 ZEST_CASE(parse_into_keeps_what_the_argv_leaves_out) {
@@ -325,93 +324,93 @@ ZEST_CASE(parse_into_replaces_a_given_list) {
 
 ZEST_CASE(value_below_the_minimum_fails) {
     auto tuned = parse_line<Tuned>("--jobs 0");
-    ZASSERT(!tuned.has_value());
-    ZEXPECT(tuned.error().kind == Error::Kind::InvalidValue);
-    ZEXPECT(tuned.error().message == "value 0 is below the minimum 1");
-    ZEXPECT(tuned.error().begin == 1U);
+    ZASSERT(tuned.error() != nullptr);
+    ZEXPECT(tuned.error()->kind == Error::Kind::InvalidValue);
+    ZEXPECT(tuned.error()->message == "value 0 is below the minimum 1");
+    ZEXPECT(tuned.error()->begin == 1U);
 }
 
 ZEST_CASE(value_above_the_maximum_fails) {
     auto tuned = parse_line<Tuned>("--jobs=65");
-    ZASSERT(!tuned.has_value());
-    ZEXPECT(tuned.error().kind == Error::Kind::InvalidValue);
-    ZEXPECT(tuned.error().message == "value 65 is above the maximum 64");
+    ZASSERT(tuned.error() != nullptr);
+    ZEXPECT(tuned.error()->kind == Error::Kind::InvalidValue);
+    ZEXPECT(tuned.error()->message == "value 65 is above the maximum 64");
 }
 
 ZEST_CASE(value_of_no_choice_fails) {
     auto tuned = parse_line<Tuned>("--mode medium");
-    ZASSERT(!tuned.has_value());
-    ZEXPECT(tuned.error().kind == Error::Kind::InvalidValue);
-    ZEXPECT(tuned.error().message == "invalid value 'medium' (supported: fast, slow)");
+    ZASSERT(tuned.error() != nullptr);
+    ZEXPECT(tuned.error()->kind == Error::Kind::InvalidValue);
+    ZEXPECT(tuned.error()->message == "invalid value 'medium' (supported: fast, slow)");
 }
 
 ZEST_CASE(bounded_value_of_no_number_fails_as_its_type) {
     auto tuned = parse_line<Tuned>("--jobs many");
-    ZASSERT(!tuned.has_value());
-    ZEXPECT(tuned.error().message == "invalid integer value: many");
+    ZASSERT(tuned.error() != nullptr);
+    ZEXPECT(tuned.error()->message == "invalid integer value: many");
 }
 
 ZEST_CASE(nan_of_a_bounded_number_fails) {
     auto bounded = parse_line<Bounded>("--ratio nan");
-    ZASSERT(!bounded.has_value());
-    ZEXPECT(bounded.error().message == "value nan is not a number in 0..1");
+    ZASSERT(bounded.error() != nullptr);
+    ZEXPECT(bounded.error()->message == "value nan is not a number in 0..1");
 }
 
 ZEST_CASE(integer_in_another_notation_fails_as_an_integer) {
     auto tuned = parse_line<Tuned>("--jobs 1e3");
-    ZASSERT(!tuned.has_value());
-    ZEXPECT(tuned.error().message == "invalid integer value: 1e3");
+    ZASSERT(tuned.error() != nullptr);
+    ZEXPECT(tuned.error()->message == "invalid integer value: 1e3");
 }
 
 ZEST_CASE(count_past_its_maximum_fails) {
     auto bounded = parse_line<Bounded>("-v -v -v -v");
-    ZASSERT(!bounded.has_value());
-    ZEXPECT(bounded.error().message == "value 4 is above the maximum 3");
+    ZASSERT(bounded.error() != nullptr);
+    ZEXPECT(bounded.error()->message == "value 4 is above the maximum 3");
 }
 
 ZEST_CASE(tuple_element_of_no_choice_fails) {
     auto bounded = parse_line<Bounded>("--pair a z");
-    ZASSERT(!bounded.has_value());
-    ZEXPECT(bounded.error().message == "invalid value 'z' (supported: a, b)");
-    ZEXPECT(bounded.error().begin == 2U);
+    ZASSERT(bounded.error() != nullptr);
+    ZEXPECT(bounded.error()->message == "invalid value 'z' (supported: a, b)");
+    ZEXPECT(bounded.error()->begin == 2U);
 }
 
 ZEST_CASE(positional_of_no_choice_fails) {
     auto bounded = parse_line<Bounded>("c");
-    ZASSERT(!bounded.has_value());
-    ZEXPECT(bounded.error().message == "invalid value 'c' (supported: a, b)");
+    ZASSERT(bounded.error() != nullptr);
+    ZEXPECT(bounded.error()->message == "invalid value 'c' (supported: a, b)");
 }
 
 ZEST_CASE(unknown_short_option_suggests_none) {
     auto options = parse_line("--must y -q");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().suggestion.empty());
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->suggestion.empty());
 }
 
 ZEST_CASE(unknown_option_near_a_hidden_one_suggests_none) {
     auto bounded = parse_line<Bounded>("--secre");
-    ZASSERT(!bounded.has_value());
-    ZEXPECT(bounded.error().suggestion.empty());
+    ZASSERT(bounded.error() != nullptr);
+    ZEXPECT(bounded.error()->suggestion.empty());
 }
 
 ZEST_CASE(unknown_option_fails_suggesting_the_closest) {
     auto options = parse_line("--must y --verbos");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().suggestion == "--verbose");
-    ZEXPECT(
-        options.error().render().ends_with("unknown option '--verbos'; did you mean '--verbose'?"));
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->suggestion == "--verbose");
+    ZEXPECT(options.error()->render().ends_with(
+        "unknown option '--verbos'; did you mean '--verbose'?"));
 }
 
 ZEST_CASE(unknown_option_with_a_value_fails_suggesting_by_its_name) {
     auto options = parse_line("--must y --jbos=3");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().suggestion == "--jobs");
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->suggestion == "--jobs");
 }
 
 ZEST_CASE(unknown_option_far_from_all_suggests_none) {
     auto options = parse_line("--must y --zzzzzzzz");
-    ZASSERT(!options.has_value());
-    ZEXPECT(options.error().suggestion.empty());
+    ZASSERT(options.error() != nullptr);
+    ZEXPECT(options.error()->suggestion.empty());
 }
 
 };  // ZEST_SUITE(cli_parse_options)

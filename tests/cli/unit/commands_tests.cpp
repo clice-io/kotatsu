@@ -76,6 +76,23 @@ int stop(Service&) {
 [[maybe_unused]] const bool start_added = cli::add_command<Lifecycle>(start, {.name = "start"});
 [[maybe_unused]] const bool stop_added = cli::add_command<Lifecycle>(stop, {.name = "stop"});
 
+/// A set whose subcommands are added out of the order of their names.
+struct Stages {
+    using signature = int();
+};
+
+struct Pipeline {
+    cli::Commands<Stages> stage;
+};
+
+int stage(Service&) {
+    return 0;
+}
+
+[[maybe_unused]] const bool test_added = cli::add_command<Stages>(stage, {.name = "test"});
+[[maybe_unused]] const bool check_added = cli::add_command<Stages>(stage, {.name = "check"});
+[[maybe_unused]] const bool deploy_added = cli::add_command<Stages>(stage, {.name = "deploy"});
+
 /// A set a test adds to while it runs.
 struct Late {
     using signature = int();
@@ -158,29 +175,37 @@ ZEST_CASE(moved_from_holds_nothing) {
 
 ZEST_CASE(error_in_a_subcommand_names_it) {
     auto tool = cli::parse<Tool>(std::vector<std::string>{"build", "--jobs", "x"});
-    ZASSERT(!tool.has_value());
-    ZEXPECT(tool.error().subcommands == (std::vector<std::string>{"build"}));
+    ZASSERT(tool.error() != nullptr);
+    ZEXPECT(tool.error()->subcommands == (std::vector<std::string>{"build"}));
 }
 
 ZEST_CASE(unknown_word_near_a_hidden_one_suggests_none) {
     auto tool = cli::parse<Tool>(std::vector<std::string>{"internl"});
-    ZASSERT(!tool.has_value());
-    ZEXPECT(tool.error().suggestion.empty());
+    ZASSERT(tool.error() != nullptr);
+    ZEXPECT(tool.error()->suggestion.empty());
 }
 
 ZEST_CASE(unknown_word_fails_with_the_closest) {
     auto tool = cli::parse<Tool>(std::vector<std::string>{"buidl"});
-    ZASSERT(!tool.has_value());
-    ZEXPECT(tool.error().kind == Error::Kind::UnknownSubcommand);
-    ZEXPECT(tool.error().suggestion == "build");
+    ZASSERT(tool.error() != nullptr);
+    ZEXPECT(tool.error()->kind == Error::Kind::UnknownSubcommand);
+    ZEXPECT(tool.error()->suggestion == "build");
 }
 
 ZEST_CASE(usage_lists_the_shown_ones_by_name) {
     const auto entries = cli::usage_entries<Tool>();
-    ZASSERT(entries.size() == 3U);
-    ZEXPECT(entries[1].usage == "build");
-    ZEXPECT(entries[1].help == "Build the project");
-    ZEXPECT(entries[2].usage == "serve");
+    ZASSERT(entries.size() == 4U);
+    ZEXPECT(entries[2].usage == "build");
+    ZEXPECT(entries[2].help == "Build the project");
+    ZEXPECT(entries[3].usage == "serve");
+}
+
+ZEST_CASE(usage_lists_them_by_name_whatever_order_they_were_added_in) {
+    const auto entries = cli::usage_entries<Pipeline>();
+    ZASSERT(entries.size() == 4U);
+    ZEXPECT(entries[1].usage == "check");
+    ZEXPECT(entries[2].usage == "deploy");
+    ZEXPECT(entries[3].usage == "test");
 }
 
 ZEST_CASE(hidden_one_still_parses) {
@@ -216,8 +241,8 @@ ZEST_CASE(annotated_field_keeps_its_subcommands) {
 
 ZEST_CASE(required_field_without_a_word_fails) {
     auto picked = cli::parse<MustPick>(std::vector<std::string>{});
-    ZASSERT(!picked.has_value());
-    ZEXPECT(picked.error().kind == Error::Kind::MissingSubcommand);
+    ZASSERT(picked.error() != nullptr);
+    ZEXPECT(picked.error()->kind == Error::Kind::MissingSubcommand);
 }
 
 ZEST_CASE(two_added_under_one_name_end_the_program, crashes = true) {

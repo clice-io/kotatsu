@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -10,6 +11,7 @@
 #include "kotatsu/cli/error.h"
 #include "kotatsu/cli/parse.h"
 #include "kotatsu/cli/to_argv.h"
+#include "kotatsu/support/string_list_ref.h"
 
 namespace kotatsu::cli {
 
@@ -45,12 +47,25 @@ struct UsageEntry {
 
 namespace detail {
 
-/// The options a default-constructed `T` holds, which a usage says the defaults of; none for a
-/// `T` that is not default-constructible, or a field whose value does not write.
+/// The options naming `subcommands`, outermost first, under `command`, and nothing more: what
+/// a decode reads into options that hold those subcommands and their defaults.
+Node subcommand_path(const Command& command, string_list_ref subcommands);
+
+/// The options a default-constructed `T` holds once it holds `subcommands`, which a usage says
+/// the defaults of; none for a `T` that is not default-constructible, or a field whose value
+/// does not write.
 template <typename T>
-Node defaults_of(std::deque<std::string>& texts) {
+Node defaults_of(string_list_ref subcommands, std::deque<std::string>& texts) {
     if constexpr(std::is_default_constructible_v<T>) {
-        return write_options(T{}, texts, true);
+        const Node path = subcommand_path(command_of<T>(), subcommands);
+        T options{};
+        const Node* last = nullptr;
+        codec::rich_error error;
+        codec::scoped_context<codec::rich_error> guard(error);
+        Reader reader{path, &last};
+        [[maybe_unused]] const bool decoded = codec::decode_value(reader, options);
+        assert(decoded);
+        return write_options(options, texts, true);
     } else {
         return Node{};
     }
@@ -60,25 +75,41 @@ std::vector<UsageEntry> usage_entries(const Command& command, const Node& defaul
 
 std::string usage(const Command& command,
                   const Node& defaults,
-                  std::string_view usage_line,
+                  std::string_view program,
+                  string_list_ref subcommands,
                   const Style& style);
 
 }  // namespace detail
 
-/// The entries a usage of the options `T` declares lists, in declaration order: what a program
-/// lays out its own help from.
+/// The entries a usage of the options `T` declares lists, the help option first, then in
+/// declaration order: what a program lays out its own help from.
 template <typename T>
 std::vector<UsageEntry> usage_entries() {
     std::deque<std::string> texts;
-    return detail::usage_entries(detail::command_of<T>(), detail::defaults_of<T>(texts));
+    return detail::usage_entries(detail::command_of<T>(), detail::defaults_of<T>({}, texts));
 }
 
-/// The usage of a program taking the options `T` declares: what `T` is (the description its
-/// KANNOTATE_TYPE gives), `usage: <usage_line>`, its options, by group, and its subcommands.
+/// The usage of the command `subcommands` names, outermost first, in a program `program` taking
+/// the options `T`; of the program's own when they are none, and `subcommands` of a Help asks
+/// for the one it was asked for. It says what the command is (the description its struct's
+/// KANNOTATE_TYPE gives), the line that calls it, "usage: tool serve <PATH> [OPTIONS]", its
+/// options, by group, and its subcommands. The line writes the program's name and the
+/// subcommands' words, then the command's positional arguments and the options it requires, in
+/// declaration order, then "[OPTIONS]", the arguments after "--", and a placeholder of the
+/// subcommand it takes: the meta_var of its field, else "<command>". What may be left out is in
+/// brackets, and an exclusive field is its alternatives, "(<LOCATOR> | --spec <FILE>)", when it
+/// is required or one of them takes positional arguments. `subcommands` must name subcommands
+/// of `T`.
 template <typename T>
-std::string usage(std::string_view usage_line, const Style& style = {}) {
+std::string usage(std::string_view program,
+                  string_list_ref subcommands = {},
+                  const Style& style = {}) {
     std::deque<std::string> texts;
-    return detail::usage(detail::command_of<T>(), detail::defaults_of<T>(texts), usage_line, style);
+    return detail::usage(detail::command_of<T>(),
+                         detail::defaults_of<T>(subcommands, texts),
+                         program,
+                         subcommands,
+                         style);
 }
 
 }  // namespace kotatsu::cli

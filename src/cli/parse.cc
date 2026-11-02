@@ -144,7 +144,8 @@ std::vector<std::string_view> shown_names(const Command& command) {
     std::vector<std::string_view> names;
     for(std::size_t i = 0; i < command.spellings.size(); ++i) {
         // Spelling i names the option of id i + 3, after the unknown and input options.
-        if(!command.args[command.arg_of[i + 3]].spec.hidden) {
+        const auto arg = command.arg_of[i + 3];
+        if(arg == help_arg || !command.args[arg].spec.hidden) {
             names.push_back(command.spellings[i]);
         }
     }
@@ -192,6 +193,9 @@ class ArgvReader {
     bool stopped = false;
 
 public:
+    /// Whether the argv asks for help, which ends the parse too.
+    bool help = false;
+
     ArgvReader(Reading& reading, string_list_ref argv) : reading(reading), argv(argv) {
         reading.active.assign(argv.begin(), argv.end());
         reading.origin.resize(argv.size());
@@ -578,6 +582,11 @@ public:
                 }
 
                 const auto arg_index = command.arg_of[parsed.id];
+                if(arg_index == help_arg) {
+                    help = true;
+                    stopped = true;
+                    return std::nullopt;
+                }
                 const auto& arg = command.args[arg_index];
                 if(arg.shape == Shape::Alias) {
                     expand(arg, index, next);
@@ -657,9 +666,19 @@ std::optional<std::string> read_number(std::string_view text, double& out) {
     return std::nullopt;
 }
 
-std::optional<Error> read(const Command& command, string_list_ref argv, Reading& reading) {
+Parsed<void> read(const Command& command, string_list_ref argv, Reading& reading) {
     ArgvReader reader(reading, argv);
-    return reader.run(command, reading.root, 0);
+    if(auto err = reader.run(command, reading.root, 0)) {
+        return std::move(*err);
+    }
+    if(!reader.help) {
+        return {};
+    }
+    Help help;
+    for(const auto word: reading.subcommand_words) {
+        help.subcommands.emplace_back(reading.active[word]);
+    }
+    return help;
 }
 
 Error decode_error(const Reading& reading,

@@ -169,9 +169,13 @@ class Builder {
         switch(arg.shape) {
             case Shape::Flag:
             case Shape::Count:
-            case Shape::Alias: arg.usage = join(own, "|"); return;
+            case Shape::Alias:
+                arg.usage = join(own, "|");
+                arg.synopsis = first.name;
+                return;
             case Shape::Tuple:
                 arg.usage = std::format("{} {}", join(own, "|"), numbered(token, arg.tuple_size));
+                arg.synopsis = std::format("{} {}", first.name, numbered(token, arg.tuple_size));
                 return;
             case Shape::Value: break;
         }
@@ -181,6 +185,9 @@ class Builder {
         }
         usages.insert(usages.end(), joined.begin(), joined.end());
         arg.usage = join(usages, "|");
+        // A first name that takes its value joined is the first of `joined`.
+        arg.synopsis = first.kind == OptionKind::Separate ? std::format("{} {}", first.name, token)
+                                                          : joined.front();
     }
 
     void add_arg(Arg arg) {
@@ -195,6 +202,7 @@ class Builder {
         if(added.spec.rest) {
             command.rest = index;
             added.usage = std::format("-- {}...", token);
+            added.synopsis = added.usage;
             return;
         }
         if(!added.spec.positional) {
@@ -206,6 +214,7 @@ class Builder {
         added.usage = !added.list          ? token
                       : num.min == num.max ? numbered(token, num.min)
                                            : std::format("{}...", token);
+        added.synopsis = added.usage;
         auto& count = command.positional_count;
         count.min += num.min;
         count.max = num.max == ArgNum::unbounded || count.max == ArgNum::unbounded
@@ -221,7 +230,8 @@ class Builder {
         Subcommands subcommands{.keys = keys,
                                 .path = path,
                                 .optional = use.optional,
-                                .group = group};
+                                .group = group,
+                                .meta_var = use.spec.meta_var};
         for(std::size_t i = 0; i < variant.alternatives.size(); ++i) {
             const auto& alternative = variant.alternatives[i]();
             auto word = subcommand_name(variant, i);
@@ -244,7 +254,8 @@ class Builder {
         Subcommands subcommands{.keys = keys,
                                 .path = path,
                                 .optional = !use.required,
-                                .group = group};
+                                .group = group,
+                                .meta_var = use.spec.meta_var};
         for(const auto& entry: use.spec.commands.registry().entries) {
             subcommands.names.push_back(entry.name);
             subcommands.descriptions.push_back(entry.description);
@@ -352,6 +363,15 @@ public:
         command.arg_of = {no_arg, no_arg, no_arg};
         add_struct(type, no_group, {}, "");
         name_equals_forms();
+        // -h and --help ask for the usage, each unless the command names an option so itself.
+        std::vector<std::string_view> help_names;
+        for(const std::string_view name: {"-h", "--help"}) {
+            if(std::ranges::find(command.spellings, name) == command.spellings.end()) {
+                add_option(NameForm{.name = std::string(name), .kind = OptionKind::Flag}, help_arg);
+                help_names.push_back(name);
+            }
+        }
+        command.help_usage = join(help_names, "|");
         // "--" ends the options: what follows is positional, or the rest when a field takes it.
         command.parse_options.dash_dash_parsing = true;
         command.parse_options.dash_dash_packing = command.rest.has_value();

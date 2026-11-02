@@ -1,7 +1,6 @@
 // Exclusive fields: a variant of groups of the command's own arguments, the one the argv gives
 // an argument of first held, and an argument of another a conflict.
 
-#include <expected>
 #include <optional>
 #include <string>
 #include <variant>
@@ -88,7 +87,7 @@ struct Plain {
 };
 
 template <typename T>
-std::expected<T, Error> parse_line(std::string_view line) {
+Parsed<T> parse_line(std::string_view line) {
     return cli::parse<T>(line.empty() ? std::vector<std::string>{} : test::split(line));
 }
 
@@ -112,25 +111,25 @@ ZEST_CASE(positional_picks_its_alternative) {
 
 ZEST_CASE(option_of_another_alternative_fails) {
     auto rename = parse_line<Rename>("old new --spec s");
-    ZASSERT(!rename.has_value());
-    ZEXPECT(rename.error().kind == Error::Kind::Conflict);
-    ZEXPECT(rename.error().message == "--spec <value> cannot be used with <LOCATOR>");
-    ZEXPECT(rename.error().begin == 2U);
+    ZASSERT(rename.error() != nullptr);
+    ZEXPECT(rename.error()->kind == Error::Kind::Conflict);
+    ZEXPECT(rename.error()->message == "--spec <value> cannot be used with <LOCATOR>");
+    ZEXPECT(rename.error()->begin == 2U);
 }
 
 ZEST_CASE(positional_of_another_alternative_fails) {
     auto rename = parse_line<Rename>("--spec s old");
-    ZASSERT(!rename.has_value());
-    ZEXPECT(rename.error().kind == Error::Kind::Conflict);
-    ZEXPECT(rename.error().message == "<LOCATOR> cannot be used with --spec <value>");
-    ZEXPECT(rename.error().begin == 2U);
+    ZASSERT(rename.error() != nullptr);
+    ZEXPECT(rename.error()->kind == Error::Kind::Conflict);
+    ZEXPECT(rename.error()->message == "<LOCATOR> cannot be used with --spec <value>");
+    ZEXPECT(rename.error()->begin == 2U);
 }
 
 ZEST_CASE(required_option_of_the_held_alternative_left_out_fails) {
     auto rename = parse_line<Rename>("--dry");
-    ZASSERT(!rename.has_value());
-    ZEXPECT(rename.error().kind == Error::Kind::MissingRequired);
-    ZEXPECT(rename.error().message == "required option --spec <value> is missing");
+    ZASSERT(rename.error() != nullptr);
+    ZEXPECT(rename.error()->kind == Error::Kind::MissingRequired);
+    ZEXPECT(rename.error()->message == "required option --spec <value> is missing");
 }
 
 ZEST_CASE(nothing_given_keeps_the_initial_alternative) {
@@ -141,9 +140,9 @@ ZEST_CASE(nothing_given_keeps_the_initial_alternative) {
 
 ZEST_CASE(required_field_left_out_fails) {
     auto pick = parse_line<Pick>("");
-    ZASSERT(!pick.has_value());
-    ZEXPECT(pick.error().kind == Error::Kind::MissingRequired);
-    ZEXPECT(pick.error().message == "one of --spec <value> or <LOCATOR> is required");
+    ZASSERT(pick.error() != nullptr);
+    ZEXPECT(pick.error()->kind == Error::Kind::MissingRequired);
+    ZEXPECT(pick.error()->message == "one of --spec <value> or <LOCATOR> is required");
 }
 
 ZEST_CASE(optional_field_left_out_is_empty) {
@@ -194,14 +193,14 @@ ZEST_CASE(field_in_an_optional_group_left_out_with_it_passes) {
 
 ZEST_CASE(optional_group_given_without_its_required_field_fails) {
     auto outer = parse_line<Outer>("--level 1");
-    ZASSERT(!outer.has_value());
-    ZEXPECT(outer.error().message == "one of --spec <value> or <LOCATOR> is required");
+    ZASSERT(outer.error() != nullptr);
+    ZEXPECT(outer.error()->message == "one of --spec <value> or <LOCATOR> is required");
 }
 
 ZEST_CASE(rest_of_another_alternative_fails) {
     auto pass = parse_line<Pass>("--spec s -- x");
-    ZASSERT(!pass.has_value());
-    ZEXPECT(pass.error().kind == Error::Kind::Conflict);
+    ZASSERT(pass.error() != nullptr);
+    ZEXPECT(pass.error()->kind == Error::Kind::Conflict);
 }
 
 ZEST_CASE(empty_rest_alternative_writes_its_delimiter) {
