@@ -61,6 +61,14 @@ struct Remote {
     std::optional<std::variant<Serve>> command;
 };
 
+/// A subcommand that must be given, which the options always hold, beside an option that ends
+/// the parse.
+struct Versioned {
+    KANNOTATE(&version, cli::stop = true)
+    bool version = false;
+    std::variant<Serve> command;
+};
+
 struct Run {
     KANNOTATE(&command, cli::rest = true)
     std::vector<std::string> command;
@@ -138,6 +146,14 @@ ZEST_CASE(subcommand_follows_the_arguments_that_go_with_it) {
     ZEXPECT(back->host == std::string("h"));
     ZASSERT(back->command.has_value());
     ZEXPECT(std::get<Serve>(*back->command).port == 8);
+}
+
+ZEST_CASE(stop_option_writes_before_a_subcommand) {
+    const auto argv = cli::to_argv(Versioned{.version = true, .command = Serve{}});
+    ZEXPECT(argv == (std::vector<std::string>{"--version", "serve", "--port=0"}));
+    auto back = cli::parse<Versioned>(argv);
+    ZASSERT(back.has_value());
+    ZEXPECT(back->version);
 }
 
 ZEST_CASE(rest_writes_after_dash_dash) {

@@ -36,12 +36,13 @@ std::vector<const Node*> values_of(const Node& node) {
 
 void write(const Command& command, const Node& root, std::vector<std::string>& out) {
     // The subcommand the options hold, before which only the arguments that go with it are
-    // written.
+    // written, and those that end the parse ahead of it.
     const Node* subcommand =
         command.subcommands ? node_at(root, command.subcommands->keys) : nullptr;
     // An argument of an alternative the options do not hold writes nothing.
     auto writes = [&](const Arg& arg) {
-        return (subcommand == nullptr || arg.global) && present(command, root, arg.group);
+        return (subcommand == nullptr || arg.global || arg.spec.stop) &&
+               present(command, root, arg.group);
     };
     for(const auto& arg: command.args) {
         if(arg.spec.positional || arg.spec.rest || !writes(arg)) {
