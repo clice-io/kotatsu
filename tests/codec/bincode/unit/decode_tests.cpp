@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -104,6 +105,19 @@ ZEST_CASE(value_overload_value_initializes) {
     ZSTATIC_EXPECT(decodes_by_value<test::HoldsExplicit>);
     // A type with no default constructor has no value to decode into.
     ZSTATIC_EXPECT(!decodes_by_value<test::NoDefault>);
+}
+
+ZEST_CASE(octet_spans_decode_as_byte_spans) {
+    auto encoded = bincode::to_bytes(std::string("hello"));
+    ZASSERT(encoded);
+    std::vector<std::uint8_t> octets(encoded->size());
+    std::ranges::transform(*encoded, octets.begin(), [](std::byte b) {
+        return std::to_integer<std::uint8_t>(b);
+    });
+    std::string out;
+    ZASSERT(bincode::from_bytes(octets, out));
+    ZEXPECT(out == "hello");
+    ZEXPECT(bincode::from_bytes<std::string>(octets) == "hello");
 }
 
 ZEST_CASE(truncated_payload_fails) {

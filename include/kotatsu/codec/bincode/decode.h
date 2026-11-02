@@ -352,12 +352,23 @@ auto from_bytes(std::span<const std::byte> data, T& out) -> std::expected<void, 
     return {};
 }
 
+template <typename F = bincode::format, typename T>
+auto from_bytes(std::span<const std::uint8_t> data, T& out) -> std::expected<void, rich_error> {
+    return from_bytes<F>(std::as_bytes(data), out);
+}
+
 template <typename T, typename F = bincode::format>
     requires std::is_default_constructible_v<T>
 auto from_bytes(std::span<const std::byte> data) -> std::expected<T, rich_error> {
     auto value = T();
     KOTATSU_EXPECTED_TRY(from_bytes<F>(data, value));
     return value;
+}
+
+template <typename T, typename F = bincode::format>
+    requires std::is_default_constructible_v<T>
+auto from_bytes(std::span<const std::uint8_t> data) -> std::expected<T, rich_error> {
+    return from_bytes<T, F>(std::as_bytes(data));
 }
 
 }  // namespace kotatsu::codec::bincode
