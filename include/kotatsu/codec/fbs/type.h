@@ -248,14 +248,15 @@ consteval bool inline_struct() {
         // outright (assert_fields_reflected).
         return false;
     } else {
-        // A field's attrs replace its raw handling (with/as substitute the
-        // shape, presence drops the slot), so an annotated field cannot join a
-        // memcpy image at any nesting depth; the enclosing struct degrades to
-        // a table, where the dispatch applies the attrs.
+        // A field's own annotation may replace its raw handling (with and as
+        // substitute the shape), so an annotated field cannot join a memcpy
+        // image at any nesting depth; the enclosing struct degrades to a
+        // table, where the dispatch applies the attrs. Its type's annotation
+        // carries no with or as: it keeps the field raw.
         return []<std::size_t... I>(std::index_sequence<I...>) {
-            return ((std::is_same_v<meta::field_attrs_t<T, I>, std::tuple<>> &&
-                     inline_struct_field<meta::field_type<T, I>>()) &&
-                    ...);
+            return (
+                (!meta::field_annotated<T, I> && inline_struct_field<meta::field_type<T, I>>()) &&
+                ...);
         }(std::make_index_sequence<meta::field_count<T>()>{});
     }
 }

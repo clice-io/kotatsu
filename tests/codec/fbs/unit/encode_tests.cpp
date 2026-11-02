@@ -314,6 +314,23 @@ struct CellProbe {
     auto operator==(const CellProbe&) const -> bool = default;
 };
 
+/// Its type annotation names its members, which changes none of its bytes.
+KANNOTATE_TYPE(struct NamedPoint, rename_all = Casing::UpperCamel);
+
+struct NamedPoint {
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+
+    auto operator==(const NamedPoint&) const -> bool = default;
+};
+
+struct HoldsNamedPoint {
+    NamedPoint at;
+    std::int32_t id = 0;
+
+    auto operator==(const HoldsNamedPoint&) const -> bool = default;
+};
+
 struct AdaptedProbe {
     KANNOTATE(&cal, with = type<CalibrationText>)
     Calibration cal;
@@ -809,6 +826,24 @@ ZEST_CASE(members_that_keep_a_struct_a_table) {
     ZSTATIC_EXPECT(meta::field_count<OverLimit>() == 0U);
     ZSTATIC_EXPECT(!fbs::can_inline_struct_v<OverLimit>);
     ZSTATIC_EXPECT(!fbs::can_inline_struct_v<HoldsOverLimit>);
+}
+
+ZEST_CASE(a_member_type_s_annotation_keeps_a_struct_inline) {
+    // Only a field's own annotation can replace its raw member.
+    ZSTATIC_EXPECT(fbs::can_inline_struct_v<HoldsNamedPoint>);
+    const Placed<HoldsNamedPoint> input{
+        .entries = {{.at = {.x = 1, .y = 2}, .id = 3}},
+        .solo = {.at = {.x = 4, .y = 5}, .id = 6},
+    };
+    auto bytes = fbs::to_bytes(input);
+    ZASSERT(bytes);
+    const auto* solo = root_of(*bytes)->GetStruct<const HoldsNamedPoint*>(slot(1));
+    ZASSERT(solo != nullptr);
+    ZEXPECT(*solo == input.solo);
+    auto decoded = fbs::from_bytes<Placed<HoldsNamedPoint>>(*bytes);
+    ZASSERT(decoded);
+    ZEXPECT(decoded->entries == input.entries);
+    ZEXPECT(decoded->solo == input.solo);
 }
 
 ZEST_CASE(table_shaped_structs_roundtrip) {
