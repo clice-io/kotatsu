@@ -187,6 +187,17 @@ struct type_names {
     constexpr static std::array<std::string_view, sizeof...(Ts)> value{meta::type_name<Ts>()...};
 };
 
+/// The policy a tagged variant's tags are spelled by: its own rename_all, else
+/// the format's.
+template <typename SpecAttr, typename Format>
+consteval auto tag_policy() {
+    if constexpr(SpecAttr::value.rename_all.has_value()) {
+        return std::type_identity<naming::rename_policy_of_t<*SpecAttr::value.rename_all>>{};
+    } else {
+        return std::type_identity<typename Format::rename_all>{};
+    }
+}
+
 }  // namespace detail
 
 /// The names a tagged variant's alternatives travel under: the annotation's tag_names when it
@@ -203,14 +214,7 @@ constexpr auto resolve_tag_names() {
         static_assert(naming::distinct(spec.tag_names), "tagged: two tag_names are alike");
         return names;
     } else {
-        using policy = typename decltype([] {
-            if constexpr(SpecAttr::value.rename_all.has_value()) {
-                return std::type_identity<
-                    naming::rename_policy_of_t<*SpecAttr::value.rename_all>>{};
-            } else {
-                return std::type_identity<typename Format::rename_all>{};
-            }
-        }())::type;
+        using policy = typename decltype(detail::tag_policy<SpecAttr, Format>())::type;
         constexpr const auto& names = naming::renamed<policy, detail::type_names<Ts...>::value>;
         static_assert(naming::distinct(names),
                       "tagged: two alternatives' types have the same name; give the tags with "

@@ -307,7 +307,7 @@ ZEST_CASE(field_info_finds_extensions_at_compile_time) {
 
 ZEST_CASE(annotation_maps_components_to_behavior_attrs) {
     using converted = field_attrs_t<behavior_struct, 0>;
-    ZSTATIC_EXPECT(meta::spec_in<field_spec, converted> != nullptr);
+    ZSTATIC_EXPECT(!std::is_void_v<meta::spec_attr_t<field_spec, converted>>);
     ZSTATIC_EXPECT(spec_of<field_spec, converted>.description == "Converted field.");
     ZSTATIC_EXPECT((tuple_has_v<converted, behavior::as<std::int64_t>>));
 
@@ -392,7 +392,7 @@ ZEST_CASE(struct_attributes_fold_into_values_and_derive_tagging) {
 }
 
 ZEST_CASE(type_annotation_attaches_struct_spec) {
-    ZSTATIC_EXPECT(meta::spec_in<struct_spec, attrs_of_t<shape>> != nullptr);
+    ZSTATIC_EXPECT(!std::is_void_v<meta::spec_attr_t<struct_spec, attrs_of_t<shape>>>);
     ZSTATIC_EXPECT(spec_of<struct_spec, attrs_of_t<shape>>.tag == "kind");
 }
 
