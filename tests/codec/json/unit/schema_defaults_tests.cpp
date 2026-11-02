@@ -395,12 +395,12 @@ ZEST_CASE(presence_all_on_a_field_leaves_its_holder_required) {
     ZEXPECT(!zest::contains(result, R"("required":["threads")"));
 }
 
-ZEST_CASE(defaults_omitted_at_its_default) {
-    // The empty vector is the field's default, which the default document
-    // leaves out, so it has no such property to annotate from.
+ZEST_CASE(defaults_stated_where_presence_omits_them) {
+    // Written, the empty vector is left out; absent, it reads as the field's
+    // default all the same, which the schema states.
     const auto result = json::schema_string<defaults_omitted>().value();
     ZEXPECT(zest::contains(result, R"("tags")"));
-    ZEXPECT(!zest::contains(result, R"("default")"));
+    ZEXPECT(zest::contains(result, R"("default":[])"));
 }
 
 ZEST_CASE(defaults_shared_def_shows_fresh_values) {

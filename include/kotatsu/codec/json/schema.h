@@ -685,8 +685,8 @@ private:
 
 /// F, leaving out the fields annotated `schema_default = false` wherever they
 /// sit, so that neither their own property nor the default of an object
-/// holding them states their value: the format the documents the defaults
-/// come from are encoded under.
+/// holding them states their value, and no others, whatever their presence:
+/// the format the documents the defaults come from are encoded under.
 template <typename F>
 struct default_document_format : codec::extend<F> {
     constexpr static bool omit_unstated_defaults = true;

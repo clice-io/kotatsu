@@ -280,12 +280,14 @@ bool encode_one_field(Vis& vis, const T& value) {
     using descriptor = codec::field<T, I, Format>;
 
     // A visitor that writes every field has nothing to mark one absent, so
-    // presence omits fields only elsewhere.
+    // presence omits fields only elsewhere. A default document states every
+    // default the schema states, whatever presence omits: an absent field
+    // reads as its default all the same.
     constexpr bool omits = !writes_every_field<Vis>;
     if constexpr(omits && omits_unstated_defaults<Format> && !descriptor::info.schema_default) {
         return true;
     } else {
-        if constexpr(omits) {
+        if constexpr(omits && !omits_unstated_defaults<Format>) {
             if(descriptor::omitted(value)) {
                 return true;
             }

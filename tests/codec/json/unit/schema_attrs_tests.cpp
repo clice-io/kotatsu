@@ -352,11 +352,11 @@ ZEST_CASE(omitted_fields_not_required) {
                       R"("tags":{"type":"array",)"
                       R"("items":{"type":"integer",)"
                       R"("minimum":-2147483648,)"
-                      R"("maximum":2147483647}},)"
+                      R"("maximum":2147483647},"default":[]},)"
                       R"("count":{"type":"integer",)"
                       R"("minimum":-2147483648,)"
-                      R"("maximum":2147483647},)"
-                      R"("note":{"type":"string"}},)"
+                      R"("maximum":2147483647,"default":0},)"
+                      R"("note":{"type":"string","default":""}},)"
                       R"("required":["name"]})");
 }
 
