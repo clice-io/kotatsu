@@ -515,9 +515,32 @@ auto read_field(table_ref view, slot_id field) -> field_return_type_t<T> {
     }
 }
 
-/// The view type of Object's members of type M: they share their slot type.
+/// Whether Object's members of type M share the view type of their slots,
+/// which a view, finding a member by its C++ type, reads them all as.
+template <typename Object, typename M, std::size_t... Rs>
+consteval bool members_share_view(std::index_sequence<Rs...>) {
+    constexpr auto slots = member_slots<Object, M>();
+    return (std::same_as<slot_view_t<Object, slots[Rs]>, slot_view_t<Object, slots[0]>> && ...);
+}
+
 template <typename Object, typename M>
-using member_slot_view_t = slot_view_t<Object, member_slots<Object, M>()[0]>;
+consteval bool members_share_view() {
+    return members_share_view<Object, M>(
+        std::make_index_sequence<member_slots<Object, M>().size()>{});
+}
+
+template <typename Object, typename M>
+struct member_slot_view {
+    static_assert(members_share_view<Object, M>(),
+                  "fbs views find a member by its C++ type: members of one type that `as` or "
+                  "`with` represents differently cannot be told apart; give such a member a "
+                  "type of its own");
+    using type = slot_view_t<Object, member_slots<Object, M>()[0]>;
+};
+
+/// The view type of Object's members of type M, which share it.
+template <typename Object, typename M>
+using member_slot_view_t = typename member_slot_view<Object, M>::type;
 
 template <typename Object, typename M>
 using member_view_t = field_return_type_t<member_slot_view_t<Object, M>>;

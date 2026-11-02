@@ -250,6 +250,14 @@ struct Reprs {
     test::AccessGrant grant;
 };
 
+/// Two members of one C++ type, one of them represented as another: a view,
+/// finding a member by its type, cannot tell them apart.
+struct SameTypeTwoReprs {
+    KANNOTATE(&widened, as = type<std::int64_t>)
+    std::int32_t widened;
+    std::int32_t plain;
+};
+
 ZEST_SUITE(codec_fbs_proxy) {
 
 ZEST_CASE(table_view_reads_every_field_kind) {
@@ -899,6 +907,14 @@ ZEST_CASE(from_verified_bytes_wraps_without_verifying) {
     ZEXPECT(root[&Profile::name] == "alice");
     auto as_bytes = std::as_bytes(std::span(*bytes));
     ZEXPECT(table_view<Profile>::from_verified_bytes(as_bytes)[&Profile::id] == 7);
+}
+
+ZEST_CASE(members_of_one_type_share_their_view) {
+    // Reprs' std::int32_t member is the only one of its type.
+    ZSTATIC_EXPECT((fbs::proxy_detail::members_share_view<Reprs, std::int32_t>()));
+    // A view would read `plain` as the eight bytes `widened` travels as: it
+    // does not build for such a struct.
+    ZSTATIC_EXPECT((!fbs::proxy_detail::members_share_view<SameTypeTwoReprs, std::int32_t>()));
 }
 
 };  // ZEST_SUITE(codec_fbs_proxy)

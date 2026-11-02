@@ -152,6 +152,10 @@ struct Inner {
 
 enum class Grade : std::int32_t { low, mid, high };
 
+/// Read by its name: the one member of its type, as a view finds members by
+/// their type.
+enum class Shade : std::int32_t { dim, bright };
+
 /// One field of every layout the verifier classifies: scalar, enum, char,
 /// byte and long double cells, strings, string, table, scalar and
 /// inline-struct vectors, nested vectors, a set, string- and integer-keyed
@@ -182,9 +186,9 @@ struct Rich {
     std::variant<std::monostate, Inner> maybe;
     std::tuple<std::int32_t, std::array<std::int32_t, 3>> mixed;
     KANNOTATE(&widened, as = type<std::int64_t>)
-    std::int32_t widened = 0;
+    std::int16_t widened = 0;
     KANNOTATE(&level_name, with = type<codec::enum_names<>>)
-    Grade level_name = Grade::low;
+    Shade level_name = Shade::dim;
 
     auto operator==(const Rich&) const -> bool = default;
 };
@@ -214,7 +218,7 @@ auto make_rich() -> Rich {
         .maybe = Inner{.a = 1, .name = "table payload"},
         .mixed = {11, {21, 22, 23}},
         .widened = 1234,
-        .level_name = Grade::high,
+        .level_name = Shade::bright,
     };
 }
 
