@@ -151,7 +151,9 @@ constexpr std::string normalize_identifier(std::string_view text) {
 
 /// The rename policies: each spells a declared name as a document writes it, in a constant
 /// expression, so the names a type travels under are computed once, at compile time. A
-/// document is read by matching the names so spelled, never by spelling back.
+/// document is read by matching the names so spelled, never by spelling back. Each but
+/// identity also writes a name into a buffer with room for twice its size, which a table of
+/// names renamed at compile time fills without growing a string (naming::renamed).
 namespace rename_policy {
 
 struct identity {
@@ -159,9 +161,6 @@ struct identity {
         return std::string(value);
     }
 };
-
-// Each writes a name into a buffer with room for twice its size, which a table of names
-// renamed at compile time fills without growing a string (naming::renamed).
 
 struct lower_snake {
     constexpr static std::size_t write(std::string_view name, char* out) {
@@ -394,6 +393,7 @@ struct renamed_table<Policy, Names> {
     }();
 };
 
+/// The identity policy spells the names as they are.
 template <const auto& Names>
 struct renamed_table<rename_policy::identity, Names> {
     constexpr const static auto& value = Names;

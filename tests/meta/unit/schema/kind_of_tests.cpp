@@ -1,10 +1,16 @@
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <map>
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -55,6 +61,17 @@ ZEST_CASE(compounds) {
     ZSTATIC_EXPECT(kind_of<std::tuple<int, float>>() == type_kind::tuple);
     ZSTATIC_EXPECT(kind_of<std::pair<int, std::string>>() == type_kind::tuple);
     ZSTATIC_EXPECT(kind_of<fx::SimpleStruct>() == type_kind::structure);
+}
+
+ZEST_CASE(views_and_what_converts_to_none) {
+    ZSTATIC_EXPECT(kind_of<std::vector<std::byte>>() == type_kind::bytes);
+    ZSTATIC_EXPECT(kind_of<std::span<const std::byte>>() == type_kind::bytes);
+    ZSTATIC_EXPECT(kind_of<std::array<std::byte, 4>>() == type_kind::bytes);
+    ZSTATIC_EXPECT(kind_of<const char*>() == type_kind::string);
+    ZSTATIC_EXPECT(kind_of<std::monostate>() == type_kind::null);
+    ZSTATIC_EXPECT(kind_of<std::optional<std::string_view>>() == type_kind::optional);
+    ZSTATIC_EXPECT(kind_of<std::weak_ptr<int>>() == type_kind::pointer);
+    ZSTATIC_EXPECT(kind_of<std::expected<int, std::string>>() == type_kind::variant);
 }
 
 };  // ZEST_SUITE(meta_schema_kind_of)

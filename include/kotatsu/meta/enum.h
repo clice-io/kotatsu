@@ -63,7 +63,7 @@ consteval std::string_view probe_name() {
 /// compiler takes no pack of, an enum without a fixed underlying type and values outside its
 /// range, is probed a value at a time.
 template <typename E, int... Vs>
-consteval std::array<std::string_view, sizeof...(Vs)> chunk_names() {
+consteval std::array<std::string_view, sizeof...(Vs)> probe_chunk() {
     std::array<std::string_view, sizeof...(Vs)> names{};
     if constexpr(requires { pack_signature<enum_probe_value<E, Vs>()...>(); }) {
         const auto parts =
@@ -83,15 +83,16 @@ consteval void copy_chunk(std::array<std::string_view, sizeof...(Values)>& names
                           std::integer_sequence<int, Values...>,
                           std::index_sequence<Is...>) {
     constexpr int values[] = {Values...};
-    const auto chunk = chunk_names<E, values[Base + Is]...>();
+    const auto chunk = probe_chunk<E, values[Base + Is]...>();
     for(std::size_t i = 0; i < chunk.size(); ++i) {
         names[Base + i] = chunk[i];
     }
 }
 
+/// The name of each of the values the reflection of E scans, empty for one no enumerator has.
 template <typename E, int... Values, std::size_t... Chunks>
-consteval auto chunked_names(std::integer_sequence<int, Values...> values,
-                             std::index_sequence<Chunks...>) {
+consteval auto make_candidate_names(std::integer_sequence<int, Values...> values,
+                                    std::index_sequence<Chunks...>) {
     constexpr std::size_t count = sizeof...(Values);
     std::array<std::string_view, count> names{};
     (copy_chunk<E, Chunks * enum_chunk>(
@@ -100,14 +101,6 @@ consteval auto chunked_names(std::integer_sequence<int, Values...> values,
          std::make_index_sequence<std::min(enum_chunk, count - Chunks * enum_chunk)>{}),
      ...);
     return names;
-}
-
-/// The name of each of the values the reflection of E scans, empty for one no enumerator has.
-template <typename E, int... Values>
-consteval auto make_candidate_names(std::integer_sequence<int, Values...> values) {
-    return chunked_names<E>(
-        values,
-        std::make_index_sequence<(sizeof...(Values) + enum_chunk - 1) / enum_chunk>{});
 }
 
 }  // namespace kotatsu::meta::detail
@@ -126,7 +119,10 @@ struct reflection<T> {
 
     constexpr inline static auto candidate_values =
         detail::make_candidate_values<T>(scan_sequence{});
-    constexpr inline static auto candidate_names = detail::make_candidate_names<T>(scan_sequence{});
+    constexpr inline static auto candidate_names = detail::make_candidate_names<T>(
+        scan_sequence{},
+        std::make_index_sequence<(scan_sequence::size() + detail::enum_chunk - 1) /
+                                 detail::enum_chunk>{});
 
     constexpr inline static std::size_t member_count = [] {
         std::size_t count = 0;

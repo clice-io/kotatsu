@@ -66,6 +66,13 @@ enum class Chunked : int {
     FirstOfSixth = 32,
 };
 
+/// Without a fixed underlying type its values are 0..63: of the chunks of the scan, those
+/// within that range are probed as one pack, the others a value at a time.
+enum Unfixed {
+    First = 0,
+    Last = 63,
+};
+
 enum class Toggle : bool {
     Off,
     On,
@@ -103,6 +110,10 @@ static_assert(reflection<Chunked>::member_names[1] == "FirstOfThird");
 static_assert(reflection<Chunked>::member_names[2] == "LastOfFifth");
 static_assert(reflection<Chunked>::member_names[3] == "FirstOfSixth");
 static_assert(reflection<Chunked>::member_values[3] == Chunked::FirstOfSixth);
+
+static_assert(reflection<Unfixed>::member_count == 2);
+static_assert(reflection<Unfixed>::member_names[0] == "First");
+static_assert(reflection<Unfixed>::member_names[1] == "Last");
 
 static_assert(reflection<Edge8>::member_count == 2);
 static_assert(reflection<Edge8>::member_values[0] == Edge8::Min);

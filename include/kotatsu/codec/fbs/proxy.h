@@ -575,14 +575,11 @@ struct member_key {
 private:
     template <typename P>
     static consteval std::size_t rank_of(P member) {
-        const auto& unknown = meta::detail::ext<meta::detail::uninitialized<Object>>;
-        const auto addresses = meta::apply_fields(unknown.value, [](const auto&... field) {
-            return std::array<const void*, sizeof...(field)>{std::addressof(field)...};
-        });
-        const void* address = std::addressof(unknown.value.*member);
+        const auto& offsets = meta::field_offsets<Object>();
+        const std::size_t offset = meta::field_offset(member);
         const auto fields = member_fields<Object, M>();
         const auto found =
-            std::ranges::find(fields, address, [&](std::size_t i) { return addresses[i]; });
+            std::ranges::find(fields, offset, [&](std::size_t i) { return offsets[i]; });
         if(found == fields.end()) {
             member_has_no_slot();
         }

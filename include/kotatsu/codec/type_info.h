@@ -575,21 +575,22 @@ template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::enumeration> : enum_info_node<T> {};
 
 /// The info of the node a field of type Raw carrying Attrs resolves to under Members, the
-/// format of its struct's members; a skipped field's type, which need not resolve, has none.
-template <typename Raw, typename Attrs, typename Members, bool Skipped>
+/// format of its struct's members; none for a field without an entry of its own, skipped or
+/// flattened, whose type need not resolve.
+template <typename Raw, typename Attrs, typename Members, bool Entered>
 constexpr inline type_info_fn field_type_info =
     &decltype(resolve_node<Raw, Attrs, Members>())::info;
 
 template <typename Raw, typename Attrs, typename Members>
-constexpr inline type_info_fn field_type_info<Raw, Attrs, Members, true> = nullptr;
+constexpr inline type_info_fn field_type_info<Raw, Attrs, Members, false> = nullptr;
 
-/// The kind of a field of type Raw, which a skipped one, whose type meta need not classify,
-/// has none of.
-template <typename Raw, bool Skipped>
+/// The kind of a field of type Raw; none for a field without an entry of its own, whose type
+/// meta need not classify.
+template <typename Raw, bool Entered>
 constexpr inline meta::type_kind field_kind = meta::kind_of<Raw>();
 
 template <typename Raw>
-constexpr inline meta::type_kind field_kind<Raw, true> = meta::type_kind::unknown;
+constexpr inline meta::type_kind field_kind<Raw, false> = meta::type_kind::unknown;
 
 /// The fields a flattened field of struct type Raw carrying Attrs spreads into its struct's,
 /// at offsets from Raw's start: Raw's own members, named and marked by its own attributes, or
@@ -603,8 +604,8 @@ constexpr inline std::span<const field_info> flattened_fields<Raw, Attrs, Member
 
 /// The fields struct T holds in a document under Format, built in one pass: what differs
 /// between its fields is read from arrays a pack expansion fills, and what depends on a
-/// field's type alone, its resolved info, its kind, the specs of its attrs, is instantiated
-/// once per type, whichever fields share it.
+/// field's type and attrs alone, its resolved info, its kind, its specs, is instantiated once
+/// for them, whichever fields share them.
 template <typename T, typename Format, std::size_t... Is>
 constexpr built_fields_t<T> build_fields(std::index_sequence<Is...>) {
     built_fields_t<T> result{};
@@ -614,12 +615,14 @@ constexpr built_fields_t<T> build_fields(std::index_sequence<Is...>) {
             naming::renamed<typename Format::rename_all, meta::field_names<T>()>;
         constexpr const auto& offsets = meta::field_offsets<T>();
         const field_spec* const specs[] = {&field_spec_of<T, Is>...};
-        const type_info_fn types[] = {field_type_info<std::remove_cv_t<meta::field_type<T, Is>>,
-                                                      meta::field_attrs_t<T, Is>,
-                                                      members,
-                                                      field_spec_of<T, Is>.skip>...};
-        const meta::type_kind kinds[] = {
-            field_kind<std::remove_cv_t<meta::field_type<T, Is>>, field_spec_of<T, Is>.skip>...};
+        const type_info_fn types[] = {field_type_info < std::remove_cv_t<meta::field_type<T, Is>>,
+                                      meta::field_attrs_t<T, Is>,
+                                      members,
+                                      !field_spec_of<T, Is>.skip &&
+                                          !field_spec_of<T, Is>.flatten > ...};
+        const meta::type_kind kinds[] = {field_kind < std::remove_cv_t<meta::field_type<T, Is>>,
+                                         !field_spec_of<T, Is>.skip &&
+                                             !field_spec_of<T, Is>.flatten > ...};
         const std::span<const meta::spec_ref> extensions[] = {
             meta::spec_refs_of<meta::field_attrs_t<T, Is>, field_spec, struct_spec>...};
         const std::span<const field_info> flattened[] = {

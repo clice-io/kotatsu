@@ -27,10 +27,6 @@ union uninitialized {
     ~uninitialized() {}
 };
 
-/// The most fields a struct may have where the compiler has no structured binding packs: as
-/// many as binder.inl has specializations for.
-constexpr std::size_t max_fields = 72;
-
 #if KOTATSU_HAS_BINDING_PACKS
 
 /// The fields of aggregate T, as many as a structured binding of it declares; none that meta
@@ -46,6 +42,10 @@ consteval std::size_t field_count() {
 }
 
 #else
+
+/// The most fields a struct may have where the compiler has no structured binding packs: as
+/// many as binder.inl has specializations for.
+constexpr std::size_t max_fields = 72;
 
 struct any {
     consteval any(std::size_t);

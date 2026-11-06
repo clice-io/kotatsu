@@ -25,6 +25,17 @@
 #define KOTATSU_HAS_BINDING_PACKS 0
 #endif
 
+// The builtin that names the I-th type of a pack in one step (clang, GCC 14+), which
+// type_list_element uses where the compiler has it.
+#if defined(__has_builtin)
+#if __has_builtin(__type_pack_element)
+#define KOTATSU_HAS_TYPE_PACK_ELEMENT 1
+#endif
+#endif
+#ifndef KOTATSU_HAS_TYPE_PACK_ELEMENT
+#define KOTATSU_HAS_TYPE_PACK_ELEMENT 0
+#endif
+
 #if KOTATSU_COMPILER_MSVC
 #define KOTATSU_NOINLINE __declspec(noinline)
 #else

@@ -383,9 +383,8 @@ auto layered_attrs(std::type_identity<std::tuple<Specs...>>, std::type_identity<
     -> tuple_cat_t<std::tuple<spec_attr<spec_tag_t<Inner, Outer, Specs>, Specs>...>,
                    typename added_attr<Cs>::type...>;
 
-/// The type of the attributes of the annotation Outer written around Inner: those of the one
-/// that is there when the other is not, as a field annotated in neither its own place nor its
-/// type's, or in one of them, mostly is, without composing them.
+/// The type of the attributes of the annotation Outer written around Inner; when either is
+/// no_annotation, the other's as they are, uncomposed: what most fields carry.
 template <typename Inner, typename Outer>
 struct composed_attributes {
     using type = decltype(compose_attributes(Inner::attributes, Outer::attributes));

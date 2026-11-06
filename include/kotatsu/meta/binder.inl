@@ -1,10 +1,6 @@
 // One KOTATSU_BINDER(COUNT, NAMES, TYPES, ADDRESSES, WRAPPED) for each field count meta reflects
 // without structured binding packs: the names a structured binding of COUNT fields declares,
 // their declared types, their addresses, and the addresses as wrapper template arguments.
-#ifndef KOTATSU_BINDER
-#define KOTATSU_BINDER(COUNT, NAMES, TYPES, ADDRESSES, WRAPPED)
-#endif
-
 // clang-format off
 KOTATSU_BINDER(1, (f0), (decltype(f0)), (&f0), (wrapper{&f0}))
 KOTATSU_BINDER(2, (f0, f1), (decltype(f0), decltype(f1)), (&f0, &f1), (wrapper{&f0}, wrapper{&f1}))

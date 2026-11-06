@@ -6,6 +6,8 @@
 #include <utility>
 #include <variant>
 
+#include "kotatsu/support/config.h"
+
 namespace kotatsu {
 
 template <typename T, typename... Ts>
@@ -87,6 +89,7 @@ using type_list_unique_t = typename type_list_unique<List>::type;
 template <std::size_t I, typename List>
 struct type_list_element;
 
+#if !KOTATSU_HAS_TYPE_PACK_ELEMENT
 namespace detail {
 
 template <std::size_t I, typename T>
@@ -104,11 +107,6 @@ template <std::size_t I, typename T>
 indexed_type<I, T> select_indexed(const indexed_type<I, T>&);
 
 }  // namespace detail
-
-#if defined(__has_builtin)
-#if __has_builtin(__type_pack_element)
-#define KOTATSU_TYPE_PACK_ELEMENT 1
-#endif
 #endif
 
 /// The I-th type of a list in one instantiation, however long the list: the compiler's own
@@ -116,7 +114,7 @@ indexed_type<I, T> select_indexed(const indexed_type<I, T>&);
 /// index selects (MSVC).
 template <std::size_t I, typename... Ts>
 struct type_list_element<I, type_list<Ts...>> {
-#if KOTATSU_TYPE_PACK_ELEMENT
+#if KOTATSU_HAS_TYPE_PACK_ELEMENT
     using type = __type_pack_element<I, Ts...>;
 #else
     using type = typename decltype(detail::select_indexed<I>(

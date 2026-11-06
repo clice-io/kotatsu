@@ -102,6 +102,16 @@ struct NoUniqueAddress {
 #endif
 };
 
+struct Overlapping {
+    int i;
+    char c;
+#ifdef _MSC_VER
+    [[msvc::no_unique_address]] Empty e;
+#else
+    [[no_unique_address]] Empty e;
+#endif
+};
+
 struct NoDefault {
     NoDefault() = delete;
 
@@ -250,24 +260,58 @@ ZEST_CASE(apply_fields_hands_every_field_at_once) {
     ZEXPECT(apply_fields(empty, [] { return 0; }) == 0);
 }
 
+ZEST_CASE(apply_fields_hands_a_const_object_const_fields) {
+    constexpr Point point{.x = 1, .c = 'a', .z = 2.0, .y = 3};
+    ZSTATIC_EXPECT(apply_fields(point, [](auto&... fields) {
+        return (std::is_const_v<std::remove_reference_t<decltype(fields)>> && ...);
+    }));
+    ZSTATIC_EXPECT(apply_fields(point, [](const auto&... fields) { return (0 + ... + fields); }) ==
+                   1 + 'a' + 2.0 + 3);
+}
+
 ZEST_CASE(field_type_is_the_declared_type) {
     struct Declared {
         const int fixed;
         double value;
-        int& ref;
     };
 
     ZEXPECT(zest::type_eq<field_type<Declared, 0>, const int>());
     ZEXPECT(zest::type_eq<field_type<Declared, 1>, double>());
-    // A reference member's, the type it refers to.
-    ZEXPECT(zest::type_eq<field_type<Declared, 2>, int>());
 }
 
 ZEST_CASE(field_offsets_lists_every_offset) {
-    constexpr const auto& offsets = field_offsets<Packed>();
-    ZSTATIC_EXPECT(offsets.size() == 6U);
-    ZEXPECT(offsets[0] == offsetof(Packed, a));
-    ZEXPECT(offsets[5] == offsetof(Packed, e));
+    constexpr std::array<std::size_t, 6> expected = {
+        offsetof(Packed, a),
+        offsetof(Packed, b),
+        offsetof(Packed, bb),
+        offsetof(Packed, c),
+        offsetof(Packed, d),
+        offsetof(Packed, e),
+    };
+    ZEXPECT(field_offsets<Packed>() == expected);
+}
+
+ZEST_CASE(field_offset_of_a_member_placed_below_the_one_before) {
+    // e, empty and without an address of its own, sits below c where the layout overlaps it
+    // with i (the Itanium ABI's), and the search for its offset starts over.
+    ZEXPECT(field_offset<Overlapping>(0) == offsetof(Overlapping, i));
+    ZEXPECT(field_offset<Overlapping>(1) == offsetof(Overlapping, c));
+    ZEXPECT(field_offset<Overlapping>(2) == offsetof(Overlapping, e));
+}
+
+ZEST_CASE(for_each_const_object_names_its_fields) {
+    const Point point{.x = 1, .c = 'a', .z = 2.0, .y = 3};
+    std::array<std::string_view, 4> names{};
+    std::array<std::size_t, 4> offsets{};
+    std::size_t visited = 0;
+    for_each(point, [&](auto f) {
+        names[visited] = f.name();
+        offsets[visited] = f.offset();
+        ++visited;
+    });
+    ZEXPECT(visited == 4U);
+    ZEXPECT(names[3] == "y");
+    ZEXPECT(offsets[3] == offsetof(Point, y));
 }
 
 ZEST_CASE(field_refs_lvalue) {

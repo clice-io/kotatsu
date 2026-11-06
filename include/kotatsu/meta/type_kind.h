@@ -201,12 +201,13 @@ consteval type_kind kind_of() {
         return sizeof(T) <= 4 ? type_kind::float32 : type_kind::float64;
     } else if constexpr(char_like<T>) {
         return type_kind::character;
-    } else if constexpr(null_like<T>) {
+    }
+    // Null, optional, pointer and variant come before str_like and bytes_like, as none of them
+    // converts to a view: the conversions those test, overload resolution over the views' range
+    // constructors, are most of what classifying a type costs.
+    else if constexpr(null_like<T>) {
         return type_kind::null;
     } else if constexpr(is_optional_v<T>) {
-        // These come before str_like and bytes_like, which none of them is, as no optional,
-        // smart pointer or variant converts to a view: the conversions those test, overload
-        // resolution over the views' range constructors, are what classifying a type costs.
         return type_kind::optional;
     } else if constexpr(is_specialization_of<std::unique_ptr, T> ||
                         is_specialization_of<std::shared_ptr, T> ||
