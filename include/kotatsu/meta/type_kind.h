@@ -20,12 +20,6 @@
 namespace kotatsu::meta {
 
 template <typename T>
-concept null_like = is_one_of<T, std::nullptr_t, std::nullopt_t, std::monostate>;
-
-template <typename T>
-concept bool_like = std::same_as<T, bool>;
-
-template <typename T>
 concept int_like = is_one_of<T,
                              signed char,
                              short,
@@ -57,15 +51,6 @@ concept char_like = std::same_as<T, char>;
 
 template <typename T>
 concept str_like = std::convertible_to<T, std::string_view>;
-
-template <typename T>
-concept bytes_like = std::convertible_to<T, std::span<const std::byte>>;
-
-template <typename T>
-constexpr inline bool is_pair_v = is_specialization_of<std::pair, T>;
-
-template <typename T>
-constexpr inline bool is_tuple_v = is_specialization_of<std::tuple, T>;
 
 namespace detail {
 
@@ -185,7 +170,7 @@ consteval type_kind kind_of() {
         return type_kind::any;
     } else if constexpr(std::is_enum_v<T>) {
         return type_kind::enumeration;
-    } else if constexpr(bool_like<T>) {
+    } else if constexpr(std::same_as<T, bool>) {
         return type_kind::boolean;
     } else if constexpr(int_like<T>) {
         return sizeof(T) == 1   ? type_kind::int8
@@ -202,10 +187,10 @@ consteval type_kind kind_of() {
     } else if constexpr(char_like<T>) {
         return type_kind::character;
     }
-    // Null, optional, pointer and variant come before str_like and bytes_like, as none of them
+    // Null, optional, pointer and variant come before the views, string and bytes, as none of them
     // converts to a view: the conversions those test, overload resolution over the views' range
     // constructors, are most of what classifying a type costs.
-    else if constexpr(null_like<T>) {
+    else if constexpr(is_one_of<T, std::nullptr_t, std::nullopt_t, std::monostate>) {
         return type_kind::null;
     } else if constexpr(is_optional_v<T>) {
         return type_kind::optional;
@@ -218,7 +203,7 @@ consteval type_kind kind_of() {
         return type_kind::variant;
     } else if constexpr(str_like<T>) {
         return type_kind::string;
-    } else if constexpr(bytes_like<T>) {
+    } else if constexpr(std::convertible_to<T, std::span<const std::byte>>) {
         return type_kind::bytes;
     } else if constexpr(tuple_like<T>) {
         return type_kind::tuple;

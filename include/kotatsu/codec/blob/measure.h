@@ -21,7 +21,7 @@ void measure_part(const A& part, Visit& visit, std::string& path) {
                 if(prefix != 0) {
                     path += '.';
                 }
-                path += meta::field_name<index(), A>();
+                path += meta::field_names<A>[index()];
                 detail::measure_part(meta::field_of<index()>(part), visit, path);
                 path.resize(prefix);
             }

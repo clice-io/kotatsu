@@ -38,7 +38,7 @@ consteval auto packed_size() -> std::size_t {
     if constexpr(meta::reflectable_class<T>) {
         return []<std::size_t... I>(std::index_sequence<I...>) {
             return (std::size_t{0} + ... + packed_size<std::remove_cv_t<meta::field_type<T, I>>>());
-        }(std::make_index_sequence<meta::field_count<T>()>{});
+        }(std::make_index_sequence<meta::field_count<T>>{});
     } else {
         return sizeof(T);
     }
@@ -51,8 +51,8 @@ template <typename T>
 void copy_field_bytes(const T& value, std::byte* image) {
     if constexpr(meta::reflectable_class<T>) {
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-            (copy_field_bytes(meta::field_of<I>(value), image + meta::field_offset<T>(I)), ...);
-        }(std::make_index_sequence<meta::field_count<T>()>{});
+            (copy_field_bytes(meta::field_of<I>(value), image + meta::field_offsets<T>[I]), ...);
+        }(std::make_index_sequence<meta::field_count<T>>{});
     } else {
         std::memcpy(image, std::addressof(value), sizeof(T));
     }

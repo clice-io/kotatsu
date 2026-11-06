@@ -1,131 +1,101 @@
 #pragma once
 
-#include <array>
 #include <cstddef>
-#include <initializer_list>
 #include <source_location>
 #include <string_view>
-#include <type_traits>
 
-#include "kotatsu/support/string_ref.h"
-
+/// Names as the compiler prints them in a function's signature: of a type, of a member, of the
+/// values of a pack. A signature is read in constant evaluation, which pays for every step: the
+/// helpers below search it through the compiler's own string builtins, a step each, and walk
+/// character by character only what they must, a name from its end.
 namespace kotatsu::meta::detail {
 
-constexpr std::size_t find_last_top_level_scope(string_ref sv) {
-    std::size_t pos = string_ref::npos;
-    int angle = 0;
-    int paren = 0;
-    int bracket = 0;
-    int brace = 0;
+constexpr bool identifier_char(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
+           static_cast<unsigned char>(c) >= 0x80;
+}
 
-    for(std::size_t i = 0; i + 1 < sv.size(); ++i) {
-        const auto ch = sv[i];
-        // Most of a name is letters: passed over first, as constant evaluation pays for each
-        // comparison.
-        if((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+/// A signature, its length counted by the compiler.
+constexpr std::string_view signature_text(const char* signature) {
+    return {signature, __builtin_strlen(signature)};
+}
+
+/// Where c first appears in text from `from` on; text.size() when it does not.
+constexpr std::size_t find_char(std::string_view text, char c, std::size_t from) {
+#if defined(__clang__) || defined(_MSC_VER)
+    const char* found = __builtin_char_memchr(text.data() + from, c, text.size() - from);
+    return found == nullptr ? text.size() : static_cast<std::size_t>(found - text.data());
+#else
+    while(from < text.size() && text[from] != c) {
+        ++from;
+    }
+    return from;
+#endif
+}
+
+/// Whether text holds `part` at `at`.
+constexpr bool holds_at(std::string_view text, std::size_t at, std::string_view part) {
+    return at + part.size() <= text.size() &&
+           __builtin_memcmp(text.data() + at, part.data(), part.size()) == 0;
+}
+
+/// Where `part` first appears in text from `from` on; text.size() when it does not.
+constexpr std::size_t find_text(std::string_view text, std::string_view part, std::size_t from) {
+    for(from = find_char(text, part[0], from); from < text.size();
+        from = find_char(text, part[0], from + 1)) {
+        if(holds_at(text, from, part)) {
+            return from;
+        }
+    }
+    return text.size();
+}
+
+/// Where the last name in text begins: past its last `::` outside brackets, which a name's
+/// template arguments, a function's parameters and `(anonymous namespace)` are in; 0 when
+/// there is none. Walked from the end, as far back as the name goes.
+constexpr std::size_t name_start(std::string_view text) {
+    int depth = 0;
+    for(std::size_t i = text.size(); i > 1; --i) {
+        const char c = text[i - 1];
+        if(identifier_char(c)) {
             continue;
         }
-        switch(ch) {
-            case '<': ++angle; break;
-            case '>':
-                if(angle > 0) {
-                    --angle;
-                }
-                break;
-            case '(': ++paren; break;
-            case ')':
-                if(paren > 0) {
-                    --paren;
-                }
-                break;
-            case '[': ++bracket; break;
-            case ']':
-                if(bracket > 0) {
-                    --bracket;
-                }
-                break;
-            case '{': ++brace; break;
-            case '}':
-                if(brace > 0) {
-                    --brace;
-                }
-                break;
-            default: break;
-        }
-
-        if(ch == ':' && sv[i + 1] == ':' && angle == 0 && paren == 0 && bracket == 0 &&
-           brace == 0) {
-            pos = i;
-            ++i;
+        if(c == '>' || c == ')' || c == ']' || c == '}') {
+            ++depth;
+        } else if(c == '<' || c == '(' || c == '[' || c == '{') {
+            --depth;
+        } else if(c == ':' && depth == 0 && text[i - 2] == ':') {
+            return i;
         }
     }
-    return pos;
+    return 0;
 }
 
-constexpr string_ref unqualify_type_name(string_ref sv) {
-    if(auto pos = find_last_top_level_scope(sv); pos != string_ref::npos) {
-        return sv.substr(pos + 2);
+/// The identifier text begins with.
+constexpr std::string_view leading_identifier(std::string_view text) {
+    std::size_t end = 0;
+    while(end < text.size() && identifier_char(text[end])) {
+        ++end;
     }
-    return sv;
+    return text.substr(0, end);
 }
 
-constexpr string_ref unwrap_wrapper_value(string_ref sv) {
-    auto open = sv.rfind('{');
-    auto close = sv.rfind('}');
-    if(open != string_ref::npos && close != string_ref::npos && open < close) {
-        sv = sv.substr(open + 1, close - open - 1);
-    }
-    return sv.trim();
+/// The last name in text, without the template arguments and parameters after it.
+constexpr std::string_view last_name(std::string_view text) {
+    return leading_identifier(text.substr(name_start(text)));
 }
 
-constexpr string_ref extract_identifier(string_ref expression) {
-    expression = expression.trim();
-    while(true) {
-        bool changed = false;
-        while(!expression.empty() && expression.front() == '&') {
-            expression = expression.drop_front();
-            expression = expression.trim();
-            changed = true;
-        }
-        if(expression.size() >= 2 && expression.front() == '(' && expression.back() == ')') {
-            expression = expression.drop_front().drop_back();
-            expression = expression.trim();
-            changed = true;
-        }
-        if(!changed) {
-            break;
-        }
+/// The identifier text ends in, past the characters after it that end no identifier.
+constexpr std::string_view trailing_identifier(std::string_view text) {
+    std::size_t end = text.size();
+    while(end > 0 && !identifier_char(text[end - 1])) {
+        --end;
     }
-
-    while(!expression.empty() && (expression.back() == ')' || expression.back() == ']' ||
-                                  expression.back() == '}' || expression.back() == ';')) {
-        expression = expression.drop_back();
-        expression = expression.trim();
+    std::size_t begin = end;
+    while(begin > 0 && identifier_char(text[begin - 1])) {
+        --begin;
     }
-
-    if(expression.starts_with("::")) {
-        expression = expression.drop_front(2);
-    }
-    if(auto pos = find_last_top_level_scope(expression); pos != string_ref::npos) {
-        expression = expression.substr(pos + 2);
-    } else if(auto colon = expression.rfind(':'); colon != string_ref::npos) {
-        // MSVC may format pointer NTTPs like `int*:symbol`.
-        expression = expression.substr(colon + 1);
-    }
-    if(auto pos = expression.rfind("->"); pos != string_ref::npos) {
-        expression = expression.substr(pos + 2);
-    }
-    if(auto pos = expression.rfind('.'); pos != string_ref::npos) {
-        expression = expression.substr(pos + 1);
-    }
-    if(auto pos = expression.find('<'); pos != string_ref::npos) {
-        expression = expression.substr(0, pos);
-    }
-    if(auto pos = expression.find('('); pos != string_ref::npos) {
-        expression = expression.substr(0, pos);
-    }
-
-    return expression.trim();
+    return text.substr(begin, end - begin);
 }
 
 /// The signature of a function of T, in which the compiler spells T. Its return type names no
@@ -135,180 +105,81 @@ consteval const char* type_signature() {
     return std::source_location::current().function_name();
 }
 
-/// Where T is spelled in type_signature<T>(): after a prefix and before a suffix that are the
-/// same for every T, measured once, on int.
-struct type_spelling {
-    std::size_t prefix;
-    std::size_t suffix;
-};
-
-consteval type_spelling measure_spelling() {
-    const string_ref signature = type_signature<int>();
-    const std::size_t at = signature.rfind("int");
-    return type_spelling{at, signature.size() - at - 3};
+/// Prints a pack of values into one signature, so that reflecting the members of an enum or a
+/// struct takes one instantiation for many of them rather than one each. Its name and return
+/// type hold no digit, as measure_pack finds the values by one.
+template <auto... Vs>
+consteval const char* pack_signature() {
+    return std::source_location::current().function_name();
 }
 
-constexpr inline type_spelling spelling = measure_spelling();
+/// Where a signature spells what it is of: after a prefix and before a suffix that are the
+/// same for every type, or every pack, measured once.
+struct spelling {
+    std::size_t prefix;
+    std::size_t suffix;
 
-/// T as the compiler spells it, qualified; a class type's key, which MSVC writes first
-/// (`struct Foo`), left out.
+    constexpr std::string_view of(const char* signature) const {
+        const std::string_view text = signature_text(signature);
+        return text.substr(prefix, text.size() - prefix - suffix);
+    }
+};
+
+consteval spelling measure_type() {
+    const std::string_view text = signature_text(type_signature<int>());
+    const std::size_t at = text.rfind("int");
+    return {at, text.size() - at - 3};
+}
+
+/// On a pack of one 0, which MSVC prints `0x0`.
+consteval spelling measure_pack() {
+    const std::string_view text = signature_text(pack_signature<0>());
+    return {text.find('0'), text.size() - text.rfind('0') - 1};
+}
+
+constexpr inline spelling type_spelling = measure_type();
+constexpr inline spelling pack_spelling = measure_pack();
+
+/// T as the compiler spells it in a signature, with the key MSVC writes ahead of a class type
+/// (`struct Foo`), as it writes it in a cast.
 template <typename T>
-consteval string_ref qualified_name() {
-    string_ref name = type_signature<T>();
-    name = name.substr(spelling.prefix, name.size() - spelling.prefix - spelling.suffix);
+constexpr inline std::string_view spelled_type = type_spelling.of(type_signature<T>());
+
+consteval std::string_view drop_class_key(std::string_view name) {
 #if defined(_MSC_VER) && !defined(__clang__)
     // `unsigned int` is a name of its own.
     for(std::string_view key: {"class ", "struct ", "enum ", "union "}) {
         if(name.starts_with(key)) {
-            return name.drop_front(key.size());
+            return name.substr(key.size());
         }
     }
 #endif
     return name;
 }
 
-// Parsed once for each type, however many times its name is asked for.
-
-template <typename T>
-constexpr inline string_ref qualified_name_v = qualified_name<T>();
-
-template <typename T>
-constexpr inline string_ref short_name_v = unqualify_type_name(qualified_name_v<T>);
-
-/// workaround for msvc, if no such wrapper, msvc cannot print the member name.
-template <typename T>
-struct wrapper {
-    T value;
-
-    constexpr wrapper(T value) : value(value) {}
-};
-
-/// Prints a whole pack of values into one signature, so that reflecting the members of an
-/// enum or a struct takes one instantiation for many of them rather than one each.
-///
-/// Two things here are load-bearing: GCC and clang print the parameter's name ahead of the
-/// values, and split_pack looks for it, so it stays `Vs`; and the return type stays free of
-/// angle brackets, as MSVC prints it ahead of the argument list split_pack finds by its first
-/// `<`.
+/// The values printed in pack_signature<Vs...>(), as the compiler lists them.
 template <auto... Vs>
-consteval const char* pack_signature() {
-    return std::source_location::current().function_name();
-}
-
-/// The N values printed in a pack_signature, each from its last top-level `::`. An element the
-/// compiler spelled as an expression rather than a name, as the cast it prints for an enum
-/// value no enumerator has, comes back empty.
-///
-/// Constant evaluation costs microseconds a character, so the signature is walked once, its
-/// lowercase letters, most of it, passed over first, and its length never measured.
-template <std::size_t N>
-constexpr std::array<string_ref, N> split_pack(const char* signature) {
-#if defined(__clang__)
-    constexpr string_ref prefix = "Vs = <";
-#elif defined(__GNUC__)
-    constexpr string_ref prefix = "Vs = {";
-#elif defined(_MSC_VER)
-    constexpr string_ref prefix = "<";
-#else
-    static_assert(false, "Not supported compiler");
-#endif
-    std::array<string_ref, N> parts{};
-
-    std::size_t start = 0;
-    while(signature[start] != '\0') {
-        std::size_t matched = 0;
-        while(matched < prefix.size() && signature[start + matched] == prefix[matched]) {
-            ++matched;
-        }
-        if(matched == prefix.size()) {
-            start += matched;
-            break;
-        }
-        ++start;
-    }
-
-    std::size_t index = 0;
-    std::size_t name = start;
-    int depth = 0;
-    bool spelled_out = false;
-
-    for(std::size_t i = start; index < N && signature[i] != '\0'; ++i) {
-        const char c = signature[i];
-        if(c >= 'a' && c <= 'z') {
-            continue;
-        }
-        if(c == '\'' || c == '`' || c == '"') {
-            // A char or string literal, '<' or "a)" say, holds no delimiter, and neither does a
-            // name MSVC quotes, `anonymous-namespace'.
-            const char close = c == '"' ? '"' : '\'';
-            for(++i; signature[i] != close; ++i) {
-                i += signature[i] == '\\';
-            }
-        } else if(c == '-' && signature[i + 1] == '>') {
-            ++i;
-        } else if(c == '<' || c == '(' || c == '[' || c == '{') {
-            ++depth;
-        } else if(c == '>' || c == ')' || c == ']' || c == '}') {
-            if(depth == 0) {
-                parts[index] = spelled_out ? string_ref{} : string_ref(signature + name, i - name);
-                break;
-            }
-            --depth;
-            spelled_out = spelled_out || (depth == 0 && c == ')');
-        } else if(depth == 0 && c == ',') {
-            parts[index++] = spelled_out ? string_ref{} : string_ref(signature + name, i - name);
-            name = i + (signature[i + 1] == ' ' ? 2 : 1);
-            spelled_out = false;
-        } else if(depth == 0 && c == ':' && signature[i + 1] == ':') {
-            name = i + 2;
-            spelled_out = false;
-            ++i;
-        }
-    }
-    return parts;
+constexpr std::string_view pack_list() {
+    return pack_spelling.of(pack_signature<Vs...>());
 }
 
 }  // namespace kotatsu::meta::detail
 
 namespace kotatsu::meta {
 
+/// T as the compiler spells it, qualified.
 template <typename T>
-constexpr auto type_name(bool qualified = false) {
-    return qualified ? detail::qualified_name_v<T> : detail::short_name_v<T>;
-}
+constexpr inline std::string_view qualified_type_name =
+    detail::drop_class_key(detail::spelled_type<T>);
 
-template <auto value>
-    requires std::is_enum_v<decltype(value)>
-constexpr auto enum_name() {
-    string_ref name = std::source_location::current().function_name();
-#if __GNUC__ || __clang__
-    std::size_t start = name.find('=') + 2;
-    std::size_t end = name.size() - 1;
-#elif _MSC_VER
-    std::size_t start = name.find('<') + 1;
-    std::size_t end = name.rfind(">(");
-#else
-    static_assert(false, "Not supported compiler");
-#endif
-    name = name.substr(start, end - start).trim();
-    auto pos = name.rfind("::");
-    return pos == string_ref::npos ? name : name.substr(pos + 2);
-}
+/// T as the compiler spells it, its last name only: `Foo<ns::Bar>` for `ns::Foo<ns::Bar>`.
+template <typename T>
+constexpr inline std::string_view type_name =
+    qualified_type_name<T>.substr(detail::name_start(qualified_type_name<T>));
 
-template <detail::wrapper ptr>
-    requires std::is_pointer_v<decltype(ptr.value)>
-consteval auto pointer_name() {
-    string_ref name = std::source_location::current().function_name();
-    name = detail::unwrap_wrapper_value(name);
-    return detail::extract_identifier(name);
-}
-
-template <detail::wrapper ptr>
-    requires std::is_member_pointer_v<decltype(ptr.value)>
-consteval auto member_name() {
-    string_ref name = std::source_location::current().function_name();
-    name = detail::unwrap_wrapper_value(name);
-    return detail::extract_identifier(name);
-}
+/// The name of the member `Member` points to, `&S::field` or `&S::function`, which MSVC prints
+/// as its declaration, `void __cdecl S::function(void)`.
+template <auto Member>
+constexpr inline std::string_view member_name = detail::last_name(detail::pack_list<Member>());
 
 }  // namespace kotatsu::meta

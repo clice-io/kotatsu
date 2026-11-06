@@ -178,14 +178,14 @@ ZEST_CASE(one_annotation_takes_field_and_struct_attributes) {
 
 ZEST_CASE(field_annotation_overrides_its_type_annotation) {
     ZSTATIC_EXPECT(spec_of<field_spec, attrs_of_t<Weighed>>.description == "weighed");
-    ZSTATIC_EXPECT(meta::spec_in<Probe, attrs_of_t<Weighed>>->weight == 1);
+    ZSTATIC_EXPECT(meta::spec_attr_t<Probe, attrs_of_t<Weighed>>::value.weight == 1);
     using heavier = field_attrs_t<HoldsWeighed, 1>;
     ZSTATIC_EXPECT(spec_of<field_spec, heavier>.description == "heavier");
-    ZSTATIC_EXPECT(meta::spec_in<Probe, heavier>->weight == 9);
+    ZSTATIC_EXPECT(meta::spec_attr_t<Probe, heavier>::value.weight == 9);
     // What only one of them says stays.
     ZSTATIC_EXPECT(spec_of<field_spec, heavier>.rename == "renamed");
     ZSTATIC_EXPECT(spec_of<field_spec, heavier>.presence == presence_kind::optional);
-    ZSTATIC_EXPECT(meta::spec_in<Probe, heavier>->label == "type");
+    ZSTATIC_EXPECT(meta::spec_attr_t<Probe, heavier>::value.label == "type");
 }
 
 ZEST_CASE(type_annotation_reaches_a_plain_field) {

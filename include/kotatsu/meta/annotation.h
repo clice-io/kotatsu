@@ -310,20 +310,6 @@ using spec_attr_t = typename decltype(detail::find_spec_attr<Spec>(Attrs{}))::ty
 
 namespace detail {
 
-template <typename Spec, typename Attr>
-constexpr const Spec* spec_at = &Attr::value;
-
-template <typename Spec>
-constexpr const Spec* spec_at<Spec, void> = nullptr;
-
-}  // namespace detail
-
-/// The spec of type `Spec` attached through Attrs; null when none is.
-template <typename Spec, typename Attrs>
-constexpr const Spec* spec_in = detail::spec_at<Spec, spec_attr_t<Spec, Attrs>>;
-
-namespace detail {
-
 /// No annotation, as a tag: what a type or a field nothing annotates has.
 struct no_annotation {
     constexpr static std::tuple<> attributes{};
@@ -497,7 +483,7 @@ void __kotatsu__field_annotation() = delete;
 
 template <typename T, std::size_t I>
 consteval auto key_of() {
-    constexpr std::string_view name = field_name<I, T>();
+    constexpr std::string_view name = field_names<T>[I];
     return name_key<field_key_text<name.size()>(name)>{};
 }
 
@@ -514,7 +500,7 @@ template <typename T, typename Key>
 consteval bool has_field_keyed() {
     return []<std::size_t... I>(std::index_sequence<I...>) {
         return (std::is_same_v<decltype(key_of<T, I>()), Key> || ...);
-    }(std::make_index_sequence<field_count<T>()>{});
+    }(std::make_index_sequence<meta::field_count<T>>{});
 }
 
 template <typename T, typename Key>
@@ -563,13 +549,11 @@ using field_attrs_t =
     detail::layered_attrs_t<detail::type_annotation_t<std::remove_cv_t<field_type<T, I>>>,
                             detail::field_annotation_t<T, I>>;
 
-/// The key a spec type is found by: its qualified name, which compares in a constant
-/// expression too, where the address of a variable may not.
-template <typename Spec>
-constexpr inline std::string_view spec_key = type_name<Spec>(true);
+namespace detail {
 
-/// A spec as a field keeps it, beside the key of its type, which spec_ref compares before it
-/// casts down, in a constant expression too.
+/// A spec as a field keeps it, beside the key of its type, its qualified name, which spec_ref
+/// compares before it casts down: names compare in a constant expression too, where the
+/// addresses of variables may not.
 struct spec_base {
     std::string_view key;
 };
@@ -579,19 +563,21 @@ struct spec_value : spec_base {
     Spec spec;
 };
 
+}  // namespace detail
+
 /// A spec attached to a field, of a type the holder need not know.
 struct spec_ref {
-    const spec_base* value;
+    const detail::spec_base* value;
 
     template <typename Spec>
     constexpr bool holds() const {
-        return value->key == spec_key<Spec>;
+        return value->key == qualified_type_name<Spec>;
     }
 
     /// The spec it holds, which must be a `Spec`.
     template <typename Spec>
     constexpr const Spec& get() const {
-        return static_cast<const spec_value<Spec>*>(value)->spec;
+        return static_cast<const detail::spec_value<Spec>*>(value)->spec;
     }
 };
 
@@ -600,7 +586,7 @@ namespace detail {
 /// A spec as a spec_ref points at it, one per spec attr.
 template <typename Attr>
 constexpr inline spec_value<typename Attr::spec_type> spec_value_of = {
-    {spec_key<typename Attr::spec_type>},
+    {qualified_type_name<typename Attr::spec_type>},
     Attr::value,
 };
 

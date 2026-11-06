@@ -322,7 +322,7 @@ constexpr bool addressable_field_v =
     !codec::field_spec_of<Object, I>.skip && !codec::field_spec_of<Object, I>.flatten;
 
 /// The types of Object's addressable members, each once.
-template <typename Object, typename Seq = std::make_index_sequence<meta::field_count<Object>()>>
+template <typename Object, typename Seq = std::make_index_sequence<meta::field_count<Object>>>
 struct member_types;
 
 template <typename Object, std::size_t... Is>
@@ -342,7 +342,7 @@ consteval auto member_fields() {
     constexpr auto typed = []<std::size_t... Is>(std::index_sequence<Is...>) {
         return std::array<bool, sizeof...(Is)>{
             (std::same_as<field_value_t<Object, Is>, M> && addressable_field_v<Object, Is>)...};
-    }(std::make_index_sequence<meta::field_count<Object>()>{});
+    }(std::make_index_sequence<meta::field_count<Object>>{});
     std::array<std::size_t, std::ranges::count(typed, true)> fields{};
     std::size_t next = 0;
     for(std::size_t i = 0; i < typed.size(); ++i) {
@@ -361,7 +361,7 @@ consteval auto member_slots() {
     constexpr auto taken = []<std::size_t... Is>(std::index_sequence<Is...>) {
         return std::array<std::size_t, sizeof...(Is)>{
             type_list_size_v<typename codec::detail::single_field_slots<Object, Is>::type>...};
-    }(std::make_index_sequence<meta::field_count<Object>()>{});
+    }(std::make_index_sequence<meta::field_count<Object>>{});
     auto slots = member_fields<Object, M>();
     for(auto& slot: slots) {
         slot = std::accumulate(taken.begin(), taken.begin() + slot, std::size_t{0});
@@ -574,7 +574,7 @@ struct member_key {
 private:
     template <typename P>
     static consteval std::size_t rank_of(P member) {
-        const auto& offsets = meta::field_offsets<Object>();
+        const auto& offsets = meta::field_offsets<Object>;
         const std::size_t offset = meta::field_offset(member);
         const auto fields = member_fields<Object, M>();
         const auto found =
@@ -677,7 +677,7 @@ consteval bool has_bool_field() {
     if constexpr(meta::reflectable_class<T>) {
         return []<std::size_t... I>(std::index_sequence<I...>) {
             return (has_bool_field<std::remove_cv_t<meta::field_type<T, I>>>() || ...);
-        }(std::make_index_sequence<meta::field_count<T>()>{});
+        }(std::make_index_sequence<meta::field_count<T>>{});
     } else {
         return is_bool_image<T>();
     }
@@ -688,9 +688,9 @@ bool bool_bytes_valid(const std::uint8_t* image) {
     if constexpr(meta::reflectable_class<T>) {
         return [&]<std::size_t... I>(std::index_sequence<I...>) {
             return (bool_bytes_valid<std::remove_cv_t<meta::field_type<T, I>>>(
-                        image + meta::field_offset<T>(I)) &&
+                        image + meta::field_offsets<T>[I]) &&
                     ...);
-        }(std::make_index_sequence<meta::field_count<T>()>{});
+        }(std::make_index_sequence<meta::field_count<T>>{});
     } else if constexpr(is_bool_image<T>()) {
         return *image <= 1;
     } else {
@@ -920,7 +920,7 @@ constexpr bool ordering_less(const T& a, const U& b) {
                 return !ordering_less(rhs, lhs);
             }() &&
              ...);
-        }(std::make_index_sequence<meta::field_count<T>()>{});
+        }(std::make_index_sequence<meta::field_count<T>>{});
         return less;
     } else if constexpr(std::is_enum_v<T> || meta::char_like<T> || std::is_enum_v<U> ||
                         meta::char_like<U>) {

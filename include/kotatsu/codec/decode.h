@@ -87,7 +87,7 @@ bool decode_enum_name(Vis& vis, E& out) {
     KOTATSU_CODEC_TRY(vis.visit_str(name));
     for(std::size_t i = 0; i < names.size(); ++i) {
         if(names[i] == name) {
-            out = meta::reflection<E>::member_values[i];
+            out = meta::enum_values<E>[i];
             return true;
         }
     }

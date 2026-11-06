@@ -10,8 +10,6 @@
 
 namespace kotatsu::codec {
 
-using meta::reflection;
-
 namespace {
 
 namespace fx = ::kotatsu::test;

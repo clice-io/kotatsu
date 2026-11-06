@@ -35,50 +35,45 @@ consteval auto make_scan_values(std::integer_sequence<int, Is...>) {
 }
 
 /// The values the reflection of an enum whose underlying type is U scans, -128..127, in
-/// ascending order of U, which enum_name's binary search needs: an unsigned U (char too, where
+/// ascending order of U, which enum_index's binary search needs: an unsigned U (char too, where
 /// it is unsigned) converts the negative ones to its largest values, so they come after 0..127.
 /// A bool U has only 0 and 1.
 template <typename U>
 using scan_values = decltype(make_scan_values<U>(std::make_integer_sequence<int, 256>{}));
 
-template <typename E, int... Values>
-consteval auto make_candidate_values(std::integer_sequence<int, Values...>) {
-    return std::array<E, sizeof...(Values)>{enum_probe_value<E, Values>()...};
-}
-
-/// The values a probe prints at once: a wider chunk trades a longer signature to split for
-/// fewer instantiations.
+/// The values a probe prints at once: a wider chunk trades a longer signature for fewer
+/// instantiations.
 constexpr std::size_t enum_chunk = 32;
 
-/// The name of the value V of E, empty when no enumerator has it, which the compiler prints as
-/// a cast.
-template <typename E, int V>
-consteval std::string_view probe_name() {
-    constexpr E value = enum_probe_value<E, V>();
-    constexpr std::string_view name = meta::enum_name<value>();
-    return name.find(')') == std::string_view::npos ? name : std::string_view{};
+/// The name of the enumerator a value prints as, `ns::E::name`; empty for a value no enumerator
+/// has, which prints as a cast ending in a number, `(ns::E)5`.
+constexpr std::string_view enumerator(std::string_view printed) {
+    const std::string_view name = trailing_identifier(printed);
+    return name.empty() || (name[0] >= '0' && name[0] <= '9') ? std::string_view{} : name;
 }
 
-/// Whether E has a fixed underlying type, which every value of its underlying type is a value
-/// of: such an enum is list-initialized from an integer.
+/// Whether the values of E print as a list a comma separates: E has a fixed underlying type,
+/// which every value of is a value of E, as a compiler takes a template argument outside an
+/// enum's range of none other; and its name holds no comma, as one in template arguments would.
 template <typename E>
-concept fixed_underlying = requires { E{0}; };
+concept listed_by_commas =
+    requires { E{0}; } && find_char(spelled_type<E>, ',', 0) == spelled_type<E>.size();
 
-/// The name of each of the values Vs of E, empty for one no enumerator has. An enum without a
-/// fixed underlying type, which a compiler may take no value outside its range of as a
-/// template argument, is probed a value at a time.
+/// The name of each of the values Vs of E, empty for one no enumerator has.
 template <typename E, int... Vs>
 consteval std::array<std::string_view, sizeof...(Vs)> probe_chunk() {
     std::array<std::string_view, sizeof...(Vs)> names{};
-    if constexpr(fixed_underlying<E>) {
-        const auto parts =
-            split_pack<sizeof...(Vs)>(pack_signature<enum_probe_value<E, Vs>()...>());
-        for(std::size_t i = 0; i < names.size(); ++i) {
-            names[i] = parts[i];
+    if constexpr(listed_by_commas<E>) {
+        const std::string_view list = pack_list<enum_probe_value<E, Vs>()...>();
+        std::size_t begin = 0;
+        for(std::string_view& name: names) {
+            const std::size_t end = find_char(list, ',', begin);
+            name = enumerator(list.substr(begin, end - begin));
+            begin = end + 1;
         }
     } else {
         std::size_t i = 0;
-        ((names[i++] = probe_name<E, Vs>()), ...);
+        ((names[i++] = enumerator(pack_list<enum_probe_value<E, Vs>()>())), ...);
     }
     return names;
 }
@@ -96,8 +91,8 @@ consteval void copy_chunk(std::array<std::string_view, sizeof...(Values)>& names
 
 /// The name of each of the values the reflection of E scans, empty for one no enumerator has.
 template <typename E, int... Values, std::size_t... Chunks>
-consteval auto make_candidate_names(std::integer_sequence<int, Values...> values,
-                                    std::index_sequence<Chunks...>) {
+consteval auto make_scanned_names(std::integer_sequence<int, Values...> values,
+                                  std::index_sequence<Chunks...>) {
     constexpr std::size_t count = sizeof...(Values);
     std::array<std::string_view, count> names{};
     (copy_chunk<E, Chunks * enum_chunk>(
@@ -108,94 +103,93 @@ consteval auto make_candidate_names(std::integer_sequence<int, Values...> values
     return names;
 }
 
+template <typename E>
+constexpr inline auto scanned_names = make_scanned_names<E>(
+    scan_values<std::underlying_type_t<E>>{},
+    std::make_index_sequence<(scan_values<std::underlying_type_t<E>>::size() + enum_chunk - 1) /
+                             enum_chunk>{});
+
+template <std::size_t N>
+consteval std::size_t count_named(const std::array<std::string_view, N>& names) {
+    std::size_t count = 0;
+    for(std::string_view name: names) {
+        count += !name.empty();
+    }
+    return count;
+}
+
+template <typename E, std::size_t N>
+struct enumerator_table {
+    std::array<E, N> values;
+    std::array<std::string_view, N> names;
+};
+
+/// The enumerators of E among the values it scans, in their order.
+template <typename E, int... Values>
+consteval auto make_enumerators(std::integer_sequence<int, Values...>) {
+    constexpr const auto& names = scanned_names<E>;
+    constexpr E values[] = {enum_probe_value<E, Values>()...};
+    enumerator_table<E, count_named(names)> table{};
+    std::size_t found = 0;
+    for(std::size_t i = 0; i < names.size(); ++i) {
+        if(!names[i].empty()) {
+            table.values[found] = values[i];
+            table.names[found] = names[i];
+            ++found;
+        }
+    }
+    return table;
+}
+
+template <typename E>
+constexpr inline auto enumerators = make_enumerators<E>(scan_values<std::underlying_type_t<E>>{});
+
 }  // namespace kotatsu::meta::detail
 
 namespace kotatsu::meta {
 
-template <typename T>
-struct reflection;
+/// The values of E's enumerators in -128..127, in ascending order of its underlying type.
+template <typename E>
+    requires std::is_enum_v<E>
+constexpr inline auto enum_values = detail::enumerators<E>.values;
 
-template <typename T>
-concept enum_type = std::is_enum_v<T>;
+/// The names of E's enumerators, in the order of enum_values.
+template <typename E>
+    requires std::is_enum_v<E>
+constexpr inline auto enum_names = detail::enumerators<E>.names;
 
-template <enum_type T>
-struct reflection<T> {
-    using scan_sequence = detail::scan_values<std::underlying_type_t<T>>;
-
-    constexpr inline static auto candidate_values =
-        detail::make_candidate_values<T>(scan_sequence{});
-    constexpr inline static auto candidate_names = detail::make_candidate_names<T>(
-        scan_sequence{},
-        std::make_index_sequence<(scan_sequence::size() + detail::enum_chunk - 1) /
-                                 detail::enum_chunk>{});
-
-    constexpr inline static std::size_t member_count = [] {
-        std::size_t count = 0;
-        for(std::string_view name: candidate_names) {
-            count += !name.empty();
-        }
-        return count;
-    }();
-    constexpr inline static auto member_values = [] {
-        std::array<T, member_count> out{};
-        std::size_t idx = 0;
-        for(std::size_t i = 0; i < candidate_names.size(); ++i) {
-            if(!candidate_names[i].empty()) {
-                out[idx++] = candidate_values[i];
-            }
-        }
-        return out;
-    }();
-    constexpr inline static auto member_names = [] {
-        std::array<std::string_view, member_count> out{};
-        std::size_t idx = 0;
-        for(std::string_view name: candidate_names) {
-            if(!name.empty()) {
-                out[idx++] = name;
-            }
-        }
-        return out;
-    }();
-};
-
-/// The position of `e` among reflection<E>::member_values, or member_count when no enumerator
-/// has its value.
-template <enum_type E>
+/// The position of `e` among enum_values<E>, or their count when no enumerator has its value.
+template <typename E>
+    requires std::is_enum_v<E>
 constexpr std::size_t enum_index(E e) {
     using U = std::underlying_type_t<E>;
-    const auto target = static_cast<U>(e);
-    const auto& values = reflection<E>::member_values;
-
+    const auto& values = enum_values<E>;
     std::size_t left = 0;
     std::size_t right = values.size();
     while(left < right) {
-        const auto mid = left + (right - left) / 2;
-        if(static_cast<U>(values[mid]) < target) {
+        const std::size_t mid = left + (right - left) / 2;
+        if(static_cast<U>(values[mid]) < static_cast<U>(e)) {
             left = mid + 1;
         } else {
             right = mid;
         }
     }
-
-    if(left < values.size() && static_cast<U>(values[left]) == target) {
-        return left;
-    }
-    return values.size();
+    return left < values.size() && values[left] == e ? left : values.size();
 }
 
-template <enum_type E>
+template <typename E>
+    requires std::is_enum_v<E>
 constexpr std::string_view enum_name(E e, std::string_view fallback = {}) {
     const auto index = enum_index(e);
-    return index < reflection<E>::member_count ? reflection<E>::member_names[index] : fallback;
+    return index < enum_names<E>.size() ? enum_names<E>[index] : fallback;
 }
 
-template <enum_type E>
+template <typename E>
+    requires std::is_enum_v<E>
 constexpr std::optional<E> enum_value(std::string_view name) {
-    const auto& values = reflection<E>::member_values;
-    const auto& names = reflection<E>::member_names;
-    for(std::size_t index = 0; index < names.size(); ++index) {
-        if(names[index] == name) {
-            return values[index];
+    for(std::size_t i = 0; i < enum_names<E>.size(); ++i) {
+        if(enum_names<E>[i] == name) {
+            return enum_values<E>[i];
         }
     }
     return std::nullopt;

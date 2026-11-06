@@ -399,8 +399,8 @@ constexpr bool compare_eq(const L& lhs, const R& rhs) {
             return static_cast<bool>(lhs == rhs);
         }
     } else if constexpr(reflectable_pair<L, R>) {
-        constexpr std::size_t lhs_count = reflection<L>::field_count;
-        constexpr std::size_t rhs_count = reflection<R>::field_count;
+        constexpr std::size_t lhs_count = meta::field_count<L>;
+        constexpr std::size_t rhs_count = meta::field_count<R>;
 
         if constexpr(lhs_count != rhs_count) {
             return false;
@@ -475,8 +475,8 @@ constexpr bool compare_lt(const L& lhs, const R& rhs) {
     } else if constexpr(lt_comparable_with<L, R>) {
         return static_cast<bool>(lhs < rhs);
     } else if constexpr(reflectable_pair<L, R>) {
-        constexpr std::size_t lhs_count = reflection<L>::field_count;
-        constexpr std::size_t rhs_count = reflection<R>::field_count;
+        constexpr std::size_t lhs_count = meta::field_count<L>;
+        constexpr std::size_t rhs_count = meta::field_count<R>;
         constexpr std::size_t common_count = lhs_count < rhs_count ? lhs_count : rhs_count;
 
         bool result = false;

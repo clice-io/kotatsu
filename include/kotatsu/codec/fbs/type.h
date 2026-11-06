@@ -99,7 +99,7 @@ struct format : codec::extend<codec::format> {
 /// a genuinely empty struct, so every field-walking lowering would treat the
 /// struct as empty.
 template <typename T>
-constexpr bool fields_reflected_v = std::is_empty_v<T> || meta::field_count<T>() > 0;
+constexpr bool fields_reflected_v = std::is_empty_v<T> || meta::field_count<T> > 0;
 
 namespace detail {
 
@@ -257,7 +257,7 @@ consteval bool inline_struct() {
             return (
                 (!meta::field_annotated<T, I> && inline_struct_field<meta::field_type<T, I>>()) &&
                 ...);
-        }(std::make_index_sequence<meta::field_count<T>()>{});
+        }(std::make_index_sequence<meta::field_count<T>>{});
     }
 }
 

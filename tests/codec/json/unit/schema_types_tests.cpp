@@ -21,7 +21,6 @@
 
 namespace kotatsu::codec {
 
-using meta::reflection;
 using meta::type_kind;
 
 namespace {

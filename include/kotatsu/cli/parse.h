@@ -402,10 +402,10 @@ inline std::string enum_key(std::string_view text) {
 template <typename Enum>
 std::optional<Enum> enum_from_text(std::string_view text) {
     const auto key = enum_key(text);
-    const auto& names = meta::reflection<Enum>::member_names;
+    const auto& names = meta::enum_names<Enum>;
     for(std::size_t i = 0; i < names.size(); ++i) {
         if(enum_key(names[i]) == key) {
-            return meta::reflection<Enum>::member_values[i];
+            return meta::enum_values<Enum>[i];
         }
     }
     return std::nullopt;
@@ -414,7 +414,7 @@ std::optional<Enum> enum_from_text(std::string_view text) {
 template <typename Enum>
 std::string invalid_enum_value(std::string_view text) {
     std::string message = std::format("invalid enum value: {}", text);
-    const auto& names = meta::reflection<Enum>::member_names;
+    const auto& names = meta::enum_names<Enum>;
     if(!names.empty()) {
         message += " (supported: ";
         for(std::size_t i = 0; i < names.size(); ++i) {

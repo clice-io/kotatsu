@@ -175,7 +175,7 @@ using enum_names_policy_t = std::conditional_t<std::is_void_v<typename Repr::pol
 /// The names of E's enumerators spelled by Policy, in ascending order of value.
 template <typename E, typename Policy>
 constexpr const inline auto& enum_names_of = []() -> const auto& {
-    constexpr const auto& names = naming::renamed<Policy, meta::reflection<E>::member_names>;
+    constexpr const auto& names = naming::renamed<Policy, meta::enum_names<E>>;
     static_assert(naming::distinct(names),
                   "enum_names: two enumerators of the enum are spelled alike");
     return names;
@@ -183,7 +183,7 @@ constexpr const inline auto& enum_names_of = []() -> const auto& {
 
 template <typename... Ts>
 struct type_names {
-    constexpr static std::array<std::string_view, sizeof...(Ts)> value{meta::type_name<Ts>()...};
+    constexpr static std::array<std::string_view, sizeof...(Ts)> value{meta::type_name<Ts>...};
 };
 
 /// The policy a tagged variant's tags are spelled by: its own rename_all, else
@@ -283,7 +283,7 @@ struct build_slots_from_seq<T, std::index_sequence<Is...>> {
 /// of its struct for a flattened one.
 template <typename T>
 using build_slots_t =
-    typename build_slots_from_seq<T, std::make_index_sequence<meta::field_count<T>()>>::type;
+    typename build_slots_from_seq<T, std::make_index_sequence<meta::field_count<T>>>::type;
 
 template <typename T, std::size_t I>
 struct single_field_slots<T, I, /*Skipped=*/false, /*Flattened=*/true> {
@@ -307,13 +307,13 @@ struct enum_info_node {
         if constexpr(named) {
             return enum_names_of<E, Policy>;
         } else {
-            return meta::reflection<E>::member_names;
+            return meta::enum_names<E>;
         }
     }();
 
     constexpr inline static enum_type_info value = {
-        {meta::type_kind::enumeration, meta::type_name<E>()},
-        {names.data(),                 names.size()        },
+        {meta::type_kind::enumeration, meta::type_name<E>},
+        {names.data(),                 names.size()      },
         meta::kind_of<std::underlying_type_t<E>>(),
         named,
     };
@@ -459,12 +459,12 @@ struct variant_info_node<std::variant<Ts...>, TagAttrs, Format> {
     }();
 
     constexpr inline static variant_type_info value = {
-        {meta::type_kind::variant, meta::type_name<std::variant<Ts...>>()},
-        {alternatives.data(),      alternatives.size()                   },
+        {meta::type_kind::variant, meta::type_name<std::variant<Ts...>>},
+        {alternatives.data(),      alternatives.size()                 },
         spec.tagging,
         spec.tag,
         spec.content,
-        {alt_names.data(),         has_tag ? alt_names.size() : 0        },
+        {alt_names.data(),         has_tag ? alt_names.size() : 0      },
         spec.deny_unknown_fields || Format::deny_unknown_fields,
     };
 };
@@ -480,20 +480,20 @@ struct tuple_info_node<Tuple, Format, std::index_sequence<Is...>> {
         type_info::of<std::tuple_element_t<Is, Tuple>, Format>...};
 
     constexpr inline static tuple_type_info value = {
-        {meta::type_kind::tuple, meta::type_name<Tuple>()},
-        {elements.data(),        elements.size()         },
+        {meta::type_kind::tuple, meta::type_name<Tuple>},
+        {elements.data(),        elements.size()       },
     };
 };
 
 template <typename T, typename TagAttrs, typename Format, meta::type_kind Kind>
 struct info_node {
-    constexpr inline static type_info value = {meta::kind_of<T>(), meta::type_name<T>()};
+    constexpr inline static type_info value = {meta::kind_of<T>(), meta::type_name<T>};
 };
 
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::optional> {
     constexpr inline static optional_type_info value = {
-        {meta::type_kind::optional, meta::type_name<T>()},
+        {meta::type_kind::optional, meta::type_name<T>},
         type_info::of<typename T::value_type, Format>,
     };
 };
@@ -501,7 +501,7 @@ struct info_node<T, TagAttrs, Format, meta::type_kind::optional> {
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::pointer> {
     constexpr inline static optional_type_info value = {
-        {meta::type_kind::pointer, meta::type_name<T>()},
+        {meta::type_kind::pointer, meta::type_name<T>},
         type_info::of<typename T::element_type, Format>,
     };
 };
@@ -518,7 +518,7 @@ struct info_node<T, TagAttrs, Format, meta::type_kind::map> {
     using kv_t = std::ranges::range_value_t<T>;
 
     constexpr inline static map_type_info value = {
-        {meta::type_kind::map, meta::type_name<T>()},
+        {meta::type_kind::map, meta::type_name<T>},
         type_info::of<std::remove_const_t<typename kv_t::first_type>, Format>,
         type_info::of<typename kv_t::second_type, Format>,
     };
@@ -527,7 +527,7 @@ struct info_node<T, TagAttrs, Format, meta::type_kind::map> {
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::set> {
     constexpr inline static array_type_info value = {
-        {meta::type_kind::set, meta::type_name<T>()},
+        {meta::type_kind::set, meta::type_name<T>},
         type_info::of<std::ranges::range_value_t<T>, Format>,
     };
 };
@@ -535,7 +535,7 @@ struct info_node<T, TagAttrs, Format, meta::type_kind::set> {
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::array> {
     constexpr inline static array_type_info value = {
-        {meta::type_kind::array, meta::type_name<T>()},
+        {meta::type_kind::array, meta::type_name<T>},
         type_info::of<std::ranges::range_value_t<T>, Format>,
     };
 };
@@ -552,11 +552,11 @@ consteval std::array<field_info, N> distinct_fields(std::array<field_info, N> fi
 
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::structure> {
-    constexpr inline static built_fields_t<T> fields = distinct_fields(
-        build_fields<T, Format>(std::make_index_sequence<meta::field_count<T>()>{}));
+    constexpr inline static built_fields_t<T> fields =
+        distinct_fields(build_fields<T, Format>(std::make_index_sequence<meta::field_count<T>>{}));
 
     constexpr inline static struct_type_info value = {
-        {meta::type_kind::structure, meta::type_name<T>()},
+        {meta::type_kind::structure, meta::type_name<T>},
         Format::deny_unknown_fields,
         fields,
         spec_of<field_spec, meta::attrs_of_t<T>>.description,
@@ -604,8 +604,8 @@ constexpr built_fields_t<T> build_fields(std::index_sequence<Is...>) {
     if constexpr(sizeof...(Is) > 0) {
         using members = members_format_t<Format>;
         constexpr const auto& names =
-            naming::renamed<typename Format::rename_all, meta::field_names<T>()>;
-        constexpr const auto& offsets = meta::field_offsets<T>();
+            naming::renamed<typename Format::rename_all, meta::field_names<T>>;
+        constexpr const auto& offsets = meta::field_offsets<T>;
         const field_spec* const specs[] = {&field_spec_of<T, Is>...};
         const type_info_fn types[] = {field_type_info < std::remove_cv_t<meta::field_type<T, Is>>,
                                       meta::field_attrs_t<T, Is>,
@@ -644,7 +644,7 @@ constexpr built_fields_t<T> build_fields(std::index_sequence<Is...>) {
                     .minimum = spec.minimum,
                     .maximum = spec.maximum,
                     .choices = spec.choices,
-                    .declared_name = meta::field_names<T>()[i],
+                    .declared_name = meta::field_names<T>[i],
                     .extensions = extensions[i],
                 };
             }

@@ -84,9 +84,7 @@ Match type_eq() {
     return Match{
         .held = std::is_same_v<L, R>,
         .explain =
-            [] {
-                return std::format("lhs: {}\nrhs: {}", meta::type_name<L>(), meta::type_name<R>());
-            },
+            [] { return std::format("lhs: {}\nrhs: {}", meta::type_name<L>, meta::type_name<R>); },
     };
 }
 
@@ -127,7 +125,7 @@ Match throws(F&& body) {
                 if constexpr(std::is_void_v<E>) {
                     return what;
                 } else {
-                    return std::format("expected: {}\n{}", meta::type_name<E>(), what);
+                    return std::format("expected: {}\n{}", meta::type_name<E>, what);
                 }
             },
     };

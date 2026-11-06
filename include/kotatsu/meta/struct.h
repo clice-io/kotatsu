@@ -2,9 +2,7 @@
 
 #include <array>
 #include <cstddef>
-#include <memory>
 #include <string_view>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -165,33 +163,22 @@ consteval std::array<std::size_t, N> locate(const std::array<const void*, N>& ad
     return offsets;
 }
 
-constexpr bool identifier_char(char c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
-           static_cast<unsigned char>(c) >= 0x80;
-}
-
-/// The name of the data member whose address a pack_signature element prints: the identifier
-/// it ends in, after the last `.` (clang, GCC) or `->` (MSVC), before the parenthesis and the
-/// brace that close it.
-constexpr std::string_view member_of(string_ref printed) {
-    std::size_t end = printed.size();
-    while(end > 0 && !identifier_char(printed[end - 1])) {
-        --end;
-    }
-    std::size_t begin = end;
-    while(begin > 0 && identifier_char(printed[begin - 1])) {
-        --begin;
-    }
-    return printed.substr(begin, end - begin);
-}
-
-/// The names of the data members at the addresses Ptrs.
-template <wrapper... Ptrs>
-consteval std::array<std::string_view, sizeof...(Ptrs)> member_names() {
-    const auto parts = split_pack<sizeof...(Ptrs)>(pack_signature<Ptrs...>());
-    std::array<std::string_view, sizeof...(Ptrs)> names{};
-    for(std::size_t i = 0; i < names.size(); ++i) {
-        names[i] = member_of(parts[i]);
+/// The names of the fields of T at the addresses Ps, members of ext<uninitialized<T>>.value,
+/// printed in one signature: each as the object's address, `&ext.value`, then the field's name,
+/// `.field`, which ends where the next address begins.
+template <typename T, auto... Ps>
+consteval std::array<std::string_view, sizeof...(Ps)> member_names() {
+    constexpr std::string_view printed = pack_list<&ext<uninitialized<T>>.value>();
+    // GCC closes an address in a parenthesis, which comes after the field's name.
+    constexpr std::string_view object =
+        printed.ends_with(')') ? printed.substr(0, printed.size() - 1) : printed;
+    const std::string_view list = pack_list<Ps...>();
+    std::array<std::string_view, sizeof...(Ps)> names{};
+    std::size_t at = find_text(list, object, 0);
+    for(std::string_view& name: names) {
+        const std::size_t next = find_text(list, object, at + object.size());
+        name = trailing_identifier(list.substr(at, next - at));
+        at = next;
     }
     return names;
 }
@@ -280,7 +267,7 @@ struct binder {
     template <typename T>
     consteval static auto names() {
         auto& [... fields] = ext<uninitialized<T>>.value;
-        return member_names<wrapper{&fields}...>();
+        return member_names<T, &fields...>();
     }
 };
 
@@ -295,10 +282,6 @@ struct binder {
 #define KOTATSU_BINDER_NAME(I) f##I
 #define KOTATSU_BINDER_TYPE(I) decltype(f##I)
 #define KOTATSU_BINDER_ADDRESS(I) &f##I
-#define KOTATSU_BINDER_WRAPPED(I)                                                                  \
-    wrapper {                                                                                      \
-        &f##I                                                                                      \
-    }
 
 #if KOTATSU_COMPILER_MSVC
 // MSVC takes no address of a structured binding as a template argument: names() reads each
@@ -312,7 +295,7 @@ consteval auto field_address() {
 
 template <typename T, std::size_t... Is>
 consteval auto names_by_address(std::index_sequence<Is...>) {
-    return member_names<wrapper{field_address<T, Is>()}...>();
+    return member_names<T, field_address<T, Is>()...>();
 }
 
 #define KOTATSU_BINDER_NAMES(N)                                                                    \
@@ -325,7 +308,7 @@ consteval auto names_by_address(std::index_sequence<Is...>) {
     template <typename T>                                                                          \
     consteval static auto names() {                                                                \
         auto& [KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_NAME)] = ext<uninitialized<T>>.value;      \
-        return member_names<KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_WRAPPED)>();                  \
+        return member_names<T, KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_ADDRESS)>();               \
     }
 #endif
 
@@ -361,7 +344,6 @@ consteval auto names_by_address(std::index_sequence<Is...>) {
 #undef KOTATSU_BINDER_NAME
 #undef KOTATSU_BINDER_TYPE
 #undef KOTATSU_BINDER_ADDRESS
-#undef KOTATSU_BINDER_WRAPPED
 
 #endif
 
@@ -369,96 +351,40 @@ consteval auto names_by_address(std::index_sequence<Is...>) {
 
 namespace kotatsu::meta {
 
+/// Whether meta takes T apart: an aggregate class that one structured binding decomposes.
 template <typename T>
-struct reflection;
+concept reflectable_class =
+    std::is_class_v<T> && std::is_aggregate_v<T> && detail::decomposable<std::remove_cv_t<T>>;
 
-template <typename Object>
-    requires std::is_aggregate_v<Object> && detail::decomposable<Object>
-struct reflection<Object> {
-    constexpr inline static std::size_t field_count = meta::detail::field_count<Object>();
-};
-
-template <typename Object>
-consteval std::size_t field_count() {
-    return reflection<Object>::field_count;
-}
+/// How many fields of T meta sees: none when T has more than 72 or one is a reference.
+template <reflectable_class T>
+constexpr inline std::size_t field_count = detail::field_count<std::remove_cv_t<T>>();
 
 namespace detail {
 
-template <typename Object>
-using binder_of = binder<reflection<Object>::field_count>;
+template <typename T>
+using binder_of = binder<meta::field_count<T>>;
 
-template <typename Object>
-using field_types_t = decltype(binder_of<Object>::types(std::declval<Object&>()));
-
-// Variables of their own rather than members of reflection, so that what needs only the
-// count, as reflectable_class does, evaluates neither.
-
-template <typename Object>
-constexpr inline auto field_names_v = binder_of<Object>::template names<Object>();
-
-template <typename Object>
-constexpr inline auto field_offsets_v = binder_of<Object>::template offsets<Object>();
+template <typename T>
+using field_types_t = decltype(binder_of<T>::types(std::declval<std::remove_cv_t<T>&>()));
 
 }  // namespace detail
 
-/// Hands every field of object to fn at once, as lvalues as const as object is, and returns
-/// what fn does.
-template <typename Object, typename Fn>
-constexpr decltype(auto) apply_fields(Object& object, Fn&& fn) {
-    return detail::binder_of<std::remove_const_t<Object>>::apply(object, std::forward<Fn>(fn));
-}
+/// The declared type of field I of T.
+template <reflectable_class T, std::size_t I>
+using field_type = type_list_element_t<I, detail::field_types_t<T>>;
 
-template <typename Object>
-constexpr auto field_refs(Object&& object) {
-    return apply_fields(object, [](auto&... fields) {
-        if constexpr(std::is_lvalue_reference_v<Object&&>) {
-            return std::tuple<decltype(fields)...>(fields...);
-        } else {
-            return std::tuple<std::remove_reference_t<decltype(fields)>&&...>(std::move(fields)...);
-        }
-    });
-}
+/// The names of T's fields, as declared.
+template <reflectable_class T>
+constexpr inline auto field_names = detail::binder_of<T>::template names<std::remove_cv_t<T>>();
 
-/// The names of Object's fields, as declared.
-template <typename Object>
-consteval const auto& field_names() {
-    return detail::field_names_v<Object>;
-}
+/// The offsets of T's fields, in declaration order.
+template <reflectable_class T>
+constexpr inline auto field_offsets = detail::binder_of<T>::template offsets<std::remove_cv_t<T>>();
 
-/// The declared type of field I of Object; of a reference member, the type it refers to.
-template <typename Object, std::size_t I>
-using field_type = std::remove_reference_t<type_list_element_t<I, detail::field_types_t<Object>>>;
-
-template <std::size_t I, typename Object>
-constexpr auto& field_of(Object&& object) {
-    return apply_fields(object,
-                        [](auto&... fields) -> auto& { return detail::pick<I>(fields...); });
-}
-
-template <std::size_t I, typename Object>
-constexpr auto field_addr_of(Object&& object) {
-    return std::addressof(field_of<I>(object));
-}
-
-template <std::size_t I, typename Object>
-consteval std::string_view field_name() {
-    return detail::field_names_v<Object>[I];
-}
-
-/// The offsets of Object's fields, in declaration order.
-template <class Object>
-consteval const auto& field_offsets() {
-    return detail::field_offsets_v<Object>;
-}
-
-template <class Object>
-consteval auto field_offset(std::size_t index) noexcept -> std::size_t {
-    return detail::field_offsets_v<Object>[index];
-}
-
+/// The offset of the data member `member` points to.
 template <typename C, typename M>
-consteval auto field_offset(M C::* member) noexcept -> std::size_t {
+consteval std::size_t field_offset(M C::* member) {
     const auto& unknown = detail::ext<detail::uninitialized<C>>;
     const void* address = &(unknown.value.*member);
     for(std::size_t i = 0; i < sizeof(unknown.bytes); ++i) {
@@ -469,52 +395,18 @@ consteval auto field_offset(M C::* member) noexcept -> std::size_t {
     std::unreachable();
 }
 
-template <std::size_t I, typename Object>
-struct field {
-    Object& object;
-
-    using type = field_type<std::remove_const_t<Object>, I>;
-
-    constexpr auto&& value() {
-        return field_of<I>(object);
-    }
-
-    constexpr static std::size_t index() {
-        return I;
-    }
-
-    constexpr static std::string_view name() {
-        return field_name<I, std::remove_const_t<Object>>();
-    }
-
-    constexpr static std::size_t offset() {
-        return field_offset<std::remove_const_t<Object>>(I);
-    }
-};
-
-template <typename Object, typename Callback>
-constexpr bool for_each(Object&& object, const Callback& callback) {
-    using reflect = reflection<std::remove_cvref_t<Object>>;
-    auto foldable = [&](auto field) {
-        using R = decltype(callback(field));
-        if constexpr(std::is_void_v<R>) {
-            callback(field);
-            return true;
-        } else {
-            return bool(callback(field));
-        }
-    };
-
-    using T = std::remove_reference_t<Object>;
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return (foldable(field<Is, T>{object}) && ...);
-    }(std::make_index_sequence<reflect::field_count>());
+/// Hands every field of object to fn at once, as lvalues as const as object is, and returns
+/// what fn does.
+template <typename Object, typename Fn>
+constexpr decltype(auto) apply_fields(Object& object, Fn&& fn) {
+    return detail::binder_of<Object>::apply(object, std::forward<Fn>(fn));
 }
 
-template <typename T>
-concept reflectable_class = requires {
-    requires std::is_class_v<T>;
-    reflection<T>::field_count;
-};
+/// Field I of object, as const as object is.
+template <std::size_t I, typename Object>
+constexpr auto& field_of(Object& object) {
+    return apply_fields(object,
+                        [](auto&... fields) -> auto& { return detail::pick<I>(fields...); });
+}
 
 }  // namespace kotatsu::meta

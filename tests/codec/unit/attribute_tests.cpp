@@ -279,9 +279,11 @@ ZEST_CASE(extension_attributes_are_told_apart_by_their_member) {
 }
 
 ZEST_CASE(a_field_carries_its_extension_specs) {
-    ZSTATIC_EXPECT(meta::spec_in<probe_extension, field_attrs_t<holds_extension, 0>>->weight == 3);
-    ZSTATIC_EXPECT(meta::spec_in<probe_extension, field_attrs_t<holds_extension, 1>> == nullptr);
-    ZSTATIC_EXPECT(meta::spec_in<probe_extension, attrs_of_t<int>> == nullptr);
+    ZSTATIC_EXPECT(
+        meta::spec_attr_t<probe_extension, field_attrs_t<holds_extension, 0>>::value.weight == 3);
+    ZSTATIC_EXPECT(
+        std::is_void_v<meta::spec_attr_t<probe_extension, field_attrs_t<holds_extension, 1>>>);
+    ZSTATIC_EXPECT(std::is_void_v<meta::spec_attr_t<probe_extension, attrs_of_t<int>>>);
 }
 
 ZEST_CASE(field_info_carries_extensions_and_declared_names) {

@@ -203,7 +203,7 @@ using arithmetic_t = typename std::
     conditional_t<std::is_enum_v<T>, std::underlying_type<T>, std::type_identity<T>>::type;
 
 template <typename T>
-constexpr inline std::size_t field_count_v = meta::field_count<T>();
+constexpr inline std::size_t field_count_v = meta::field_count<T>;
 
 template <typename T, std::size_t I>
 using field_t = std::remove_cv_t<meta::field_type<T, I>>;
@@ -334,8 +334,8 @@ constexpr std::uint32_t fingerprint(std::uint32_t hash = 2166136261u) {
     } else {
         hash = mix(hash, "{");
         for_each_index<A>([&](auto index) {
-            hash = mix(hash, meta::field_name<index(), A>());
-            hash = mix_number(hash, meta::field_offset<A>(index()));
+            hash = mix(hash, meta::field_names<A>[index()]);
+            hash = mix_number(hash, meta::field_offsets<A>[index()]);
             hash = fingerprint<field_t<A, index()>>(mix(hash, ":"));
             hash = mix(hash, ";");
         });

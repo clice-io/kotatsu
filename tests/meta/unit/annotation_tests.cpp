@@ -128,15 +128,15 @@ ZEST_CASE(a_group_is_overridden_as_a_whole) {
 }
 
 ZEST_CASE(a_field_annotation_composes_over_its_type_one) {
-    ZSTATIC_EXPECT(spec_in<Range, attrs_of_t<Weighed>>->weight == 1);
+    ZSTATIC_EXPECT(spec_attr_t<Range, attrs_of_t<Weighed>>::value.weight == 1);
     // A plain field keeps its type's attrs as they are.
     ZSTATIC_EXPECT((std::is_same_v<field_attrs_t<Holder, 0>, attrs_of_t<Weighed>>));
-    constexpr const Range* narrowed = spec_in<Range, field_attrs_t<Holder, 1>>;
-    ZSTATIC_EXPECT(narrowed->label == "narrowed");
-    ZSTATIC_EXPECT(narrowed->weight == 1);
-    ZSTATIC_EXPECT(narrowed->low == 2);
-    ZSTATIC_EXPECT(narrowed->high == 0);
-    ZSTATIC_EXPECT(spec_in<Note, field_attrs_t<Holder, 1>> == nullptr);
+    constexpr const Range& narrowed = spec_attr_t<Range, field_attrs_t<Holder, 1>>::value;
+    ZSTATIC_EXPECT(narrowed.label == "narrowed");
+    ZSTATIC_EXPECT(narrowed.weight == 1);
+    ZSTATIC_EXPECT(narrowed.low == 2);
+    ZSTATIC_EXPECT(narrowed.high == 0);
+    ZSTATIC_EXPECT(std::is_void_v<spec_attr_t<Note, field_attrs_t<Holder, 1>>>);
 }
 
 ZEST_CASE(a_type_annotation_takes_no_field_only_attribute) {

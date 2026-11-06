@@ -55,7 +55,7 @@ struct Writer {
             static_assert(field_count_v<A> == field_count_v<T>,
                           "a record is laid out field by field");
             for_each_index<A>([&](auto index) {
-                store<field_t<A, index()>>(at + meta::field_offset<A>(index()),
+                store<field_t<A, index()>>(at + meta::field_offsets<A>[index()],
                                            meta::field_of<index()>(value));
             });
         } else {
