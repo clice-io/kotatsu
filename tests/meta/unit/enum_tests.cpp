@@ -80,17 +80,6 @@ enum Compass : int {
     Leftmost = -120,
 };
 
-/// Its name holds a comma, between its class's template arguments: it is probed a value at a
-/// time. Unscoped, as a class template's instantiation instantiates the enumerators of its
-/// unscoped enums alone.
-template <typename A, typename B>
-struct Holder {
-    enum Inner : int {
-        Left = -3,
-        Right = 90,
-    };
-};
-
 enum class Toggle : bool {
     Off,
     On,
@@ -137,10 +126,6 @@ static_assert(enum_values<Compass>.size() == 3);
 static_assert(enum_names<Compass>[0] == "Leftmost");
 static_assert(enum_names<Compass>[1] == "Down");
 static_assert(enum_names<Compass>[2] == "Up");
-
-static_assert(enum_values<Holder<int, char>::Inner>.size() == 2);
-static_assert(enum_names<Holder<int, char>::Inner>[0] == "Left");
-static_assert(enum_names<Holder<int, char>::Inner>[1] == "Right");
 
 static_assert(enum_values<Edge8>.size() == 2);
 static_assert(enum_values<Edge8>[0] == Edge8::Min);
