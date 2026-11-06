@@ -405,10 +405,9 @@ constexpr bool compare_eq(const L& lhs, const R& rhs) {
         if constexpr(lhs_count != rhs_count) {
             return false;
         } else {
-            return apply_fields(lhs, [&](const auto&... ls) {
-                return apply_fields(rhs,
-                                    [&](const auto&... rs) { return (compare_eq(ls, rs) && ...); });
-            });
+            return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+                return (compare_eq(field_of<Is>(lhs), field_of<Is>(rhs)) && ...);
+            }(std::make_index_sequence<lhs_count>{});
         }
     } else {
         static_assert(dependent_false<L>,
@@ -481,26 +480,22 @@ constexpr bool compare_lt(const L& lhs, const R& rhs) {
         constexpr std::size_t common_count = lhs_count < rhs_count ? lhs_count : rhs_count;
 
         bool result = false;
-        const bool decided = apply_fields(lhs, [&](const auto&... ls) {
-            return apply_fields(rhs, [&](const auto&... rs) {
-                return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                    return (([&] {
-                                const auto& l = detail::pick<Is>(ls...);
-                                const auto& r = detail::pick<Is>(rs...);
-                                if(compare_lt(l, r)) {
-                                    result = true;
-                                    return true;
-                                }
-                                if(compare_lt(r, l)) {
-                                    result = false;
-                                    return true;
-                                }
-                                return false;
-                            }()) ||
-                            ...);
-                }(std::make_index_sequence<common_count>{});
-            });
-        });
+        const bool decided = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            return (([&] {
+                        const auto& l = field_of<Is>(lhs);
+                        const auto& r = field_of<Is>(rhs);
+                        if(compare_lt(l, r)) {
+                            result = true;
+                            return true;
+                        }
+                        if(compare_lt(r, l)) {
+                            result = false;
+                            return true;
+                        }
+                        return false;
+                    }()) ||
+                    ...);
+        }(std::make_index_sequence<common_count>{});
 
         if(decided) {
             return result;
