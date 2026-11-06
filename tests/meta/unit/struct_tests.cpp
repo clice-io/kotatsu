@@ -322,7 +322,7 @@ ZEST_CASE(field_offset_of_a_member_placed_below_the_one_before) {
 
 ZEST_CASE(apply_fields_visits_many_fields) {
     Many36 v{};
-    const int sum = apply_fields(v, [](int&... fields) {
+    const int sum = apply_fields(v, [](auto&... fields) {
         int next = 0;
         ((fields = ++next), ...);
         return (0 + ... + fields);

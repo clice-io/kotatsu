@@ -47,83 +47,17 @@ constexpr bool is_non_ascii(char c) {
 
 namespace detail {
 
-/// Writes `text` in lower snake case into `out`, which has room for twice its size, and
-/// returns the size written: one pass over a buffer sized once, which is what constant
+/// A rename policy that writes a name into a buffer with room for twice its size (Policy::write),
+/// and so spells one as a string: one pass over a buffer sized once, which is what constant
 /// evaluation, slow to grow a string, needs.
-constexpr std::size_t write_lower_snake(std::string_view text, char* out) {
-    std::size_t n = 0;
-    for(std::size_t i = 0; i < text.size(); ++i) {
-        const char c = text[i];
-        if(is_upper(c)) {
-            // Within a word, an uppercase letter starts a new one after a lowercase letter, a
-            // UTF-8 byte or a digit ("fooBar", "名前Value", "v2Go"), and ends a run of capitals
-            // before a lowercase letter ("HTTPServer"); a UTF-8 byte has no case, and ends no
-            // such run ("HTTP名前").
-            const bool in_word = n != 0 && out[n - 1] != '_';
-            if(in_word &&
-               (is_lower(text[i - 1]) || is_non_ascii(text[i - 1]) || is_digit(text[i - 1]) ||
-                (i + 1 < text.size() && is_lower(text[i + 1])))) {
-                out[n++] = '_';
-            }
-            out[n++] = to_lower(c);
-        } else if(is_lower(c) || is_digit(c) || is_non_ascii(c)) {
-            // A UTF-8 byte continues a word like a lowercase letter.
-            out[n++] = c;
-        } else if(n != 0 && out[n - 1] != '_') {
-            out[n++] = '_';
-        }
-    }
-    // A separator only ever follows a word, so the one left to drop is a trailing one.
-    if(n != 0 && out[n - 1] == '_') {
-        --n;
-    }
-    return n;
-}
-
-/// Writes `text` in camel case, its first letter upper or lower as upper_first says, into
-/// `out`, which has room for twice its size, and returns the size written.
-constexpr std::size_t write_camel(std::string_view text, char* out, bool upper_first) {
-    const std::size_t snake = write_lower_snake(text, out);
-    // The camel case name is no longer than the snake case one it is written over.
-    std::size_t n = 0;
-    bool capitalize_next = upper_first;
-    bool seen_output = false;
-    for(std::size_t i = 0; i < snake; ++i) {
-        const char c = out[i];
-        if(c == '_') {
-            capitalize_next = true;
-            continue;
-        }
-        if(capitalize_next && is_alpha(c)) {
-            out[n++] = to_upper(c);
-        } else if(!seen_output) {
-            out[n++] = upper_first ? to_upper(c) : to_lower(c);
-        } else {
-            out[n++] = c;
-        }
-        capitalize_next = false;
-        seen_output = true;
-    }
-    return n;
-}
-
-/// Writes `text` in upper snake case into `out`, which has room for twice its size, and
-/// returns the size written.
-constexpr std::size_t write_upper_snake(std::string_view text, char* out) {
-    const std::size_t n = write_lower_snake(text, out);
-    for(std::size_t i = 0; i < n; ++i) {
-        out[i] = to_upper(out[i]);
-    }
-    return n;
-}
-
-/// What Policy writes of `text`, as a string.
 template <typename Policy>
-constexpr std::string spelled(std::string_view text) {
-    std::string out(text.size() * 2, '\0');
-    out.resize(Policy::write(text, out.data()));
-    return out;
-}
+struct writes_names {
+    constexpr std::string operator()(std::string_view name) const {
+        std::string out(name.size() * 2, '\0');
+        out.resize(Policy::write(name, out.data()));
+        return out;
+    }
+};
 
 }  // namespace detail
 
@@ -162,43 +96,81 @@ struct identity {
     }
 };
 
-struct lower_snake {
-    constexpr static std::size_t write(std::string_view name, char* out) {
-        return detail::write_lower_snake(name, out);
-    }
-
-    constexpr std::string operator()(std::string_view name) const {
-        return detail::spelled<lower_snake>(name);
+/// Words split at separators (anything not a letter, digit or UTF-8 byte) and at case changes
+/// ("HTTPServer2Go" is "http_server2_go"), lowered and joined by one `_`, without leading or
+/// trailing ones.
+struct lower_snake : detail::writes_names<lower_snake> {
+    constexpr static std::size_t write(std::string_view text, char* out) {
+        std::size_t n = 0;
+        for(std::size_t i = 0; i < text.size(); ++i) {
+            const char c = text[i];
+            if(is_upper(c)) {
+                // Within a word, an uppercase letter starts a new one after a lowercase letter,
+                // a UTF-8 byte or a digit ("fooBar", "名前Value", "v2Go"), and ends a run of
+                // capitals before a lowercase letter ("HTTPServer"); a UTF-8 byte has no case,
+                // and ends no such run ("HTTP名前").
+                const bool in_word = n != 0 && out[n - 1] != '_';
+                if(in_word &&
+                   (is_lower(text[i - 1]) || is_non_ascii(text[i - 1]) || is_digit(text[i - 1]) ||
+                    (i + 1 < text.size() && is_lower(text[i + 1])))) {
+                    out[n++] = '_';
+                }
+                out[n++] = to_lower(c);
+            } else if(is_lower(c) || is_digit(c) || is_non_ascii(c)) {
+                // A UTF-8 byte continues a word like a lowercase letter.
+                out[n++] = c;
+            } else if(n != 0 && out[n - 1] != '_') {
+                out[n++] = '_';
+            }
+        }
+        // A separator only ever follows a word, so the one left to drop is a trailing one.
+        if(n != 0 && out[n - 1] == '_') {
+            --n;
+        }
+        return n;
     }
 };
 
-struct lower_camel {
-    constexpr static std::size_t write(std::string_view name, char* out) {
-        return detail::write_camel(name, out, false);
-    }
-
-    constexpr std::string operator()(std::string_view name) const {
-        return detail::spelled<lower_camel>(name);
+/// The words lower_snake splits, the first letter of each but the first upper, joined.
+template <bool UpperFirst>
+struct camel : detail::writes_names<camel<UpperFirst>> {
+    constexpr static std::size_t write(std::string_view text, char* out) {
+        const std::size_t snake = lower_snake::write(text, out);
+        // The camel case name is no longer than the snake case one it is written over.
+        std::size_t n = 0;
+        bool capitalize_next = UpperFirst;
+        bool seen_output = false;
+        for(std::size_t i = 0; i < snake; ++i) {
+            const char c = out[i];
+            if(c == '_') {
+                capitalize_next = true;
+                continue;
+            }
+            if(capitalize_next && is_alpha(c)) {
+                out[n++] = to_upper(c);
+            } else if(!seen_output) {
+                out[n++] = UpperFirst ? to_upper(c) : to_lower(c);
+            } else {
+                out[n++] = c;
+            }
+            capitalize_next = false;
+            seen_output = true;
+        }
+        return n;
     }
 };
 
-struct upper_camel {
-    constexpr static std::size_t write(std::string_view name, char* out) {
-        return detail::write_camel(name, out, true);
-    }
+using lower_camel = camel<false>;
+using upper_camel = camel<true>;
 
-    constexpr std::string operator()(std::string_view name) const {
-        return detail::spelled<upper_camel>(name);
-    }
-};
-
-struct upper_snake {
-    constexpr static std::size_t write(std::string_view name, char* out) {
-        return detail::write_upper_snake(name, out);
-    }
-
-    constexpr std::string operator()(std::string_view name) const {
-        return detail::spelled<upper_snake>(name);
+/// The words lower_snake splits, upper.
+struct upper_snake : detail::writes_names<upper_snake> {
+    constexpr static std::size_t write(std::string_view text, char* out) {
+        const std::size_t n = lower_snake::write(text, out);
+        for(std::size_t i = 0; i < n; ++i) {
+            out[i] = to_upper(out[i]);
+        }
+        return n;
     }
 };
 
