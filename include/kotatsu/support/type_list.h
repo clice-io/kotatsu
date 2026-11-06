@@ -15,7 +15,7 @@
 namespace kotatsu {
 
 template <typename T, typename... Ts>
-concept is_one_of = (std::same_as<T, Ts> || ...);
+concept is_one_of = (std::is_same_v<T, Ts> || ...);
 
 template <typename... Ts>
 struct type_list {};

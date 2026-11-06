@@ -9,7 +9,7 @@
 
 namespace kotatsu::codec {
 
-using meta::field_offset;
+using meta::field_offsets;
 using meta::type_kind;
 
 namespace {

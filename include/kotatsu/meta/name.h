@@ -110,9 +110,16 @@ consteval const char* type_signature() {
 
 /// Prints a pack of values into one signature, so that reflecting the members of an enum or a
 /// struct takes one instantiation for many of them rather than one each. Its name and return
-/// type hold no digit, as measure_pack finds the values by one.
+/// type hold no digit, as measure_zero finds the values by one.
 template <auto... Vs>
 consteval const char* pack_signature() {
+    return std::source_location::current().function_name();
+}
+
+/// Prints one value: clang takes as an argument of a pack no value of an enum without a fixed
+/// underlying type outside the enum's range, which it takes as a value of its own.
+template <auto V>
+consteval const char* value_signature() {
     return std::source_location::current().function_name();
 }
 
@@ -134,14 +141,15 @@ consteval spelling measure_type() {
     return {at, text.size() - at - 3};
 }
 
-/// On a pack of one 0, which MSVC prints `0x0`.
-consteval spelling measure_pack() {
-    const std::string_view text = signature_text(pack_signature<0>());
+/// On a signature of 0 alone, which MSVC prints `0x0`.
+consteval spelling measure_zero(const char* signature) {
+    const std::string_view text = signature_text(signature);
     return {text.find('0'), text.size() - text.rfind('0') - 1};
 }
 
 constexpr inline spelling type_spelling = measure_type();
-constexpr inline spelling pack_spelling = measure_pack();
+constexpr inline spelling pack_spelling = measure_zero(pack_signature<0>());
+constexpr inline spelling value_spelling = measure_zero(value_signature<0>());
 
 /// T as the compiler spells it in a signature, with the key MSVC writes ahead of a class type
 /// (`struct Foo`), as it writes it in a cast.
@@ -164,6 +172,12 @@ consteval std::string_view drop_class_key(std::string_view name) {
 template <auto... Vs>
 constexpr std::string_view pack_list() {
     return pack_spelling.of(pack_signature<Vs...>());
+}
+
+/// V as the compiler prints it.
+template <auto V>
+constexpr std::string_view value_text() {
+    return value_spelling.of(value_signature<V>());
 }
 
 }  // namespace kotatsu::meta::detail

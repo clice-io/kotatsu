@@ -160,6 +160,17 @@ concept derived_variant = !is_specialization_of<std::variant, T> &&
 template <derived_variant T>
 using variant_base_t = decltype(detail::variant_base_of(std::declval<const T&>()));
 
+namespace detail {
+
+/// A range of std::byte that converts to a byte span. A concept, so that the conversion, which
+/// overload resolution over span's range constructor decides, is tested of byte ranges alone.
+template <typename T>
+concept byte_span_range =
+    std::same_as<std::remove_cvref_t<std::ranges::range_reference_t<T>>, std::byte> &&
+    std::convertible_to<T, std::span<const std::byte>>;
+
+}  // namespace detail
+
 template <typename T>
 consteval type_kind kind_of() {
     if constexpr(!std::is_same_v<T, std::remove_cv_t<T>>) {
@@ -170,26 +181,31 @@ consteval type_kind kind_of() {
         return type_kind::any;
     } else if constexpr(std::is_enum_v<T>) {
         return type_kind::enumeration;
-    } else if constexpr(std::same_as<T, bool>) {
-        return type_kind::boolean;
-    } else if constexpr(int_like<T>) {
-        return sizeof(T) == 1   ? type_kind::int8
-               : sizeof(T) == 2 ? type_kind::int16
-               : sizeof(T) == 4 ? type_kind::int32
-                                : type_kind::int64;
-    } else if constexpr(uint_like<T>) {
-        return sizeof(T) == 1   ? type_kind::uint8
-               : sizeof(T) == 2 ? type_kind::uint16
-               : sizeof(T) == 4 ? type_kind::uint32
-                                : type_kind::uint64;
-    } else if constexpr(floating_like<T>) {
-        return sizeof(T) <= 4 ? type_kind::float32 : type_kind::float64;
-    } else if constexpr(char_like<T>) {
-        return type_kind::character;
+    } else if constexpr(std::is_arithmetic_v<T>) {
+        if constexpr(std::is_same_v<T, bool>) {
+            return type_kind::boolean;
+        } else if constexpr(int_like<T>) {
+            return sizeof(T) == 1   ? type_kind::int8
+                   : sizeof(T) == 2 ? type_kind::int16
+                   : sizeof(T) == 4 ? type_kind::int32
+                                    : type_kind::int64;
+        } else if constexpr(uint_like<T>) {
+            return sizeof(T) == 1   ? type_kind::uint8
+                   : sizeof(T) == 2 ? type_kind::uint16
+                   : sizeof(T) == 4 ? type_kind::uint32
+                                    : type_kind::uint64;
+        } else if constexpr(floating_like<T>) {
+            return sizeof(T) <= 4 ? type_kind::float32 : type_kind::float64;
+        } else if constexpr(char_like<T>) {
+            return type_kind::character;
+        } else {
+            return type_kind::unknown;
+        }
     }
     // Null, optional, pointer and variant come before the views, string and bytes, as none of them
     // converts to a view: the conversions those test, overload resolution over the views' range
-    // constructors, are most of what classifying a type costs.
+    // constructors, are most of what classifying a type costs. Of ranges, a byte range alone is
+    // tested for the conversion to a byte span.
     else if constexpr(is_one_of<T, std::nullptr_t, std::nullopt_t, std::monostate>) {
         return type_kind::null;
     } else if constexpr(is_optional_v<T>) {
@@ -203,21 +219,24 @@ consteval type_kind kind_of() {
         return type_kind::variant;
     } else if constexpr(str_like<T>) {
         return type_kind::string;
-    } else if constexpr(std::convertible_to<T, std::span<const std::byte>>) {
-        return type_kind::bytes;
-    } else if constexpr(tuple_like<T>) {
-        return type_kind::tuple;
     } else if constexpr(std::ranges::input_range<T>) {
-        constexpr auto fmt = format_kind<T>;
-        if constexpr(fmt == range_format::map) {
+        if constexpr(detail::byte_span_range<T>) {
+            return type_kind::bytes;
+        } else if constexpr(tuple_like<T>) {
+            return type_kind::tuple;
+        } else if constexpr(format_kind<T> == range_format::map) {
             return type_kind::map;
-        } else if constexpr(fmt == range_format::set) {
+        } else if constexpr(format_kind<T> == range_format::set) {
             return type_kind::set;
-        } else if constexpr(fmt == range_format::sequence) {
+        } else if constexpr(format_kind<T> == range_format::sequence) {
             return type_kind::array;
         } else {
             return type_kind::unknown;
         }
+    } else if constexpr(std::convertible_to<T, std::span<const std::byte>>) {
+        return type_kind::bytes;
+    } else if constexpr(tuple_like<T>) {
+        return type_kind::tuple;
     } else if constexpr(reflectable_class<T>) {
         return type_kind::structure;
     } else {
