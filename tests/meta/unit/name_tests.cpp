@@ -51,6 +51,20 @@ struct nested_holder {
     leaf value;
 };
 
+struct first_base {
+    int a;
+};
+
+struct second_base {
+    int b;
+};
+
+/// A class with more than one base, a pointer to a member of which MSVC prints with the
+/// offsets that adjust it.
+struct two_bases : first_base, second_base {
+    void run() {}
+};
+
 struct struct_y {
     std::string x;
     std::vector<int> y;
@@ -160,6 +174,7 @@ ZEST_CASE(basic_member_name) {
     ZEXPECT(member_name<&struct_y::cast_size<int>> == "cast_size");
     ZEXPECT(member_name<&nested_holder::value> == "value");
     ZEXPECT(member_name<&nested_holder::leaf::field> == "field");
+    ZEXPECT(member_name<&two_bases::run> == "run");
 }
 
 };  // ZEST_SUITE(meta_name)

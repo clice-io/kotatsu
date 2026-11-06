@@ -88,6 +88,24 @@ constexpr std::string_view last_name(std::string_view text) {
     return leading_identifier(text.substr(name_start(text)));
 }
 
+/// A member pointer as MSVC prints one of a class with more than one base, `{&S::f,0}`, without
+/// the braces and the offsets.
+constexpr std::string_view without_offsets(std::string_view printed) {
+    if(!printed.starts_with('{') || !printed.ends_with('}')) {
+        return printed;
+    }
+    printed = printed.substr(1, printed.size() - 2);
+    for(std::size_t comma = printed.rfind(','); comma != std::string_view::npos;
+        comma = printed.rfind(',')) {
+        const std::string_view offset = printed.substr(comma + 1);
+        if(offset.empty() || !(offset[0] >= '0' && offset[0] <= '9')) {
+            break;
+        }
+        printed = printed.substr(0, comma);
+    }
+    return printed;
+}
+
 /// The identifier text ends in, past the characters after it that end no identifier.
 constexpr std::string_view trailing_identifier(std::string_view text) {
     std::size_t end = text.size();
@@ -189,8 +207,10 @@ constexpr inline std::string_view type_name =
     qualified_type_name<T>.substr(detail::name_start(qualified_type_name<T>));
 
 /// The name of the member `Member` points to, `&S::field` or `&S::function`, which MSVC prints
-/// as its declaration, `void __cdecl S::function(void)`.
+/// as its declaration, `void __cdecl S::function(void)`, or, of a class with more than one base,
+/// in braces with the offsets that adjust it, `{&S::function,0}`.
 template <auto Member>
-constexpr inline std::string_view member_name = detail::last_name(detail::pack_list<Member>());
+constexpr inline std::string_view member_name =
+    detail::last_name(detail::without_offsets(detail::pack_list<Member>()));
 
 }  // namespace kotatsu::meta
