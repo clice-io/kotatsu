@@ -45,7 +45,7 @@ struct TestSuiteDef {
     constexpr static auto _suite_name() {
         auto name = meta::type_name<Derived>;
         if(name.ends_with("TEST")) {
-            name = name.drop_back(4);
+            name.remove_suffix(4);
         }
         return name;
     }
