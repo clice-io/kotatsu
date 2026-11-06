@@ -81,10 +81,11 @@ enum Compass : int {
 };
 
 /// Its name holds a comma, between its class's template arguments: it is probed a value at a
-/// time.
+/// time. Unscoped, as a class template's instantiation instantiates the enumerators of its
+/// unscoped enums alone.
 template <typename A, typename B>
 struct Holder {
-    enum class Inner : int {
+    enum Inner : int {
         Left = -3,
         Right = 90,
     };
