@@ -59,13 +59,18 @@ consteval std::string_view probe_name() {
     return name.find(')') == std::string_view::npos ? name : std::string_view{};
 }
 
-/// The name of each of the values Vs of E, empty for one no enumerator has. A chunk the
-/// compiler takes no pack of, an enum without a fixed underlying type and values outside its
-/// range, is probed a value at a time.
+/// Whether E has a fixed underlying type, which every value of its underlying type is a value
+/// of: such an enum is list-initialized from an integer.
+template <typename E>
+concept fixed_underlying = requires { E{0}; };
+
+/// The name of each of the values Vs of E, empty for one no enumerator has. An enum without a
+/// fixed underlying type, which a compiler may take no value outside its range of as a
+/// template argument, is probed a value at a time.
 template <typename E, int... Vs>
 consteval std::array<std::string_view, sizeof...(Vs)> probe_chunk() {
     std::array<std::string_view, sizeof...(Vs)> names{};
-    if constexpr(requires { pack_signature<enum_probe_value<E, Vs>()...>(); }) {
+    if constexpr(fixed_underlying<E>) {
         const auto parts =
             split_pack<sizeof...(Vs)>(pack_signature<enum_probe_value<E, Vs>()...>());
         for(std::size_t i = 0; i < names.size(); ++i) {

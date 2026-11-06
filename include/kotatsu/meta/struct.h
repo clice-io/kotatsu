@@ -14,6 +14,11 @@
 
 namespace kotatsu::meta::detail {
 
+/// The most fields meta reflects a struct with, as many as binder.inl has specializations for
+/// where the compiler has no structured binding packs, and where it has them too, so that a
+/// struct is reflected alike whatever compiles it.
+constexpr std::size_t max_fields = 72;
+
 template <class T>
 extern const T ext{};
 
@@ -43,12 +48,14 @@ consteval bool holds_reference(type_list<Fields...>) {
 }
 
 /// The fields of aggregate T, as many as a structured binding of it declares; none that meta
-/// sees when one is a reference, which has neither an offset nor an address to name it by, as
-/// where the compiler has no binding packs.
+/// sees when they are more than max_fields, or when one is a reference, which has neither an
+/// offset nor an address to name it by, as where the compiler has no binding packs.
 template <typename T>
 consteval std::size_t field_count() {
     constexpr std::size_t count = __builtin_structured_binding_size(T);
-    if constexpr(holds_reference(decltype(binder<count>::types(std::declval<T&>())){})) {
+    if constexpr(count > max_fields) {
+        return 0;
+    } else if constexpr(holds_reference(decltype(binder<count>::types(std::declval<T&>())){})) {
         return 0;
     } else {
         return count;
@@ -59,10 +66,6 @@ consteval std::size_t field_count() {
 
 template <typename T>
 concept decomposable = true;
-
-/// The most fields a struct may have where the compiler has no structured binding packs: as
-/// many as binder.inl has specializations for.
-constexpr std::size_t max_fields = 72;
 
 struct any {
     consteval any(std::size_t);

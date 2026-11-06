@@ -71,11 +71,10 @@ Adapted from `tests/meta/unit/struct_tests.cpp` and `tests/meta/unit/enum_tests.
   spelling (and a variant's default tag names) can differ by compiler and platform.
 - Enum reflection probes the underlying values -128..127 (0..127 and the top
   128 values for an unsigned type); an enumerator outside them is not reflected.
-- Aggregate reflection reaches a struct's fields through one structured binding
-  of them all: a binding pack (`auto& [...fields]`) on clang 21+ and GCC 16+,
-  which take it in C++23 as an extension, and a specialization per field count
-  elsewhere (MSVC, older clang and GCC), which handles structs of up to 72
-  fields.
+- Aggregate reflection handles structs of up to 72 fields, reaching them through
+  one structured binding of them all: a binding pack (`auto& [...fields]`) on
+  clang 21+ and GCC 16+, which take it in C++23 as an extension, and a
+  specialization per field count elsewhere (MSVC, older clang and GCC).
 - `kind_of` sorts integers by size: `long` is `int32` on Windows, `int64` elsewhere.
 
 ## See also
