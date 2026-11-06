@@ -112,6 +112,34 @@ struct Overlapping {
 #endif
 };
 
+/// A string as a template argument, which a compiler prints as a literal.
+template <std::size_t N>
+struct Text {
+    char value[N];
+
+    consteval Text(const char (&text)[N]) {
+        for(std::size_t i = 0; i < N; ++i) {
+            value[i] = text[i];
+        }
+    }
+};
+
+template <Text Label>
+struct Labeled {
+    int value;
+};
+
+/// The printed name of each field's type holds what would end a name or a list.
+struct Quoted {
+    Labeled<"it's (a) <b>, c"> first;
+    int second;
+};
+
+struct WithReference {
+    int& ref;
+    int value;
+};
+
 struct NoDefault {
     NoDefault() = delete;
 
@@ -255,7 +283,9 @@ ZEST_CASE(apply_fields_hands_every_field_at_once) {
     ZEXPECT(p.x == 4);
 
     const Point& view = p;
-    ZEXPECT(apply_fields(view, [](const auto&... fields) { return sizeof...(fields); }) == 4U);
+    ZEXPECT(apply_fields(view, []<typename... Fields>(const Fields&...) {
+                return sizeof...(Fields);
+            }) == 4U);
     Empty empty;
     ZEXPECT(apply_fields(empty, [] { return 0; }) == 0);
 }
@@ -267,6 +297,16 @@ ZEST_CASE(apply_fields_hands_a_const_object_const_fields) {
     }));
     ZSTATIC_EXPECT(apply_fields(point, [](const auto&... fields) { return (0 + ... + fields); }) ==
                    1 + 'a' + 2.0 + 3);
+}
+
+ZEST_CASE(field_names_past_quotes_in_type_names) {
+    ZEXPECT(field_name<0, Quoted>() == "first");
+    ZEXPECT(field_name<1, Quoted>() == "second");
+}
+
+ZEST_CASE(reference_member_leaves_no_field) {
+    // A reference has neither an offset nor an address meta could name it by.
+    ZSTATIC_EXPECT(field_count<WithReference>() == 0U);
 }
 
 ZEST_CASE(field_type_is_the_declared_type) {

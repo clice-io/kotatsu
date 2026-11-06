@@ -20,6 +20,11 @@ constexpr std::size_t find_last_top_level_scope(string_ref sv) {
 
     for(std::size_t i = 0; i + 1 < sv.size(); ++i) {
         const auto ch = sv[i];
+        // Most of a name is letters: passed over first, as constant evaluation pays for each
+        // comparison.
+        if((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+            continue;
+        }
         switch(ch) {
             case '<': ++angle; break;
             case '>':
@@ -123,6 +128,53 @@ constexpr string_ref extract_identifier(string_ref expression) {
     return expression.trim();
 }
 
+/// The signature of a function of T, in which the compiler spells T. Its return type names no
+/// typedef, which GCC would spell out after T.
+template <typename T>
+consteval const char* type_signature() {
+    return std::source_location::current().function_name();
+}
+
+/// Where T is spelled in type_signature<T>(): after a prefix and before a suffix that are the
+/// same for every T, measured once, on int.
+struct type_spelling {
+    std::size_t prefix;
+    std::size_t suffix;
+};
+
+consteval type_spelling measure_spelling() {
+    const string_ref signature = type_signature<int>();
+    const std::size_t at = signature.rfind("int");
+    return type_spelling{at, signature.size() - at - 3};
+}
+
+constexpr inline type_spelling spelling = measure_spelling();
+
+/// T as the compiler spells it, qualified; a class type's key, which MSVC writes first
+/// (`struct Foo`), left out.
+template <typename T>
+consteval string_ref qualified_name() {
+    string_ref name = type_signature<T>();
+    name = name.substr(spelling.prefix, name.size() - spelling.prefix - spelling.suffix);
+#if defined(_MSC_VER) && !defined(__clang__)
+    // `unsigned int` is a name of its own.
+    for(std::string_view key: {"class ", "struct ", "enum ", "union "}) {
+        if(name.starts_with(key)) {
+            return name.drop_front(key.size());
+        }
+    }
+#endif
+    return name;
+}
+
+// Parsed once for each type, however many times its name is asked for.
+
+template <typename T>
+constexpr inline string_ref qualified_name_v = qualified_name<T>();
+
+template <typename T>
+constexpr inline string_ref short_name_v = unqualify_type_name(qualified_name_v<T>);
+
 /// workaround for msvc, if no such wrapper, msvc cannot print the member name.
 template <typename T>
 struct wrapper {
@@ -185,10 +237,11 @@ constexpr std::array<string_ref, N> split_pack(const char* signature) {
         if(c >= 'a' && c <= 'z') {
             continue;
         }
-        if(c == '\'' || c == '`') {
-            // A char literal, '<' say, holds no delimiter, and neither does a name MSVC quotes,
-            // `anonymous-namespace'.
-            for(++i; signature[i] != '\''; ++i) {
+        if(c == '\'' || c == '`' || c == '"') {
+            // A char or string literal, '<' or "a)" say, holds no delimiter, and neither does a
+            // name MSVC quotes, `anonymous-namespace'.
+            const char close = c == '"' ? '"' : '\'';
+            for(++i; signature[i] != close; ++i) {
                 i += signature[i] == '\\';
             }
         } else if(c == '-' && signature[i + 1] == '>') {
@@ -221,29 +274,7 @@ namespace kotatsu::meta {
 
 template <typename T>
 constexpr auto type_name(bool qualified = false) {
-    string_ref name = std::source_location::current().function_name();
-#if __GNUC__ || __clang__
-    std::size_t start = name.rfind("T =") + 3;
-    std::size_t end = name.rfind("]");
-    end = end == string_ref::npos ? name.size() : end;
-    name = name.substr(start, end - start).trim();
-#elif _MSC_VER
-    std::size_t start = name.find("type_name<") + 10;
-    std::size_t end = name.rfind(">(");
-    name = name.slice(start, end);
-    // MSVC names a class type with its key, `struct Foo`; `unsigned int` is
-    // a name of its own.
-    for(std::string_view key: {"class ", "struct ", "enum ", "union "}) {
-        if(name.starts_with(key)) {
-            name = name.drop_front(key.size());
-            break;
-        }
-    }
-#endif
-    if(!qualified) {
-        name = detail::unqualify_type_name(name);
-    }
-    return name;
+    return qualified ? detail::qualified_name_v<T> : detail::short_name_v<T>;
 }
 
 template <auto value>

@@ -29,19 +29,36 @@ union uninitialized {
 
 #if KOTATSU_HAS_BINDING_PACKS
 
+/// Whether a structured binding takes T apart: not when its members are spread over its bases,
+/// which meta then does not reflect.
+template <typename T>
+concept decomposable = requires { __builtin_structured_binding_size(T); };
+
+template <std::size_t N>
+struct binder;
+
+template <typename... Fields>
+consteval bool holds_reference(type_list<Fields...>) {
+    return (std::is_reference_v<Fields> || ...);
+}
+
 /// The fields of aggregate T, as many as a structured binding of it declares; none that meta
-/// sees when no structured binding takes it apart, as where its members are spread over its
-/// bases.
+/// sees when one is a reference, which has neither an offset nor an address to name it by, as
+/// where the compiler has no binding packs.
 template <typename T>
 consteval std::size_t field_count() {
-    if constexpr(requires { __builtin_structured_binding_size(T); }) {
-        return __builtin_structured_binding_size(T);
-    } else {
+    constexpr std::size_t count = __builtin_structured_binding_size(T);
+    if constexpr(holds_reference(decltype(binder<count>::types(std::declval<T&>())){})) {
         return 0;
+    } else {
+        return count;
     }
 }
 
 #else
+
+template <typename T>
+concept decomposable = true;
 
 /// The most fields a struct may have where the compiler has no structured binding packs: as
 /// many as binder.inl has specializations for.
@@ -342,7 +359,7 @@ template <typename T>
 struct reflection;
 
 template <typename Object>
-    requires std::is_aggregate_v<Object>
+    requires std::is_aggregate_v<Object> && detail::decomposable<Object>
 struct reflection<Object> {
     constexpr inline static std::size_t field_count = meta::detail::field_count<Object>();
 };
