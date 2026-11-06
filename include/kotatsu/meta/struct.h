@@ -301,7 +301,8 @@ struct address {
 
 template <typename T, std::size_t... Is>
 consteval std::array<std::string_view, sizeof...(Is)> names_by_address(std::index_sequence<Is...>) {
-    return {trailing_identifier(value_text<address{field_address<T, Is>()}>())...};
+    return {trailing_identifier(
+        value_spelling.of(value_signature<address{field_address<T, Is>()}>()))...};
 }
 
 #define KOTATSU_BINDER_NAMES(N)                                                                    \

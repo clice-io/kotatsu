@@ -59,13 +59,13 @@ template <typename E>
 concept listed_by_commas =
     requires { E{0}; } && find_char(spelled_type<E>, ',', 0) == spelled_type<E>.size();
 
-/// The name of value V of E, empty when no enumerator has it. Held by a variable first: clang
+/// The name of value V of E, empty when no enumerator has it. Printed from a variable: clang
 /// takes as a template argument a value outside an enum's range that a variable holds, but not
-/// the call that makes it.
+/// the call that makes it, nor a template parameter that holds it.
 template <typename E, int V>
 consteval std::string_view probe_name() {
     constexpr E value = enum_probe_value<E, V>();
-    return enumerator(value_text<value>());
+    return enumerator(value_spelling.of(value_signature<value>()));
 }
 
 /// The name of each of the values Vs of E, empty for one no enumerator has.

@@ -174,12 +174,6 @@ constexpr std::string_view pack_list() {
     return pack_spelling.of(pack_signature<Vs...>());
 }
 
-/// V as the compiler prints it.
-template <auto V>
-constexpr std::string_view value_text() {
-    return value_spelling.of(value_signature<V>());
-}
-
 }  // namespace kotatsu::meta::detail
 
 namespace kotatsu::meta {
