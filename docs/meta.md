@@ -58,7 +58,7 @@ Adapted from `tests/meta/unit/struct_tests.cpp` and `tests/meta/unit/enum_tests.
 
 | Header                                               | Contents                                                                                                                                                                                                                            |
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [struct.h](../include/kotatsu/meta/struct.h)         | Aggregate reflection: `field_count`, `field_names`, `field_refs`, `field_offset`, `for_each`, the `reflectable_class` concept                                                                                                       |
+| [struct.h](../include/kotatsu/meta/struct.h)         | Aggregate reflection: `field_count`, `field_names`, `field_refs`, `field_offset`, `apply_fields`, `for_each`, the `reflectable_class` concept                                                                                       |
 | [enum.h](../include/kotatsu/meta/enum.h)             | Enum reflection: `enum_name(value)`, `enum_value<E>(name)`, the members in `reflection<E>`                                                                                                                                          |
 | [name.h](../include/kotatsu/meta/name.h)             | Names from `std::source_location`: `type_name<T>()`, `enum_name<V>()`, `pointer_name`, `member_name`                                                                                                                                |
 | [type_kind.h](../include/kotatsu/meta/type_kind.h)   | `type_kind` and `kind_of<T>()`, the shape codec dispatches on, with concepts such as `int_like` and `str_like`                                                                                                                      |
@@ -71,7 +71,11 @@ Adapted from `tests/meta/unit/struct_tests.cpp` and `tests/meta/unit/enum_tests.
   spelling (and a variant's default tag names) can differ by compiler and platform.
 - Enum reflection probes the underlying values -128..127 (0..127 and the top
   128 values for an unsigned type); an enumerator outside them is not reflected.
-- Aggregate reflection handles structs of up to 72 fields.
+- Aggregate reflection reaches a struct's fields through one structured binding
+  of them all: a binding pack (`auto& [...fields]`) on clang 21+ and GCC 16+,
+  which take it in C++23 as an extension, and a specialization per field count
+  elsewhere (MSVC, older clang and GCC), which handles structs of up to 72
+  fields.
 - `kind_of` sorts integers by size: `long` is `int32` on Windows, `int64` elsewhere.
 
 ## See also

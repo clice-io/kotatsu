@@ -3,6 +3,7 @@
 #include <concepts>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 namespace kotatsu {
@@ -86,13 +87,41 @@ using type_list_unique_t = typename type_list_unique<List>::type;
 template <std::size_t I, typename List>
 struct type_list_element;
 
-template <std::size_t I, typename First, typename... Rest>
-struct type_list_element<I, type_list<First, Rest...>> :
-    type_list_element<I - 1, type_list<Rest...>> {};
+namespace detail {
 
-template <typename First, typename... Rest>
-struct type_list_element<0, type_list<First, Rest...>> {
-    using type = First;
+template <std::size_t I, typename T>
+struct indexed_type {
+    using type = T;
+};
+
+template <typename Seq, typename... Ts>
+struct indexed_types;
+
+template <std::size_t... Is, typename... Ts>
+struct indexed_types<std::index_sequence<Is...>, Ts...> : indexed_type<Is, Ts>... {};
+
+template <std::size_t I, typename T>
+indexed_type<I, T> select_indexed(const indexed_type<I, T>&);
+
+}  // namespace detail
+
+#if defined(__has_builtin)
+#if __has_builtin(__type_pack_element)
+#define KOTATSU_TYPE_PACK_ELEMENT 1
+#endif
+#endif
+
+/// The I-th type of a list in one instantiation, however long the list: the compiler's own
+/// pack indexing where it has one (clang, GCC), else the one base of an indexed class the
+/// index selects (MSVC).
+template <std::size_t I, typename... Ts>
+struct type_list_element<I, type_list<Ts...>> {
+#if KOTATSU_TYPE_PACK_ELEMENT
+    using type = __type_pack_element<I, Ts...>;
+#else
+    using type = typename decltype(detail::select_indexed<I>(
+        detail::indexed_types<std::index_sequence_for<Ts...>, Ts...>{}))::type;
+#endif
 };
 
 template <std::size_t I, typename List>

@@ -1,11 +1,13 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstddef>
 #include <optional>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 #include "name.h"
 
@@ -19,19 +21,6 @@ consteval E enum_probe_value() {
     return static_cast<E>(V);
 #endif
 }
-
-template <typename E, int V>
-consteval std::string_view enum_probe_name() {
-    constexpr E value = enum_probe_value<E, V>();
-    return meta::enum_name<value>();
-}
-
-template <typename E, int V>
-struct enum_probe {
-    constexpr static E value = enum_probe_value<E, V>();
-    constexpr static std::string_view name = enum_probe_name<E, V>();
-    constexpr static bool valid = !name.empty() && name.find(')') == std::string_view::npos;
-};
 
 template <typename U, int... Is>
 consteval auto make_scan_values(std::integer_sequence<int, Is...>) {
@@ -54,28 +43,71 @@ using scan_values = decltype(make_scan_values<U>(std::make_integer_sequence<int,
 
 template <typename E, int... Values>
 consteval auto make_candidate_values(std::integer_sequence<int, Values...>) {
-    return std::array<E, sizeof...(Values)>{enum_probe<E, Values>::value...};
+    return std::array<E, sizeof...(Values)>{enum_probe_value<E, Values>()...};
 }
 
-template <typename E, int... Values>
-consteval auto make_candidate_names(std::integer_sequence<int, Values...>) {
-    return std::array<std::string_view, sizeof...(Values)>{enum_probe<E, Values>::name...};
+/// The values a probe prints at once: a wider chunk trades a longer signature to split for
+/// fewer instantiations.
+constexpr std::size_t enum_chunk = 32;
+
+/// The name of the value V of E, empty when no enumerator has it, which the compiler prints as
+/// a cast.
+template <typename E, int V>
+consteval std::string_view probe_name() {
+    constexpr E value = enum_probe_value<E, V>();
+    constexpr std::string_view name = meta::enum_name<value>();
+    return name.find(')') == std::string_view::npos ? name : std::string_view{};
 }
 
-template <typename E, int... Values>
-consteval auto make_candidate_valid(std::integer_sequence<int, Values...>) {
-    return std::array<bool, sizeof...(Values)>{enum_probe<E, Values>::valid...};
-}
-
-template <std::size_t N>
-consteval auto count_valid(const std::array<bool, N>& valid) {
-    std::size_t count = 0;
-    for(bool v: valid) {
-        if(v) {
-            ++count;
+/// The name of each of the values Vs of E, empty for one no enumerator has. A chunk the
+/// compiler takes no pack of, an enum without a fixed underlying type and values outside its
+/// range, is probed a value at a time.
+template <typename E, int... Vs>
+consteval std::array<std::string_view, sizeof...(Vs)> chunk_names() {
+    std::array<std::string_view, sizeof...(Vs)> names{};
+    if constexpr(requires { pack_signature<enum_probe_value<E, Vs>()...>(); }) {
+        const auto parts =
+            split_pack<sizeof...(Vs)>(pack_signature<enum_probe_value<E, Vs>()...>());
+        for(std::size_t i = 0; i < names.size(); ++i) {
+            names[i] = parts[i];
         }
+    } else {
+        std::size_t i = 0;
+        ((names[i++] = probe_name<E, Vs>()), ...);
     }
-    return count;
+    return names;
+}
+
+template <typename E, std::size_t Base, int... Values, std::size_t... Is>
+consteval void copy_chunk(std::array<std::string_view, sizeof...(Values)>& names,
+                          std::integer_sequence<int, Values...>,
+                          std::index_sequence<Is...>) {
+    constexpr int values[] = {Values...};
+    const auto chunk = chunk_names<E, values[Base + Is]...>();
+    for(std::size_t i = 0; i < chunk.size(); ++i) {
+        names[Base + i] = chunk[i];
+    }
+}
+
+template <typename E, int... Values, std::size_t... Chunks>
+consteval auto chunked_names(std::integer_sequence<int, Values...> values,
+                             std::index_sequence<Chunks...>) {
+    constexpr std::size_t count = sizeof...(Values);
+    std::array<std::string_view, count> names{};
+    (copy_chunk<E, Chunks * enum_chunk>(
+         names,
+         values,
+         std::make_index_sequence<std::min(enum_chunk, count - Chunks * enum_chunk)>{}),
+     ...);
+    return names;
+}
+
+/// The name of each of the values the reflection of E scans, empty for one no enumerator has.
+template <typename E, int... Values>
+consteval auto make_candidate_names(std::integer_sequence<int, Values...> values) {
+    return chunked_names<E>(
+        values,
+        std::make_index_sequence<(sizeof...(Values) + enum_chunk - 1) / enum_chunk>{});
 }
 
 }  // namespace kotatsu::meta::detail
@@ -95,14 +127,19 @@ struct reflection<T> {
     constexpr inline static auto candidate_values =
         detail::make_candidate_values<T>(scan_sequence{});
     constexpr inline static auto candidate_names = detail::make_candidate_names<T>(scan_sequence{});
-    constexpr inline static auto candidate_valid = detail::make_candidate_valid<T>(scan_sequence{});
 
-    constexpr inline static auto member_count = detail::count_valid(candidate_valid);
+    constexpr inline static std::size_t member_count = [] {
+        std::size_t count = 0;
+        for(std::string_view name: candidate_names) {
+            count += !name.empty();
+        }
+        return count;
+    }();
     constexpr inline static auto member_values = [] {
         std::array<T, member_count> out{};
         std::size_t idx = 0;
-        for(std::size_t i = 0; i < candidate_valid.size(); ++i) {
-            if(candidate_valid[i]) {
+        for(std::size_t i = 0; i < candidate_names.size(); ++i) {
+            if(!candidate_names[i].empty()) {
                 out[idx++] = candidate_values[i];
             }
         }
@@ -111,9 +148,9 @@ struct reflection<T> {
     constexpr inline static auto member_names = [] {
         std::array<std::string_view, member_count> out{};
         std::size_t idx = 0;
-        for(std::size_t i = 0; i < candidate_valid.size(); ++i) {
-            if(candidate_valid[i]) {
-                out[idx++] = candidate_names[i];
+        for(std::string_view name: candidate_names) {
+            if(!name.empty()) {
+                out[idx++] = name;
             }
         }
         return out;

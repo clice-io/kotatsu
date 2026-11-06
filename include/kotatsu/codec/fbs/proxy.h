@@ -576,9 +576,9 @@ private:
     template <typename P>
     static consteval std::size_t rank_of(P member) {
         const auto& unknown = meta::detail::ext<meta::detail::uninitialized<Object>>;
-        const auto addresses = std::apply(
-            [](auto... field) { return std::array<const void*, sizeof...(field)>{field...}; },
-            meta::reflection<Object>::field_addrs(unknown.value));
+        const auto addresses = meta::apply_fields(unknown.value, [](const auto&... field) {
+            return std::array<const void*, sizeof...(field)>{std::addressof(field)...};
+        });
         const void* address = std::addressof(unknown.value.*member);
         const auto fields = member_fields<Object, M>();
         const auto found =

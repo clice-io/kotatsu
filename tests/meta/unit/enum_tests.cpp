@@ -57,6 +57,15 @@ enum class Byte : char {
     High = '\xE9',
 };
 
+/// Members on both sides of where one chunk of probed values ends and the next begins: the
+/// scan of -128..127 takes 32 values at a time.
+enum class Chunked : int {
+    LastOfSecond = -65,
+    FirstOfThird = -64,
+    LastOfFifth = 31,
+    FirstOfSixth = 32,
+};
+
 enum class Toggle : bool {
     Off,
     On,
@@ -87,6 +96,13 @@ static_assert(reflection<Sparse>::member_values[2] == Sparse::High);
 static_assert(reflection<Sparse>::member_names[0] == "Neg");
 static_assert(reflection<Sparse>::member_names[1] == "Mid");
 static_assert(reflection<Sparse>::member_names[2] == "High");
+
+static_assert(reflection<Chunked>::member_count == 4);
+static_assert(reflection<Chunked>::member_names[0] == "LastOfSecond");
+static_assert(reflection<Chunked>::member_names[1] == "FirstOfThird");
+static_assert(reflection<Chunked>::member_names[2] == "LastOfFifth");
+static_assert(reflection<Chunked>::member_names[3] == "FirstOfSixth");
+static_assert(reflection<Chunked>::member_values[3] == Chunked::FirstOfSixth);
 
 static_assert(reflection<Edge8>::member_count == 2);
 static_assert(reflection<Edge8>::member_values[0] == Edge8::Min);

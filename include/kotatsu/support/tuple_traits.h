@@ -89,4 +89,21 @@ struct tuple_find_spec<std::tuple<Ts...>, HKT> : detail::pack_find_spec<HKT, Ts.
 template <typename Tuple, template <typename...> typename HKT>
 using tuple_find_spec_t = typename tuple_find_spec<Tuple, HKT>::type;
 
+template <typename... Tuples>
+struct tuple_cat_type;
+
+template <typename... Ts>
+struct tuple_cat_type<std::tuple<Ts...>> {
+    using type = std::tuple<Ts...>;
+};
+
+template <typename... As, typename... Bs, typename... Rest>
+struct tuple_cat_type<std::tuple<As...>, std::tuple<Bs...>, Rest...> :
+    tuple_cat_type<std::tuple<As..., Bs...>, Rest...> {};
+
+/// The tuple std::tuple_cat would make of tuples of the types Tuples, named without making
+/// one: no std::tuple is instantiated, as a type list needs none.
+template <typename... Tuples>
+using tuple_cat_t = typename tuple_cat_type<std::tuple<>, Tuples...>::type;
+
 }  // namespace kotatsu

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <initializer_list>
 #include <source_location>
 #include <string_view>
@@ -128,6 +130,90 @@ struct wrapper {
 
     constexpr wrapper(T value) : value(value) {}
 };
+
+/// Prints a whole pack of values into one signature, so that reflecting the members of an
+/// enum or a struct takes one instantiation for many of them rather than one each.
+///
+/// Two things here are load-bearing: GCC and clang print the parameter's name ahead of the
+/// values, and split_pack looks for it, so it stays `Vs`; and the return type stays free of
+/// angle brackets, as MSVC prints it ahead of the argument list split_pack finds by its first
+/// `<`.
+template <auto... Vs>
+consteval const char* pack_signature() {
+    return std::source_location::current().function_name();
+}
+
+/// The N values printed in a pack_signature, each from its last top-level `::`. An element the
+/// compiler spelled as an expression rather than a name, as the cast it prints for an enum
+/// value no enumerator has, comes back empty.
+///
+/// Constant evaluation costs microseconds a character, so the signature is walked once, its
+/// lowercase letters, most of it, passed over first, and its length never measured.
+template <std::size_t N>
+constexpr std::array<string_ref, N> split_pack(const char* signature) {
+#if defined(__clang__)
+    constexpr string_ref prefix = "Vs = <";
+#elif defined(__GNUC__)
+    constexpr string_ref prefix = "Vs = {";
+#elif defined(_MSC_VER)
+    constexpr string_ref prefix = "<";
+#else
+    static_assert(false, "Not supported compiler");
+#endif
+    std::array<string_ref, N> parts{};
+
+    std::size_t start = 0;
+    while(signature[start] != '\0') {
+        std::size_t matched = 0;
+        while(matched < prefix.size() && signature[start + matched] == prefix[matched]) {
+            ++matched;
+        }
+        if(matched == prefix.size()) {
+            start += matched;
+            break;
+        }
+        ++start;
+    }
+
+    std::size_t index = 0;
+    std::size_t name = start;
+    int depth = 0;
+    bool spelled_out = false;
+
+    for(std::size_t i = start; index < N && signature[i] != '\0'; ++i) {
+        const char c = signature[i];
+        if(c >= 'a' && c <= 'z') {
+            continue;
+        }
+        if(c == '\'' || c == '`') {
+            // A char literal, '<' say, holds no delimiter, and neither does a name MSVC quotes,
+            // `anonymous-namespace'.
+            for(++i; signature[i] != '\''; ++i) {
+                i += signature[i] == '\\';
+            }
+        } else if(c == '-' && signature[i + 1] == '>') {
+            ++i;
+        } else if(c == '<' || c == '(' || c == '[' || c == '{') {
+            ++depth;
+        } else if(c == '>' || c == ')' || c == ']' || c == '}') {
+            if(depth == 0) {
+                parts[index] = spelled_out ? string_ref{} : string_ref(signature + name, i - name);
+                break;
+            }
+            --depth;
+            spelled_out = spelled_out || (depth == 0 && c == ')');
+        } else if(depth == 0 && c == ',') {
+            parts[index++] = spelled_out ? string_ref{} : string_ref(signature + name, i - name);
+            name = i + (signature[i + 1] == ' ' ? 2 : 1);
+            spelled_out = false;
+        } else if(depth == 0 && c == ':' && signature[i + 1] == ':') {
+            name = i + 2;
+            spelled_out = false;
+            ++i;
+        }
+    }
+    return parts;
+}
 
 }  // namespace kotatsu::meta::detail
 

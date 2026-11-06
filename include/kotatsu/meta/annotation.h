@@ -303,12 +303,6 @@ struct spec_attr {
 
 namespace detail {
 
-template <typename T>
-constexpr bool is_spec_attr_v = false;
-
-template <typename Tag, typename Spec>
-constexpr bool is_spec_attr_v<spec_attr<Tag, Spec>> = true;
-
 template <typename Spec, typename Attrs>
 struct find_spec_attr {
     using type = void;
@@ -330,15 +324,19 @@ struct find_spec_attr<Spec, std::tuple<spec_attr<Tag, Spec>, Rest...>> {
 template <typename Spec, typename Attrs>
 using spec_attr_t = typename detail::find_spec_attr<Spec, Attrs>::type;
 
+namespace detail {
+
+template <typename Spec, typename Attr>
+constexpr const Spec* spec_at = &Attr::value;
+
+template <typename Spec>
+constexpr const Spec* spec_at<Spec, void> = nullptr;
+
+}  // namespace detail
+
 /// The spec of type `Spec` attached through Attrs; null when none is.
 template <typename Spec, typename Attrs>
-constexpr const Spec* spec_in = [] -> const Spec* {
-    if constexpr(std::is_void_v<spec_attr_t<Spec, Attrs>>) {
-        return nullptr;
-    } else {
-        return &spec_attr_t<Spec, Attrs>::value;
-    }
-}();
+constexpr const Spec* spec_in = detail::spec_at<Spec, spec_attr_t<Spec, Attrs>>;
 
 namespace detail {
 
@@ -368,32 +366,59 @@ using spec_tag_t = std::conditional_t<
     Inner,
     std::conditional_t<sets_spec<Inner, Spec>, composed_tag<Inner, Outer>, Outer>>;
 
-/// The attr an attribute adds beside the specs: one that carries a type names it.
+/// The attr an attribute adds beside the specs, as a tuple: one that carries a type names it.
 template <typename C>
-constexpr auto added_attr() {
-    if constexpr(requires { typename C::attr; }) {
-        return std::tuple<typename C::attr>{};
-    } else {
-        return std::tuple<>{};
-    }
-}
+struct added_attr {
+    using type = std::tuple<>;
+};
+
+template <typename C>
+    requires requires { typename C::attr; }
+struct added_attr<C> {
+    using type = std::tuple<typename C::attr>;
+};
 
 template <typename Inner, typename Outer, typename... Specs, typename... Cs>
-constexpr auto layered_attrs(std::type_identity<std::tuple<Specs...>>,
-                             std::type_identity<std::tuple<Cs...>>) {
-    return std::tuple_cat(std::tuple<spec_attr<spec_tag_t<Inner, Outer, Specs>, Specs>...>{},
-                          added_attr<Cs>()...);
-}
+auto layered_attrs(std::type_identity<std::tuple<Specs...>>, std::type_identity<std::tuple<Cs...>>)
+    -> tuple_cat_t<std::tuple<spec_attr<spec_tag_t<Inner, Outer, Specs>, Specs>...>,
+                   typename added_attr<Cs>::type...>;
 
+/// The type of the attributes of the annotation Outer written around Inner: those of the one
+/// that is there when the other is not, as a field annotated in neither its own place nor its
+/// type's, or in one of them, mostly is, without composing them.
 template <typename Inner, typename Outer>
-using composed_attributes_t = decltype(compose_attributes(Inner::attributes, Outer::attributes));
+struct composed_attributes {
+    using type = decltype(compose_attributes(Inner::attributes, Outer::attributes));
+};
+
+template <typename Inner>
+struct composed_attributes<Inner, no_annotation> {
+    using type = std::remove_const_t<decltype(Inner::attributes)>;
+};
+
+template <typename Outer>
+struct composed_attributes<no_annotation, Outer> {
+    using type = std::remove_const_t<decltype(Outer::attributes)>;
+};
+
+template <>
+struct composed_attributes<no_annotation, no_annotation> {
+    using type = std::tuple<>;
+};
+
+template <typename Inner,
+          typename Outer,
+          typename Composed = typename composed_attributes<Inner, Outer>::type>
+struct layered {
+    using type = decltype(layered_attrs<Inner, Outer>(
+        std::type_identity<typename spec_types<Composed>::type>{},
+        std::type_identity<Composed>{}));
+};
 
 /// The attrs of the annotation Outer written around Inner, either of them no_annotation: a
 /// spec_attr for each spec type their attributes set, then the attrs the attributes add.
 template <typename Inner, typename Outer>
-using layered_attrs_t = decltype(layered_attrs<Inner, Outer>(
-    std::type_identity<typename spec_types<composed_attributes_t<Inner, Outer>>::type>{},
-    std::type_identity<composed_attributes_t<Inner, Outer>>{}));
+using layered_attrs_t = typename layered<Inner, Outer>::type;
 
 /// Declared so that the unqualified call below finds the user's by argument-dependent
 /// lookup, in the namespace of the type KANNOTATE_TYPE annotates.
@@ -590,33 +615,41 @@ struct spec_ref {
 
 namespace detail {
 
+/// A spec as a spec_ref points at it, one per spec attr.
+template <typename Attr>
+constexpr inline spec_value<typename Attr::spec_type> spec_value_of = {
+    {spec_key<typename Attr::spec_type>},
+    Attr::value,
+};
+
+/// Attr as a tuple of the one spec attr kept, or of none: one that is no spec attr, or that
+/// sets a spec of a type among Excluded, is not.
 template <typename Attr, typename... Excluded>
-constexpr auto kept_spec_value() {
-    if constexpr(is_spec_attr_v<Attr>) {
-        using spec_t = typename Attr::spec_type;
-        if constexpr(!is_one_of<spec_t, Excluded...>) {
-            return std::tuple<spec_value<spec_t>>{
-                spec_value<spec_t>{{spec_key<spec_t>}, Attr::value}
-            };
-        } else {
-            return std::tuple<>{};
-        }
-    } else {
-        return std::tuple<>{};
-    }
-}
+struct kept_spec {
+    using type = std::tuple<>;
+};
+
+template <typename Tag, typename Spec, typename... Excluded>
+    requires (!is_one_of<Spec, Excluded...>)
+struct kept_spec<spec_attr<Tag, Spec>, Excluded...> {
+    using type = std::tuple<spec_attr<Tag, Spec>>;
+};
 
 template <typename Attrs, typename... Excluded>
-struct kept_spec_values;
+struct kept_specs;
 
 template <typename... Attrs, typename... Excluded>
-struct kept_spec_values<std::tuple<Attrs...>, Excluded...> {
-    constexpr static auto value = std::tuple_cat(kept_spec_value<Attrs, Excluded...>()...);
-    constexpr static auto refs = std::apply(
-        [](const auto&... spec) {
-            return std::array<spec_ref, sizeof...(spec)>{spec_ref{&spec}...};
-        },
-        value);
+struct kept_specs<std::tuple<Attrs...>, Excluded...> {
+    using type = tuple_cat_t<typename kept_spec<Attrs, Excluded...>::type...>;
+};
+
+template <typename Kept>
+struct spec_refs;
+
+template <typename... Kept>
+struct spec_refs<std::tuple<Kept...>> {
+    constexpr static std::array<spec_ref, sizeof...(Kept)> value = {
+        spec_ref{&spec_value_of<Kept>}...};
 };
 
 }  // namespace detail
@@ -625,6 +658,6 @@ struct kept_spec_values<std::tuple<Attrs...>, Excluded...> {
 /// types itself keeps the others, of other modules, for them to find.
 template <typename Attrs, typename... Excluded>
 constexpr std::span<const spec_ref> spec_refs_of =
-    detail::kept_spec_values<Attrs, Excluded...>::refs;
+    detail::spec_refs<typename detail::kept_specs<Attrs, Excluded...>::type>::value;
 
 }  // namespace kotatsu::meta

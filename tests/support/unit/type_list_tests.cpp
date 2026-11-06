@@ -1,5 +1,7 @@
+#include <cstddef>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 #include "kotatsu/zest/zest.h"
@@ -10,6 +12,11 @@ namespace kotatsu {
 namespace {
 
 using Numbers = type_list<int, double, int, char>;
+
+template <std::size_t... Is>
+type_list<std::integral_constant<std::size_t, Is>...> indices(std::index_sequence<Is...>);
+
+using Indices = decltype(indices(std::make_index_sequence<1100>{}));
 
 ZEST_SUITE(support_type_list) {
 
@@ -29,6 +36,9 @@ ZEST_CASE(contains_and_size_read_the_list) {
 ZEST_CASE(element_is_found_by_index) {
     ZEXPECT(zest::type_eq<type_list_element_t<0, Numbers>, int>());
     ZEXPECT(zest::type_eq<type_list_element_t<3, Numbers>, char>());
+    // Deeper than the compilers' default limit on recursive instantiation, 1024.
+    ZEXPECT(zest::type_eq<type_list_element_t<1099, Indices>,
+                          std::integral_constant<std::size_t, 1099>>());
 }
 
 ZEST_CASE(prepend_and_concatenate_keep_the_order) {

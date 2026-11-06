@@ -36,6 +36,14 @@ ZEST_CASE(finds_the_first_match) {
     ZEXPECT(zest::type_eq<tuple_find_spec_t<Mixed, std::tuple>, void>());
 }
 
+ZEST_CASE(cat_names_the_tuple_tuple_cat_makes) {
+    ZEXPECT(zest::type_eq<tuple_cat_t<>, std::tuple<>>());
+    ZEXPECT(zest::type_eq<tuple_cat_t<std::tuple<int>, std::tuple<>, std::tuple<char, float>>,
+                          std::tuple<int, char, float>>());
+    ZEXPECT(zest::type_eq<tuple_cat_t<Mixed, std::tuple<int>>,
+                          decltype(std::tuple_cat(Mixed{}, std::tuple<int>{}))>());
+}
+
 ZEST_CASE(only_tuples_are_searched) {
     ZSTATIC_EXPECT(!tuple_has_v<int, int>);
     ZSTATIC_EXPECT(!tuple_any_of_v<int, std::is_integral>);

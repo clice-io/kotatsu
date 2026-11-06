@@ -407,11 +407,10 @@ constexpr bool compare_eq(const L& lhs, const R& rhs) {
         } else if constexpr(lhs_count == 0) {
             return true;
         } else {
-            auto lhs_addrs = reflection<L>::field_addrs(lhs);
-            auto rhs_addrs = reflection<R>::field_addrs(rhs);
-            return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                return (compare_eq(*std::get<Is>(lhs_addrs), *std::get<Is>(rhs_addrs)) && ...);
-            }(std::make_index_sequence<lhs_count>{});
+            return apply_fields(lhs, [&](const auto&... ls) {
+                return apply_fields(rhs,
+                                    [&](const auto&... rs) { return (compare_eq(ls, rs) && ...); });
+            });
         }
     } else {
         static_assert(dependent_false<L>,
@@ -483,29 +482,30 @@ constexpr bool compare_lt(const L& lhs, const R& rhs) {
         constexpr std::size_t rhs_count = reflection<R>::field_count;
         constexpr std::size_t common_count = lhs_count < rhs_count ? lhs_count : rhs_count;
 
-        auto lhs_addrs = reflection<L>::field_addrs(lhs);
-        auto rhs_addrs = reflection<R>::field_addrs(rhs);
-
         bool result = false;
         bool decided = false;
 
         if constexpr(common_count > 0) {
-            decided = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                return (([&] {
-                            const auto& l = *std::get<Is>(lhs_addrs);
-                            const auto& r = *std::get<Is>(rhs_addrs);
-                            if(compare_lt(l, r)) {
-                                result = true;
-                                return true;
-                            }
-                            if(compare_lt(r, l)) {
-                                result = false;
-                                return true;
-                            }
-                            return false;
-                        }()) ||
-                        ...);
-            }(std::make_index_sequence<common_count>{});
+            decided = apply_fields(lhs, [&](const auto&... ls) {
+                return apply_fields(rhs, [&](const auto&... rs) {
+                    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+                        return (([&] {
+                                    const auto& l = detail::pick<Is>(ls...);
+                                    const auto& r = detail::pick<Is>(rs...);
+                                    if(compare_lt(l, r)) {
+                                        result = true;
+                                        return true;
+                                    }
+                                    if(compare_lt(r, l)) {
+                                        result = false;
+                                        return true;
+                                    }
+                                    return false;
+                                }()) ||
+                                ...);
+                    }(std::make_index_sequence<common_count>{});
+                });
+            });
         }
 
         if(decided) {

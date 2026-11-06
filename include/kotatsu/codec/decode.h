@@ -297,15 +297,12 @@ bool
 
 /// Decode a field's value applying behavior transforms, without visit_field
 /// wrapping, below key, the name the document gives it. Used by match_field
-/// (data-driven path) where the field reader is already provided.
-template <typename Format, std::size_t I, typename Vis, typename T>
-bool decode_field_value(Vis& vis, T& out, std::string_view key, UnknownFields* sink) {
-    using descriptor = codec::field<T, I, Format>;
-    auto& field_ref = descriptor::of(out);
-    return decode_step(sink, key, [&] {
-        return decode_with_attrs<members_format_t<Format>, typename descriptor::attrs>(vis,
-                                                                                       field_ref);
-    });
+/// (data-driven path) where the field reader is already provided; it depends
+/// on the field's type and attrs alone, so the fields that share them share
+/// one instantiation.
+template <typename Format, typename Attrs, typename Vis, typename Field>
+bool decode_field_value(Vis& vis, Field& field, std::string_view key, UnknownFields* sink) {
+    return decode_step(sink, key, [&] { return decode_with_attrs<Format, Attrs>(vis, field); });
 }
 
 /// The slot whose name or alias is key; fields.size() when none is.
@@ -341,7 +338,12 @@ bool match_field(std::string_view key,
 
     field_mask |= std::uint64_t{1} << slot;
     return with_index<N>(slot, [&](auto i) {
-        return decode_field_value<Format, decltype(i)::value>(reader, out, key, sink);
+        using field_slot = type_list_element_t<decltype(i)::value, typename schema::slots>;
+        return decode_field_value<members_format_t<Format>, typename field_slot::attrs>(
+            reader,
+            field_at<typename field_slot::raw_type>(out, schema::fields[slot].offset),
+            key,
+            sink);
     });
 }
 

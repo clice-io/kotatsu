@@ -171,8 +171,7 @@ ZEST_CASE(field_name_values) {
     ZEXPECT(field_name<2, Point>() == "z");
     ZEXPECT(field_name<3, Point>() == "y");
 
-    ZEXPECT(field_names<Empty>().size() == 1U);
-    ZEXPECT(field_names<Empty>()[0] == "PLACEHOLDER");
+    ZEXPECT(field_names<Empty>().empty());
 
     ZEXPECT(field_names<Many36>().size() == 36U);
     ZEXPECT(field_name<0, Many36>() == "f01");
@@ -234,6 +233,41 @@ ZEST_CASE(field_offset_values) {
     ZEXPECT(field<1, Point>::offset() == offsetof(Point, c));
     ZEXPECT(field<2, Point>::offset() == offsetof(Point, z));
     ZEXPECT(field<3, Point>::offset() == offsetof(Point, y));
+}
+
+ZEST_CASE(apply_fields_hands_every_field_at_once) {
+    Point p{.x = 3, .c = 'b', .z = 1.0, .y = 5};
+    const auto sum = apply_fields(p, [](int& x, char& c, double& z, int& y) {
+        x = 4;
+        return x + c + static_cast<int>(z) + y;
+    });
+    ZEXPECT(sum == 4 + 'b' + 1 + 5);
+    ZEXPECT(p.x == 4);
+
+    const Point& view = p;
+    ZEXPECT(apply_fields(view, [](const auto&... fields) { return sizeof...(fields); }) == 4U);
+    Empty empty;
+    ZEXPECT(apply_fields(empty, [] { return 0; }) == 0);
+}
+
+ZEST_CASE(field_type_is_the_declared_type) {
+    struct Declared {
+        const int fixed;
+        double value;
+        int& ref;
+    };
+
+    ZEXPECT(zest::type_eq<field_type<Declared, 0>, const int>());
+    ZEXPECT(zest::type_eq<field_type<Declared, 1>, double>());
+    // A reference member's, the type it refers to.
+    ZEXPECT(zest::type_eq<field_type<Declared, 2>, int>());
+}
+
+ZEST_CASE(field_offsets_lists_every_offset) {
+    constexpr const auto& offsets = field_offsets<Packed>();
+    ZSTATIC_EXPECT(offsets.size() == 6U);
+    ZEXPECT(offsets[0] == offsetof(Packed, a));
+    ZEXPECT(offsets[5] == offsetof(Packed, e));
 }
 
 ZEST_CASE(field_refs_lvalue) {

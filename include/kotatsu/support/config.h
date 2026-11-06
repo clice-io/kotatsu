@@ -12,6 +12,19 @@
 #define KOTATSU_COMPILER_MSVC_VERSION 0
 #endif
 
+// Structured binding packs (P1061, `auto& [...fields] = object;`), which clang 21 and GCC 16
+// take in C++23 too, as an extension, along with the builtin that counts a struct's bindings.
+// meta reaches the fields of a struct through them where the compiler has them, and through
+// a specialization per field count elsewhere (MSVC, older clang and GCC).
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_structured_binding_size)
+#define KOTATSU_HAS_BINDING_PACKS 1
+#endif
+#endif
+#ifndef KOTATSU_HAS_BINDING_PACKS
+#define KOTATSU_HAS_BINDING_PACKS 0
+#endif
+
 #if KOTATSU_COMPILER_MSVC
 #define KOTATSU_NOINLINE __declspec(noinline)
 #else

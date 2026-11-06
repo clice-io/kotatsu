@@ -45,18 +45,13 @@ constexpr bool is_non_ascii(char c) {
     return static_cast<unsigned char>(c) >= 0x80;
 }
 
-/// `text` in lower snake case: words split at separators (anything not a letter, digit or
-/// UTF-8 byte) and at case changes ("HTTPServer2Go" is "http_server2_go"), lowered and joined
-/// by one `_`, without leading or trailing ones.
-constexpr std::string normalize_to_lower_snake(std::string_view text) {
-    // A UTF-8 byte continues a word like a lowercase letter.
-    auto is_word = [](char c) {
-        return is_alnum(c) || is_non_ascii(c);
-    };
-    auto is_lower_like = [](char c) {
-        return is_lower(c) || is_non_ascii(c);
-    };
-    std::string out;
+namespace detail {
+
+/// Writes `text` in lower snake case into `out`, which has room for twice its size, and
+/// returns the size written: one pass over a buffer sized once, which is what constant
+/// evaluation, slow to grow a string, needs.
+constexpr std::size_t write_lower_snake(std::string_view text, char* out) {
+    std::size_t n = 0;
     for(std::size_t i = 0; i < text.size(); ++i) {
         const char c = text[i];
         if(is_upper(c)) {
@@ -64,47 +59,73 @@ constexpr std::string normalize_to_lower_snake(std::string_view text) {
             // UTF-8 byte or a digit ("fooBar", "名前Value", "v2Go"), and ends a run of capitals
             // before a lowercase letter ("HTTPServer"); a UTF-8 byte has no case, and ends no
             // such run ("HTTP名前").
-            const bool in_word = !out.empty() && out.back() != '_';
-            if(in_word && (is_lower_like(text[i - 1]) || is_digit(text[i - 1]) ||
-                           (i + 1 < text.size() && is_lower(text[i + 1])))) {
-                out += '_';
+            const bool in_word = n != 0 && out[n - 1] != '_';
+            if(in_word &&
+               (is_lower(text[i - 1]) || is_non_ascii(text[i - 1]) || is_digit(text[i - 1]) ||
+                (i + 1 < text.size() && is_lower(text[i + 1])))) {
+                out[n++] = '_';
             }
-            out += to_lower(c);
-        } else if(is_word(c)) {
-            out += c;
-        } else if(!out.empty() && out.back() != '_') {
-            out += '_';
+            out[n++] = to_lower(c);
+        } else if(is_lower(c) || is_digit(c) || is_non_ascii(c)) {
+            // A UTF-8 byte continues a word like a lowercase letter.
+            out[n++] = c;
+        } else if(n != 0 && out[n - 1] != '_') {
+            out[n++] = '_';
         }
     }
     // A separator only ever follows a word, so the one left to drop is a trailing one.
-    if(!out.empty() && out.back() == '_') {
-        out.pop_back();
+    if(n != 0 && out[n - 1] == '_') {
+        --n;
     }
-    return out;
+    return n;
 }
 
-constexpr std::string snake_to_camel(std::string_view text, bool upper_first) {
-    auto snake = normalize_to_lower_snake(text);
-    std::string out;
+/// Writes `text` in camel case, its first letter upper or lower as upper_first says, into
+/// `out`, which has room for twice its size, and returns the size written.
+constexpr std::size_t write_camel(std::string_view text, char* out, bool upper_first) {
+    const std::size_t snake = write_lower_snake(text, out);
+    // The camel case name is no longer than the snake case one it is written over.
+    std::size_t n = 0;
     bool capitalize_next = upper_first;
     bool seen_output = false;
-    for(auto c: snake) {
+    for(std::size_t i = 0; i < snake; ++i) {
+        const char c = out[i];
         if(c == '_') {
             capitalize_next = true;
             continue;
         }
         if(capitalize_next && is_alpha(c)) {
-            out += to_upper(c);
+            out[n++] = to_upper(c);
         } else if(!seen_output) {
-            out += upper_first ? to_upper(c) : to_lower(c);
+            out[n++] = upper_first ? to_upper(c) : to_lower(c);
         } else {
-            out += c;
+            out[n++] = c;
         }
         capitalize_next = false;
         seen_output = true;
     }
+    return n;
+}
+
+/// Writes `text` in upper snake case into `out`, which has room for twice its size, and
+/// returns the size written.
+constexpr std::size_t write_upper_snake(std::string_view text, char* out) {
+    const std::size_t n = write_lower_snake(text, out);
+    for(std::size_t i = 0; i < n; ++i) {
+        out[i] = to_upper(out[i]);
+    }
+    return n;
+}
+
+/// What Policy writes of `text`, as a string.
+template <typename Policy>
+constexpr std::string spelled(std::string_view text) {
+    std::string out(text.size() * 2, '\0');
+    out.resize(Policy::write(text, out.data()));
     return out;
 }
+
+}  // namespace detail
 
 constexpr std::string normalize_identifier(std::string_view text) {
     std::string out;
@@ -128,13 +149,6 @@ constexpr std::string normalize_identifier(std::string_view text) {
     return out;
 }
 
-constexpr std::string snake_to_upper(std::string_view text) {
-    auto snake = normalize_to_lower_snake(text);
-    for(auto& c: snake)
-        c = to_upper(c);
-    return snake;
-}
-
 /// The rename policies: each spells a declared name as a document writes it, in a constant
 /// expression, so the names a type travels under are computed once, at compile time. A
 /// document is read by matching the names so spelled, never by spelling back.
@@ -146,31 +160,68 @@ struct identity {
     }
 };
 
+// Each writes a name into a buffer with room for twice its size, which a table of names
+// renamed at compile time fills without growing a string (naming::renamed).
+
 struct lower_snake {
-    constexpr std::string operator()(std::string_view value) const {
-        return normalize_to_lower_snake(value);
+    constexpr static std::size_t write(std::string_view name, char* out) {
+        return detail::write_lower_snake(name, out);
+    }
+
+    constexpr std::string operator()(std::string_view name) const {
+        return detail::spelled<lower_snake>(name);
     }
 };
 
 struct lower_camel {
-    constexpr std::string operator()(std::string_view value) const {
-        return snake_to_camel(value, false);
+    constexpr static std::size_t write(std::string_view name, char* out) {
+        return detail::write_camel(name, out, false);
+    }
+
+    constexpr std::string operator()(std::string_view name) const {
+        return detail::spelled<lower_camel>(name);
     }
 };
 
 struct upper_camel {
-    constexpr std::string operator()(std::string_view value) const {
-        return snake_to_camel(value, true);
+    constexpr static std::size_t write(std::string_view name, char* out) {
+        return detail::write_camel(name, out, true);
+    }
+
+    constexpr std::string operator()(std::string_view name) const {
+        return detail::spelled<upper_camel>(name);
     }
 };
 
 struct upper_snake {
-    constexpr std::string operator()(std::string_view value) const {
-        return snake_to_upper(value);
+    constexpr static std::size_t write(std::string_view name, char* out) {
+        return detail::write_upper_snake(name, out);
+    }
+
+    constexpr std::string operator()(std::string_view name) const {
+        return detail::spelled<upper_snake>(name);
     }
 };
 
 }  // namespace rename_policy
+
+/// `text` in lower snake case: words split at separators (anything not a letter, digit or
+/// UTF-8 byte) and at case changes ("HTTPServer2Go" is "http_server2_go"), lowered and joined
+/// by one `_`, without leading or trailing ones.
+constexpr std::string normalize_to_lower_snake(std::string_view text) {
+    return rename_policy::lower_snake{}(text);
+}
+
+/// `text` in camel case, its words as normalize_to_lower_snake splits them, its first letter
+/// upper or lower as upper_first says.
+constexpr std::string snake_to_camel(std::string_view text, bool upper_first) {
+    return upper_first ? rename_policy::upper_camel{}(text) : rename_policy::lower_camel{}(text);
+}
+
+/// `text` in upper snake case, its words as normalize_to_lower_snake splits them.
+constexpr std::string snake_to_upper(std::string_view text) {
+    return rename_policy::upper_snake{}(text);
+}
 
 /// A rename policy: a type whose call operator spells a name, in a constant expression.
 template <typename Policy>
@@ -261,20 +312,23 @@ using rename_policy_of_t = typename detail::policy_of<Fn>::type;
 
 namespace detail {
 
+/// Names renamed by Policy, kept in one buffer: each name is renamed twice, once to size the
+/// buffer and once to fill it.
 template <typename Policy, const auto& Names>
 struct renamed_table {
     constexpr static std::size_t count = std::size(Names);
 
-    constexpr static std::size_t total = [] {
-        std::size_t size = 0;
-        for(std::string_view name: Names) {
-            size += std::string(Policy{}(name)).size();
+    /// Where each name ends in chars, after a 0 where the first begins.
+    constexpr static std::array<std::size_t, count + 1> ends = [] {
+        std::array<std::size_t, count + 1> out{};
+        for(std::size_t i = 0; i < count; ++i) {
+            out[i + 1] = out[i] + std::string(Policy{}(Names[i])).size();
         }
-        return size;
+        return out;
     }();
 
-    constexpr static std::array<char, total> chars = [] {
-        std::array<char, total> out{};
+    constexpr static std::array<char, ends[count]> chars = [] {
+        std::array<char, ends[count]> out{};
         std::size_t at = 0;
         for(std::string_view name: Names) {
             for(char c: std::string(Policy{}(name))) {
@@ -286,17 +340,60 @@ struct renamed_table {
 
     constexpr static std::array<std::string_view, count> value = [] {
         std::array<std::string_view, count> out{};
-        std::size_t at = 0;
         for(std::size_t i = 0; i < count; ++i) {
-            const std::size_t size = std::string(Policy{}(Names[i])).size();
-            out[i] = std::string_view(chars.data() + at, size);
-            at += size;
+            out[i] = std::string_view(chars.data() + ends[i], ends[i + 1] - ends[i]);
         }
         return out;
     }();
 };
 
-/// The identity policy spells the names as they are.
+/// Names renamed by a built-in Policy, which writes each into a buffer: each is renamed once,
+/// into a draft with room for twice their size, which the exact buffer is copied from.
+template <typename Policy, const auto& Names>
+    requires requires(char* out) { Policy::write(std::string_view{}, out); }
+struct renamed_table<Policy, Names> {
+    constexpr static std::size_t count = std::size(Names);
+
+    constexpr static std::size_t room = [] {
+        std::size_t size = 0;
+        for(std::string_view name: Names) {
+            size += name.size() * 2;
+        }
+        return size;
+    }();
+
+    struct draft_t {
+        std::array<char, room> chars;
+        /// Where each name ends in chars, after a 0 where the first begins.
+        std::array<std::size_t, count + 1> ends;
+    };
+
+    constexpr static draft_t draft = [] {
+        draft_t out{};
+        for(std::size_t i = 0; i < count; ++i) {
+            out.ends[i + 1] = out.ends[i] + Policy::write(Names[i], out.chars.data() + out.ends[i]);
+        }
+        return out;
+    }();
+
+    constexpr static std::array<char, draft.ends[count]> chars = [] {
+        std::array<char, draft.ends[count]> out{};
+        for(std::size_t i = 0; i < out.size(); ++i) {
+            out[i] = draft.chars[i];
+        }
+        return out;
+    }();
+
+    constexpr static std::array<std::string_view, count> value = [] {
+        std::array<std::string_view, count> out{};
+        for(std::size_t i = 0; i < count; ++i) {
+            out[i] =
+                std::string_view(chars.data() + draft.ends[i], draft.ends[i + 1] - draft.ends[i]);
+        }
+        return out;
+    }();
+};
+
 template <const auto& Names>
 struct renamed_table<rename_policy::identity, Names> {
     constexpr const static auto& value = Names;
