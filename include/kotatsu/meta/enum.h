@@ -144,6 +144,25 @@ consteval auto make_enumerators(std::integer_sequence<int, Values...>) {
 template <typename E>
 constexpr inline auto enumerators = make_enumerators<E>(scan_values<std::underlying_type_t<E>>{});
 
+/// The places of names in the order of the names themselves.
+template <std::size_t N>
+consteval std::array<std::size_t, N> sorted_order(const std::array<std::string_view, N>& names) {
+    std::array<std::size_t, N> order{};
+    for(std::size_t i = 0; i < N; ++i) {
+        std::size_t at = i;
+        for(; at > 0 && names[i] < names[order[at - 1]]; --at) {
+            order[at] = order[at - 1];
+        }
+        order[at] = i;
+    }
+    return order;
+}
+
+/// The places of E's enumerators in the order of their names, which enum_value halves; made
+/// only where a name is looked up.
+template <typename E>
+constexpr inline auto name_order = sorted_order(enumerators<E>.names);
+
 }  // namespace kotatsu::meta::detail
 
 namespace kotatsu::meta {
@@ -184,13 +203,23 @@ constexpr std::string_view enum_name(E e, std::string_view fallback = {}) {
     return index < enum_names<E>.size() ? enum_names<E>[index] : fallback;
 }
 
+/// The value of E's enumerator named `name`; none when no enumerator has the name.
 template <typename E>
     requires std::is_enum_v<E>
 constexpr std::optional<E> enum_value(std::string_view name) {
-    for(std::size_t i = 0; i < enum_names<E>.size(); ++i) {
-        if(enum_names<E>[i] == name) {
-            return enum_values<E>[i];
+    const auto& order = detail::name_order<E>;
+    std::size_t left = 0;
+    std::size_t right = order.size();
+    while(left < right) {
+        const std::size_t mid = left + (right - left) / 2;
+        if(enum_names<E>[order[mid]] < name) {
+            left = mid + 1;
+        } else {
+            right = mid;
         }
+    }
+    if(left < order.size() && enum_names<E>[order[left]] == name) {
+        return enum_values<E>[order[left]];
     }
     return std::nullopt;
 }

@@ -22,6 +22,9 @@ constexpr std::string_view signature_text(const char* signature) {
 
 /// Where c first appears in text from `from` on; text.size() when it does not.
 constexpr std::size_t find_char(std::string_view text, char c, std::size_t from) {
+    if(from >= text.size()) {
+        return text.size();
+    }
 #if defined(__clang__) || defined(_MSC_VER)
     const char* found = __builtin_char_memchr(text.data() + from, c, text.size() - from);
     return found == nullptr ? text.size() : static_cast<std::size_t>(found - text.data());

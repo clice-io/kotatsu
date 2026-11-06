@@ -163,18 +163,17 @@ consteval std::array<std::size_t, N> locate(const std::array<const void*, N>& ad
     return offsets;
 }
 
-/// The names of the fields of T at the addresses Ps, members of ext<uninitialized<T>>.value,
-/// printed in one signature: each as the object's address, `&ext.value`, then the field's name,
-/// `.field`, which ends where the next address begins.
-template <typename T, auto... Ps>
-consteval std::array<std::string_view, sizeof...(Ps)> member_names() {
-    constexpr std::string_view printed = pack_list<&ext<uninitialized<T>>.value>();
-    // GCC closes an address in a parenthesis, which comes after the field's name.
+/// The names of the fields at the addresses First and Rest, members of one object, printed in
+/// one signature: each as the object's address, then its name, `&ext.value.field`, which ends
+/// where the next address begins. The first one printed alone shows what comes before a name.
+template <auto First, auto... Rest>
+consteval std::array<std::string_view, 1 + sizeof...(Rest)> member_names() {
+    constexpr std::string_view first = pack_list<First>();
     constexpr std::string_view object =
-        printed.ends_with(')') ? printed.substr(0, printed.size() - 1) : printed;
-    const std::string_view list = pack_list<Ps...>();
-    std::array<std::string_view, sizeof...(Ps)> names{};
-    std::size_t at = find_text(list, object, 0);
+        first.substr(0, static_cast<std::size_t>(trailing_identifier(first).data() - first.data()));
+    const std::string_view list = pack_list<First, Rest...>();
+    std::array<std::string_view, 1 + sizeof...(Rest)> names{};
+    std::size_t at = 0;
     for(std::string_view& name: names) {
         const std::size_t next = find_text(list, object, at + object.size());
         name = trailing_identifier(list.substr(at, next - at));
@@ -267,7 +266,7 @@ struct binder {
     template <typename T>
     consteval static auto names() {
         auto& [... fields] = ext<uninitialized<T>>.value;
-        return member_names<T, &fields...>();
+        return member_names<&fields...>();
     }
 };
 
@@ -295,7 +294,7 @@ consteval auto field_address() {
 
 template <typename T, std::size_t... Is>
 consteval auto names_by_address(std::index_sequence<Is...>) {
-    return member_names<T, field_address<T, Is>()...>();
+    return member_names<field_address<T, Is>()...>();
 }
 
 #define KOTATSU_BINDER_NAMES(N)                                                                    \
@@ -308,7 +307,7 @@ consteval auto names_by_address(std::index_sequence<Is...>) {
     template <typename T>                                                                          \
     consteval static auto names() {                                                                \
         auto& [KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_NAME)] = ext<uninitialized<T>>.value;      \
-        return member_names<T, KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_ADDRESS)>();               \
+        return member_names<KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_ADDRESS)>();                  \
     }
 #endif
 
