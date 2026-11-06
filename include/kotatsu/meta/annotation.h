@@ -490,9 +490,16 @@ consteval auto key_of() {
 template <typename T, std::size_t I>
 concept annotated_in_class = requires { T::__kotatsu__annotation(key_of<T, I>()); };
 
+/// Whether a KANNOTATE_FIELD annotates a field of T: each declares, beside the annotation, a
+/// function of T alone, which tells a class no field of which it annotates apart without the
+/// key of each field, which takes its name to make.
+template <typename T>
+concept annotated_from_outside = requires { __kotatsu__field_annotation(std::type_identity<T>{}); };
+
 template <typename T, std::size_t I>
-concept annotated_out_of_class =
-    requires { __kotatsu__field_annotation(std::type_identity<T>{}, key_of<T, I>()); };
+concept annotated_out_of_class = annotated_from_outside<T> && requires {
+    __kotatsu__field_annotation(std::type_identity<T>{}, key_of<T, I>());
+};
 
 /// Whether argument-dependent lookup finds a KANNOTATE_FIELD of T filed under Key, which T has
 /// a field of: what KANNOTATE_FIELD checks it is written where it is read.

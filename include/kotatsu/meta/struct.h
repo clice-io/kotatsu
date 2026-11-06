@@ -292,9 +292,16 @@ consteval auto field_address() {
     });
 }
 
+/// A pointer as a template argument, as MSVC takes one to an array element, a field std::array
+/// binds, inside a class only.
+template <typename P>
+struct address {
+    P value;
+};
+
 template <typename T, std::size_t... Is>
-consteval auto names_by_address(std::index_sequence<Is...>) {
-    return member_names<field_address<T, Is>()...>();
+consteval std::array<std::string_view, sizeof...(Is)> names_by_address(std::index_sequence<Is...>) {
+    return {trailing_identifier(value_text<address{field_address<T, Is>()}>())...};
 }
 
 #define KOTATSU_BINDER_NAMES(N)                                                                    \

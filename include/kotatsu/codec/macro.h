@@ -94,6 +94,8 @@
 ///
 /// A field annotated both here and in its class fails to compile.
 #define KANNOTATE_FIELD(member, ...)                                                               \
+    void __kotatsu__field_annotation(                                                              \
+        ::std::type_identity<::kotatsu::class_type_t<decltype(member)>>);                          \
     [[maybe_unused]] consteval auto __kotatsu__field_annotation(                                   \
         ::std::type_identity<::kotatsu::class_type_t<decltype(member)>>,                           \
         ::kotatsu::meta::detail::member_key_t<#member>) {                                          \
