@@ -108,10 +108,14 @@ template <typename... Lists>
 constexpr inline auto concat_places =
     list_places<(0 + ... + type_list_size_v<Lists>)>({type_list_size_v<Lists>..., 0});
 
+/// Element J of the concatenation of Lists.
+template <std::size_t J, typename... Lists>
+using concat_element =
+    type_list_element_t<concat_places<Lists...>[J].at,
+                        type_list_element_t<concat_places<Lists...>[J].list, type_list<Lists...>>>;
+
 template <typename... Lists, std::size_t... Js>
-auto list_concat(std::index_sequence<Js...>) -> type_list<type_list_element_t<
-    concat_places<Lists...>[Js].at,
-    type_list_element_t<concat_places<Lists...>[Js].list, type_list<Lists...>>>...>;
+auto list_concat(std::index_sequence<Js...>) -> type_list<concat_element<Js, Lists...>...>;
 
 /// Where T first appears among Us.
 template <typename T, typename... Us>
