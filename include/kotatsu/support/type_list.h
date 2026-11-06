@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <type_traits>
@@ -9,9 +10,8 @@
 #include "kotatsu/support/config.h"
 #include "kotatsu/support/type_traits.h"
 
-/// Type lists, each operation one fold or one pack expansion rather than a recursion over the
-/// list. A fold nests as deep as its operands are many, which clang limits to 256 by default
-/// (-fbracket-depth): concatenate, filter and unique take lists shorter than that.
+/// Type lists, each operation one pack expansion rather than a recursion over the list, nor a
+/// fold, which nests as deep as the list is long.
 namespace kotatsu {
 
 template <typename T, typename... Ts>
@@ -69,31 +69,6 @@ auto list_element(type_list<Ts...>)
     -> decltype(select_indexed<I>(indexed_types<std::index_sequence_for<Ts...>, Ts...>{}));
 #endif
 
-/// A list as the operand of a fold, whose `+` appends a list and whose `|` appends a type the
-/// list does not hold yet.
-template <typename... Ts>
-struct list_fold {
-    using type = type_list<Ts...>;
-};
-
-template <typename T>
-struct list_item {};
-
-template <typename... As, typename... Bs>
-list_fold<As..., Bs...> operator+(list_fold<As...>, type_list<Bs...>);
-
-template <typename... Ts, typename T>
-std::conditional_t<is_one_of<T, Ts...>, list_fold<Ts...>, list_fold<Ts..., T>>
-    operator|(list_fold<Ts...>, list_item<T>);
-
-template <typename... Ts>
-auto list_unique(type_list<Ts...>) -> decltype((list_fold<>{} | ... | list_item<Ts>{}));
-
-template <template <typename> typename Predicate, typename... Ts>
-auto list_filter(type_list<Ts...>)
-    -> decltype((list_fold<>{} + ... +
-                 std::conditional_t<Predicate<Ts>::value, type_list<Ts>, type_list<>>{}));
-
 /// Where the first of flags is set; the last of them is, past those a list tests.
 template <std::size_t N>
 consteval std::size_t first_set(const bool (&flags)[N]) {
@@ -104,6 +79,44 @@ consteval std::size_t first_set(const bool (&flags)[N]) {
     return i;
 }
 
+}  // namespace detail
+
+template <std::size_t I, typename List>
+using type_list_element_t = typename decltype(detail::list_element<I>(List{}))::type;
+
+namespace detail {
+
+/// Where an element of a concatenation of lists comes from: its list, and its place there.
+struct list_place {
+    std::size_t list;
+    std::size_t at;
+};
+
+template <std::size_t Total, std::size_t N>
+consteval std::array<list_place, Total> list_places(const std::size_t (&sizes)[N]) {
+    std::array<list_place, Total> places{};
+    std::size_t out = 0;
+    for(std::size_t list = 0; list < N; ++list) {
+        for(std::size_t at = 0; at < sizes[list]; ++at) {
+            places[out++] = {list, at};
+        }
+    }
+    return places;
+}
+
+template <typename... Lists>
+constexpr inline auto concat_places =
+    list_places<(0 + ... + type_list_size_v<Lists>)>({type_list_size_v<Lists>..., 0});
+
+template <typename... Lists, std::size_t... Js>
+auto list_concat(std::index_sequence<Js...>) -> type_list<type_list_element_t<
+    concat_places<Lists...>[Js].at,
+    type_list_element_t<concat_places<Lists...>[Js].list, type_list<Lists...>>>...>;
+
+/// Where T first appears among Us.
+template <typename T, typename... Us>
+constexpr inline std::size_t first_of = first_set({std::is_same_v<T, Us>..., true});
+
 template <template <typename...> typename HKT, typename... Ts>
 auto list_find_spec(type_list<Ts...>)
     -> decltype(list_element<first_set({is_specialization_of<HKT, Ts>..., true})>(
@@ -111,19 +124,34 @@ auto list_find_spec(type_list<Ts...>)
 
 }  // namespace detail
 
-template <std::size_t I, typename List>
-using type_list_element_t = typename decltype(detail::list_element<I>(List{}))::type;
-
+/// The lists, one after another, picked element by element in one pack expansion.
 template <typename... Lists>
-using type_list_concat_t = typename decltype((detail::list_fold<>{} + ... + Lists{}))::type;
+using type_list_concat_t = decltype(detail::list_concat<Lists...>(
+    std::make_index_sequence<(0 + ... + type_list_size_v<Lists>)>{}));
+
+namespace detail {
+
+template <template <typename> typename Predicate, typename... Ts>
+auto list_filter(type_list<Ts...>)
+    -> type_list_concat_t<std::conditional_t<Predicate<Ts>::value, type_list<Ts>, type_list<>>...>;
+
+template <typename... Ts, typename... Us, std::size_t... Is>
+auto list_unique(type_list<Ts...>, type_list<Us...>, std::index_sequence<Is...>)
+    -> type_list_concat_t<
+        std::conditional_t<first_of<Ts, Us...> == Is, type_list<Ts>, type_list<>>...>;
+
+}  // namespace detail
 
 /// The types of List for which Predicate holds, in order.
 template <typename List, template <typename> typename Predicate>
-using type_list_filter_t = typename decltype(detail::list_filter<Predicate>(List{}))::type;
+using type_list_filter_t = decltype(detail::list_filter<Predicate>(List{}));
 
 /// The types of List, each where it first appears.
 template <typename List>
-using type_list_unique_t = typename decltype(detail::list_unique(List{}))::type;
+using type_list_unique_t =
+    decltype(detail::list_unique(List{},
+                                 List{},
+                                 std::make_index_sequence<type_list_size_v<List>>{}));
 
 /// The first specialization of HKT in List; void when there is none.
 template <typename List, template <typename...> typename HKT>
