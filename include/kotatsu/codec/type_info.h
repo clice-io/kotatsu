@@ -17,7 +17,6 @@
 #include "format.h"
 #include "repr.h"
 #include "kotatsu/support/naming.h"
-#include "kotatsu/support/tuple_traits.h"
 #include "kotatsu/support/type_list.h"
 #include "kotatsu/support/type_traits.h"
 #include "kotatsu/meta/annotation.h"
@@ -252,14 +251,9 @@ constexpr bool dispatch_attr_v<meta::spec_attr<Tag, struct_spec>> =
     meta::spec_attr<Tag, struct_spec>::value.presence_all.has_value();
 
 /// The attrs among Attrs that dispatch_attr_v keeps.
-template <typename Attrs>
-struct dispatch_attrs;
-
 template <typename... Attrs>
-struct dispatch_attrs<std::tuple<Attrs...>> {
-    using type =
-        tuple_cat_t<std::conditional_t<dispatch_attr_v<Attrs>, std::tuple<Attrs>, std::tuple<>>...>;
-};
+auto dispatch_attrs(type_list<Attrs...>) -> type_list_concat_t<
+    std::conditional_t<dispatch_attr_v<Attrs>, type_list<Attrs>, type_list<>>...>;
 
 template <typename T,
           std::size_t I,
@@ -267,7 +261,7 @@ template <typename T,
           bool Flattened = field_spec_of<T, I>.flatten>
 struct single_field_slots {
     using type = type_list<field_slot<std::remove_cv_t<meta::field_type<T, I>>,
-                                      typename dispatch_attrs<meta::field_attrs_t<T, I>>::type,
+                                      decltype(detail::dispatch_attrs(meta::field_attrs_t<T, I>{})),
                                       T,
                                       I>>;
 };
@@ -326,7 +320,7 @@ struct enum_info_node {
 };
 
 /// A node resolved: the type the codec reads and writes for it, the tagging spec attr of a
-/// tagged variant (an empty tuple otherwise), the format it is read and written under, with
+/// tagged variant (an empty list otherwise), the format it is read and written under, with
 /// every rename_all / deny_unknown_fields / presence_all crossed on the way scoped in, and the
 /// node of its info: an enum_names enum's own, which a schema lists the names of.
 template <typename T,
@@ -373,18 +367,18 @@ constexpr auto resolve_node() {
     // An enum's names are spelled by the scope its node makes, the field's
     // rename_all over its type's.
     using scope = node_format_t<Format, Raw, Attrs>;
-    if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
-        using adapter = typename tuple_find_spec_t<Attrs, behavior::with>::adapter;
+    if constexpr(type_list_has_spec_v<Attrs, behavior::with>) {
+        using adapter = typename type_list_find_spec_t<Attrs, behavior::with>::adapter;
         if constexpr(names_enum<adapter>) {
             return resolved_repr<std::string_view,
-                                 std::tuple<>,
+                                 type_list<>,
                                  Format,
                                  enum_info_node<Raw, enum_names_policy_t<adapter, scope>>>{};
         } else {
             return resolve_repr<declared_repr_t<adapter>, Format>();
         }
-    } else if constexpr(tuple_has_spec_v<Attrs, behavior::as>) {
-        using target = typename tuple_find_spec_t<Attrs, behavior::as>::target;
+    } else if constexpr(type_list_has_spec_v<Attrs, behavior::as>) {
+        using target = typename type_list_find_spec_t<Attrs, behavior::as>::target;
         return resolve_repr<target, Format>();
     } else if constexpr(taggable<Raw> && spec_of<struct_spec, Attrs>.tagging != tag_mode::none) {
         // Read and written as the variant it is, whatever repr its type has.
@@ -395,14 +389,12 @@ constexpr auto resolve_node() {
                 return std::type_identity<Raw>{};
             }
         }())::type;
-        return resolved_repr<variant_t,
-                             std::tuple<meta::spec_attr_t<struct_spec, Attrs>>,
-                             Format>{};
+        return resolved_repr<variant_t, type_list<meta::spec_attr_t<struct_spec, Attrs>>, Format>{};
     } else if constexpr(has_repr<Raw, Format>) {
         using chosen = repr_for<Raw, Format>;
         if constexpr(names_enum<chosen>) {
             return resolved_repr<std::string_view,
-                                 std::tuple<>,
+                                 type_list<>,
                                  Format,
                                  enum_info_node<Raw, enum_names_policy_t<chosen, scope>>>{};
         } else {
@@ -411,7 +403,7 @@ constexpr auto resolve_node() {
     } else if constexpr(meta::derived_variant<Raw>) {
         return resolve_node<meta::variant_base_t<Raw>, Attrs, Format>();
     } else {
-        return resolved_repr<Raw, std::tuple<>, scope>{};
+        return resolved_repr<Raw, type_list<>, scope>{};
     }
 }
 
@@ -600,7 +592,7 @@ constexpr inline std::span<const field_info> flattened_fields = {};
 
 template <typename Raw, typename Attrs, typename Members>
 constexpr inline std::span<const field_info> flattened_fields<Raw, Attrs, Members, true> =
-    info_node<Raw, std::tuple<>, node_format_t<Members, Raw, Attrs>>::fields;
+    info_node<Raw, type_list<>, node_format_t<Members, Raw, Attrs>>::fields;
 
 /// The fields struct T holds in a document under Format, built in one pass: what differs
 /// between its fields is read from arrays a pack expansion fills, and what depends on a
@@ -677,7 +669,7 @@ using resolved_repr_t = typename decltype(detail::resolve_repr<std::remove_cvref
 template <typename T, typename F = format>
 constexpr bool resolves_to_tagged_variant =
     !std::is_same_v<typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, F>())::tag_attrs,
-                    std::tuple<>>;
+                    type_list<>>;
 
 template <typename T, typename F>
 constexpr const type_info& type_info::of() {
@@ -691,7 +683,7 @@ namespace detail {
 /// resolves T to, without scoping T's own annotation again over a field's.
 template <typename T, typename Format>
 constexpr const struct_type_info& struct_info() {
-    return info_node<T, std::tuple<>, Format>::value;
+    return info_node<T, type_list<>, Format>::value;
 }
 
 }  // namespace detail
@@ -826,10 +818,10 @@ public:
                           "value-initialized struct: the struct needs a default constructor");
             return meta::eq(of(owner), of(detail::value_initialized<T>()));
         } else if constexpr(presence == presence_kind::omit_if) {
-            static_assert(tuple_has_spec_v<attrs, behavior::omit_if>,
+            static_assert(type_list_has_spec_v<attrs, behavior::omit_if>,
                           "presence = omit_if takes its predicate as a type: "
                           "presence = type<Pred>");
-            using pred = typename tuple_find_spec_t<attrs, behavior::omit_if>::predicate;
+            using pred = typename type_list_find_spec_t<attrs, behavior::omit_if>::predicate;
             return static_cast<bool>(pred{}(of(owner)));
         } else {
             return false;

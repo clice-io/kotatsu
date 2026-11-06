@@ -198,24 +198,24 @@ ZEST_CASE(type_annotation_reaches_a_plain_field) {
 ZEST_CASE(field_presence_overrides_type_one) {
     using predicate_over_value = field_attrs_t<PresenceOverrides, 0>;
     ZSTATIC_EXPECT(spec_of<field_spec, predicate_over_value>.presence == presence_kind::omit_if);
-    ZSTATIC_EXPECT((tuple_has_v<predicate_over_value, behavior::omit_if<Negative>>));
+    ZSTATIC_EXPECT((type_list_contains_v<predicate_over_value, behavior::omit_if<Negative>>));
 
     using value_over_predicate = field_attrs_t<PresenceOverrides, 1>;
     ZSTATIC_EXPECT(spec_of<field_spec, value_over_predicate>.presence ==
                    presence_kind::omit_if_default);
-    ZSTATIC_EXPECT(!(tuple_has_v<value_over_predicate, behavior::omit_if<Negative>>));
+    ZSTATIC_EXPECT(!(type_list_contains_v<value_over_predicate, behavior::omit_if<Negative>>));
 }
 
 ZEST_CASE(field_required_overrides_type_predicate) {
     using required_over_predicate = field_attrs_t<PresenceOverrides, 2>;
-    ZSTATIC_EXPECT(!(tuple_has_v<required_over_predicate, behavior::omit_if<Negative>>));
+    ZSTATIC_EXPECT(!(type_list_contains_v<required_over_predicate, behavior::omit_if<Negative>>));
     ZSTATIC_EXPECT(spec_of<field_spec, required_over_predicate>.presence ==
                    presence_kind::required);
 }
 
 ZEST_CASE(field_annotation_keeps_its_type_predicate) {
     using renamed = field_attrs_t<PresenceOverrides, 3>;
-    ZSTATIC_EXPECT((tuple_has_v<renamed, behavior::omit_if<Negative>>));
+    ZSTATIC_EXPECT((type_list_contains_v<renamed, behavior::omit_if<Negative>>));
     ZSTATIC_EXPECT(spec_of<field_spec, renamed>.presence == presence_kind::omit_if);
     ZSTATIC_EXPECT(spec_of<field_spec, renamed>.rename == "renamed");
 }

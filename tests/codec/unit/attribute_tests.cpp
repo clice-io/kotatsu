@@ -220,7 +220,7 @@ ZEST_CASE(attributes_fold_into_values) {
     ZSTATIC_EXPECT(!spec.skip);
     ZSTATIC_EXPECT(!spec.flatten);
     ZSTATIC_EXPECT(!spec.presence.has_value());
-    ZSTATIC_EXPECT(std::tuple_size_v<field_attrs_t<spec_struct, 0>> == 1);
+    ZSTATIC_EXPECT(type_list_size_v<field_attrs_t<spec_struct, 0>> == 1);
 }
 
 ZEST_CASE(attributes_fold_into_what_a_schema_states) {
@@ -309,12 +309,13 @@ ZEST_CASE(annotation_maps_components_to_behavior_attrs) {
     using converted = field_attrs_t<behavior_struct, 0>;
     ZSTATIC_EXPECT(!std::is_void_v<meta::spec_attr_t<field_spec, converted>>);
     ZSTATIC_EXPECT(spec_of<field_spec, converted>.description == "Converted field.");
-    ZSTATIC_EXPECT((tuple_has_v<converted, behavior::as<std::int64_t>>));
+    ZSTATIC_EXPECT((type_list_contains_v<converted, behavior::as<std::int64_t>>));
 
-    ZSTATIC_EXPECT((tuple_has_v<field_attrs_t<behavior_struct, 1>, behavior::with<probe_adapter>>));
+    ZSTATIC_EXPECT(
+        (type_list_contains_v<field_attrs_t<behavior_struct, 1>, behavior::with<probe_adapter>>));
 
     using omitted = field_attrs_t<behavior_struct, 2>;
-    ZSTATIC_EXPECT((tuple_has_v<omitted, behavior::omit_if<custom_pred>>));
+    ZSTATIC_EXPECT((type_list_contains_v<omitted, behavior::omit_if<custom_pred>>));
     ZSTATIC_EXPECT(spec_of<field_spec, omitted>.presence == presence_kind::omit_if);
 }
 
@@ -358,9 +359,9 @@ ZEST_CASE(field_spec_stays_out_of_the_slot) {
     // annotated field and a bare int share the slot type.
     using slots = virtual_schema<spec_struct>::slots;
     using first_slot = type_list_element_t<0, slots>;
-    ZSTATIC_EXPECT((std::is_same_v<typename first_slot::attrs, std::tuple<>>));
+    ZSTATIC_EXPECT((std::is_same_v<typename first_slot::attrs, type_list<>>));
     using retries_slot = type_list_element_t<3, slots>;
-    ZSTATIC_EXPECT((std::is_same_v<typename retries_slot::attrs, std::tuple<>>));
+    ZSTATIC_EXPECT((std::is_same_v<typename retries_slot::attrs, type_list<>>));
 }
 
 ZEST_CASE(struct_attributes_fold_into_values_and_derive_tagging) {

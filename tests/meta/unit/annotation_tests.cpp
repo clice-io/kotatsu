@@ -97,7 +97,7 @@ ZEST_CASE(attributes_fold_into_their_specs) {
     // One spec_attr for each spec type the attributes set.
     ZSTATIC_EXPECT(
         (std::is_same_v<attrs_alone_t<labeled_tag>,
-                        std::tuple<spec_attr<labeled_tag, Range>, spec_attr<labeled_tag, Note>>>));
+                        type_list<spec_attr<labeled_tag, Range>, spec_attr<labeled_tag, Note>>>));
 }
 
 ZEST_CASE(attributes_written_beside_a_bundle_override_it) {

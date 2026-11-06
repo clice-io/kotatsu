@@ -231,15 +231,15 @@ bool decode_tagged_variant(Vis& vis, std::variant<Ts...>& var);
 /// tagging > the node's scope (node_format_t).
 template <typename Format, typename Attrs, typename Vis, typename T>
 bool decode_with_attrs(Vis& vis, T& out) {
-    if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
-        using adapter = typename tuple_find_spec_t<Attrs, behavior::with>::adapter;
+    if constexpr(type_list_has_spec_v<Attrs, behavior::with>) {
+        using adapter = typename type_list_find_spec_t<Attrs, behavior::with>::adapter;
         if constexpr(names_enum<adapter>) {
             return repr_decode<adapter, node_format_t<Format, T, Attrs>>(vis, out);
         } else {
             return repr_decode<adapter, Format>(vis, out);
         }
-    } else if constexpr(tuple_has_spec_v<Attrs, behavior::as>) {
-        using target = typename tuple_find_spec_t<Attrs, behavior::as>::target;
+    } else if constexpr(type_list_has_spec_v<Attrs, behavior::as>) {
+        using target = typename type_list_find_spec_t<Attrs, behavior::as>::target;
         auto converted = target();
         KOTATSU_CODEC_TRY(decode_under<Format>(vis, converted));
         out = T(std::move(converted));
@@ -693,8 +693,8 @@ constexpr bool probes_as_untagged_variant() {
     using scope = node_format_t<Format, T, attrs>;
     if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T>::visit(v, out); })
         return false;
-    else if constexpr(tuple_has_spec_v<attrs, behavior::with> ||
-                      tuple_has_spec_v<attrs, behavior::as>)
+    else if constexpr(type_list_has_spec_v<attrs, behavior::with> ||
+                      type_list_has_spec_v<attrs, behavior::as>)
         return false;
     else if constexpr(spec_of<struct_spec, attrs>.tagging != tag_mode::none)
         return has_native_variant<Vis> || !Format::human_readable;
@@ -865,7 +865,7 @@ template <typename Format, typename Vis, typename T>
 bool decode_under(Vis& vis, T& out) {
     using V = std::remove_const_t<T>;
 
-    if constexpr(!std::is_same_v<meta::attrs_of_t<V>, std::tuple<>>) {
+    if constexpr(!std::is_same_v<meta::attrs_of_t<V>, type_list<>>) {
         return decode_with_attrs<Format, meta::attrs_of_t<V>>(vis, out);
     } else {
         return decode_plain<Format>(vis, out);

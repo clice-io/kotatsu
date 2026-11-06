@@ -1,8 +1,10 @@
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/support/type_list.h"
@@ -31,6 +33,7 @@ ZEST_CASE(contains_and_size_read_the_list) {
     ZSTATIC_EXPECT(!type_list_contains_v<Numbers, float>);
     ZSTATIC_EXPECT(type_list_size_v<Numbers> == 4U);
     ZSTATIC_EXPECT(type_list_size_v<type_list<>> == 0U);
+    ZSTATIC_EXPECT(!type_list_contains_v<int, int>);
 }
 
 ZEST_CASE(element_is_found_by_index) {
@@ -41,10 +44,18 @@ ZEST_CASE(element_is_found_by_index) {
                           std::integral_constant<std::size_t, 1099>>());
 }
 
-ZEST_CASE(prepend_and_concatenate_keep_the_order) {
-    ZEXPECT(zest::type_eq<type_list_prepend_t<type_list<int>, char>, type_list<char, int>>());
-    ZEXPECT(
-        zest::type_eq<type_list_cat_t<type_list<int>, type_list<char>>, type_list<int, char>>());
+ZEST_CASE(has_spec_and_find_spec_look_for_a_template) {
+    using Mixed = type_list<int, std::optional<char>, std::vector<int>, std::optional<int>>;
+    ZSTATIC_EXPECT(type_list_has_spec_v<Mixed, std::optional>);
+    ZSTATIC_EXPECT(!type_list_has_spec_v<Mixed, std::variant>);
+    ZSTATIC_EXPECT(!type_list_has_spec_v<type_list<>, std::optional>);
+    ZEXPECT(zest::type_eq<type_list_find_spec_t<Mixed, std::optional>, std::optional<char>>());
+    ZEXPECT(zest::type_eq<type_list_find_spec_t<Mixed, std::vector>, std::vector<int>>());
+    ZEXPECT(zest::type_eq<type_list_find_spec_t<Mixed, std::variant>, void>());
+    ZEXPECT(zest::type_eq<type_list_find_spec_t<type_list<>, std::optional>, void>());
+}
+
+ZEST_CASE(concatenate_keeps_the_order) {
     ZEXPECT(zest::type_eq<type_list_concat_t<>, type_list<>>());
     ZEXPECT(zest::type_eq<type_list_concat_t<Numbers>, Numbers>());
     ZEXPECT(zest::type_eq<type_list_concat_t<type_list<int>, type_list<>, type_list<char, bool>>,

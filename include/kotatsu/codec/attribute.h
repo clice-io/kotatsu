@@ -461,7 +461,7 @@ constexpr const inline Spec& spec_or_unset<Spec, void> = unset_spec<Spec>;
 
 }  // namespace detail
 
-/// The spec of type Spec, field_spec or struct_spec, an attrs tuple carries; one no attribute
+/// The spec of type Spec, field_spec or struct_spec, an attrs list carries; one no attribute
 /// set when it carries none.
 template <typename Spec, typename Attrs>
 constexpr const inline Spec& spec_of = detail::spec_or_unset<Spec, meta::spec_attr_t<Spec, Attrs>>;

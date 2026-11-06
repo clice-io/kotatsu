@@ -292,6 +292,14 @@ struct binder {
 
 #else
 
+#define KOTATSU_BINDER_NAME(I) f##I
+#define KOTATSU_BINDER_TYPE(I) decltype(f##I)
+#define KOTATSU_BINDER_ADDRESS(I) &f##I
+#define KOTATSU_BINDER_WRAPPED(I)                                                                  \
+    wrapper {                                                                                      \
+        &f##I                                                                                      \
+    }
+
 #if KOTATSU_COMPILER_MSVC
 // MSVC takes no address of a structured binding as a template argument: names() reads each
 // field's address from a function of its own.
@@ -307,50 +315,53 @@ consteval auto names_by_address(std::index_sequence<Is...>) {
     return member_names<wrapper{field_address<T, Is>()}...>();
 }
 
-#define KOTATSU_BINDER_NAMES(COUNT, NAMES, WRAPPED)                                                \
+#define KOTATSU_BINDER_NAMES(N)                                                                    \
     template <typename T>                                                                          \
     consteval static auto names() {                                                                \
-        return names_by_address<T>(std::make_index_sequence<COUNT>{});                             \
+        return names_by_address<T>(std::make_index_sequence<N>{});                                 \
     }
 #else
-#define KOTATSU_BINDER_NAMES(COUNT, NAMES, WRAPPED)                                                \
+#define KOTATSU_BINDER_NAMES(N)                                                                    \
     template <typename T>                                                                          \
     consteval static auto names() {                                                                \
-        auto& [KOTATSU_BINDER_UNWRAP NAMES] = ext<uninitialized<T>>.value;                         \
-        return member_names<KOTATSU_BINDER_UNWRAP WRAPPED>();                                      \
+        auto& [KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_NAME)] = ext<uninitialized<T>>.value;      \
+        return member_names<KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_WRAPPED)>();                  \
     }
 #endif
 
-#define KOTATSU_BINDER_UNWRAP(...) __VA_ARGS__
-#define KOTATSU_BINDER(COUNT, NAMES, TYPES, ADDRESSES, WRAPPED)                                    \
+#define KOTATSU_BINDER(N)                                                                          \
     template <>                                                                                    \
-    struct binder<COUNT> {                                                                         \
+    struct binder<N> {                                                                             \
         template <typename Object, typename Fn>                                                    \
         constexpr static decltype(auto) apply(Object& object, Fn&& fn) {                           \
-            auto& [KOTATSU_BINDER_UNWRAP NAMES] = object;                                          \
-            return fn(KOTATSU_BINDER_UNWRAP NAMES);                                                \
+            auto& [KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_NAME)] = object;                       \
+            return fn(KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_NAME));                             \
         }                                                                                          \
                                                                                                    \
         template <typename T>                                                                      \
         static auto types(T& object) {                                                             \
-            [[maybe_unused]] auto& [KOTATSU_BINDER_UNWRAP NAMES] = object;                         \
-            return type_list<KOTATSU_BINDER_UNWRAP TYPES>{};                                       \
+            [[maybe_unused]] auto& [KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_NAME)] = object;      \
+            return type_list<KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_TYPE)>{};                    \
         }                                                                                          \
                                                                                                    \
         template <typename T>                                                                      \
         consteval static auto offsets() {                                                          \
-            auto& [KOTATSU_BINDER_UNWRAP NAMES] = ext<uninitialized<T>>.value;                     \
-            return locate<T>(std::array<const void*, COUNT>{KOTATSU_BINDER_UNWRAP ADDRESSES});     \
+            auto& [KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_NAME)] = ext<uninitialized<T>>.value;  \
+            return locate<T>(                                                                      \
+                std::array<const void*, N>{KOTATSU_BINDER_FIELDS_##N(KOTATSU_BINDER_ADDRESS)});    \
         }                                                                                          \
                                                                                                    \
-        KOTATSU_BINDER_NAMES(COUNT, NAMES, WRAPPED)                                                \
+        KOTATSU_BINDER_NAMES(N)                                                                    \
     };
 
 #include "binder.inl"
 
 #undef KOTATSU_BINDER
-#undef KOTATSU_BINDER_UNWRAP
 #undef KOTATSU_BINDER_NAMES
+#undef KOTATSU_BINDER_NAME
+#undef KOTATSU_BINDER_TYPE
+#undef KOTATSU_BINDER_ADDRESS
+#undef KOTATSU_BINDER_WRAPPED
 
 #endif
 

@@ -21,7 +21,6 @@
 #include <variant>
 
 #include "kotatsu/support/function_traits.h"
-#include "kotatsu/support/tuple_traits.h"
 #include "kotatsu/support/type_list.h"
 #include "kotatsu/meta/struct.h"
 #include "kotatsu/meta/type_kind.h"
@@ -299,7 +298,7 @@ consteval auto slot_view_impl() {
     using resolved = decltype(codec::detail::resolve_node<std::remove_cv_t<typename Slot::raw_type>,
                                                           typename Slot::attrs,
                                                           fbs::format>());
-    if constexpr(std::is_same_v<typename resolved::tag_attrs, std::tuple<>>) {
+    if constexpr(std::is_same_v<typename resolved::tag_attrs, type_list<>>) {
         return std::type_identity<deep_clean_t<typename resolved::type>>{};
     } else {
         return std::type_identity<typename resolved::type>{};

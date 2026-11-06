@@ -62,7 +62,7 @@ ZEST_CASE(struct_description_comes_from_its_annotation) {
 }
 
 ZEST_CASE(derived_struct_takes_no_annotation_of_its_base) {
-    ZEXPECT(zest::type_eq<attrs_of_t<DerivedFromDescribed>, std::tuple<>>());
+    ZEXPECT(zest::type_eq<attrs_of_t<DerivedFromDescribed>, type_list<>>());
 }
 
 ZEST_CASE(enum_annotated_after_its_definition_is_found) {
