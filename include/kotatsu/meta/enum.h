@@ -13,12 +13,14 @@
 
 namespace kotatsu::meta::detail {
 
-template <typename E, int V>
-consteval E enum_probe_value() {
+/// E of the value v of its underlying type: one function for every value, rather than one
+/// instantiation each.
+template <typename E>
+consteval E enum_probe_value(int v) {
 #if defined(__clang__) && __clang_major__ >= 16
-    return std::bit_cast<E>(static_cast<std::underlying_type_t<E>>(V));
+    return std::bit_cast<E>(static_cast<std::underlying_type_t<E>>(v));
 #else
-    return static_cast<E>(V);
+    return static_cast<E>(v);
 #endif
 }
 
@@ -64,7 +66,7 @@ concept listed_by_commas =
 /// the call that makes it, nor a template parameter that holds it.
 template <typename E, int V>
 consteval std::string_view probe_name() {
-    constexpr E value = enum_probe_value<E, V>();
+    constexpr E value = enum_probe_value<E>(V);
     return enumerator(value_spelling.of(value_signature<value>()));
 }
 
@@ -73,7 +75,7 @@ template <typename E, int... Vs>
 consteval std::array<std::string_view, sizeof...(Vs)> probe_chunk() {
     std::array<std::string_view, sizeof...(Vs)> names{};
     if constexpr(listed_by_commas<E>) {
-        const std::string_view list = pack_list<enum_probe_value<E, Vs>()...>();
+        const std::string_view list = pack_list<enum_probe_value<E>(Vs)...>();
         std::size_t begin = 0;
         for(std::string_view& name: names) {
             const std::size_t end = find_char(list, ',', begin);
@@ -137,7 +139,7 @@ struct enumerator_table {
 template <typename E, int... Values>
 consteval auto make_enumerators(std::integer_sequence<int, Values...>) {
     constexpr const auto& names = scanned_names<E>;
-    constexpr E values[] = {enum_probe_value<E, Values>()...};
+    constexpr E values[] = {enum_probe_value<E>(Values)...};
     enumerator_table<E, count_named(names)> table{};
     std::size_t found = 0;
     for(std::size_t i = 0; i < names.size(); ++i) {
