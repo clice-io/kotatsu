@@ -11,16 +11,16 @@ namespace kotatsu::ipc {
 
 /// The largest payload a frame may carry by default; a larger frame is
 /// skipped.
-constexpr std::size_t default_max_payload = 64 * 1024 * 1024;
+constexpr inline std::size_t default_max_payload = 64 * 1024 * 1024;
 
 /// How much of a skipped frame's payload is kept, for the codec to read the
 /// message's id from.
-constexpr std::size_t skipped_prefix_size = 4 * 1024;
+constexpr inline std::size_t skipped_prefix_size = 4 * 1024;
 
 /// The room a payload is read into past its end: a codec that parses it in
 /// place writes there what its parser reads past the text, without moving
 /// the payload.
-constexpr std::size_t payload_padding = 64;
+constexpr inline std::size_t payload_padding = 64;
 
 /// Why a message could not be read.
 struct ReadError {

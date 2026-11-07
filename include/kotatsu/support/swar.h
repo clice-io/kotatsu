@@ -11,7 +11,7 @@ namespace kotatsu {
 namespace detail {
 
 /// A word of eight bytes of 1, which times a byte is eight of that byte.
-constexpr std::uint64_t byte_ones = 0x0101'0101'0101'0101;
+constexpr inline std::uint64_t byte_ones = 0x0101'0101'0101'0101;
 
 }  // namespace detail
 

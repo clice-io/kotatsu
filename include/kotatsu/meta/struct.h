@@ -15,7 +15,7 @@ namespace kotatsu::meta::detail {
 /// The most fields meta reflects a struct with, as many as binder.inl has specializations for
 /// where the compiler has no structured binding packs, and where it has them too, so that a
 /// struct of more is reflected alike, as having none, whatever compiles it.
-constexpr std::size_t max_fields = 72;
+constexpr inline std::size_t max_fields = 72;
 
 template <class T>
 extern const T ext{};
