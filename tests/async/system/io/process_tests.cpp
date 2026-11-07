@@ -21,6 +21,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+// After windows.h, whose types it uses.
+#include <aclapi.h>
 #else
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -46,6 +48,7 @@
 
 #include "async/harness/io.h"
 #include "async/harness/os.h"
+#include "sys/harness/privileges.h"
 #include "sys/harness/signals.h"
 #include "sys/harness/streams.h"
 #include "kotatsu/zest/async.h"
@@ -944,6 +947,34 @@ ZEST_CASE(wait_exit_of_no_process_fails) {
     ZASSERT(waited.has_error());
     ZEXPECT(waited.error() == error::no_such_process);
 }
+
+// The process lets nobody wait for it, which an administrator with the
+// debug privilege, as CI's runners hold it, would do all the same. The test
+// ends it through the handle it opened before.
+ZEST_CASE(wait_exit_of_a_process_this_one_may_not_wait_for_fails) {
+    auto child = sys::spawn(test::stdin_reader());
+    ZASSERT(child.has_value());
+    zest::FatalHook on_fatal{[&child] { child->kill(); }};
+    // A list of access with no entry grants nothing.
+    ACL acl;
+    ZASSERT(::InitializeAcl(&acl, sizeof(acl), ACL_REVISION));
+    const DWORD set =
+        ::SetSecurityInfo(child->native_handle(),
+                          SE_KERNEL_OBJECT,
+                          DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                          nullptr,
+                          nullptr,
+                          &acl,
+                          nullptr);
+    ZASSERT(set == static_cast<DWORD>(ERROR_SUCCESS));
+    test::ScopedNoPrivileges unprivileged({L"SeDebugPrivilege"});
+
+    auto [waited] = run(wait_exit(child->pid(), loop));
+    ZASSERT(waited.has_error());
+    ZEXPECT(waited.error() == error::permission_denied);
+    ZEXPECT(!child->kill());
+    ZEXPECT(child->wait().has_value());
+}
 #endif
 
 ZEST_CASE(wait_exit_of_a_pid_not_above_zero_fails) {
@@ -960,6 +991,33 @@ ZEST_CASE(wait_exit_while_its_loop_is_destroyed_fails) {
         [](event_loop& dying) -> task<result<void>> { co_return co_await wait_exit(1, dying); });
     ZASSERT(waited.has_error());
     ZEXPECT(waited.error() == error::operation_aborted);
+}
+
+// A wait pending when its loop goes stays pending, as every task the loop
+// leaves suspended does, and its cancel ends it. The process runs until the
+// test kills it, so nothing else could end the wait; the stop lets run()
+// return while it waits, the tasks starting in turn.
+ZEST_CASE(wait_exit_outliving_its_loop_ends_when_cancelled) {
+    auto child = sys::spawn(test::stdin_reader());
+    ZASSERT(child.has_value());
+    zest::FatalHook on_fatal{[&child] { child->kill(); }};
+    std::optional<event_loop> own(std::in_place);
+    auto waiting = wait_exit(child->pid(), *own);
+    auto stop_own = [&]() -> task<> {
+        own->stop();
+        co_return;
+    };
+
+    own->schedule(waiting);
+    own->schedule(stop_own());
+    own->run();
+    ZASSERT(!waiting.done());
+    own.reset();
+    ZEXPECT(!waiting.done());
+    waiting.cancel();
+    ZEXPECT(waiting.is_cancelled());
+    ZEXPECT(!child->kill());
+    ZEXPECT(child->wait().has_value());
 }
 
 #ifndef _WIN32
@@ -1142,6 +1200,64 @@ ZEST_CASE(wait_exit_without_pidfds_looks_at_proc) {
             return 8;
         }
         return exited->wait() ? 0 : 9;
+    });
+    ZEXPECT(ended == 0);
+}
+
+// The process is killed and reaped once the first look found it running,
+// the tasks starting in turn: the next look finds no process, which has
+// exited. No other takes its pid so soon, Linux giving pids out in turn.
+ZEST_CASE(wait_exit_without_pidfds_of_a_process_reaped_between_looks_returns) {
+    const int ended = without_pidfds([] {
+        event_loop own;
+        auto child = sys::spawn(test::stdin_reader());
+        if(!child) {
+            return 3;
+        }
+        auto reap_child = [&]() -> task<bool> {
+            co_return !child->kill() && child->wait().has_value();
+        };
+        auto waited = wait_exit(child->pid(), own);
+        auto reap = reap_child();
+        own.schedule(waited);
+        own.schedule(reap);
+        own.run();
+        if(!reap.result()) {
+            return 4;
+        }
+        return std::move(waited).catch_cancel().result().has_value() ? 0 : 5;
+    });
+    ZEXPECT(ended == 0);
+}
+
+// Nothing ends the process, so only the cancel can end the wait, whose
+// timer goes with it: run() returns, and the process runs on until the test
+// kills it.
+ZEST_CASE(wait_exit_without_pidfds_can_be_cancelled) {
+    const int ended = without_pidfds([] {
+        event_loop own;
+        auto child = sys::spawn(test::stdin_reader());
+        if(!child) {
+            return 3;
+        }
+        cancellation_source source;
+        auto waited = with_token(wait_exit(child->pid(), own), source.token());
+        auto cancel_wait = [&]() -> task<> {
+            source.cancel();
+            co_return;
+        };
+        own.schedule(waited);
+        own.schedule(cancel_wait());
+        own.run();
+        auto running = child->try_wait();
+        const bool ran_on = running.has_value() && !running->has_value();
+        if(child->kill() || !child->wait()) {
+            return 4;
+        }
+        if(!waited.result().is_cancelled()) {
+            return 5;
+        }
+        return ran_on ? 0 : 6;
     });
     ZEXPECT(ended == 0);
 }
