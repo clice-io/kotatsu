@@ -21,9 +21,14 @@ ZEST_CASE(signal_name_names_this_hosts_signals) {
 #endif
 }
 
+// Windows' <csignal> has neither.
+ZEST_CASE(signal_name_names_sighup_and_sigkill) {
+    ZEXPECT(signal_name(sighup) == "SIGHUP");
+    ZEXPECT(signal_name(sigkill) == "SIGKILL");
+}
+
 #ifdef _WIN32
-ZEST_CASE(signal_name_names_sigkill_by_its_posix_number_on_windows) {
-    ZEXPECT(signal_name(9) == "SIGKILL");
+ZEST_CASE(signal_name_names_sigbreak_on_windows) {
     ZEXPECT(signal_name(SIGBREAK) == "SIGBREAK");
 }
 #endif

@@ -32,6 +32,12 @@ using test::split_all;
 
 ZEST_SUITE(sys_cmd_join) {
 
+ZEST_CASE(joins_by_native_quoting_unless_told) {
+    std::string out;
+    join(out, {"p", "a b", R"(c"d)"});
+    ZEXPECT(out == joined({"p", "a b", R"(c"d)"}, native_quoting));
+}
+
 ZEST_CASE(windows_leaves_a_plain_argument) {
     ZEXPECT(joined({"p", "plain"}, windows) == "p plain");
     ZEXPECT(joined({"p", R"(C:\dir\file)"}, windows) == R"(p C:\dir\file)");

@@ -1,6 +1,7 @@
 #include <csignal>
 #include <cstdint>
 #include <format>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -10,22 +11,32 @@
 
 namespace kotatsu::sys {
 
+#ifndef _WIN32
+static_assert(sighup == SIGHUP && sigkill == SIGKILL, "POSIX fixes their numbers");
+#endif
+
 std::string ExitStatus::to_string() const {
     if(term_signal != 0) {
         auto name = signal_name(term_signal);
         return name.empty() ? std::format("signal {}", term_signal)
                             : std::format("signal {} ({})", term_signal, name);
     }
+    if(auto status = exception()) {
+        auto name = windows::ntstatus_name(*status);
+        return name.empty() ? std::format("exception 0x{:08X}", *status)
+                            : std::format("exception 0x{:08X} ({})", *status, name);
+    }
+    return std::format("exit code {}", code);
+}
+
+std::optional<std::uint32_t> ExitStatus::exception() const noexcept {
 #ifdef _WIN32
     // A crash exits with its exception's NTSTATUS, an error or a warning.
-    const auto exception = static_cast<std::uint32_t>(code);
-    if(exception >= 0x8000'0000) {
-        auto name = windows::ntstatus_name(exception);
-        return name.empty() ? std::format("exception 0x{:08X}", exception)
-                            : std::format("exception 0x{:08X} ({})", exception, name);
+    if(const auto status = static_cast<std::uint32_t>(code); status >= 0x8000'0000) {
+        return status;
     }
 #endif
-    return std::format("exit code {}", code);
+    return std::nullopt;
 }
 
 std::string_view signal_name(int signum) {
@@ -39,8 +50,9 @@ std::string_view signal_name(int signum) {
 #ifdef _WIN32
         case SIGBREAK: return "SIGBREAK";
         case SIGABRT_COMPAT: return "SIGABRT";
-        // POSIX's number, which a child's kill takes.
-        case 9: return "SIGKILL";
+        // POSIX's numbers, which async::signal and a child's kill take.
+        case sighup: return "SIGHUP";
+        case sigkill: return "SIGKILL";
 #else
         case SIGHUP: return "SIGHUP";
         case SIGQUIT: return "SIGQUIT";

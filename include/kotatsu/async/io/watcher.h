@@ -72,7 +72,10 @@ private:
     friend task<> sleep(std::chrono::milliseconds timeout, event_loop& loop);
 };
 
-/// Fires when the process receives a signal.
+/// Fires when the process receives a signal. On Windows the console's
+/// events come as signals: Ctrl+C as SIGINT, Ctrl+Break as SIGBREAK, and its
+/// closing as SIGHUP (sys::sighup), after which Windows ends the process
+/// within seconds.
 ///
 /// Once no signal watcher in the process watches a signal any more, after a
 /// stop(), a start() on another signal or a destruction, libuv sets its
@@ -81,11 +84,8 @@ private:
 /// again. The watcher that stopped last leaves the signal as its start()'s
 /// `then` says; one its loop's destruction stopped leaves the default. A
 /// start() on a signal no watcher watches catches it again, whatever its
-/// action.
-///
-/// On Windows libuv makes SIGINT, SIGBREAK, SIGHUP and SIGWINCH of console
-/// events, and there is no action to leave: once the last watcher of SIGINT
-/// or SIGBREAK stops, Ctrl+C or Ctrl+Break ends the process again.
+/// action. On Windows there is no action to leave: once the last watcher of
+/// SIGINT or SIGBREAK stops, Ctrl+C or Ctrl+Break ends the process again.
 class signal : public watcher {
 public:
     /// What a signal is left as once no watcher watches it.

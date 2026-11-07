@@ -45,7 +45,7 @@
 #ifndef _WIN32
 #include "sys/harness/signals.h"
 #include "sys/harness/streams.h"
-#include "kotatsu/sys/detail/signals.h"
+#include "kotatsu/sys/process.h"
 #endif
 
 #ifdef __linux__
@@ -859,7 +859,7 @@ ZEST_CASE(keep_signals_starts_the_child_as_exec_would) {
 // in a program.
 ZEST_CASE(keep_signals_gives_back_the_sigpipe_kotatsu_ignored) {
     test::ScopedSignalAction at_default(SIGPIPE, SIG_DFL);
-    detail::ignore_sigpipe();
+    ignore_sigpipe();
     ZASSERT(action_of(SIGPIPE).sa_handler == SIG_IGN);
     ZEXPECT(status_keeping_signals("kill -PIPE $$; exit 5").term_signal == SIGPIPE);
 }

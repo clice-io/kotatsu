@@ -1,8 +1,9 @@
 #pragma once
 
-// The arithmetic of memory() and parallelism() on figures given rather than
-// read: Linux's cgroups through a reader of their files, macOS's counts as
-// numbers, so that a test's fixture stands in for the system on any host.
+// The arithmetic of memory(), parallelism() and physical_cores() on figures
+// given rather than read: Linux's cgroups and CPU topology through a reader
+// of their files, macOS's counts as numbers, so that a test's fixture stands
+// in for the system on any host.
 
 #include <cstdint>
 #include <optional>
@@ -47,6 +48,14 @@ std::optional<MemoryLimit> memory(std::string_view mounts,
 std::optional<double> cpu_quota(std::string_view mounts, std::string_view membership, Reader read);
 
 }  // namespace cgroup
+
+/// The physical cores of Linux's logical CPUs `cpus`, ascending: those that
+/// share a core, as `siblings` gives the CPUs of each one's
+/// (/sys/devices/system/cpu/cpu<N>/topology/thread_siblings_list, "0,8" or
+/// "0-1"), count once; one whose siblings it cannot read, unset, counts as a
+/// core.
+unsigned count_physical_cores(std::span<const unsigned> cpus,
+                              function_ref<std::optional<std::string>(unsigned cpu)> siblings);
 
 /// The machine's memory as macOS counts it, in bytes.
 struct MacMemory {
