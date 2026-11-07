@@ -54,6 +54,8 @@ struct Writer {
         } else if constexpr(kind_of<A>() == Kind::Record) {
             static_assert(meta::field_count<A> == meta::field_count<T>,
                           "a record is laid out field by field");
+            static_assert(std::is_empty_v<T> || meta::field_count<T> > 0,
+                          "reflection sees none of this struct's fields");
             for_each_index<A>([&](auto index) {
                 store<field_t<A, index()>>(at + meta::field_offsets<A>[index()],
                                            meta::field_of<index()>(value));
