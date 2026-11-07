@@ -39,14 +39,6 @@ jobs:
           run-install: false
           cache: false
           post-cleanup: false
-      - name: Notes
-        shell: bash
-        run: |
-          mkdir -p ~/.box
-          cat > ~/.box/notes <<'NOTES'
-          Only pixi is installed; the first `pixi run` installs the environment it needs.
-          Build and test as CI does: pixi run test <preset> (CMake presets in CMakePresets.json).
-          NOTES
       - uses: 16bit-ykiko/agent-box@3d725fcfdb4368ef79b6005c41c4bbc0ab4888d7
         with:
           pubkey: ${{ inputs.pubkey }}
