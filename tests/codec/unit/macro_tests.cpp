@@ -42,6 +42,15 @@ struct Point {
 
 KANNOTATE_FIELD(&third_party::Point::y, rename = "Y", alias = {"why"});
 
+/// Two fields annotated from outside, each one's annotation found beside the other's.
+struct Segment {
+    int begin = 0;
+    int end = 0;
+};
+
+KANNOTATE_FIELD(&third_party::Segment::begin, rename = "from");
+KANNOTATE_FIELD(&third_party::Segment::end, rename = "to");
+
 template <typename A, typename B>
 struct Pair {
     A first;
@@ -174,6 +183,11 @@ ZEST_CASE(annotate_field_annotates_a_class_from_outside) {
     ZSTATIC_EXPECT(codec::field_spec_of<third_party::Point, 0>.rename.empty());
 }
 
+ZEST_CASE(annotate_field_annotates_several_fields_of_a_class) {
+    ZSTATIC_EXPECT(codec::field_spec_of<third_party::Segment, 0>.rename == "from");
+    ZSTATIC_EXPECT(codec::field_spec_of<third_party::Segment, 1>.rename == "to");
+}
+
 ZEST_CASE(annotate_field_takes_a_parenthesized_member) {
     ZSTATIC_EXPECT((codec::field_spec_of<third_party::Pair<int, int>, 1>.rename == "Second"));
     ZSTATIC_EXPECT((codec::field_spec_of<third_party::Pair<int, int>, 0>.rename.empty()));
@@ -225,11 +239,11 @@ ZEST_CASE(annotate_field_attributes_make_a_field_spec) {
 
 ZEST_CASE(annotate_type_attributes_become_behavior_attrs) {
     using as_attrs = meta::field_attrs_t<Behaviors, 0>;
-    ZSTATIC_EXPECT(tuple_has_v<as_attrs, codec::behavior::as<std::string>>);
+    ZSTATIC_EXPECT(type_list_contains_v<as_attrs, codec::behavior::as<std::string>>);
     using with_attrs = meta::field_attrs_t<Behaviors, 1>;
-    ZSTATIC_EXPECT(tuple_has_v<with_attrs, codec::behavior::with<test::DecimalText>>);
+    ZSTATIC_EXPECT(type_list_contains_v<with_attrs, codec::behavior::with<test::DecimalText>>);
     using omit_attrs = meta::field_attrs_t<Behaviors, 2>;
-    ZSTATIC_EXPECT(tuple_has_v<omit_attrs, codec::behavior::omit_if<test::IsNegative>>);
+    ZSTATIC_EXPECT(type_list_contains_v<omit_attrs, codec::behavior::omit_if<test::IsNegative>>);
 }
 
 ZEST_CASE(annotation_struct_attributes_make_a_struct_spec) {
@@ -245,7 +259,7 @@ ZEST_CASE(annotation_struct_attributes_make_a_struct_spec) {
     ZSTATIC_EXPECT(strict.deny_unknown_fields);
     ZSTATIC_EXPECT(strict.presence_all == codec::presence_kind::optional);
     // Struct attributes alone make the struct spec and nothing else.
-    ZSTATIC_EXPECT(std::tuple_size_v<strict_attrs> == 1U);
+    ZSTATIC_EXPECT(type_list_size_v<strict_attrs> == 1U);
 }
 
 ZEST_CASE(attributes_after_a_bundle_override_its_own) {

@@ -180,7 +180,7 @@ struct ValueWriter {
 
     template <typename T>
     bool visit_enum(T v) {
-        fmt.out += meta::type_name<T>();
+        fmt.out += meta::type_name<T>;
         fmt.out += "::";
         auto name = meta::enum_name(v);
         if(name.empty()) {
@@ -217,7 +217,7 @@ struct ValueWriter {
             fmt.out += std::format("{}", v);
         } else {
             fmt.out += '<';
-            fmt.out += meta::type_name<T>();
+            fmt.out += meta::type_name<T>;
             fmt.out += '>';
         }
         return true;
@@ -276,7 +276,7 @@ struct MapWriter {
 template <typename Format>
 template <typename T, typename Body>
 bool ValueWriter<Format>::visit_struct(const T&, Body&& body) {
-    fmt.out += meta::type_name<T>();
+    fmt.out += meta::type_name<T>;
     fmt.out += ' ';
     if(fmt.pretty) {
         return fmt.write_block<StructWriter<Format>>('{', '}', std::forward<Body>(body));

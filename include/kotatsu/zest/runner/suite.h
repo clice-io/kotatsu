@@ -43,9 +43,9 @@ struct TestSuiteDef {
     virtual ~TestSuiteDef() = default;
 
     constexpr static auto _suite_name() {
-        auto name = meta::type_name<Derived>();
+        auto name = meta::type_name<Derived>;
         if(name.ends_with("TEST")) {
-            name = name.drop_back(4);
+            name.remove_suffix(4);
         }
         return name;
     }
@@ -77,11 +77,11 @@ struct TestSuiteDef {
 
     template <auto test_body, const char* path, std::size_t line, TestAttrs attrs = {}>
     inline static bool _register_test_case = [] {
-        constexpr auto case_name_ref = meta::member_name<test_body>();
+        constexpr auto case_name_ref = meta::member_name<test_body>;
 
         auto run_test = +[] {
             constexpr auto sn = _suite_name();
-            constexpr auto cn = meta::member_name<test_body>();
+            constexpr auto cn = meta::member_name<test_body>;
             auto cn_sv = strip_test_prefix(std::string_view(cn.data(), cn.size()));
             detail::reset_snapshot_context(std::string_view(sn.data(), sn.size()), cn_sv);
             Derived test;

@@ -11,6 +11,9 @@ namespace {
 
 constexpr std::array<std::string_view, 3> declared = {"read_only", "FullControl", "HTTPServer"};
 constexpr std::array<std::string_view, 2> alike = {"FooBar", "foo_bar"};
+constexpr std::array<std::string_view, 3> uneven = {"", "aBcD", "X"};
+constexpr std::array<std::string_view, 2> all_empty = {"", ""};
+constexpr std::array<std::string_view, 0> no_names = {};
 
 ZEST_SUITE(support_naming) {
 
@@ -127,6 +130,22 @@ ZEST_CASE(renamed_spells_a_table_into_static_storage) {
     ZSTATIC_EXPECT(names[2] == "httpServer");
     // The identity policy keeps the names as they are, where they are.
     ZSTATIC_EXPECT(&renamed<rename_policy::identity, declared> == &declared);
+}
+
+ZEST_CASE(renamed_spells_names_of_any_length_into_one_buffer) {
+    constexpr const auto& names = renamed<rename_policy::upper_snake, uneven>;
+    ZSTATIC_EXPECT(names.size() == 3U);
+    ZSTATIC_EXPECT(names[0].empty());
+    ZSTATIC_EXPECT(names[1] == "A_BC_D");
+    ZSTATIC_EXPECT(names[2] == "X");
+}
+
+ZEST_CASE(renamed_spells_tables_with_no_characters) {
+    constexpr const auto& empty = renamed<rename_policy::upper_snake, all_empty>;
+    ZSTATIC_EXPECT(empty.size() == 2U);
+    ZSTATIC_EXPECT(empty[0].empty());
+    ZSTATIC_EXPECT(empty[1].empty());
+    ZSTATIC_EXPECT(renamed<rename_policy::upper_snake, no_names>.empty());
 }
 
 ZEST_CASE(distinct_finds_a_name_listed_twice) {

@@ -21,7 +21,6 @@
 #include <variant>
 
 #include "kotatsu/support/function_traits.h"
-#include "kotatsu/support/tuple_traits.h"
 #include "kotatsu/support/type_list.h"
 #include "kotatsu/meta/struct.h"
 #include "kotatsu/meta/type_kind.h"
@@ -299,7 +298,7 @@ consteval auto slot_view_impl() {
     using resolved = decltype(codec::detail::resolve_node<std::remove_cv_t<typename Slot::raw_type>,
                                                           typename Slot::attrs,
                                                           fbs::format>());
-    if constexpr(std::is_same_v<typename resolved::tag_attrs, std::tuple<>>) {
+    if constexpr(std::is_same_v<typename resolved::tag_attrs, type_list<>>) {
         return std::type_identity<deep_clean_t<typename resolved::type>>{};
     } else {
         return std::type_identity<typename resolved::type>{};
@@ -319,11 +318,10 @@ using field_value_t = std::remove_cv_t<meta::field_type<Object, I>>;
 /// it: a skipped field has none, and a flattened field's own fields take the
 /// enclosing table's slots.
 template <typename Object, std::size_t I>
-constexpr bool addressable_field_v =
-    !codec::field_spec_of<Object, I>.skip && !codec::field_spec_of<Object, I>.flatten;
+constexpr bool addressable_field_v = codec::detail::entered_field_v<Object, I>;
 
 /// The types of Object's addressable members, each once.
-template <typename Object, typename Seq = std::make_index_sequence<meta::field_count<Object>()>>
+template <typename Object, typename Seq = std::make_index_sequence<meta::field_count<Object>>>
 struct member_types;
 
 template <typename Object, std::size_t... Is>
@@ -343,7 +341,7 @@ consteval auto member_fields() {
     constexpr auto typed = []<std::size_t... Is>(std::index_sequence<Is...>) {
         return std::array<bool, sizeof...(Is)>{
             (std::same_as<field_value_t<Object, Is>, M> && addressable_field_v<Object, Is>)...};
-    }(std::make_index_sequence<meta::field_count<Object>()>{});
+    }(std::make_index_sequence<meta::field_count<Object>>{});
     std::array<std::size_t, std::ranges::count(typed, true)> fields{};
     std::size_t next = 0;
     for(std::size_t i = 0; i < typed.size(); ++i) {
@@ -362,7 +360,7 @@ consteval auto member_slots() {
     constexpr auto taken = []<std::size_t... Is>(std::index_sequence<Is...>) {
         return std::array<std::size_t, sizeof...(Is)>{
             type_list_size_v<typename codec::detail::single_field_slots<Object, Is>::type>...};
-    }(std::make_index_sequence<meta::field_count<Object>()>{});
+    }(std::make_index_sequence<meta::field_count<Object>>{});
     auto slots = member_fields<Object, M>();
     for(auto& slot: slots) {
         slot = std::accumulate(taken.begin(), taken.begin() + slot, std::size_t{0});
@@ -557,7 +555,7 @@ auto read_member(table_ref view, std::size_t slot) -> member_view_t<Object, M> {
 
 /// A member of Object of type M, located where it is named: the conversion
 /// from &Object::member is evaluated at compile time, finding which of
-/// Object's members of type M it points to by address, over an uninitialized
+/// Object's members of type M it points to by offset, over an uninitialized
 /// Object, so none is ever constructed. A member pointer that is not a
 /// constant expression does not convert.
 template <typename Object, typename M>
@@ -575,14 +573,11 @@ struct member_key {
 private:
     template <typename P>
     static consteval std::size_t rank_of(P member) {
-        const auto& unknown = meta::detail::ext<meta::detail::uninitialized<Object>>;
-        const auto addresses = std::apply(
-            [](auto... field) { return std::array<const void*, sizeof...(field)>{field...}; },
-            meta::reflection<Object>::field_addrs(unknown.value));
-        const void* address = std::addressof(unknown.value.*member);
+        const auto& offsets = meta::field_offsets<Object>;
+        const std::size_t offset = meta::field_offset(member);
         const auto fields = member_fields<Object, M>();
         const auto found =
-            std::ranges::find(fields, address, [&](std::size_t i) { return addresses[i]; });
+            std::ranges::find(fields, offset, [&](std::size_t i) { return offsets[i]; });
         if(found == fields.end()) {
             member_has_no_slot();
         }
@@ -681,7 +676,7 @@ consteval bool has_bool_field() {
     if constexpr(meta::reflectable_class<T>) {
         return []<std::size_t... I>(std::index_sequence<I...>) {
             return (has_bool_field<std::remove_cv_t<meta::field_type<T, I>>>() || ...);
-        }(std::make_index_sequence<meta::field_count<T>()>{});
+        }(std::make_index_sequence<meta::field_count<T>>{});
     } else {
         return is_bool_image<T>();
     }
@@ -692,9 +687,9 @@ bool bool_bytes_valid(const std::uint8_t* image) {
     if constexpr(meta::reflectable_class<T>) {
         return [&]<std::size_t... I>(std::index_sequence<I...>) {
             return (bool_bytes_valid<std::remove_cv_t<meta::field_type<T, I>>>(
-                        image + meta::field_offset<T>(I)) &&
+                        image + meta::field_offsets<T>[I]) &&
                     ...);
-        }(std::make_index_sequence<meta::field_count<T>()>{});
+        }(std::make_index_sequence<meta::field_count<T>>{});
     } else if constexpr(is_bool_image<T>()) {
         return *image <= 1;
     } else {
@@ -924,7 +919,7 @@ constexpr bool ordering_less(const T& a, const U& b) {
                 return !ordering_less(rhs, lhs);
             }() &&
              ...);
-        }(std::make_index_sequence<meta::field_count<T>()>{});
+        }(std::make_index_sequence<meta::field_count<T>>{});
         return less;
     } else if constexpr(std::is_enum_v<T> || meta::char_like<T> || std::is_enum_v<U> ||
                         meta::char_like<U>) {

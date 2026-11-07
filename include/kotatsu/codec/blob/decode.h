@@ -48,8 +48,8 @@ struct Checker {
         } else if constexpr(kind_of<A>() == Kind::Record) {
             bool ok = true;
             for_each_index<A>([&](auto index) {
-                if(ok && !check<field_t<A, index()>>(at + meta::field_offset<A>(index()))) {
-                    error.prepend_field(meta::field_name<index(), A>());
+                if(ok && !check<field_t<A, index()>>(at + meta::field_offsets<A>[index()])) {
+                    error.prepend_field(meta::field_names<A>[index()]);
                     ok = false;
                 }
             });

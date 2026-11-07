@@ -17,7 +17,6 @@
 #include "format.h"
 #include "repr.h"
 #include "kotatsu/support/naming.h"
-#include "kotatsu/support/tuple_traits.h"
 #include "kotatsu/support/type_list.h"
 #include "kotatsu/support/type_traits.h"
 #include "kotatsu/meta/annotation.h"
@@ -176,7 +175,7 @@ using enum_names_policy_t = std::conditional_t<std::is_void_v<typename Repr::pol
 /// The names of E's enumerators spelled by Policy, in ascending order of value.
 template <typename E, typename Policy>
 constexpr const inline auto& enum_names_of = []() -> const auto& {
-    constexpr const auto& names = naming::renamed<Policy, meta::reflection<E>::member_names>;
+    constexpr const auto& names = naming::renamed<Policy, meta::enum_names<E>>;
     static_assert(naming::distinct(names),
                   "enum_names: two enumerators of the enum are spelled alike");
     return names;
@@ -184,7 +183,7 @@ constexpr const inline auto& enum_names_of = []() -> const auto& {
 
 template <typename... Ts>
 struct type_names {
-    constexpr static std::array<std::string_view, sizeof...(Ts)> value{meta::type_name<Ts>()...};
+    constexpr static std::array<std::string_view, sizeof...(Ts)> value{meta::type_name<Ts>...};
 };
 
 /// The policy a tagged variant's tags are spelled by: its own rename_all, else
@@ -252,14 +251,9 @@ constexpr bool dispatch_attr_v<meta::spec_attr<Tag, struct_spec>> =
     meta::spec_attr<Tag, struct_spec>::value.presence_all.has_value();
 
 /// The attrs among Attrs that dispatch_attr_v keeps.
-template <typename Attrs>
-struct dispatch_attrs;
-
 template <typename... Attrs>
-struct dispatch_attrs<std::tuple<Attrs...>> {
-    using type = decltype(std::tuple_cat(
-        std::conditional_t<dispatch_attr_v<Attrs>, std::tuple<Attrs>, std::tuple<>>{}...));
-};
+auto dispatch_attrs(type_list<Attrs...>) -> type_list_concat_t<
+    std::conditional_t<dispatch_attr_v<Attrs>, type_list<Attrs>, type_list<>>...>;
 
 template <typename T,
           std::size_t I,
@@ -267,7 +261,7 @@ template <typename T,
           bool Flattened = field_spec_of<T, I>.flatten>
 struct single_field_slots {
     using type = type_list<field_slot<std::remove_cv_t<meta::field_type<T, I>>,
-                                      typename dispatch_attrs<meta::field_attrs_t<T, I>>::type,
+                                      decltype(detail::dispatch_attrs(meta::field_attrs_t<T, I>{})),
                                       T,
                                       I>>;
 };
@@ -289,7 +283,7 @@ struct build_slots_from_seq<T, std::index_sequence<Is...>> {
 /// of its struct for a flattened one.
 template <typename T>
 using build_slots_t =
-    typename build_slots_from_seq<T, std::make_index_sequence<meta::field_count<T>()>>::type;
+    typename build_slots_from_seq<T, std::make_index_sequence<meta::field_count<T>>>::type;
 
 template <typename T, std::size_t I>
 struct single_field_slots<T, I, /*Skipped=*/false, /*Flattened=*/true> {
@@ -313,20 +307,20 @@ struct enum_info_node {
         if constexpr(named) {
             return enum_names_of<E, Policy>;
         } else {
-            return meta::reflection<E>::member_names;
+            return meta::enum_names<E>;
         }
     }();
 
     constexpr inline static enum_type_info value = {
-        {meta::type_kind::enumeration, meta::type_name<E>()},
-        {names.data(),                 names.size()        },
+        {meta::type_kind::enumeration, meta::type_name<E>},
+        {names.data(),                 names.size()      },
         meta::kind_of<std::underlying_type_t<E>>(),
         named,
     };
 };
 
 /// A node resolved: the type the codec reads and writes for it, the tagging spec attr of a
-/// tagged variant (an empty tuple otherwise), the format it is read and written under, with
+/// tagged variant (an empty list otherwise), the format it is read and written under, with
 /// every rename_all / deny_unknown_fields / presence_all crossed on the way scoped in, and the
 /// node of its info: an enum_names enum's own, which a schema lists the names of.
 template <typename T,
@@ -373,18 +367,18 @@ constexpr auto resolve_node() {
     // An enum's names are spelled by the scope its node makes, the field's
     // rename_all over its type's.
     using scope = node_format_t<Format, Raw, Attrs>;
-    if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
-        using adapter = typename tuple_find_spec_t<Attrs, behavior::with>::adapter;
+    if constexpr(type_list_has_spec_v<Attrs, behavior::with>) {
+        using adapter = typename type_list_find_spec_t<Attrs, behavior::with>::adapter;
         if constexpr(names_enum<adapter>) {
             return resolved_repr<std::string_view,
-                                 std::tuple<>,
+                                 type_list<>,
                                  Format,
                                  enum_info_node<Raw, enum_names_policy_t<adapter, scope>>>{};
         } else {
             return resolve_repr<declared_repr_t<adapter>, Format>();
         }
-    } else if constexpr(tuple_has_spec_v<Attrs, behavior::as>) {
-        using target = typename tuple_find_spec_t<Attrs, behavior::as>::target;
+    } else if constexpr(type_list_has_spec_v<Attrs, behavior::as>) {
+        using target = typename type_list_find_spec_t<Attrs, behavior::as>::target;
         return resolve_repr<target, Format>();
     } else if constexpr(taggable<Raw> && spec_of<struct_spec, Attrs>.tagging != tag_mode::none) {
         // Read and written as the variant it is, whatever repr its type has.
@@ -395,14 +389,12 @@ constexpr auto resolve_node() {
                 return std::type_identity<Raw>{};
             }
         }())::type;
-        return resolved_repr<variant_t,
-                             std::tuple<meta::spec_attr_t<struct_spec, Attrs>>,
-                             Format>{};
+        return resolved_repr<variant_t, type_list<meta::spec_attr_t<struct_spec, Attrs>>, Format>{};
     } else if constexpr(has_repr<Raw, Format>) {
         using chosen = repr_for<Raw, Format>;
         if constexpr(names_enum<chosen>) {
             return resolved_repr<std::string_view,
-                                 std::tuple<>,
+                                 type_list<>,
                                  Format,
                                  enum_info_node<Raw, enum_names_policy_t<chosen, scope>>>{};
         } else {
@@ -411,7 +403,7 @@ constexpr auto resolve_node() {
     } else if constexpr(meta::derived_variant<Raw>) {
         return resolve_node<meta::variant_base_t<Raw>, Attrs, Format>();
     } else {
-        return resolved_repr<Raw, std::tuple<>, scope>{};
+        return resolved_repr<Raw, type_list<>, scope>{};
     }
 }
 
@@ -423,8 +415,8 @@ constexpr auto resolve_repr() {
 template <typename T>
 using built_fields_t = std::array<field_info, type_list_size_v<build_slots_t<T>>>;
 
-template <typename T, typename Format>
-constexpr built_fields_t<T> build_fields(std::size_t base_offset = 0);
+template <typename T, typename Format, std::size_t... Is>
+constexpr built_fields_t<T> build_fields(std::index_sequence<Is...>);
 
 /// Rejects an alternative of an internally tagged variant whose fields
 /// cannot sit beside the tag: one that is not a struct, or a struct that
@@ -467,12 +459,12 @@ struct variant_info_node<std::variant<Ts...>, TagAttrs, Format> {
     }();
 
     constexpr inline static variant_type_info value = {
-        {meta::type_kind::variant, meta::type_name<std::variant<Ts...>>()},
-        {alternatives.data(),      alternatives.size()                   },
+        {meta::type_kind::variant, meta::type_name<std::variant<Ts...>>},
+        {alternatives.data(),      alternatives.size()                 },
         spec.tagging,
         spec.tag,
         spec.content,
-        {alt_names.data(),         has_tag ? alt_names.size() : 0        },
+        {alt_names.data(),         has_tag ? alt_names.size() : 0      },
         spec.deny_unknown_fields || Format::deny_unknown_fields,
     };
 };
@@ -488,20 +480,20 @@ struct tuple_info_node<Tuple, Format, std::index_sequence<Is...>> {
         type_info::of<std::tuple_element_t<Is, Tuple>, Format>...};
 
     constexpr inline static tuple_type_info value = {
-        {meta::type_kind::tuple, meta::type_name<Tuple>()},
-        {elements.data(),        elements.size()         },
+        {meta::type_kind::tuple, meta::type_name<Tuple>},
+        {elements.data(),        elements.size()       },
     };
 };
 
 template <typename T, typename TagAttrs, typename Format, meta::type_kind Kind>
 struct info_node {
-    constexpr inline static type_info value = {meta::kind_of<T>(), meta::type_name<T>()};
+    constexpr inline static type_info value = {meta::kind_of<T>(), meta::type_name<T>};
 };
 
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::optional> {
     constexpr inline static optional_type_info value = {
-        {meta::type_kind::optional, meta::type_name<T>()},
+        {meta::type_kind::optional, meta::type_name<T>},
         type_info::of<typename T::value_type, Format>,
     };
 };
@@ -509,7 +501,7 @@ struct info_node<T, TagAttrs, Format, meta::type_kind::optional> {
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::pointer> {
     constexpr inline static optional_type_info value = {
-        {meta::type_kind::pointer, meta::type_name<T>()},
+        {meta::type_kind::pointer, meta::type_name<T>},
         type_info::of<typename T::element_type, Format>,
     };
 };
@@ -526,7 +518,7 @@ struct info_node<T, TagAttrs, Format, meta::type_kind::map> {
     using kv_t = std::ranges::range_value_t<T>;
 
     constexpr inline static map_type_info value = {
-        {meta::type_kind::map, meta::type_name<T>()},
+        {meta::type_kind::map, meta::type_name<T>},
         type_info::of<std::remove_const_t<typename kv_t::first_type>, Format>,
         type_info::of<typename kv_t::second_type, Format>,
     };
@@ -535,7 +527,7 @@ struct info_node<T, TagAttrs, Format, meta::type_kind::map> {
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::set> {
     constexpr inline static array_type_info value = {
-        {meta::type_kind::set, meta::type_name<T>()},
+        {meta::type_kind::set, meta::type_name<T>},
         type_info::of<std::ranges::range_value_t<T>, Format>,
     };
 };
@@ -543,7 +535,7 @@ struct info_node<T, TagAttrs, Format, meta::type_kind::set> {
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::array> {
     constexpr inline static array_type_info value = {
-        {meta::type_kind::array, meta::type_name<T>()},
+        {meta::type_kind::array, meta::type_name<T>},
         type_info::of<std::ranges::range_value_t<T>, Format>,
     };
 };
@@ -560,10 +552,11 @@ consteval std::array<field_info, N> distinct_fields(std::array<field_info, N> fi
 
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::structure> {
-    constexpr inline static built_fields_t<T> fields = distinct_fields(build_fields<T, Format>());
+    constexpr inline static built_fields_t<T> fields =
+        distinct_fields(build_fields<T, Format>(std::make_index_sequence<meta::field_count<T>>{}));
 
     constexpr inline static struct_type_info value = {
-        {meta::type_kind::structure, meta::type_name<T>()},
+        {meta::type_kind::structure, meta::type_name<T>},
         Format::deny_unknown_fields,
         fields,
         spec_of<field_spec, meta::attrs_of_t<T>>.description,
@@ -573,71 +566,93 @@ struct info_node<T, TagAttrs, Format, meta::type_kind::structure> {
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::enumeration> : enum_info_node<T> {};
 
-/// The name field I of T is written under in Format: its rename, else its
-/// declared name as Format's rename_all spells it.
-template <typename T, typename Format, std::size_t I>
-consteval std::string_view field_name_in() {
-    constexpr const field_spec& spec = field_spec_of<T, I>;
-    if constexpr(spec.rename.empty()) {
-        return naming::renamed<typename Format::rename_all, meta::reflection<T>::field_names>[I];
-    } else {
-        return spec.rename;
-    }
-}
+/// Whether field I of T holds an entry of its own in a document: neither skipped nor flattened,
+/// whose own fields take its struct's entries.
+template <typename T, std::size_t I>
+constexpr inline bool entered_field_v = !field_spec_of<T, I>.skip && !field_spec_of<T, I>.flatten;
 
-template <typename T, typename Format, std::size_t I>
-constexpr field_info make_field_info(std::size_t base_offset) {
-    using raw_t = std::remove_cv_t<meta::field_type<T, I>>;
-    using attrs_t = meta::field_attrs_t<T, I>;
-    using resolved = decltype(resolve_node<raw_t, attrs_t, members_format_t<Format>>());
-    constexpr const field_spec& spec = field_spec_of<T, I>;
+/// The info of the node a field of type Raw carrying Attrs resolves to under Members, the
+/// format of its struct's members; none for a field without an entry of its own, skipped or
+/// flattened, whose type need not resolve.
+template <typename Raw, typename Attrs, typename Members, bool Entered>
+constexpr inline type_info_fn field_type_info =
+    &decltype(resolve_node<Raw, Attrs, Members>())::info;
 
-    return field_info{
-        .name = field_name_in<T, Format, I>(),
-        .aliases = spec.alias,
-        .offset = base_offset + meta::field_offset<T>(I),
-        .type = &resolved::info,
-        .presence = effective_presence<Format>(spec, meta::kind_of<raw_t>()),
-        .description = spec.description,
-        .schema_default = spec.schema_default,
-        .minimum = spec.minimum,
-        .maximum = spec.maximum,
-        .choices = spec.choices,
-        .declared_name = meta::field_name<I, T>(),
-        .extensions = meta::spec_refs_of<attrs_t, field_spec, struct_spec>,
-    };
-}
+template <typename Raw, typename Attrs, typename Members>
+constexpr inline type_info_fn field_type_info<Raw, Attrs, Members, false> = nullptr;
 
-template <typename T, typename Format, std::size_t I>
-constexpr void fill_field(auto& result, std::size_t& out, std::size_t base_offset) {
-    constexpr const field_spec& spec = field_spec_of<T, I>;
-    if constexpr(spec.flatten) {
-        // The flattened struct's fields are its own members: named and marked
-        // by its own attributes, or the field's holding it, not by T's.
-        using inner_t = std::remove_cv_t<meta::field_type<T, I>>;
-        using inner_scope =
-            node_format_t<members_format_t<Format>, inner_t, meta::field_attrs_t<T, I>>;
-        for(const field_info& field:
-            build_fields<inner_t, inner_scope>(base_offset + meta::field_offset<T>(I))) {
-            result[out++] = field;
-        }
-    } else if constexpr(!spec.skip) {
-        result[out++] = make_field_info<T, Format, I>(base_offset);
-    }
-}
+/// The kind of a field of type Raw; none for a field without an entry of its own, whose type
+/// meta need not classify.
+template <typename Raw, bool Entered>
+constexpr inline meta::type_kind field_kind = meta::kind_of<Raw>();
 
-template <typename T, typename Format>
-constexpr built_fields_t<T> build_fields(std::size_t base_offset) {
+template <typename Raw>
+constexpr inline meta::type_kind field_kind<Raw, false> = meta::type_kind::unknown;
+
+/// The fields a flattened field of struct type Raw carrying Attrs spreads into its struct's,
+/// at offsets from Raw's start: Raw's own members, named and marked by its own attributes, or
+/// the field's holding it, under Members; none for a field that is not flattened.
+template <typename Raw, typename Attrs, typename Members, bool Flattened>
+constexpr inline std::span<const field_info> flattened_fields = {};
+
+template <typename Raw, typename Attrs, typename Members>
+constexpr inline std::span<const field_info> flattened_fields<Raw, Attrs, Members, true> =
+    info_node<Raw, type_list<>, node_format_t<Members, Raw, Attrs>>::fields;
+
+/// The fields struct T holds in a document under Format, built in one pass: what differs
+/// between its fields is read from arrays a pack expansion fills, and what depends on a
+/// field's type and attrs alone, its resolved info, its kind, its specs, is instantiated once
+/// for them, whichever fields share them.
+template <typename T, typename Format, std::size_t... Is>
+constexpr built_fields_t<T> build_fields(std::index_sequence<Is...>) {
     built_fields_t<T> result{};
-    std::size_t out = 0;
+    if constexpr(sizeof...(Is) > 0) {
+        using members = members_format_t<Format>;
+        constexpr const auto& names =
+            naming::renamed<typename Format::rename_all, meta::field_names<T>>;
+        constexpr const auto& offsets = meta::field_offsets<T>;
+        const field_spec* const specs[] = {&field_spec_of<T, Is>...};
+        const type_info_fn types[] = {field_type_info<std::remove_cv_t<meta::field_type<T, Is>>,
+                                                      meta::field_attrs_t<T, Is>,
+                                                      members,
+                                                      entered_field_v<T, Is>>...};
+        const meta::type_kind kinds[] = {
+            field_kind<std::remove_cv_t<meta::field_type<T, Is>>, entered_field_v<T, Is>>...};
+        const std::span<const meta::spec_ref> extensions[] = {
+            meta::spec_refs_of<meta::field_attrs_t<T, Is>, field_spec, struct_spec>...};
+        const std::span<const field_info> flattened[] = {
+            flattened_fields<std::remove_cv_t<meta::field_type<T, Is>>,
+                             meta::field_attrs_t<T, Is>,
+                             members,
+                             field_spec_of<T, Is>.flatten>...};
 
-    constexpr std::size_t N = meta::field_count<T>();
-    if constexpr(N > 0) {
-        [&]<std::size_t... Is>(std::index_sequence<Is...>) constexpr {
-            (fill_field<T, Format, Is>(result, out, base_offset), ...);
-        }(std::make_index_sequence<N>{});
+        std::size_t out = 0;
+        for(std::size_t i = 0; i < sizeof...(Is); ++i) {
+            const field_spec& spec = *specs[i];
+            const std::size_t offset = offsets[i];
+            if(spec.flatten) {
+                for(field_info field: flattened[i]) {
+                    field.offset += offset;
+                    result[out++] = field;
+                }
+            } else if(!spec.skip) {
+                result[out++] = field_info{
+                    .name = spec.rename.empty() ? names[i] : spec.rename,
+                    .aliases = spec.alias,
+                    .offset = offset,
+                    .type = types[i],
+                    .presence = effective_presence<Format>(spec, kinds[i]),
+                    .description = spec.description,
+                    .schema_default = spec.schema_default,
+                    .minimum = spec.minimum,
+                    .maximum = spec.maximum,
+                    .choices = spec.choices,
+                    .declared_name = meta::field_names<T>[i],
+                    .extensions = extensions[i],
+                };
+            }
+        }
     }
-
     return result;
 }
 
@@ -657,7 +672,7 @@ using resolved_repr_t = typename decltype(detail::resolve_repr<std::remove_cvref
 template <typename T, typename F = format>
 constexpr bool resolves_to_tagged_variant =
     !std::is_same_v<typename decltype(detail::resolve_repr<std::remove_cvref_t<T>, F>())::tag_attrs,
-                    std::tuple<>>;
+                    type_list<>>;
 
 template <typename T, typename F>
 constexpr const type_info& type_info::of() {
@@ -671,7 +686,7 @@ namespace detail {
 /// resolves T to, without scoping T's own annotation again over a field's.
 template <typename T, typename Format>
 constexpr const struct_type_info& struct_info() {
-    return info_node<T, std::tuple<>, Format>::value;
+    return info_node<T, type_list<>, Format>::value;
 }
 
 }  // namespace detail
@@ -732,6 +747,16 @@ const T& value_initialized() {
     return value;
 }
 
+/// The field of type Field `offset` bytes into object, as const as object is.
+template <typename Field, typename Object>
+auto& field_at(Object& object, std::size_t offset) {
+    constexpr bool is_const = std::is_const_v<Object>;
+    using byte_t = std::conditional_t<is_const, const std::byte, std::byte>;
+    using field_t = std::conditional_t<is_const, const Field, Field>;
+    auto* base = reinterpret_cast<byte_t*>(std::addressof(object));
+    return *reinterpret_cast<field_t*>(base + offset);
+}
+
 }  // namespace detail
 
 /// Field I of struct T as a document holds it under F, the scope T is read and
@@ -783,11 +808,7 @@ public:
     template <typename Object>
         requires std::same_as<std::remove_const_t<Object>, T>
     static auto& of(Object& object) {
-        constexpr bool is_const = std::is_const_v<Object>;
-        using byte_t = std::conditional_t<is_const, const std::byte, std::byte>;
-        using field_t = std::conditional_t<is_const, const type, type>;
-        auto* base = reinterpret_cast<byte_t*>(std::addressof(object));
-        return *reinterpret_cast<field_t*>(base + info.offset);
+        return detail::field_at<type>(object, info.offset);
     }
 
     /// Whether a write leaves the field of owner out: it is its default, the
@@ -800,10 +821,10 @@ public:
                           "value-initialized struct: the struct needs a default constructor");
             return meta::eq(of(owner), of(detail::value_initialized<T>()));
         } else if constexpr(presence == presence_kind::omit_if) {
-            static_assert(tuple_has_spec_v<attrs, behavior::omit_if>,
+            static_assert(type_list_has_spec_v<attrs, behavior::omit_if>,
                           "presence = omit_if takes its predicate as a type: "
                           "presence = type<Pred>");
-            using pred = typename tuple_find_spec_t<attrs, behavior::omit_if>::predicate;
+            using pred = typename type_list_find_spec_t<attrs, behavior::omit_if>::predicate;
             return static_cast<bool>(pred{}(of(owner)));
         } else {
             return false;

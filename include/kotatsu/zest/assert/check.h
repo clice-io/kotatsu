@@ -24,7 +24,7 @@ namespace kotatsu::zest {
 template <typename T>
 std::string pretty_dump(const T& value) {
     auto text = codec::debug::to_string(value);
-    return text ? std::move(*text) : std::string(meta::type_name<T>());
+    return text ? std::move(*text) : std::string(meta::type_name<T>);
 }
 
 /// What a predicate found: whether it held, and how to show its inputs when a

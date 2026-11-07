@@ -70,7 +70,7 @@ ZEST_CASE(simple_struct_slots) {
     ZSTATIC_EXPECT(kind_of<slot2::raw_type>() == type_kind::float32);
 
     // attrs is empty tuple for plain fields
-    ZEXPECT(zest::type_eq<slot0::attrs, std::tuple<>>());
+    ZEXPECT(zest::type_eq<slot0::attrs, type_list<>>());
 }
 
 ZEST_CASE(skip_and_flatten_slot_counts) {
@@ -99,7 +99,7 @@ ZEST_CASE(behavior_slot_attrs) {
     // Field 0 (maybe): raw=optional<int>, has an omit_if attr
     using slot0 = type_list_element_t<0, slots>;
     ZEXPECT(zest::type_eq<slot0::raw_type, std::optional<int>>());
-    ZSTATIC_EXPECT(!std::is_same_v<slot0::attrs, std::tuple<>>);
+    ZSTATIC_EXPECT(!std::is_same_v<slot0::attrs, type_list<>>);
 
     // Field 1 (as_str): the slot keeps the raw type; the behavior transform
     // lives in the field's type_info kind, not the slot.
@@ -109,7 +109,7 @@ ZEST_CASE(behavior_slot_attrs) {
     // Field 2 (plain): empty attrs
     using slot2 = type_list_element_t<2, slots>;
     ZSTATIC_EXPECT(kind_of<slot2::raw_type>() == type_kind::float32);
-    ZEXPECT(zest::type_eq<slot2::attrs, std::tuple<>>());
+    ZEXPECT(zest::type_eq<slot2::attrs, type_list<>>());
 }
 
 ZEST_CASE(repr_field_type_info) {
@@ -134,7 +134,7 @@ ZEST_CASE(tagged_variant_slot) {
     // tagged<> is a schema attr that appears in behavior attrs filter
     ZEXPECT(zest::type_eq<slot0::raw_type, std::variant<int, std::string>>());
     // attrs is not empty (contains tagged<>)
-    ZSTATIC_EXPECT(!std::is_same_v<slot0::attrs, std::tuple<>>);
+    ZSTATIC_EXPECT(!std::is_same_v<slot0::attrs, type_list<>>);
 }
 
 };  // ZEST_SUITE(codec_schema_slots)

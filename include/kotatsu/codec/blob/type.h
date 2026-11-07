@@ -202,9 +202,6 @@ template <typename T>
 using arithmetic_t = typename std::
     conditional_t<std::is_enum_v<T>, std::underlying_type<T>, std::type_identity<T>>::type;
 
-template <typename T>
-constexpr inline std::size_t field_count_v = meta::field_count<T>();
-
 template <typename T, std::size_t I>
 using field_t = std::remove_cv_t<meta::field_type<T, I>>;
 
@@ -212,7 +209,7 @@ template <typename T, typename Visit>
 constexpr void for_each_index(Visit&& visit) {
     [&]<std::size_t... I>(std::index_sequence<I...>) {
         (visit(std::integral_constant<std::size_t, I>{}), ...);
-    }(std::make_index_sequence<field_count_v<T>>{});
+    }(std::make_index_sequence<meta::field_count<T>>{});
 }
 
 enum class Kind : std::uint8_t {
@@ -230,12 +227,12 @@ consteval Kind kind_of() {
     } else if constexpr(is_vec_v<A>) {
         return Kind::Vec;
     } else if constexpr(std::is_class_v<A> && std::is_aggregate_v<A>) {
-        static_assert(std::is_empty_v<A> || field_count_v<A> > 0,
+        static_assert(std::is_empty_v<A> || meta::field_count<A> > 0,
                       "reflection sees none of this struct's fields");
         static_assert(
             []<std::size_t... I>(std::index_sequence<I...>) {
                 return (!meta::field_annotated<A, I> && ...);
-            }(std::make_index_sequence<field_count_v<A>>{}),
+            }(std::make_index_sequence<meta::field_count<A>>{}),
             "a blob lays a record out as the struct itself: annotations do not apply");
         static_assert(std::is_standard_layout_v<A>, "a record read in place is standard-layout");
         static_assert(alignof(A) <= alignment, "a blob aligns what it holds to 8 bytes at most");
@@ -334,8 +331,8 @@ constexpr std::uint32_t fingerprint(std::uint32_t hash = 2166136261u) {
     } else {
         hash = mix(hash, "{");
         for_each_index<A>([&](auto index) {
-            hash = mix(hash, meta::field_name<index(), A>());
-            hash = mix_number(hash, meta::field_offset<A>(index()));
+            hash = mix(hash, meta::field_names<A>[index()]);
+            hash = mix_number(hash, meta::field_offsets<A>[index()]);
             hash = fingerprint<field_t<A, index()>>(mix(hash, ":"));
             hash = mix(hash, ";");
         });

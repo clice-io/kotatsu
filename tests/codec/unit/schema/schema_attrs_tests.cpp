@@ -9,7 +9,7 @@
 
 namespace kotatsu::codec {
 
-using meta::field_offset;
+using meta::field_offsets;
 using meta::type_kind;
 
 namespace {
@@ -95,9 +95,9 @@ ZEST_CASE(flatten) {
     ZSTATIC_EXPECT(fields[2].offset > fields[1].offset);
     ZSTATIC_EXPECT(fields[3].offset > fields[2].offset);
 
-    constexpr auto outer_inner_offset = field_offset<fx::Outer>(1);
-    constexpr auto inner_a_offset = field_offset<fx::Inner>(0);
-    constexpr auto inner_b_offset = field_offset<fx::Inner>(1);
+    constexpr auto outer_inner_offset = field_offsets<fx::Outer>[1];
+    constexpr auto inner_a_offset = field_offsets<fx::Inner>[0];
+    constexpr auto inner_b_offset = field_offsets<fx::Inner>[1];
     ZSTATIC_EXPECT(fields[1].offset == outer_inner_offset + inner_a_offset);
     ZSTATIC_EXPECT(fields[2].offset == outer_inner_offset + inner_b_offset);
 }

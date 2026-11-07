@@ -358,7 +358,7 @@ struct Pinned {
     friend bool operator==(const Pinned&, const Pinned&) = default;
 };
 
-/// One past the reflection field limit: meta::field_count() reads zero.
+/// One past the reflection field limit: meta::field_count reads zero.
 struct OverLimit {
     std::int32_t f00, f01, f02, f03, f04, f05, f06, f07, f08, f09, f10, f11, f12, f13, f14, f15,
         f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33,
@@ -823,7 +823,7 @@ ZEST_CASE(members_that_keep_a_struct_a_table) {
     ZSTATIC_EXPECT(!fbs::can_inline_struct_v<CellProbe>);
     ZSTATIC_EXPECT(!fbs::can_inline_struct_v<AdaptedProbe>);
     ZSTATIC_EXPECT(!fbs::can_inline_struct_v<ProbeFrame>);
-    ZSTATIC_EXPECT(meta::field_count<OverLimit>() == 0U);
+    ZSTATIC_EXPECT(meta::field_count<OverLimit> == 0U);
     ZSTATIC_EXPECT(!fbs::can_inline_struct_v<OverLimit>);
     ZSTATIC_EXPECT(!fbs::can_inline_struct_v<HoldsOverLimit>);
 }
@@ -865,7 +865,7 @@ ZEST_CASE(table_shaped_structs_roundtrip) {
     };
     auto check = [](const auto& input) {
         using T = std::remove_cvref_t<decltype(input)>;
-        ZEST_CONTEXT("{}", meta::type_name<T>());
+        ZEST_CONTEXT("{}", meta::type_name<T>);
         auto bytes = fbs::to_bytes(input);
         ZASSERT(bytes);
         ZEXPECT(solo_is_a_table(*bytes));

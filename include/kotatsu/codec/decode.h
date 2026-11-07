@@ -87,7 +87,7 @@ bool decode_enum_name(Vis& vis, E& out) {
     KOTATSU_CODEC_TRY(vis.visit_str(name));
     for(std::size_t i = 0; i < names.size(); ++i) {
         if(names[i] == name) {
-            out = meta::reflection<E>::member_values[i];
+            out = meta::enum_values<E>[i];
             return true;
         }
     }
@@ -231,15 +231,15 @@ bool decode_tagged_variant(Vis& vis, std::variant<Ts...>& var);
 /// tagging > the node's scope (node_format_t).
 template <typename Format, typename Attrs, typename Vis, typename T>
 bool decode_with_attrs(Vis& vis, T& out) {
-    if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
-        using adapter = typename tuple_find_spec_t<Attrs, behavior::with>::adapter;
+    if constexpr(type_list_has_spec_v<Attrs, behavior::with>) {
+        using adapter = typename type_list_find_spec_t<Attrs, behavior::with>::adapter;
         if constexpr(names_enum<adapter>) {
             return repr_decode<adapter, node_format_t<Format, T, Attrs>>(vis, out);
         } else {
             return repr_decode<adapter, Format>(vis, out);
         }
-    } else if constexpr(tuple_has_spec_v<Attrs, behavior::as>) {
-        using target = typename tuple_find_spec_t<Attrs, behavior::as>::target;
+    } else if constexpr(type_list_has_spec_v<Attrs, behavior::as>) {
+        using target = typename type_list_find_spec_t<Attrs, behavior::as>::target;
         auto converted = target();
         KOTATSU_CODEC_TRY(decode_under<Format>(vis, converted));
         out = T(std::move(converted));
@@ -297,15 +297,12 @@ bool
 
 /// Decode a field's value applying behavior transforms, without visit_field
 /// wrapping, below key, the name the document gives it. Used by match_field
-/// (data-driven path) where the field reader is already provided.
-template <typename Format, std::size_t I, typename Vis, typename T>
-bool decode_field_value(Vis& vis, T& out, std::string_view key, UnknownFields* sink) {
-    using descriptor = codec::field<T, I, Format>;
-    auto& field_ref = descriptor::of(out);
-    return decode_step(sink, key, [&] {
-        return decode_with_attrs<members_format_t<Format>, typename descriptor::attrs>(vis,
-                                                                                       field_ref);
-    });
+/// (data-driven path) where the field reader is already provided; it depends
+/// on the field's type and attrs alone, so the fields that share them share
+/// one instantiation.
+template <typename Format, typename Attrs, typename Vis, typename Field>
+bool decode_field_value(Vis& vis, Field& field, std::string_view key, UnknownFields* sink) {
+    return decode_step(sink, key, [&] { return decode_with_attrs<Format, Attrs>(vis, field); });
 }
 
 /// The slot whose name or alias is key; fields.size() when none is.
@@ -341,7 +338,12 @@ bool match_field(std::string_view key,
 
     field_mask |= std::uint64_t{1} << slot;
     return with_index<N>(slot, [&](auto i) {
-        return decode_field_value<Format, decltype(i)::value>(reader, out, key, sink);
+        using field_slot = type_list_element_t<decltype(i)::value, typename schema::slots>;
+        return decode_field_value<members_format_t<Format>, typename field_slot::attrs>(
+            reader,
+            field_at<typename field_slot::raw_type>(out, schema::fields[slot].offset),
+            key,
+            sink);
     });
 }
 
@@ -691,8 +693,8 @@ constexpr bool probes_as_untagged_variant() {
     using scope = node_format_t<Format, T, attrs>;
     if constexpr(requires(Vis& v, T& out) { deserialize_visit<Vis, T>::visit(v, out); })
         return false;
-    else if constexpr(tuple_has_spec_v<attrs, behavior::with> ||
-                      tuple_has_spec_v<attrs, behavior::as>)
+    else if constexpr(type_list_has_spec_v<attrs, behavior::with> ||
+                      type_list_has_spec_v<attrs, behavior::as>)
         return false;
     else if constexpr(spec_of<struct_spec, attrs>.tagging != tag_mode::none)
         return has_native_variant<Vis> || !Format::human_readable;
@@ -863,7 +865,7 @@ template <typename Format, typename Vis, typename T>
 bool decode_under(Vis& vis, T& out) {
     using V = std::remove_const_t<T>;
 
-    if constexpr(!std::is_same_v<meta::attrs_of_t<V>, std::tuple<>>) {
+    if constexpr(!std::is_same_v<meta::attrs_of_t<V>, type_list<>>) {
         return decode_with_attrs<Format, meta::attrs_of_t<V>>(vis, out);
     } else {
         return decode_plain<Format>(vis, out);

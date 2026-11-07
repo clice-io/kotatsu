@@ -255,15 +255,15 @@ bool encode_tagged_variant(Vis& vis, const std::variant<Ts...>& var) {
 /// written as its type writes it, its repr first.
 template <typename Format, typename Attrs, typename Vis, typename T>
 bool encode_with_attrs(Vis& vis, const T& value) {
-    if constexpr(tuple_has_spec_v<Attrs, behavior::with>) {
-        using adapter = typename tuple_find_spec_t<Attrs, behavior::with>::adapter;
+    if constexpr(type_list_has_spec_v<Attrs, behavior::with>) {
+        using adapter = typename type_list_find_spec_t<Attrs, behavior::with>::adapter;
         if constexpr(names_enum<adapter>) {
             return repr_encode<adapter, node_format_t<Format, T, Attrs>>(vis, value);
         } else {
             return repr_encode<adapter, Format>(vis, value);
         }
-    } else if constexpr(tuple_has_spec_v<Attrs, behavior::as>) {
-        using target = typename tuple_find_spec_t<Attrs, behavior::as>::target;
+    } else if constexpr(type_list_has_spec_v<Attrs, behavior::as>) {
+        using target = typename type_list_find_spec_t<Attrs, behavior::as>::target;
         target converted(value);
         return encode_under<Format>(vis, converted);
     } else if constexpr(spec_of<struct_spec, Attrs>.tagging != tag_mode::none) {
@@ -314,7 +314,7 @@ bool encode_struct_fields(Vis& vis, const T& value) {
 
 template <typename Format, typename Vis, typename T>
 bool encode_under(Vis& vis, const T& value) {
-    if constexpr(!std::is_same_v<meta::attrs_of_t<T>, std::tuple<>>) {
+    if constexpr(!std::is_same_v<meta::attrs_of_t<T>, type_list<>>) {
         return encode_with_attrs<Format, meta::attrs_of_t<T>>(vis, value);
     } else {
         return encode_plain<Format>(vis, value);

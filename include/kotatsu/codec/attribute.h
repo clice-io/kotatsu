@@ -452,18 +452,19 @@ namespace detail {
 template <typename Spec>
 constexpr inline Spec unset_spec{};
 
+/// The spec of type Spec Attr, a spec_attr, carries; one no attribute set when Attr is void.
+template <typename Spec, typename Attr>
+constexpr const inline Spec& spec_or_unset = Attr::value;
+
+template <typename Spec>
+constexpr const inline Spec& spec_or_unset<Spec, void> = unset_spec<Spec>;
+
 }  // namespace detail
 
-/// The spec of type Spec, field_spec or struct_spec, an attrs tuple carries; one no attribute
+/// The spec of type Spec, field_spec or struct_spec, an attrs list carries; one no attribute
 /// set when it carries none.
 template <typename Spec, typename Attrs>
-constexpr const inline Spec& spec_of = [] -> const Spec& {
-    if constexpr(std::is_void_v<meta::spec_attr_t<Spec, Attrs>>) {
-        return detail::unset_spec<Spec>;
-    } else {
-        return meta::spec_attr_t<Spec, Attrs>::value;
-    }
-}();
+constexpr const inline Spec& spec_of = detail::spec_or_unset<Spec, meta::spec_attr_t<Spec, Attrs>>;
 
 /// The field spec field I of T carries, its type's annotation included (meta::field_attrs_t).
 template <typename T, std::size_t I>
@@ -578,6 +579,24 @@ consteval bool takes_scope() {
     }
 }
 
+template <typename Format, typename T, typename Attrs, typename StructAttr>
+struct node_format {
+    using type =
+        std::conditional_t<takes_scope<T>(),
+                           typename scope<Format,
+                                          typename decltype(rename_in<Attrs>())::type,
+                                          StructAttr::value.deny_unknown_fields,
+                                          presence_code(StructAttr::value.presence_all)>::type,
+                           Format>;
+};
+
+/// Attrs without a struct spec scope nothing: what most nodes carry, which so need not ask
+/// whether T takes a scope.
+template <typename Format, typename T, typename Attrs>
+struct node_format<Format, T, Attrs, void> {
+    using type = Format;
+};
+
 }  // namespace detail
 
 /// The format a node of type T carrying Attrs, a field's attrs or its type's, is read and
@@ -586,13 +605,8 @@ consteval bool takes_scope() {
 /// Format on every other node. The dispatch and type_info both scope through it, so that
 /// type_info describes the documents the codec reads and writes.
 template <typename Format, typename T, typename Attrs>
-using node_format_t = std::conditional_t<
-    detail::takes_scope<T>(),
-    typename detail::scope<Format,
-                           typename decltype(detail::rename_in<Attrs>())::type,
-                           spec_of<struct_spec, Attrs>.deny_unknown_fields,
-                           detail::presence_code(spec_of<struct_spec, Attrs>.presence_all)>::type,
-    Format>;
+using node_format_t =
+    typename detail::node_format<Format, T, Attrs, meta::spec_attr_t<struct_spec, Attrs>>::type;
 
 /// The format the values of a struct's fields are read and written under, Format being the
 /// struct's scope: the format the scope was made of, as a struct's attributes name and mark its

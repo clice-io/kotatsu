@@ -92,8 +92,12 @@
 ///
 ///     KANNOTATE_FIELD(&third_party::Point::y, rename = "Y");
 ///
-/// A field annotated both here and in its class fails to compile.
+/// A field annotated both here and in its class fails to compile, and so do
+/// fields of one class annotated from two namespaces.
 #define KANNOTATE_FIELD(member, ...)                                                               \
+    template <typename... Undefined>                                                               \
+    void __kotatsu__field_annotation(                                                              \
+        ::std::type_identity<::kotatsu::class_type_t<decltype(member)>>);                          \
     [[maybe_unused]] consteval auto __kotatsu__field_annotation(                                   \
         ::std::type_identity<::kotatsu::class_type_t<decltype(member)>>,                           \
         ::kotatsu::meta::detail::member_key_t<#member>) {                                          \
@@ -104,7 +108,13 @@
     static_assert(::kotatsu::meta::detail::field_annotation_found<                                 \
                       ::kotatsu::class_type_t<decltype(member)>,                                   \
                       ::kotatsu::meta::detail::member_key_t<#member>>,                             \
-                  "KANNOTATE_FIELD: write it in the namespace of the class whose field it names")
+                  "KANNOTATE_FIELD: write it in the namespace of the class whose field it names"); \
+    static_assert(                                                                                 \
+        requires {                                                                                 \
+            __kotatsu__field_annotation(                                                           \
+                ::std::type_identity<::kotatsu::class_type_t<decltype(member)>>{});                \
+        },                                                                                         \
+        "KANNOTATE_FIELD: annotate the fields of one class from one namespace")
 
 // `annotated` as a declaration when its first token is `struct` or `class`, which only pasting
 // tells: pasted onto KOTATSU_CLASS_KEY_, that token makes a macro that puts KOTATSU_KEEP second,

@@ -399,18 +399,14 @@ constexpr bool compare_eq(const L& lhs, const R& rhs) {
             return static_cast<bool>(lhs == rhs);
         }
     } else if constexpr(reflectable_pair<L, R>) {
-        constexpr std::size_t lhs_count = reflection<L>::field_count;
-        constexpr std::size_t rhs_count = reflection<R>::field_count;
+        constexpr std::size_t lhs_count = meta::field_count<L>;
+        constexpr std::size_t rhs_count = meta::field_count<R>;
 
         if constexpr(lhs_count != rhs_count) {
             return false;
-        } else if constexpr(lhs_count == 0) {
-            return true;
         } else {
-            auto lhs_addrs = reflection<L>::field_addrs(lhs);
-            auto rhs_addrs = reflection<R>::field_addrs(rhs);
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                return (compare_eq(*std::get<Is>(lhs_addrs), *std::get<Is>(rhs_addrs)) && ...);
+                return (compare_eq(field_of<Is>(lhs), field_of<Is>(rhs)) && ...);
             }(std::make_index_sequence<lhs_count>{});
         }
     } else {
@@ -479,34 +475,27 @@ constexpr bool compare_lt(const L& lhs, const R& rhs) {
     } else if constexpr(lt_comparable_with<L, R>) {
         return static_cast<bool>(lhs < rhs);
     } else if constexpr(reflectable_pair<L, R>) {
-        constexpr std::size_t lhs_count = reflection<L>::field_count;
-        constexpr std::size_t rhs_count = reflection<R>::field_count;
+        constexpr std::size_t lhs_count = meta::field_count<L>;
+        constexpr std::size_t rhs_count = meta::field_count<R>;
         constexpr std::size_t common_count = lhs_count < rhs_count ? lhs_count : rhs_count;
 
-        auto lhs_addrs = reflection<L>::field_addrs(lhs);
-        auto rhs_addrs = reflection<R>::field_addrs(rhs);
-
         bool result = false;
-        bool decided = false;
-
-        if constexpr(common_count > 0) {
-            decided = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                return (([&] {
-                            const auto& l = *std::get<Is>(lhs_addrs);
-                            const auto& r = *std::get<Is>(rhs_addrs);
-                            if(compare_lt(l, r)) {
-                                result = true;
-                                return true;
-                            }
-                            if(compare_lt(r, l)) {
-                                result = false;
-                                return true;
-                            }
-                            return false;
-                        }()) ||
-                        ...);
-            }(std::make_index_sequence<common_count>{});
-        }
+        const bool decided = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            return (([&] {
+                        const auto& l = field_of<Is>(lhs);
+                        const auto& r = field_of<Is>(rhs);
+                        if(compare_lt(l, r)) {
+                            result = true;
+                            return true;
+                        }
+                        if(compare_lt(r, l)) {
+                            result = false;
+                            return true;
+                        }
+                        return false;
+                    }()) ||
+                    ...);
+        }(std::make_index_sequence<common_count>{});
 
         if(decided) {
             return result;

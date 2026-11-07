@@ -57,44 +57,144 @@ enum class Byte : char {
     High = '\xE9',
 };
 
+/// Members on both sides of where one chunk of probed values ends and the next begins: the
+/// scan of -128..127 takes 32 values at a time.
+enum class Chunked : int {
+    LastOfSecond = -65,
+    FirstOfThird = -64,
+    LastOfFifth = 31,
+    FirstOfSixth = 32,
+};
+
+/// Without a fixed underlying type its values are 0..63, which a compiler may take no value
+/// outside of as a template argument: it is probed a value at a time.
+enum Unfixed {
+    First = 0,
+    Last = 63,
+};
+
+/// Unscoped, with a fixed type: its values print under its namespace, not under its name.
+enum Compass : int {
+    Up = 85,
+    Down = -42,
+    Leftmost = -120,
+};
+
+#if !defined(__clang__) || __clang_major__ >= 21
+/// Its name holds a comma, between its class's template arguments: it is probed a value at a
+/// time. Unscoped, as instantiating a class template instantiates its unscoped enums'
+/// enumerators; clang 20 prints none of them by name.
+template <typename A, typename B>
+struct Holder {
+    enum Inner : int {
+        Left = -3,
+        Right = 90,
+    };
+};
+
+static_assert(enum_values<Holder<int, char>::Inner>.size() == 2);
+static_assert(enum_names<Holder<int, char>::Inner>[0] == "Left");
+static_assert(enum_names<Holder<int, char>::Inner>[1] == "Right");
+#endif
+
+/// An enum in a function of two parameters, whose values clang prints in the function's scope,
+/// the comma between its parameters and all, where it prints the enum's type without it.
+consteval bool names_a_local_enum(int, int) {
+    enum class Local : int {
+        first = 1,
+        second = 5,
+    };
+    return enum_names<Local>.size() == 2 && enum_names<Local>[0] == "first" &&
+           enum_names<Local>[1] == "second";
+}
+
+static_assert(names_a_local_enum(0, 0));
+
 enum class Toggle : bool {
     Off,
     On,
 };
 
-static_assert(reflection<Color>::member_count == 3);
-static_assert(reflection<Color>::member_names.size() == 3);
-static_assert(reflection<Color>::member_names[0] == "Red");
-static_assert(reflection<Color>::member_names[1] == "Green");
-static_assert(reflection<Color>::member_names[2] == "Blue");
+/// An enum with no value the probes reach.
+enum class Remote : int {
+    Far = 1000,
+};
 
-static_assert(reflection<Plain>::member_count == 3);
-static_assert(reflection<Plain>::member_names.size() == 3);
-static_assert(reflection<Plain>::member_names[0] == "Zero");
-static_assert(reflection<Plain>::member_names[1] == "One");
-static_assert(reflection<Plain>::member_names[2] == "Two");
+static_assert(enum_values<Color>.size() == 3);
+static_assert(enum_names<Color>.size() == 3);
+static_assert(enum_names<Color>[0] == "Red");
+static_assert(enum_names<Color>[1] == "Green");
+static_assert(enum_names<Color>[2] == "Blue");
 
-static_assert(reflection<Tiny>::member_count == 3);
-static_assert(reflection<Tiny>::member_names.size() == 3);
-static_assert(reflection<Tiny>::member_names[0] == "A");
-static_assert(reflection<Tiny>::member_names[1] == "B");
-static_assert(reflection<Tiny>::member_names[2] == "C");
+static_assert(enum_values<Plain>.size() == 3);
+static_assert(enum_names<Plain>.size() == 3);
+static_assert(enum_names<Plain>[0] == "Zero");
+static_assert(enum_names<Plain>[1] == "One");
+static_assert(enum_names<Plain>[2] == "Two");
 
-static_assert(reflection<Sparse>::member_count == 3);
-static_assert(reflection<Sparse>::member_values[0] == Sparse::Neg);
-static_assert(reflection<Sparse>::member_values[1] == Sparse::Mid);
-static_assert(reflection<Sparse>::member_values[2] == Sparse::High);
-static_assert(reflection<Sparse>::member_names[0] == "Neg");
-static_assert(reflection<Sparse>::member_names[1] == "Mid");
-static_assert(reflection<Sparse>::member_names[2] == "High");
+static_assert(enum_values<Tiny>.size() == 3);
+static_assert(enum_names<Tiny>.size() == 3);
+static_assert(enum_names<Tiny>[0] == "A");
+static_assert(enum_names<Tiny>[1] == "B");
+static_assert(enum_names<Tiny>[2] == "C");
 
-static_assert(reflection<Edge8>::member_count == 2);
-static_assert(reflection<Edge8>::member_values[0] == Edge8::Min);
-static_assert(reflection<Edge8>::member_values[1] == Edge8::Max);
-static_assert(reflection<Edge8>::member_names[0] == "Min");
-static_assert(reflection<Edge8>::member_names[1] == "Max");
+static_assert(enum_values<Sparse>.size() == 3);
+static_assert(enum_values<Sparse>[0] == Sparse::Neg);
+static_assert(enum_values<Sparse>[1] == Sparse::Mid);
+static_assert(enum_values<Sparse>[2] == Sparse::High);
+static_assert(enum_names<Sparse>[0] == "Neg");
+static_assert(enum_names<Sparse>[1] == "Mid");
+static_assert(enum_names<Sparse>[2] == "High");
+
+static_assert(enum_values<Chunked>.size() == 4);
+static_assert(enum_names<Chunked>[0] == "LastOfSecond");
+static_assert(enum_names<Chunked>[1] == "FirstOfThird");
+static_assert(enum_names<Chunked>[2] == "LastOfFifth");
+static_assert(enum_names<Chunked>[3] == "FirstOfSixth");
+static_assert(enum_values<Chunked>[3] == Chunked::FirstOfSixth);
+
+static_assert(enum_values<Unfixed>.size() == 2);
+static_assert(enum_names<Unfixed>[0] == "First");
+static_assert(enum_names<Unfixed>[1] == "Last");
+
+static_assert(enum_values<Compass>.size() == 3);
+static_assert(enum_names<Compass>[0] == "Leftmost");
+static_assert(enum_names<Compass>[1] == "Down");
+static_assert(enum_names<Compass>[2] == "Up");
+
+static_assert(enum_values<Edge8>.size() == 2);
+static_assert(enum_values<Edge8>[0] == Edge8::Min);
+static_assert(enum_values<Edge8>[1] == Edge8::Max);
+static_assert(enum_names<Edge8>[0] == "Min");
+static_assert(enum_names<Edge8>[1] == "Max");
 
 ZEST_SUITE(meta_enum) {
+
+ZEST_CASE(enum_value_finds_every_name) {
+    // Compass's names sort apart from its values: Down, Leftmost, Up against -120, -42, 85.
+    ZSTATIC_EXPECT(enum_value<Compass>("Leftmost") == Compass::Leftmost);
+    ZSTATIC_EXPECT(enum_value<Compass>("Down") == Compass::Down);
+    ZSTATIC_EXPECT(enum_value<Compass>("Up") == Compass::Up);
+    ZSTATIC_EXPECT(enum_value<Color>("Green") == Color::Green);
+    ZSTATIC_EXPECT(enum_value<Chunked>("FirstOfSixth") == Chunked::FirstOfSixth);
+    ZSTATIC_EXPECT(enum_value<Toggle>("On") == Toggle::On);
+}
+
+ZEST_CASE(enum_value_finds_no_other_name) {
+    ZSTATIC_EXPECT(!enum_value<Compass>("Dow").has_value());
+    ZSTATIC_EXPECT(!enum_value<Compass>("").has_value());
+    ZSTATIC_EXPECT(!enum_value<Compass>("Zzz").has_value());
+    ZSTATIC_EXPECT(!enum_value<Compass>("A").has_value());
+    ZSTATIC_EXPECT(!enum_value<Color>("red").has_value());
+}
+
+ZEST_CASE(enum_with_no_reached_names) {
+    ZSTATIC_EXPECT(enum_values<Remote>.empty());
+    ZSTATIC_EXPECT(enum_names<Remote>.empty());
+    ZSTATIC_EXPECT(enum_name(Remote::Far, "far") == "far");
+    ZSTATIC_EXPECT(!enum_value<Remote>("Far").has_value());
+    ZSTATIC_EXPECT(!enum_value<Remote>("").has_value());
+}
 
 ZEST_CASE(enum_member_names) {
     ZEXPECT(enum_name(Color::Red) == "Red");
@@ -120,30 +220,30 @@ ZEST_CASE(enum_member_names) {
 }
 
 ZEST_CASE(unsigned_members_above_127_ascend) {
-    ZSTATIC_EXPECT(reflection<High8>::member_count == 2);
-    ZSTATIC_EXPECT(reflection<High8>::member_values[0] == High8::Low);
-    ZSTATIC_EXPECT(reflection<High8>::member_values[1] == High8::High);
+    ZSTATIC_EXPECT(enum_values<High8>.size() == 2);
+    ZSTATIC_EXPECT(enum_values<High8>[0] == High8::Low);
+    ZSTATIC_EXPECT(enum_values<High8>[1] == High8::High);
     ZEXPECT(enum_name(High8::Low) == "Low");
     ZEXPECT(enum_name(High8::High) == "High");
 
-    ZSTATIC_EXPECT(reflection<EdgeU32>::member_count == 4);
-    ZSTATIC_EXPECT(reflection<EdgeU32>::member_values[0] == EdgeU32::Zero);
-    ZSTATIC_EXPECT(reflection<EdgeU32>::member_values[1] == EdgeU32::Top);
-    ZSTATIC_EXPECT(reflection<EdgeU32>::member_values[2] == EdgeU32::Bottom);
-    ZSTATIC_EXPECT(reflection<EdgeU32>::member_values[3] == EdgeU32::Max);
+    ZSTATIC_EXPECT(enum_values<EdgeU32>.size() == 4);
+    ZSTATIC_EXPECT(enum_values<EdgeU32>[0] == EdgeU32::Zero);
+    ZSTATIC_EXPECT(enum_values<EdgeU32>[1] == EdgeU32::Top);
+    ZSTATIC_EXPECT(enum_values<EdgeU32>[2] == EdgeU32::Bottom);
+    ZSTATIC_EXPECT(enum_values<EdgeU32>[3] == EdgeU32::Max);
     ZEXPECT(enum_name(EdgeU32::Zero) == "Zero");
     ZEXPECT(enum_name(EdgeU32::Top) == "Top");
     ZEXPECT(enum_name(EdgeU32::Bottom) == "Bottom");
     ZEXPECT(enum_name(EdgeU32::Max) == "Max");
 
-    ZSTATIC_EXPECT(reflection<Byte>::member_count == 2);
-    ZSTATIC_EXPECT(reflection<Byte>::member_values[0] < reflection<Byte>::member_values[1]);
+    ZSTATIC_EXPECT(enum_values<Byte>.size() == 2);
+    ZSTATIC_EXPECT(enum_values<Byte>[0] < enum_values<Byte>[1]);
     ZEXPECT(enum_name(Byte::Letter) == "Letter");
     ZEXPECT(enum_name(Byte::High) == "High");
 }
 
 ZEST_CASE(bool_members_are_named_once) {
-    ZSTATIC_EXPECT(reflection<Toggle>::member_count == 2);
+    ZSTATIC_EXPECT(enum_values<Toggle>.size() == 2);
     ZEXPECT(enum_name(Toggle::Off) == "Off");
     ZEXPECT(enum_name(Toggle::On) == "On");
 }
