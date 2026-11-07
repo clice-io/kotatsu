@@ -73,7 +73,7 @@ public:
     /// with. Fails as sys::Child::open does, and with
     /// error::operation_aborted while the loop is being destroyed. POSIX has
     /// no counterpart: there a process this one did not start tells it no
-    /// exit status.
+    /// exit status; wait_exit() waits for such a process without one.
     static result<process> open(int pid,
                                 std::uint32_t access = 0,
                                 event_loop& loop = event_loop::current());
@@ -126,6 +126,11 @@ public:
 private:
     struct Self;
 
+#ifdef _WIN32
+    /// Waits through the watch of the loop's children.
+    friend task<void, error> wait_exit(int pid, event_loop& loop);
+#endif
+
     explicit process(detail::unique_handle<Self> self) noexcept;
 
     detail::unique_handle<Self> self;
@@ -151,5 +156,22 @@ struct process::capture_result {
 
     std::string stderr_data;
 };
+
+/// Waits for the process with ID `pid` to exit, whichever process started
+/// it, and gives no exit status: POSIX tells a process of none but its own
+/// children's. On Linux it waits through a pidfd, or where the kernel has
+/// none (before 5.3) or a sandbox forbids them, looks at /proc every second;
+/// on macOS through kqueue; on Windows through a handle that may only wait.
+/// A child of this process that exited and is not reaped yet has exited. A
+/// pid that went to another process before the call, its own having exited,
+/// is waited on as that other process, and so is one that does between two
+/// looks at /proc.
+///
+/// Fails with error::invalid_argument for a pid not above 0,
+/// error::no_such_process when no process has it,
+/// error::operation_aborted while the loop is being destroyed, and with the
+/// system's error where it refuses the wait, error::permission_denied on
+/// Windows. Cancelling it only abandons the wait.
+task<void, error> wait_exit(int pid, event_loop& loop = event_loop::current());
 
 }  // namespace kotatsu::async

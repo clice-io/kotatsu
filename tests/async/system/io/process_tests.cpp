@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -34,6 +35,7 @@
 #include <sys/epoll.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <thread>
 #include <unistd.h>
 
 // As spawn names it for C libraries older than Linux 5.3.
@@ -127,18 +129,18 @@ std::string unset(std::string_view name) {
     return std::string(by_platform("unset", std::format("%{}%", name)));
 }
 
-/// What `start` gives on a loop being destroyed. ~event_loop runs the loop
-/// until the thread pool's work is done, and so resumes the task that queued
-/// it: a watch made then would come after the loop closed its handles, and
-/// keep it from closing.
+/// What the task `start` makes gives on a loop being destroyed. ~event_loop
+/// runs the loop until the thread pool's work is done, and so resumes the
+/// task that queued it: a watch made then would come after the loop closed
+/// its handles, and keep it from closing.
 template <typename Start>
 auto while_destroyed(Start start) {
     std::latch gate(1);
-    std::optional<decltype(start(std::declval<event_loop&>()))> started;
+    std::optional<typename std::invoke_result_t<Start&, event_loop&>::value_type> started;
     std::optional<event_loop> dying(std::in_place);
     auto late = [&]() -> task<> {
         co_await queue([&] { gate.wait(); }, *dying);
-        started.emplace(start(*dying));
+        started.emplace(co_await start(*dying));
     };
     auto stop = [&]() -> task<> {
         dying->stop();
@@ -153,6 +155,56 @@ auto while_destroyed(Start start) {
     ZASSERT(started.has_value());
     return std::move(*started);
 }
+
+#ifdef __linux__
+/// What `body` returns as the exit code of a process of the test's own, in
+/// which a seccomp filter makes pidfd_open fail with ENOSYS, as it does where
+/// the kernel has none (before 5.3); 2 when the filter cannot be set or does
+/// not hold, and -1 when the process ends otherwise.
+template <typename Body>
+int without_pidfds(Body body) {
+    const pid_t tester = ::fork();
+    if(tester < 0) {
+        return -1;
+    }
+    if(tester == 0) {
+        // Ended by SIGALRM rather than hang the test.
+        ::alarm(10);
+        sock_filter filter[] = {
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, nr)),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_pidfd_open, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | ENOSYS),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        };
+        sock_fprog program{.len = std::size(filter), .filter = filter};
+        if(::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
+           ::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0 ||
+           ::syscall(SYS_pidfd_open, ::getpid(), 0) != -1 || errno != ENOSYS) {
+            ::_exit(2);
+        }
+        ::_exit(body());
+    }
+    int status = 0;
+    if(::waitpid(tester, &status, 0) != tester || !WIFEXITED(status)) {
+        return -1;
+    }
+    return WEXITSTATUS(status);
+}
+
+/// Whether ThreadSanitizer is on, which starts no thread in a process forked
+/// from one that had threads, as the test binary's workers have.
+#if defined(__SANITIZE_THREAD__)
+constexpr bool thread_sanitized = true;
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+constexpr bool thread_sanitized = true;
+#else
+constexpr bool thread_sanitized = false;
+#endif
+#else
+constexpr bool thread_sanitized = false;
+#endif
+#endif
 
 ZEST_SUITE(async_io_process, zest::LoopFixture) {
 
@@ -562,8 +614,9 @@ ZEST_CASE(wait_cancelled_after_its_process_is_destroyed_ends) {
 }
 
 ZEST_CASE(spawn_while_its_loop_is_destroyed_fails) {
-    auto spawned =
-        while_destroyed([](event_loop& dying) { return process::spawn(shell("exit 0"), dying); });
+    auto spawned = while_destroyed([](event_loop& dying) -> task<result<process::spawn_result>> {
+        co_return process::spawn(shell("exit 0"), dying);
+    });
     ZASSERT(spawned.has_error());
     ZEXPECT(spawned.error() == error::operation_aborted);
 }
@@ -805,13 +858,109 @@ ZEST_CASE(open_of_no_process_fails) {
 ZEST_CASE(open_while_its_loop_is_destroyed_fails) {
     auto child = sys::spawn(shell("exit 0"));
     ZASSERT(child.has_value());
-    auto opened =
-        while_destroyed([&](event_loop& dying) { return process::open(child->pid(), 0, dying); });
+    auto opened = while_destroyed([&](event_loop& dying) -> task<result<process>> {
+        co_return process::open(child->pid(), 0, dying);
+    });
     ZASSERT(opened.has_error());
     ZEXPECT(opened.error() == error::operation_aborted);
     ZEXPECT(child->wait().has_value());
 }
 #endif
+
+// The process is started without the loop, as one another program started:
+// its exit ends the wait, which has begun by the kill, the tasks starting in
+// turn. The test reaps it after.
+ZEST_CASE(wait_exit_returns_once_the_process_exits) {
+    auto child = sys::spawn(test::stdin_reader());
+    ZASSERT(child.has_value());
+    // A failed ZASSERT leaves nothing running.
+    zest::FatalHook on_fatal{[&child] { child->kill(); }};
+    auto kill = [&]() -> task<> {
+        // A failed kill would leave the wait waiting until the watchdog.
+        ZASSERT(!child->kill());
+        co_return;
+    };
+
+    auto [waited, killed] = run(wait_exit(child->pid(), loop), kill());
+    ZEXPECT(waited.has_value());
+    ZEXPECT(killed.has_value());
+    auto status = child->wait();
+    ZASSERT(status.has_value());
+    ZEXPECT(!status->success());
+}
+
+// Nothing ends the process, so only the cancel can end the wait; the process
+// runs on until the test kills it.
+ZEST_CASE(cancelled_wait_exit_leaves_the_process_running) {
+    auto child = sys::spawn(test::stdin_reader());
+    ZASSERT(child.has_value());
+    zest::FatalHook on_fatal{[&child] { child->kill(); }};
+
+    auto [cancelled] = run(test::winner(wait_exit(child->pid(), loop), yield(loop)));
+    ZASSERT(cancelled.has_value());
+    ZEXPECT(*cancelled == 1U);
+    auto running = child->try_wait();
+    ZASSERT(running.has_value());
+    ZEXPECT(!running->has_value());
+    ZEXPECT(!child->kill());
+    ZEXPECT(child->wait().has_value());
+}
+
+// The child has exited, which the test waits for without reaping it: a
+// zombie on POSIX, which kqueue knows not of, and on Windows a process the
+// child's handle keeps.
+ZEST_CASE(wait_exit_of_an_exited_child_returns) {
+    auto child = sys::spawn(shell("exit 0"));
+    ZASSERT(child.has_value());
+#ifdef _WIN32
+    ZASSERT(::WaitForSingleObject(child->native_handle(), INFINITE) == WAIT_OBJECT_0);
+#else
+    siginfo_t info{};
+    ZASSERT(::waitid(P_PID, static_cast<id_t>(child->pid()), &info, WEXITED | WNOWAIT) == 0);
+#endif
+
+    auto [waited] = run(wait_exit(child->pid(), loop));
+    ZEXPECT(waited.has_value());
+    ZEXPECT(child->wait().has_value());
+}
+
+#ifndef _WIN32
+// Linux and macOS give pids out in turn: none goes to another so soon after
+// the test reaped the child.
+ZEST_CASE(wait_exit_of_a_reaped_process_fails) {
+    auto child = sys::spawn(shell("exit 0"));
+    ZASSERT(child.has_value());
+    ZASSERT(child->wait().has_value());
+
+    auto [waited] = run(wait_exit(child->pid(), loop));
+    ZASSERT(waited.has_error());
+    ZEXPECT(waited.error() == error::no_such_process);
+}
+#else
+// Windows gives a freed ID out again at once, to a process or a thread: the
+// test asks for one no process has, IDs going by fours, 2^24 of them at most.
+ZEST_CASE(wait_exit_of_no_process_fails) {
+    auto [waited] = run(wait_exit(0x7FFF'FFFC, loop));
+    ZASSERT(waited.has_error());
+    ZEXPECT(waited.error() == error::no_such_process);
+}
+#endif
+
+ZEST_CASE(wait_exit_of_a_pid_not_above_zero_fails) {
+    auto [zero, negative] = run(wait_exit(0, loop), wait_exit(-1, loop));
+    ZASSERT(zero.has_error());
+    ZEXPECT(zero.error() == error::invalid_argument);
+    ZASSERT(negative.has_error());
+    ZEXPECT(negative.error() == error::invalid_argument);
+}
+
+// Whatever process has the pid, if any, the loop is looked at first.
+ZEST_CASE(wait_exit_while_its_loop_is_destroyed_fails) {
+    auto waited = while_destroyed(
+        [](event_loop& dying) -> task<result<void>> { co_return co_await wait_exit(1, dying); });
+    ZASSERT(waited.has_error());
+    ZEXPECT(waited.error() == error::operation_aborted);
+}
 
 #ifndef _WIN32
 // The loop's watch of its children, made at its first spawn, would take the
@@ -923,49 +1072,148 @@ ZEST_CASE(children_of_uv_spawn_and_of_spawn_both_report) {
 #endif
 
 #ifdef __linux__
-// A kernel before 5.3 has no pidfd_open, nor has a sandbox that forbids
-// it: a seccomp filter makes it fail with ENOSYS in a process of the test's
-// own, which spawns and waits there, SIGCHLD telling it of the exit.
+// A kernel before 5.3 has no pidfd_open, nor has a sandbox that forbids it:
+// the child spawned waits there, SIGCHLD telling it of the exit.
 ZEST_CASE(exit_is_seen_without_pidfds) {
-    const pid_t tester = ::fork();
-    ZASSERT(tester >= 0);
-    if(tester == 0) {
-        // Ended by SIGALRM rather than hang the test.
-        ::alarm(10);
-        sock_filter filter[] = {
-            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, nr)),
-            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_pidfd_open, 0, 1),
-            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | ENOSYS),
-            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-        };
-        sock_fprog program{.len = std::size(filter), .filter = filter};
-        if(::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
-           ::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0) {
-            ::_exit(2);
-        }
-        // The filter holds.
-        if(::syscall(SYS_pidfd_open, ::getpid(), 0) != -1 || errno != ENOSYS) {
-            ::_exit(5);
-        }
+    const int ended = without_pidfds([] {
         event_loop own;
         auto spawned = process::spawn(shell("exit 7"), own);
         if(!spawned || spawned->proc.pid() <= 0) {
-            ::_exit(3);
+            return 3;
         }
         // No pidfd to give.
         if(spawned->proc.native_handle() != -1) {
-            ::_exit(6);
+            return 4;
         }
         auto waited = spawned->proc.wait();
         own.schedule(waited);
         own.run();
         auto status = std::move(waited).catch_cancel().result();
-        ::_exit(status.has_value() && status->code == 7 ? 0 : 4);
-    }
-    int status = 0;
-    ZASSERT(::waitpid(tester, &status, 0) == tester);
-    ZEXPECT(WIFEXITED(status));
-    ZEXPECT(WEXITSTATUS(status) == 0);
+        return status.has_value() && status->code == 7 ? 0 : 5;
+    });
+    ZEXPECT(ended == 0);
+}
+
+// Without pidfds wait_exit() looks at /proc, at once and then every second:
+// a process it found running is waited on until it is a zombie, one reaped
+// is no process, and a zombie has exited.
+ZEST_CASE(wait_exit_without_pidfds_looks_at_proc) {
+    const int ended = without_pidfds([] {
+        event_loop own;
+        auto child = sys::spawn(test::stdin_reader());
+        if(!child) {
+            return 3;
+        }
+        // The kill once the wait has begun, the tasks starting in turn.
+        auto kill_child = [&]() -> task<> {
+            child->kill();
+            co_return;
+        };
+        auto waited = wait_exit(child->pid(), own);
+        auto kill = kill_child();
+        own.schedule(waited);
+        own.schedule(kill);
+        own.run();
+        if(!std::move(waited).catch_cancel().result().has_value()) {
+            return 4;
+        }
+
+        if(!child->wait()) {
+            return 5;
+        }
+        auto gone = wait_exit(child->pid(), own);
+        own.schedule(gone);
+        own.run();
+        auto lost = std::move(gone).catch_cancel().result();
+        if(!lost.has_error() || lost.error() != error::no_such_process) {
+            return 6;
+        }
+
+        auto exited = sys::spawn(shell("exit 0"));
+        siginfo_t info{};
+        const auto pid = exited ? static_cast<id_t>(exited->pid()) : 0;
+        if(!exited || ::waitid(P_PID, pid, &info, WEXITED | WNOWAIT) != 0) {
+            return 7;
+        }
+        auto zombie = wait_exit(exited->pid(), own);
+        own.schedule(zombie);
+        own.run();
+        if(!std::move(zombie).catch_cancel().result().has_value()) {
+            return 8;
+        }
+        return exited->wait() ? 0 : 9;
+    });
+    ZEXPECT(ended == 0);
+}
+
+// A process whose first thread ended while another runs on is a zombie to
+// /proc, which counts its threads too: the wait goes on past its first look
+// until the last thread ends. The process forked here is one such, its
+// thread running until the test closes the pipe it reads.
+ZEST_CASE(wait_exit_without_pidfds_waits_for_the_last_thread, skip = thread_sanitized) {
+    const int ended = without_pidfds([] {
+        int hold[2];
+        if(::pipe(hold) != 0) {
+            return 3;
+        }
+        const pid_t threaded = ::fork();
+        if(threaded < 0) {
+            return 4;
+        }
+        if(threaded == 0) {
+            ::close(hold[1]);
+            std::thread([read_end = hold[0]] {
+                char byte = 0;
+                [[maybe_unused]] auto got = ::read(read_end, &byte, 1);
+                ::_exit(0);
+            }).detach();
+            // The first thread alone ends, unwinding nothing: pthread_exit()
+            // would unwind through the runner's frames, whose catch-all
+            // would abort the process.
+            ::syscall(SYS_exit, 0);
+            std::unreachable();
+        }
+        ::close(hold[0]);
+
+        // Nothing tells when the first thread has ended: the test looks
+        // until /proc shows it a zombie.
+        auto first_thread_ended = [threaded] {
+            char stat[512] = {};
+            const int fd =
+                ::open(std::format("/proc/{}/stat", threaded).c_str(), O_RDONLY | O_CLOEXEC);
+            const auto size = fd < 0 ? -1 : ::read(fd, stat, sizeof(stat) - 1);
+            ::close(fd);
+            return size > 0 && std::string_view(stat).find(") Z ") != std::string_view::npos;
+        };
+        for(int tries = 0; !first_thread_ended(); ++tries) {
+            if(tries == 5000) {
+                return 5;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        event_loop own;
+        auto waited = wait_exit(threaded, own);
+        // The wait has made its first look by then, the tasks starting in
+        // turn.
+        auto release_thread = [&]() -> task<bool> {
+            const bool waiting = !waited.done();
+            ::close(hold[1]);
+            co_return waiting;
+        };
+        auto release = release_thread();
+        own.schedule(waited);
+        own.schedule(release);
+        own.run();
+        if(!release.result()) {
+            return 6;
+        }
+        if(!std::move(waited).catch_cancel().result().has_value()) {
+            return 7;
+        }
+        return ::waitpid(threaded, nullptr, 0) == threaded ? 0 : 8;
+    });
+    ZEXPECT(ended == 0);
 }
 
 // epoll nests sets at most four deep: with the loop's own set four deep in
