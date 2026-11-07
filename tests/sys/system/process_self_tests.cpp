@@ -12,6 +12,7 @@
 #endif
 #include <windows.h>
 #else
+#include <cerrno>
 #include <csignal>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -30,6 +31,8 @@
 
 #ifdef _WIN32
 #include "kotatsu/support/utf16.h"
+#else
+#include "sys/harness/signals.h"
 #endif
 
 namespace kotatsu::sys {
@@ -272,6 +275,34 @@ ZEST_CASE(set_process_title_with_nothing_for_the_name_leaves_it) {
 #else
 ZEST_CASE(set_process_name_off_linux_fails) {
     ZEXPECT(set_process_name("kotatsu") == std::errc::not_supported);
+}
+#endif
+
+#ifndef _WIN32
+// A write to a pipe whose reader went away fails rather than ending this
+// process.
+ZEST_CASE(ignore_sigpipe_turns_a_broken_pipe_into_an_error) {
+    test::ScopedSignalAction at_default(SIGPIPE, SIG_DFL);
+    ignore_sigpipe();
+    struct sigaction action = {};
+    ::sigaction(SIGPIPE, nullptr, &action);
+    ZEXPECT(action.sa_handler == SIG_IGN);
+    int fds[2];
+    ZASSERT(::pipe(fds) == 0);
+    ::close(fds[0]);
+    auto written = ::write(fds[1], "x", 1);
+    auto error = errno;
+    ::close(fds[1]);
+    ZEXPECT(written == -1);
+    ZEXPECT(error == EPIPE);
+}
+
+ZEST_CASE(ignore_sigpipe_keeps_a_handler) {
+    test::ScopedSignalAction handled(SIGPIPE, test::do_nothing);
+    ignore_sigpipe();
+    struct sigaction action = {};
+    ::sigaction(SIGPIPE, nullptr, &action);
+    ZEXPECT(action.sa_handler == test::do_nothing);
 }
 #endif
 

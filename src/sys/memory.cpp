@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -11,8 +12,9 @@
 #include "kotatsu/sys/info.h"
 
 #ifdef _WIN32
-// After windows.h, whose types it uses.
+// After windows.h, whose types they use.
 #include <psapi.h>
+#include <winternl.h>
 #else
 #include <sys/resource.h>
 #endif
@@ -21,9 +23,24 @@
 #include <libproc.h>
 #include <mach/mach.h>
 #include <mach/mach_time.h>
+#include <malloc/malloc.h>
 #include <sys/sysctl.h>
 #elif !defined(_WIN32)
 #include "kotatsu/fs/directory.h"
+#endif
+
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
+
+// Whether a sanitizer allocates in place of the C library.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#define KOTATSU_SANITIZER_ALLOCATES 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) ||                         \
+    __has_feature(memory_sanitizer)
+#define KOTATSU_SANITIZER_ALLOCATES 1
+#endif
 #endif
 
 namespace kotatsu::sys {
@@ -126,6 +143,23 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
     stats.memory = counters.PrivateUsage;
     stats.peak_memory = counters.PeakPagefileUsage;
     stats.resident = counters.WorkingSetSize;
+
+    // VM_COUNTERS, whose start PROCESS_MEMORY_COUNTERS leaves out. Asked
+    // as GetProcessMemoryInfo asked for the rest, it does not fail.
+    struct {
+        SIZE_T peak_virtual_size;
+        SIZE_T virtual_size;
+        ULONG page_faults;
+        SIZE_T peak_working_set;
+        SIZE_T working_set;
+        SIZE_T paged_pool[2];
+        SIZE_T non_paged_pool[2];
+        SIZE_T pagefile[2];
+    } vm{};
+
+    constexpr auto process_vm_counters = static_cast<PROCESSINFOCLASS>(3);
+    ::NtQueryInformationProcess(process->handle, process_vm_counters, &vm, sizeof(vm), nullptr);
+    stats.address_space = vm.virtual_size;
     stats.user_time = microseconds(user);
     stats.system_time = microseconds(kernel);
 #elif defined(__APPLE__)
@@ -141,6 +175,7 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
     stats.memory = usage.ri_phys_footprint;
     stats.peak_memory = usage.ri_lifetime_max_phys_footprint;
     stats.resident = usage.ri_resident_size;
+    stats.address_space = task.pti_virtual_size;
     stats.user_time = microseconds(usage.ri_user_time);
     stats.system_time = microseconds(usage.ri_system_time);
     // Counted in 32 bits, which wrap.
@@ -166,6 +201,7 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
     stats.memory = kilobytes("RssAnon:") + stats.swapped;
     stats.peak_memory = kilobytes("VmHWM:");
     stats.resident = kilobytes("VmRSS:");
+    stats.address_space = kilobytes("VmSize:");
     // Of another process, only the threads it has are there to count.
     if(pid == 0 || pid == ::getpid()) {
         count_own_switches(stats);
@@ -209,6 +245,40 @@ std::expected<std::uint64_t, std::error_code> resident_memory() {
     std::string_view fields = statm;
     auto pages = leading_number(fields.substr(std::min(fields.find(' '), fields.size())));
     return pages.value_or(0) * page_size();
+#endif
+}
+
+std::optional<std::uint64_t> address_space_limit() {
+#ifdef _WIN32
+    return std::nullopt;
+#else
+    rlimit limit{};
+    ::getrlimit(RLIMIT_AS, &limit);
+    if(limit.rlim_cur == RLIM_INFINITY) {
+        return std::nullopt;
+    }
+    return static_cast<std::uint64_t>(limit.rlim_cur);
+#endif
+}
+
+void release_free_heap() noexcept {
+#ifdef _WIN32
+    // HEAP_OPTIMIZE_RESOURCES_INFORMATION, version 1 and no flags, which
+    // MinGW's headers may lack, as they may HeapOptimizeResources.
+    struct {
+        DWORD version = 1;
+        DWORD flags = 0;
+    } information;
+
+    // Fails before Windows 8.1, which gives nothing back.
+    ::HeapSetInformation(nullptr,
+                         static_cast<HEAP_INFORMATION_CLASS>(3),
+                         &information,
+                         sizeof(information));
+#elif defined(__APPLE__)
+    ::malloc_zone_pressure_relief(nullptr, 0);
+#elif defined(__GLIBC__) && !defined(KOTATSU_SANITIZER_ALLOCATES)
+    ::malloc_trim(0);
 #endif
 }
 

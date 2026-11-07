@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <ctime>
 #include <iterator>
 #include <string>
 
@@ -9,7 +10,6 @@
 #ifdef _WIN32
 #include "kotatsu/support/utf16.h"
 #else
-#include <ctime>
 #include <sys/resource.h>
 #endif
 
@@ -66,6 +66,25 @@ std::chrono::milliseconds uptime() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::seconds(now.tv_sec) + std::chrono::nanoseconds(now.tv_nsec));
 #endif
+}
+
+std::expected<std::tm, std::error_code> local_time(std::chrono::system_clock::time_point time) {
+    auto seconds = std::chrono::floor<std::chrono::seconds>(time).time_since_epoch().count();
+    std::tm local{};
+    // TZ as it is now, which localtime_r need not read again.
+#ifdef _WIN32
+    ::_tzset();
+    __time64_t value = seconds;
+    if(auto error = ::_localtime64_s(&local, &value)) {
+        return std::unexpected(std::error_code(error, std::generic_category()));
+    }
+#else
+    ::tzset();
+    auto value = static_cast<std::time_t>(seconds);
+    // It fails for a year past an int alone, past every system_clock's.
+    ::localtime_r(&value, &local);
+#endif
+    return local;
 }
 
 namespace {
@@ -179,6 +198,25 @@ std::error_code set_thread_priority(Priority priority) {
     return std::error_code(::pthread_set_qos_class_self_np(classes[index], 0),
                            std::generic_category());
 #endif
+#endif
+}
+
+std::error_code set_power_throttling([[maybe_unused]] bool throttled) {
+#ifdef _WIN32
+    PROCESS_POWER_THROTTLING_STATE state{
+        .Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+        .ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+        .StateMask = throttled ? PROCESS_POWER_THROTTLING_EXECUTION_SPEED : 0UL,
+    };
+    if(!::SetProcessInformation(::GetCurrentProcess(),
+                                ProcessPowerThrottling,
+                                &state,
+                                sizeof(state))) {
+        return fs::windows::last_error();
+    }
+    return {};
+#else
+    return std::make_error_code(std::errc::not_supported);
 #endif
 }
 

@@ -13,6 +13,7 @@ add_library(kotatsu_sys STATIC
     dirs.cpp
     env.cpp
     exit_status.cpp
+    exit_with_parent.cpp
     host.cpp
     memory.cpp
     os_version.cpp
@@ -22,7 +23,9 @@ add_library(kotatsu_sys STATIC
     spawn_posix.cpp
     spawn_windows.cpp
     temp_dir.cpp
+    thread.cpp
     title.cpp
+    user.cpp
 )
 add_library(kotatsu::sys ALIAS kotatsu_sys)
 
@@ -30,7 +33,8 @@ target_include_directories(kotatsu_sys PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-# pthread_sigmask around spawn's fork, in libc itself only from glibc 2.34.
+# Thread, and pthread_sigmask around spawn's fork, in libc itself only from
+# glibc 2.34.
 find_package(Threads REQUIRED)
 
 target_link_libraries(kotatsu_sys PUBLIC
@@ -39,8 +43,9 @@ target_link_libraries(kotatsu_sys PUBLIC
     Threads::Threads
 )
 
-# ntdll: parent_pid, parallelism, cpu_cores, os; advapi32: the registry of
-# cpu_cores; shell32 and ole32: the known folders of dirs.
+# ntdll: parent_pid, parallelism, cpu_cores, os, process_stats; advapi32: the
+# registry of cpu_cores, user_name; shell32 and ole32: the known folders of
+# dirs.
 if(WIN32)
     target_link_libraries(kotatsu_sys PUBLIC advapi32 ntdll ole32 shell32)
 endif()

@@ -38,6 +38,14 @@ enum class Quoting : std::uint8_t {
     POSIX,
 };
 
+/// The host's quoting: what its programs' command lines are written in, and
+/// split() and join() take unless told otherwise.
+#ifdef _WIN32
+constexpr inline Quoting native_quoting = Quoting::Windows;
+#else
+constexpr inline Quoting native_quoting = Quoting::POSIX;
+#endif
+
 /// The arguments of a command line, as split() reads them: a view that
 /// reads the line as it goes.
 class split_view : public std::ranges::view_interface<split_view> {
@@ -50,9 +58,16 @@ public:
 
         iterator() = default;
 
-        /// The argument, which holds until this iterator moves on or goes.
+        /// The argument: a view of the line when is_view(), else one that
+        /// holds until this iterator moves on or goes.
         std::string_view operator*() const {
             return borrowed ? argument : std::string_view(unquoted);
+        }
+
+        /// Whether the argument, having nothing to unquote, is a view of the
+        /// line, which holds as long as the line does.
+        bool is_view() const noexcept {
+            return borrowed;
         }
 
         iterator& operator++();
@@ -131,9 +146,10 @@ private:
 };
 
 /// The arguments of command line `line`, quoted as `quoting` says. One with
-/// nothing to unquote is a view of `line`, the others are unquoted into the
-/// iterator; either holds until the iterator moves on.
-inline split_view split(std::string_view line, Quoting quoting) {
+/// nothing to unquote is a view of `line`, which holds as long as `line`
+/// does; the others are unquoted into the iterator, and hold until it moves
+/// on. The iterator's is_view() tells which.
+inline split_view split(std::string_view line, Quoting quoting = native_quoting) {
     return split_view(line, quoting);
 }
 
@@ -148,7 +164,7 @@ inline split_view split(std::string_view line, Quoting quoting) {
 /// instead, which sh would take for a line continuation, and an empty
 /// argument as `''`; sh reads it back alike, but for a program named like
 /// one of its reserved words or an assignment.
-void join(buffer_ref out, string_list_ref arguments, Quoting quoting);
+void join(buffer_ref out, string_list_ref arguments, Quoting quoting = native_quoting);
 
 /// The arguments of a command with its response files read, as expand()
 /// gives them: a view that reads them as it goes.

@@ -16,7 +16,7 @@
 
 #include "kotatsu/support/utf16.h"
 #else
-#include <pwd.h>
+#include "passwd.h"
 #endif
 
 namespace kotatsu::sys {
@@ -44,31 +44,6 @@ std::error_code known_folder(buffer_ref out, const KNOWNFOLDERID& id) {
 }
 
 #else
-
-/// Writes into `out` the home directory in the entry of the password
-/// database that `find` gives, called as getpwuid_r and getpwnam_r are after
-/// the key; no_such_file_or_directory when there is none.
-template <typename Find>
-std::error_code passwd_home(buffer_ref out, Find find) {
-    passwd entry{};
-    passwd* found = nullptr;
-    std::string buffer(1024, '\0');
-    while(true) {
-        auto error = find(&entry, buffer.data(), buffer.size(), &found);
-        if(error == ERANGE) {
-            buffer.resize(buffer.size() * 2);
-            continue;
-        }
-        if(error != 0) {
-            return std::error_code(error, std::generic_category());
-        }
-        if(found == nullptr) {
-            return std::make_error_code(std::errc::no_such_file_or_directory);
-        }
-        out.assign(found->pw_dir);
-        return {};
-    }
-}
 
 /// Directory `relative` in the home directory.
 std::error_code in_home(buffer_ref out, std::string_view relative) {
@@ -106,7 +81,9 @@ std::error_code home_dir(buffer_ref out) {
     if(get_env(out, "HOME") && !out.empty()) {
         return {};
     }
-    return passwd_home(out, [](auto... args) { return ::getpwuid_r(::getuid(), args...); });
+    return read_passwd(out, &passwd::pw_dir, [](auto... args) {
+        return ::getpwuid_r(::getuid(), args...);
+    });
 #endif
 }
 
@@ -130,7 +107,9 @@ std::error_code expand_tilde(buffer_ref out, std::string_view path) {
         // POSIX lets a lookup that finds no such user fail as it likes, as
         // with ENOENT: any failure is taken for none.
         std::string name(user);
-        if(passwd_home(out, [&](auto... args) { return ::getpwnam_r(name.c_str(), args...); })) {
+        if(read_passwd(out, &passwd::pw_dir, [&](auto... args) {
+               return ::getpwnam_r(name.c_str(), args...);
+           })) {
             out.assign(path);
             return {};
         }

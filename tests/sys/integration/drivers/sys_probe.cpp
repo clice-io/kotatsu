@@ -46,6 +46,17 @@
 //   orphan                starts `sys_probe hang`, exit_with_parent, its
 //                         stdout this one's, prints {"pid": <its pid>} and
 //                         exits once its stdin ends, unless killed first
+//   follower              calls sys::exit_with_parent, prints "following" and
+//                         runs until it is killed
+//   followed              starts `sys_probe follower`, its stdout this one's,
+//                         prints {"pid": <its pid>} and exits once its stdin
+//                         ends, unless killed first
+//   late-follower         Windows: once its parent has exited, which the
+//                         handle it opens holds as it was, calls
+//                         sys::exit_with_parent, and prints {"survived":
+//                         true} if that returns
+//   left                  Windows: starts `sys_probe late-follower`, its stdout
+//                         this one's, prints {"pid": <its pid>} and exits
 //   orphan-thread         Linux: starts `sys_probe hang` exit_with_parent
 //                         from a thread that then ends, and prints
 //                         {"signal": <the signal that ended it>}
@@ -695,6 +706,50 @@ int main() {
         wait_for_stdin();
         return 0;
     }
+    if(command == "follower") {
+        if(auto error = sys::exit_with_parent()) {
+            return fail("exit_with_parent", error);
+        }
+        print_line(R"("following")");
+        while(true) {
+            std::this_thread::sleep_for(std::chrono::hours(1));
+        }
+    }
+    if(command == "followed") {
+        auto options = probe({"follower"});
+        options.streams[0] = sys::Stdio::ignore();
+        auto child = sys::spawn(options);
+        if(!child) {
+            return fail("spawn", child.error());
+        }
+        print_line(std::format(R"({{"pid":{}}})", child->pid()));
+        wait_for_stdin();
+        return 0;
+    }
+#ifdef _WIN32
+    if(command == "late-follower") {
+        HANDLE parent = ::OpenProcess(SYNCHRONIZE, FALSE, static_cast<DWORD>(sys::parent_pid()));
+        if(parent == nullptr) {
+            return fail("OpenProcess", kotatsu::fs::windows::last_error());
+        }
+        ::WaitForSingleObject(parent, INFINITE);
+        if(auto error = sys::exit_with_parent()) {
+            return fail("exit_with_parent", error);
+        }
+        print_line(R"({"survived":true})");
+        return 0;
+    }
+    if(command == "left") {
+        auto options = probe({"late-follower"});
+        options.streams[0] = sys::Stdio::ignore();
+        auto child = sys::spawn(options);
+        if(!child) {
+            return fail("spawn", child.error());
+        }
+        print_line(std::format(R"({{"pid":{}}})", child->pid()));
+        return 0;
+    }
+#endif
 #ifdef __linux__
     if(command == "orphan-thread") {
         std::expected<sys::Child, std::error_code> child;

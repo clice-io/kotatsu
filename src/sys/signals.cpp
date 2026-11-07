@@ -1,13 +1,17 @@
-#ifndef _WIN32
+#include "kotatsu/sys/process.h"
 
-#include "signals.h"
+#ifndef _WIN32
 
 #include <csignal>
 #include <mutex>
 
-#include "kotatsu/sys/detail/signals.h"
+#include "signals.h"
+
+#endif
 
 namespace kotatsu::sys {
+
+#ifndef _WIN32
 
 constinit std::atomic<bool> sigpipe_was_default = false;
 
@@ -40,9 +44,10 @@ void stop_auto_reaping() noexcept {
     ::sigaction(SIGCHLD, &action, nullptr);
 }
 
-namespace detail {
+#endif
 
 void ignore_sigpipe() noexcept {
+#ifndef _WIN32
 #ifdef __APPLE__
     std::lock_guard lock(spawning);
 #endif
@@ -54,10 +59,7 @@ void ignore_sigpipe() noexcept {
         action.sa_handler = SIG_IGN;
         ::sigaction(SIGPIPE, &action, nullptr);
     }
+#endif
 }
 
-}  // namespace detail
-
 }  // namespace kotatsu::sys
-
-#endif

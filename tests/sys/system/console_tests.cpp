@@ -17,6 +17,7 @@
 #include <windows.h>
 #include <winsock2.h>
 #else
+#include <cerrno>
 #include <cstdlib>
 #include <fcntl.h>
 #include <sys/socket.h>
@@ -68,20 +69,6 @@ struct Pipe {
 #endif
         read.fd = fds[0];
         write.fd = fds[1];
-    }
-
-    /// Writes to the write end return at once, taking what fits: O_NONBLOCK,
-    /// or Windows' PIPE_NOWAIT.
-    void stop_blocking_writes() {
-#ifdef _WIN32
-        DWORD mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
-        auto handle = reinterpret_cast<HANDLE>(::_get_osfhandle(write.fd));
-        ZASSERT(::SetNamedPipeHandleState(handle, &mode, nullptr, nullptr));
-#else
-        auto flags = ::fcntl(write.fd, F_GETFL);
-        ZASSERT(flags >= 0);
-        ZASSERT(::fcntl(write.fd, F_SETFL, flags | O_NONBLOCK) == 0);
-#endif
     }
 
     /// Everything written, until the write end is closed.
@@ -144,7 +131,7 @@ ZEST_CASE(write_console_writes_all_of_a_long_text) {
 // may take nothing of a larger write.
 ZEST_CASE(write_console_to_a_full_pipe_that_does_not_block_fails) {
     Pipe pipe;
-    pipe.stop_blocking_writes();
+    ZASSERT(!set_nonblocking(pipe.write.fd));
     std::size_t taken = 0;
     std::error_code error;
     while(!(error = write_console(pipe.write.fd, "x"))) {
@@ -154,6 +141,138 @@ ZEST_CASE(write_console_to_a_full_pipe_that_does_not_block_fails) {
     ZEXPECT(taken > 0U);
     pipe.write.reset();
     ZEXPECT(pipe.read_all().size() == taken);
+}
+
+ZEST_CASE(write_console_some_counts_what_it_wrote) {
+    Pipe pipe;
+    auto written = write_console_some(pipe.write.fd, "text");
+    ZASSERT(written);
+    ZEXPECT(*written == 4U);
+    pipe.write.reset();
+    ZEXPECT(pipe.read_all() == "text");
+}
+
+// Each write that took a byte counts it, up to the one that took nothing.
+ZEST_CASE(write_console_some_to_a_full_pipe_that_does_not_block_fails) {
+    Pipe pipe;
+    ZASSERT(!set_nonblocking(pipe.write.fd));
+    std::size_t taken = 0;
+    while(true) {
+        auto written = write_console_some(pipe.write.fd, "xy");
+        if(!written) {
+            ZEXPECT(written.error() == std::errc::resource_unavailable_try_again);
+            break;
+        }
+        ZASSERT(*written > 0U);
+        taken += *written;
+    }
+    ZEXPECT(taken > 0U);
+    pipe.write.reset();
+    ZEXPECT(pipe.read_all().size() == taken);
+}
+
+#ifndef _WIN32
+// What fits, where Windows may take nothing of a write larger than its room.
+ZEST_CASE(write_console_some_takes_what_fits_in_a_pipe_that_does_not_block) {
+    Pipe pipe;
+    ZASSERT(!set_nonblocking(pipe.write.fd));
+    std::string text(1 << 22, 'x');
+    auto written = write_console_some(pipe.write.fd, text);
+    ZASSERT(written);
+    ZEXPECT(*written > 0U);
+    ZEXPECT(*written < text.size());
+}
+#endif
+
+// Without a write, which a descriptor not open would fail.
+ZEST_CASE(write_console_some_of_nothing_writes_nothing) {
+    auto written = write_console_some(-1, "");
+    ZASSERT(written);
+    ZEXPECT(*written == 0U);
+}
+
+ZEST_CASE(write_console_some_to_no_descriptor_fails) {
+    auto written = write_console_some(-1, "text");
+    ZASSERT(!written);
+    ZEXPECT(written.error() == std::errc::bad_file_descriptor);
+}
+
+#ifdef _WIN32
+/// The state GetNamedPipeHandleState reads of the pipe of descriptor `fd`.
+DWORD pipe_state(int fd) {
+    DWORD state = 0;
+    auto handle = reinterpret_cast<HANDLE>(::_get_osfhandle(fd));
+    ZASSERT(::GetNamedPipeHandleState(handle, &state, nullptr, nullptr, nullptr, nullptr, 0));
+    return state;
+}
+
+ZEST_CASE(set_nonblocking_sets_pipe_nowait) {
+    Pipe pipe;
+    ZASSERT((pipe_state(pipe.write.fd) & PIPE_NOWAIT) == 0);
+    ZEXPECT(!set_nonblocking(pipe.write.fd));
+    ZEXPECT((pipe_state(pipe.write.fd) & PIPE_NOWAIT) != 0);
+}
+
+// A pipe of messages, whose name is the temporary directory's, stays one.
+ZEST_CASE(set_nonblocking_keeps_a_pipes_read_mode) {
+    test::TempDir dir;
+    auto name = LR"(\\.\pipe\)" + dir.path.filename().wstring();
+    HANDLE server = ::CreateNamedPipeW(name.c_str(),
+                                       PIPE_ACCESS_DUPLEX,
+                                       PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+                                       1,
+                                       4096,
+                                       4096,
+                                       0,
+                                       nullptr);
+    ZASSERT(server != INVALID_HANDLE_VALUE);
+    Descriptor pipe(::_open_osfhandle(reinterpret_cast<std::intptr_t>(server), 0));
+    ZASSERT(pipe.fd >= 0);
+    ZEXPECT(!set_nonblocking(pipe.fd));
+    auto state = pipe_state(pipe.fd);
+    ZEXPECT((state & PIPE_READMODE_MESSAGE) != 0);
+    ZEXPECT((state & PIPE_NOWAIT) != 0);
+}
+
+ZEST_CASE(set_nonblocking_of_a_file_fails_on_windows) {
+    test::TempDir dir;
+    auto path = dir.file("file");
+    test::write_text(path, "text");
+    Descriptor file(open_file(path));
+    ZASSERT(file.fd >= 0);
+    ZEXPECT(set_nonblocking(file.fd) == std::errc::not_supported);
+}
+
+// Its read end, which takes no message mode of a byte pipe.
+ZEST_CASE(set_nonblocking_of_a_pipes_read_end_lets_a_read_return_at_once) {
+    Pipe pipe;
+    ZASSERT(!set_nonblocking(pipe.read.fd));
+    char byte;
+    ZEXPECT(::_read(pipe.read.fd, &byte, 1) < 0);
+}
+#else
+ZEST_CASE(set_nonblocking_sets_o_nonblock) {
+    Pipe pipe;
+    ZASSERT(!set_nonblocking(pipe.read.fd));
+    ZEXPECT((::fcntl(pipe.read.fd, F_GETFL) & O_NONBLOCK) != 0);
+    char byte;
+    auto read = ::read(pipe.read.fd, &byte, 1);
+    auto error = errno;
+    ZEXPECT(read < 0);
+    ZEXPECT(error == EAGAIN);
+}
+#endif
+
+ZEST_CASE(set_nonblocking_of_no_descriptor_fails) {
+    int closed = -1;
+    {
+        Pipe pipe;
+        closed = pipe.write.fd;
+    }
+    for(int fd: {-1, closed}) {
+        ZEST_CONTEXT("descriptor {}", fd);
+        ZEXPECT(set_nonblocking(fd) == std::errc::bad_file_descriptor);
+    }
 }
 
 // On Windows without ending the process, as the C runtime's check would.

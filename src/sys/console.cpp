@@ -8,6 +8,7 @@
 
 #include "kotatsu/support/utf8.h"
 #else
+#include <fcntl.h>
 #include <sys/stat.h>
 #endif
 
@@ -22,50 +23,39 @@ bool is_console_handle(HANDLE handle) noexcept {
     return ::GetConsoleMode(handle, &mode) != 0;
 }
 
-/// `text` through WriteConsoleW, converted a buffer at a time.
-std::error_code write_wide(HANDLE console, std::string_view text) noexcept {
+/// The start of `text` through WriteConsoleW, as many code points as a
+/// buffer holds: the bytes of those.
+std::expected<std::size_t, std::error_code> write_wide(HANDLE console,
+                                                       std::string_view text) noexcept {
     wchar_t buffer[2048];
-    while(!text.empty()) {
-        std::size_t count = 0;
-        // Each code point takes at most two units.
-        while(!text.empty() && count + 2 <= std::size(buffer)) {
-            auto sequence = decode_utf8(text);
-            text.remove_prefix(sequence.length);
-            auto code_point = sequence.code_point;
-            if(code_point < 0x10000) {
-                buffer[count++] = static_cast<wchar_t>(code_point);
-            } else {
-                code_point -= 0x10000;
-                buffer[count++] = static_cast<wchar_t>(0xD800 + (code_point >> 10));
-                buffer[count++] = static_cast<wchar_t>(0xDC00 + (code_point & 0x3FF));
-            }
-        }
-        for(const wchar_t* rest = buffer; count > 0;) {
-            DWORD written = 0;
-            if(!::WriteConsoleW(console, rest, static_cast<DWORD>(count), &written, nullptr)) {
-                return fs::windows::last_error();
-            }
-            rest += written;
-            count -= written;
+    std::size_t count = 0;
+    auto rest = text;
+    // Each code point takes at most two units.
+    while(!rest.empty() && count + 2 <= std::size(buffer)) {
+        auto sequence = decode_utf8(rest);
+        rest.remove_prefix(sequence.length);
+        auto code_point = sequence.code_point;
+        if(code_point < 0x10000) {
+            buffer[count++] = static_cast<wchar_t>(code_point);
+        } else {
+            code_point -= 0x10000;
+            buffer[count++] = static_cast<wchar_t>(0xD800 + (code_point >> 10));
+            buffer[count++] = static_cast<wchar_t>(0xDC00 + (code_point & 0x3FF));
         }
     }
-    return {};
-}
-
-std::error_code write_bytes(HANDLE handle, std::string_view text) noexcept {
-    while(!text.empty()) {
+    for(const wchar_t* unwritten = buffer; count > 0;) {
         DWORD written = 0;
-        auto size = static_cast<DWORD>(std::min<std::size_t>(text.size(), MAXDWORD));
-        if(!::WriteFile(handle, text.data(), size, &written, nullptr)) {
-            return fs::windows::last_error();
+        if(!::WriteConsoleW(console, unwritten, static_cast<DWORD>(count), &written, nullptr)) {
+            return std::unexpected(fs::windows::last_error());
         }
-        // What a full pipe in PIPE_NOWAIT mode does, where POSIX says EAGAIN.
+        // Never seen of a console; it would write nothing for ever.
         if(written == 0) {
-            return std::make_error_code(std::errc::resource_unavailable_try_again);
+            return std::unexpected(std::make_error_code(std::errc::io_error));
         }
-        text.remove_prefix(written);
+        unwritten += written;
+        count -= written;
     }
-    return {};
+    return text.size() - rest.size();
 }
 
 }  // namespace
@@ -73,25 +63,79 @@ std::error_code write_bytes(HANDLE handle, std::string_view text) noexcept {
 #endif
 
 std::error_code write_console(int fd, std::string_view text) noexcept {
+    while(!text.empty()) {
+        auto written = write_console_some(fd, text);
+        if(!written) {
+            return written.error();
+        }
+        text.remove_prefix(*written);
+    }
+    return {};
+}
+
+std::expected<std::size_t, std::error_code> write_console_some(int fd,
+                                                               std::string_view text) noexcept {
+    if(text.empty()) {
+        return 0;
+    }
+#ifdef _WIN32
+    auto handle = descriptor_handle(fd);
+    if(handle == INVALID_HANDLE_VALUE) {
+        return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
+    }
+    if(is_console_handle(handle)) {
+        return write_wide(handle, text);
+    }
+    DWORD written = 0;
+    auto size = static_cast<DWORD>(std::min<std::size_t>(text.size(), MAXDWORD));
+    if(!::WriteFile(handle, text.data(), size, &written, nullptr)) {
+        return std::unexpected(fs::windows::last_error());
+    }
+    // What a full pipe in PIPE_NOWAIT mode does, where POSIX says EAGAIN.
+    if(written == 0) {
+        return std::unexpected(std::make_error_code(std::errc::resource_unavailable_try_again));
+    }
+    return written;
+#else
+    while(true) {
+        auto written = ::write(fd, text.data(), text.size());
+        if(written > 0) {
+            return static_cast<std::size_t>(written);
+        }
+        // A device that takes nothing and says no error.
+        if(written == 0) {
+            return std::unexpected(std::make_error_code(std::errc::io_error));
+        }
+        if(errno != EINTR) {
+            return std::unexpected(errno_code());
+        }
+    }
+#endif
+}
+
+std::error_code set_nonblocking(int fd) noexcept {
 #ifdef _WIN32
     auto handle = descriptor_handle(fd);
     if(handle == INVALID_HANDLE_VALUE) {
         return std::make_error_code(std::errc::bad_file_descriptor);
     }
-    if(is_console_handle(handle)) {
-        return write_wide(handle, text);
+    if(::GetFileType(handle) != FILE_TYPE_PIPE) {
+        return std::make_error_code(std::errc::not_supported);
     }
-    return write_bytes(handle, text);
+    DWORD state = 0;
+    if(!::GetNamedPipeHandleState(handle, &state, nullptr, nullptr, nullptr, nullptr, 0)) {
+        return fs::windows::last_error();
+    }
+    // Both modes are set at once: the read mode stays.
+    DWORD mode = (state & PIPE_READMODE_MESSAGE) | PIPE_NOWAIT;
+    if(!::SetNamedPipeHandleState(handle, &mode, nullptr, nullptr)) {
+        return fs::windows::last_error();
+    }
+    return {};
 #else
-    while(!text.empty()) {
-        auto written = ::write(fd, text.data(), text.size());
-        if(written < 0) {
-            if(errno == EINTR) {
-                continue;
-            }
-            return errno_code();
-        }
-        text.remove_prefix(static_cast<std::size_t>(written));
+    int flags = ::fcntl(fd, F_GETFL);
+    if(flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) {
+        return errno_code();
     }
     return {};
 #endif
