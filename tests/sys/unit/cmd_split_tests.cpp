@@ -45,15 +45,63 @@ ZEST_CASE(views_an_argument_with_nothing_to_unquote) {
         ZEST_CONTEXT("{}", line);
         auto view = cmd::split(line, quoting);
         auto it = view.begin();
+        ZEXPECT(it.is_view());
         ZEXPECT(views(line, *it));
         ++it;
         ZASSERT(it != std::default_sentinel);
+        ZEXPECT(it.is_view());
         ZEXPECT(views(line, *it));
         ++it;
         ZASSERT(it != std::default_sentinel);
         ZEXPECT(*it == "c d");
+        ZEXPECT(!it.is_view());
         ZEXPECT(!views(line, *it));
     }
+}
+
+// The views hold as long as the line, the iterator moved on and gone.
+ZEST_CASE(views_outlive_the_iterator) {
+    for(auto [line, quoting]: {
+            std::pair{R"(C:\bin\cc.exe -I C:\include\ "a b" -c x.cpp)"sv, windows},
+            std::pair{R"(/bin/cc -I /include 'a b' -c x.cpp)"sv,          posix  }
+    }) {
+        ZEST_CONTEXT("{}", line);
+        std::vector<std::string_view> kept;
+        for(auto it = cmd::split(line, quoting).begin(); it != std::default_sentinel; ++it) {
+            if(it.is_view()) {
+                kept.push_back(*it);
+            }
+        }
+        auto expected =
+            quoting == windows
+                ? std::vector<std::string_view>{R"(C:\bin\cc.exe)",
+                                                "-I",
+                                                R"(C:\include\)",
+                                                "-c",
+                                                "x.cpp"}
+                : std::vector<std::string_view>{"/bin/cc", "-I", "/include", "-c", "x.cpp"};
+        ZEXPECT(kept == expected);
+        for(auto argument: kept) {
+            ZEXPECT(views(line, argument));
+        }
+    }
+}
+
+ZEST_CASE(native_quoting_is_the_hosts) {
+#ifdef _WIN32
+    ZSTATIC_EXPECT(native_quoting == Quoting::Windows);
+#else
+    ZSTATIC_EXPECT(native_quoting == Quoting::POSIX);
+#endif
+}
+
+ZEST_CASE(splits_by_native_quoting_unless_told) {
+    constexpr auto line = R"(p "a b" c\\d 'e')"sv;
+    Arguments arguments;
+    for(auto argument: cmd::split(line)) {
+        arguments.emplace_back(argument);
+    }
+    ZEXPECT(arguments == split_all(line, native_quoting));
 }
 
 // An argument views its iterator or the line: a copy keeps its own.
