@@ -327,7 +327,8 @@ constexpr inline std::string_view type_name =
 
 /// The name of the member `Member` points to, `&S::field` or `&S::function`, which MSVC prints
 /// as its declaration, `void __cdecl S::function(void)`, or, of a class with more than one base,
-/// in braces with the offsets that adjust it, `{&S::function,0}`.
+/// in braces with the offsets that adjust it, `{&S::function,0}`. GCC prints every conversion
+/// operator as `__conv_op`, which is then its name.
 template <auto Member>
 constexpr inline std::string_view member_name =
     detail::last_name(detail::member_text(detail::without_offsets(detail::pack_list<Member>())));

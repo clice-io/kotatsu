@@ -261,8 +261,13 @@ ZEST_CASE(basic_member_name) {
     ZEXPECT(member_name<&adapter<(&ordered::operator>)>::value> == "value");
     ZEXPECT(member_name<&adapter<(&ordered::operator>>)>::value> == "value");
     ZEXPECT(zest::ends_with(member_name<(&ordered::operator>>)>, ">>"));
+#if defined(__GNUC__) && !defined(__clang__)
+    // GCC prints every conversion operator as `__conv_op`.
+    ZEXPECT(member_name<(&ordered::operator int)> == "__conv_op");
+#else
     ZEXPECT(member_name<(&ordered::operator int)> == "operator int");
     ZEXPECT(member_name<(&ordered::operator double)> == "operator double");
+#endif
 }
 
 };  // ZEST_SUITE(meta_name)
