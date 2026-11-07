@@ -121,7 +121,8 @@ consteval std::size_t run_end() {
 
 /// The fields of aggregate T; none that meta sees when no list of at most max_fields
 /// initializers initializes it, or when it takes more, as an array member's elements count
-/// one each.
+/// one each. A `const&` or `&&` member, which an initializer binds, counts as a field, whose
+/// address then names nothing in T: reading the fields fails to compile.
 template <typename T>
 consteval std::size_t field_count() {
     constexpr std::size_t start = run_start<T>();

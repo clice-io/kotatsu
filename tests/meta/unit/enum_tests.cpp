@@ -115,6 +115,11 @@ enum class Toggle : bool {
     On,
 };
 
+/// An enum with no value the probes reach.
+enum class Remote : int {
+    Far = 1000,
+};
+
 static_assert(enum_values<Color>.size() == 3);
 static_assert(enum_names<Color>.size() == 3);
 static_assert(enum_names<Color>[0] == "Red");
@@ -181,6 +186,14 @@ ZEST_CASE(enum_value_finds_no_other_name) {
     ZSTATIC_EXPECT(!enum_value<Compass>("Zzz").has_value());
     ZSTATIC_EXPECT(!enum_value<Compass>("A").has_value());
     ZSTATIC_EXPECT(!enum_value<Color>("red").has_value());
+}
+
+ZEST_CASE(enum_with_no_reached_names) {
+    ZSTATIC_EXPECT(enum_values<Remote>.empty());
+    ZSTATIC_EXPECT(enum_names<Remote>.empty());
+    ZSTATIC_EXPECT(enum_name(Remote::Far, "far") == "far");
+    ZSTATIC_EXPECT(!enum_value<Remote>("Far").has_value());
+    ZSTATIC_EXPECT(!enum_value<Remote>("").has_value());
 }
 
 ZEST_CASE(enum_member_names) {
