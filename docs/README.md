@@ -21,18 +21,18 @@ Each page gives a module's purpose, its build targets, a short example and what 
 
 ## Dependencies between modules
 
-| Module  | Depends on                                             |
-| ------- | ------------------------------------------------------ |
-| support | the standard library                                   |
-| meta    | support                                                |
-| codec   | meta, support                                          |
-| fs      | support                                                |
-| sys     | fs, support                                            |
-| cli     | meta, codec, support; privately sys                    |
-| async   | fs, sys, support                                       |
-| ipc     | codec, support; its peers and the LSP part also async  |
-| http    | async; codec's JSON backend when it is enabled         |
-| zest    | cli, meta, codec, support; privately async, fs and sys |
+| Module  | Depends on                                                             |
+| ------- | ---------------------------------------------------------------------- |
+| support | the standard library                                                   |
+| meta    | support                                                                |
+| codec   | meta, support                                                          |
+| fs      | support                                                                |
+| sys     | fs, support                                                            |
+| cli     | meta, codec, support; privately sys                                    |
+| async   | fs, sys, support                                                       |
+| ipc     | codec, support; its peers and the LSP part also async, the LSP part fs |
+| http    | async; codec's JSON backend when it is enabled                         |
+| zest    | cli, meta, codec, support; privately async, fs and sys                 |
 
 Only async and the modules built on it need an event loop; support, meta, codec, fs, sys, cli and ipc's codec target do not, so a program that must stay small, such as a library injected into other processes, can use them alone.
 

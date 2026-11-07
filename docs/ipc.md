@@ -17,7 +17,7 @@ not for HTTP ([http](http.md)), nor does it define how values are encoded
 | Bazel      | `@kotatsu//:ipc_codec` (framing, codecs, `BlockingClient`; no event loop) and `@kotatsu//:ipc_codec_json`; `@kotatsu//:ipc` (transports, peers) and `@kotatsu//:ipc_json`; `@kotatsu//:ipc_lsp` |
 | CMake      | `kotatsu::ipc::codec`, always built; `kotatsu::ipc` and `kotatsu::ipc::lsp`, with `KOTATSU_ENABLE_ASYNC`; the JSON parts with `KOTATSU_CODEC_ENABLE_SIMDJSON`                                   |
 | Headers    | [include/kotatsu/ipc/](../include/kotatsu/ipc/), the LSP part in [lsp/](../include/kotatsu/ipc/lsp/)                                                                                            |
-| Depends on | [codec](codec.md), [support](support.md); the peers and the LSP part also [async](async.md)                                                                                                     |
+| Depends on | [codec](codec.md), [support](support.md); the peers and the LSP part also [async](async.md), the LSP part [fs](fs.md)                                                                           |
 
 ## Example
 

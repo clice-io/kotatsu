@@ -110,8 +110,8 @@ struct VisitorBase {
 };
 
 constexpr inline char buffer_identifier[] = "EVTO";
-constexpr voffset_t first_field = 4;
-constexpr voffset_t field_step = 2;
+constexpr inline voffset_t first_field = 4;
+constexpr inline voffset_t field_step = 2;
 
 /// Table lowerings walk a struct's reflected fields, so a nonempty struct
 /// past the reflection field limit would encode as an empty table and decode

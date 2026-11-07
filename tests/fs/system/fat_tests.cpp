@@ -371,6 +371,11 @@ ZEST_CASE(read_symlink_of_a_file_fails) {
     });
 }
 
+ZEST_CASE(case_sensitive_is_false) {
+    // FAT keeps no flag of a directory's case.
+    on_fat([](const test::TempDir& dir) { ZEXPECT(case_sensitive(dir.root()) == false); });
+}
+
 };  // ZEST_SUITE(fs_fat)
 
 }  // namespace

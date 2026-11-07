@@ -44,7 +44,7 @@ using scan_values = decltype(make_scan_values<U>(std::make_integer_sequence<int,
 
 /// The values a probe prints at once: a wider chunk trades a longer signature for fewer
 /// instantiations.
-constexpr std::size_t enum_chunk = 32;
+constexpr inline std::size_t enum_chunk = 32;
 
 /// The name of the enumerator a value prints as, `ns::E::name`; empty for a value no enumerator
 /// has, which prints as a cast ending in a number, `(ns::E)5`.

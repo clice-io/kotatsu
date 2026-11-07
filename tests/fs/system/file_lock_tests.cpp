@@ -1,6 +1,8 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -11,6 +13,7 @@
 #ifndef _WIN32
 #include <fcntl.h>
 #include <sys/file.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -71,6 +74,85 @@ struct HandleCopy {
 
     File::native_handle_type handle;
 };
+
+enum class RangeKind : std::uint8_t {
+    Shared,
+    Exclusive,
+};
+
+/// A byte-range lock of the `length` bytes from `offset` of the lock file
+/// that another holder holds while this lives: on Windows another handle,
+/// by LockFileEx; on POSIX, where a process never sees its own record locks,
+/// a child process, by fcntl, as SQLite and LMDB take them.
+struct RangeLock {
+    RangeLock(LockFile& lock, RangeKind kind, std::uint64_t offset, std::uint64_t length) :
+        file(lock.open()) {
+#ifdef _WIN32
+        OVERLAPPED at{};
+        at.Offset = static_cast<DWORD>(offset);
+        at.OffsetHigh = static_cast<DWORD>(offset >> 32);
+        DWORD flags = (kind == RangeKind::Exclusive ? LOCKFILE_EXCLUSIVE_LOCK : 0) |
+                      LOCKFILE_FAIL_IMMEDIATELY;
+        ZASSERT(::LockFileEx(file.native_handle(),
+                             flags,
+                             0,
+                             static_cast<DWORD>(length),
+                             static_cast<DWORD>(length >> 32),
+                             &at));
+#else
+        int taken_pipe[2];
+        int release_pipe[2];
+        ZASSERT(::pipe(taken_pipe) == 0);
+        ZASSERT(::pipe(release_pipe) == 0);
+        child = ::fork();
+        ZASSERT(child >= 0);
+        if(child == 0) {
+            // Async-signal-safe calls alone, in the fork of a process that
+            // may run threads.
+            ::close(release_pipe[1]);
+            struct flock range{};
+            range.l_type = kind == RangeKind::Exclusive ? F_WRLCK : F_RDLCK;
+            range.l_whence = SEEK_SET;
+            range.l_start = static_cast<off_t>(offset);
+            range.l_len = static_cast<off_t>(length);
+            char taken = ::fcntl(file.native_handle(), F_SETLK, &range) == 0 ? 1 : 0;
+            [[maybe_unused]] auto told = ::write(taken_pipe[1], &taken, 1);
+            // Holds it until the end of the pipe in this process closes, as
+            // it does when this goes, or when a failed ZASSERT ends the
+            // process: no child stays behind.
+            char released;
+            [[maybe_unused]] auto waited = ::read(release_pipe[0], &released, 1);
+            ::_exit(0);
+        }
+        ::close(taken_pipe[1]);
+        ::close(release_pipe[0]);
+        release = release_pipe[1];
+        char taken = 0;
+        auto told = ::read(taken_pipe[0], &taken, 1);
+        ::close(taken_pipe[0]);
+        ZASSERT(told == 1);
+        ZASSERT(taken == 1);
+#endif
+    }
+
+    ~RangeLock() {
+#ifndef _WIN32
+        ::close(release);
+        ::waitpid(child, nullptr, 0);
+#endif
+    }
+
+    RangeLock(const RangeLock&) = delete;
+    RangeLock& operator=(const RangeLock&) = delete;
+
+    File file;
+#ifndef _WIN32
+    pid_t child;
+    int release;
+#endif
+};
+
+constexpr auto every_byte = std::numeric_limits<std::uint64_t>::max();
 
 ZEST_SUITE(fs_file_lock) {
 
@@ -228,12 +310,156 @@ ZEST_CASE(a_moved_file_releases_the_lock_it_was_given) {
     ZEXPECT(second.try_lock() == true);
 }
 
+ZEST_CASE(a_borrowed_file_releases_its_lock_and_leaves_the_handle) {
+    LockFile lock;
+    auto owner = lock.open();
+    auto other = lock.open();
+    {
+        auto borrowed = File::borrow(owner.native_handle());
+        ZEXPECT(!borrowed.lock());
+        ZEXPECT(other.try_lock() == false);
+    }
+    ZEXPECT(other.try_lock() == true);
+    ZEXPECT(!other.unlock());
+    ZEXPECT(owner.try_lock() == true);
+    std::array<char, 16> buffer{};
+    auto count = owner.read(buffer);
+    ZASSERT(count.has_value());
+    ZEXPECT(std::string_view(buffer.data(), *count) == "text");
+}
+
 ZEST_CASE(unlock_without_a_lock_does_nothing) {
     LockFile lock;
     auto file = lock.open();
     ZEXPECT(!file.unlock());
     ZEXPECT(file.try_lock() == true);
 }
+
+ZEST_CASE(range_locked_sees_a_lock_another_holds) {
+    LockFile lock;
+    RangeLock held(lock, RangeKind::Exclusive, 10, 10);
+    // To probe takes no right to write.
+    auto probe = File::open(lock.dir.file("lock"));
+    ZASSERT(probe.has_value());
+    ZEXPECT(probe->range_locked(0, 11) == true);
+    ZEXPECT(probe->range_locked(19, 5) == true);
+    ZEXPECT(probe->range_locked(12, 1) == true);
+    ZEXPECT(probe->range_locked(0, every_byte) == true);
+}
+
+ZEST_CASE(range_locked_sees_a_shared_lock) {
+    LockFile lock;
+    RangeLock held(lock, RangeKind::Shared, 10, 10);
+    auto probe = lock.open();
+    ZEXPECT(probe.range_locked(15, 1) == true);
+}
+
+ZEST_CASE(range_locked_of_bytes_beside_a_lock_is_false) {
+    LockFile lock;
+    RangeLock held(lock, RangeKind::Exclusive, 10, 10);
+    auto probe = lock.open();
+    ZEXPECT(probe.range_locked(0, 10) == false);
+    ZEXPECT(probe.range_locked(20, 10) == false);
+}
+
+ZEST_CASE(range_locked_of_a_file_no_one_locks_is_false) {
+    LockFile lock;
+    auto probe = lock.open();
+    ZEXPECT(probe.range_locked(0, every_byte) == false);
+}
+
+ZEST_CASE(range_locked_leaves_the_range_free) {
+    // Windows takes the range to probe it.
+    LockFile lock;
+    auto probe = lock.open();
+    ZEXPECT(probe.range_locked(0, 10) == false);
+    RangeLock held(lock, RangeKind::Exclusive, 0, 10);
+    ZEXPECT(probe.range_locked(0, 10) == true);
+}
+
+ZEST_CASE(range_locked_sees_what_lock_takes_but_on_linux) {
+    LockFile lock;
+    auto holder = lock.open();
+    auto probe = lock.open();
+    ZEXPECT(!holder.lock());
+#ifdef __linux__
+    // flock()'s locks, a family apart from the record locks.
+    ZEXPECT(probe.range_locked(0, every_byte) == false);
+#else
+    // macOS keeps flock()'s locks with the record locks, a lock of every
+    // byte; on Windows a lock is of a byte past any file's end.
+    ZEXPECT(probe.range_locked(0, every_byte) == true);
+#endif
+#ifdef _WIN32
+    ZEXPECT(probe.range_locked(0, 4096) == false);
+#endif
+}
+
+#ifndef __linux__
+// The File's own lock counts too: on Windows it is in the way of the range
+// the probe takes, and on macOS a lock of flock()'s family belongs to the
+// open file, not to the process, whose own locks alone the probe passes
+// over.
+ZEST_CASE(range_locked_sees_the_lock_of_its_own_file) {
+    LockFile lock;
+    auto file = lock.open();
+    ZEXPECT(!file.lock());
+    ZEXPECT(file.range_locked(0, every_byte) == true);
+    ZEXPECT(!file.lock_shared());
+    ZEXPECT(file.range_locked(0, every_byte) == true);
+#ifdef _WIN32
+    ZEXPECT(file.range_locked(0, 4096) == false);
+#endif
+}
+#endif
+
+// A range whose end would pass the largest offset ends there, as one of
+// every byte does.
+ZEST_CASE(range_locked_of_a_range_past_the_largest_offset_ends_there) {
+    LockFile lock;
+    auto probe = lock.open();
+    ZEXPECT(probe.range_locked(5, every_byte) == false);
+    RangeLock held(lock, RangeKind::Exclusive, 10, 10);
+    ZEXPECT(probe.range_locked(5, every_byte) == true);
+    ZEXPECT(probe.range_locked(20, every_byte) == false);
+}
+
+#ifdef _WIN32
+// Windows lets a lock reach 2^64 - 1, the last byte, which a range that
+// would pass it still sees.
+ZEST_CASE(range_locked_sees_a_lock_of_the_last_byte) {
+    LockFile lock;
+    RangeLock held(lock, RangeKind::Exclusive, std::numeric_limits<std::uint64_t>::max(), 1);
+    auto probe = lock.open();
+    ZEXPECT(probe.range_locked(std::numeric_limits<std::uint64_t>::max(), 1) == true);
+    ZEXPECT(probe.range_locked(5, every_byte) == true);
+    ZEXPECT(probe.range_locked(5, 10) == false);
+}
+#endif
+
+#ifndef _WIN32
+ZEST_CASE(range_locked_sees_no_record_lock_of_this_process) {
+    // A record lock belongs to the process, which never sees its own.
+    LockFile lock;
+    auto holder = lock.open();
+    auto probe = lock.open();
+    struct flock range{};
+    range.l_type = F_WRLCK;
+    range.l_whence = SEEK_SET;
+    range.l_start = 0;
+    range.l_len = 10;
+    ZASSERT(::fcntl(holder.native_handle(), F_SETLK, &range) == 0);
+    ZEXPECT(probe.range_locked(0, 10) == false);
+}
+
+ZEST_CASE(range_locked_past_the_largest_offset_fails) {
+    LockFile lock;
+    auto probe = lock.open();
+    auto locked = probe.range_locked(std::uint64_t{1} << 63, 1);
+    ZASSERT(!locked.has_value());
+    ZEXPECT(locked.error() == std::errc::invalid_argument);
+}
+#endif
 
 };  // ZEST_SUITE(fs_file_lock)
 

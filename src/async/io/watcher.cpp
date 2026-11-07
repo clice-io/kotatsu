@@ -5,9 +5,46 @@
 #include <cstddef>
 #include <utility>
 
+#ifndef _WIN32
+#include <csignal>
+#include <mutex>
+#endif
+
 #include "awaiter.h"
 
 namespace kotatsu::async {
+
+#ifndef _WIN32
+namespace {
+
+/// Held while a signal watcher starts or stops: leaving a signal ignored
+/// must not undo a start() elsewhere in between. Never destroyed: a watcher
+/// of static storage may go after it.
+std::mutex& signal_actions() {
+    static auto& mutex = *new std::mutex;
+    return mutex;
+}
+
+/// Leaves `signum`, which a watcher has just stopped watching, as `then`
+/// says, if no watcher watches it any more: libuv has set the default action
+/// then, and keeps its handler while any of its signal handles, kotatsu's or
+/// another's, still watches the signal.
+void leave_signal(int signum, signal::leave then) {
+    if(then == signal::leave::default_action) {
+        return;
+    }
+    struct sigaction now = {};
+    ::sigaction(signum, nullptr, &now);
+    if(now.sa_handler != SIG_DFL) {
+        return;
+    }
+    struct sigaction ignored = {};
+    ignored.sa_handler = SIG_IGN;
+    ::sigaction(signum, &ignored, nullptr);
+}
+
+}  // namespace
+#endif
 
 struct watcher::Self : uv::owned_handle<Self> {
     union {
@@ -23,6 +60,32 @@ struct watcher::Self : uv::owned_handle<Self> {
 
     /// Fires nobody waited for yet.
     std::size_t missed = 0;
+
+#ifndef _WIN32
+    /// What a signal watcher leaves its signal as, if it stops last. Here
+    /// `signal` names the handle.
+    async::signal::leave then = async::signal::leave::default_action;
+
+    /// Stops a signal watcher, leaving its signal as `then` says.
+    void stop_signal() {
+        // Watching no signal (0): stopped, or closed with its loop.
+        const int watched = signal.signum;
+        if(watched == 0) {
+            return;
+        }
+        std::scoped_lock lock(signal_actions());
+        ::uv_signal_stop(&signal);
+        leave_signal(watched, then);
+    }
+
+    /// Stops a signal watcher first, as stop() does, then closes the handle.
+    static void destroy(Self* self) noexcept {
+        if(self->handle.type == UV_SIGNAL) {
+            self->stop_signal();
+        }
+        owned_handle::destroy(self);
+    }
+#endif
 
     void fire() {
         if(slot.waiting()) {
@@ -68,7 +131,11 @@ error watcher::stop() {
 
     switch(self->handle.type) {
         case UV_TIMER: ::uv_timer_stop(&self->timer); break;
+#ifdef _WIN32
         case UV_SIGNAL: ::uv_signal_stop(&self->signal); break;
+#else
+        case UV_SIGNAL: self->stop_signal(); break;
+#endif
         case UV_IDLE: ::uv_idle_stop(&self->idle); break;
         case UV_PREPARE: ::uv_prepare_stop(&self->prepare); break;
         case UV_CHECK: ::uv_check_stop(&self->check); break;
@@ -134,19 +201,41 @@ result<signal> signal::create(event_loop& loop) {
     return signal(std::move(self));
 }
 
-error signal::start(int signum) {
+error signal::start(int signum, [[maybe_unused]] leave then) {
     if(!self) {
         return error::invalid_argument;
     }
 
+#ifndef _WIN32
+    // Ignored, SIGCHLD has the system reap every child before process's
+    // waits can.
+    if(signum == SIGCHLD && then == leave::ignored) {
+        return error::invalid_argument;
+    }
+#endif
+
     // Stopped, it watches no signal (0).
-    const bool switching = self->signal.signum != signum;
-    if(auto err = error(::uv_signal_start(&self->signal, Self::on_signal, signum))) {
-        return err;
-    }
-    if(switching) {
+    const int watched = self->signal.signum;
+#ifndef _WIN32
+    std::scoped_lock lock(signal_actions());
+#endif
+    auto failed = error(::uv_signal_start(&self->signal, Self::on_signal, signum));
+    // A switch, also one that fails, stops watching the old signal, whose
+    // fires go.
+    if(self->signal.signum != watched) {
         self->missed = 0;
+#ifndef _WIN32
+        if(watched != 0) {
+            leave_signal(watched, self->then);
+        }
+#endif
     }
+    if(failed) {
+        return failed;
+    }
+#ifndef _WIN32
+    self->then = then;
+#endif
     return {};
 }
 

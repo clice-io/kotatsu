@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 
 #include "kotatsu/async/io/loop.h"
 #include "kotatsu/async/runtime/task.h"
@@ -75,16 +76,42 @@ private:
 /// events come as signals: Ctrl+C as SIGINT, Ctrl+Break as SIGBREAK, and its
 /// closing as SIGHUP (sys::sighup), after which Windows ends the process
 /// within seconds.
+///
+/// Once no signal watcher in the process watches a signal any more, after a
+/// stop(), a start() on another signal or a destruction, libuv sets its
+/// action to the default (SIG_DFL), not to the action it had before the
+/// first start(): an ignored SIGPIPE, watched and stopped, ends the process
+/// again. The watcher that stopped last leaves the signal as its start()'s
+/// `then` says; one its loop's destruction stopped leaves the default. A
+/// start() on a signal no watcher watches catches it again, whatever its
+/// action. On Windows there is no action to leave: once the last watcher of
+/// SIGINT or SIGBREAK stops, Ctrl+C or Ctrl+Break ends the process again.
 class signal : public watcher {
 public:
+    /// What a signal is left as once no watcher watches it.
+    enum class leave : std::uint8_t {
+        /// The default action, which for most signals ends the process.
+        default_action,
+        /// Ignored (SIG_IGN), set just after libuv set the default action: a
+        /// signal that arrives in between takes the default action. On
+        /// Windows it is as default_action.
+        ignored,
+    };
+
     signal() noexcept = default;
 
     static result<signal> create(event_loop& loop = event_loop::current());
 
-    /// Watches `signum`, or switches to it; fails with invalid_argument for
-    /// a number that names no signal. The fires kept are dropped unless it
-    /// watches `signum` already.
-    error start(int signum);
+    /// Watches `signum`, or switches to it, and leaves it as `then` says if
+    /// this watcher is the last to stop watching it; fails with
+    /// invalid_argument for a number that names no signal, on POSIX having
+    /// stopped watching the old signal unless the number is 0. The fires
+    /// kept are dropped unless it watches `signum` already: then only `then`
+    /// changes, as when a program decides, once the signal came, to leave
+    /// it ignored. SIGCHLD is not left ignored, which would have the system
+    /// reap every child before a process's wait() could: asked to, it
+    /// fails with invalid_argument and changes nothing.
+    error start(int signum, leave then = leave::default_action);
 
 private:
     using watcher::watcher;

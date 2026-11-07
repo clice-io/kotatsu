@@ -2,8 +2,8 @@
 // uri.test.ts and position.test.ts to put the same questions to VS Code's
 // libraries. It reads one JSON object a line and answers each with one:
 //
-//   {"fromFilePath": "<path>"}             {"uri": "<text>"} or {"error": "..."}
-//   {"filePath": "<uri>"}                  {"path": "<path>"} or {"error": "..."}
+//   {"fromPath": "<path>"}                 {"uri": "<text>"} or {"error": "..."}
+//   {"toPath": "<uri>"}                    {"path": "<path>"} or {"error": "..."}
 //   {"text": "...", "offset": <byte>}      {"line": l, "character": c} or {}
 //   {"text": "...", "line": l, "character": c}
 //                                          {"offset": <byte>} or {}
@@ -32,8 +32,8 @@ namespace {
 namespace lsp = ipc::lsp;
 
 struct Question {
-    std::optional<std::string> from_file_path;
-    std::optional<std::string> file_path;
+    std::optional<std::string> from_path;
+    std::optional<std::string> to_path;
     std::optional<std::string> text;
     std::optional<std::uint32_t> offset;
     std::optional<std::uint32_t> line;
@@ -55,21 +55,21 @@ struct Answer {
 
 Answer answer(const Question& question) {
     Answer answer{};
-    if(question.from_file_path) {
-        auto uri = lsp::URI::from_file_path(*question.from_file_path);
+    if(question.from_path) {
+        auto uri = lsp::URI::from_path(*question.from_path);
         if(uri) {
-            answer.uri = uri->str();
+            answer.uri = std::string(uri->text());
         } else {
-            answer.error = std::move(uri).error();
+            answer.error = uri.error().message();
         }
-    } else if(question.file_path) {
-        auto path = lsp::URI::parse(*question.file_path).and_then([](const lsp::URI& uri) {
-            return uri.file_path();
-        });
-        if(path) {
-            answer.path = std::move(*path);
+    } else if(question.to_path) {
+        auto uri = lsp::URI::from_string(*question.to_path);
+        std::string path;
+        auto error = uri ? uri->to_path(path) : uri.error();
+        if(error) {
+            answer.error = error.message();
         } else {
-            answer.error = std::move(path).error();
+            answer.path = std::move(path);
         }
     } else {
         // The conversions read only the lines the caller does not know to

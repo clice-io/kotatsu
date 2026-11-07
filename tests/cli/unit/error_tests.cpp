@@ -83,6 +83,20 @@ ZEST_CASE(suggestion_follows_the_message) {
     ZEXPECT(error.render().ends_with("bad; did you mean '--verbose'?"));
 }
 
+ZEST_CASE(summary_is_the_message_alone_without_a_suggestion) {
+    std::string summary = "left over";
+    at({"--jobs", "many"}, 1, 2).summary(summary);
+    ZEXPECT(summary == "bad");
+}
+
+ZEST_CASE(summary_ends_with_the_suggestion) {
+    auto error = at({"--verbos"}, 0, 1);
+    error.suggestion = "--verbose";
+    std::string summary;
+    error.summary(summary);
+    ZEXPECT(summary == "bad; did you mean '--verbose'?");
+}
+
 };  // ZEST_SUITE(cli_error)
 
 }  // namespace

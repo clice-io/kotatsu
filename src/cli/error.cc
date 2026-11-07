@@ -133,9 +133,18 @@ std::string
 
 }  // namespace
 
+void Error::summary(buffer_ref out) const {
+    out.assign(message);
+    if(!suggestion.empty()) {
+        out.append("; did you mean '");
+        out.append(suggestion);
+        out.append("'?");
+    }
+}
+
 std::string Error::render(const Style& style) const {
-    const auto said =
-        suggestion.empty() ? message : std::format("{}; did you mean '{}'?", message, suggestion);
+    std::string said;
+    summary(said);
     if(argv.empty()) {
         return style.color ? std::format("{} {}",
                                          detail::paint(detail::ansi_error, "error"),

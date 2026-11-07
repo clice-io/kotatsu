@@ -340,6 +340,25 @@ private:
 /// a symlink.
 Walk walk(std::string_view root, const Walk::Options& options = {});
 
+/// Whether the names in `directory`, symlinks followed, are matched with
+/// their case, so that `a` and `A` name two files there. A file that is no
+/// directory fails with std::errc::not_a_directory.
+///
+/// On macOS each volume says, as getattrlist() tells its format
+/// (VOL_CAP_FMT_CASE_SENSITIVE), which ISO 9660 and UDF tell as well, where
+/// pathconf(_PC_CASE_SENSITIVE) has no answer, and one that does not tell
+/// matches case; APFS and HFS+ fold case unless formatted otherwise. On
+/// Windows each directory says, by the flag WSL and `fsutil file
+/// setCaseSensitiveInfo` set (FileCaseSensitiveInfo), which NTFS leaves
+/// clear by default; a file system that keeps no such flag (FAT, ReFS), and
+/// Windows before 10 1803, fold case. On Linux a directory folds case where
+/// it is marked so (FS_CASEFOLD_FL, `chattr +F` on ext4, f2fs and tmpfs), as
+/// every one on the FAT family does (vfat, exfat); the others match it,
+/// those of network file systems too (CIFS and SMB, and the 9p through which
+/// WSL reaches the Windows drives), whose server may fold case out of the
+/// client's sight.
+std::expected<bool, std::error_code> case_sensitive(std::string_view directory);
+
 /// Creates the directory `path`: true when it made it, false when a
 /// directory was there already.
 std::expected<bool, std::error_code> create_directory(std::string_view path);

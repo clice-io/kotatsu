@@ -95,6 +95,44 @@ ZEST_CASE(replacement_takes_each_maximal_subpart) {
     ZEXPECT(replace_invalid_utf8("\xED\xA0\x80") == "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBD");
 }
 
+ZEST_CASE(floor_char_boundary_keeps_a_boundary) {
+    // "a", U+00E9, U+20AC, U+1F600: one, two, three and four bytes.
+    constexpr std::string_view text = "a\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80";
+    ZSTATIC_EXPECT(floor_char_boundary(text, 0) == 0);
+    ZSTATIC_EXPECT(floor_char_boundary(text, 1) == 1);
+    ZSTATIC_EXPECT(floor_char_boundary(text, 3) == 3);
+    ZSTATIC_EXPECT(floor_char_boundary(text, 6) == 6);
+}
+
+ZEST_CASE(floor_char_boundary_steps_back_to_the_sequence_start) {
+    constexpr std::string_view text = "a\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80";
+    ZSTATIC_EXPECT(floor_char_boundary(text, 2) == 1);
+    ZSTATIC_EXPECT(floor_char_boundary(text, 4) == 3);
+    ZSTATIC_EXPECT(floor_char_boundary(text, 5) == 3);
+    ZSTATIC_EXPECT(floor_char_boundary(text, 7) == 6);
+    ZSTATIC_EXPECT(floor_char_boundary(text, 8) == 6);
+    ZSTATIC_EXPECT(floor_char_boundary(text, 9) == 6);
+}
+
+ZEST_CASE(floor_char_boundary_past_the_end_is_the_size) {
+    ZSTATIC_EXPECT(floor_char_boundary("ab", 2) == 2);
+    ZSTATIC_EXPECT(floor_char_boundary("ab", 7) == 2);
+    ZSTATIC_EXPECT(floor_char_boundary("", 0) == 0);
+}
+
+ZEST_CASE(floor_char_boundary_reads_what_is_no_utf8_as_the_decoder_does) {
+    // The prefix of a code point cut short is one sequence.
+    ZSTATIC_EXPECT(floor_char_boundary("\xE2\x82x", 1) == 0);
+    ZSTATIC_EXPECT(floor_char_boundary("\xE2\x82x", 2) == 2);
+    // A continuation byte past a whole code point is a sequence of its own.
+    ZSTATIC_EXPECT(floor_char_boundary("\xC3\xA9\x80", 2) == 2);
+    // So is each after an overlong lead, and each in a run longer than a
+    // sequence can be.
+    ZSTATIC_EXPECT(floor_char_boundary("\xC0\xAF", 1) == 1);
+    ZSTATIC_EXPECT(floor_char_boundary("\x80\x80\x80\x80\x80", 4) == 4);
+    ZSTATIC_EXPECT(floor_char_boundary("\x80\x80", 1) == 1);
+}
+
 };  // ZEST_SUITE(support_utf8)
 
 }  // namespace

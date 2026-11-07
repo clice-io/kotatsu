@@ -45,10 +45,11 @@ enum class SeekFrom : std::uint8_t {
     End,
 };
 
-/// An open file to read or write bytes, closed when this goes: a regular
-/// file, a device or a pipe, never a directory, which a Directory opens. Its
-/// handle is not inherited by child processes, and on Windows does not keep
-/// another process from renaming or removing the file.
+/// An open file to read or write bytes, closed when this goes but for a
+/// handle it borrows (borrow()): a regular file, a device or a pipe, never a
+/// directory, which a Directory opens. A handle it opens is not inherited by
+/// child processes, and on Windows does not keep another process from
+/// renaming or removing the file.
 class File {
 public:
 #ifdef _WIN32
@@ -145,6 +146,14 @@ public:
     /// systems that can hold holes always do, and there this does nothing.
     std::error_code set_sparse();
 
+#ifdef _WIN32
+    /// Whether the file is marked sparse (FILE_ATTRIBUTE_SPARSE_FILE), as
+    /// set_sparse() or another program marks it. Windows alone: POSIX has no
+    /// such mark, and whether a file there holds holes is its file system's
+    /// affair.
+    std::expected<bool, std::error_code> is_sparse() const;
+#endif
+
     /// Waits until no other handle holds a lock of the file, then takes an
     /// exclusive one, which keeps any other from taking either kind. Locks
     /// are advisory: they keep no one from reading or writing. A handle
@@ -175,6 +184,34 @@ public:
     /// Releases the lock this handle holds; holding none is no error.
     std::error_code unlock();
 
+    /// Whether a byte-range lock, a read lock or a write lock, covers any of
+    /// the `length` bytes from `offset`, `length` not zero: (0, UINT64_MAX)
+    /// asks of every byte. Whose locks count differs: on POSIX other
+    /// processes', on Windows every handle's.
+    ///
+    /// On POSIX fcntl(F_GETLK), which sees the record locks that other
+    /// processes take with fcntl or lockf, as SQLite and LMDB do, and never
+    /// this process's own: a record lock belongs to the process, not to a
+    /// handle. Closing any descriptor of a file drops every record lock the
+    /// process holds of it, the File's close among them: probe a file this
+    /// process does not otherwise hold open, as LMDB's lock file. No lock
+    /// reaches past 2^63 - 1, off_t's largest offset, and an `offset` past
+    /// it fails with std::errc::invalid_argument. lock() takes locks of
+    /// another family, flock's, which Linux keeps apart and this does not
+    /// see; macOS keeps the two families together, and sees a lock lock()
+    /// took, of any handle, this process's too, as one of every byte.
+    ///
+    /// On Windows LockFileEx of the range, without waiting, and UnlockFileEx
+    /// when it took it: a lock of any handle counts, this File's and this
+    /// process's other handles' included, and for an instant the probe holds
+    /// the range itself, which keeps other handles from locking it, and from
+    /// reading or writing its bytes. A lock reaches 2^64 - 1 at most, the
+    /// last byte, where a range that would pass it ends. lock() locks a byte
+    /// past any file's end, which a range that reaches it sees. It takes a
+    /// file open for `read` or `write`, as lock() does.
+    std::expected<bool, std::error_code> range_locked(std::uint64_t offset,
+                                                      std::uint64_t length) const;
+
     /// Releases the lock this File holds and closes the file, saying whether
     /// the system kept every write, which some file systems tell only now;
     /// closing a closed file does nothing. Windows would release the lock of
@@ -188,7 +225,8 @@ public:
     /// then, without releasing the lock it holds, and the descriptor the
     /// caller's to close. On Windows it belongs to the C runtime kotatsu is
     /// linked with, which with a static runtime is each module's own. On
-    /// failure the File keeps the handle.
+    /// failure the File keeps the handle. A File that borrows its handle
+    /// (borrow()) has none of its own to give: it must not call this.
     std::expected<int, std::error_code> into_descriptor() &&;
 
     bool is_open() const;
@@ -197,6 +235,12 @@ public:
     native_handle_type native_handle() const {
         return handle;
     }
+
+    /// A File that works through `handle`, which stays its owner's: every
+    /// operation goes through it, and closing the File, or its going,
+    /// releases the lock the File took and leaves `handle` open, close()
+    /// then telling no error of its own.
+    static File borrow(native_handle_type handle);
 
 private:
     friend std::error_code copy_file(std::string_view from, std::string_view to);
@@ -213,6 +257,10 @@ private:
     /// Whether this File has taken a lock it may still hold, which close()
     /// then releases.
     bool locked = false;
+
+    /// Whether close() closes the handle, which it leaves open where the
+    /// File borrows it.
+    bool owned = true;
 };
 
 /// Writes into `out` the bytes of a file, as File::read_to_end() reads

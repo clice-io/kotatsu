@@ -1,7 +1,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <filesystem>
 #include <format>
 #include <iterator>
@@ -15,11 +14,8 @@
 #else
 #include <unistd.h>
 #endif
-#ifdef __APPLE__
-#include <chrono>
-#include <thread>
-#endif
 
+#include "fs/harness/disk_image.h"
 #include "fs/harness/files.h"
 #include "fs/harness/win32.h"
 #include "kotatsu/zest/zest.h"
@@ -85,75 +81,6 @@ void expect_refused_as_a_directory(std::string_view path) {
         ZEXPECT(file.error() == entry.error);
     }
 }
-
-#ifdef __APPLE__
-/// A disk image of 1 MB of HFS+ in a test's directory, attached beside it,
-/// which hdiutil lets any user do; detached, as though the disk went, when
-/// this goes or a failed ZASSERT ends the process.
-struct DiskImage {
-    explicit DiskImage(const test::TempDir& dir) :
-        image(dir.file("image.dmg")), mount(dir.file("volume")) {
-        std::filesystem::create_directory(test::std_path(mount));
-        ZASSERT(hdiutil(std::format("create -size 1m -fs HFS+ -volname kotatsu '{}'", image)));
-        attach(false);
-    }
-
-    DiskImage(const DiskImage&) = delete;
-    DiskImage& operator=(const DiskImage&) = delete;
-
-    ~DiskImage() {
-        detach();
-    }
-
-    /// `name` on the volume.
-    std::string file(std::string_view name) const {
-        return std::format("{}/{}", mount, name);
-    }
-
-    void attach(bool read_only) {
-        // The disk's device, which hdiutil names first, before its volume:
-        // through a file, as the helper hdiutil leaves running would keep a
-        // pipe open.
-        auto listed = image + ".attached";
-        attached = std::system(std::format("hdiutil attach {} -nobrowse -noverify -noautofsck "
-                                           "-mountpoint '{}' '{}' > '{}'",
-                                           read_only ? "-readonly" : "",
-                                           mount,
-                                           image,
-                                           listed)
-                                   .c_str()) == 0;
-        ZASSERT(attached);
-        auto text = test::read_text(listed);
-        device = text.substr(0, text.find_first_of(" \t\n"));
-        ZASSERT(device.starts_with("/dev/"));
-    }
-
-    /// Detaches it, files open on it or not: false when it stays attached.
-    /// A daemon may hold the disk for a moment once its volume is unmounted,
-    /// which -force does not override ("Resource busy"): the disk is tried
-    /// again by its device, a few times.
-    bool detach() {
-        for(int tries = 0; attached && tries < 10; ++tries) {
-            if(tries != 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            }
-            attached = !hdiutil(std::format("detach -force '{}'", device));
-        }
-        return !attached;
-    }
-
-private:
-    static bool hdiutil(std::string_view arguments) {
-        return std::system(std::format("hdiutil {} > /dev/null", arguments).c_str()) == 0;
-    }
-
-    const std::string image;
-    const std::string mount;
-    std::string device;
-    bool attached = false;
-    zest::FatalHook on_fatal{[this] { detach(); }};
-};
-#endif
 
 ZEST_SUITE(fs_file_handle) {
 
@@ -579,7 +506,7 @@ ZEST_CASE(sync_of_a_device_succeeds) {
 
 ZEST_CASE(sync_of_a_file_on_a_read_only_volume_succeeds) {
     test::TempDir dir;
-    DiskImage image(dir);
+    test::DiskImage image(dir, "HFS+");
     test::write_text(image.file("file"), "text");
     ZASSERT(image.detach());
     image.attach(true);
@@ -590,7 +517,7 @@ ZEST_CASE(sync_of_a_file_on_a_read_only_volume_succeeds) {
 
 ZEST_CASE(sync_of_a_file_whose_volume_went_fails) {
     test::TempDir dir;
-    DiskImage image(dir);
+    test::DiskImage image(dir, "HFS+");
     auto file = File::open(image.file("file"), {.write = true, .create = true});
     ZASSERT(file.has_value());
     ZEXPECT(!file->write("text"));
@@ -620,6 +547,17 @@ ZEST_CASE(set_sparse_lets_a_file_hold_a_hole) {
     ZASSERT(found.has_value());
     ZEXPECT(found->size == size);
 }
+
+#ifdef _WIN32
+ZEST_CASE(is_sparse_tells_whether_set_sparse_marked_the_file) {
+    test::TempDir dir;
+    auto file = File::open(dir.file("file"), {.write = true, .create = true});
+    ZASSERT(file.has_value());
+    ZEXPECT(file->is_sparse() == false);
+    ZEXPECT(!file->set_sparse());
+    ZEXPECT(file->is_sparse() == true);
+}
+#endif
 
 ZEST_CASE(canonical_names_the_open_file_as_canonical_does) {
     test::TempDir dir;
@@ -834,6 +772,45 @@ ZEST_CASE(into_descriptor_of_a_closed_file_fails) {
     auto fd = std::move(file).into_descriptor();
     ZASSERT(!fd.has_value());
     ZEXPECT(fd.error() == std::errc::bad_file_descriptor);
+}
+
+ZEST_CASE(borrow_works_through_a_handle_it_leaves_open) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    auto owner = File::open(dir.file("file"), {.read = true, .write = true});
+    ZASSERT(owner.has_value());
+    {
+        auto borrowed = File::borrow(owner->native_handle());
+        ZEXPECT(borrowed.native_handle() == owner->native_handle());
+        auto found = borrowed.status();
+        ZASSERT(found.has_value());
+        ZEXPECT(found->size == 4u);
+        ZEXPECT(!borrowed.resize(2));
+        ZEXPECT(rest_of(borrowed) == "te");
+        // Moved, it borrows still.
+        File moved(std::move(borrowed));
+        File assigned;
+        assigned = std::move(moved);
+        ZEXPECT(assigned.native_handle() == owner->native_handle());
+    }
+    ZEXPECT(owner->seek(0) == 0u);
+    ZEXPECT(!owner->write("TE"));
+    ZEXPECT(owner->seek(0) == 0u);
+    ZEXPECT(rest_of(*owner) == "TE");
+    ZEXPECT(!owner->close());
+}
+
+ZEST_CASE(close_of_a_borrowed_file_leaves_the_handle_open) {
+    test::TempDir dir;
+    auto owner = File::open(dir.file("file"), {.write = true, .create = true});
+    ZASSERT(owner.has_value());
+    auto borrowed = File::borrow(owner->native_handle());
+    ZEXPECT(!borrowed.write("hello"));
+    ZEXPECT(!borrowed.close());
+    ZEXPECT(!borrowed.is_open());
+    ZEXPECT(!owner->write(" world"));
+    ZEXPECT(!owner->close());
+    ZEXPECT(test::read_text(dir.file("file")) == "hello world");
 }
 
 };  // ZEST_SUITE(fs_file_handle)

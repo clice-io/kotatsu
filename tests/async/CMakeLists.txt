@@ -1,5 +1,13 @@
 kotatsu_add_module_tests(LIBS kotatsu::async kotatsu::zest::async)
 
+# The thread pool sized at startup: see thread_pool_size/main.cpp.
+add_executable(async_thread_pool_size thread_pool_size/main.cpp)
+target_link_libraries(async_thread_pool_size PRIVATE kotatsu::async kotatsu::sys)
+kotatsu_apply_project_options(async_thread_pool_size)
+set_property(GLOBAL APPEND PROPERTY kotatsu_check_programs async_thread_pool_size)
+add_test(NAME async_thread_pool_size COMMAND async_thread_pool_size)
+set_tests_properties(async_thread_pool_size PROPERTIES LABELS system)
+
 # A relay let go while its loop winds down: see relay_release/main.cpp. The
 # linker's --wrap is ELF's.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

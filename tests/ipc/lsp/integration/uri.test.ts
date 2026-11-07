@@ -7,9 +7,9 @@
 // - the URI VS Code makes of a path reads as the path in kotatsu.
 //
 // The two encode differently (VS Code escapes ':' and more), which the checks
-// leave to each; what matters is that each reads the other's. Each writes
-// the path its own way: kotatsu separates segments with '/', and VS Code with
-// the platform's separator, a drive letter in lower case.
+// leave to each; what matters is that each reads the other's. Both write a
+// drive letter in lower case, and on POSIX keep `\` as a character of a name;
+// on Windows kotatsu separates names with '/', and VS Code with '\'.
 
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
@@ -24,10 +24,12 @@ import type { JsonLines } from "../../../harness/jsonl.ts";
 const windows = process.platform === "win32";
 const separator = windows ? "\\" : "/";
 
-// Path characters, among them every one a URI reserves or escapes.
+// Path characters, among them every one a URI reserves or escapes, and on
+// POSIX `\`, which is a character of a name there.
 const segment = fc.string({
   unit: fc.constantFrom(
     ...("aZ09-._~ #?%:@&=+;,!$'()*[]é😀".match(/./gsu) as string[]),
+    ...(windows ? [] : ["\\"]),
   ),
   minLength: 1,
   maxLength: 6,
@@ -60,20 +62,14 @@ const uncPath = fc
 
 const path = fc.oneof(windows ? drivePath : posixPath, uncPath);
 
-/** `drawn` as kotatsu writes a path: its segments separated by '/'. */
-function kotatsuPath(drawn: string): string {
-  return drawn.replaceAll("\\", "/");
-}
-
 /** `path` with its drive letter, if it has one, in lower case. */
 function lowerDrive(path: string): string {
   return /^[A-Za-z]:/.test(path) ? path[0].toLowerCase() + path.slice(1) : path;
 }
 
-/** `drawn` as VS Code's fsPath writes a path. */
-function vscodePath(drawn: string): string {
-  const path = lowerDrive(kotatsuPath(drawn));
-  return windows ? path.replaceAll("/", "\\") : path;
+/** `drawn` as kotatsu writes a path back: on Windows its names separated by '/'. */
+function kotatsuPath(drawn: string): string {
+  return lowerDrive(windows ? drawn.replaceAll("\\", "/") : drawn);
 }
 
 async function ask(
@@ -101,14 +97,14 @@ test("kotatsu_uris_read_back_as_their_paths", { timeout: FUZZ_TIMEOUT }, (t) =>
   withProbe(t, (lines) =>
     fuzz(
       fc.asyncProperty(path, async (drawn) => {
-        const { uri } = await ask(lines, { fromFilePath: drawn });
+        const { uri } = await ask(lines, { fromPath: drawn });
         assert.ok(uri, `no URI for ${JSON.stringify(drawn)}`);
-        assert.deepEqual(await ask(lines, { filePath: uri }), {
+        assert.deepEqual(await ask(lines, { toPath: uri }), {
           path: kotatsuPath(drawn),
         });
         assert.equal(
           URI.parse(uri).fsPath,
-          vscodePath(drawn),
+          lowerDrive(drawn),
           `VS Code reading ${uri}`,
         );
       }),
@@ -122,8 +118,8 @@ test("vscode_uris_read_as_their_paths", { timeout: FUZZ_TIMEOUT }, (t) =>
       fc.asyncProperty(path, async (drawn) => {
         const uri = URI.file(drawn).toString();
         assert.deepEqual(
-          await ask(lines, { filePath: uri }),
-          { path: lowerDrive(kotatsuPath(drawn)) },
+          await ask(lines, { toPath: uri }),
+          { path: kotatsuPath(drawn) },
           `reading ${uri}`,
         );
       }),

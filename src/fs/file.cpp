@@ -1,7 +1,9 @@
 #include "kotatsu/fs/file.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <utility>
 
@@ -136,14 +138,17 @@ std::uint64_t left_to_read(HANDLE handle) {
     return static_cast<std::uint64_t>(size.QuadPart - position.QuadPart);
 }
 
-/// The byte a lock covers: past any file's end, so that it keeps no one
-/// from the file's bytes, as a Windows lock of them would.
-OVERLAPPED lock_byte() {
+/// Where LockFileEx and UnlockFileEx start, `offset`.
+OVERLAPPED at_offset(std::uint64_t offset) {
     OVERLAPPED at{};
-    at.Offset = 0xFFFF'FFFE;
-    at.OffsetHigh = 0x7FFF'FFFF;
+    at.Offset = static_cast<DWORD>(offset);
+    at.OffsetHigh = static_cast<DWORD>(offset >> 32);
     return at;
 }
+
+/// The byte a lock covers: past any file's end, so that it keeps no one
+/// from the file's bytes, as a Windows lock of them would.
+constexpr std::uint64_t lock_byte = 0x7FFF'FFFF'FFFF'FFFE;
 
 /// The flags of the locks take_lock() takes.
 constexpr DWORD exclusive = LOCKFILE_EXCLUSIVE_LOCK;
@@ -155,9 +160,9 @@ constexpr DWORD no_wait = LOCKFILE_FAIL_IMMEDIATELY;
 std::expected<bool, std::error_code> take_lock(HANDLE handle, DWORD flags) {
     // A lock replaces the one the handle holds, as flock's does; Windows
     // would have the two conflict.
-    auto at = lock_byte();
+    auto at = at_offset(lock_byte);
     ::UnlockFileEx(handle, 0, 1, 0, &at);
-    at = lock_byte();
+    at = at_offset(lock_byte);
     if(::LockFileEx(handle, flags, 0, 1, 0, &at)) {
         return true;
     }
@@ -253,16 +258,24 @@ std::error_code error_of(const std::expected<bool, std::error_code>& taken) {
 }  // namespace
 
 File::File(File&& other) noexcept :
-    handle(std::exchange(other.handle, closed)), locked(std::exchange(other.locked, false)) {}
+    handle(std::exchange(other.handle, closed)), locked(std::exchange(other.locked, false)),
+    owned(std::exchange(other.owned, true)) {}
 
 File& File::operator=(File&& other) noexcept {
     std::swap(handle, other.handle);
     std::swap(locked, other.locked);
+    std::swap(owned, other.owned);
     return *this;
 }
 
 File::~File() {
     [[maybe_unused]] auto ignored = close();
+}
+
+File File::borrow(native_handle_type handle) {
+    File file(handle);
+    file.owned = false;
+    return file;
 }
 
 bool File::is_open() const {
@@ -500,13 +513,42 @@ std::error_code File::set_sparse() {
     return {};
 }
 
+std::expected<bool, std::error_code> File::is_sparse() const {
+    FILE_BASIC_INFO basic;
+    if(!::GetFileInformationByHandleEx(handle, FileBasicInfo, &basic, sizeof(basic))) {
+        return std::unexpected(windows::last_error());
+    }
+    return (basic.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE) != 0;
+}
+
 std::error_code File::unlock() {
-    auto at = lock_byte();
+    auto at = at_offset(lock_byte);
     if(!::UnlockFileEx(handle, 0, 1, 0, &at) && ::GetLastError() != ERROR_NOT_LOCKED) {
         return windows::last_error();
     }
     locked = false;
     return {};
+}
+
+std::expected<bool, std::error_code> File::range_locked(std::uint64_t offset,
+                                                        std::uint64_t length) const {
+    assert(length != 0);
+    // LockFileEx refuses a range whose last byte, offset + length - 1, would
+    // pass 2^64 - 1 (ERROR_INVALID_LOCK_RANGE): it ends there.
+    length = std::min(length - 1, std::numeric_limits<std::uint64_t>::max() - offset) + 1;
+    auto low = static_cast<DWORD>(length);
+    auto high = static_cast<DWORD>(length >> 32);
+    auto at = at_offset(offset);
+    if(!::LockFileEx(handle, exclusive | no_wait, 0, low, high, &at)) {
+        auto error = ::GetLastError();
+        if(error == ERROR_LOCK_VIOLATION) {
+            return true;
+        }
+        return std::unexpected(windows::to_error_code(error));
+    }
+    at = at_offset(offset);
+    ::UnlockFileEx(handle, 0, low, high, &at);
+    return false;
 }
 
 #else
@@ -693,6 +735,24 @@ std::error_code File::unlock() {
     return error;
 }
 
+std::expected<bool, std::error_code> File::range_locked(std::uint64_t offset,
+                                                        std::uint64_t length) const {
+    assert(length != 0);
+    // A write lock, which a lock of either kind is in the way of. A range
+    // whose end off_t cannot hold reaches the largest offset, as a length
+    // of zero says; F_GETLK refuses an offset past it.
+    constexpr auto largest = static_cast<std::uint64_t>(std::numeric_limits<off_t>::max());
+    struct flock probe{};
+    probe.l_type = F_WRLCK;
+    probe.l_whence = SEEK_SET;
+    probe.l_start = static_cast<off_t>(offset);
+    probe.l_len = length <= largest - offset ? static_cast<off_t>(length) : 0;
+    if(::fcntl(handle, F_GETLK, &probe) != 0) {
+        return std::unexpected(posix::last_error());
+    }
+    return probe.l_type != F_UNLCK;
+}
+
 #endif
 
 std::error_code File::sync() {
@@ -711,6 +771,10 @@ std::error_code File::close() {
     }
     auto closing = std::exchange(handle, closed);
     locked = false;
+    // A borrowed handle is its owner's to close.
+    if(!std::exchange(owned, true)) {
+        return {};
+    }
 #ifdef _WIN32
     return ::CloseHandle(closing) ? std::error_code() : windows::last_error();
 #else
@@ -721,6 +785,8 @@ std::error_code File::close() {
 }
 
 std::expected<int, std::error_code> File::into_descriptor() && {
+    // A borrowed handle is not the File's to give.
+    assert(owned);
     if(!is_open()) {
         return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
     }

@@ -78,6 +78,29 @@ constexpr UTF8Sequence decode_utf8(std::string_view text) {
     return detail::decode_sequence(text, false);
 }
 
+/// Where text cut at `at` keeps only whole sequences: `at` where a sequence
+/// starts there, else the start of the sequence `at` falls inside; the size
+/// of text for an `at` past its end. The sequences are those decode_utf8()
+/// reads from the start, so in text that is no UTF-8 a byte that continues
+/// no sequence is one of its own.
+constexpr std::size_t floor_char_boundary(std::string_view text, std::size_t at) {
+    if(at >= text.size()) {
+        return text.size();
+    }
+    auto continues = [&](std::size_t i) {
+        return (static_cast<unsigned char>(text[i]) & 0xC0) == 0x80;
+    };
+    // A sequence is one byte that continues none and at most three that do.
+    std::size_t start = at;
+    while(start > 0 && at - start < 3 && continues(start)) {
+        --start;
+    }
+    if(continues(start) || start + decode_utf8(text.substr(start)).length <= at) {
+        return at;
+    }
+    return start;
+}
+
 /// Whether text is UTF-8: whole code points, none overlong, a surrogate or
 /// past U+10FFFF. ASCII passes eight bytes at a time.
 inline bool is_utf8(std::string_view text) {

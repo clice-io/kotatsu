@@ -246,7 +246,7 @@ bool MapWriter<Format>::visit_entry(KF&& key_fn, VF&& value_fn) {
 }
 
 /// The room to_string starts with, unless told how much.
-constexpr std::size_t default_capacity = 1024;
+constexpr inline std::size_t default_capacity = 1024;
 
 /// Encodes `value` as compact JSON text under the format F; use json::prettify
 /// for indented output.

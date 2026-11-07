@@ -2,22 +2,33 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <format>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #ifdef _WIN32
 #include <io.h>
 #elif defined(__linux__)
+#include <fcntl.h>
 #include <sys/epoll.h>
+#include <sys/syscall.h>
 #include <unistd.h>
+
+// pidfd_open's number on every architecture but Alpha's and MIPS's, for C
+// libraries whose headers are older than it (Linux 5.3).
+#if !defined(SYS_pidfd_open) && !defined(__alpha__) && !defined(__mips__)
+#define SYS_pidfd_open 434
+#endif
 #elif defined(__APPLE__)
 #include <sys/event.h>
 #include <unistd.h>
@@ -27,6 +38,10 @@
 #include "kotatsu/support/scope_exit.h"
 #include "kotatsu/sys/detail/descriptors.h"
 #include "kotatsu/async/runtime/when.h"
+
+#ifdef _WIN32
+#include "kotatsu/fs/windows.h"
+#endif
 
 namespace kotatsu::async {
 
@@ -81,15 +96,16 @@ struct process::Self {
 /// for them: on Linux an epoll set of their pidfds, on macOS a kqueue of
 /// their EVFILT_PROC events, under one poll handle; SIGCHLD for children
 /// neither can watch; on Windows a thread-pool wait on each handle, which
-/// posts to the loop. It keeps the loop alive while a child whose process
-/// is still there runs, as libuv's process handles do.
+/// posts to the loop, and so for the processes wait_exit() waits for. It
+/// keeps the loop alive while a child whose process is still there runs, as
+/// libuv's process handles do, and while wait_exit() waits.
 struct process::Self::Watch {
     uv_loop_t& loop;
 
     /// The children watched, orphans among them.
     std::vector<Self*> watched;
 
-    /// Those whose processes are still there.
+    /// Those whose processes are still there, and the processes waited on.
     int owned = 0;
 
     /// Handles still to close once the loop goes.
@@ -119,6 +135,27 @@ struct process::Self::Watch {
     std::mutex mutex;
 
     std::vector<Self*> signaled;
+
+    /// A wait_exit(): the thread pool's wait on a process, through a handle
+    /// that may only wait, which the watch hands to the loop as a child's.
+    struct Exit {
+        HANDLE process;
+
+        /// The thread pool's wait; null once it is unregistered.
+        HANDLE wait_handle = nullptr;
+
+        /// Its watch; null once it watches it no more: the process exited,
+        /// or the loop is gone.
+        Watch* watch = nullptr;
+
+        uv::waiter_slot<void> slot;
+    };
+
+    /// The processes waited on, counted with the children whose processes
+    /// are there, and those whose waits fired, handed over as `signaled`.
+    std::vector<Exit*> exits;
+
+    std::vector<Exit*> signaled_exits;
 #endif
 
     explicit Watch(uv_loop_t& loop) noexcept : loop(loop) {}
@@ -194,23 +231,7 @@ struct process::Self::Watch {
         self.watch = this;
         own(+1);
 #ifdef _WIN32
-        auto on_exited = [](void* context, BOOLEAN) {
-            auto& exited = *static_cast<Self*>(context);
-            auto& watch = *exited.watch;
-            {
-                std::scoped_lock lock(watch.mutex);
-                watch.signaled.push_back(&exited);
-            }
-            ::uv_async_send(&watch.async);
-        };
-        if(!::RegisterWaitForSingleObject(&self.wait_handle,
-                                          self.child.native_handle(),
-                                          on_exited,
-                                          &self,
-                                          INFINITE,
-                                          WT_EXECUTEONLYONCE)) {
-            auto failed = error(::uv_translate_sys_error(static_cast<int>(::GetLastError())));
-            self.wait_handle = nullptr;
+        if(auto failed = wait_for<&Watch::signaled>(self, self.child.native_handle())) {
             forget(self);
             return failed;
         }
@@ -232,7 +253,65 @@ struct process::Self::Watch {
         return {};
     }
 
-#ifndef _WIN32
+#ifdef _WIN32
+    /// Waits for `exit`'s process; the error when it cannot.
+    error add(Exit& exit) {
+        exits.push_back(&exit);
+        exit.watch = this;
+        own(+1);
+        if(auto failed = wait_for<&Watch::signaled_exits>(exit, exit.process)) {
+            forget(exit);
+            return failed;
+        }
+        return {};
+    }
+
+    /// Has the thread pool wait for `object`, and hand `entry` over through
+    /// `Fired` once it is signaled; the error when it cannot.
+    template <auto Fired, typename Entry>
+    static error wait_for(Entry& entry, HANDLE object) {
+        auto on_fired = [](void* context, BOOLEAN) {
+            auto& fired = *static_cast<Entry*>(context);
+            auto& watch = *fired.watch;
+            {
+                std::scoped_lock lock(watch.mutex);
+                (watch.*Fired).push_back(&fired);
+            }
+            ::uv_async_send(&watch.async);
+        };
+        if(::RegisterWaitForSingleObject(&entry.wait_handle,
+                                         object,
+                                         on_fired,
+                                         &entry,
+                                         INFINITE,
+                                         WT_EXECUTEONLYONCE)) {
+            return {};
+        }
+        entry.wait_handle = nullptr;
+        return error(::uv_translate_sys_error(static_cast<int>(::GetLastError())));
+    }
+
+    /// Ends the thread pool's wait for `entry`, if it has one, and takes it
+    /// out of `Fired`. Waits for a callback under way, which reads
+    /// `entry.watch` and hands `entry` over.
+    template <auto Fired, typename Entry>
+    void unwait(Entry& entry) {
+        if(entry.wait_handle == nullptr) {
+            return;
+        }
+        ::UnregisterWaitEx(std::exchange(entry.wait_handle, nullptr), INVALID_HANDLE_VALUE);
+        std::scoped_lock lock(mutex);
+        std::erase(this->*Fired, &entry);
+    }
+
+    /// Stops waiting for `exit`'s process, which exited, or whose wait goes.
+    void forget(Exit& exit) {
+        unwait<&Watch::signaled_exits>(exit);
+        std::erase(exits, &exit);
+        exit.watch = nullptr;
+        own(-1);
+    }
+#else
     /// Makes room for one more in `children`, growing it as push_back does.
     static void make_room(std::vector<Self*>& children) {
         if(children.size() == children.capacity()) {
@@ -285,8 +364,8 @@ struct process::Self::Watch {
     }
 #endif
 
-    /// Counts a child whose process is there, or one fewer; the loop stays
-    /// alive while there are some.
+    /// Counts a child whose process is there or a process waited on, or one
+    /// fewer; the loop stays alive while there are some.
     void own(int change) {
         const bool before = owned > 0;
         owned += change;
@@ -318,13 +397,7 @@ struct process::Self::Watch {
     /// Stops watching `self`, which has exited or goes.
     void forget(Self& self) {
 #ifdef _WIN32
-        if(self.wait_handle != nullptr) {
-            // Waits for a callback under way, which reads `self.watch` and
-            // hands `self` over.
-            ::UnregisterWaitEx(std::exchange(self.wait_handle, nullptr), INVALID_HANDLE_VALUE);
-            std::scoped_lock lock(mutex);
-            std::erase(signaled, &self);
-        }
+        unwait<&Watch::signaled>(self);
 #endif
         std::erase(watched, &self);
         self.watch = nullptr;
@@ -411,11 +484,26 @@ struct process::Self::Watch {
     static void on_signaled(uv_async_t* handle) {
         auto& watch = *static_cast<Watch*>(handle->data);
         std::vector<Self*> ready;
+        std::vector<Exit*> exited;
         {
             std::scoped_lock lock(watch.mutex);
             ready.swap(watch.signaled);
+            exited.swap(watch.signaled_exits);
         }
         watch.reap(ready);
+        // What a wait resumes may end the waits after it, and start one whose
+        // Exit takes an ended one's address while its process still runs.
+        for(auto* exit: exited) {
+            if(std::ranges::find(watch.exits, exit) == watch.exits.end() ||
+               ::WaitForSingleObject(exit->process, 0) != WAIT_OBJECT_0) {
+                continue;
+            }
+            watch.forget(*exit);
+            // A wait cancelled stays until its task goes.
+            if(exit->slot.waiting()) {
+                exit->slot.deliver({});
+            }
+        }
     }
 #endif
 
@@ -435,6 +523,12 @@ struct process::Self::Watch {
                 self->slot.detach();
             }
         }
+#ifdef _WIN32
+        for(auto* exit: std::vector(exits)) {
+            forget(*exit);
+            exit->slot.detach();
+        }
+#endif
         auto closed = [](uv_handle_t* handle) {
             auto* watch = static_cast<Watch*>(handle->data);
             if(--watch->closing == 0) {
@@ -569,6 +663,136 @@ std::error_code end_tree(sys::Child& child) noexcept {
     killed = child.kill();
     return killed == std::errc::no_such_process ? std::error_code() : killed;
 }
+
+#ifdef __linux__
+/// A pidfd of process `pid`, or -1 with errno set: ENOSYS where the kernel
+/// has none, EPERM where a sandbox forbids them.
+int open_pidfd(int pid) noexcept {
+#ifdef SYS_pidfd_open
+    return sys::detail::move_above_standard_streams(
+        static_cast<int>(::syscall(SYS_pidfd_open, pid, 0)));
+#else
+    errno = ENOSYS;
+    return -1;
+#endif
+}
+
+/// How a process stands, as /proc tells.
+enum class ProcState : std::uint8_t {
+    Running,
+    /// Exited, and not reaped yet.
+    Zombie,
+    /// No process has the pid.
+    Gone,
+};
+
+/// How process `pid` stands, as /proc/<pid>/stat tells; the error that kept
+/// it from telling.
+result<ProcState> state_of(int pid) {
+    const int fd = ::open(std::format("/proc/{}/stat", pid).c_str(), O_RDONLY | O_CLOEXEC);
+    if(fd < 0) {
+        if(errno != ENOENT && errno != EACCES && errno != EPERM) {
+            return outcome_error(error(-errno));
+        }
+        // Gone, or out of sight, /proc not mounted or hiding other users'
+        // processes: kill() tells whether the pid is there, zombies among them.
+        return ::kill(pid, 0) != 0 && errno == ESRCH ? ProcState::Gone : ProcState::Running;
+    }
+    char stat[512];
+    const auto size = ::read(fd, stat, sizeof(stat));
+    const int read_errno = errno;
+    ::close(fd);
+    if(size < 0) {
+        // A process reaped since the open reads as ESRCH.
+        if(read_errno == ESRCH) {
+            return ProcState::Gone;
+        }
+        return outcome_error(error(-read_errno));
+    }
+    // "<pid> (<name>) <state> ...", where the name may hold anything.
+    const std::string_view text(stat, static_cast<std::size_t>(size));
+    const auto name_end = text.rfind(')');
+    assert(name_end != std::string_view::npos && name_end + 2 < text.size());
+    const auto fields = text.substr(name_end + 2);
+    if(fields.front() != 'Z') {
+        return ProcState::Running;
+    }
+    // A first thread that ended before the others is a zombie the process
+    // outlives: the 20th field counts the threads, a zombie among them.
+    std::size_t at = 0;
+    for(int field = 3; field < 20; ++field) {
+        at = fields.find(' ', at) + 1;
+    }
+    return fields.substr(at).starts_with("1 ") ? ProcState::Zombie : ProcState::Running;
+}
+#endif
+
+#ifndef _WIN32
+/// What wait_exit() waits on: a descriptor the loop polls, readable once the
+/// process has exited, a pidfd on Linux and on macOS a kqueue told of the
+/// exit; or on Linux without pidfds a timer that looks at /proc every
+/// second.
+struct ExitPoll : uv::owned_handle<ExitPoll> {
+    union {
+        uv_handle_t handle;
+        uv_poll_t poll;
+#ifdef __linux__
+        uv_timer_t timer;
+#endif
+    };
+
+    uv::waiter_slot<void> slot;
+
+    /// The descriptor polled, closed with this; -1 for the timer.
+    int fd = -1;
+
+#ifdef __linux__
+    /// The process the timer looks at.
+    int pid = 0;
+#endif
+
+    ~ExitPoll() {
+        if(fd >= 0) {
+            ::close(fd);
+        }
+    }
+
+    /// Polls `fd`, set to a descriptor, on `loop`.
+    error start_poll(uv_loop_t& loop) {
+        if(auto failed = error(::uv_poll_init(&loop, &poll, fd))) {
+            return failed;
+        }
+        ::uv_poll_start(&poll, UV_READABLE, on_readable);
+        return {};
+    }
+
+    /// Ends the wait with `status`. A wait cancelled stays until its task
+    /// goes, which closes the handle.
+    void end(error status) {
+        if(slot.waiting()) {
+            slot.deliver(status);
+        }
+    }
+
+    static void on_readable(uv_poll_t* handle, int status, int) {
+        // Readable for good once the process has exited.
+        ::uv_poll_stop(handle);
+        static_cast<ExitPoll*>(handle->data)->end(error(status));
+    }
+
+#ifdef __linux__
+    static void on_tick(uv_timer_t* handle) {
+        auto& self = *static_cast<ExitPoll*>(handle->data);
+        auto state = state_of(self.pid);
+        if(state.has_value() && *state == ProcState::Running) {
+            return;
+        }
+        ::uv_timer_stop(handle);
+        self.end(state.has_value() ? error() : state.error());
+    }
+#endif
+};
+#endif
 
 }  // namespace
 
@@ -810,6 +1034,94 @@ error process::kill_tree() {
         return error::invalid_argument;
     }
     return error_of(self->child.kill_tree());
+}
+
+task<void, error> wait_exit(int pid, event_loop& loop) {
+    // No process has an ID below 1, which kill() takes for groups.
+    if(pid <= 0) {
+        co_await fail(error::invalid_argument);
+    }
+    // What it waits with would come after the loop closed its handles, as a
+    // spawn's watch would.
+    if(uv::destroying(*loop.native_handle())) {
+        co_await fail(error::operation_aborted);
+    }
+#ifdef _WIN32
+    using Watch = process::Self::Watch;
+    Watch::Exit waited{};
+    waited.process = ::OpenProcess(SYNCHRONIZE, FALSE, static_cast<DWORD>(pid));
+    if(waited.process == nullptr) {
+        const auto code = ::GetLastError();
+        co_await fail(code == ERROR_INVALID_PARAMETER
+                          ? error::no_such_process
+                          : error_of(kotatsu::fs::windows::to_error_code(code)));
+    }
+    ScopeExit close([&waited] {
+        if(waited.watch != nullptr) {
+            waited.watch->forget(waited);
+        }
+        ::CloseHandle(waited.process);
+    });
+    if(auto failed = Watch::of(loop).add(waited)) {
+        co_await fail(failed);
+    }
+    // Nothing but the exit ends it: the loop's destruction lets it go.
+    co_await waited.slot.wait();
+#else
+    auto waited = ExitPoll::make();
+#ifdef __linux__
+    waited->fd = open_pidfd(pid);
+    if(waited->fd >= 0) {
+        if(auto failed = waited->start_poll(*loop.native_handle())) {
+            co_await fail(failed);
+        }
+    } else if(errno == ENOSYS || errno == EPERM) {
+        // No pidfds: /proc tells, now and every second.
+        auto state = state_of(pid);
+        if(!state.has_value()) {
+            co_await fail(state.error());
+        }
+        if(*state == ProcState::Gone) {
+            co_await fail(error::no_such_process);
+        }
+        if(*state == ProcState::Zombie) {
+            co_return;
+        }
+        waited->pid = pid;
+        ::uv_timer_init(loop.native_handle(), &waited->timer);
+        ::uv_timer_start(&waited->timer, ExitPoll::on_tick, 1000, 1000);
+    } else {
+        co_await fail(error(-errno));
+    }
+#else
+    waited->fd = sys::detail::move_above_standard_streams(::kqueue());
+    if(waited->fd < 0) {
+        co_await fail(error(-errno));
+    }
+    struct kevent change;
+    EV_SET(&change,
+           static_cast<uintptr_t>(pid),
+           EVFILT_PROC,
+           EV_ADD | EV_ONESHOT,
+           NOTE_EXIT,
+           0,
+           nullptr);
+    if(::kevent(waited->fd, &change, 1, nullptr, 0, nullptr) != 0) {
+        // A process exiting, or a zombie, is none kqueue knows of, but one
+        // kill() still finds.
+        if(errno == ESRCH && (::kill(pid, 0) == 0 || errno == EPERM)) {
+            co_return;
+        }
+        co_await fail(error(-errno));
+    }
+    if(auto failed = waited->start_poll(*loop.native_handle())) {
+        co_await fail(failed);
+    }
+#endif
+    if(auto failed = co_await waited->slot.wait()) {
+        co_await fail(failed);
+    }
+#endif
 }
 
 }  // namespace kotatsu::async

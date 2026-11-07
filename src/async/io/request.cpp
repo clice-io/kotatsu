@@ -1,8 +1,12 @@
 #include "kotatsu/async/io/request.h"
 
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include "awaiter.h"
+#include "kotatsu/support/scope_exit.h"
+#include "kotatsu/sys/env.h"
 
 namespace kotatsu::async {
 
@@ -42,6 +46,35 @@ struct work_op : uv::request_op<work_op, uv_work_t> {
 
 task<> detail::run_on_pool(function<void()> work, function<void()> on_cancel, event_loop& loop) {
     co_await work_op(loop.native_handle(), std::move(work), std::move(on_cancel));
+}
+
+error set_thread_pool_size(unsigned threads) {
+    if(threads < 1 || threads > 1024) {
+        return error::invalid_argument;
+    }
+    constexpr std::string_view variable = "UV_THREADPOOL_SIZE";
+    std::string previous;
+    const bool was_set = sys::get_env(previous, variable);
+    // With this name and a number, only memory can run out.
+    if(sys::set_env(variable, std::to_string(threads))) {
+        return error::not_enough_memory;
+    }
+    ScopeExit restore([&] {
+        [[maybe_unused]] auto restored =
+            was_set ? sys::set_env(variable, previous) : sys::unset_env(variable);
+    });
+
+    // libuv starts the pool, reading the variable, at the first work queued
+    // in the process, and waits for its threads to start.
+    uv_loop_t loop;
+    if(auto failed = error(::uv_loop_init(&loop))) {
+        return failed;
+    }
+    uv_work_t work{};
+    ::uv_queue_work(&loop, &work, [](uv_work_t*) {}, [](uv_work_t*, int) {});
+    ::uv_run(&loop, UV_RUN_DEFAULT);
+    ::uv_loop_close(&loop);
+    return {};
 }
 
 }  // namespace kotatsu::async

@@ -261,6 +261,7 @@ kotatsu_library(
     hdrs = glob(["include/kotatsu/ipc/lsp/**"]),
     deps = [
         ":codec",
+        ":fs",
         ":ipc",
         ":ipc_codec",
         ":meta",

@@ -55,28 +55,29 @@ Adapted from `examples/async_basics/async_basics.cpp`.
 
 ## Overview
 
-| Header                                                                                                                 | Contents                                                                   |
-| ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| [runtime/task.h](../include/kotatsu/async/runtime/task.h)                                                              | `task`, `cancel()`, `fail()`, `or_fail()`, `catch_cancel()`, `co_invoke()` |
-| [runtime/when.h](../include/kotatsu/async/runtime/when.h)                                                              | `when_all` and `when_any`, over tasks or a range of them                   |
-| [runtime/task_group.h](../include/kotatsu/async/runtime/task_group.h)                                                  | `task_group` and `with_task_group()`, for a dynamic set of children        |
-| [runtime/cancellation.h](../include/kotatsu/async/runtime/cancellation.h)                                              | `cancellation_source`, `cancellation_token`, `with_token()`                |
-| [runtime/sync.h](../include/kotatsu/async/runtime/sync.h)                                                              | `mutex`, `semaphore`, `event`, `condition_variable`, and scoped guards     |
-| [runtime/debug.h](../include/kotatsu/async/runtime/debug.h), [runtime/walk.h](../include/kotatsu/async/runtime/walk.h) | `dump_dot()` and `async_visitor`, to inspect the task tree                 |
-| [io/loop.h](../include/kotatsu/async/io/loop.h)                                                                        | `event_loop`, `run()`, `relay`, `yield()`                                  |
-| [io/request.h](../include/kotatsu/async/io/request.h)                                                                  | `queue()`, to run a function on the thread pool                            |
-| [io/watcher.h](../include/kotatsu/async/io/watcher.h)                                                                  | `timer`, `signal`, `idle`, `prepare`, `check`, `sleep()`, `with_timeout()` |
-| [io/stream.h](../include/kotatsu/async/io/stream.h), [io/udp.h](../include/kotatsu/async/io/udp.h)                     | `stream` (`pipe`, `tcp`, `console`), `acceptor`, `udp`                     |
-| [io/process.h](../include/kotatsu/async/io/process.h)                                                                  | `process`: `spawn()`, `capture()`, `wait()`, `kill()`, `kill_tree()`       |
-| [io/fs.h](../include/kotatsu/async/io/fs.h)                                                                            | `kotatsu::async::fs`: file operations as tasks, on the thread pool         |
-| [vocab/error.h](../include/kotatsu/async/vocab/error.h)                                                                | `error`, `result<T>`, `cancellation`                                       |
+| Header                                                                                                                 | Contents                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [runtime/task.h](../include/kotatsu/async/runtime/task.h)                                                              | `task`, `cancel()`, `fail()`, `or_fail()`, `catch_cancel()`, `co_invoke()`          |
+| [runtime/when.h](../include/kotatsu/async/runtime/when.h)                                                              | `when_all` and `when_any`, over tasks or a range of them                            |
+| [runtime/task_group.h](../include/kotatsu/async/runtime/task_group.h)                                                  | `task_group` and `with_task_group()`, for a dynamic set of children                 |
+| [runtime/cancellation.h](../include/kotatsu/async/runtime/cancellation.h)                                              | `cancellation_source`, `cancellation_token`, `with_token()`                         |
+| [runtime/sync.h](../include/kotatsu/async/runtime/sync.h)                                                              | `mutex`, `semaphore`, `event`, `condition_variable`, and scoped guards              |
+| [runtime/debug.h](../include/kotatsu/async/runtime/debug.h), [runtime/walk.h](../include/kotatsu/async/runtime/walk.h) | `dump_dot()` and `async_visitor`, to inspect the task tree                          |
+| [io/loop.h](../include/kotatsu/async/io/loop.h)                                                                        | `event_loop`, `run()`, `relay`, `yield()`                                           |
+| [io/request.h](../include/kotatsu/async/io/request.h)                                                                  | `queue()`, to run a function on the thread pool; `set_thread_pool_size()`           |
+| [io/watcher.h](../include/kotatsu/async/io/watcher.h)                                                                  | `timer`, `signal`, `idle`, `prepare`, `check`, `sleep()`, `with_timeout()`          |
+| [io/stream.h](../include/kotatsu/async/io/stream.h), [io/udp.h](../include/kotatsu/async/io/udp.h)                     | `stream` (`pipe`, `tcp`, `console`), `acceptor`, `udp`                              |
+| [io/process.h](../include/kotatsu/async/io/process.h)                                                                  | `process`: `spawn()`, `capture()`, `wait()`, `kill()`, `kill_tree()`; `wait_exit()` |
+| [io/fs.h](../include/kotatsu/async/io/fs.h)                                                                            | `kotatsu::async::fs`: file operations as tasks, on the thread pool                  |
+| [vocab/error.h](../include/kotatsu/async/vocab/error.h)                                                                | `error`, `result<T>`, `cancellation`                                                |
 
 ## Platform notes
 
 - On Unix the first event loop ignores SIGPIPE, unless the program set its
   own action: a write to a peer that went away fails with `error::broken_pipe`.
 - `pipe` is a named pipe on Windows and a Unix domain socket elsewhere.
-- `process::open(pid)`, for a process another one started, is Windows only.
+- `process::open(pid)`, for a process another one started, is Windows only;
+  `wait_exit(pid)` waits for one everywhere, without its exit status.
 - Without exceptions (`KOTATSU_ENABLE_EXCEPTIONS` off), what would throw
   aborts, such as `when_any` over an empty range.
 
