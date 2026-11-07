@@ -206,6 +206,14 @@ error signal::start(int signum, [[maybe_unused]] leave then) {
         return error::invalid_argument;
     }
 
+#ifndef _WIN32
+    // Ignored, SIGCHLD has the system reap every child before process's
+    // waits can.
+    if(signum == SIGCHLD && then == leave::ignored) {
+        return error::invalid_argument;
+    }
+#endif
+
     // Stopped, it watches no signal (0).
     const int watched = self->signal.signum;
 #ifndef _WIN32

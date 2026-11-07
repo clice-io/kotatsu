@@ -108,7 +108,9 @@ public:
     /// stopped watching the old signal unless the number is 0. The fires
     /// kept are dropped unless it watches `signum` already: then only `then`
     /// changes, as when a program decides, once the signal came, to leave
-    /// it ignored.
+    /// it ignored. SIGCHLD is not left ignored, which would have the system
+    /// reap every child before a process's wait() could: asked to, it
+    /// fails with invalid_argument and changes nothing.
     error start(int signum, leave then = leave::default_action);
 
 private:

@@ -146,6 +146,17 @@ ZEST_CASE(start_with_an_invalid_signal_fails) {
     ZEXPECT(sig->start(0) == error::invalid_argument);
 }
 
+ZEST_CASE(leaving_sigchld_ignored_fails) {
+    test::ScopedSignalAction found(SIGCHLD, SIG_DFL);
+    auto sig = signal::create(loop);
+    ZASSERT(sig.has_value());
+    ZEXPECT(sig->start(SIGCHLD, signal::leave::ignored) == error::invalid_argument);
+    ZEXPECT(!sig->start(SIGCHLD));
+    ZEXPECT(sig->start(SIGCHLD, signal::leave::ignored) == error::invalid_argument);
+    ZEXPECT(!sig->stop());
+    ZEXPECT(action_of(SIGCHLD) == "default");
+}
+
 // Each case below sets the actions it looks at, and puts them back as it
 // found them when it ends.
 
