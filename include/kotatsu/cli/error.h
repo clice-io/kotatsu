@@ -46,7 +46,8 @@ struct Error {
     };
 
     Kind kind;
-    /// One line: "invalid integer value: many".
+    /// What is wrong, with the argument at fault as the argv spells it, a line break it holds
+    /// included: "invalid integer value: many".
     std::string message;
     /// The argv the error is in.
     std::vector<std::string> argv;
@@ -60,9 +61,9 @@ struct Error {
     /// rendering offers: "--verbose" for "--verbos"; empty when none is close.
     std::string suggestion = {};
 
-    /// Writes into `out` the message and, when there is one, the suggestion after it, on one
-    /// line: "unknown option: --verbos; did you mean '--verbose'?". What render() writes under
-    /// the argv, for a report that shows no argv.
+    /// Writes into `out` the message and, when there is one, the suggestion after it:
+    /// "unknown option: --verbos; did you mean '--verbose'?". What render() writes under the
+    /// argv, for a report that shows no argv.
     void summary(buffer_ref out) const;
 
     /// summary() under the argv, the elements at fault marked, as a program reports it:
