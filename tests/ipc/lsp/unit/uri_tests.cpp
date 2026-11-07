@@ -146,6 +146,30 @@ ZEST_CASE(windows_to_path_keeps_the_drive_as_written) {
     ZEXPECT(path_of(*uri, Style::Windows) == "C:/x.cpp");
 }
 
+// VS Code writes the drive's colon percent-encoded.
+ZEST_CASE(windows_to_path_reads_an_encoded_drive) {
+    auto uri = URI::from_string("file:///c%3A/work/a%20b.txt");
+    ZASSERT(uri);
+    ZEXPECT(path_of(*uri, Style::Windows) == "c:/work/a b.txt");
+}
+
+ZEST_CASE(windows_path_on_the_current_drive) {
+    auto uri = URI::from_path(R"(\x\a.cpp)", Style::Windows);
+    ZASSERT(uri);
+    ZEXPECT(uri->text() == "file:///x/a.cpp");
+    ZEXPECT(path_of(*uri, Style::Windows) == "/x/a.cpp");
+}
+
+ZEST_CASE(windows_to_path_of_a_drive_without_root_fails) {
+    for(std::string_view text: {"file:///c:x.cpp", "file:///c:", "file:///c%3A"}) {
+        ZEST_CONTEXT("text: {}", text);
+        auto uri = URI::from_string(text);
+        ZASSERT(uri);
+        std::string path;
+        ZEXPECT(uri->to_path(path, Style::Windows) == std::errc::invalid_argument);
+    }
+}
+
 ZEST_CASE(windows_drive_without_root_fails) {
     for(std::string_view path: {"C:relative.txt", "C:"}) {
         ZEST_CONTEXT("path: {}", path);
@@ -217,9 +241,34 @@ ZEST_CASE(to_path_reads_localhost_as_local) {
     ZEXPECT(path_of(*remote, Style::Posix) == "//server/share/a.txt");
 }
 
-ZEST_CASE(to_path_of_a_bad_authority_fails) {
-    for(std::string_view text:
-        {"file://server%2Fteam/share/a.txt", "file://server%5Cteam/share/a.txt"}) {
+// On POSIX `\` in a server's name moves no boundary.
+ZEST_CASE(posix_to_path_keeps_a_backslash_in_a_server) {
+    auto uri = URI::from_string("file://a%5Cb/share/x");
+    ZASSERT(uri);
+    ZEXPECT(path_of(*uri, Style::Posix) == R"(//a\b/share/x)");
+    std::string path;
+    ZEXPECT(uri->to_path(path, Style::Windows) == std::errc::invalid_argument);
+}
+
+ZEST_CASE(to_path_of_a_server_with_a_separator_fails) {
+    auto uri = URI::from_string("file://server%2Fteam/share/a.txt");
+    ZASSERT(uri);
+    for(auto style: {Style::Posix, Style::Windows}) {
+        std::string path;
+        ZEXPECT(uri->to_path(path, style) == std::errc::invalid_argument);
+    }
+}
+
+ZEST_CASE(to_path_replaces_what_the_buffer_held) {
+    auto uri = URI::from_string("file:///tmp/a.txt");
+    ZASSERT(uri);
+    std::string path = "left over";
+    ZEXPECT(!uri->to_path(path, Style::Posix));
+    ZEXPECT(path == "/tmp/a.txt");
+}
+
+ZEST_CASE(to_path_of_a_bad_escape_fails) {
+    for(std::string_view text: {"file:///a%2", "file:///a%GG", "file://srv%2/share/x"}) {
         ZEST_CONTEXT("text: {}", text);
         auto uri = URI::from_string(text);
         ZASSERT(uri);

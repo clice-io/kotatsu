@@ -264,7 +264,8 @@ std::error_code URI::to_path(buffer_ref out, fs::path::Style style) const {
             return error;
         }
         // A server with a separator in it would move where the share starts.
-        if(out.view().substr(2).find_first_of(R"(/\)") != std::string_view::npos) {
+        if(std::ranges::any_of(out.view().substr(2),
+                               [style](char c) { return fs::path::is_separator(c, style); })) {
             return invalid();
         }
         return decode_into(out, path());
@@ -278,6 +279,10 @@ std::error_code URI::to_path(buffer_ref out, fs::path::Style style) const {
     }
     if(style == fs::path::Style::Windows && local.size() >= 3 && is_ascii_alpha(local[1]) &&
        local[2] == ':') {
+        // A drive without its root directory, c:x, depends on the current one.
+        if(local.size() == 3 || !fs::path::is_separator(local[3], style)) {
+            return invalid();
+        }
         out.assign(local.substr(1));
     }
     return {};

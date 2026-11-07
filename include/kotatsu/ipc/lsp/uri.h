@@ -22,17 +22,18 @@ public:
     /// and `.`, fails with std::errc::invalid_argument.
     static std::expected<URI, std::error_code> from_string(std::string_view text);
 
-    /// The `file:` URI of the absolute path `path`, as `style` spells paths,
+    /// The `file:` URI of the path `path`, as `style` spells paths,
     /// each byte a URI reserves percent-encoded: `/tmp/a b` is
     /// `file:///tmp/a%20b`, and `//server/share/x` is `file://server/share/x`,
     /// as VS Code makes it on every platform. On Windows `\` separates too, and
     /// a drive's letter is written in lower case, as VS Code keys documents:
     /// `C:\x` is `file:///c:/x`. On POSIX `\` is a character of a name like
-    /// any other, `%5C`, and `C:/x` a relative path. A relative path, on
-    /// Windows a drive without a root directory (`C:x`) among them, so that a
-    /// URI never depends on the current directory, a share without a server
-    /// or a share name, and on Windows a verbatim (`\\?\`) or a device
-    /// (`\\.\`) path fail with std::errc::invalid_argument.
+    /// any other, `%5C`, and `C:/x` a relative path. On Windows a path rooted
+    /// on the current drive, `\x`, is `file:///x`, as VS Code makes it. A
+    /// relative path, on Windows a drive without a root directory (`C:x`)
+    /// among them, a share without a server or a share name, and on Windows a
+    /// verbatim (`\\?\`) or a device (`\\.\`) path fail with
+    /// std::errc::invalid_argument.
     static std::expected<URI, std::error_code>
         from_path(std::string_view path, fs::path::Style style = fs::path::native_style);
 
@@ -41,7 +42,9 @@ public:
     /// a share, `//server/share/x`, and on Windows a drive without the slash
     /// before it, `/c:/x` as `c:/x`, its letter as the URI writes it. Another
     /// scheme, a bad percent escape, a server with a separator in it, and a
-    /// path that is not absolute fail with std::errc::invalid_argument.
+    /// path that does not start at a root, on Windows a drive without its
+    /// root directory (`/c:x`) among them, fail with
+    /// std::errc::invalid_argument.
     std::error_code to_path(buffer_ref out, fs::path::Style style = fs::path::native_style) const;
 
     /// Writes into `out` the bytes of `text`, each as `%HH` but letters,
