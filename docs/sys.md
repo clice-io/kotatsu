@@ -51,16 +51,16 @@ POSIX only; on Windows the test runs `cmd /c` instead.
 Failures are `std::expected<T, std::error_code>` (or a bare `std::error_code`);
 text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
 
-| Header                                        | Contents                                                                                                         |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [env.h](../include/kotatsu/sys/env.h)         | Environment variables, and PATH-like lists split and joined                                                      |
-| [process.h](../include/kotatsu/sys/process.h) | This process: IDs, executable path, arguments, `find_program`, title, `exit_with_parent`, `ignore_sigpipe`, signals |
-| [spawn.h](../include/kotatsu/sys/spawn.h)     | `spawn` and `Child` (wait, kill, process groups), `Stdio`, `ExitStatus`, `capture`                               |
-| [thread.h](../include/kotatsu/sys/thread.h)   | `Thread`, started with the stack size the caller picks                                                           |
-| [cmd.h](../include/kotatsu/sys/cmd.h)         | Command lines of Windows or POSIX quoting split and joined, the host's by default, response files expanded       |
-| [windows.h](../include/kotatsu/sys/windows.h) | NTSTATUS names, CreateProcess's program search                                                                   |
-| [dirs.h](../include/kotatsu/sys/dirs.h)       | Home, temporary, cache, config and data directories, `~` expansion                                               |
-| [console.h](../include/kotatsu/sys/console.h) | `write_console` and `write_console_some`, `set_nonblocking`, `is_console`, `is_pipe`                             |
+| Header                                        | Contents                                                                                                                                                     |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [env.h](../include/kotatsu/sys/env.h)         | Environment variables, and PATH-like lists split and joined                                                                                                  |
+| [process.h](../include/kotatsu/sys/process.h) | This process: IDs, executable path, arguments, `find_program`, title, `exit_with_parent`, `ignore_sigpipe`, signals                                          |
+| [spawn.h](../include/kotatsu/sys/spawn.h)     | `spawn` and `Child` (wait, kill, process groups), `Stdio`, `ExitStatus`, `capture`                                                                           |
+| [thread.h](../include/kotatsu/sys/thread.h)   | `Thread`, started with the stack size the caller picks                                                                                                       |
+| [cmd.h](../include/kotatsu/sys/cmd.h)         | Command lines of Windows or POSIX quoting split and joined, the host's by default, response files expanded                                                   |
+| [windows.h](../include/kotatsu/sys/windows.h) | NTSTATUS names, CreateProcess's program search                                                                                                               |
+| [dirs.h](../include/kotatsu/sys/dirs.h)       | Home, temporary, cache, config and data directories, `~` expansion                                                                                           |
+| [console.h](../include/kotatsu/sys/console.h) | `write_console` and `write_console_some`, `set_nonblocking`, `is_console`, `is_pipe`                                                                         |
 | [info.h](../include/kotatsu/sys/info.h)       | Process and system memory, the address space limit, CPU time, `parallelism` and `physical_cores`, OS, user name, local time, priorities and power throttling |
 
 ## Platform notes

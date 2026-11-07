@@ -44,12 +44,13 @@ std::error_code exit_with_parent() {
         return fs::windows::last_error();
     }
     // A process that started after this one took the parent's ID, the
-    // parent gone.
-    if(::CompareFileTime(&parent_start, &own_start) > 0) {
+    // parent gone; or the parent has exited, and a handle to it holds it
+    // still, whose wait would end this process later.
+    if(::CompareFileTime(&parent_start, &own_start) > 0 ||
+       ::WaitForSingleObject(parent->handle, 0) == WAIT_OBJECT_0) {
         end_process(nullptr, FALSE);
     }
     HANDLE wait = nullptr;
-    // Fires at once for a parent that has exited and is not gone yet.
     if(!::RegisterWaitForSingleObject(&wait,
                                       parent->handle,
                                       end_process,
