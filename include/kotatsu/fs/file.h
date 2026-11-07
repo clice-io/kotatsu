@@ -205,9 +205,10 @@ public:
     /// when it took it: a lock of any handle counts, this File's and this
     /// process's other handles' included, and for an instant the probe holds
     /// the range itself, which keeps other handles from locking it, and from
-    /// reading or writing its bytes. lock() locks a byte past any file's
-    /// end, which a range that reaches it sees. It takes a file open for
-    /// `read` or `write`, as lock() does.
+    /// reading or writing its bytes. A lock reaches 2^64 - 1 at most, the
+    /// last byte, where a range that would pass it ends. lock() locks a byte
+    /// past any file's end, which a range that reaches it sees. It takes a
+    /// file open for `read` or `write`, as lock() does.
     std::expected<bool, std::error_code> range_locked(std::uint64_t offset,
                                                       std::uint64_t length) const;
 

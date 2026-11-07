@@ -85,14 +85,20 @@ enum class RangeKind : std::uint8_t {
 /// by LockFileEx; on POSIX, where a process never sees its own record locks,
 /// a child process, by fcntl, as SQLite and LMDB take them.
 struct RangeLock {
-    RangeLock(LockFile& lock, RangeKind kind, std::uint32_t offset, std::uint32_t length) :
+    RangeLock(LockFile& lock, RangeKind kind, std::uint64_t offset, std::uint64_t length) :
         file(lock.open()) {
 #ifdef _WIN32
         OVERLAPPED at{};
-        at.Offset = offset;
+        at.Offset = static_cast<DWORD>(offset);
+        at.OffsetHigh = static_cast<DWORD>(offset >> 32);
         DWORD flags = (kind == RangeKind::Exclusive ? LOCKFILE_EXCLUSIVE_LOCK : 0) |
                       LOCKFILE_FAIL_IMMEDIATELY;
-        ZASSERT(::LockFileEx(file.native_handle(), flags, 0, length, 0, &at));
+        ZASSERT(::LockFileEx(file.native_handle(),
+                             flags,
+                             0,
+                             static_cast<DWORD>(length),
+                             static_cast<DWORD>(length >> 32),
+                             &at));
 #else
         int taken_pipe[2];
         int release_pipe[2];
@@ -107,8 +113,8 @@ struct RangeLock {
             struct flock range{};
             range.l_type = kind == RangeKind::Exclusive ? F_WRLCK : F_RDLCK;
             range.l_whence = SEEK_SET;
-            range.l_start = offset;
-            range.l_len = length;
+            range.l_start = static_cast<off_t>(offset);
+            range.l_len = static_cast<off_t>(length);
             char taken = ::fcntl(file.native_handle(), F_SETLK, &range) == 0 ? 1 : 0;
             [[maybe_unused]] auto told = ::write(taken_pipe[1], &taken, 1);
             // Holds it until the end of the pipe in this process closes, as
@@ -388,6 +394,30 @@ ZEST_CASE(range_locked_sees_what_lock_takes_but_on_linux) {
     ZEXPECT(probe.range_locked(0, 4096) == false);
 #endif
 }
+
+// A range whose end would pass the largest offset ends there, as one of
+// every byte does.
+ZEST_CASE(range_locked_of_a_range_past_the_largest_offset_ends_there) {
+    LockFile lock;
+    auto probe = lock.open();
+    ZEXPECT(probe.range_locked(5, every_byte) == false);
+    RangeLock held(lock, RangeKind::Exclusive, 10, 10);
+    ZEXPECT(probe.range_locked(5, every_byte) == true);
+    ZEXPECT(probe.range_locked(20, every_byte) == false);
+}
+
+#ifdef _WIN32
+// Windows lets a lock reach 2^64 - 1, the last byte, which a range that
+// would pass it still sees.
+ZEST_CASE(range_locked_sees_a_lock_of_the_last_byte) {
+    LockFile lock;
+    RangeLock held(lock, RangeKind::Exclusive, std::numeric_limits<std::uint64_t>::max(), 1);
+    auto probe = lock.open();
+    ZEXPECT(probe.range_locked(std::numeric_limits<std::uint64_t>::max(), 1) == true);
+    ZEXPECT(probe.range_locked(5, every_byte) == true);
+    ZEXPECT(probe.range_locked(5, 10) == false);
+}
+#endif
 
 #ifndef _WIN32
 ZEST_CASE(range_locked_sees_no_record_lock_of_this_process) {

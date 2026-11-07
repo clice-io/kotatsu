@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <utility>
 
@@ -20,7 +21,6 @@
 #else
 #include <fcntl.h>
 #include <format>
-#include <limits>
 #include <memory>
 #include <sys/file.h>
 #include <unistd.h>
@@ -533,6 +533,9 @@ std::error_code File::unlock() {
 std::expected<bool, std::error_code> File::range_locked(std::uint64_t offset,
                                                         std::uint64_t length) const {
     assert(length != 0);
+    // LockFileEx refuses a range whose last byte, offset + length - 1, would
+    // pass 2^64 - 1 (ERROR_INVALID_LOCK_RANGE): it ends there.
+    length = std::min(length - 1, std::numeric_limits<std::uint64_t>::max() - offset) + 1;
     auto low = static_cast<DWORD>(length);
     auto high = static_cast<DWORD>(length >> 32);
     auto at = at_offset(offset);
