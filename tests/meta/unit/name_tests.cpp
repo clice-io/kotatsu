@@ -217,9 +217,12 @@ ZEST_CASE(basic_member_name) {
     constexpr std::string_view less = member_name<(&ordered::operator<)>;
     constexpr std::string_view at_least = member_name<(&ordered::operator>=)>;
     constexpr std::string_view call = member_name<(&ordered::operator())>;
-    ZEXPECT(zest::starts_with(less, "operator") && zest::ends_with(less, "<"));
-    ZEXPECT(zest::starts_with(at_least, "operator") && zest::ends_with(at_least, ">="));
-    ZEXPECT(zest::starts_with(call, "operator") && zest::ends_with(call, "()"));
+    ZEXPECT(zest::starts_with(less, "operator"));
+    ZEXPECT(zest::ends_with(less, "<"));
+    ZEXPECT(zest::starts_with(at_least, "operator"));
+    ZEXPECT(zest::ends_with(at_least, ">="));
+    ZEXPECT(zest::starts_with(call, "operator"));
+    ZEXPECT(zest::ends_with(call, "()"));
 }
 
 };  // ZEST_SUITE(meta_name)
