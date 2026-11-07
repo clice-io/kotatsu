@@ -45,10 +45,11 @@ enum class SeekFrom : std::uint8_t {
     End,
 };
 
-/// An open file to read or write bytes, closed when this goes: a regular
-/// file, a device or a pipe, never a directory, which a Directory opens. Its
-/// handle is not inherited by child processes, and on Windows does not keep
-/// another process from renaming or removing the file.
+/// An open file to read or write bytes, closed when this goes but for a
+/// handle it borrows (borrow()): a regular file, a device or a pipe, never a
+/// directory, which a Directory opens. A handle it opens is not inherited by
+/// child processes, and on Windows does not keep another process from
+/// renaming or removing the file.
 class File {
 public:
 #ifdef _WIN32
@@ -215,7 +216,8 @@ public:
     /// then, without releasing the lock it holds, and the descriptor the
     /// caller's to close. On Windows it belongs to the C runtime kotatsu is
     /// linked with, which with a static runtime is each module's own. On
-    /// failure the File keeps the handle.
+    /// failure the File keeps the handle. A File that borrows its handle
+    /// (borrow()) has none of its own to give: it must not call this.
     std::expected<int, std::error_code> into_descriptor() &&;
 
     bool is_open() const;
@@ -224,6 +226,12 @@ public:
     native_handle_type native_handle() const {
         return handle;
     }
+
+    /// A File that works through `handle`, which stays its owner's: every
+    /// operation goes through it, and closing the File, or its going,
+    /// releases the lock the File took and leaves `handle` open, close()
+    /// then telling no error of its own.
+    static File borrow(native_handle_type handle);
 
 private:
     friend std::error_code copy_file(std::string_view from, std::string_view to);
@@ -240,6 +248,10 @@ private:
     /// Whether this File has taken a lock it may still hold, which close()
     /// then releases.
     bool locked = false;
+
+    /// Whether close() closes the handle, which it leaves open where the
+    /// File borrows it.
+    bool owned = true;
 };
 
 /// Writes into `out` the bytes of a file, as File::read_to_end() reads

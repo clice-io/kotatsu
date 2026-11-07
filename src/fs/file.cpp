@@ -258,16 +258,24 @@ std::error_code error_of(const std::expected<bool, std::error_code>& taken) {
 }  // namespace
 
 File::File(File&& other) noexcept :
-    handle(std::exchange(other.handle, closed)), locked(std::exchange(other.locked, false)) {}
+    handle(std::exchange(other.handle, closed)), locked(std::exchange(other.locked, false)),
+    owned(std::exchange(other.owned, true)) {}
 
 File& File::operator=(File&& other) noexcept {
     std::swap(handle, other.handle);
     std::swap(locked, other.locked);
+    std::swap(owned, other.owned);
     return *this;
 }
 
 File::~File() {
     [[maybe_unused]] auto ignored = close();
+}
+
+File File::borrow(native_handle_type handle) {
+    File file(handle);
+    file.owned = false;
+    return file;
 }
 
 bool File::is_open() const {
@@ -752,6 +760,10 @@ std::error_code File::close() {
     }
     auto closing = std::exchange(handle, closed);
     locked = false;
+    // A borrowed handle is its owner's to close.
+    if(!std::exchange(owned, true)) {
+        return {};
+    }
 #ifdef _WIN32
     return ::CloseHandle(closing) ? std::error_code() : windows::last_error();
 #else
@@ -762,6 +774,8 @@ std::error_code File::close() {
 }
 
 std::expected<int, std::error_code> File::into_descriptor() && {
+    // A borrowed handle is not the File's to give.
+    assert(owned);
     if(!is_open()) {
         return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
     }

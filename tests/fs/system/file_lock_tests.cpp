@@ -304,6 +304,24 @@ ZEST_CASE(a_moved_file_releases_the_lock_it_was_given) {
     ZEXPECT(second.try_lock() == true);
 }
 
+ZEST_CASE(a_borrowed_file_releases_its_lock_and_leaves_the_handle) {
+    LockFile lock;
+    auto owner = lock.open();
+    auto other = lock.open();
+    {
+        auto borrowed = File::borrow(owner.native_handle());
+        ZEXPECT(!borrowed.lock());
+        ZEXPECT(other.try_lock() == false);
+    }
+    ZEXPECT(other.try_lock() == true);
+    ZEXPECT(!other.unlock());
+    ZEXPECT(owner.try_lock() == true);
+    std::array<char, 16> buffer{};
+    auto count = owner.read(buffer);
+    ZASSERT(count.has_value());
+    ZEXPECT(std::string_view(buffer.data(), *count) == "text");
+}
+
 ZEST_CASE(unlock_without_a_lock_does_nothing) {
     LockFile lock;
     auto file = lock.open();

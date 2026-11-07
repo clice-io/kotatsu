@@ -836,6 +836,45 @@ ZEST_CASE(into_descriptor_of_a_closed_file_fails) {
     ZEXPECT(fd.error() == std::errc::bad_file_descriptor);
 }
 
+ZEST_CASE(borrow_works_through_a_handle_it_leaves_open) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    auto owner = File::open(dir.file("file"), {.read = true, .write = true});
+    ZASSERT(owner.has_value());
+    {
+        auto borrowed = File::borrow(owner->native_handle());
+        ZEXPECT(borrowed.native_handle() == owner->native_handle());
+        auto found = borrowed.status();
+        ZASSERT(found.has_value());
+        ZEXPECT(found->size == 4u);
+        ZEXPECT(!borrowed.resize(2));
+        ZEXPECT(rest_of(borrowed) == "te");
+        // Moved, it borrows still.
+        File moved(std::move(borrowed));
+        File assigned;
+        assigned = std::move(moved);
+        ZEXPECT(assigned.native_handle() == owner->native_handle());
+    }
+    ZEXPECT(owner->seek(0) == 0u);
+    ZEXPECT(!owner->write("TE"));
+    ZEXPECT(owner->seek(0) == 0u);
+    ZEXPECT(rest_of(*owner) == "TE");
+    ZEXPECT(!owner->close());
+}
+
+ZEST_CASE(close_of_a_borrowed_file_leaves_the_handle_open) {
+    test::TempDir dir;
+    auto owner = File::open(dir.file("file"), {.write = true, .create = true});
+    ZASSERT(owner.has_value());
+    auto borrowed = File::borrow(owner->native_handle());
+    ZEXPECT(!borrowed.write("hello"));
+    ZEXPECT(!borrowed.close());
+    ZEXPECT(!borrowed.is_open());
+    ZEXPECT(!owner->write(" world"));
+    ZEXPECT(!owner->close());
+    ZEXPECT(test::read_text(dir.file("file")) == "hello world");
+}
+
 };  // ZEST_SUITE(fs_file_handle)
 
 }  // namespace
