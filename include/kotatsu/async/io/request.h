@@ -6,6 +6,7 @@
 #include "kotatsu/support/functional.h"
 #include "kotatsu/async/io/loop.h"
 #include "kotatsu/async/runtime/task.h"
+#include "kotatsu/async/vocab/error.h"
 
 namespace kotatsu::async {
 
@@ -16,10 +17,21 @@ task<> run_on_pool(function<void()> work, function<void()> on_cancel, event_loop
 
 }  // namespace detail
 
+/// Sizes libuv's thread pool, on which queue() and async::fs run, at
+/// `threads` and starts it at once; fails with error::invalid_argument for a
+/// size not from 1 to 1024. The pool is one for the whole process: one that
+/// any use in the process started before stays as it is, which the call
+/// cannot tell, and the call waits for one of its threads to be free. Call
+/// it at startup, before other threads, and before the first queue(), fs
+/// operation or DNS lookup. libuv reads the size from the UV_THREADPOOL_SIZE
+/// environment variable, which the call sets while the pool starts and then
+/// puts back as it was: children do not inherit it.
+error set_thread_pool_size(unsigned threads);
+
 /// Runs `fn` on libuv's thread pool and returns what it returns. The pool is
 /// one for the whole process, shared by every loop and by the fs operations,
-/// and sized from the UV_THREADPOOL_SIZE environment variable when it is first
-/// used (4 threads by default); setting the variable later changes nothing.
+/// and sized by set_thread_pool_size(), or else at its first use from the
+/// UV_THREADPOOL_SIZE environment variable (4 threads by default).
 ///
 /// If the awaiting task is cancelled while `fn` is still queued, `fn` is
 /// dequeued and never runs, and `on_cancel` is not called. Once `fn` runs it
