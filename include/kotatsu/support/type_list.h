@@ -10,8 +10,22 @@
 #include "kotatsu/support/type_traits.h"
 
 /// Type lists, each operation one pack expansion rather than a recursion over the list, nor a
-/// fold that builds a type, which nests as deep as the list is long.
+/// fold over it, which nests as deep as the list is long: clang stops at 256 by default.
 namespace kotatsu {
+
+namespace detail {
+
+/// Where the first of flags is set; the last of them is, past those a list tests.
+template <std::size_t N>
+consteval std::size_t first_set(const bool (&flags)[N]) {
+    std::size_t i = 0;
+    while(!flags[i]) {
+        ++i;
+    }
+    return i;
+}
+
+}  // namespace detail
 
 template <typename T, typename... Ts>
 concept is_one_of = (std::is_same_v<T, Ts> || ...);
@@ -23,7 +37,8 @@ template <typename List, typename T>
 constexpr inline bool type_list_contains_v = false;
 
 template <typename... Ts, typename T>
-constexpr inline bool type_list_contains_v<type_list<Ts...>, T> = is_one_of<T, Ts...>;
+constexpr inline bool type_list_contains_v<type_list<Ts...>, T> =
+    detail::first_set({std::is_same_v<T, Ts>..., true}) < sizeof...(Ts);
 
 /// Whether the list holds a specialization of HKT.
 template <typename List, template <typename...> typename HKT>
@@ -31,7 +46,7 @@ constexpr inline bool type_list_has_spec_v = false;
 
 template <typename... Ts, template <typename...> typename HKT>
 constexpr inline bool type_list_has_spec_v<type_list<Ts...>, HKT> =
-    (is_specialization_of<HKT, Ts> || ...);
+    detail::first_set({is_specialization_of<HKT, Ts>..., true}) < sizeof...(Ts);
 
 template <typename List>
 constexpr inline std::size_t type_list_size_v = 0;
@@ -68,16 +83,6 @@ auto list_element(type_list<Ts...>)
     -> decltype(select_indexed<I>(indexed_types<std::index_sequence_for<Ts...>, Ts...>{}));
 #endif
 
-/// Where the first of flags is set; the last of them is, past those a list tests.
-template <std::size_t N>
-consteval std::size_t first_set(const bool (&flags)[N]) {
-    std::size_t i = 0;
-    while(!flags[i]) {
-        ++i;
-    }
-    return i;
-}
-
 }  // namespace detail
 
 template <std::size_t I, typename List>
@@ -103,9 +108,21 @@ consteval std::array<list_place, Total> list_places(const std::size_t (&sizes)[N
     return places;
 }
 
+template <std::size_t N>
+consteval std::size_t sum(const std::size_t (&sizes)[N]) {
+    std::size_t total = 0;
+    for(std::size_t size: sizes) {
+        total += size;
+    }
+    return total;
+}
+
+template <typename... Lists>
+constexpr inline std::size_t concat_size = sum({type_list_size_v<Lists>..., 0});
+
 template <typename... Lists>
 constexpr inline auto concat_places =
-    list_places<(0 + ... + type_list_size_v<Lists>)>({type_list_size_v<Lists>..., 0});
+    list_places<concat_size<Lists...>>({type_list_size_v<Lists>..., 0});
 
 /// Element J of the concatenation of Lists.
 template <std::size_t J, typename... Lists>
@@ -134,7 +151,7 @@ auto list_find_spec(type_list<Ts...>)
 /// The lists, one after another, picked element by element in one pack expansion.
 template <typename... Lists>
 using type_list_concat_t = decltype(detail::list_concat<Lists...>(
-    std::make_index_sequence<(0 + ... + type_list_size_v<Lists>)>{}));
+    std::make_index_sequence<detail::concat_size<Lists...>>{}));
 
 namespace detail {
 

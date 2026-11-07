@@ -69,6 +69,8 @@ ZEST_CASE(long_lists_are_concatenated_and_filtered) {
     ZEXPECT(
         zest::type_eq<type_list_element_t<1100, Twice>, std::integral_constant<std::size_t, 0>>());
     ZEXPECT(zest::type_eq<type_list_filter_t<Indices, std::is_integral>, type_list<>>());
+    ZSTATIC_EXPECT(type_list_contains_v<Indices, std::integral_constant<std::size_t, 1099>>);
+    ZSTATIC_EXPECT(!type_list_has_spec_v<Indices, std::optional>);
 }
 
 ZEST_CASE(find_takes_the_first_match) {
