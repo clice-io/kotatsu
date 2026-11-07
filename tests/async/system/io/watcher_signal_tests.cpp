@@ -296,6 +296,44 @@ ZEST_CASE(failed_start_on_another_signal_leaves_the_first_as_asked) {
     ZEXPECT(action_of(SIGUSR1) == "ignored");
 }
 
+// libuv refuses signal 0 before it stops watching the first signal, which
+// still wakes a wait. The default action would end the process.
+ZEST_CASE(failed_start_on_signal_zero_keeps_watching_the_first) {
+    test::ScopedSignalAction found(SIGUSR1, SIG_DFL);
+    auto sig = signal::create(loop);
+    ZASSERT(sig.has_value());
+    ZASSERT(!sig->start(SIGUSR1));
+
+    ZEXPECT(sig->start(0) == error::invalid_argument);
+    ZASSERT(action_of(SIGUSR1) == "caught");
+    auto wait_one = [&]() -> task<void, error> {
+        ::raise(SIGUSR1);
+        co_await sig->wait().or_fail();
+    };
+    auto [caught] = run(wait_one());
+    ZEXPECT(caught.has_value());
+    ZEXPECT(!sig->stop());
+}
+
+// The start refused, nothing changes: the first signal is still watched,
+// and still wakes a wait. The default action would end the process.
+ZEST_CASE(failed_start_leaving_sigchld_ignored_keeps_watching_the_first) {
+    test::ScopedSignalAction found(SIGUSR1, SIG_DFL);
+    auto sig = signal::create(loop);
+    ZASSERT(sig.has_value());
+    ZASSERT(!sig->start(SIGUSR1));
+
+    ZEXPECT(sig->start(SIGCHLD, signal::leave::ignored) == error::invalid_argument);
+    ZASSERT(action_of(SIGUSR1) == "caught");
+    auto wait_one = [&]() -> task<void, error> {
+        ::raise(SIGUSR1);
+        co_await sig->wait().or_fail();
+    };
+    auto [caught] = run(wait_one());
+    ZEXPECT(caught.has_value());
+    ZEXPECT(!sig->stop());
+}
+
 // The loop's destruction closes the watcher's handle, which libuv stops
 // without the watcher: the default action stays, also once the watcher goes.
 ZEST_CASE(destroying_the_loop_leaves_the_default_action) {
