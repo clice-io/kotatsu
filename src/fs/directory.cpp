@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <span>
@@ -26,8 +27,17 @@
 #ifdef __APPLE__
 // renamex_np
 #include <stdio.h>
+#include <sys/attr.h>
 #else
+#include <linux/fs.h>
+#include <sys/ioctl.h>
 #include <sys/syscall.h>
+
+// FS_IOC_GETFLAGS's flag of a directory that folds case, which kernel
+// headers before Linux 5.4 leave out.
+#ifndef FS_CASEFOLD_FL
+#define FS_CASEFOLD_FL 0x40000000
+#endif
 
 // What C libraries before glibc 2.28, and their kernel headers before Linux
 // 3.15, leave out: renameat2's flag, and its number on x86-64 and on the
@@ -73,6 +83,10 @@ constexpr auto rename_info_ex = static_cast<FILE_INFO_BY_HANDLE_CLASS>(22);
 constexpr ULONG rename_replace = 0x1;
 constexpr ULONG rename_posix_semantics = 0x2;
 constexpr ULONG rename_ignore_readonly = 0x40;
+
+/// FileCaseSensitiveInfo, which MinGW's headers declare only for Windows 10
+/// 1803 and later (NTDDI_VERSION), above the one they aim at by default.
+constexpr auto case_sensitive_info = static_cast<FILE_INFO_BY_HANDLE_CLASS>(23);
 
 /// Whether a file system refused an information class it does not know,
 /// one newer than it: FAT knows no POSIX deletes or renames, some network
@@ -881,6 +895,68 @@ void Walk::advance() {
     }
     entry.relative_start = relative_start;
     current = std::move(entry);
+}
+
+std::expected<bool, std::error_code> case_sensitive(std::string_view directory) {
+#ifdef _WIN32
+    auto handle = open_directory(directory);
+    if(!handle) {
+        return std::unexpected(handle.error());
+    }
+    FILE_CASE_SENSITIVE_INFO info;
+    if(!::GetFileInformationByHandleEx(handle->get(), case_sensitive_info, &info, sizeof(info))) {
+        // A file system without the flag matches no case.
+        auto error = ::GetLastError();
+        if(unsupported(error)) {
+            return false;
+        }
+        return std::unexpected(windows::to_error_code(error));
+    }
+    return (info.Flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR) != 0;
+#else
+    posix::CPath c_path;
+    if(auto error = c_path.assign(directory)) {
+        return std::unexpected(error);
+    }
+    Descriptor dir(::open(c_path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    if(dir.fd < 0) {
+        return std::unexpected(posix::last_error());
+    }
+#ifdef __APPLE__
+    // What the volume tells of its format, which ISO 9660 and UDF tell as
+    // well, where pathconf(_PC_CASE_SENSITIVE) has no answer.
+    attrlist asked{};
+    asked.bitmapcount = ATTR_BIT_MAP_COUNT;
+    asked.volattr = ATTR_VOL_INFO | ATTR_VOL_CAPABILITIES;
+
+    struct {
+        std::uint32_t length;
+        vol_capabilities_attr_t capabilities;
+    } told;
+
+    if(::fgetattrlist(dir.fd, &asked, &told, sizeof(told), 0) != 0) {
+        return std::unexpected(posix::last_error());
+    }
+    auto format = told.capabilities.capabilities[VOL_CAPABILITIES_FORMAT];
+    return (format & VOL_CAP_FMT_CASE_SENSITIVE) != 0;
+#else
+    // A file system that keeps no such flags, FAT, NFS and 9p among others,
+    // refuses to tell them (ENOTTY, EINVAL, EOPNOTSUPP): its type tells.
+    int flags = 0;
+    if(::ioctl(dir.fd, FS_IOC_GETFLAGS, &flags) == 0) {
+        if(flags & FS_CASEFOLD_FL) {
+            return false;
+        }
+    } else if(errno != ENOTTY && errno != EINVAL && errno != EOPNOTSUPP) {
+        return std::unexpected(posix::last_error());
+    }
+    auto volume = posix::volume_of(dir.fd);
+    if(!volume) {
+        return std::unexpected(volume.error());
+    }
+    return volume->type != "vfat" && volume->type != "exfat";
+#endif
+#endif
 }
 
 std::expected<bool, std::error_code> create_directory(std::string_view path) {

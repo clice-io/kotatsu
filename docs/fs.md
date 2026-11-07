@@ -53,18 +53,18 @@ Adapted from `tests/fs/system/file_tests.cpp` and `directory_walk_tests.cpp`.
 
 ## Overview
 
-| Header                                           | Contents                                                                                             |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| [path.h](../include/kotatsu/fs/path.h)           | Lexical paths in the POSIX or Windows style on any host: components, `push`, `normalize`, `relative` |
-| [status.h](../include/kotatsu/fs/status.h)       | `status`, `symlink_status`, `exists`, `set_times`, `set_permissions`                                 |
-| [directory.h](../include/kotatsu/fs/directory.h) | `Directory`, `walk`, `create_directories`, `remove_all`, `rename`, `rename_noreplace`, links         |
-| [file.h](../include/kotatsu/fs/file.h)           | `File` and `OpenOptions`, locks, `range_locked`; `read_file`, `write_file_atomic`, `copy_file`       |
-| [temp.h](../include/kotatsu/fs/temp.h)           | `TempFile` and `TempDirectory`, deleted when destroyed                                               |
-| [mapping.h](../include/kotatsu/fs/mapping.h)     | `Mapping`, a file's bytes mapped read only                                                           |
-| [volume.h](../include/kotatsu/fs/volume.h)       | `volume`: space, type and remoteness of a file system                                                |
-| [resolve.h](../include/kotatsu/fs/resolve.h)     | `canonical`, `weakly_canonical`, `absolute`, `current_dir`                                           |
-| [windows.h](../include/kotatsu/fs/windows.h)     | Windows only: `to_native` / `from_native` paths, Win32 errors as `std::error_code`                   |
-| [cygwin.h](../include/kotatsu/fs/cygwin.h)       | Cygwin and MSYS2 POSIX paths and mount tables                                                        |
+| Header                                           | Contents                                                                                                       |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| [path.h](../include/kotatsu/fs/path.h)           | Lexical paths in the POSIX or Windows style on any host: components, `push`, `normalize`, `relative`           |
+| [status.h](../include/kotatsu/fs/status.h)       | `status`, `symlink_status`, `exists`, `set_times`, `set_permissions`                                           |
+| [directory.h](../include/kotatsu/fs/directory.h) | `Directory`, `walk`, `create_directories`, `remove_all`, `rename`, `rename_noreplace`, links, `case_sensitive` |
+| [file.h](../include/kotatsu/fs/file.h)           | `File` and `OpenOptions`, locks, `range_locked`; `read_file`, `write_file_atomic`, `copy_file`                 |
+| [temp.h](../include/kotatsu/fs/temp.h)           | `TempFile` and `TempDirectory`, deleted when destroyed                                                         |
+| [mapping.h](../include/kotatsu/fs/mapping.h)     | `Mapping`, a file's bytes mapped read only                                                                     |
+| [volume.h](../include/kotatsu/fs/volume.h)       | `volume`: space, type and remoteness of a file system                                                          |
+| [resolve.h](../include/kotatsu/fs/resolve.h)     | `canonical`, `weakly_canonical`, `absolute`, `current_dir`                                                     |
+| [windows.h](../include/kotatsu/fs/windows.h)     | Windows only: `to_native` / `from_native` paths, Win32 errors as `std::error_code`                             |
+| [cygwin.h](../include/kotatsu/fs/cygwin.h)       | Cygwin and MSYS2 POSIX paths and mount tables                                                                  |
 
 ## Platform notes
 

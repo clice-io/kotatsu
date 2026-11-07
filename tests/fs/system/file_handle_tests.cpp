@@ -1,7 +1,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <filesystem>
 #include <format>
 #include <iterator>
@@ -15,11 +14,8 @@
 #else
 #include <unistd.h>
 #endif
-#ifdef __APPLE__
-#include <chrono>
-#include <thread>
-#endif
 
+#include "fs/harness/disk_image.h"
 #include "fs/harness/files.h"
 #include "fs/harness/win32.h"
 #include "kotatsu/zest/zest.h"
@@ -85,75 +81,6 @@ void expect_refused_as_a_directory(std::string_view path) {
         ZEXPECT(file.error() == entry.error);
     }
 }
-
-#ifdef __APPLE__
-/// A disk image of 1 MB of HFS+ in a test's directory, attached beside it,
-/// which hdiutil lets any user do; detached, as though the disk went, when
-/// this goes or a failed ZASSERT ends the process.
-struct DiskImage {
-    explicit DiskImage(const test::TempDir& dir) :
-        image(dir.file("image.dmg")), mount(dir.file("volume")) {
-        std::filesystem::create_directory(test::std_path(mount));
-        ZASSERT(hdiutil(std::format("create -size 1m -fs HFS+ -volname kotatsu '{}'", image)));
-        attach(false);
-    }
-
-    DiskImage(const DiskImage&) = delete;
-    DiskImage& operator=(const DiskImage&) = delete;
-
-    ~DiskImage() {
-        detach();
-    }
-
-    /// `name` on the volume.
-    std::string file(std::string_view name) const {
-        return std::format("{}/{}", mount, name);
-    }
-
-    void attach(bool read_only) {
-        // The disk's device, which hdiutil names first, before its volume:
-        // through a file, as the helper hdiutil leaves running would keep a
-        // pipe open.
-        auto listed = image + ".attached";
-        attached = std::system(std::format("hdiutil attach {} -nobrowse -noverify -noautofsck "
-                                           "-mountpoint '{}' '{}' > '{}'",
-                                           read_only ? "-readonly" : "",
-                                           mount,
-                                           image,
-                                           listed)
-                                   .c_str()) == 0;
-        ZASSERT(attached);
-        auto text = test::read_text(listed);
-        device = text.substr(0, text.find_first_of(" \t\n"));
-        ZASSERT(device.starts_with("/dev/"));
-    }
-
-    /// Detaches it, files open on it or not: false when it stays attached.
-    /// A daemon may hold the disk for a moment once its volume is unmounted,
-    /// which -force does not override ("Resource busy"): the disk is tried
-    /// again by its device, a few times.
-    bool detach() {
-        for(int tries = 0; attached && tries < 10; ++tries) {
-            if(tries != 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            }
-            attached = !hdiutil(std::format("detach -force '{}'", device));
-        }
-        return !attached;
-    }
-
-private:
-    static bool hdiutil(std::string_view arguments) {
-        return std::system(std::format("hdiutil {} > /dev/null", arguments).c_str()) == 0;
-    }
-
-    const std::string image;
-    const std::string mount;
-    std::string device;
-    bool attached = false;
-    zest::FatalHook on_fatal{[this] { detach(); }};
-};
-#endif
 
 ZEST_SUITE(fs_file_handle) {
 
@@ -579,7 +506,7 @@ ZEST_CASE(sync_of_a_device_succeeds) {
 
 ZEST_CASE(sync_of_a_file_on_a_read_only_volume_succeeds) {
     test::TempDir dir;
-    DiskImage image(dir);
+    test::DiskImage image(dir, "HFS+");
     test::write_text(image.file("file"), "text");
     ZASSERT(image.detach());
     image.attach(true);
@@ -590,7 +517,7 @@ ZEST_CASE(sync_of_a_file_on_a_read_only_volume_succeeds) {
 
 ZEST_CASE(sync_of_a_file_whose_volume_went_fails) {
     test::TempDir dir;
-    DiskImage image(dir);
+    test::DiskImage image(dir, "HFS+");
     auto file = File::open(image.file("file"), {.write = true, .create = true});
     ZASSERT(file.has_value());
     ZEXPECT(!file->write("text"));
