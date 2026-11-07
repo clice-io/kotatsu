@@ -321,7 +321,7 @@ struct renamed_table {
 /// Names renamed by a built-in Policy, which writes each into a buffer: each is renamed once,
 /// into a draft with room for twice their size, which the exact buffer is copied from.
 template <typename Policy, const auto& Names>
-    requires requires(char* out) { Policy::write(std::string_view{}, out); }
+    requires std::derived_from<Policy, detail::writes_names<Policy>>
 struct renamed_table<Policy, Names> {
     constexpr static std::size_t count = std::size(Names);
 

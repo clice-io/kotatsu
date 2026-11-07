@@ -42,6 +42,15 @@ struct Point {
 
 KANNOTATE_FIELD(&third_party::Point::y, rename = "Y", alias = {"why"});
 
+/// Two fields annotated from outside, each one's annotation found beside the other's.
+struct Segment {
+    int begin = 0;
+    int end = 0;
+};
+
+KANNOTATE_FIELD(&third_party::Segment::begin, rename = "from");
+KANNOTATE_FIELD(&third_party::Segment::end, rename = "to");
+
 template <typename A, typename B>
 struct Pair {
     A first;
@@ -172,6 +181,11 @@ ZEST_CASE(annotate_field_annotates_a_class_from_outside) {
     ZSTATIC_EXPECT(y.rename == std::string_view("Y"));
     ZSTATIC_EXPECT(y.alias[0] == std::string_view("why"));
     ZSTATIC_EXPECT(codec::field_spec_of<third_party::Point, 0>.rename.empty());
+}
+
+ZEST_CASE(annotate_field_annotates_several_fields_of_a_class) {
+    ZSTATIC_EXPECT(codec::field_spec_of<third_party::Segment, 0>.rename == "from");
+    ZSTATIC_EXPECT(codec::field_spec_of<third_party::Segment, 1>.rename == "to");
 }
 
 ZEST_CASE(annotate_field_takes_a_parenthesized_member) {

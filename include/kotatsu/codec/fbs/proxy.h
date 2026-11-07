@@ -555,7 +555,7 @@ auto read_member(table_ref view, std::size_t slot) -> member_view_t<Object, M> {
 
 /// A member of Object of type M, located where it is named: the conversion
 /// from &Object::member is evaluated at compile time, finding which of
-/// Object's members of type M it points to by address, over an uninitialized
+/// Object's members of type M it points to by offset, over an uninitialized
 /// Object, so none is ever constructed. A member pointer that is not a
 /// constant expression does not convert.
 template <typename Object, typename M>

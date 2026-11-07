@@ -203,10 +203,10 @@ consteval type_kind kind_of() {
             return type_kind::unknown;
         }
     }
-    // Null, optional, pointer and variant come before the views, string and bytes, as none of them
-    // converts to a view: the conversions those test, overload resolution over the views' range
-    // constructors, are most of what classifying a type costs. Of ranges, a byte range alone is
-    // tested for the conversion to a byte span.
+    // Null, optional, pointer and variant come before the views, string and bytes: the
+    // conversions those test, overload resolution over the views' range constructors, are most
+    // of what classifying a type costs. Of ranges, a byte range alone is tested for the
+    // conversion to a byte span.
     else if constexpr(is_one_of<T, std::nullptr_t, std::nullopt_t, std::monostate>) {
         return type_kind::null;
     } else if constexpr(is_optional_v<T>) {
