@@ -4,65 +4,84 @@
 #include <expected>
 #include <string>
 #include <string_view>
+#include <system_error>
+
+#include "kotatsu/support/buffer_ref.h"
+#include "kotatsu/fs/path.h"
 
 namespace kotatsu::ipc::lsp {
 
-/// Parsed URI value with helpers for LSP-style URI handling.
-///
-/// Instances are created via `parse(...)` or `from_file_path(...)` so callers
-/// always receive either a valid URI or an explicit error.
+/// A URI, as LSP names documents and workspaces: its text, and where each of
+/// its components lies in it. Made by from_string() or from_path(), so that
+/// every URI is a valid one.
 class URI {
 public:
-    /// Parses a URI string into structured components.
-    static std::expected<URI, std::string> parse(std::string_view text);
+    /// Reads `text` as a URI: `scheme ":" ["//" authority] path ["?" query]
+    /// ["#" fragment]`, the scheme written in lower case. Text with no scheme,
+    /// or a scheme that is not a letter followed by letters, digits, `+`, `-`
+    /// and `.`, fails with std::errc::invalid_argument.
+    static std::expected<URI, std::error_code> from_string(std::string_view text);
 
-    /// Builds a `file://` URI from an absolute filesystem path.
-    ///
-    /// Relative paths are rejected intentionally to avoid cwd-dependent URI
-    /// semantics in language-server workflows.
-    static std::expected<URI, std::string> from_file_path(std::string_view path);
+    /// The `file:` URI of the absolute path `path`, as `style` spells paths,
+    /// each byte a URI reserves percent-encoded: `/tmp/a b` is
+    /// `file:///tmp/a%20b`, and `//server/share/x` is `file://server/share/x`,
+    /// as VS Code makes it on every platform. On Windows `\` separates too, and
+    /// a drive's letter is written in lower case, as VS Code keys documents:
+    /// `C:\x` is `file:///c:/x`. On POSIX `\` is a character of a name like
+    /// any other, `%5C`, and `C:/x` a relative path. A relative path, on
+    /// Windows a drive without a root directory (`C:x`) among them, and a
+    /// share without a server or a share name fail with
+    /// std::errc::invalid_argument, so that a URI never depends on the current
+    /// directory.
+    static std::expected<URI, std::error_code>
+        from_path(std::string_view path, fs::path::Style style = fs::path::native_style);
 
-    /// Percent-encodes bytes that are not valid URI characters.
-    static std::string percent_encode(std::string_view text, bool encode_slash = false);
+    /// Writes into `out` the path a `file:` URI names, decoded, with `/`
+    /// separating its names: a URI with a server, other than `localhost`, as
+    /// a share, `//server/share/x`, and on Windows a drive without the slash
+    /// before it, `/c:/x` as `c:/x`, its letter as the URI writes it. Another
+    /// scheme, a bad percent escape, a server with a separator in it, and a
+    /// path that is not absolute fail with std::errc::invalid_argument.
+    std::error_code to_path(buffer_ref out, fs::path::Style style = fs::path::native_style) const;
 
-    /// Decodes percent-encoded bytes (`%HH`), returning an error on invalid input.
-    static std::expected<std::string, std::string> percent_decode(std::string_view text);
+    /// Writes into `out` the bytes of `text`, each as `%HH` but letters,
+    /// digits, `-`, `.`, `_` and `~`, which a URI never reserves, `:`, `@` and
+    /// `!$&'()*+,;=`, which delimit the parts of a component, and `/` unless
+    /// `encode_slash`.
+    static void percent_encode(buffer_ref out, std::string_view text, bool encode_slash = false);
 
-    /// Reconstructs the normalized URI string.
-    std::string str() const;
+    /// Writes into `out` the bytes `text` percent-encodes; a `%` not followed
+    /// by two hex digits fails with std::errc::invalid_argument.
+    static std::error_code percent_decode(buffer_ref out, std::string_view text);
 
-    /// Lower-case URI scheme (e.g. `file`, `https`).
+    /// The URI's text, its scheme in lower case.
+    std::string_view text() const noexcept;
+
+    /// In lower case: `file`, `https`.
     std::string_view scheme() const noexcept;
 
-    /// Whether the URI contains `//authority`.
+    /// Whether `//` and an authority follow the scheme, which may be empty:
+    /// `file:///x` has one.
     bool has_authority() const noexcept;
 
-    /// Authority component (host[:port], possibly empty for `file:///...`).
+    /// The server and port, or nothing for `file:///x`.
     std::string_view authority() const noexcept;
 
-    /// URI path component.
+    /// The path component, percent-encoded as the URI writes it.
     std::string_view path() const noexcept;
 
-    /// Whether a query component was present.
     bool has_query() const noexcept;
 
-    /// Query component (without `?`), or empty when absent.
+    /// What follows `?`, or nothing when there is no query.
     std::string_view query() const noexcept;
 
-    /// Whether a fragment component was present.
     bool has_fragment() const noexcept;
 
-    /// Fragment component (without `#`), or empty when absent.
+    /// What follows `#`, or nothing when there is no fragment.
     std::string_view fragment() const noexcept;
 
-    /// Convenience check for `file` scheme.
+    /// Whether the scheme is `file`.
     bool is_file() const noexcept;
-
-    /// Returns decoded path string for `file` URIs.
-    ///
-    /// For remote authorities, returns UNC-like form: `//authority/path`.
-    /// Local returned paths are always absolute.
-    std::expected<std::string, std::string> file_path() const;
 
 private:
     struct Segment {
@@ -76,9 +95,10 @@ private:
     };
 
     URI() = default;
+
     std::string_view view(Segment segment) const noexcept;
 
-    std::string text;
+    std::string spelling;
     Segment scheme_segment;
     Segment authority_segment;
     Segment path_segment;
