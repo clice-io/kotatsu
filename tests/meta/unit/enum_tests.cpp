@@ -80,6 +80,23 @@ enum Compass : int {
     Leftmost = -120,
 };
 
+#if !defined(__clang__) || __clang_major__ >= 21
+/// Its name holds a comma, between its class's template arguments: it is probed a value at a
+/// time. Unscoped, as instantiating a class template instantiates its unscoped enums'
+/// enumerators; clang 20 prints none of them by name.
+template <typename A, typename B>
+struct Holder {
+    enum Inner : int {
+        Left = -3,
+        Right = 90,
+    };
+};
+
+static_assert(enum_values<Holder<int, char>::Inner>.size() == 2);
+static_assert(enum_names<Holder<int, char>::Inner>[0] == "Left");
+static_assert(enum_names<Holder<int, char>::Inner>[1] == "Right");
+#endif
+
 enum class Toggle : bool {
     Off,
     On,
@@ -134,6 +151,24 @@ static_assert(enum_names<Edge8>[0] == "Min");
 static_assert(enum_names<Edge8>[1] == "Max");
 
 ZEST_SUITE(meta_enum) {
+
+ZEST_CASE(enum_value_finds_every_name) {
+    // Compass's names sort apart from its values: Down, Leftmost, Up against -120, -42, 85.
+    ZSTATIC_EXPECT(enum_value<Compass>("Leftmost") == Compass::Leftmost);
+    ZSTATIC_EXPECT(enum_value<Compass>("Down") == Compass::Down);
+    ZSTATIC_EXPECT(enum_value<Compass>("Up") == Compass::Up);
+    ZSTATIC_EXPECT(enum_value<Color>("Green") == Color::Green);
+    ZSTATIC_EXPECT(enum_value<Chunked>("FirstOfSixth") == Chunked::FirstOfSixth);
+    ZSTATIC_EXPECT(enum_value<Toggle>("On") == Toggle::On);
+}
+
+ZEST_CASE(enum_value_finds_no_other_name) {
+    ZSTATIC_EXPECT(!enum_value<Compass>("Dow").has_value());
+    ZSTATIC_EXPECT(!enum_value<Compass>("").has_value());
+    ZSTATIC_EXPECT(!enum_value<Compass>("Zzz").has_value());
+    ZSTATIC_EXPECT(!enum_value<Compass>("A").has_value());
+    ZSTATIC_EXPECT(!enum_value<Color>("red").has_value());
+}
 
 ZEST_CASE(enum_member_names) {
     ZEXPECT(enum_name(Color::Red) == "Red");

@@ -62,6 +62,20 @@ ZEST_CASE(concatenate_keeps_the_order) {
                           type_list<int, char, bool>>());
 }
 
+ZEST_CASE(long_lists_are_concatenated_and_filtered) {
+    // Longer than the compilers' default limit on recursive instantiation, 1024.
+    using Twice = type_list_concat_t<Indices, Indices>;
+    ZSTATIC_EXPECT(type_list_size_v<Twice> == 2200U);
+    ZEXPECT(
+        zest::type_eq<type_list_element_t<1100, Twice>, std::integral_constant<std::size_t, 0>>());
+    ZEXPECT(zest::type_eq<type_list_filter_t<Indices, std::is_integral>, type_list<>>());
+}
+
+ZEST_CASE(find_takes_the_first_match) {
+    ZEXPECT(zest::type_eq<type_list_find_t<Numbers, std::is_floating_point>, double>());
+    ZEXPECT(zest::type_eq<type_list_find_t<Numbers, std::is_pointer>, void>());
+}
+
 ZEST_CASE(filter_keeps_order) {
     ZEXPECT(
         zest::type_eq<type_list_filter_t<Numbers, std::is_integral>, type_list<int, int, char>>());

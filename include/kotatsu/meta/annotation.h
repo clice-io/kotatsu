@@ -291,22 +291,21 @@ struct spec_attr {
 
 namespace detail {
 
-template <typename Spec, typename Attr>
-constexpr bool is_spec_attr_of = false;
+/// Whether an attr is the spec_attr of a spec of type Spec.
+template <typename Spec>
+struct spec_attr_of {
+    template <typename Attr>
+    struct is : std::false_type {};
 
-template <typename Spec, typename Tag>
-constexpr bool is_spec_attr_of<Spec, spec_attr<Tag, Spec>> = true;
-
-template <typename Spec, typename... Attrs>
-auto find_spec_attr(type_list<Attrs...>) -> std::type_identity<
-    type_list_element_t<kotatsu::detail::first_set({is_spec_attr_of<Spec, Attrs>..., true}),
-                        type_list<Attrs..., void>>>;
+    template <typename Tag>
+    struct is<spec_attr<Tag, Spec>> : std::true_type {};
+};
 
 }  // namespace detail
 
 /// The spec_attr of spec type `Spec` among Attrs; void when there is none.
 template <typename Spec, typename Attrs>
-using spec_attr_t = typename decltype(detail::find_spec_attr<Spec>(Attrs{}))::type;
+using spec_attr_t = type_list_find_t<Attrs, detail::spec_attr_of<Spec>::template is>;
 
 namespace detail {
 

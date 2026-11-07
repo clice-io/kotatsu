@@ -4,6 +4,8 @@
 #include <source_location>
 #include <string_view>
 
+#include "kotatsu/support/config.h"
+
 /// Names as the compiler prints them in a function's signature: of a type, of a member, of the
 /// values of a pack. A signature is read in constant evaluation, which pays for every step: the
 /// helpers below search it through the compiler's own string builtins, a step each, and walk
@@ -25,7 +27,7 @@ constexpr std::size_t find_char(std::string_view text, char c, std::size_t from)
     if(from >= text.size()) {
         return text.size();
     }
-#if defined(__clang__) || defined(_MSC_VER)
+#if defined(__clang__) || KOTATSU_COMPILER_MSVC
     const char* found = __builtin_char_memchr(text.data() + from, c, text.size() - from);
     return found == nullptr ? text.size() : static_cast<std::size_t>(found - text.data());
 #else
@@ -175,7 +177,7 @@ template <typename T>
 constexpr inline std::string_view spelled_type = type_spelling.of(type_signature<T>());
 
 consteval std::string_view drop_class_key(std::string_view name) {
-#if defined(_MSC_VER) && !defined(__clang__)
+#if KOTATSU_COMPILER_MSVC
     // `unsigned int` is a name of its own.
     for(std::string_view key: {"class ", "struct ", "enum ", "union "}) {
         if(name.starts_with(key)) {

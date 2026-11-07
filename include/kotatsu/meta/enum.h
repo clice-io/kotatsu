@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstddef>
@@ -109,7 +108,8 @@ consteval auto make_scanned_names(std::integer_sequence<int, Values...> values,
     (copy_chunk<E, Chunks * enum_chunk>(
          names,
          values,
-         std::make_index_sequence<std::min(enum_chunk, count - Chunks * enum_chunk)>{}),
+         std::make_index_sequence <
+             count - Chunks * enum_chunk<enum_chunk ? count - Chunks * enum_chunk : enum_chunk>{}),
      ...);
     return names;
 }
@@ -178,7 +178,8 @@ constexpr inline auto name_order = sorted_order(enumerators<E>.names);
 
 namespace kotatsu::meta {
 
-/// The values of E's enumerators in -128..127, in ascending order of its underlying type.
+/// The values of E's enumerators among those it scans, -128..127, or 0..127 and the top 128 values
+/// of an unsigned underlying type, in ascending order of that type.
 template <typename E>
     requires std::is_enum_v<E>
 constexpr inline auto enum_values = detail::enumerators<E>.values;
@@ -207,6 +208,7 @@ constexpr std::size_t enum_index(E e) {
     return left < values.size() && values[left] == e ? left : values.size();
 }
 
+/// The name of the enumerator of value `e`; fallback when none has it.
 template <typename E>
     requires std::is_enum_v<E>
 constexpr std::string_view enum_name(E e, std::string_view fallback = {}) {

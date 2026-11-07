@@ -96,7 +96,8 @@ enum class type_kind : std::uint8_t {
     character,
     /// Anything convertible to std::string_view.
     string,
-    /// Anything convertible to std::span<const std::byte>.
+    /// A range of std::byte convertible to std::span<const std::byte>, or a type that is no
+    /// range and converts to one.
     bytes,
     /// enum / enum class: its underlying integer, or a name through codec::enum_names.
     enumeration,

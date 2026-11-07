@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <concepts>
 #include <cstddef>
 #include <type_traits>
 #include <utility>
@@ -11,7 +10,7 @@
 #include "kotatsu/support/type_traits.h"
 
 /// Type lists, each operation one pack expansion rather than a recursion over the list, nor a
-/// fold, which nests as deep as the list is long.
+/// fold that builds a type, which nests as deep as the list is long.
 namespace kotatsu {
 
 template <typename T, typename... Ts>
@@ -121,6 +120,10 @@ auto list_concat(std::index_sequence<Js...>) -> type_list<concat_element<Js, Lis
 template <typename T, typename... Us>
 constexpr inline std::size_t first_of = first_set({std::is_same_v<T, Us>..., true});
 
+template <template <typename> typename Predicate, typename... Ts>
+auto list_find(type_list<Ts...>)
+    -> decltype(list_element<first_set({Predicate<Ts>::value..., true})>(type_list<Ts..., void>{}));
+
 template <template <typename...> typename HKT, typename... Ts>
 auto list_find_spec(type_list<Ts...>)
     -> decltype(list_element<first_set({is_specialization_of<HKT, Ts>..., true})>(
@@ -156,6 +159,10 @@ using type_list_unique_t =
     decltype(detail::list_unique(List{},
                                  List{},
                                  std::make_index_sequence<type_list_size_v<List>>{}));
+
+/// The first type of List for which Predicate holds; void when there is none.
+template <typename List, template <typename> typename Predicate>
+using type_list_find_t = typename decltype(detail::list_find<Predicate>(List{}))::type;
 
 /// The first specialization of HKT in List; void when there is none.
 template <typename List, template <typename...> typename HKT>

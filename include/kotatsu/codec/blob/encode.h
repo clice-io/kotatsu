@@ -52,7 +52,7 @@ struct Writer {
             static_assert(std::is_same_v<A, T>, "a scalar is laid out as itself");
             write(at, &value, sizeof(A));
         } else if constexpr(kind_of<A>() == Kind::Record) {
-            static_assert(field_count_v<A> == field_count_v<T>,
+            static_assert(meta::field_count<A> == meta::field_count<T>,
                           "a record is laid out field by field");
             for_each_index<A>([&](auto index) {
                 store<field_t<A, index()>>(at + meta::field_offsets<A>[index()],

@@ -75,7 +75,11 @@ Adapted from `tests/meta/unit/struct_tests.cpp` and `tests/meta/unit/enum_tests.
 - Aggregate reflection handles structs of up to 72 fields, reaching them through
   one structured binding of them all: a binding pack (`auto& [...fields]`) on
   clang 21+ and GCC 16+, which take it in C++23 as an extension, and a
-  specialization per field count elsewhere (MSVC, older clang and GCC).
+  specialization per field count elsewhere (MSVC, older clang and GCC). Where
+  the count is found by brace-initialization instead, a struct with an array
+  member is miscounted, an element a field, and one whose members are spread
+  over its bases fails to compile where its fields are read rather than being
+  no `reflectable_class`.
 - `kind_of` sorts integers by size: `long` is `int32` on Windows, `int64` elsewhere.
 
 ## See also

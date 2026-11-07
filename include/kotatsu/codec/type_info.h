@@ -566,6 +566,11 @@ struct info_node<T, TagAttrs, Format, meta::type_kind::structure> {
 template <typename T, typename TagAttrs, typename Format>
 struct info_node<T, TagAttrs, Format, meta::type_kind::enumeration> : enum_info_node<T> {};
 
+/// Whether field I of T holds an entry of its own in a document: neither skipped nor flattened,
+/// whose own fields take its struct's entries.
+template <typename T, std::size_t I>
+constexpr inline bool entered_field_v = !field_spec_of<T, I>.skip && !field_spec_of<T, I>.flatten;
+
 /// The info of the node a field of type Raw carrying Attrs resolves to under Members, the
 /// format of its struct's members; none for a field without an entry of its own, skipped or
 /// flattened, whose type need not resolve.
@@ -607,14 +612,12 @@ constexpr built_fields_t<T> build_fields(std::index_sequence<Is...>) {
             naming::renamed<typename Format::rename_all, meta::field_names<T>>;
         constexpr const auto& offsets = meta::field_offsets<T>;
         const field_spec* const specs[] = {&field_spec_of<T, Is>...};
-        const type_info_fn types[] = {field_type_info < std::remove_cv_t<meta::field_type<T, Is>>,
-                                      meta::field_attrs_t<T, Is>,
-                                      members,
-                                      !field_spec_of<T, Is>.skip &&
-                                          !field_spec_of<T, Is>.flatten > ...};
-        const meta::type_kind kinds[] = {field_kind < std::remove_cv_t<meta::field_type<T, Is>>,
-                                         !field_spec_of<T, Is>.skip &&
-                                             !field_spec_of<T, Is>.flatten > ...};
+        const type_info_fn types[] = {field_type_info<std::remove_cv_t<meta::field_type<T, Is>>,
+                                                      meta::field_attrs_t<T, Is>,
+                                                      members,
+                                                      entered_field_v<T, Is>>...};
+        const meta::type_kind kinds[] = {
+            field_kind<std::remove_cv_t<meta::field_type<T, Is>>, entered_field_v<T, Is>>...};
         const std::span<const meta::spec_ref> extensions[] = {
             meta::spec_refs_of<meta::field_attrs_t<T, Is>, field_spec, struct_spec>...};
         const std::span<const field_info> flattened[] = {

@@ -318,8 +318,7 @@ using field_value_t = std::remove_cv_t<meta::field_type<Object, I>>;
 /// it: a skipped field has none, and a flattened field's own fields take the
 /// enclosing table's slots.
 template <typename Object, std::size_t I>
-constexpr bool addressable_field_v =
-    !codec::field_spec_of<Object, I>.skip && !codec::field_spec_of<Object, I>.flatten;
+constexpr bool addressable_field_v = codec::detail::entered_field_v<Object, I>;
 
 /// The types of Object's addressable members, each once.
 template <typename Object, typename Seq = std::make_index_sequence<meta::field_count<Object>>>

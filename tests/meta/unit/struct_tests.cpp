@@ -91,6 +91,159 @@ struct Many36 {
     int f36;
 };
 
+/// As many fields as meta reflects.
+struct Many72 {
+    int f00;
+    int f01;
+    int f02;
+    int f03;
+    int f04;
+    int f05;
+    int f06;
+    int f07;
+    int f08;
+    int f09;
+    int f10;
+    int f11;
+    int f12;
+    int f13;
+    int f14;
+    int f15;
+    int f16;
+    int f17;
+    int f18;
+    int f19;
+    int f20;
+    int f21;
+    int f22;
+    int f23;
+    int f24;
+    int f25;
+    int f26;
+    int f27;
+    int f28;
+    int f29;
+    int f30;
+    int f31;
+    int f32;
+    int f33;
+    int f34;
+    int f35;
+    int f36;
+    int f37;
+    int f38;
+    int f39;
+    int f40;
+    int f41;
+    int f42;
+    int f43;
+    int f44;
+    int f45;
+    int f46;
+    int f47;
+    int f48;
+    int f49;
+    int f50;
+    int f51;
+    int f52;
+    int f53;
+    int f54;
+    int f55;
+    int f56;
+    int f57;
+    int f58;
+    int f59;
+    int f60;
+    int f61;
+    int f62;
+    int f63;
+    int f64;
+    int f65;
+    int f66;
+    int f67;
+    int f68;
+    int f69;
+    int f70;
+    int f71;
+};
+
+/// One more: meta sees none.
+struct Many73 {
+    int f00;
+    int f01;
+    int f02;
+    int f03;
+    int f04;
+    int f05;
+    int f06;
+    int f07;
+    int f08;
+    int f09;
+    int f10;
+    int f11;
+    int f12;
+    int f13;
+    int f14;
+    int f15;
+    int f16;
+    int f17;
+    int f18;
+    int f19;
+    int f20;
+    int f21;
+    int f22;
+    int f23;
+    int f24;
+    int f25;
+    int f26;
+    int f27;
+    int f28;
+    int f29;
+    int f30;
+    int f31;
+    int f32;
+    int f33;
+    int f34;
+    int f35;
+    int f36;
+    int f37;
+    int f38;
+    int f39;
+    int f40;
+    int f41;
+    int f42;
+    int f43;
+    int f44;
+    int f45;
+    int f46;
+    int f47;
+    int f48;
+    int f49;
+    int f50;
+    int f51;
+    int f52;
+    int f53;
+    int f54;
+    int f55;
+    int f56;
+    int f57;
+    int f58;
+    int f59;
+    int f60;
+    int f61;
+    int f62;
+    int f63;
+    int f64;
+    int f65;
+    int f66;
+    int f67;
+    int f68;
+    int f69;
+    int f70;
+    int f71;
+    int f72;
+};
+
 struct NoUniqueAddress {
     int i;
 #ifdef _MSC_VER
@@ -216,6 +369,13 @@ ZEST_CASE(field_count_counts_the_fields) {
     ZSTATIC_EXPECT(field_count<Many36> == 36U);
     ZSTATIC_EXPECT(field_count_robustness_check<MoveOnly>());
     ZSTATIC_EXPECT(field_count_robustness_check<FromIntOnly>());
+}
+
+ZEST_CASE(field_count_stops_at_seventy_two) {
+    ZSTATIC_EXPECT(field_count<Many72> == 72U);
+    ZSTATIC_EXPECT(field_names<Many72>[71] == "f71");
+    ZSTATIC_EXPECT(field_offsets<Many72>[71] == offsetof(Many72, f71));
+    ZSTATIC_EXPECT(field_count<Many73> == 0U);
 }
 
 ZEST_CASE(reflectable_class_takes_aggregate_classes) {
