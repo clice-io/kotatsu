@@ -10,7 +10,7 @@
 #include "../libuv.h"
 #include "../runtime/resumption.h"
 #include "kotatsu/support/functional.h"
-#include "kotatsu/sys/detail/signals.h"
+#include "kotatsu/sys/process.h"
 #include "kotatsu/async/runtime/node.h"
 #include "kotatsu/async/runtime/sync.h"
 #include "kotatsu/async/runtime/task.h"
@@ -286,18 +286,14 @@ std::coroutine_handle<> yield_awaiter::suspend(task_frame& waiting,
     return attach(waiting, location);
 }
 
-#ifndef _WIN32
 /// Once per process: an action set after the first loop is kept.
 static void ignore_sigpipe() {
     static std::once_flag once;
-    std::call_once(once, sys::detail::ignore_sigpipe);
+    std::call_once(once, sys::ignore_sigpipe);
 }
-#endif
 
 event_loop::event_loop() : self(new Self()) {
-#ifndef _WIN32
     ignore_sigpipe();
-#endif
     auto* loop = &self->loop;
     if(::uv_loop_init(loop) != 0) {
         std::abort();

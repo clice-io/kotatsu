@@ -3,7 +3,6 @@
 // What spawn does alike on every host: the child's environment, its
 // arguments, and the file it runs.
 
-#include <csignal>
 #include <expected>
 #include <optional>
 #include <string>
@@ -11,17 +10,10 @@
 #include <vector>
 
 #include "kotatsu/sys/env.h"
+#include "kotatsu/sys/process.h"
 #include "kotatsu/sys/spawn.h"
 
 namespace kotatsu::sys {
-
-#ifdef _WIN32
-/// SIGKILL, which Windows's C runtime does not name: kill and kill_tree take
-/// it there too.
-constexpr inline int sigkill = 9;
-#else
-inline constexpr int sigkill = SIGKILL;
-#endif
 
 /// The child's environment as `options` ask for it: `env`, or this
 /// process's, with `env_changes` made in order; unset when the child is to

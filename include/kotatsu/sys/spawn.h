@@ -125,7 +125,7 @@ struct CreationOptions {
     /// is killed when closed: the whole tree with process_group or detached,
     /// else the child alone; the job closes once this process exits, or its
     /// Child is destroyed. not_supported on macOS, which has nothing to do it
-    /// with.
+    /// with: a child that can calls exit_with_parent() itself there.
     bool exit_with_parent = false;
 
     /// POSIX: the child starts with the signals as exec leaves them, rather
@@ -230,6 +230,12 @@ struct ExitStatus {
     std::chrono::microseconds user_time{};
 
     std::chrono::microseconds system_time{};
+
+    /// Windows: the NTSTATUS of the exception that crashed the child, its
+    /// exit code when that is 0x80000000 or more, an error's or a warning's;
+    /// a program that exits with such a code itself, as exit(-1) does, reads
+    /// as one too. Unset for another code, and on POSIX.
+    std::optional<std::uint32_t> exception() const noexcept;
 
     /// Whether the child exited with code 0, rather than failing, crashing
     /// or being killed.

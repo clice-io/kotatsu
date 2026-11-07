@@ -71,7 +71,10 @@ private:
     friend task<> sleep(std::chrono::milliseconds timeout, event_loop& loop);
 };
 
-/// Fires when the process receives a signal.
+/// Fires when the process receives a signal. On Windows the console's
+/// events come as signals: Ctrl+C as SIGINT, Ctrl+Break as SIGBREAK, and its
+/// closing as SIGHUP (sys::sighup), after which Windows ends the process
+/// within about 5 seconds.
 class signal : public watcher {
 public:
     signal() noexcept = default;

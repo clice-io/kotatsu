@@ -16,7 +16,9 @@
 //   arguments read the same after; on Linux an empty one leaves the name top
 //   shows;
 // - on Windows what write_console writes to a console, and the limits of a
-//   job it joins.
+//   job it joins;
+// - a child of its that calls exit_with_parent ends with it, and on Windows
+//   at once when it has ended already.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -427,5 +429,52 @@ test(
     const output = (await printed(driver)) as { parallelism: number };
     await driver.expectExit(0);
     assert.equal(output.parallelism, 1);
+  },
+);
+
+// The follower holds sys_probe's stdout, which ends only once both are gone.
+test("exit_with_parent_ends_the_child_with_its_parent", async (t) => {
+  const driver = await Driver.spawn(t, "sys_probe", ["followed"]);
+  const lines = driver.jsonLines();
+  // Each prints a line, in no set order.
+  const printed = [await lines.receive(), await lines.receive()];
+  assert.ok(printed.includes("following"));
+  const { pid } = printed.find((line) => typeof line === "object") as {
+    pid: number;
+  };
+  let ended = false;
+  // A follower the kill did not reach goes with the test.
+  t.after(() => {
+    if (!ended) {
+      process.kill(pid, "SIGKILL");
+    }
+  });
+  await driver.kill();
+  assert.equal(await lines.receive(), undefined);
+  ended = true;
+});
+
+// The late follower holds sys_probe's stdout too, and prints nothing unless
+// exit_with_parent returns.
+test(
+  "exit_with_parent_ends_the_child_at_once_when_its_parent_has_ended",
+  {
+    skip:
+      process.platform !== "win32" &&
+      "POSIX takes the process that adopted the child for its parent",
+  },
+  async (t) => {
+    const driver = await Driver.spawn(t, "sys_probe", ["left"]);
+    const lines = driver.jsonLines();
+    const { pid } = (await lines.receive()) as { pid: number };
+    let ended = false;
+    t.after(() => {
+      if (!ended) {
+        process.kill(pid, "SIGKILL");
+      }
+    });
+    await driver.expectExit(0);
+    assert.equal(await lines.receive(), undefined);
+    ended = true;
   },
 );

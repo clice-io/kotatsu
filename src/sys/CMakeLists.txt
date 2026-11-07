@@ -13,6 +13,7 @@ add_library(kotatsu_sys STATIC
     dirs.cpp
     env.cpp
     exit_status.cpp
+    exit_with_parent.cpp
     host.cpp
     memory.cpp
     os_version.cpp
@@ -22,6 +23,7 @@ add_library(kotatsu_sys STATIC
     spawn_posix.cpp
     spawn_windows.cpp
     temp_dir.cpp
+    thread.cpp
     thread.cpp
     title.cpp
 )
