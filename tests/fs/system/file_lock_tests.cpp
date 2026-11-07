@@ -395,6 +395,24 @@ ZEST_CASE(range_locked_sees_what_lock_takes_but_on_linux) {
 #endif
 }
 
+#ifndef __linux__
+// The File's own lock counts too: on Windows it is in the way of the range
+// the probe takes, and on macOS a lock of flock()'s family belongs to the
+// open file, not to the process, whose own locks alone the probe passes
+// over.
+ZEST_CASE(range_locked_sees_the_lock_of_its_own_file) {
+    LockFile lock;
+    auto file = lock.open();
+    ZEXPECT(!file.lock());
+    ZEXPECT(file.range_locked(0, every_byte) == true);
+    ZEXPECT(!file.lock_shared());
+    ZEXPECT(file.range_locked(0, every_byte) == true);
+#ifdef _WIN32
+    ZEXPECT(file.range_locked(0, 4096) == false);
+#endif
+}
+#endif
+
 // A range whose end would pass the largest offset ends there, as one of
 // every byte does.
 ZEST_CASE(range_locked_of_a_range_past_the_largest_offset_ends_there) {
