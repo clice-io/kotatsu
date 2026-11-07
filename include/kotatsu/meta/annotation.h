@@ -492,7 +492,8 @@ concept annotated_in_class = requires { T::__kotatsu__annotation(key_of<T, I>())
 
 /// Whether a KANNOTATE_FIELD annotates a field of T: each declares, beside the annotation, a
 /// function of T alone, which tells a class no field of which it annotates apart without the
-/// key of each field, which takes its name to make.
+/// key of each field, which takes its name to make. A template, never defined, as no compiler
+/// warns of one, and redeclared by each KANNOTATE_FIELD of the class.
 template <typename T>
 concept annotated_from_outside = requires { __kotatsu__field_annotation(std::type_identity<T>{}); };
 
