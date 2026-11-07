@@ -100,12 +100,13 @@ constexpr bool operator_char(char c) {
 
 /// How long the operator is that `operator`'s name goes on with at `at`: `()`, `[]`, or the
 /// longest of its symbols that is one, so that `operator<` in `S<&T::operator<>` takes the one
-/// `<`; 0 for a conversion's, whose name goes on with a type.
-constexpr std::size_t operator_length(std::string_view text, std::size_t at) {
+/// `<`, and, unless `shifts`, the shorter one where those are `>>`; 0 for a conversion's, whose
+/// name goes on with a type.
+constexpr std::size_t operator_length(std::string_view text, std::size_t at, bool shifts = true) {
     constexpr std::string_view bracketed[] =
         {"<=>", "<<=", ">>=", "->*", "<<", ">>", "<=", ">=", "->", "()", "[]", "<", ">"};
     for(const std::string_view symbols: bracketed) {
-        if(holds_at(text, at, symbols)) {
+        if(holds_at(text, at, symbols) && (shifts || !symbols.starts_with(">>"))) {
             return symbols.size();
         }
     }
@@ -116,12 +117,14 @@ constexpr std::size_t operator_length(std::string_view text, std::size_t at) {
     return end - at;
 }
 
-/// Where the last name in text begins: past its last `::` outside brackets and literals, which
-/// a name's template arguments, a function's parameters and `(anonymous namespace)` are in; 0
-/// when there is none. An operator's symbols, `operator<`, open and close no bracket.
-constexpr std::size_t name_start(std::string_view text) {
-    std::size_t start = 0;
-    std::size_t depth = 0;
+/// Where a name's last scope ends in text, and how many brackets are left open after it.
+struct scopes {
+    std::size_t end = 0;
+    std::size_t open = 0;
+};
+
+constexpr scopes scan_scopes(std::string_view text, bool shifts) {
+    scopes found;
     for(std::size_t i = 0; i < text.size(); ++i) {
         const char c = text[i];
         if(identifier_char(c)) {
@@ -129,8 +132,9 @@ constexpr std::size_t name_start(std::string_view text) {
             if(text.substr(i, end - i) == "operator") {
                 // MSVC writes a space after `operator`.
                 const std::size_t symbols = text.find_first_not_of(' ', end);
-                i = symbols == std::string_view::npos ? text.size()
-                                                      : symbols + operator_length(text, symbols);
+                i = symbols == std::string_view::npos
+                        ? text.size()
+                        : symbols + operator_length(text, symbols, shifts);
             } else {
                 i = end;
             }
@@ -140,14 +144,24 @@ constexpr std::size_t name_start(std::string_view text) {
         } else if(c == '-' && i + 1 < text.size() && text[i + 1] == '>') {
             ++i;
         } else if(c == '<' || c == '(' || c == '[' || c == '{') {
-            ++depth;
+            ++found.open;
         } else if(c == '>' || c == ')' || c == ']' || c == '}') {
-            depth = depth > 0 ? depth - 1 : 0;
-        } else if(c == ':' && depth == 0 && i + 1 < text.size() && text[i + 1] == ':') {
-            start = ++i + 1;
+            found.open = found.open > 0 ? found.open - 1 : 0;
+        } else if(c == ':' && found.open == 0 && i + 1 < text.size() && text[i + 1] == ':') {
+            found.end = ++i + 1;
         }
     }
-    return start;
+    return found;
+}
+
+/// Where the last name in text begins: past its last `::` outside brackets and literals, which
+/// a name's template arguments, a function's parameters and `(anonymous namespace)` are in; 0
+/// when there is none. An operator's symbols, `operator<`, open and close no bracket; `>>`
+/// after `operator` is `operator>` and a bracket where `operator>>` would leave one open, as in
+/// `S<&T::operator>>`, which clang and GCC print without a space.
+constexpr std::size_t name_start(std::string_view text) {
+    const scopes shift = scan_scopes(text, true);
+    return shift.open == 0 ? shift.end : scan_scopes(text, false).end;
 }
 
 /// The identifier text begins with.
