@@ -90,8 +90,20 @@ struct ordered {
         return key < other.key;
     }
 
+    bool operator>(const ordered& other) const {
+        return key > other.key;
+    }
+
     bool operator>=(const ordered& other) const {
         return key >= other.key;
+    }
+
+    explicit operator int() const {
+        return key;
+    }
+
+    explicit operator double() const {
+        return key;
     }
 
     int operator()(int x) const {
@@ -188,6 +200,12 @@ ZEST_CASE(type_name_past_a_bracket_in_a_literal) {
     ZEXPECT(zest::starts_with(type_name<qualified_types::labeled<"greater >">>, "labeled<"));
 }
 
+ZEST_CASE(type_name_past_an_operator_argument) {
+    ZEXPECT(zest::starts_with(type_name<adapter<(&ordered::operator<)>>, "adapter<"));
+    ZEXPECT(zest::starts_with(type_name<adapter<(&ordered::operator>)>>, "adapter<"));
+    ZEXPECT(zest::starts_with(type_name<adapter<(&ordered::operator>=)>>, "adapter<"));
+}
+
 ZEST_CASE(qualified_type_name) {
     ZEXPECT(short_outer == "Outer");
     ZEXPECT(zest::ends_with(full_outer, "qualified_types::Outer"));
@@ -235,6 +253,9 @@ ZEST_CASE(basic_member_name) {
     ZEXPECT(zest::ends_with(call, "()"));
     ZEXPECT(member_name<&adapter<(&ordered::operator<)>::value> == "value");
     ZEXPECT(member_name<&adapter<(&ordered::operator<)>::get> == "get");
+    ZEXPECT(member_name<&adapter<(&ordered::operator>)>::value> == "value");
+    ZEXPECT(member_name < &ordered::operator int> == "operator int");
+    ZEXPECT(member_name < &ordered::operator double> == "operator double");
 }
 
 };  // ZEST_SUITE(meta_name)

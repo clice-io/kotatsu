@@ -9,7 +9,7 @@
 /// Names as the compiler prints them in a function's signature: of a type, of a member, of the
 /// values of a pack. A signature is read in constant evaluation, which pays for every step: the
 /// helpers below search it through the compiler's own string builtins, a step each, and walk
-/// character by character only what they must, a name from its end.
+/// character by character only a name they take apart.
 namespace kotatsu::meta::detail {
 
 constexpr bool identifier_char(char c) {
@@ -64,83 +64,109 @@ constexpr std::size_t find_text(std::string_view text, std::string_view part, st
     return text.size();
 }
 
-/// Where the literal that ends with the quote at `close` begins: at the quote before it that no
-/// backslash escapes, or, for a name MSVC quotes, `anonymous namespace', at a backtick.
-constexpr std::size_t literal_start(std::string_view text, std::size_t close) {
-    for(std::size_t at = close; at > 0; --at) {
-        const char c = text[at - 1];
-        if(c == text[close] || (text[close] == '\'' && c == '`')) {
-            std::size_t slashes = 0;
-            while(slashes + 1 < at && text[at - 2 - slashes] == '\\') {
-                ++slashes;
+/// Where the literal that opens with the quote at `open` closes: at the next quote no backslash
+/// escapes, or, of a name MSVC quotes, `anonymous namespace', at the `'` that matches the
+/// backtick; at text's end when none does.
+constexpr std::size_t literal_end(std::string_view text, std::size_t open) {
+    const bool backtick = text[open] == '`';
+    const char quote = backtick ? '\'' : text[open];
+    std::size_t nested = 0;
+    for(std::size_t at = open + 1; at < text.size(); ++at) {
+        if(text[at] == '\\') {
+            ++at;
+        } else if(backtick && text[at] == '`') {
+            ++nested;
+        } else if(text[at] == quote) {
+            if(nested == 0) {
+                return at;
             }
-            if(slashes % 2 == 0) {
-                return at - 1;
-            }
+            --nested;
         }
     }
-    return 0;
+    return text.size();
 }
 
-/// Where the last name in text begins: past its last `::` outside brackets and literals, which
-/// a name's template arguments, a function's parameters and `(anonymous namespace)` are in; 0
-/// when there is none. Walked from the end, as far back as the name goes.
-constexpr std::size_t name_start(std::string_view text) {
-    int depth = 0;
-    for(std::size_t i = text.size(); i > 1; --i) {
-        const char c = text[i - 1];
-        if(identifier_char(c)) {
-            continue;
-        }
-        if(c == '"' || c == '\'') {
-            // The loop steps on to the character before the opening quote.
-            i = literal_start(text, i - 1) + 1;
-        } else if(c == '>' || c == ')' || c == ']' || c == '}') {
-            ++depth;
-        } else if(c == '<' || c == '(' || c == '[' || c == '{') {
-            // One no bracket closes, as in `operator<`, opens nothing the name is in.
-            depth = depth > 0 ? depth - 1 : 0;
-        } else if(c == ':' && depth == 0 && text[i - 2] == ':') {
-            return i;
-        }
+/// Where the identifier that starts at `at` ends.
+constexpr std::size_t identifier_end(std::string_view text, std::size_t at) {
+    while(at < text.size() && identifier_char(text[at])) {
+        ++at;
     }
-    return 0;
-}
-
-/// The identifier text begins with.
-constexpr std::string_view leading_identifier(std::string_view text) {
-    std::size_t end = 0;
-    while(end < text.size() && identifier_char(text[end])) {
-        ++end;
-    }
-    return text.substr(0, end);
+    return at;
 }
 
 constexpr bool operator_char(char c) {
     return std::string_view("<>=!+-*/%^&|~,").find(c) != std::string_view::npos;
 }
 
-/// The last name in text: an operator's whole, `operator<=`, where text ends in one, else the
-/// identifier past the last `::` outside brackets.
-constexpr std::string_view last_name(std::string_view text) {
-    std::size_t symbols = text.size();
-    if(text.ends_with("()") || text.ends_with("[]")) {
-        symbols -= 2;
-    } else {
-        while(symbols > 0 && operator_char(text[symbols - 1])) {
-            --symbols;
+/// How long the operator is that `operator`'s name goes on with at `at`: `()`, `[]`, or the
+/// longest of its symbols that is one, so that `operator<` in `S<&T::operator<>` takes the one
+/// `<`; 0 for a conversion's, whose name goes on with a type.
+constexpr std::size_t operator_length(std::string_view text, std::size_t at) {
+    constexpr std::string_view bracketed[] =
+        {"<=>", "<<=", ">>=", "->*", "<<", ">>", "<=", ">=", "->", "()", "[]", "<", ">"};
+    for(const std::string_view symbols: bracketed) {
+        if(holds_at(text, at, symbols)) {
+            return symbols.size();
         }
     }
-    // MSVC writes a space after `operator`, which the name keeps.
-    std::size_t word = symbols;
-    while(word > 0 && text[word - 1] == ' ') {
-        --word;
+    std::size_t end = at;
+    while(end < text.size() && operator_char(text[end]) && text[end] != '<' && text[end] != '>') {
+        ++end;
     }
-    if(symbols < text.size() && word >= 8 && text.substr(word - 8, 8) == "operator" &&
-       (word == 8 || !identifier_char(text[word - 9]))) {
-        return text.substr(word - 8);
+    return end - at;
+}
+
+/// Where the last name in text begins: past its last `::` outside brackets and literals, which
+/// a name's template arguments, a function's parameters and `(anonymous namespace)` are in; 0
+/// when there is none. An operator's symbols, `operator<`, open and close no bracket.
+constexpr std::size_t name_start(std::string_view text) {
+    std::size_t start = 0;
+    std::size_t depth = 0;
+    for(std::size_t i = 0; i < text.size(); ++i) {
+        const char c = text[i];
+        if(identifier_char(c)) {
+            const std::size_t end = identifier_end(text, i);
+            if(text.substr(i, end - i) == "operator") {
+                // MSVC writes a space after `operator`.
+                const std::size_t symbols = text.find_first_not_of(' ', end);
+                i = symbols == std::string_view::npos ? text.size()
+                                                      : symbols + operator_length(text, symbols);
+            } else {
+                i = end;
+            }
+            --i;
+        } else if(c == '"' || c == '\'' || c == '`') {
+            i = literal_end(text, i);
+        } else if(c == '-' && i + 1 < text.size() && text[i + 1] == '>') {
+            ++i;
+        } else if(c == '<' || c == '(' || c == '[' || c == '{') {
+            ++depth;
+        } else if(c == '>' || c == ')' || c == ']' || c == '}') {
+            depth = depth > 0 ? depth - 1 : 0;
+        } else if(c == ':' && depth == 0 && i + 1 < text.size() && text[i + 1] == ':') {
+            start = ++i + 1;
+        }
     }
-    return leading_identifier(text.substr(name_start(text)));
+    return start;
+}
+
+/// The identifier text begins with.
+constexpr std::string_view leading_identifier(std::string_view text) {
+    return text.substr(0, identifier_end(text, 0));
+}
+
+/// The last name in text: an operator's whole, `operator<=` or `operator int`, else the
+/// identifier past the last `::` outside brackets.
+constexpr std::string_view last_name(std::string_view text) {
+    const std::string_view name = text.substr(name_start(text));
+    const std::string_view identifier = leading_identifier(name);
+    if(identifier != "operator") {
+        return identifier;
+    }
+    const std::size_t symbols = name.find_first_not_of(' ', identifier.size());
+    const std::size_t length =
+        symbols == std::string_view::npos ? 0 : operator_length(name, symbols);
+    return length == 0 ? name : name.substr(0, symbols + length);
 }
 
 /// The member a member pointer names, as the compiler prints it, `&S::member`; of the
