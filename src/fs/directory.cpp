@@ -929,17 +929,21 @@ std::expected<bool, std::error_code> case_sensitive(std::string_view directory) 
     if(::fgetattrlist(dir->native_handle(), &asked, &told, sizeof(told), 0) != 0) {
         return std::unexpected(posix::last_error());
     }
+    // A volume that does not tell matches case, as Linux answers what it
+    // cannot ask.
+    auto valid = told.capabilities.valid[VOL_CAPABILITIES_FORMAT];
     auto format = told.capabilities.capabilities[VOL_CAPABILITIES_FORMAT];
-    return (format & VOL_CAP_FMT_CASE_SENSITIVE) != 0;
+    return (valid & VOL_CAP_FMT_CASE_SENSITIVE) == 0 || (format & VOL_CAP_FMT_CASE_SENSITIVE) != 0;
 #else
     // A file system that keeps no such flags, FAT, NFS and 9p among others,
-    // refuses to tell them (ENOTTY, EINVAL, EOPNOTSUPP): its type tells.
+    // refuses to tell them (ENOTTY, EINVAL, EOPNOTSUPP, and ENOSYS from a
+    // FUSE file system without the ioctl): its type tells.
     int flags = 0;
     if(::ioctl(dir->native_handle(), FS_IOC_GETFLAGS, &flags) == 0) {
         if(flags & FS_CASEFOLD_FL) {
             return false;
         }
-    } else if(errno != ENOTTY && errno != EINVAL && errno != EOPNOTSUPP) {
+    } else if(errno != ENOTTY && errno != EINVAL && errno != EOPNOTSUPP && errno != ENOSYS) {
         return std::unexpected(posix::last_error());
     }
     auto volume = dir->volume();

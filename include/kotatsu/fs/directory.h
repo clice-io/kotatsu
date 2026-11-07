@@ -346,16 +346,17 @@ Walk walk(std::string_view root, const Walk::Options& options = {});
 ///
 /// On macOS each volume says, as getattrlist() tells its format
 /// (VOL_CAP_FMT_CASE_SENSITIVE), which ISO 9660 and UDF tell as well, where
-/// pathconf(_PC_CASE_SENSITIVE) has no answer; APFS and HFS+ fold case
-/// unless formatted otherwise. On Windows each directory says, by the flag
-/// WSL and `fsutil file setCaseSensitiveInfo` set (FileCaseSensitiveInfo),
-/// which NTFS leaves clear by default; a file system that keeps no such
-/// flag (FAT, ReFS), and Windows before 10 1803, fold case. On Linux a
-/// directory folds case where it is marked so (FS_CASEFOLD_FL, `chattr +F`
-/// on ext4, f2fs and tmpfs), as every one on the FAT family does (vfat,
-/// exfat); the others match it, those of network file systems too (CIFS and
-/// SMB, and the 9p through which WSL reaches the Windows drives), whose
-/// server may fold case out of the client's sight.
+/// pathconf(_PC_CASE_SENSITIVE) has no answer, and one that does not tell
+/// matches case; APFS and HFS+ fold case unless formatted otherwise. On
+/// Windows each directory says, by the flag WSL and `fsutil file
+/// setCaseSensitiveInfo` set (FileCaseSensitiveInfo), which NTFS leaves
+/// clear by default; a file system that keeps no such flag (FAT, ReFS), and
+/// Windows before 10 1803, fold case. On Linux a directory folds case where
+/// it is marked so (FS_CASEFOLD_FL, `chattr +F` on ext4, f2fs and tmpfs), as
+/// every one on the FAT family does (vfat, exfat); the others match it,
+/// those of network file systems too (CIFS and SMB, and the 9p through which
+/// WSL reaches the Windows drives), whose server may fold case out of the
+/// client's sight.
 std::expected<bool, std::error_code> case_sensitive(std::string_view directory);
 
 /// Creates the directory `path`: true when it made it, false when a
