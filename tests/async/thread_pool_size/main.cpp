@@ -1,9 +1,10 @@
 // set_thread_pool_size() sizes libuv's thread pool, over what
 // UV_THREADPOOL_SIZE says, and starts it at once, putting the variable back
-// as it was. Four functions queued on a pool of two meet two at a time: each
-// waits for the others to arrive, for a while, so that four would meet on a
-// pool of four. A program of its own: the pool is the process's, started
-// once, and a test binary's workers each run many cases.
+// as it was, set or not. A call once the pool has started takes any size and
+// changes nothing. Four functions queued on a pool of two meet two at a
+// time: each waits for the others to arrive, for a while, so that four would
+// meet on a pool of four. A program of its own: the pool is the process's,
+// started once, and a test binary's workers each run many cases.
 
 #include <algorithm>
 #include <chrono>
@@ -67,8 +68,16 @@ int main() {
     check(!async::set_thread_pool_size(2), "a pool of 2 threads was refused");
 
     std::string after;
-    check(sys::get_env(after, variable) && after == "3",
+    check(sys::get_env(after, variable), "UV_THREADPOOL_SIZE is unset after the call, not \"3\"");
+    check(after == "3",
           std::format("UV_THREADPOOL_SIZE is \"{}\" after the call, not \"3\"", after));
+
+    check(!sys::unset_env(variable), "UV_THREADPOOL_SIZE could not be unset");
+    check(!async::set_thread_pool_size(1), "a pool of 1 thread was refused");
+    check(!async::set_thread_pool_size(1024), "a pool of 1024 threads was refused");
+    after.clear();
+    check(!sys::get_env(after, variable),
+          std::format("UV_THREADPOOL_SIZE is \"{}\" after the calls, not unset", after));
 
     auto queue_four = []() -> async::task<> {
         co_await async::when_all(async::queue(meet),
