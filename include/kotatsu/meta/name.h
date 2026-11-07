@@ -120,28 +120,49 @@ constexpr bool operator_char(char c) {
     return std::string_view("<>=!+-*/%^&|~,").find(c) != std::string_view::npos;
 }
 
-/// The last name in text, without the template arguments and parameters after it. An
-/// operator's, `S::operator<=`, is `operator<=`, its brackets none: found first. MSVC writes a
-/// space after `operator`, which the name keeps.
+/// The last name in text: an operator's whole, `operator<=`, where text ends in one, else the
+/// identifier past the last `::` outside brackets.
 constexpr std::string_view last_name(std::string_view text) {
-    if(const std::size_t at = text.rfind("::operator"); at != std::string_view::npos) {
-        std::string_view name = text.substr(at + 2);
-        std::size_t end = 8;
-        while(end < name.size() && name[end] == ' ') {
-            ++end;
-        }
-        if(name.substr(end).starts_with("()") || name.substr(end).starts_with("[]")) {
-            return name.substr(0, end + 2);
-        }
-        const std::size_t symbols = end;
-        while(end < name.size() && operator_char(name[end])) {
-            ++end;
-        }
-        if(end > symbols) {
-            return name.substr(0, end);
+    std::size_t symbols = text.size();
+    if(text.ends_with("()") || text.ends_with("[]")) {
+        symbols -= 2;
+    } else {
+        while(symbols > 0 && operator_char(text[symbols - 1])) {
+            --symbols;
         }
     }
+    // MSVC writes a space after `operator`, which the name keeps.
+    std::size_t word = symbols;
+    while(word > 0 && text[word - 1] == ' ') {
+        --word;
+    }
+    if(symbols < text.size() && word >= 8 && text.substr(word - 8, 8) == "operator" &&
+       (word == 8 || !identifier_char(text[word - 9]))) {
+        return text.substr(word - 8);
+    }
     return leading_identifier(text.substr(name_start(text)));
+}
+
+/// The member a member pointer names, as the compiler prints it, `&S::member`; of the
+/// declaration MSVC prints of a member function, `void __cdecl S::member(void) const`, up to
+/// its parameters.
+constexpr std::string_view member_text(std::string_view printed) {
+#if KOTATSU_COMPILER_MSVC
+    const std::size_t close = printed.rfind(')');
+    // Its qualifiers alone follow the parameters, no name.
+    if(close != std::string_view::npos &&
+       printed.find_first_of(":<>", close) == std::string_view::npos) {
+        int depth = 0;
+        for(std::size_t i = close + 1; i > 0; --i) {
+            if(printed[i - 1] == ')') {
+                ++depth;
+            } else if(printed[i - 1] == '(' && --depth == 0) {
+                return printed.substr(0, i - 1);
+            }
+        }
+    }
+#endif
+    return printed;
 }
 
 /// A member pointer as MSVC prints one of a class with more than one base, `{&S::f,0}`, without
@@ -269,6 +290,6 @@ constexpr inline std::string_view type_name =
 /// in braces with the offsets that adjust it, `{&S::function,0}`.
 template <auto Member>
 constexpr inline std::string_view member_name =
-    detail::last_name(detail::without_offsets(detail::pack_list<Member>()));
+    detail::last_name(detail::member_text(detail::without_offsets(detail::pack_list<Member>())));
 
 }  // namespace kotatsu::meta

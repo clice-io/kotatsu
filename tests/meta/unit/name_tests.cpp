@@ -99,6 +99,16 @@ struct ordered {
     }
 };
 
+/// A class an operator is a template argument of.
+template <auto Op>
+struct adapter {
+    int value;
+
+    int get() const {
+        return value;
+    }
+};
+
 struct struct_y {
     std::string x;
     std::vector<int> y;
@@ -223,6 +233,8 @@ ZEST_CASE(basic_member_name) {
     ZEXPECT(zest::ends_with(at_least, ">="));
     ZEXPECT(zest::starts_with(call, "operator"));
     ZEXPECT(zest::ends_with(call, "()"));
+    ZEXPECT(member_name<&adapter<(&ordered::operator<)>::value> == "value");
+    ZEXPECT(member_name<&adapter<(&ordered::operator<)>::get> == "get");
 }
 
 };  // ZEST_SUITE(meta_name)
