@@ -109,17 +109,19 @@ std::error_code find_program(buffer_ref out,
 
 /// Ends this process once its parent exits, as SIGKILL would: what
 /// CreationOptions::exit_with_parent asks of a child, asked by the child
-/// itself, as it has to be on macOS. On Linux by PR_SET_PDEATHSIG, which
-/// watches the thread that started this process, and so ends it too when
-/// that thread exits first, and which exec of a set-user-ID program clears.
-/// On macOS a thread of its own waits for the parent's exit (kqueue's
-/// NOTE_EXIT). On Windows a wait of the thread pool on the parent's handle
-/// ends it, with exit code 1. A parent that has exited by the call ends this
-/// process there on Windows, where a process that took its ID since is told
-/// apart by its later start; on POSIX the parent is by then the one that
-/// adopted this process, init or a subreaper, whose exit it waits for
-/// instead. Fails when the parent cannot be watched: on Windows with
-/// permission_denied for one this process may not open.
+/// itself, as it has to be on macOS. On Linux by PR_SET_PDEATHSIG, which the
+/// kernel keeps for the calling thread: call it on one that lasts as long as
+/// the process, the main thread. It watches the thread of the parent that
+/// started this process, and so ends this one too when that thread exits
+/// first, and a change of credentials clears it, an exec of a set-user-ID
+/// program among them. On macOS a thread of its own waits for the parent's
+/// exit (kqueue's NOTE_EXIT). On Windows a wait of the thread pool on the
+/// parent's handle ends it, with exit code 1. A parent that has exited by
+/// the call ends this process there on Windows, where a process that took
+/// its ID since is told apart by its later start; on POSIX the parent is by
+/// then the one that adopted this process, init or a subreaper, whose exit
+/// it waits for instead. Fails when the parent cannot be watched: on Windows
+/// with permission_denied for one this process may not open.
 std::error_code exit_with_parent();
 
 /// Ignores SIGPIPE when its action is the default, as an event loop does: a
@@ -130,9 +132,8 @@ std::error_code exit_with_parent();
 void ignore_sigpipe() noexcept;
 
 /// The numbers of SIGHUP and SIGKILL, which Windows' <csignal> does not
-/// name, on every host: POSIX's. async::signal takes sighup on Windows for
-/// its console closing, after which Windows ends the process within about 5
-/// seconds; a Child's kill takes sigkill to end it.
+/// name, on every host: POSIX's. On Windows async::signal takes sighup for
+/// the console closing, and a Child's kill takes sigkill to end it.
 constexpr inline int sighup = 1;
 constexpr inline int sigkill = 9;
 

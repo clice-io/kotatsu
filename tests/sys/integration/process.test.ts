@@ -454,8 +454,9 @@ test("exit_with_parent_ends_the_child_with_its_parent", async (t) => {
   ended = true;
 });
 
-// The late follower holds sys_probe's stdout too, and prints nothing unless
-// exit_with_parent returns.
+// The late follower, which holds sys_probe's stdout too, calls
+// exit_with_parent once sys_probe has exited, and prints nothing unless that
+// returns.
 test(
   "exit_with_parent_ends_the_child_at_once_when_its_parent_has_ended",
   {

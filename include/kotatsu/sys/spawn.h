@@ -125,7 +125,7 @@ struct CreationOptions {
     /// is killed when closed: the whole tree with process_group or detached,
     /// else the child alone; the job closes once this process exits, or its
     /// Child is destroyed. not_supported on macOS, which has nothing to do it
-    /// with: a child that can calls exit_with_parent() itself there.
+    /// with: a child that links kotatsu calls exit_with_parent() itself there.
     bool exit_with_parent = false;
 
     /// POSIX: the child starts with the signals as exec leaves them, rather

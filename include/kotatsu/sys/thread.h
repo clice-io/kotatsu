@@ -38,13 +38,13 @@ public:
 
     ~Thread();
 
-    /// Starts a thread that calls `fn`, a copy of it, with a stack of at
-    /// least `stack_size` bytes, rounded up to a whole page and to the least
-    /// the system takes; on Windows the stack's reserve, which it commits as
-    /// it grows. An exception that leaves `fn` ends the process, as from a
-    /// std::thread's. The system's error when it starts none:
-    /// resource_unavailable_try_again or not_enough_memory, for a stack too
-    /// large among others.
+    /// Starts a thread that calls `fn`, a copy of it, with a stack of
+    /// `stack_size` bytes, rounded up to a whole page and to the least the
+    /// system takes; on Windows the stack's reserve, which it commits as it
+    /// grows; glibc's holds the thread's static TLS too. An exception that
+    /// leaves `fn` ends the process, as from a std::thread's. The system's
+    /// error when it starts none: resource_unavailable_try_again or
+    /// not_enough_memory, or invalid_argument for a size it refuses.
     template <typename F>
     static std::expected<Thread, std::error_code> start(std::size_t stack_size, F&& fn) {
         using Fn = std::decay_t<F>;
@@ -71,7 +71,9 @@ private:
         template <typename F>
         explicit Body(F&& fn) : ThreadEntry{call}, fn(std::forward<F>(fn)) {}
 
-        static void call(ThreadEntry* entry) {
+        /// noexcept: an exception that leaves `fn` ends the process here,
+        /// on every host.
+        static void call(ThreadEntry* entry) noexcept {
             std::unique_ptr<Body> body(static_cast<Body*>(entry));
             body->fn();
         }

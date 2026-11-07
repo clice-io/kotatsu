@@ -71,7 +71,8 @@ std::error_code to_error_code(unsigned long code) {
             case ERROR_PRIVILEGE_NOT_HELD: return std::errc::operation_not_permitted;
             case ERROR_SHARING_VIOLATION:
             case ERROR_LOCK_VIOLATION:
-            case ERROR_BUSY: return std::errc::device_or_resource_busy;
+            case ERROR_BUSY:
+            case ERROR_PIPE_BUSY: return std::errc::device_or_resource_busy;
             case ERROR_ALREADY_EXISTS:
             case ERROR_FILE_EXISTS: return std::errc::file_exists;
             case ERROR_DIR_NOT_EMPTY: return std::errc::directory_not_empty;

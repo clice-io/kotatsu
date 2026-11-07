@@ -24,13 +24,14 @@ bool is_console_handle(HANDLE handle) noexcept {
 }
 
 /// The start of `text` through WriteConsoleW, as many code points as a
-/// buffer holds: the bytes of those it wrote.
+/// buffer holds: the bytes of those.
 std::expected<std::size_t, std::error_code> write_wide(HANDLE console,
                                                        std::string_view text) noexcept {
     wchar_t buffer[2048];
     std::size_t count = 0;
+    auto rest = text;
     // Each code point takes at most two units.
-    for(auto rest = text; !rest.empty() && count + 2 <= std::size(buffer);) {
+    while(!rest.empty() && count + 2 <= std::size(buffer)) {
         auto sequence = decode_utf8(rest);
         rest.remove_prefix(sequence.length);
         auto code_point = sequence.code_point;
@@ -42,17 +43,19 @@ std::expected<std::size_t, std::error_code> write_wide(HANDLE console,
             buffer[count++] = static_cast<wchar_t>(0xDC00 + (code_point & 0x3FF));
         }
     }
-    DWORD written = 0;
-    if(!::WriteConsoleW(console, buffer, static_cast<DWORD>(count), &written, nullptr)) {
-        return std::unexpected(fs::windows::last_error());
+    for(const wchar_t* unwritten = buffer; count > 0;) {
+        DWORD written = 0;
+        if(!::WriteConsoleW(console, unwritten, static_cast<DWORD>(count), &written, nullptr)) {
+            return std::unexpected(fs::windows::last_error());
+        }
+        // Never seen of a console; it would write nothing for ever.
+        if(written == 0) {
+            return std::unexpected(std::make_error_code(std::errc::io_error));
+        }
+        unwritten += written;
+        count -= written;
     }
-    std::size_t bytes = 0;
-    for(std::size_t units = 0; units < written;) {
-        auto sequence = decode_utf8(text.substr(bytes));
-        bytes += sequence.length;
-        units += sequence.code_point < 0x10000 ? 1 : 2;
-    }
-    return bytes;
+    return text.size() - rest.size();
 }
 
 }  // namespace
@@ -96,8 +99,12 @@ std::expected<std::size_t, std::error_code> write_console_some(int fd,
 #else
     while(true) {
         auto written = ::write(fd, text.data(), text.size());
-        if(written >= 0) {
+        if(written > 0) {
             return static_cast<std::size_t>(written);
+        }
+        // A device that takes nothing and says no error.
+        if(written == 0) {
+            return std::unexpected(std::make_error_code(std::errc::io_error));
         }
         if(errno != EINTR) {
             return std::unexpected(errno_code());
@@ -122,9 +129,6 @@ std::error_code set_nonblocking(int fd) noexcept {
     // Both modes are set at once: the read mode stays.
     DWORD mode = (state & PIPE_READMODE_MESSAGE) | PIPE_NOWAIT;
     if(!::SetNamedPipeHandleState(handle, &mode, nullptr, nullptr)) {
-        if(::GetLastError() == ERROR_PIPE_BUSY) {
-            return std::make_error_code(std::errc::device_or_resource_busy);
-        }
         return fs::windows::last_error();
     }
     return {};

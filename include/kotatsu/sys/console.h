@@ -26,10 +26,12 @@ std::error_code write_console(int fd, std::string_view text) noexcept;
 
 /// Writes the start of `text` as write_console() writes it, in one write:
 /// how many bytes of it, at least one, or the error of a write that took
-/// none, resource_unavailable_try_again from a full pipe that does not
-/// block among them. To a Windows console, as many whole characters as a
-/// buffer of 2048 UTF-16 units holds. 0 for an empty `text`, which it does
-/// not write. On POSIX it is async-signal-safe.
+/// none: resource_unavailable_try_again from a pipe that does not block and
+/// has no room for them, which on Windows may take none of a write larger
+/// than the room it has; io_error from a device that took none and said no
+/// error. To a Windows console, as many whole characters as a buffer of
+/// 2048 UTF-16 units holds. 0 for an empty `text`, which it does not write.
+/// On POSIX it is async-signal-safe.
 std::expected<std::size_t, std::error_code> write_console_some(int fd,
                                                                std::string_view text) noexcept;
 
@@ -37,12 +39,11 @@ std::expected<std::size_t, std::error_code> write_console_some(int fd,
 /// once rather than wait, taking what fits and giving what is there: on
 /// POSIX O_NONBLOCK, of the open file, which the descriptors that share it,
 /// a child's among them, see too; on Windows PIPE_NOWAIT, its read mode
-/// kept, of a pipe alone, where a full pipe's write takes what fits and
-/// write_console() fails with resource_unavailable_try_again. Windows:
-/// device_or_resource_busy for a pipe Windows says is busy
-/// (ERROR_PIPE_BUSY), which a later call may get past; not_supported for a
-/// descriptor that is no pipe. bad_file_descriptor for a descriptor not
-/// open.
+/// kept, of a pipe alone, whose write of more than the room it has may take
+/// nothing. Windows: device_or_resource_busy for a pipe Windows says is
+/// busy (ERROR_PIPE_BUSY), which a later call may get past; not_supported
+/// for a descriptor that is no pipe. bad_file_descriptor for a descriptor
+/// not open.
 std::error_code set_nonblocking(int fd) noexcept;
 
 /// Whether descriptor `fd` is a terminal: on Windows a console, whose mode

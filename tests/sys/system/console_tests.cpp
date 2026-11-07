@@ -198,6 +198,42 @@ ZEST_CASE(write_console_some_to_no_descriptor_fails) {
 }
 
 #ifdef _WIN32
+/// The state GetNamedPipeHandleState reads of the pipe of descriptor `fd`.
+DWORD pipe_state(int fd) {
+    DWORD state = 0;
+    auto handle = reinterpret_cast<HANDLE>(::_get_osfhandle(fd));
+    ZASSERT(::GetNamedPipeHandleState(handle, &state, nullptr, nullptr, nullptr, nullptr, 0));
+    return state;
+}
+
+ZEST_CASE(set_nonblocking_sets_pipe_nowait) {
+    Pipe pipe;
+    ZASSERT((pipe_state(pipe.write.fd) & PIPE_NOWAIT) == 0);
+    ZEXPECT(!set_nonblocking(pipe.write.fd));
+    ZEXPECT((pipe_state(pipe.write.fd) & PIPE_NOWAIT) != 0);
+}
+
+// A pipe of messages, whose name is the temporary directory's, stays one.
+ZEST_CASE(set_nonblocking_keeps_a_pipes_read_mode) {
+    test::TempDir dir;
+    auto name = LR"(\\.\pipe\)" + dir.path.filename().wstring();
+    HANDLE server = ::CreateNamedPipeW(name.c_str(),
+                                       PIPE_ACCESS_DUPLEX,
+                                       PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+                                       1,
+                                       4096,
+                                       4096,
+                                       0,
+                                       nullptr);
+    ZASSERT(server != INVALID_HANDLE_VALUE);
+    Descriptor pipe(::_open_osfhandle(reinterpret_cast<std::intptr_t>(server), 0));
+    ZASSERT(pipe.fd >= 0);
+    ZEXPECT(!set_nonblocking(pipe.fd));
+    auto state = pipe_state(pipe.fd);
+    ZEXPECT((state & PIPE_READMODE_MESSAGE) != 0);
+    ZEXPECT((state & PIPE_NOWAIT) != 0);
+}
+
 ZEST_CASE(set_nonblocking_of_a_file_fails_on_windows) {
     test::TempDir dir;
     auto path = dir.file("file");

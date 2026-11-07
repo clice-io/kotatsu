@@ -159,7 +159,7 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
 
     constexpr auto process_vm_counters = static_cast<PROCESSINFOCLASS>(3);
     ::NtQueryInformationProcess(process->handle, process_vm_counters, &vm, sizeof(vm), nullptr);
-    stats.virtual_memory = vm.virtual_size;
+    stats.address_space = vm.virtual_size;
     stats.user_time = microseconds(user);
     stats.system_time = microseconds(kernel);
 #elif defined(__APPLE__)
@@ -175,7 +175,7 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
     stats.memory = usage.ri_phys_footprint;
     stats.peak_memory = usage.ri_lifetime_max_phys_footprint;
     stats.resident = usage.ri_resident_size;
-    stats.virtual_memory = task.pti_virtual_size;
+    stats.address_space = task.pti_virtual_size;
     stats.user_time = microseconds(usage.ri_user_time);
     stats.system_time = microseconds(usage.ri_system_time);
     // Counted in 32 bits, which wrap.
@@ -201,7 +201,7 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
     stats.memory = kilobytes("RssAnon:") + stats.swapped;
     stats.peak_memory = kilobytes("VmHWM:");
     stats.resident = kilobytes("VmRSS:");
-    stats.virtual_memory = kilobytes("VmSize:");
+    stats.address_space = kilobytes("VmSize:");
     // Of another process, only the threads it has are there to count.
     if(pid == 0 || pid == ::getpid()) {
         count_own_switches(stats);

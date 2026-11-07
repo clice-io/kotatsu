@@ -15,16 +15,10 @@
 namespace kotatsu::sys {
 
 #ifdef _WIN32
-
-namespace {
-
 /// Ends this process, as the parent's exit does.
-void CALLBACK end_process(void*, BOOLEAN) {
+static void CALLBACK end_process(void*, BOOLEAN) {
     ::TerminateProcess(::GetCurrentProcess(), 1);
 }
-
-}  // namespace
-
 #endif
 
 std::error_code exit_with_parent() {

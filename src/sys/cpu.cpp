@@ -141,13 +141,15 @@ unsigned parallelism() {
 unsigned physical_cores() {
 #ifdef _WIN32
     auto own = affinity();
+    std::vector<char> buffer;
     DWORD size = 0;
-    ::GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &size);
-    std::vector<char> buffer(size);
-    auto* first = reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buffer.data());
-    // A CPU added between the calls leaves the cores uncounted.
-    if(!::GetLogicalProcessorInformationEx(RelationProcessorCore, first, &size)) {
-        return parallelism();
+    // Asked again while the cores outgrow what the last call said, as a CPU
+    // added between the calls makes them.
+    while(!::GetLogicalProcessorInformationEx(
+        RelationProcessorCore,
+        reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buffer.data()),
+        &size)) {
+        buffer.resize(size);
     }
     unsigned count = 0;
     for(DWORD at = 0; at < size;) {
@@ -175,12 +177,14 @@ unsigned physical_cores() {
         }
         return text;
     };
-    return std::max(detail::count_cores(cpus, siblings), 1u);
+    // The first of `cpus` counts.
+    return detail::count_physical_cores(cpus, siblings);
 #endif
 }
 
-unsigned detail::count_cores(std::span<const unsigned> cpus,
-                             function_ref<std::optional<std::string>(unsigned cpu)> siblings) {
+unsigned
+    detail::count_physical_cores(std::span<const unsigned> cpus,
+                                 function_ref<std::optional<std::string>(unsigned cpu)> siblings) {
     unsigned count = 0;
     for(auto cpu: cpus) {
         auto listed = siblings(cpu).value_or("");

@@ -49,13 +49,13 @@ std::optional<double> cpu_quota(std::string_view mounts, std::string_view member
 
 }  // namespace cgroup
 
-/// The physical cores of Linux's logical CPUs `cpus`, in ascending order:
-/// those that share a core, as `siblings` gives the CPUs of each one's
+/// The physical cores of Linux's logical CPUs `cpus`, ascending: those that
+/// share a core, as `siblings` gives the CPUs of each one's
 /// (/sys/devices/system/cpu/cpu<N>/topology/thread_siblings_list, "0,8" or
 /// "0-1"), count once; one whose siblings it cannot read, unset, counts as a
 /// core.
-unsigned count_cores(std::span<const unsigned> cpus,
-                     function_ref<std::optional<std::string>(unsigned cpu)> siblings);
+unsigned count_physical_cores(std::span<const unsigned> cpus,
+                              function_ref<std::optional<std::string>(unsigned cpu)> siblings);
 
 /// The machine's memory as macOS counts it, in bytes.
 struct MacMemory {

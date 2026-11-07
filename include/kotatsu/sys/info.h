@@ -38,7 +38,7 @@ struct ProcessStats {
     /// address_space_limit() bounds it: on Linux VmSize; on macOS its
     /// virtual size, which counts the shared region of the system's
     /// libraries, tens of gigabytes and more; on Windows its virtual size.
-    std::uint64_t virtual_memory = 0;
+    std::uint64_t address_space = 0;
 
     std::chrono::microseconds user_time{};
 
@@ -65,7 +65,7 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid = 0);
 std::expected<std::uint64_t, std::error_code> resident_memory();
 
 /// The most address space this process may take, its
-/// ProcessStats::virtual_memory, past which a mapping fails: the soft limit
+/// ProcessStats::address_space, past which a mapping fails: the soft limit
 /// of RLIMIT_AS (`ulimit -v`). Unset when it has none, and on Windows, which
 /// bounds no address space (a job's limits count committed memory, as
 /// Memory::limit does).
@@ -73,11 +73,10 @@ std::optional<std::uint64_t> address_space_limit();
 
 /// Gives the system back the free memory the C library's allocator holds,
 /// as far as it gives any back: glibc's malloc_trim, which keeps the free
-/// pages of its arenas otherwise; macOS's malloc_zone_pressure_relief, of
-/// every zone; Windows' HeapOptimizeResources, of every heap with a
-/// low-fragmentation front end. Nothing under a sanitizer that has an
-/// allocator of its own (ASan, TSan, MSan), which glibc's then is not, and
-/// which a trim on two threads at once would initialize unguarded.
+/// pages of its arenas otherwise, and does nothing under ASan, TSan or MSan,
+/// whose allocators stand in for glibc's; macOS's
+/// malloc_zone_pressure_relief, of every zone; Windows'
+/// HeapOptimizeResources, of every heap with a low-fragmentation front end.
 void release_free_heap() noexcept;
 
 /// The memory a process can take.
@@ -179,10 +178,9 @@ OS os();
 /// Writes into `out` the machine's name.
 std::error_code hostname(buffer_ref out);
 
-/// Writes into `out` the name of the user this process runs as: USER, on
-/// Windows USERNAME, when it is set and not empty, as clang-tidy and clangd
-/// read it; else the name of its real user in the password database, on
-/// Windows GetUserNameW's.
+/// Writes into `out` the name of the user: USER, on Windows USERNAME, when
+/// it is set and not empty; else the name of this process's real user in
+/// the password database, on Windows GetUserNameW's, which imports advapi32.
 std::error_code user_name(buffer_ref out);
 
 /// The time since the system started.
@@ -191,9 +189,8 @@ std::chrono::milliseconds uptime();
 /// `time` as the date and time of day of the system's time zone, TZ as it
 /// is at the call (in Windows' C runtime, whose environment _putenv sets),
 /// daylight saving time applied, as localtime_r and Windows' localtime_s
-/// give them: for strftime, or for std::format's chrono specifiers, which
-/// take a std::tm too. Windows takes no time before 1970 or after 3000,
-/// invalid_argument; POSIX takes any.
+/// give them, for strftime. Windows takes no time before 1970 or after
+/// 3000, invalid_argument; POSIX takes any.
 std::expected<std::tm, std::error_code> local_time(std::chrono::system_clock::time_point time);
 
 /// A priority, from the lowest. A process's is one of Windows's priority
@@ -235,8 +232,9 @@ std::error_code set_thread_priority(Priority priority);
 /// (EcoQoS), on the efficient cores of a hybrid CPU among others: by
 /// default it does so for a process it takes for background work, one
 /// without a window, which may then run at half its speed. False asks it
-/// never to; true always to. Windows 10 1709 and later; not_supported
-/// elsewhere, which has no such throttling of a process.
+/// never to; true always to. invalid_argument before Windows 10 1709,
+/// which has none; not_supported elsewhere, which has no such throttling of
+/// a process.
 std::error_code set_power_throttling(bool throttled);
 
 }  // namespace kotatsu::sys

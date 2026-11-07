@@ -33,6 +33,7 @@ ZEST_CASE(exception_is_unset_for_an_exit_code_or_a_signal) {
 #ifdef _WIN32
 ZEST_CASE(exception_is_the_ntstatus_a_windows_child_crashed_with) {
     ZEXPECT(ExitStatus{.code = 0xC000'0005, .term_signal = 0}.exception() == 0xC000'0005u);
+    ZEXPECT(ExitStatus{.code = 0x8000'0000, .term_signal = 0}.exception() == 0x8000'0000u);
     ZEXPECT(ExitStatus{.code = 0x8000'0003, .term_signal = 0}.exception() == 0x8000'0003u);
     // exit(-1), which reads as one too.
     ZEXPECT(ExitStatus{.code = 0xFFFF'FFFF, .term_signal = 0}.exception() == 0xFFFF'FFFFu);

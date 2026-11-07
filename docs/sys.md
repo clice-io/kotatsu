@@ -75,7 +75,7 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
   `CreateProcessW` on Windows, the child in a job object of its own and given
   only the standard handles unless `windows_inherit_handles`.
 - macOS cannot start a child that ends with its parent
-  (`CreationOptions::exit_with_parent`); a child of the same program calls
+  (`CreationOptions::exit_with_parent`); a child that links kotatsu calls
   `exit_with_parent()` itself instead, which works on every host.
 
 ## See also

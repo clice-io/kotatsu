@@ -62,20 +62,29 @@ KOTATSU_NOINLINE std::uint64_t deep(int depth) {
     return below + frame[0];
 }
 
+/// What a detached thread leaves, which it still holds while it counts its
+/// latch down.
+struct Left {
+    std::latch done{1};
+
+    int value = 0;
+};
+
 ZEST_SUITE(sys_thread) {
 
+// Twice Linux's default of 8 MiB, which a size ignored would give.
 ZEST_CASE(start_runs_the_function_on_a_stack_of_the_size_asked) {
     std::size_t size = 0;
     std::uint64_t sum = 0;
-    auto thread = Thread::start(8 * mebibyte, [&] {
+    auto thread = Thread::start(16 * mebibyte, [&] {
         size = own_stack_size();
-        // 6 MiB of it.
-        sum = deep(96);
+        // 12 MiB of it.
+        sum = deep(192);
     });
     ZASSERT(thread);
     thread->join();
-    ZEXPECT(size >= 8 * mebibyte);
-    ZEXPECT(sum == 96U * 97U / 2U);
+    ZEXPECT(size >= 16 * mebibyte);
+    ZEXPECT(sum == 192U * 193U / 2U);
 }
 
 ZEST_CASE(start_takes_a_size_below_the_least_and_off_a_page) {
@@ -96,15 +105,29 @@ ZEST_CASE(start_takes_a_function_that_only_moves) {
     ZEXPECT(seen == 7);
 }
 
-// No system maps a stack of half the address space, and each says so with
-// an error of its own.
+// No system maps a stack of half the address space; the largest size
+// rounds up to 0.
 ZEST_CASE(start_with_a_stack_too_large_fails) {
-    bool ran = false;
-    auto thread = Thread::start(std::numeric_limits<std::size_t>::max() / 2, [&] { ran = true; });
-    ZASSERT(!thread);
-    ZEXPECT(thread.error() != std::error_code());
-    ZEXPECT(!ran);
+    constexpr auto largest = std::numeric_limits<std::size_t>::max();
+    for(auto size: {largest / 2, largest}) {
+        ZEST_CONTEXT("{} bytes", size);
+        bool ran = false;
+        auto thread = Thread::start(size, [&] { ran = true; });
+        ZASSERT(!thread);
+        auto error = thread.error();
+        ZEXPECT((error == std::errc::resource_unavailable_try_again ||
+                 error == std::errc::not_enough_memory || error == std::errc::invalid_argument));
+        ZEXPECT(!ran);
+    }
 }
+
+#if KOTATSU_ENABLE_EXCEPTIONS
+ZEST_CASE(an_exception_that_leaves_the_function_ends_the_process, crashes = true) {
+    auto thread = Thread::start(mebibyte, [] { throw 1; });
+    ZASSERT(thread);
+    thread->join();
+}
+#endif
 
 ZEST_CASE(destruction_joins_the_thread) {
     std::atomic<bool> ended = false;
@@ -124,27 +147,36 @@ ZEST_CASE(a_moved_thread_is_joined_by_its_new_owner) {
     ZEXPECT(ended.load());
 }
 
+// The second waits until the first is joined.
 ZEST_CASE(assignment_joins_the_thread_it_held) {
-    std::atomic<int> ended = 0;
-    auto first = Thread::start(mebibyte, [&] { ++ended; });
-    auto second = Thread::start(mebibyte, [&] { ++ended; });
+    std::atomic<bool> first_ended = false;
+    std::atomic<bool> second_ended = false;
+    std::latch go(1);
+    auto first = Thread::start(mebibyte, [&] { first_ended = true; });
+    auto second = Thread::start(mebibyte, [&] {
+        go.wait();
+        second_ended = true;
+    });
     ZASSERT(first);
     ZASSERT(second);
     *first = std::move(*second);
-    // The first has ended, joined.
-    ZEXPECT(ended.load() >= 1);
+    ZEXPECT(first_ended.load());
+    ZEXPECT(!second_ended.load());
+    go.count_down();
     first->join();
-    ZEXPECT(ended.load() == 2);
+    ZEXPECT(second_ended.load());
 }
 
-// The latch is the thread's too, which may still be in count_down when the
-// wait returns.
 ZEST_CASE(a_detached_thread_runs_on) {
-    auto ran = std::make_shared<std::latch>(1);
-    auto thread = Thread::start(mebibyte, [ran] { ran->count_down(); });
+    auto left = std::make_shared<Left>();
+    auto thread = Thread::start(mebibyte, [left] {
+        left->value = 7;
+        left->done.count_down();
+    });
     ZASSERT(thread);
     thread->detach();
-    ran->wait();
+    left->done.wait();
+    ZEXPECT(left->value == 7);
 }
 
 };  // ZEST_SUITE(sys_thread)
