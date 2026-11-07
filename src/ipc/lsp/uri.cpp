@@ -3,7 +3,8 @@
 #include <algorithm>
 #include <iterator>
 #include <optional>
-#include <ranges>
+
+#include "kotatsu/support/string_ref.h"
 
 namespace kotatsu::ipc::lsp {
 
@@ -19,10 +20,6 @@ constexpr bool is_ascii_alnum(char c) noexcept {
 
 constexpr char to_ascii_lower(char c) noexcept {
     return c >= 'A' && c <= 'Z' ? static_cast<char>(c + ('a' - 'A')) : c;
-}
-
-constexpr bool is_ascii_iequal(std::string_view left, std::string_view right) noexcept {
-    return std::ranges::equal(left, right, {}, to_ascii_lower, to_ascii_lower);
 }
 
 constexpr bool is_valid_scheme(std::string_view scheme) noexcept {
@@ -192,62 +189,66 @@ std::expected<URI, std::error_code> URI::from_string(std::string_view text) {
 }
 
 std::expected<URI, std::error_code> URI::from_path(std::string_view path, fs::path::Style style) {
-    const bool windows = style == fs::path::Style::Windows;
-    std::string slashed;
-    if(windows && path.contains('\\')) {
-        slashed.assign(path);
-        std::ranges::replace(slashed, '\\', '/');
-        path = slashed;
+    using fs::path::Prefix;
+    const auto root = fs::path::root(path, style);
+    // A verbatim or a device path names what no file URI does.
+    if(root.prefix != Prefix::None && root.prefix != Prefix::Drive && root.prefix != Prefix::UNC) {
+        return std::unexpected(invalid());
     }
+    // A drive without a root directory, `C:x`, depends on the current one.
+    if(root.prefix == Prefix::Drive && root.directory.empty()) {
+        return std::unexpected(invalid());
+    }
+    std::string slashed(path);
+    fs::path::to_slash(slashed, style);
+    fs::path::lowercase_drive(slashed, style);
 
     URI uri;
     uri.spelling = "file://";
     uri.scheme_segment = {.offset = 0, .size = 4};
-    auto encoded = [&uri](std::string_view part, bool encode_slash, Segment& segment) {
+    // Appends what `write` writes as `segment`.
+    auto append = [&uri](Segment& segment, auto write) {
         const std::size_t from = uri.spelling.size();
-        encode_into(uri.spelling, part, encode_slash);
+        write();
         segment = {.offset = from, .size = uri.spelling.size() - from};
     };
 
     // A share, //server/share/..., on POSIX too, as VS Code reads it.
-    if(path.starts_with("//")) {
-        const std::string_view rest = path.substr(2);
+    if(std::string_view(slashed).starts_with("//")) {
+        const std::string_view rest = std::string_view(slashed).substr(2);
         const std::size_t slash = rest.find('/');
         if(slash == std::string_view::npos || slash == 0 || slash + 1 == rest.size() ||
            rest[slash + 1] == '/') {
             return std::unexpected(invalid());
         }
         const std::string_view server = rest.substr(0, slash);
-        // An IPv6 literal keeps its brackets.
-        if(server.starts_with('[') && server.ends_with(']')) {
-            const std::size_t from = uri.spelling.size();
-            uri.spelling.push_back('[');
-            encode_into(uri.spelling, server.substr(1, server.size() - 2), true);
-            uri.spelling.push_back(']');
-            uri.authority_segment = {.offset = from, .size = uri.spelling.size() - from};
-        } else {
-            encoded(server, true, uri.authority_segment);
-        }
-        encoded(rest.substr(slash), false, uri.path_segment);
+        append(uri.authority_segment, [&] {
+            // An IPv6 literal keeps its brackets.
+            if(server.starts_with('[') && server.ends_with(']')) {
+                uri.spelling.push_back('[');
+                encode_into(uri.spelling, server.substr(1, server.size() - 2), true);
+                uri.spelling.push_back(']');
+            } else {
+                encode_into(uri.spelling, server, true);
+            }
+        });
+        append(uri.path_segment, [&] { encode_into(uri.spelling, rest.substr(slash), false); });
         return uri;
     }
 
     uri.authority_segment = {.offset = uri.spelling.size(), .size = 0};
-    if(windows && path.size() >= 2 && is_ascii_alpha(path[0]) && path[1] == ':') {
-        if(path.size() < 3 || path[2] != '/') {
-            return std::unexpected(invalid());
-        }
-        const std::size_t from = uri.spelling.size();
-        uri.spelling.push_back('/');
-        uri.spelling.push_back(to_ascii_lower(path[0]));
-        encode_into(uri.spelling, path.substr(1), false);
-        uri.path_segment = {.offset = from, .size = uri.spelling.size() - from};
+    if(root.prefix == Prefix::Drive) {
+        // C:/x is /c:/x.
+        append(uri.path_segment, [&] {
+            uri.spelling.push_back('/');
+            encode_into(uri.spelling, slashed, false);
+        });
         return uri;
     }
-    if(!path.starts_with('/')) {
+    if(!slashed.starts_with('/')) {
         return std::unexpected(invalid());
     }
-    encoded(path, false, uri.path_segment);
+    append(uri.path_segment, [&] { encode_into(uri.spelling, slashed, false); });
     return uri;
 }
 
@@ -257,7 +258,7 @@ std::error_code URI::to_path(buffer_ref out, fs::path::Style style) const {
     }
     out.clear();
     const std::string_view server = authority();
-    if(!server.empty() && !is_ascii_iequal(server, "localhost")) {
+    if(!server.empty() && !string_ref(server).equals_insensitive("localhost")) {
         out.append("//");
         if(auto error = decode_into(out, server)) {
             return error;

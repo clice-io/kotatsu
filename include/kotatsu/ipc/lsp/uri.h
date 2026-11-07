@@ -29,10 +29,10 @@ public:
     /// a drive's letter is written in lower case, as VS Code keys documents:
     /// `C:\x` is `file:///c:/x`. On POSIX `\` is a character of a name like
     /// any other, `%5C`, and `C:/x` a relative path. A relative path, on
-    /// Windows a drive without a root directory (`C:x`) among them, and a
-    /// share without a server or a share name fail with
-    /// std::errc::invalid_argument, so that a URI never depends on the current
-    /// directory.
+    /// Windows a drive without a root directory (`C:x`) among them, so that a
+    /// URI never depends on the current directory, a share without a server
+    /// or a share name, and on Windows a verbatim (`\\?\`) or a device
+    /// (`\\.\`) path fail with std::errc::invalid_argument.
     static std::expected<URI, std::error_code>
         from_path(std::string_view path, fs::path::Style style = fs::path::native_style);
 

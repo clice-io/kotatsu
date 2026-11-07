@@ -155,6 +155,15 @@ ZEST_CASE(windows_drive_without_root_fails) {
     }
 }
 
+ZEST_CASE(windows_verbatim_or_device_path_fails) {
+    for(std::string_view path: {R"(\\?\C:\x.cpp)", R"(\\?\UNC\server\share\x)", R"(\\.\pipe\x)"}) {
+        ZEST_CONTEXT("path: {}", path);
+        auto uri = URI::from_path(path, Style::Windows);
+        ZASSERT(!uri);
+        ZEXPECT(uri.error() == std::errc::invalid_argument);
+    }
+}
+
 ZEST_CASE(unc_roundtrip) {
     auto windows = URI::from_path(R"(\\server\share\a b.txt)", Style::Windows);
     ZASSERT(windows);

@@ -688,23 +688,23 @@ enum class ProcState : std::uint8_t {
 /// it from telling.
 result<ProcState> state_of(int pid) {
     const int fd = ::open(std::format("/proc/{}/stat", pid).c_str(), O_RDONLY | O_CLOEXEC);
-    if(fd < 0 && errno != ENOENT && errno != EACCES && errno != EPERM) {
-        return outcome_error(error(-errno));
-    }
-    // Gone, or out of sight, /proc not mounted or hiding other users'
-    // processes: kill() tells whether the pid is there, zombies among them.
     if(fd < 0) {
+        if(errno != ENOENT && errno != EACCES && errno != EPERM) {
+            return outcome_error(error(-errno));
+        }
+        // Gone, or out of sight, /proc not mounted or hiding other users'
+        // processes: kill() tells whether the pid is there, zombies among them.
         return ::kill(pid, 0) != 0 && errno == ESRCH ? ProcState::Gone : ProcState::Running;
     }
     char stat[512];
     const auto size = ::read(fd, stat, sizeof(stat));
     const int read_errno = errno;
     ::close(fd);
-    // A process reaped since the open reads as ESRCH.
-    if(size < 0 && read_errno == ESRCH) {
-        return ProcState::Gone;
-    }
     if(size < 0) {
+        // A process reaped since the open reads as ESRCH.
+        if(read_errno == ESRCH) {
+            return ProcState::Gone;
+        }
         return outcome_error(error(-read_errno));
     }
     // "<pid> (<name>) <state> ...", where the name may hold anything.
@@ -717,11 +717,11 @@ result<ProcState> state_of(int pid) {
     }
     // A first thread that ended before the others is a zombie the process
     // outlives: the 20th field counts the threads, a zombie among them.
-    std::size_t threads = 0;
+    std::size_t at = 0;
     for(int field = 3; field < 20; ++field) {
-        threads = fields.find(' ', threads) + 1;
+        at = fields.find(' ', at) + 1;
     }
-    return fields.substr(threads).starts_with("1 ") ? ProcState::Zombie : ProcState::Running;
+    return fields.substr(at).starts_with("1 ") ? ProcState::Zombie : ProcState::Running;
 }
 #endif
 

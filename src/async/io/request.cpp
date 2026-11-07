@@ -1,6 +1,5 @@
 #include "kotatsu/async/io/request.h"
 
-#include <format>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -57,7 +56,7 @@ error set_thread_pool_size(unsigned threads) {
     std::string previous;
     const bool was_set = sys::get_env(previous, variable);
     // With this name and a number, only memory can run out.
-    if(sys::set_env(variable, std::format("{}", threads))) {
+    if(sys::set_env(variable, std::to_string(threads))) {
         return error::not_enough_memory;
     }
     ScopeExit restore([&] {

@@ -72,11 +72,6 @@ function kotatsuPath(drawn: string): string {
   return lowerDrive(windows ? drawn.replaceAll("\\", "/") : drawn);
 }
 
-/** `drawn` as VS Code's fsPath writes a path. */
-function vscodePath(drawn: string): string {
-  return lowerDrive(drawn);
-}
-
 async function ask(
   lines: JsonLines,
   question: object,
@@ -109,7 +104,7 @@ test("kotatsu_uris_read_back_as_their_paths", { timeout: FUZZ_TIMEOUT }, (t) =>
         });
         assert.equal(
           URI.parse(uri).fsPath,
-          vscodePath(drawn),
+          lowerDrive(drawn),
           `VS Code reading ${uri}`,
         );
       }),

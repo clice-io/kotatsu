@@ -898,14 +898,17 @@ void Walk::advance() {
 }
 
 std::expected<bool, std::error_code> case_sensitive(std::string_view directory) {
-#ifdef _WIN32
-    auto handle = open_directory(directory);
-    if(!handle) {
-        return std::unexpected(handle.error());
+    auto dir = Directory::open(directory);
+    if(!dir) {
+        return std::unexpected(dir.error());
     }
+#ifdef _WIN32
     FILE_CASE_SENSITIVE_INFO info;
-    if(!::GetFileInformationByHandleEx(handle->get(), case_sensitive_info, &info, sizeof(info))) {
-        // A file system without the flag matches no case.
+    if(!::GetFileInformationByHandleEx(dir->native_handle(),
+                                       case_sensitive_info,
+                                       &info,
+                                       sizeof(info))) {
+        // A file system that keeps no such flag folds case.
         auto error = ::GetLastError();
         if(unsupported(error)) {
             return false;
@@ -913,18 +916,7 @@ std::expected<bool, std::error_code> case_sensitive(std::string_view directory) 
         return std::unexpected(windows::to_error_code(error));
     }
     return (info.Flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR) != 0;
-#else
-    posix::CPath c_path;
-    if(auto error = c_path.assign(directory)) {
-        return std::unexpected(error);
-    }
-    Descriptor dir(::open(c_path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
-    if(dir.fd < 0) {
-        return std::unexpected(posix::last_error());
-    }
-#ifdef __APPLE__
-    // What the volume tells of its format, which ISO 9660 and UDF tell as
-    // well, where pathconf(_PC_CASE_SENSITIVE) has no answer.
+#elif defined(__APPLE__)
     attrlist asked{};
     asked.bitmapcount = ATTR_BIT_MAP_COUNT;
     asked.volattr = ATTR_VOL_INFO | ATTR_VOL_CAPABILITIES;
@@ -934,7 +926,7 @@ std::expected<bool, std::error_code> case_sensitive(std::string_view directory) 
         vol_capabilities_attr_t capabilities;
     } told;
 
-    if(::fgetattrlist(dir.fd, &asked, &told, sizeof(told), 0) != 0) {
+    if(::fgetattrlist(dir->native_handle(), &asked, &told, sizeof(told), 0) != 0) {
         return std::unexpected(posix::last_error());
     }
     auto format = told.capabilities.capabilities[VOL_CAPABILITIES_FORMAT];
@@ -943,19 +935,18 @@ std::expected<bool, std::error_code> case_sensitive(std::string_view directory) 
     // A file system that keeps no such flags, FAT, NFS and 9p among others,
     // refuses to tell them (ENOTTY, EINVAL, EOPNOTSUPP): its type tells.
     int flags = 0;
-    if(::ioctl(dir.fd, FS_IOC_GETFLAGS, &flags) == 0) {
+    if(::ioctl(dir->native_handle(), FS_IOC_GETFLAGS, &flags) == 0) {
         if(flags & FS_CASEFOLD_FL) {
             return false;
         }
     } else if(errno != ENOTTY && errno != EINVAL && errno != EOPNOTSUPP) {
         return std::unexpected(posix::last_error());
     }
-    auto volume = posix::volume_of(dir.fd);
+    auto volume = dir->volume();
     if(!volume) {
         return std::unexpected(volume.error());
     }
     return volume->type != "vfat" && volume->type != "exfat";
-#endif
 #endif
 }
 

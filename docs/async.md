@@ -64,7 +64,7 @@ Adapted from `examples/async_basics/async_basics.cpp`.
 | [runtime/sync.h](../include/kotatsu/async/runtime/sync.h)                                                              | `mutex`, `semaphore`, `event`, `condition_variable`, and scoped guards              |
 | [runtime/debug.h](../include/kotatsu/async/runtime/debug.h), [runtime/walk.h](../include/kotatsu/async/runtime/walk.h) | `dump_dot()` and `async_visitor`, to inspect the task tree                          |
 | [io/loop.h](../include/kotatsu/async/io/loop.h)                                                                        | `event_loop`, `run()`, `relay`, `yield()`                                           |
-| [io/request.h](../include/kotatsu/async/io/request.h)                                                                  | `queue()`, to run a function on the thread pool, `set_thread_pool_size()`           |
+| [io/request.h](../include/kotatsu/async/io/request.h)                                                                  | `queue()`, to run a function on the thread pool; `set_thread_pool_size()`           |
 | [io/watcher.h](../include/kotatsu/async/io/watcher.h)                                                                  | `timer`, `signal`, `idle`, `prepare`, `check`, `sleep()`, `with_timeout()`          |
 | [io/stream.h](../include/kotatsu/async/io/stream.h), [io/udp.h](../include/kotatsu/async/io/udp.h)                     | `stream` (`pipe`, `tcp`, `console`), `acceptor`, `udp`                              |
 | [io/process.h](../include/kotatsu/async/io/process.h)                                                                  | `process`: `spawn()`, `capture()`, `wait()`, `kill()`, `kill_tree()`; `wait_exit()` |

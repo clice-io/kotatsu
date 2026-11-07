@@ -75,7 +75,9 @@ Adapted from `tests/fs/system/file_tests.cpp` and `directory_walk_tests.cpp`.
   file open.
 - Windows: junctions report as `FileType::Symlink`, and `walk` and
   `remove_all` never go through them.
-- Locks are advisory; on Windows they keep no one from the file's bytes.
+- Locks are advisory; on Windows `lock()` keeps no one from the file's bytes,
+  but `range_locked()` holds the range it probes for an instant.
+- `File::is_sparse()` is Windows only: POSIX keeps no such mark.
 
 ## See also
 
