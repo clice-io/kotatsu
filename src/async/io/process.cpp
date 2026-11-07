@@ -491,9 +491,11 @@ struct process::Self::Watch {
             exited.swap(watch.signaled_exits);
         }
         watch.reap(ready);
-        // What a wait resumes may end the waits after it.
+        // What a wait resumes may end the waits after it, and start one whose
+        // Exit takes an ended one's address while its process still runs.
         for(auto* exit: exited) {
-            if(std::ranges::find(watch.exits, exit) == watch.exits.end()) {
+            if(std::ranges::find(watch.exits, exit) == watch.exits.end() ||
+               ::WaitForSingleObject(exit->process, 0) != WAIT_OBJECT_0) {
                 continue;
             }
             watch.forget(*exit);
