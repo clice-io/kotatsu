@@ -64,9 +64,27 @@ constexpr std::size_t find_text(std::string_view text, std::string_view part, st
     return text.size();
 }
 
-/// Where the last name in text begins: past its last `::` outside brackets, which a name's
-/// template arguments, a function's parameters and `(anonymous namespace)` are in; 0 when
-/// there is none. Walked from the end, as far back as the name goes.
+/// Where the literal that ends with the quote at `close` begins: at the quote before it that no
+/// backslash escapes, or, for a name MSVC quotes, `anonymous namespace', at a backtick.
+constexpr std::size_t literal_start(std::string_view text, std::size_t close) {
+    for(std::size_t at = close; at > 0; --at) {
+        const char c = text[at - 1];
+        if(c == text[close] || (text[close] == '\'' && c == '`')) {
+            std::size_t slashes = 0;
+            while(slashes + 1 < at && text[at - 2 - slashes] == '\\') {
+                ++slashes;
+            }
+            if(slashes % 2 == 0) {
+                return at - 1;
+            }
+        }
+    }
+    return 0;
+}
+
+/// Where the last name in text begins: past its last `::` outside brackets and literals, which
+/// a name's template arguments, a function's parameters and `(anonymous namespace)` are in; 0
+/// when there is none. Walked from the end, as far back as the name goes.
 constexpr std::size_t name_start(std::string_view text) {
     int depth = 0;
     for(std::size_t i = text.size(); i > 1; --i) {
@@ -74,7 +92,10 @@ constexpr std::size_t name_start(std::string_view text) {
         if(identifier_char(c)) {
             continue;
         }
-        if(c == '>' || c == ')' || c == ']' || c == '}') {
+        if(c == '"' || c == '\'') {
+            // The loop steps on to the character before the opening quote.
+            i = literal_start(text, i - 1) + 1;
+        } else if(c == '>' || c == ')' || c == ']' || c == '}') {
             ++depth;
         } else if(c == '<' || c == '(' || c == '[' || c == '{') {
             // One no bracket closes, as in `operator<`, opens nothing the name is in.
@@ -95,8 +116,31 @@ constexpr std::string_view leading_identifier(std::string_view text) {
     return text.substr(0, end);
 }
 
-/// The last name in text, without the template arguments and parameters after it.
+constexpr bool operator_char(char c) {
+    return std::string_view("<>=!+-*/%^&|~,").find(c) != std::string_view::npos;
+}
+
+/// The last name in text, without the template arguments and parameters after it. An
+/// operator's, `S::operator<=`, is `operator<=`, its brackets none: found first. MSVC writes a
+/// space after `operator`, which the name keeps.
 constexpr std::string_view last_name(std::string_view text) {
+    if(const std::size_t at = text.rfind("::operator"); at != std::string_view::npos) {
+        std::string_view name = text.substr(at + 2);
+        std::size_t end = 8;
+        while(end < name.size() && name[end] == ' ') {
+            ++end;
+        }
+        if(name.substr(end).starts_with("()") || name.substr(end).starts_with("[]")) {
+            return name.substr(0, end + 2);
+        }
+        const std::size_t symbols = end;
+        while(end < name.size() && operator_char(name[end])) {
+            ++end;
+        }
+        if(end > symbols) {
+            return name.substr(0, end);
+        }
+    }
     return leading_identifier(text.substr(name_start(text)));
 }
 

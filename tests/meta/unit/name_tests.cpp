@@ -1,4 +1,6 @@
+#include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "kotatsu/zest/zest.h"
@@ -27,6 +29,21 @@ namespace qualified_types {
 struct Outer {
     struct Inner {};
 };
+
+/// A string as a template argument, a bracket in it.
+template <std::size_t N>
+struct text {
+    char value[N];
+
+    consteval text(const char (&chars)[N]) {
+        for(std::size_t i = 0; i < N; ++i) {
+            value[i] = chars[i];
+        }
+    }
+};
+
+template <text Label>
+struct labeled {};
 
 }  // namespace qualified_types
 
@@ -65,12 +82,20 @@ struct two_bases : first_base, second_base {
     void run() {}
 };
 
-/// A member whose name holds a bracket no other closes.
+/// Members whose names hold brackets no other closes.
 struct ordered {
     int key;
 
     bool operator<(const ordered& other) const {
         return key < other.key;
+    }
+
+    bool operator>=(const ordered& other) const {
+        return key >= other.key;
+    }
+
+    int operator()(int x) const {
+        return key + x;
     }
 };
 
@@ -149,6 +174,10 @@ ZEST_CASE(type_name) {
     ZEXPECT(type_name<local_types::union_z> == "union_z");
 }
 
+ZEST_CASE(type_name_past_a_bracket_in_a_literal) {
+    ZEXPECT(zest::starts_with(type_name<qualified_types::labeled<"greater >">>, "labeled<"));
+}
+
 ZEST_CASE(qualified_type_name) {
     ZEXPECT(short_outer == "Outer");
     ZEXPECT(zest::ends_with(full_outer, "qualified_types::Outer"));
@@ -184,7 +213,13 @@ ZEST_CASE(basic_member_name) {
     ZEXPECT(member_name<&nested_holder::value> == "value");
     ZEXPECT(member_name<&nested_holder::leaf::field> == "field");
     ZEXPECT(member_name<&two_bases::run> == "run");
-    ZEXPECT(member_name < &ordered::operator<> == "operator");
+    // MSVC spells an operator's name with a space after `operator`.
+    constexpr std::string_view less = member_name<(&ordered::operator<)>;
+    constexpr std::string_view at_least = member_name<(&ordered::operator>=)>;
+    constexpr std::string_view call = member_name<(&ordered::operator())>;
+    ZEXPECT(zest::starts_with(less, "operator") && zest::ends_with(less, "<"));
+    ZEXPECT(zest::starts_with(at_least, "operator") && zest::ends_with(at_least, ">="));
+    ZEXPECT(zest::starts_with(call, "operator") && zest::ends_with(call, "()"));
 }
 
 };  // ZEST_SUITE(meta_name)
