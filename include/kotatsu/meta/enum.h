@@ -53,13 +53,6 @@ constexpr std::string_view enumerator(std::string_view printed) {
     return name.empty() || (name[0] >= '0' && name[0] <= '9') ? std::string_view{} : name;
 }
 
-/// Whether the values of E print as a list a comma separates: E has a fixed underlying type,
-/// which every value of is a value of E, as a compiler takes a template argument outside an
-/// enum's range of none other; and its name holds no comma, as one in template arguments would.
-template <typename E>
-concept listed_by_commas =
-    requires { E{0}; } && find_char(spelled_type<E>, ',', 0) == spelled_type<E>.size();
-
 /// The name of value V of E, empty when no enumerator has it. Printed from a variable: clang
 /// takes as a template argument a value outside an enum's range that a variable holds, but not
 /// the call that makes it, nor a template parameter that holds it.
@@ -69,11 +62,25 @@ consteval std::string_view probe_name() {
     return enumerator(value_spelling.of(value_signature<value>()));
 }
 
+/// Whether the values Vs of E print as a list split at its commas: E has a fixed underlying
+/// type, which every value of is a value of E, as a compiler takes a value outside an enum's
+/// range in a pack of none other; and the commas are the ones between values alone, which the
+/// scope of E's enumerators adds to where it holds template arguments or a function's
+/// parameters, which clang prints in an enumerator but not in its type.
+template <typename E, int... Vs>
+consteval bool listed_by_commas() {
+    if constexpr(requires { E{0}; }) {
+        return count_char(pack_list<enum_probe_value<E>(Vs)...>(), ',') == sizeof...(Vs) - 1;
+    } else {
+        return false;
+    }
+}
+
 /// The name of each of the values Vs of E, empty for one no enumerator has.
 template <typename E, int... Vs>
 consteval std::array<std::string_view, sizeof...(Vs)> probe_chunk() {
     std::array<std::string_view, sizeof...(Vs)> names{};
-    if constexpr(listed_by_commas<E>) {
+    if constexpr(listed_by_commas<E, Vs...>()) {
         const std::string_view list = pack_list<enum_probe_value<E>(Vs)...>();
         std::size_t begin = 0;
         for(std::string_view& name: names) {
@@ -99,17 +106,21 @@ consteval void copy_chunk(std::array<std::string_view, sizeof...(Values)>& names
     }
 }
 
+/// How many of count values chunk number `chunk` takes.
+constexpr std::size_t chunk_length(std::size_t count, std::size_t chunk) {
+    const std::size_t left = count - chunk * enum_chunk;
+    return left < enum_chunk ? left : enum_chunk;
+}
+
 /// The name of each of the values the reflection of E scans, empty for one no enumerator has.
 template <typename E, int... Values, std::size_t... Chunks>
 consteval auto make_scanned_names(std::integer_sequence<int, Values...> values,
                                   std::index_sequence<Chunks...>) {
     constexpr std::size_t count = sizeof...(Values);
     std::array<std::string_view, count> names{};
-    (copy_chunk<E, Chunks * enum_chunk>(
-         names,
-         values,
-         std::make_index_sequence <
-             count - Chunks * enum_chunk<enum_chunk ? count - Chunks * enum_chunk : enum_chunk>{}),
+    (copy_chunk<E, Chunks * enum_chunk>(names,
+                                        values,
+                                        std::make_index_sequence<chunk_length(count, Chunks)>{}),
      ...);
     return names;
 }

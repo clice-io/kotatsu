@@ -65,6 +65,15 @@ struct two_bases : first_base, second_base {
     void run() {}
 };
 
+/// A member whose name holds a bracket no other closes.
+struct ordered {
+    int key;
+
+    bool operator<(const ordered& other) const {
+        return key < other.key;
+    }
+};
+
 struct struct_y {
     std::string x;
     std::vector<int> y;
@@ -175,6 +184,7 @@ ZEST_CASE(basic_member_name) {
     ZEXPECT(member_name<&nested_holder::value> == "value");
     ZEXPECT(member_name<&nested_holder::leaf::field> == "field");
     ZEXPECT(member_name<&two_bases::run> == "run");
+    ZEXPECT(member_name < &ordered::operator<> == "operator");
 }
 
 };  // ZEST_SUITE(meta_name)

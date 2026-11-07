@@ -44,6 +44,15 @@ constexpr bool holds_at(std::string_view text, std::size_t at, std::string_view 
            __builtin_memcmp(text.data() + at, part.data(), part.size()) == 0;
 }
 
+/// How many times c appears in text.
+constexpr std::size_t count_char(std::string_view text, char c) {
+    std::size_t count = 0;
+    for(std::size_t at = find_char(text, c, 0); at < text.size(); at = find_char(text, c, at + 1)) {
+        ++count;
+    }
+    return count;
+}
+
 /// Where `part` first appears in text from `from` on; text.size() when it does not.
 constexpr std::size_t find_text(std::string_view text, std::string_view part, std::size_t from) {
     for(from = find_char(text, part[0], from); from < text.size();
@@ -68,7 +77,8 @@ constexpr std::size_t name_start(std::string_view text) {
         if(c == '>' || c == ')' || c == ']' || c == '}') {
             ++depth;
         } else if(c == '<' || c == '(' || c == '[' || c == '{') {
-            --depth;
+            // One no bracket closes, as in `operator<`, opens nothing the name is in.
+            depth = depth > 0 ? depth - 1 : 0;
         } else if(c == ':' && depth == 0 && text[i - 2] == ':') {
             return i;
         }
@@ -171,13 +181,16 @@ constexpr inline spelling type_spelling = measure_type();
 constexpr inline spelling pack_spelling = measure_zero(pack_signature<0>());
 constexpr inline spelling value_spelling = measure_zero(value_signature<0>());
 
-/// T as the compiler spells it in a signature, with the key MSVC writes ahead of a class type
-/// (`struct Foo`), as it writes it in a cast.
+/// T as the compiler spells it in a signature. MSVC writes a class type's key ahead of it
+/// (`struct Foo`), and a space after a template's arguments, before the `>` that closes those
+/// of the signature's own: both are left out.
 template <typename T>
-constexpr inline std::string_view spelled_type = type_spelling.of(type_signature<T>());
-
-consteval std::string_view drop_class_key(std::string_view name) {
+consteval std::string_view spelled_type() {
+    std::string_view name = type_spelling.of(type_signature<T>());
 #if KOTATSU_COMPILER_MSVC
+    if(name.ends_with(' ')) {
+        name.remove_suffix(1);
+    }
     // `unsigned int` is a name of its own.
     for(std::string_view key: {"class ", "struct ", "enum ", "union "}) {
         if(name.starts_with(key)) {
@@ -200,8 +213,7 @@ namespace kotatsu::meta {
 
 /// T as the compiler spells it, qualified.
 template <typename T>
-constexpr inline std::string_view qualified_type_name =
-    detail::drop_class_key(detail::spelled_type<T>);
+constexpr inline std::string_view qualified_type_name = detail::spelled_type<T>();
 
 /// T as the compiler spells it, its last name only: `Foo<ns::Bar>` for `ns::Foo<ns::Bar>`.
 template <typename T>

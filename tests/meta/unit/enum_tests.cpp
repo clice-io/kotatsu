@@ -97,6 +97,19 @@ static_assert(enum_names<Holder<int, char>::Inner>[0] == "Left");
 static_assert(enum_names<Holder<int, char>::Inner>[1] == "Right");
 #endif
 
+/// An enum in a function of two parameters, whose values clang prints in the function's scope,
+/// the comma between its parameters and all, where it prints the enum's type without it.
+consteval bool names_a_local_enum(int, int) {
+    enum class Local : int {
+        first = 1,
+        second = 5,
+    };
+    return enum_names<Local>.size() == 2 && enum_names<Local>[0] == "first" &&
+           enum_names<Local>[1] == "second";
+}
+
+static_assert(names_a_local_enum(0, 0));
+
 enum class Toggle : bool {
     Off,
     On,
