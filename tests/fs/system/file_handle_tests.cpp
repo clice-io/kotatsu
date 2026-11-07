@@ -621,6 +621,17 @@ ZEST_CASE(set_sparse_lets_a_file_hold_a_hole) {
     ZEXPECT(found->size == size);
 }
 
+#ifdef _WIN32
+ZEST_CASE(is_sparse_tells_whether_set_sparse_marked_the_file) {
+    test::TempDir dir;
+    auto file = File::open(dir.file("file"), {.write = true, .create = true});
+    ZASSERT(file.has_value());
+    ZEXPECT(file->is_sparse() == false);
+    ZEXPECT(!file->set_sparse());
+    ZEXPECT(file->is_sparse() == true);
+}
+#endif
+
 ZEST_CASE(canonical_names_the_open_file_as_canonical_does) {
     test::TempDir dir;
     test::write_text(dir.file("é中😀.txt"), "text");

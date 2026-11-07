@@ -513,6 +513,14 @@ std::error_code File::set_sparse() {
     return {};
 }
 
+std::expected<bool, std::error_code> File::is_sparse() const {
+    FILE_BASIC_INFO basic;
+    if(!::GetFileInformationByHandleEx(handle, FileBasicInfo, &basic, sizeof(basic))) {
+        return std::unexpected(windows::last_error());
+    }
+    return (basic.FileAttributes & FILE_ATTRIBUTE_SPARSE_FILE) != 0;
+}
+
 std::error_code File::unlock() {
     auto at = at_offset(lock_byte);
     if(!::UnlockFileEx(handle, 0, 1, 0, &at) && ::GetLastError() != ERROR_NOT_LOCKED) {

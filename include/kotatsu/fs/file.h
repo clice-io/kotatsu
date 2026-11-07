@@ -144,7 +144,16 @@ public:
     /// written out. On Windows the file system must support it (NTFS and
     /// ReFS do, FAT does not), and the file be open for `write`; POSIX file
     /// systems that can hold holes always do, and there this does nothing.
+    /// On Windows is_sparse() tells whether a file is marked so.
     std::error_code set_sparse();
+
+#ifdef _WIN32
+    /// Whether the file is marked sparse (FILE_ATTRIBUTE_SPARSE_FILE), as
+    /// set_sparse() or another program marks it. Windows alone: POSIX has no
+    /// such mark, and whether a file there holds holes is its file system's
+    /// affair.
+    std::expected<bool, std::error_code> is_sparse() const;
+#endif
 
     /// Waits until no other handle holds a lock of the file, then takes an
     /// exclusive one, which keeps any other from taking either kind. Locks
