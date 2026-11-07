@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "kotatsu/support/buffer_ref.h"
+
 namespace kotatsu::cli {
 
 /// How a usage and an error are laid out.
@@ -58,15 +60,19 @@ struct Error {
     /// rendering offers: "--verbose" for "--verbos"; empty when none is close.
     std::string suggestion = {};
 
-    /// `message` under the argv, the elements at fault marked, as a program reports it:
+    /// Writes into `out` the message and, when there is one, the suggestion after it, on one
+    /// line: "unknown option: --verbos; did you mean '--verbose'?". What render() writes under
+    /// the argv, for a report that shows no argv.
+    void summary(buffer_ref out) const;
+
+    /// summary() under the argv, the elements at fault marked, as a program reports it:
     ///
     ///     at argv[1]:
     ///       --jobs many
     ///              ^~~~
     ///       invalid integer value: many
     ///
-    /// The suggestion follows the message: "...; did you mean '--verbose'?". For an empty
-    /// argv, the message and the suggestion alone. In color, it reads "error [argv[1]]" and draws
+    /// For an empty argv, the summary alone. In color, it reads "error [argv[1]]" and draws
     /// the mark.
     std::string render(const Style& style = {}) const;
 };
