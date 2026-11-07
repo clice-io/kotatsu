@@ -2,9 +2,15 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <initializer_list>
+#include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -17,16 +23,22 @@
 #elif defined(__APPLE__)
 #include <mach/mach.h>
 #include <pthread.h>
+#include <pwd.h>
+#include <sys/resource.h>
+#include <unistd.h>
 #else
+#include <pwd.h>
 #include <sched.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #endif
 
+#include "sys/harness/env.h"
 #include "sys/harness/pids.h"
 #include "kotatsu/zest/macro.h"
 #include "kotatsu/zest/zest.h"
+#include "kotatsu/support/scope_exit.h"
 #include "kotatsu/sys/info.h"
 #include "kotatsu/sys/process.h"
 
@@ -46,6 +58,46 @@ int thread_priority() {
     return ::getpriority(PRIO_PROCESS, static_cast<id_t>(::syscall(SYS_gettid)));
 #endif
 }
+
+/// TZ set to `zone` until this goes, which puts back what it was: on Windows
+/// in the C runtime's environment, which its time functions read.
+struct ScopedTimeZone {
+#ifdef _WIN32
+    explicit ScopedTimeZone(const char* zone) {
+        char* value = nullptr;
+        std::size_t size = 0;
+        if(::_dupenv_s(&value, &size, "TZ") == 0 && value != nullptr) {
+            previous = value;
+            std::free(value);
+        }
+        ZASSERT(::_putenv_s("TZ", zone) == 0);
+    }
+
+    ScopedTimeZone(const ScopedTimeZone&) = delete;
+    ScopedTimeZone& operator=(const ScopedTimeZone&) = delete;
+
+    ~ScopedTimeZone() {
+        // An empty value removes it.
+        ::_putenv_s("TZ", previous ? previous->c_str() : "");
+    }
+
+    std::optional<std::string> previous;
+#else
+    explicit ScopedTimeZone(const char* zone) : env("TZ", zone) {}
+
+    test::ScopedEnv env;
+#endif
+};
+
+/// The variable user_name() reads first.
+#ifdef _WIN32
+constexpr auto user_variable = "USERNAME";
+#else
+constexpr auto user_variable = "USER";
+#endif
+
+/// 2001-09-09 01:46:40 UTC, a Sunday, the 252nd day of its year.
+constexpr std::chrono::system_clock::time_point billennium{std::chrono::seconds(1'000'000'000)};
 
 ZEST_SUITE(sys_info) {
 
@@ -103,6 +155,65 @@ ZEST_CASE(process_stats_count_the_switches_of_every_thread) {
 }
 #endif
 
+ZEST_CASE(process_stats_count_the_address_space) {
+    auto self = process_stats();
+    ZASSERT(self.has_value());
+    ZEXPECT(self->virtual_memory >= self->resident);
+    auto by_pid = process_stats(pid());
+    ZASSERT(by_pid.has_value());
+    ZEXPECT(by_pid->virtual_memory > 0U);
+}
+
+#ifdef _WIN32
+ZEST_CASE(address_space_limit_is_unset_on_windows) {
+    ZEXPECT(address_space_limit() == std::nullopt);
+}
+#else
+// A soft limit past any address space, which no mapping of this process's
+// then meets; its hard limit when that is finite.
+ZEST_CASE(address_space_limit_is_rlimit_as) {
+    rlimit original{};
+    ZASSERT(::getrlimit(RLIMIT_AS, &original) == 0);
+    rlimit lowered = original;
+    lowered.rlim_cur = original.rlim_max == RLIM_INFINITY ? rlim_t(1) << 62 : original.rlim_max;
+    ZASSERT(::setrlimit(RLIMIT_AS, &lowered) == 0);
+    auto limit = address_space_limit();
+    ::setrlimit(RLIMIT_AS, &original);
+    ZEXPECT(limit == std::uint64_t(lowered.rlim_cur));
+}
+
+ZEST_CASE(address_space_limit_is_unset_without_one) {
+    rlimit original{};
+    ZASSERT(::getrlimit(RLIMIT_AS, &original) == 0);
+    // A hard limit, which this process may not lift.
+    if(original.rlim_max != RLIM_INFINITY) {
+        zest::skip();
+        return;
+    }
+    rlimit lifted = original;
+    lifted.rlim_cur = RLIM_INFINITY;
+    ZASSERT(::setrlimit(RLIMIT_AS, &lifted) == 0);
+    auto limit = address_space_limit();
+    ::setrlimit(RLIMIT_AS, &original);
+    ZEXPECT(limit == std::nullopt);
+}
+#endif
+
+// What it gave back is taken again as any memory.
+ZEST_CASE(release_free_heap_leaves_the_heap_usable) {
+    std::vector<std::unique_ptr<char[]>> blocks;
+    for(int i = 0; i < 256; ++i) {
+        blocks.push_back(std::make_unique<char[]>(64 * 1024));
+    }
+    blocks.clear();
+    release_free_heap();
+    for(int i = 0; i < 256; ++i) {
+        blocks.push_back(std::make_unique<char[]>(64 * 1024));
+        blocks.back()[64 * 1024 - 1] = static_cast<char>(i);
+    }
+    ZEXPECT(blocks[255][64 * 1024 - 1] == static_cast<char>(255));
+}
+
 ZEST_CASE(resident_memory_is_reported) {
     auto resident = resident_memory();
     ZASSERT(resident.has_value());
@@ -115,6 +226,13 @@ ZEST_CASE(parallelism_is_at_most_the_cores) {
     ZEXPECT(!cores->empty());
     ZEXPECT(parallelism() >= 1U);
     ZEXPECT(parallelism() <= cores->size());
+}
+
+ZEST_CASE(physical_cores_are_at_most_the_logical_cpus) {
+    auto cpus = cpu_cores();
+    ZASSERT(cpus.has_value());
+    ZEXPECT(physical_cores() >= 1U);
+    ZEXPECT(physical_cores() <= cpus->size());
 }
 
 #ifdef __APPLE__
@@ -183,6 +301,20 @@ ZEST_CASE(parallelism_follows_the_affinity) {
     ZASSERT(::sched_setaffinity(0, sizeof(one), &one) == 0);
     ZEXPECT(parallelism() == 1U);
 }
+
+ZEST_CASE(physical_cores_follow_the_affinity) {
+    ScopedAffinity affinity;
+    cpu_set_t one;
+    CPU_ZERO(&one);
+    for(int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
+        if(CPU_ISSET(cpu, &affinity.original)) {
+            CPU_SET(cpu, &one);
+            break;
+        }
+    }
+    ZASSERT(::sched_setaffinity(0, sizeof(one), &one) == 0);
+    ZEXPECT(physical_cores() == 1U);
+}
 #endif
 
 ZEST_CASE(page_size_is_a_power_of_two) {
@@ -211,6 +343,69 @@ ZEST_CASE(hostname_and_uptime_are_reported) {
     ZEXPECT(!host.empty());
     ZEXPECT(uptime().count() > 0);
 }
+
+ZEST_CASE(user_name_reads_the_variable) {
+    test::ScopedEnv user(user_variable, "someone");
+    std::string name;
+    ZEXPECT(!user_name(name));
+    ZEXPECT(name == "someone");
+}
+
+ZEST_CASE(user_name_without_the_variable_asks_the_system) {
+    for(std::optional<std::string_view> value:
+        std::initializer_list<std::optional<std::string_view>>{std::nullopt, ""}) {
+        ZEST_CONTEXT("{}", value ? "empty" : "unset");
+        test::ScopedEnv user(user_variable, value);
+        std::string name;
+        ZEXPECT(!user_name(name));
+        ZEXPECT(!name.empty());
+#ifndef _WIN32
+        auto* entry = ::getpwuid(::getuid());
+        ZASSERT(entry != nullptr);
+        ZEXPECT(name == entry->pw_name);
+#endif
+    }
+}
+
+ZEST_CASE(local_time_is_of_the_time_zone) {
+    {
+        ScopedTimeZone zone("UTC0");
+        auto local = local_time(billennium);
+        ZASSERT(local.has_value());
+        ZEXPECT(local->tm_year == 101);
+        ZEXPECT(local->tm_mon == 8);
+        ZEXPECT(local->tm_mday == 9);
+        ZEXPECT(local->tm_hour == 1);
+        ZEXPECT(local->tm_min == 46);
+        ZEXPECT(local->tm_sec == 40);
+        ZEXPECT(local->tm_wday == 0);
+        ZEXPECT(local->tm_yday == 251);
+    }
+    // Eight hours east of UTC, as TZ spells it on POSIX and in Windows' C
+    // runtime alike.
+    ScopedTimeZone zone("CST-8");
+    auto local = local_time(billennium + std::chrono::milliseconds(999));
+    ZASSERT(local.has_value());
+    ZEXPECT(local->tm_hour == 9);
+    ZEXPECT(local->tm_sec == 40);
+}
+
+#ifdef _WIN32
+ZEST_CASE(local_time_before_1970_fails_on_windows) {
+    auto local = local_time(std::chrono::system_clock::time_point(std::chrono::seconds(-1)));
+    ZASSERT(!local.has_value());
+    ZEXPECT(local.error() == std::errc::invalid_argument);
+}
+#else
+ZEST_CASE(local_time_takes_a_time_before_1970) {
+    ScopedTimeZone zone("UTC0");
+    auto local = local_time(std::chrono::system_clock::time_point(std::chrono::seconds(-1)));
+    ZASSERT(local.has_value());
+    ZEXPECT(local->tm_year == 69);
+    ZEXPECT(local->tm_hour == 23);
+    ZEXPECT(local->tm_sec == 59);
+}
+#endif
 
 // A nice value between two of Priority's reads as the one below it, which
 // this process may not take back on POSIX: another process's is set by the
@@ -355,6 +550,54 @@ ZEST_CASE(oom_score_adjustment_off_linux_fails) {
     ZASSERT(!read.has_value());
     ZEXPECT(read.error() == std::errc::not_supported);
     ZEXPECT(set_oom_score_adjustment(0) == std::errc::not_supported);
+}
+#endif
+
+#ifdef _WIN32
+/// This process's power throttling as Windows reads it back.
+std::optional<PROCESS_POWER_THROTTLING_STATE> power_throttling() {
+    PROCESS_POWER_THROTTLING_STATE state{
+        .Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+        .ControlMask = 0,
+        .StateMask = 0,
+    };
+    if(!::GetProcessInformation(::GetCurrentProcess(),
+                                ProcessPowerThrottling,
+                                &state,
+                                sizeof(state))) {
+        return std::nullopt;
+    }
+    return state;
+}
+
+ZEST_CASE(set_power_throttling_sets_the_processs) {
+    auto original = power_throttling();
+    // Windows 10 sets it without reading it back.
+    if(!original) {
+        zest::skip();
+        return;
+    }
+    ScopeExit restore([&] {
+        ::SetProcessInformation(::GetCurrentProcess(),
+                                ProcessPowerThrottling,
+                                &*original,
+                                sizeof(*original));
+    });
+    constexpr ULONG speed = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+    ZEXPECT(!set_power_throttling(false));
+    auto never = power_throttling();
+    ZASSERT(never.has_value());
+    ZEXPECT((never->ControlMask & speed) == speed);
+    ZEXPECT((never->StateMask & speed) == 0U);
+    ZEXPECT(!set_power_throttling(true));
+    auto always = power_throttling();
+    ZASSERT(always.has_value());
+    ZEXPECT((always->ControlMask & speed) == speed);
+    ZEXPECT((always->StateMask & speed) == speed);
+}
+#else
+ZEST_CASE(set_power_throttling_off_windows_fails) {
+    ZEXPECT(set_power_throttling(false) == std::errc::not_supported);
 }
 #endif
 

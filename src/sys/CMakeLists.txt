@@ -24,7 +24,7 @@ add_library(kotatsu_sys STATIC
     spawn_windows.cpp
     temp_dir.cpp
     thread.cpp
-    thread.cpp
+    user.cpp
     title.cpp
 )
 add_library(kotatsu::sys ALIAS kotatsu_sys)

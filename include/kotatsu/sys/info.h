@@ -3,7 +3,9 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <ctime>
 #include <expected>
+#include <optional>
 #include <span>
 #include <string>
 #include <system_error>
@@ -32,6 +34,12 @@ struct ProcessStats {
     /// Linux: the part of `memory` swapped out.
     std::uint64_t swapped = 0;
 
+    /// Its address space in use, whatever is in memory or not, as
+    /// address_space_limit() bounds it: on Linux VmSize; on macOS its
+    /// virtual size, which counts the shared region of the system's
+    /// libraries, tens of gigabytes and more; on Windows its virtual size.
+    std::uint64_t virtual_memory = 0;
+
     std::chrono::microseconds user_time{};
 
     std::chrono::microseconds system_time{};
@@ -55,6 +63,22 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid = 0);
 
 /// This process's ProcessStats::resident, read more cheaply.
 std::expected<std::uint64_t, std::error_code> resident_memory();
+
+/// The most address space this process may take, its
+/// ProcessStats::virtual_memory, past which a mapping fails: the soft limit
+/// of RLIMIT_AS (`ulimit -v`). Unset when it has none, and on Windows, which
+/// bounds no address space (a job's limits count committed memory, as
+/// Memory::limit does).
+std::optional<std::uint64_t> address_space_limit();
+
+/// Gives the system back the free memory the C library's allocator holds,
+/// as far as it gives any back: glibc's malloc_trim, which keeps the free
+/// pages of its arenas otherwise; macOS's malloc_zone_pressure_relief, of
+/// every zone; Windows' HeapOptimizeResources, of every heap with a
+/// low-fragmentation front end. Nothing under a sanitizer that has an
+/// allocator of its own (ASan, TSan, MSan), which glibc's then is not, and
+/// which a trim on two threads at once would initialize unguarded.
+void release_free_heap() noexcept;
 
 /// The memory a process can take.
 struct Memory {
@@ -102,6 +126,15 @@ std::error_code set_oom_score_adjustment(int value, int pid = 0);
 /// that one's cap, which a process cannot read: there this counts more CPUs than it gets.
 unsigned parallelism();
 
+/// The physical cores this process can run on, at least 1: those of the
+/// logical CPUs in its affinity, the CPUs that share a core by simultaneous
+/// multithreading counting once. CPU quotas are parallelism()'s, the lesser
+/// of the two being the cores it gets. On Linux by the topology in
+/// /sys/devices/system/cpu, a CPU it cannot read counting as a core; on
+/// macOS hw.physicalcpu, macOS keeping no affinity; on Windows across the
+/// processor groups whose CPUs parallelism() counts.
+unsigned physical_cores();
+
 /// The size of a page of memory.
 std::size_t page_size();
 
@@ -146,8 +179,22 @@ OS os();
 /// Writes into `out` the machine's name.
 std::error_code hostname(buffer_ref out);
 
+/// Writes into `out` the name of the user this process runs as: USER, on
+/// Windows USERNAME, when it is set and not empty, as clang-tidy and clangd
+/// read it; else the name of its real user in the password database, on
+/// Windows GetUserNameW's.
+std::error_code user_name(buffer_ref out);
+
 /// The time since the system started.
 std::chrono::milliseconds uptime();
+
+/// `time` as the date and time of day of the system's time zone, TZ as it
+/// is at the call (in Windows' C runtime, whose environment _putenv sets),
+/// daylight saving time applied, as localtime_r and Windows' localtime_s
+/// give them: for strftime, or for std::format's chrono specifiers, which
+/// take a std::tm too. Windows takes no time before 1970 or after 3000,
+/// invalid_argument; POSIX takes any.
+std::expected<std::tm, std::error_code> local_time(std::chrono::system_clock::time_point time);
 
 /// A priority, from the lowest. A process's is one of Windows's priority
 /// classes, and on POSIX one of the nice values 19, 10, 0, -7, -14 and -20; a
@@ -183,5 +230,13 @@ std::error_code set_priority(Priority priority, int pid = 0);
 /// compares priority() first. invalid_argument for a value Priority does not
 /// name.
 std::error_code set_thread_priority(Priority priority);
+
+/// Sets whether Windows may run this process at a power-saving speed
+/// (EcoQoS), on the efficient cores of a hybrid CPU among others: by
+/// default it does so for a process it takes for background work, one
+/// without a window, which may then run at half its speed. False asks it
+/// never to; true always to. Windows 10 1709 and later; not_supported
+/// elsewhere, which has no such throttling of a process.
+std::error_code set_power_throttling(bool throttled);
 
 }  // namespace kotatsu::sys

@@ -369,6 +369,75 @@ ZEST_CASE(mac_available_without_a_compression_ratio_takes_none) {
     ZEXPECT(mac_available(host, own) == 9 * GiB);
 }
 
+/// count_cores() of `cpus`, each one's siblings as `listed` gives them.
+unsigned cores(std::vector<unsigned> cpus, std::map<unsigned, std::string> listed) {
+    auto siblings = [&](unsigned cpu) -> std::optional<std::string> {
+        auto found = listed.find(cpu);
+        if(found == listed.end()) {
+            return std::nullopt;
+        }
+        return found->second;
+    };
+    return count_cores(cpus, siblings);
+}
+
+ZEST_CASE(count_cores_counts_hyperthreads_once) {
+    ZEXPECT(cores(
+                {
+                    0,
+                    1,
+                    2,
+                    3
+    },
+                {{0, "0,2\n"}, {1, "1,3\n"}, {2, "0,2\n"}, {3, "1,3\n"}}) == 2U);
+    ZEXPECT(cores(
+                {
+                    0,
+                    1,
+                    2,
+                    3
+    },
+                {{0, "0-1\n"}, {1, "0-1\n"}, {2, "2-3\n"}, {3, "2-3\n"}}) == 2U);
+}
+
+ZEST_CASE(count_cores_counts_cpus_without_siblings_each) {
+    ZEXPECT(cores(
+                {
+                    0,
+                    1,
+                    2
+    },
+                {{0, "0\n"}, {1, "1\n"}, {2, "2\n"}}) == 3U);
+}
+
+// A core whose first CPU is not this process's counts by another.
+ZEST_CASE(count_cores_counts_a_core_by_any_of_its_cpus) {
+    ZEXPECT(cores(
+                {
+                    1,
+                    3
+    },
+                {{1, "0-1\n"}, {3, "2-3\n"}}) == 2U);
+    ZEXPECT(cores(
+                {
+                    1,
+                    2,
+                    3
+    },
+                {{1, "0-3\n"}, {2, "0-3\n"}, {3, "0-3\n"}}) == 1U);
+}
+
+ZEST_CASE(count_cores_counts_a_cpu_it_cannot_read_as_a_core) {
+    ZEXPECT(cores({0, 1}, {}) == 2U);
+    ZEXPECT(cores(
+                {
+                    0,
+                    1,
+                    2
+    },
+                {{1, "0-1\n"}}) == 2U);
+}
+
 };  // ZEST_SUITE(sys_detail_memory_model)
 
 }  // namespace
