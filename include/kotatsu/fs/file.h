@@ -175,6 +175,33 @@ public:
     /// Releases the lock this handle holds; holding none is no error.
     std::error_code unlock();
 
+    /// Whether a byte-range lock, a read lock or a write lock, covers any of
+    /// the `length` bytes from `offset`, `length` not zero: (0, UINT64_MAX)
+    /// asks of every byte. Whose locks count differs: on POSIX other
+    /// processes', on Windows every handle's.
+    ///
+    /// On POSIX fcntl(F_GETLK), which sees the record locks that other
+    /// processes take with fcntl or lockf, as SQLite and LMDB do, and never
+    /// this process's own: a record lock belongs to the process, not to a
+    /// handle. Closing any descriptor of a file drops every record lock the
+    /// process holds of it, the File's close among them: probe a file this
+    /// process does not otherwise hold open, as LMDB's lock file. No lock
+    /// reaches past 2^63 - 1, off_t's largest offset, and an `offset` past
+    /// it fails with std::errc::invalid_argument. lock() takes locks of
+    /// another family, flock's, which Linux keeps apart and this does not
+    /// see; macOS keeps the two families together, and sees a lock lock()
+    /// took, of any handle, this process's too, as one of every byte.
+    ///
+    /// On Windows LockFileEx of the range, without waiting, and UnlockFileEx
+    /// when it took it: a lock of any handle counts, this File's and this
+    /// process's other handles' included, and for an instant the probe holds
+    /// the range itself, which keeps other handles from locking it, and from
+    /// reading or writing its bytes. lock() locks a byte past any file's
+    /// end, which a range that reaches it sees. It takes a file open for
+    /// `read` or `write`, as lock() does.
+    std::expected<bool, std::error_code> range_locked(std::uint64_t offset,
+                                                      std::uint64_t length) const;
+
     /// Releases the lock this File holds and closes the file, saying whether
     /// the system kept every write, which some file systems tell only now;
     /// closing a closed file does nothing. Windows would release the lock of

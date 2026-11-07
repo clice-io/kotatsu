@@ -1,6 +1,7 @@
 #include "kotatsu/fs/file.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <random>
 #include <utility>
@@ -19,6 +20,7 @@
 #else
 #include <fcntl.h>
 #include <format>
+#include <limits>
 #include <memory>
 #include <sys/file.h>
 #include <unistd.h>
@@ -136,14 +138,17 @@ std::uint64_t left_to_read(HANDLE handle) {
     return static_cast<std::uint64_t>(size.QuadPart - position.QuadPart);
 }
 
-/// The byte a lock covers: past any file's end, so that it keeps no one
-/// from the file's bytes, as a Windows lock of them would.
-OVERLAPPED lock_byte() {
+/// Where LockFileEx and UnlockFileEx start, `offset`.
+OVERLAPPED at_offset(std::uint64_t offset) {
     OVERLAPPED at{};
-    at.Offset = 0xFFFF'FFFE;
-    at.OffsetHigh = 0x7FFF'FFFF;
+    at.Offset = static_cast<DWORD>(offset);
+    at.OffsetHigh = static_cast<DWORD>(offset >> 32);
     return at;
 }
+
+/// The byte a lock covers: past any file's end, so that it keeps no one
+/// from the file's bytes, as a Windows lock of them would.
+constexpr std::uint64_t lock_byte = 0x7FFF'FFFF'FFFF'FFFE;
 
 /// The flags of the locks take_lock() takes.
 constexpr DWORD exclusive = LOCKFILE_EXCLUSIVE_LOCK;
@@ -155,9 +160,9 @@ constexpr DWORD no_wait = LOCKFILE_FAIL_IMMEDIATELY;
 std::expected<bool, std::error_code> take_lock(HANDLE handle, DWORD flags) {
     // A lock replaces the one the handle holds, as flock's does; Windows
     // would have the two conflict.
-    auto at = lock_byte();
+    auto at = at_offset(lock_byte);
     ::UnlockFileEx(handle, 0, 1, 0, &at);
-    at = lock_byte();
+    at = at_offset(lock_byte);
     if(::LockFileEx(handle, flags, 0, 1, 0, &at)) {
         return true;
     }
@@ -501,12 +506,30 @@ std::error_code File::set_sparse() {
 }
 
 std::error_code File::unlock() {
-    auto at = lock_byte();
+    auto at = at_offset(lock_byte);
     if(!::UnlockFileEx(handle, 0, 1, 0, &at) && ::GetLastError() != ERROR_NOT_LOCKED) {
         return windows::last_error();
     }
     locked = false;
     return {};
+}
+
+std::expected<bool, std::error_code> File::range_locked(std::uint64_t offset,
+                                                        std::uint64_t length) const {
+    assert(length != 0);
+    auto low = static_cast<DWORD>(length);
+    auto high = static_cast<DWORD>(length >> 32);
+    auto at = at_offset(offset);
+    if(!::LockFileEx(handle, exclusive | no_wait, 0, low, high, &at)) {
+        auto error = ::GetLastError();
+        if(error == ERROR_LOCK_VIOLATION) {
+            return true;
+        }
+        return std::unexpected(windows::to_error_code(error));
+    }
+    at = at_offset(offset);
+    ::UnlockFileEx(handle, 0, low, high, &at);
+    return false;
 }
 
 #else
@@ -691,6 +714,24 @@ std::error_code File::unlock() {
         locked = false;
     }
     return error;
+}
+
+std::expected<bool, std::error_code> File::range_locked(std::uint64_t offset,
+                                                        std::uint64_t length) const {
+    assert(length != 0);
+    // A write lock, which a lock of either kind is in the way of. A range
+    // whose end off_t cannot hold reaches the largest offset, as a length
+    // of zero says; F_GETLK refuses an offset past it.
+    constexpr auto largest = static_cast<std::uint64_t>(std::numeric_limits<off_t>::max());
+    struct flock probe{};
+    probe.l_type = F_WRLCK;
+    probe.l_whence = SEEK_SET;
+    probe.l_start = static_cast<off_t>(offset);
+    probe.l_len = length <= largest - offset ? static_cast<off_t>(length) : 0;
+    if(::fcntl(handle, F_GETLK, &probe) != 0) {
+        return std::unexpected(posix::last_error());
+    }
+    return probe.l_type != F_UNLCK;
 }
 
 #endif
