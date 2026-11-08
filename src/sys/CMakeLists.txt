@@ -42,7 +42,8 @@ target_include_directories(kotatsu_sys PUBLIC
 find_package(Threads REQUIRED)
 
 # write_stacktrace looks _dl_find_object up through dlsym, in libdl before
-# glibc 2.34.
+# glibc 2.34, and finds a module's CFI through its .eh_frame_hdr, which GCC
+# links a static executable without.
 target_link_libraries(kotatsu_sys PUBLIC
     kotatsu::fs
     kotatsu::support
@@ -55,6 +56,10 @@ target_link_libraries(kotatsu_sys PUBLIC
 # dirs.
 if(WIN32)
     target_link_libraries(kotatsu_sys PUBLIC advapi32 ntdll ole32 shell32)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_options(kotatsu_sys INTERFACE "LINKER:--eh-frame-hdr")
 endif()
 
 kotatsu_apply_project_options(kotatsu_sys)

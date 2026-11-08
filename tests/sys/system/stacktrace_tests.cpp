@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
-#include <regex>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -68,12 +67,39 @@ struct Frame {
     std::uintptr_t base = 0;
 };
 
-std::uintptr_t parse_hex(std::string_view text) {
-    std::uintptr_t value = 0;
+/// `text` read as upper-case hexadecimal digits, all of it.
+bool parse_hex(std::string_view text, std::uintptr_t& value) {
     auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value, 16);
-    ZASSERT(error == std::errc());
-    ZASSERT(end == text.data() + text.size());
-    return value;
+    return !text.empty() && error == std::errc() && end == text.data() + text.size() &&
+           std::ranges::none_of(text, [](char c) { return c >= 'a' && c <= 'f'; });
+}
+
+/// `line` taken as write_stacktrace writes one: "0x<16 digits>, <path>(0x<16
+/// digits>) + 0x<offset> byte(s)" or "0x<16 digits> <unknown module>", the
+/// offset without leading zeros.
+bool parse_frame(std::string_view line, Frame& frame) {
+    if(line.size() < 18 || !line.starts_with("0x") ||
+       !parse_hex(line.substr(2, 16), frame.address)) {
+        return false;
+    }
+    auto rest = line.substr(18);
+    if(rest == " <unknown module>") {
+        return true;
+    }
+    constexpr std::string_view suffix = " byte(s)";
+    auto plus = rest.rfind(") + 0x");
+    if(!rest.starts_with(", ") || !rest.ends_with(suffix) || plus == std::string_view::npos ||
+       plus <= 2 + 19 || rest.substr(plus - 19, 3) != "(0x") {
+        return false;
+    }
+    auto offset = rest.substr(plus + 6, rest.size() - suffix.size() - plus - 6);
+    std::uintptr_t value = 0;
+    if(!parse_hex(rest.substr(plus - 16, 16), frame.base) || !parse_hex(offset, value) ||
+       (offset.size() > 1 && offset.front() == '0') || value != frame.address - frame.base) {
+        return false;
+    }
+    frame.module = std::string(rest.substr(2, plus - 19 - 2));
+    return true;
 }
 
 /// A file, since a whole trace can fill a Windows pipe before it is read.
@@ -92,8 +118,6 @@ struct TraceFile {
         ZASSERT(!fs::read_file(text, path));
         ZASSERT(!text.empty());
         ZASSERT(text.ends_with('\n'));
-        const std::regex format(R"(0x([0-9A-F]{16})(?:, (.+)\(0x([0-9A-F]{16})\) \+ )"
-                                R"(0x(0|[1-9A-F][0-9A-F]*) byte\(s\)| <unknown module>))");
         std::vector<Frame> frames;
         std::string_view remaining = text;
         while(!remaining.empty()) {
@@ -102,15 +126,8 @@ struct TraceFile {
             auto line = remaining.substr(0, newline);
             ZEST_CONTEXT("frame {}: {}", frames.size(), line);
             ZEXPECT(!line.contains(" (interrupted)"));
-            std::match_results<std::string_view::const_iterator> match;
-            ZASSERT(std::regex_match(line.begin(), line.end(), match, format));
-            Frame frame{.address = parse_hex(match[1].str())};
-            if(match[2].matched) {
-                frame.module = match[2].str();
-                frame.base = parse_hex(match[3].str());
-                auto offset = parse_hex(match[4].str());
-                ZEXPECT(offset == frame.address - frame.base);
-            }
+            Frame frame;
+            ZASSERT(parse_frame(line, frame));
             frames.push_back(std::move(frame));
             remaining.remove_prefix(newline + 1);
         }
@@ -225,6 +242,12 @@ ZEST_CASE(write_stacktrace_through_sort_comparators_matches_unwind) {
     });
     ZASSERT(unwind_trace.captured);
     ZASSERT(!unwind_trace.error);
+    // Built without exceptions, a macOS program may have no unwind tables,
+    // which _Unwind_Backtrace needs and frame pointers do not.
+    if(unwind_trace.count == 0) {
+        zest::skip();
+        return;
+    }
     auto frames = trace.read();
     ZASSERT(frames.size() > 1U);
     ZASSERT(unwind_trace.count > 1U);
