@@ -317,7 +317,9 @@ void walk(dwarf::Registers registers, FrameWriter& writer, Find&& find) noexcept
     bool exact = true;
     for(bool own = true;; own = false) {
         auto module = find(registers.pc - (exact ? 0 : 1));
-        if(!own && !writer.frame(registers.pc, module.transform(&Module::frame), exact)) {
+        if(!own && !writer.frame(registers.pc,
+                                 module.transform([](const Module& found) { return found.frame; }),
+                                 exact)) {
             return;
         }
         auto sp = registers.value[dwarf::sp_register];
