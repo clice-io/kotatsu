@@ -22,21 +22,34 @@ namespace kotatsu::sys {
 /// from the file.
 ///
 /// What a crash handler calls, from sigaction's handler or
-/// SetUnhandledExceptionFilter's: async-signal-safe, it allocates nothing,
-/// takes no lock of the dynamic loader's or of malloc, and needs nothing set
-/// up first. Called from a signal handler or an exception filter, it walks
-/// past the signal frame or the exception dispatcher into the code that was
-/// interrupted. Linux: by the CFI of .eh_frame, as a C++ exception would
-/// unwind, from the exact address of the instruction that faulted; a frame
-/// of code without it, as `-fno-asynchronous-unwind-tables` leaves out, ends
-/// the trace. macOS: by frame pointers, which its ABI keeps, the instruction
-/// that faulted left out (the return address in it of the call it made last,
-/// or of the code that called it, comes next). Windows: by the unwind data
-/// of its PE modules, as RtlVirtualUnwind reads it, which takes ntdll's own
-/// locks in shared mode as the exception dispatcher does. A corrupt stack
-/// may fault in it and end the process.
+/// SetUnhandledExceptionFilter's: async-signal-safe, it allocates nothing
+/// and takes no lock of the dynamic loader's or of malloc. Called from a
+/// signal handler or an exception filter, it walks past the signal frame or
+/// the exception dispatcher into the code that was interrupted, and past an
+/// address a call through a bad pointer went to into the caller. Up to
+/// about 4 KiB of stack, 7 KiB on Linux with a glibc older than 2.35, which
+/// a signal handler on an alternate stack must have room for.
 ///
-/// The error of the write that failed, which ends the trace.
+/// - Linux, x86-64 and arm64: by the CFI of .eh_frame, as a C++ exception
+///   unwinds, from the exact address of the instruction that faulted. A
+///   frame of code without CFI, as `-fno-asynchronous-unwind-tables` leaves
+///   out, ends the trace, as does a static executable linked without
+///   `--eh-frame-hdr`, as GCC's `-static` is. not_supported elsewhere.
+/// - macOS: by frame pointers, which its ABI keeps, the instruction that
+///   faulted left out: next comes the return address in it of the call it
+///   made last, or in the code that called it.
+/// - Windows: by the unwind data of its PE modules, as RtlVirtualUnwind
+///   reads it, which takes ntdll's own locks in shared mode as the exception
+///   dispatcher does. `fd` must be open: the C runtime's invalid-parameter
+///   handler, which ends the process unless the program set another, takes
+///   one that is not, but for one below 0.
+///
+/// The modules are those loaded once static initialization has set up the
+/// tables of macOS and Windows, which a trace of a crash before leaves
+/// unnamed. A corrupt stack may fault in it, ending the process.
+///
+/// The error of the write that failed, which ends the trace: bad_file_descriptor
+/// for a descriptor below 0.
 std::error_code write_stacktrace(int fd) noexcept;
 
 }  // namespace kotatsu::sys

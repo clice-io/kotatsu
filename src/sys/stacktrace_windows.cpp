@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <string_view>
 
 #include "frames.h"
@@ -38,6 +39,7 @@ using RegisterDllNotification = LONG(NTAPI*)(ULONG flags,
                                              DllCallback callback,
                                              void* context,
                                              void** cookie);
+using UnregisterDllNotification = LONG(NTAPI*)(void* cookie);
 using LockLoaderLock = LONG(NTAPI*)(ULONG flags, ULONG* state, ULONG_PTR* cookie);
 using UnlockLoaderLock = LONG(NTAPI*)(ULONG flags, ULONG_PTR cookie);
 
@@ -55,14 +57,33 @@ struct Module {
 
 /// The modules loaded, their names in `names`: the ones loaded before the
 /// registration below, and those the loader's notifications tell of after.
-/// Only the holder of the loader lock adds to them, which every notification
-/// has, and a crash handler reads them without a lock, where
-/// GetModuleHandleExW and GetModuleFileNameW take the loader lock. A module
-/// past their room goes without, its frames in no module.
+/// Their writers take `writing`, a lock of their own, and a crash handler
+/// reads them without one, where GetModuleHandleExW and GetModuleFileNameW
+/// take the loader lock. A module past their room goes without, its frames
+/// in no module.
 constinit Module modules[1024] = {};
 constinit std::atomic<std::size_t> module_count = 0;
 constinit char names[128 * 1024] = {};
 constinit std::size_t names_used = 0;
+constinit std::atomic_flag writing;
+
+/// Holds `writing` while it lives: no loader call is made under it, so a
+/// notification, which may come on a loader thread with the loader lock
+/// held, never waits for one.
+struct Writing {
+    Writing() noexcept {
+        while(writing.test_and_set(std::memory_order_acquire)) {
+            ::YieldProcessor();
+        }
+    }
+
+    ~Writing() {
+        writing.clear(std::memory_order_release);
+    }
+
+    Writing(const Writing&) = delete;
+    Writing& operator=(const Writing&) = delete;
+};
 
 /// The room of `names` from `names_used` on, a buffer for from_utf16, which
 /// is asked for no more than it has.
@@ -85,6 +106,7 @@ struct NameRoom {
 /// Adds the module at `base`, converting its name as a notification must,
 /// without calling into another module.
 void add(std::uintptr_t base, std::uintptr_t size, std::wstring_view name) noexcept {
+    Writing held;
     auto count = module_count.load(std::memory_order_relaxed);
     for(std::size_t index = 0; index < count; ++index) {
         if(modules[index].base == base &&
@@ -114,6 +136,7 @@ void NTAPI notified(ULONG reason, const DllNotification* data, void*) noexcept {
             data->size,
             std::wstring_view(data->full_name->Buffer, data->full_name->Length / sizeof(wchar_t)));
     } else if(reason == dll_unloaded) {
+        Writing held;
         auto count = module_count.load(std::memory_order_relaxed);
         for(std::size_t index = 0; index < count; ++index) {
             if(modules[index].base == base) {
@@ -129,8 +152,12 @@ constinit std::atomic<const RUNTIME_FUNCTION*> dispatcher = nullptr;
 
 /// Registers for the loader's notifications before main and adds the
 /// modules loaded by then, both under the loader lock, which keeps a module
-/// from loading between them.
+/// from loading between them; unregisters as the program, or a DLL it links
+/// into, is unloaded, whose code `notified` is.
 struct Register {
+    void* registration = nullptr;
+    UnregisterDllNotification unregister = nullptr;
+
     Register() noexcept {
         auto* ntdll = ::GetModuleHandleW(L"ntdll.dll");
         auto entry = [&](const char* name) {
@@ -140,6 +167,8 @@ struct Register {
         auto unlock = reinterpret_cast<UnlockLoaderLock>(entry("LdrUnlockLoaderLock"));
         auto register_notification =
             reinterpret_cast<RegisterDllNotification>(entry("LdrRegisterDllNotification"));
+        unregister =
+            reinterpret_cast<UnregisterDllNotification>(entry("LdrUnregisterDllNotification"));
 
         DWORD64 image_base = 0;
         dispatcher.store(
@@ -150,7 +179,6 @@ struct Register {
 
         ULONG_PTR cookie = 0;
         lock(0, nullptr, &cookie);
-        void* registration = nullptr;
         register_notification(0, notified, nullptr, &registration);
         auto* process = ::GetCurrentProcess();
         HMODULE loaded[std::size(modules)];
@@ -161,38 +189,37 @@ struct Register {
             index < std::min<std::size_t>(needed / sizeof(HMODULE), std::size(loaded));
             ++index) {
             MODULEINFO info{};
-            if(!::K32GetModuleInformation(process, loaded[index], &info, sizeof(info))) {
-                continue;
+            if(::K32GetModuleInformation(process, loaded[index], &info, sizeof(info))) {
+                add(reinterpret_cast<std::uintptr_t>(info.lpBaseOfDll),
+                    info.SizeOfImage,
+                    module_file_name(loaded[index], path));
             }
-            path.resize(MAX_PATH);
-            DWORD size = 0;
-            while((size = ::GetModuleFileNameW(loaded[index],
-                                               path.data(),
-                                               static_cast<DWORD>(path.size()))) == path.size()) {
-                path.resize(path.size() * 2);
-            }
-            add(reinterpret_cast<std::uintptr_t>(info.lpBaseOfDll),
-                info.SizeOfImage,
-                std::wstring_view(path.data(), size));
         }
         unlock(0, cookie);
     }
+
+    ~Register() {
+        unregister(registration);
+    }
+
+    Register(const Register&) = delete;
+    Register& operator=(const Register&) = delete;
 };
 
 [[maybe_unused]] const Register registered;
 
-const FrameModule* find_module(std::uintptr_t address, FrameModule& module) noexcept {
+std::optional<FrameModule> find_module(std::uintptr_t address) noexcept {
     auto count = module_count.load(std::memory_order_acquire);
     for(std::size_t index = 0; index < count; ++index) {
         const auto& candidate = modules[index];
         if(address - candidate.base < candidate.size &&
            !candidate.unloaded.load(std::memory_order_relaxed)) {
-            module = {.path = std::string_view(names + candidate.name_at, candidate.name_size),
-                      .base = candidate.base};
-            return &module;
+            return FrameModule{.path =
+                                   std::string_view(names + candidate.name_at, candidate.name_size),
+                               .base = candidate.base};
         }
     }
-    return nullptr;
+    return std::nullopt;
 }
 
 }  // namespace
@@ -201,7 +228,6 @@ KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
     CONTEXT context;
     ::RtlCaptureContext(&context);
     FrameWriter writer(fd);
-    FrameModule module;
     const auto* dispatching = dispatcher.load(std::memory_order_relaxed);
     // Whether pc is the address an exception interrupted.
     bool interrupted = false;
@@ -215,11 +241,12 @@ KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
 #else
         auto pc = context.Rip;
 #endif
-        if(pc == 0) {
+        // The outermost frame's return address; the address a call through
+        // a null pointer went to, which the frame below called from.
+        if(pc == 0 && !interrupted) {
             break;
         }
-        if(!own &&
-           !writer.frame(pc, find_module(pc - (interrupted ? 0 : 1), module), interrupted)) {
+        if(!own && !writer.frame(pc, find_module(pc - (interrupted ? 0 : 1)), interrupted)) {
             break;
         }
         DWORD64 image_base = 0;

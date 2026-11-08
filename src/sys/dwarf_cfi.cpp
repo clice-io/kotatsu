@@ -14,21 +14,19 @@ namespace kotatsu::sys::dwarf {
 
 namespace {
 
-/// DW_EH_PE: a pointer's format in the low four bits, what it is relative to
-/// in the next three.
-enum : std::uint8_t {
-    pe_absptr = 0x00,
-    pe_uleb128 = 0x01,
-    pe_udata2 = 0x02,
-    pe_udata4 = 0x03,
-    pe_udata8 = 0x04,
-    pe_sleb128 = 0x09,
-    pe_sdata2 = 0x0A,
-    pe_sdata4 = 0x0B,
-    pe_sdata8 = 0x0C,
-    pe_pcrel = 0x10,
-    pe_datarel = 0x30,
-};
+// DW_EH_PE: a pointer's format in the low four bits, what it is relative to
+// in the next three.
+constexpr std::uint8_t pe_absptr = 0x00;
+constexpr std::uint8_t pe_uleb128 = 0x01;
+constexpr std::uint8_t pe_udata2 = 0x02;
+constexpr std::uint8_t pe_udata4 = 0x03;
+constexpr std::uint8_t pe_udata8 = 0x04;
+constexpr std::uint8_t pe_sleb128 = 0x09;
+constexpr std::uint8_t pe_sdata2 = 0x0A;
+constexpr std::uint8_t pe_sdata4 = 0x0B;
+constexpr std::uint8_t pe_sdata8 = 0x0C;
+constexpr std::uint8_t pe_pcrel = 0x10;
+constexpr std::uint8_t pe_datarel = 0x30;
 
 std::uint64_t load(std::uint64_t address) noexcept {
     std::uint64_t value;
@@ -121,12 +119,12 @@ struct Cursor {
         return true;
     }
 
-    /// The end of the entry, a CIE or an FDE, whose length is here; moves
-    /// past the length, setting `wide` when it is DWARF64's.
-    const std::uint8_t* entry(bool& wide) noexcept {
+    /// The end of the entry, a CIE or an FDE, whose length is here, which
+    /// this moves past: 0xFFFFFFFF and then 8 bytes for an extended one, whose
+    /// CIE ID or pointer is 4 bytes all the same, as .eh_frame has them.
+    const std::uint8_t* entry() noexcept {
         std::uint64_t length = read<std::uint32_t>();
-        wide = length == 0xFFFFFFFF;
-        if(wide) {
+        if(length == 0xFFFFFFFF) {
             length = read<std::uint64_t>();
         }
         return at + length;
@@ -134,25 +132,22 @@ struct Cursor {
 };
 
 /// A Common Information Entry.
-struct Cie {
+struct CIE {
     std::uint64_t code_alignment = 0;
     std::int64_t data_alignment = 0;
     std::uint64_t return_register = 0;
     std::uint8_t fde_encoding = pe_absptr;
     /// Whether its FDEs have augmentation data ("z").
     bool augmented = false;
-    /// Whether its frames are signal trampolines' ("S").
-    bool signal_frame = false;
     const std::uint8_t* instructions = nullptr;
     const std::uint8_t* end = nullptr;
 };
 
-bool parse_cie(const std::uint8_t* at, Cie& cie) noexcept {
+bool parse_cie(const std::uint8_t* at, CIE& cie) noexcept {
     Cursor cursor{at};
-    bool wide = false;
-    cie.end = cursor.entry(wide);
+    cie.end = cursor.entry();
     // .eh_frame's CIE ID.
-    if((wide ? cursor.read<std::uint64_t>() : cursor.read<std::uint32_t>()) != 0) {
+    if(cursor.read<std::uint32_t>() != 0) {
         return false;
     }
     auto version = cursor.read<std::uint8_t>();
@@ -180,9 +175,10 @@ bool parse_cie(const std::uint8_t* at, Cie& cie) noexcept {
                     break;
                 }
                 case 'L': cursor.read<std::uint8_t>(); break;
-                case 'S': cie.signal_frame = true; break;
-                // arm64's branch target identification and memory tagging,
-                // which have no data.
+                // A signal trampoline's, which write_stacktrace knows by its
+                // code; arm64's branch target identification and memory
+                // tagging. None has data.
+                case 'S':
                 case 'B':
                 case 'G': break;
                 default: return false;
@@ -198,8 +194,8 @@ bool parse_cie(const std::uint8_t* at, Cie& cie) noexcept {
 }
 
 /// A Frame Description Entry: the CFI of a function.
-struct Fde {
-    Cie cie;
+struct FDE {
+    CIE cie;
     std::uintptr_t start = 0;
     std::uintptr_t end = 0;
     const std::uint8_t* instructions = nullptr;
@@ -210,7 +206,7 @@ struct Fde {
 /// `header`: the one whose function starts last at or before `pc`, if `pc`
 /// is before its end. Every linker writes the table in pe_datarel and
 /// pe_sdata4.
-bool find_fde(const std::uint8_t* header, std::uintptr_t pc, Fde& fde) noexcept {
+bool find_fde(const std::uint8_t* header, std::uintptr_t pc, FDE& fde) noexcept {
     Cursor cursor{header};
     auto version = cursor.read<std::uint8_t>();
     auto frame_encoding = cursor.read<std::uint8_t>();
@@ -245,10 +241,9 @@ bool find_fde(const std::uint8_t* header, std::uintptr_t pc, Fde& fde) noexcept 
     }
 
     cursor.at = reinterpret_cast<const std::uint8_t*>(entry(low - 1, 1));
-    bool wide = false;
-    fde.instructions_end = cursor.entry(wide);
+    fde.instructions_end = cursor.entry();
     const auto* field = cursor.at;
-    std::uint64_t to_cie = wide ? cursor.read<std::uint64_t>() : cursor.read<std::uint32_t>();
+    auto to_cie = cursor.read<std::uint32_t>();
     // 0 marks a CIE, which the table never points to.
     if(to_cie == 0 || !parse_cie(field - to_cie, fde.cie)) {
         return false;
@@ -277,23 +272,19 @@ enum class Rule : std::uint8_t {
     ValExpression,
 };
 
-/// How a register of the caller is found.
-struct RegisterRule {
-    Rule rule = Rule::Same;
-    /// The offset from the CFA, the register, or the address of the block of
-    /// the expression.
-    std::int64_t value = 0;
-};
-
-/// The rules at an address of a function: its CFA, and its caller's
-/// registers.
+/// The rules at an address of a function: its CFA, and how each register
+/// of its caller is found, apart from its operand to keep a row small, as a
+/// signal handler's stack may be.
 struct Row {
     std::uint64_t cfa_register = 0;
     std::int64_t cfa_offset = 0;
     /// The block of DW_CFA_def_cfa_expression's, or null for a register and
     /// an offset.
     const std::uint8_t* cfa_expression = nullptr;
-    RegisterRule registers[register_count];
+    Rule rules[register_count] = {};
+    /// The offset from the CFA, the register, or the address of the block of
+    /// the expression.
+    std::int64_t operands[register_count] = {};
 };
 
 /// Runs the CFA instructions from `cursor` to `end` into `row`, `location`
@@ -302,7 +293,7 @@ struct Row {
 /// DW_CFA_restore takes a register's rule back to.
 bool run(Cursor cursor,
          const std::uint8_t* end,
-         const Cie& cie,
+         const CIE& cie,
          std::uintptr_t location,
          std::uintptr_t pc,
          Row& row,
@@ -313,12 +304,14 @@ bool run(Cursor cursor,
     auto set = [&](std::uint64_t reg, Rule rule, std::int64_t value) {
         // A register no caller is found by, such as arm64's vector ones.
         if(reg < register_count) {
-            row.registers[reg] = {.rule = rule, .value = value};
+            row.rules[reg] = rule;
+            row.operands[reg] = value;
         }
     };
     auto restore = [&](std::uint64_t reg) {
         if(reg < register_count) {
-            row.registers[reg] = initial.registers[reg];
+            row.rules[reg] = initial.rules[reg];
+            row.operands[reg] = initial.operands[reg];
         }
     };
     auto factored = [&](std::int64_t offset) {
@@ -665,7 +658,10 @@ bool evaluate(const std::uint8_t* block,
                                 if(right == 0) {
                                     return false;
                                 }
-                                left = static_cast<std::uint64_t>(signed_left / signed_right);
+                                // INT64_MIN / -1 overflows; negating wraps.
+                                left = signed_right == -1
+                                           ? 0 - left
+                                           : static_cast<std::uint64_t>(signed_left / signed_right);
                                 break;
                             case 0x1C: left -= right; break;
                             case 0x1D:
@@ -708,9 +704,9 @@ bool evaluate(const std::uint8_t* block,
 
 }  // namespace
 
-bool step(Registers& registers, bool& exact, const std::uint8_t* header) noexcept {
+bool step(Registers& registers, bool exact, const std::uint8_t* header) noexcept {
     const std::uintptr_t pc = registers.pc - (exact ? 0 : 1);
-    Fde fde;
+    FDE fde;
     if(!find_fde(header, pc, fde) || fde.cie.return_register >= register_count) {
         return false;
     }
@@ -728,8 +724,7 @@ bool step(Registers& registers, bool& exact, const std::uint8_t* header) noexcep
     if(!run(Cursor{fde.instructions}, fde.instructions_end, fde.cie, fde.start, pc, row, initial)) {
         return false;
     }
-    const auto& return_rule = row.registers[fde.cie.return_register];
-    if(return_rule.rule == Rule::Undefined) {
+    if(row.rules[fde.cie.return_register] == Rule::Undefined) {
         return false;
     }
 
@@ -753,28 +748,28 @@ bool step(Registers& registers, bool& exact, const std::uint8_t* header) noexcep
     Registers caller = registers;
     caller.value[sp_register] = cfa;
     for(unsigned reg = 0; reg < register_count; ++reg) {
-        const auto& rule = row.registers[reg];
+        const auto operand = row.operands[reg];
         std::uint64_t value = 0;
-        switch(rule.rule) {
+        switch(row.rules[reg]) {
             case Rule::Same:
             case Rule::Undefined: continue;
-            case Rule::Offset: value = load(cfa + static_cast<std::uint64_t>(rule.value)); break;
-            case Rule::ValOffset: value = cfa + static_cast<std::uint64_t>(rule.value); break;
+            case Rule::Offset: value = load(cfa + static_cast<std::uint64_t>(operand)); break;
+            case Rule::ValOffset: value = cfa + static_cast<std::uint64_t>(operand); break;
             case Rule::Register:
-                if(static_cast<std::uint64_t>(rule.value) >= register_count) {
+                if(static_cast<std::uint64_t>(operand) >= register_count) {
                     return false;
                 }
-                value = registers.value[rule.value];
+                value = registers.value[operand];
                 break;
             case Rule::Expression:
             case Rule::ValExpression:
-                if(!evaluate(reinterpret_cast<const std::uint8_t*>(rule.value),
+                if(!evaluate(reinterpret_cast<const std::uint8_t*>(operand),
                              registers,
                              &cfa,
                              value)) {
                     return false;
                 }
-                if(rule.rule == Rule::Expression) {
+                if(row.rules[reg] == Rule::Expression) {
                     value = load(value);
                 }
                 break;
@@ -785,7 +780,6 @@ bool step(Registers& registers, bool& exact, const std::uint8_t* header) noexcep
 #ifdef __aarch64__
     caller.pc = strip_return_address(caller.pc);
 #endif
-    exact = fde.cie.signal_frame;
     registers = caller;
     return true;
 }

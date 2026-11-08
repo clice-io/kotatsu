@@ -34,10 +34,10 @@ std::error_code executable_path(buffer_ref out);
 /// Where this program's executable is loaded, what the addresses of its
 /// code are offset by from those of its file: on Linux its ELF load bias, as
 /// the dynamic loader takes it from where the program headers are and where
-/// PT_PHDR puts them (0 without one, a static executable not made to be
-/// moved); on macOS its Mach-O slide; on Windows its module handle, the
-/// address of its PE image. What write_stacktrace() names the executable's
-/// frames by. Async-signal-safe: no call to the loader.
+/// PT_PHDR puts them, 0 for an executable not made to be moved; on macOS its
+/// Mach-O slide; on Windows its module handle, the address of its PE image.
+/// What write_stacktrace() names the executable's frames by.
+/// Async-signal-safe: no call to the loader.
 std::uintptr_t executable_base() noexcept;
 
 /// Writes into `out` the path this program was started by, links not

@@ -29,15 +29,14 @@ struct Registers {
     std::uint64_t pc = 0;
 };
 
-/// Moves `registers` from a frame to its caller's by the CFI that the
-/// .eh_frame_hdr at `header` indexes. `exact` says whether pc is the
-/// instruction the frame is at, as of a frame a signal interrupted, rather
-/// than a return address, which may be past the end of its function; it is
-/// set for the caller, whose pc is exact below a signal trampoline's frame
-/// (augmentation "S"). False when the CFI has no entry for pc, says the frame
-/// is the outermost one, its return address undefined, or holds what this
-/// does not read.
-bool step(Registers& registers, bool& exact, const std::uint8_t* header) noexcept;
+/// Moves `registers` from a frame to its caller's, whose pc is a return
+/// address, by the CFI that the .eh_frame_hdr at `header` indexes. `exact`
+/// says whether pc is the instruction the frame is at, as of a frame a
+/// signal interrupted, rather than a return address, which may be past the
+/// end of its function. False when the CFI has no entry for pc, says the
+/// frame is the outermost one, its return address undefined, or holds what
+/// this does not read.
+bool step(Registers& registers, bool exact, const std::uint8_t* header) noexcept;
 
 }  // namespace kotatsu::sys::dwarf
 #else

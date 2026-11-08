@@ -22,6 +22,7 @@
 #include <windows.h>
 
 #include "kotatsu/support/buffer_ref.h"
+#include "kotatsu/support/small_string.h"
 #include "kotatsu/fs/windows.h"
 
 // Declared by the driver kit only; ntdll has it from Windows 2000 on.
@@ -110,6 +111,15 @@ inline HANDLE descriptor_handle(int fd) noexcept {
     return reinterpret_cast<HANDLE>(handle);
 }
 
+/// Writes the start of non-empty `text` to `handle` as write_console_some()
+/// does to a descriptor.
+std::expected<std::size_t, std::error_code> write_handle_some(HANDLE handle,
+                                                              std::string_view text) noexcept;
+
+/// The path module `module` was loaded by, as GetModuleFileNameW gives it,
+/// however long, in `path`.
+std::wstring_view module_file_name(HMODULE module, small_wstring<264>& path);
+
 /// Writes into `out` the system directory, as GetSystemDirectoryW gives it.
 std::error_code system_directory(buffer_ref out);
 
@@ -154,7 +164,7 @@ inline TextSegment text_segment(const mach_header* header) noexcept {
         command = reinterpret_cast<const load_command*>(reinterpret_cast<const char*>(command) +
                                                         command->cmdsize);
     }
-    return {};
+    std::unreachable();
 }
 #endif
 

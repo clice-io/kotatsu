@@ -2,12 +2,12 @@
 
 #include <atomic>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
 #include <mach-o/dyld.h>
 #include <mach-o/dyld_images.h>
 #include <mach/mach.h>
+#include <optional>
 #include <pthread.h>
 #include <signal.h>
 
@@ -103,16 +103,15 @@ struct Register {
 
 [[maybe_unused]] const Register registered;
 
-const FrameModule* find_module(std::uintptr_t address, FrameModule& module) noexcept {
+std::optional<FrameModule> find_module(std::uintptr_t address) noexcept {
     for(auto* image = images.load(std::memory_order_acquire); image != nullptr;
         image = image->next) {
         if(address >= image->start && address < image->end &&
            !image->unloaded.load(std::memory_order_relaxed)) {
-            module = {.path = image->path, .base = image->slide};
-            return &module;
+            return FrameModule{.path = image->path, .base = image->slide};
         }
     }
-    return nullptr;
+    return std::nullopt;
 }
 
 /// A stack frames may be on: the thread's, or the alternate one a signal
@@ -145,16 +144,17 @@ KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
     // alternate stack to the thread's, where a signal handler's _sigtramp
     // records the frame the signal interrupted.
     FrameWriter writer(fd);
-    FrameModule module;
     auto record = reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0));
     while(thread.holds(record) || alternate.holds(record)) {
         const auto* words = reinterpret_cast<const std::uintptr_t*>(record);
-        auto next = words[0];
+        // Swift's async frames tag the record they save in its top bits,
+        // which no address on a stack has.
+        auto next = words[0] & 0x0FFF'FFFF'FFFF'FFFF;
         auto address = words[1];
 #ifdef __aarch64__
         address = strip_return_address(address);
 #endif
-        if(address == 0 || !writer.frame(address, find_module(address - 1, module), false)) {
+        if(address == 0 || !writer.frame(address, find_module(address - 1), false)) {
             break;
         }
         const auto& stack = thread.holds(record) ? thread : alternate;

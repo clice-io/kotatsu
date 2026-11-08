@@ -5,7 +5,7 @@
 // handler that writes the stack with write_stacktrace to stdout and exits
 // with 3:
 //
-//   fault   writes to address 0 in probe_fault, which probe_inlined, forced
+//   fault   writes to address 16 in probe_fault, which probe_inlined, forced
 //           inline into probe_caller, calls; a SIGSEGV or SIGBUS handler on
 //           an alternate stack, on Windows the unhandled exception filter,
 //           prints {"fault": <the address the context says it interrupted>}
@@ -61,8 +61,9 @@
 #include <ucontext.h>
 #endif
 
-// Where probe_fault writes, which the compiler cannot tell is null.
-volatile int* volatile target = nullptr;
+// Where probe_fault writes: an address in the first page, which no host maps,
+// and not null, which UBSan would report first.
+volatile int* volatile target = reinterpret_cast<volatile int*>(std::uintptr_t(16));
 
 // What the probe functions do after their calls, which keeps those from
 // being tail calls that leave no frame.
@@ -143,7 +144,9 @@ Image executable() {
                          &module);
     MODULEINFO info{};
     ::K32GetModuleInformation(::GetCurrentProcess(), module, &info, sizeof(info));
-    Image image{.base = reinterpret_cast<std::uintptr_t>(module), .high = info.SizeOfImage};
+    Image image;
+    image.base = reinterpret_cast<std::uintptr_t>(module);
+    image.high = info.SizeOfImage;
     wchar_t path[MAX_PATH * 4];
     auto size = ::GetModuleFileNameW(module, path, static_cast<DWORD>(std::size(path)));
     kotatsu::from_utf16(image.path, std::wstring_view(path, size));

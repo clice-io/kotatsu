@@ -2,8 +2,8 @@
 
 `kotatsu::sys` gives synchronous access to the current process and the
 system: environment, program lookup, child processes, threads, command lines,
-user directories, console output, stack traces, memory and CPU. It needs no event loop, and
-a program links only the parts it calls.
+user directories, console output, stack traces, memory and CPU. It needs no
+event loop, and a program links only the parts it calls.
 
 It is not for managing processes on an event loop: `kotatsu::async::process`
 builds on `sys::spawn` for that (see [async](async.md)).
@@ -76,16 +76,16 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
   `CreateProcessW` on Windows, the child in a job object of its own and given
   only the standard handles unless `windows_inherit_handles`.
 - `write_stacktrace` is async-signal-safe: it allocates nothing and takes no
-  lock of the loader's. On Linux, on x86-64 and arm64, it walks the stack by
-  .eh_frame's CFI with an unwinder of its own, through signal frames, finding
-  modules with `_dl_find_object` from glibc 2.35 on and in
-  `/proc/self/maps` before; code without CFI ends the trace. On macOS it walks
-  frame pointers, which leaves out the instruction that faulted. On Windows
-  it uses `RtlVirtualUnwind`, which takes ntdll's locks in shared mode as the
-  exception dispatcher does, and names modules from a table the loader's
-  notifications fill, of 1024 modules; one loaded past it, or before the
-  table is set up at static initialization, goes unnamed. It writes no
-  symbols.
+  lock of the loader's. On Linux, on x86-64 and arm64 (`not_supported`
+  elsewhere), it walks the stack by .eh_frame's CFI with an unwinder of its
+  own, through signal frames, finding modules with `_dl_find_object` from
+  glibc 2.35 on and in `/proc/self/maps` before; code without CFI ends the
+  trace. On macOS it walks frame pointers, which leaves out the instruction
+  that faulted. On Windows it uses `RtlVirtualUnwind`, which takes ntdll's
+  locks in shared mode as the exception dispatcher does. macOS and Windows
+  name modules from tables that dyld's callbacks and the loader's
+  notifications fill from static initialization on, Windows' of 1024
+  modules. It writes no symbols.
 - macOS cannot start a child that ends with its parent
   (`CreationOptions::exit_with_parent`); a child that links kotatsu calls
   `exit_with_parent()` itself instead, which works on every host.
