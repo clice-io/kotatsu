@@ -1,7 +1,7 @@
 kotatsu_add_git_dependency(
     libuv
     GIT_REPOSITORY https://github.com/libuv/libuv.git
-    GIT_TAG v1.53.0
+    GIT_TAG v1.52.1
     OPTIONS
         LIBUV_BUILD_TESTS OFF
         LIBUV_BUILD_BENCH OFF

@@ -12,7 +12,7 @@ bazel_dep(name = "rules_cc", version = "0.2.25")
 # depends on it the same way and links the one copy Bazel resolves.
 bazel_dep(name = "cpptrace", version = "1.0.4.clice.2")
 bazel_dep(name = "flatbuffers", version = "25.12.19.clice.1")
-bazel_dep(name = "libuv", version = "1.53.0.clice.1")
+bazel_dep(name = "libuv", version = "1.52.1.clice.1")
 bazel_dep(name = "simdjson", version = "5.1.1.clice.1")
 bazel_dep(name = "tomlplusplus", version = "3.4.0.clice.1")
 

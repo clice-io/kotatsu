@@ -33,6 +33,10 @@ kotatsu_add_git_dependency(
         CURL_ZLIB OFF
         CURL_ZSTD OFF
         ENABLE_ARES OFF
+        # The libraries curl finds through pkg-config (Homebrew's nghttp2,
+        # libidn2 and brotli on macOS) reach a program linking the static
+        # libcurl without their directories; found by path, they link.
+        CURL_USE_PKGCONFIG OFF
         # HTTP and HTTPS only: every other protocol curl builds is off.
         CURL_DISABLE_DICT ON
         CURL_DISABLE_FILE ON
