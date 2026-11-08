@@ -20,6 +20,12 @@ kotatsu_add_git_dependency(
         UBSAN OFF
 )
 
+# libuv 1.52.1's src/win/util.c passes a `const char**` for a `char**`, which
+# GCC rejects since 14; libuv 1.53.0 fixes it.
+if(WIN32 AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(uv_a PRIVATE -Wno-error=incompatible-pointer-types)
+endif()
+
 add_library(kotatsu_async STATIC)
 add_library(kotatsu::async ALIAS kotatsu_async)
 
