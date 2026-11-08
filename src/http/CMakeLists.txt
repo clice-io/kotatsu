@@ -26,17 +26,19 @@ kotatsu_add_git_dependency(
         BUILD_STATIC_LIBS ON
         CURL_DISABLE_INSTALL ON
         CURL_ENABLE_EXPORT_TARGET ON
+        # TLS is the only library curl takes. The others it would find are
+        # the host's: on macOS Homebrew's, whose include directory may hold
+        # another OpenSSL's headers than the one found, and which reach a
+        # program linking the static libcurl without their directories.
+        # Without libssh2, SCP and SFTP stay out too.
         CURL_USE_LIBPSL OFF
-        # libssh2's headers on macOS may come from another OpenSSL than the
-        # one found; without it, SCP and SFTP stay out too.
         CURL_USE_LIBSSH2 OFF
+        CURL_BROTLI OFF
         CURL_ZLIB OFF
         CURL_ZSTD OFF
         ENABLE_ARES OFF
-        # The libraries curl finds through pkg-config (Homebrew's nghttp2,
-        # libidn2 and brotli on macOS) reach a program linking the static
-        # libcurl without their directories; found by path, they link.
-        CURL_USE_PKGCONFIG OFF
+        USE_LIBIDN2 OFF
+        USE_NGHTTP2 OFF
         # HTTP and HTTPS only: every other protocol curl builds is off.
         CURL_DISABLE_DICT ON
         CURL_DISABLE_FILE ON
