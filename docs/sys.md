@@ -80,8 +80,9 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
   elsewhere), it walks the stack by .eh_frame's CFI with an unwinder of its
   own, through signal frames, finding modules with `_dl_find_object` from
   glibc 2.35 on and in `/proc/self/maps` before; code without CFI ends the
-  trace. On macOS it walks frame pointers, which leaves out the instruction
-  that faulted. On Windows it uses `RtlVirtualUnwind`, which takes ntdll's
+  trace. On macOS it walks frame pointers, and through a signal handler goes
+  on from the context the kernel saved, which it finds by `_sigtramp`'s
+  frame. On Windows it uses `RtlVirtualUnwind`, which takes ntdll's
   locks in shared mode as the exception dispatcher does. macOS and Windows
   name modules from tables that dyld's callbacks and the loader's
   notifications fill from static initialization on. Windows' holds the

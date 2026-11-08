@@ -21,6 +21,15 @@ struct ScopedSignalAction {
         ZASSERT(::sigaction(signum, &action, &previous) == 0);
     }
 
+    /// A handler that takes the signal's siginfo and context, SA_SIGINFO's.
+    ScopedSignalAction(int signum, void (*handler)(int, siginfo_t*, void*), int flags = 0) :
+        signum(signum) {
+        struct sigaction action = {};
+        action.sa_sigaction = handler;
+        action.sa_flags = flags | SA_SIGINFO;
+        ZASSERT(::sigaction(signum, &action, &previous) == 0);
+    }
+
     ScopedSignalAction(const ScopedSignalAction&) = delete;
     ScopedSignalAction& operator=(const ScopedSignalAction&) = delete;
 

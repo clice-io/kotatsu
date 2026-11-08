@@ -6,10 +6,15 @@
 // addresses as {"returns": [<innermost first>, ...]}, writes the stack with
 // write_stacktrace to stdout and exits with 3:
 //
-//   fault   writes to address 16 in probe_fault, which probe_inlined, forced
-//           inline into probe_caller, calls; a SIGSEGV or SIGBUS handler on
-//           an alternate stack, on Windows the unhandled exception filter,
-//           prints {"fault": <the address the context says it interrupted>}
+//   fault   writes to address 16 in probe_fault, a leaf, which probe_inlined,
+//           forced inline into probe_caller, calls; a SIGSEGV or SIGBUS
+//           handler on an alternate stack, on Windows the unhandled
+//           exception filter, prints {"fault": <the address the context
+//           says it interrupted>} first
+//   fault_on_stack
+//           as fault, the handler on the thread's own stack
+//   fault_after_call
+//           as fault, from probe_fault_after_call, which calls probe_callee
 //           first
 //   call    calls a null function pointer from probe_call, handled as fault
 //   abort   calls std::abort from probe_abort, which SIGABRT's handler ends
@@ -35,6 +40,7 @@
 #include <string>
 #include <string_view>
 
+#include "sys/harness/context.h"
 #include "sys/harness/json.h"
 #include "kotatsu/support/config.h"
 #include "kotatsu/sys/console.h"
@@ -70,7 +76,6 @@
 #include <mach-o/loader.h>
 #elif defined(__linux__)
 #include <link.h>
-#include <ucontext.h>
 #endif
 
 #if defined(__SANITIZE_ADDRESS__)
@@ -102,13 +107,28 @@ volatile std::uintptr_t return_addresses[2] = {};
 // being tail calls that leave no frame.
 volatile int calls = 0;
 
+// A leaf: it calls nothing, and on arm64 makes no frame record.
 KOTATSU_NOINLINE void probe_fault() {
     return_addresses[0] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
     *target = 1;
 }
 
+KOTATSU_NOINLINE void probe_callee() {
+    calls = calls + 1;
+}
+
+// Faults after a call, for which it made its frame record.
+KOTATSU_NOINLINE void probe_fault_after_call() {
+    return_addresses[0] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
+    probe_callee();
+    *target = 1;
+}
+
+// What probe_inlined calls.
+void (*volatile faulting)() = probe_fault;
+
 PROBE_ALWAYS_INLINE void probe_inlined() {
-    probe_fault();
+    faulting();
     calls = calls + 1;
 }
 
@@ -243,7 +263,7 @@ void aborted(int) {
     end();
 }
 
-void on_fault() {
+void on_fault(bool) {
     ::SetUnhandledExceptionFilter(filtered);
 }
 
@@ -275,19 +295,6 @@ KOTATSU_NOINLINE void probe_late(HMODULE dbghelp) {
 namespace {
 
 #else
-
-std::uintptr_t interrupted_at(const void* context) {
-    const auto* interrupted = static_cast<const ucontext_t*>(context);
-#if defined(__APPLE__) && defined(__aarch64__)
-    return __darwin_arm_thread_state64_get_pc(interrupted->uc_mcontext->__ss);
-#elif defined(__APPLE__)
-    return interrupted->uc_mcontext->__ss.__rip;
-#elif defined(__aarch64__)
-    return interrupted->uc_mcontext.pc;
-#else
-    return static_cast<std::uintptr_t>(interrupted->uc_mcontext.gregs[REG_RIP]);
-#endif
-}
 
 Image executable() {
     Image image;
@@ -330,7 +337,7 @@ Image executable() {
 }
 
 void faulted(int, siginfo_t*, void* context) {
-    print_fault(interrupted_at(context));
+    print_fault(kotatsu::test::interrupted_at(context));
     end();
 }
 
@@ -346,14 +353,16 @@ void handle(int signal, void (*handler)(int, siginfo_t*, void*)) {
     sigaction(signal, &action, nullptr);
 }
 
-void on_fault() {
-    // An alternate stack, as a crash handler sets one for a stack that
-    // overflowed.
-    static char room[256 * 1024];
-    stack_t alternate = {};
-    alternate.ss_sp = room;
-    alternate.ss_size = sizeof(room);
-    sigaltstack(&alternate, nullptr);
+/// With `alternate`, on an alternate stack, as a crash handler sets one for
+/// a stack that overflowed.
+void on_fault(bool alternate) {
+    if(alternate) {
+        static char room[256 * 1024];
+        stack_t stack = {};
+        stack.ss_sp = room;
+        stack.ss_size = sizeof(room);
+        sigaltstack(&stack, nullptr);
+    }
     handle(SIGSEGV, faulted);
     handle(SIGBUS, faulted);
 }
@@ -385,7 +394,7 @@ struct Early {
     Early() {
         if(const char* value = std::getenv("KOTATSU_PROBE_EARLY");
            value != nullptr && std::string_view(value) == "1") {
-            on_fault();
+            on_fault(true);
             print_image();
             probe_caller();
             calls = calls + 1;
@@ -401,8 +410,11 @@ struct Early {
 
 int main(int argc, char** argv) {
     std::string_view command = argc == 2 ? argv[1] : "";
-    if(command == "fault") {
-        on_fault();
+    if(command == "fault" || command == "fault_on_stack" || command == "fault_after_call") {
+        if(command == "fault_after_call") {
+            faulting = probe_fault_after_call;
+        }
+        on_fault(command != "fault_on_stack");
         print_image();
         probe_caller();
         return 1;
@@ -413,7 +425,7 @@ int main(int argc, char** argv) {
         probe_abort();
     }
     if(command == "call") {
-        on_fault();
+        on_fault(true);
         print_image();
         probe_call();
         return 1;

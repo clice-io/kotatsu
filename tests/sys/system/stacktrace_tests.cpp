@@ -14,6 +14,8 @@
 #ifdef _WIN32
 #include <io.h>
 #else
+#include <csignal>
+#include <pthread.h>
 #include <unistd.h>
 #endif
 
@@ -22,6 +24,8 @@
 #endif
 
 #include "fs/harness/files.h"
+#include "sys/harness/context.h"
+#include "sys/harness/signals.h"
 #include "kotatsu/zest/macro.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/support/config.h"
@@ -65,6 +69,7 @@ struct Frame {
     std::uintptr_t address = 0;
     std::string module = {};
     std::uintptr_t base = 0;
+    bool interrupted = false;
 };
 
 /// `text` read as upper-case hexadecimal digits, all of it.
@@ -76,13 +81,19 @@ bool parse_hex(std::string_view text, std::uintptr_t& value) {
 
 /// `line` taken as write_stacktrace writes one: "0x<16 digits>, <path>(0x<16
 /// digits>) + 0x<offset> byte(s)" or "0x<16 digits> <unknown module>", the
-/// offset without leading zeros.
+/// offset without leading zeros, either followed by " (interrupted)" for the
+/// address a signal interrupted.
 bool parse_frame(std::string_view line, Frame& frame) {
     if(line.size() < 18 || !line.starts_with("0x") ||
        !parse_hex(line.substr(2, 16), frame.address)) {
         return false;
     }
     auto rest = line.substr(18);
+    constexpr std::string_view marker = " (interrupted)";
+    frame.interrupted = rest.ends_with(marker);
+    if(frame.interrupted) {
+        rest.remove_suffix(marker.size());
+    }
     if(rest == " <unknown module>") {
         return true;
     }
@@ -112,7 +123,8 @@ struct TraceFile {
         descriptor.fd = *fd;
     }
 
-    std::vector<Frame> read() {
+    /// The frames written, of which `interrupted` are marked.
+    std::vector<Frame> read(std::size_t interrupted = 0) {
         descriptor.reset();
         std::string text;
         ZASSERT(!fs::read_file(text, path));
@@ -125,12 +137,13 @@ struct TraceFile {
             ZASSERT(newline != std::string_view::npos);
             auto line = remaining.substr(0, newline);
             ZEST_CONTEXT("frame {}: {}", frames.size(), line);
-            ZEXPECT(!line.contains(" (interrupted)"));
             Frame frame;
             ZASSERT(parse_frame(line, frame));
             frames.push_back(std::move(frame));
             remaining.remove_prefix(newline + 1);
         }
+        ZEXPECT(static_cast<std::size_t>(std::ranges::count(frames, true, &Frame::interrupted)) ==
+                interrupted);
         return frames;
     }
 
@@ -175,6 +188,64 @@ KOTATSU_NOINLINE void capture_both() {
 }
 #endif
 
+#ifndef _WIN32
+/// What the handler of SIGTRAP below saw: a signal that sanitizers hand to
+/// the handler at once, as a fault, rather than at a later call.
+struct SignalTrace {
+    int fd = -1;
+    std::error_code error = {};
+    /// The address the context says the signal interrupted.
+    std::uintptr_t interrupted = 0;
+    /// Where raise_trap returns to.
+    std::uintptr_t raised_from = 0;
+    bool handled = false;
+};
+
+SignalTrace signal_trace;
+
+void trace_signal(int, siginfo_t*, void* context) {
+    signal_trace.interrupted = test::interrupted_at(context);
+    signal_trace.error = write_stacktrace(signal_trace.fd);
+    signal_trace.handled = true;
+}
+
+KOTATSU_NOINLINE void raise_trap() {
+    signal_trace.raised_from = reinterpret_cast<std::uintptr_t>(__builtin_return_address(0));
+    ::pthread_kill(::pthread_self(), SIGTRAP);
+}
+
+/// Raises SIGTRAP on a thread of its own, its handler on an alternate stack
+/// with `alternate`, and checks that the trace the handler wrote goes on
+/// from the address the signal interrupted to raise_trap's caller.
+void check_trace_through_a_signal(bool alternate) {
+    TraceFile trace;
+    auto previous = std::exchange(signal_trace, SignalTrace{.fd = trace.descriptor.fd});
+    ScopeExit restore([previous] { signal_trace = previous; });
+    test::ScopedSignalAction action(SIGTRAP, trace_signal, alternate ? SA_ONSTACK : 0);
+    // Kept until the thread, which ends with it set, is joined.
+    std::vector<char> room(alternate ? 64 * 1024 : 0);
+    auto thread = Thread::start(1U << 20, [&] {
+        if(alternate) {
+            stack_t stack = {};
+            stack.ss_sp = room.data();
+            stack.ss_size = room.size();
+            ZASSERT(::sigaltstack(&stack, nullptr) == 0);
+        }
+        raise_trap();
+    });
+    ZASSERT(thread);
+    thread->join();
+    ZASSERT(signal_trace.handled);
+    ZASSERT(!signal_trace.error);
+    auto frames = trace.read(1);
+    auto marked = std::ranges::find(frames, true, &Frame::interrupted);
+    ZASSERT(marked != frames.end());
+    ZEXPECT(marked->address == signal_trace.interrupted);
+    ZEXPECT(std::ranges::find(marked, frames.end(), signal_trace.raised_from, &Frame::address) !=
+            frames.end());
+}
+#endif
+
 // Ordinary calls, including a new thread and frames inside library sort routines.
 ZEST_SUITE(sys_stacktrace) {
 
@@ -216,6 +287,16 @@ ZEST_CASE(write_stacktrace_limits_a_deep_stack_to_256_frames) {
     auto frames = trace.read();
     ZEXPECT(frames.size() == 256U);
 }
+
+#ifndef _WIN32
+ZEST_CASE(write_stacktrace_in_a_signal_handler_goes_on_from_the_interrupted_address) {
+    check_trace_through_a_signal(false);
+}
+
+ZEST_CASE(write_stacktrace_on_an_alternate_stack_goes_on_from_the_interrupted_address) {
+    check_trace_through_a_signal(true);
+}
+#endif
 
 #if defined(__linux__) || defined(__APPLE__)
 ZEST_CASE(write_stacktrace_through_sort_comparators_matches_unwind) {

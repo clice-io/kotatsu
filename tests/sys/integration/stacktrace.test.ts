@@ -5,15 +5,17 @@
 //   write_stacktrace;
 // - the executable's frames name it with the base its loader tells and
 //   offsets inside its executable code;
-// - Linux and Windows mark the interrupted frame at the context's address,
-//   right past ntdll's exception dispatcher on Windows; macOS walks frame
-//   pointers and marks none;
+// - each host marks the interrupted frame at the context's address, right
+//   past ntdll's exception dispatcher on Windows and _sigtramp on macOS,
+//   with the handler on an alternate stack or the thread's own;
 // - recorded return addresses appear in order after faults, aborts and
 //   calls through a null pointer, even without a symbolizer;
 // - llvm-symbolizer, where it is on PATH, decodes the executable's frames
-//   exactly, including the inlined call when DWARF has line information;
-// - a null call on Linux and Windows marks address zero as unknown and
-//   continues through probe_call to main;
+//   exactly, including the inlined call when DWARF has line information,
+//   from a leaf that faulted, which on arm64 made no frame record, and from
+//   a function that faulted after a call, each named once;
+// - a null call marks address zero as unknown and continues through
+//   probe_call to main;
 // - a Linux fault before static initialization names the executable through
 //   /proc/self/maps and decodes through probe_fault and probe_caller;
 // - Windows names a DLL first loaded after startup with its module handle.
@@ -244,20 +246,36 @@ function assertCalls(names: string[], expected: string[]): void {
   );
 }
 
-const walksFramePointers = process.platform === "darwin";
-
-/** Inline names are required with DWARF lines, and ordered when present. */
+/**
+ * `faulting` once, then probe_caller, through probe_inlined, whose name is
+ * required with DWARF lines, and ordered when present.
+ */
 function assertFaultCalls(
   { image }: Crash,
   { names, hasLines }: Decoded,
+  faulting = "probe_fault",
 ): void {
   const inlined =
     (image.debug === "dwarf" && hasLines) || names.includes("probe_inlined");
+  assert.equal(
+    names.filter((name) => name === faulting).length,
+    1,
+    JSON.stringify(names),
+  );
   assertCalls(names, [
-    ...(walksFramePointers ? [] : ["probe_fault"]),
+    faulting,
     ...(inlined ? ["probe_inlined"] : []),
     "probe_caller",
   ]);
+}
+
+/** Checks that one frame is marked, at the address the context says. */
+function assertInterrupted(crashed: Crash): void {
+  const marked = crashed.frames.filter((frame) => frame.interrupted);
+  assert.equal(marked.length, 1);
+  assert.ok(crashed.fault !== undefined);
+  assert.equal(marked[0]?.address, crashed.fault);
+  assert.ok(samePath(marked[0]?.path, crashed.image.executable));
 }
 
 test("stacktrace_of_a_fault_names_the_executable", async (t) => {
@@ -270,15 +288,7 @@ test("stacktrace_of_a_fault_names_the_executable", async (t) => {
 
 test("stacktrace_of_a_fault_marks_the_address_interrupted", async (t) => {
   const crashed = await crash(t, "fault");
-  const marked = crashed.frames.filter((frame) => frame.interrupted);
-  if (walksFramePointers) {
-    assert.equal(marked.length, 0);
-  } else {
-    assert.equal(marked.length, 1);
-    assert.ok(crashed.fault !== undefined);
-    assert.equal(marked[0]?.address, crashed.fault);
-    assert.ok(samePath(marked[0]?.path, crashed.image.executable));
-  }
+  assertInterrupted(crashed);
   await crashed.driver.expectExit(3);
 });
 
@@ -311,6 +321,28 @@ test(
   },
 );
 
+test("stacktrace_of_a_fault_on_the_thread_stack_decodes_to_its_calls", async (t) => {
+  const crashed = await crash(t, "fault_on_stack");
+  assertInterrupted(crashed);
+  if (symbolizer !== undefined) {
+    const decoded = decode(t, crashed);
+    assertFaultCalls(crashed, decoded);
+    assertCalls(decoded.names, ["probe_caller", "main"]);
+  }
+  await crashed.driver.expectExit(3);
+});
+
+test("stacktrace_of_a_fault_after_a_call_decodes_to_its_calls", async (t) => {
+  const crashed = await crash(t, "fault_after_call");
+  assertInterrupted(crashed);
+  if (symbolizer !== undefined) {
+    const decoded = decode(t, crashed);
+    assertFaultCalls(crashed, decoded, "probe_fault_after_call");
+    assertCalls(decoded.names, ["probe_caller", "main"]);
+  }
+  await crashed.driver.expectExit(3);
+});
+
 test("stacktrace_of_an_abort_preserves_its_callers", async (t) => {
   const crashed = await crash(t, "abort");
   if (symbolizer !== undefined) {
@@ -321,22 +353,19 @@ test("stacktrace_of_an_abort_preserves_its_callers", async (t) => {
 
 test("stacktrace_of_a_null_call_walks_past_address_zero", async (t) => {
   const crashed = await crash(t, "call");
-  // macOS's frame-pointer walk only promises the recorded return address.
-  if (!walksFramePointers) {
-    const marked = crashed.frames.filter((frame) => frame.interrupted);
-    assert.equal(marked.length, 1);
-    assert.equal(crashed.fault, 0n);
-    assert.equal(marked[0]?.address, 0n);
-    assert.equal(marked[0]?.path, undefined);
-    const interrupted = crashed.frames.findIndex((frame) => frame.interrupted);
-    assert.ok(
-      crashed.frames
-        .slice(interrupted + 1)
-        .some((frame) => frame.address === crashed.returns[0]),
-    );
-    if (symbolizer !== undefined) {
-      assertCalls(decode(t, crashed).names, ["probe_call", "main"]);
-    }
+  const marked = crashed.frames.filter((frame) => frame.interrupted);
+  assert.equal(marked.length, 1);
+  assert.equal(crashed.fault, 0n);
+  assert.equal(marked[0]?.address, 0n);
+  assert.equal(marked[0]?.path, undefined);
+  const interrupted = crashed.frames.findIndex((frame) => frame.interrupted);
+  assert.ok(
+    crashed.frames
+      .slice(interrupted + 1)
+      .some((frame) => frame.address === crashed.returns[0]),
+  );
+  if (symbolizer !== undefined) {
+    assertCalls(decode(t, crashed).names, ["probe_call", "main"]);
   }
   await crashed.driver.expectExit(3);
 });
