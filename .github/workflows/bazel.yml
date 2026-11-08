@@ -22,8 +22,6 @@ jobs:
           - { os_label: linux-arm64,   os: ubuntu-24.04-arm, config: default }
           - { os_label: macos,         os: macos-15,         config: default }
           - { os_label: windows,       os: windows-2025,     config: default }
-          # Windows on arm64, cross-built from Linux with xclang: its tests are
-          # built, not run.
           - { os_label: windows-arm64, os: ubuntu-24.04,     config: aarch64-w64-mingw32, command: build, flags: "--platforms=@xclang//platforms:aarch64-w64-mingw32" }
 
     steps:
