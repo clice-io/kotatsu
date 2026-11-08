@@ -17,11 +17,14 @@ jobs:
       # prettier-ignore
       matrix:
         include:
-          - { os_label: linux,       os: ubuntu-24.04,     config: default }
-          - { os_label: linux,       os: ubuntu-24.04,     config: no-exceptions-no-rtti, flags: "--config=no-exceptions --config=no-rtti" }
-          - { os_label: linux-arm64, os: ubuntu-24.04-arm, config: default }
-          - { os_label: macos,       os: macos-15,         config: default }
-          - { os_label: windows,     os: windows-2025,     config: default }
+          - { os_label: linux,         os: ubuntu-24.04,     config: default }
+          - { os_label: linux,         os: ubuntu-24.04,     config: no-exceptions-no-rtti, flags: "--config=no-exceptions --config=no-rtti" }
+          - { os_label: linux-arm64,   os: ubuntu-24.04-arm, config: default }
+          - { os_label: macos,         os: macos-15,         config: default }
+          - { os_label: windows,       os: windows-2025,     config: default }
+          # Windows on arm64, cross-built from Linux with xclang: its tests are
+          # built, not run.
+          - { os_label: windows-arm64, os: ubuntu-24.04,     config: aarch64-w64-mingw32, command: build, flags: "--platforms=@xclang//platforms:aarch64-w64-mingw32" }
 
     steps:
       - name: Checkout repository
@@ -65,7 +68,7 @@ jobs:
           # second early since `date +%s` rounds down.
           echo "BUILD_STARTED_AT=$(( $(date +%s) - 1 ))" >> "$GITHUB_ENV"
           cache="${RUNNER_TEMP}/bazel"
-          pixi run -e bazel bazel test //... \
+          pixi run -e bazel bazel ${{ matrix.command || 'test' }} //... \
             --disk_cache="${cache}/disk" \
             --repository_cache="${cache}/repos" \
             ${{ matrix.flags }}

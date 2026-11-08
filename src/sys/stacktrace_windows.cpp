@@ -73,7 +73,7 @@ constinit std::atomic_flag writing;
 struct Writing {
     Writing() noexcept {
         while(writing.test_and_set(std::memory_order_acquire)) {
-            ::YieldProcessor();
+            YieldProcessor();
         }
     }
 
