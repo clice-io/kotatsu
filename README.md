@@ -72,7 +72,7 @@ CI builds and tests every commit on:
 | macOS 15 (ARM64)   | Apple Clang, Clang 22                                                                              |
 | Windows (x64)      | MSVC, clang-cl, MinGW GCC 14, and Clang with libc++ ([xclang](https://github.com/clice-io/xclang)) |
 
-CI also builds without exceptions and without RTTI, and runs the tests under AddressSanitizer, UndefinedBehaviorSanitizer and ThreadSanitizer. The Bazel build is tested with xclang on the same platforms.
+CI also builds without exceptions and without RTTI, and runs the tests under AddressSanitizer, UndefinedBehaviorSanitizer and ThreadSanitizer. The Bazel build is tested with xclang on the same platforms, and cross-built with it for Windows on ARM64 (MinGW), where its tests are built but not run.
 
 ## Development
 

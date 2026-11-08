@@ -233,7 +233,7 @@ std::vector<UsageEntry> usage_entries(const Command& command, const Node& defaul
         entries.push_back(UsageEntry{
             .kind = UsageEntry::Kind::Option,
             .usage = command.help_usage,
-            .help = "display this help and exit",
+            .help = "Print this help and exit.",
         });
     }
     for(const auto& arg: command.args) {
