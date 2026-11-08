@@ -43,7 +43,7 @@ function(kotatsu_ensure_cpm)
         return()
     endif()
 
-    set(cpm_version "0.42.1")
+    set(cpm_version "0.43.2")
     set(cpm_path "${CMAKE_BINARY_DIR}/cmake/CPM_${cpm_version}.cmake")
 
     if(NOT EXISTS "${cpm_path}")

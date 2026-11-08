@@ -19,7 +19,7 @@ endif()
 kotatsu_add_git_dependency(
     curl
     GIT_REPOSITORY https://github.com/curl/curl.git
-    GIT_TAG curl-8_17_0
+    GIT_TAG curl-8_23_0
     OPTIONS
         BUILD_CURL_EXE OFF
         BUILD_SHARED_LIBS OFF
@@ -27,13 +27,27 @@ kotatsu_add_git_dependency(
         CURL_DISABLE_INSTALL ON
         CURL_ENABLE_EXPORT_TARGET ON
         CURL_USE_LIBPSL OFF
-        # HTTP_ONLY leaves SSH out, but curl still finds libssh2, whose
-        # headers on macOS may come from another OpenSSL than the one found.
+        # libssh2's headers on macOS may come from another OpenSSL than the
+        # one found; without it, SCP and SFTP stay out too.
         CURL_USE_LIBSSH2 OFF
         CURL_ZLIB OFF
         CURL_ZSTD OFF
         ENABLE_ARES OFF
-        HTTP_ONLY ON
+        # HTTP and HTTPS only: every other protocol curl builds is off.
+        CURL_DISABLE_DICT ON
+        CURL_DISABLE_FILE ON
+        CURL_DISABLE_FTP ON
+        CURL_DISABLE_GOPHER ON
+        CURL_DISABLE_IMAP ON
+        CURL_DISABLE_IPFS ON
+        CURL_DISABLE_LDAP ON
+        CURL_DISABLE_LDAPS ON
+        CURL_DISABLE_MQTT ON
+        CURL_DISABLE_POP3 ON
+        CURL_DISABLE_RTSP ON
+        CURL_DISABLE_SMTP ON
+        CURL_DISABLE_TELNET ON
+        CURL_DISABLE_TFTP ON
         ${_kotatsu_curl_ssl_opt}
 )
 

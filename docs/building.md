@@ -32,7 +32,7 @@ common --registry=https://bcr.bazel.build/
 bazel_dep(name = "kotatsu", version = "0.1.0.<n>")
 ```
 
-Your build brings the C++ toolchain, `--cxxopt=-std=c++23`, and on macOS `--macos_minimum_os=15.0`, below which the SDK hides libc++ features kotatsu uses. A build without exceptions or RTTI sets the flags below; the simdjson one resolves when your `MODULE.bazel` depends on simdjson too (`bazel_dep(name = "simdjson", version = "4.2.4.clice.1")`).
+Your build brings the C++ toolchain, `--cxxopt=-std=c++23`, and on macOS `--macos_minimum_os=15.0`, below which the SDK hides libc++ features kotatsu uses. A build without exceptions or RTTI sets the flags below; the simdjson one resolves when your `MODULE.bazel` depends on simdjson too (`bazel_dep(name = "simdjson", version = "5.1.1.clice.1")`).
 
 | Flag                                                                | Effect                            |
 | ------------------------------------------------------------------- | --------------------------------- |

@@ -18,7 +18,7 @@ runs:
   steps:
     - id: save
       if: ${{ !github.event.pull_request.head.repo.fork }}
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v6
       with:
         path: ${{ inputs.path }}
         key: ${{ inputs.key }}
