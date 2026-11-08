@@ -509,7 +509,7 @@ ZEST_CASE(lines_clice_wrote_otherwise_are_the_rule_s) {
 ZEST_CASE(clice_s_commands_are_listed_by_name) {
     const auto usage = cli::usage<clice::Clice>("clice");
     ZEXPECT(
-        usage.contains("  -h|--help                       display this help and exit\n"
+        usage.contains("  -h|--help                       Print this help and exit.\n"
                        "  -v|--version                    Print the version and exit\n"));
     ZEXPECT(
         usage.contains("Subcommands:\n"
