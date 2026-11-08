@@ -1,17 +1,23 @@
 // What sys's stack trace tests start: `stacktrace_probe <command>`. It prints
 // what the loader tells of its executable, {"executable": <its path>,
 // "base": <its base>, "low": <the lowest offset of its code from the base>,
-// "high": <past the highest>}, numbers as hexadecimal strings, and ends in a
-// handler that writes the stack with write_stacktrace to stdout and exits
-// with 3:
+// "high": <past the highest>, "debug": "pdb" or "dwarf"}, numbers as
+// hexadecimal strings, and ends in a handler that prints the probes' return
+// addresses as {"returns": [<innermost first>, ...]}, writes the stack with
+// write_stacktrace to stdout and exits with 3:
 //
 //   fault   writes to address 16 in probe_fault, which probe_inlined, forced
 //           inline into probe_caller, calls; a SIGSEGV or SIGBUS handler on
 //           an alternate stack, on Windows the unhandled exception filter,
 //           prints {"fault": <the address the context says it interrupted>}
 //           first
+//   call    calls a null function pointer from probe_call, handled as fault
 //   abort   calls std::abort from probe_abort, which SIGABRT's handler ends
-//   late    Windows: loads dbghelp.dll, prints {"library": <its path>}, and
+//   early   Linux: with KOTATSU_PROBE_EARLY=1, faults before the library's
+//           static initializers, through probe_caller, whatever the command
+//   late    Windows: loads dbghelp.dll, prints {"library": <its path>,
+//           "loaded_before": <whether it was loaded>, "library_base":
+//           <its module handle>}, and
 //           writes the stack and exits in probe_callback, which its
 //           EnumerateLoadedModulesW64 calls from probe_late; dbghelp would
 //           catch a fault there
@@ -29,6 +35,7 @@
 #include <string>
 #include <string_view>
 
+#include "sys/harness/json.h"
 #include "kotatsu/support/config.h"
 #include "kotatsu/sys/console.h"
 #include "kotatsu/sys/stacktrace.h"
@@ -41,16 +48,21 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-// After windows.h, whose types it uses.
-#include <psapi.h>
 
 #include "kotatsu/support/utf16.h"
-#define PROBE_ALWAYS_INLINE __forceinline
 #else
 #include <unistd.h>
 
 #include "kotatsu/sys/process.h"
+#endif
+
+#if KOTATSU_COMPILER_MSVC
+#include <intrin.h>
+#define PROBE_ALWAYS_INLINE __forceinline
+#define PROBE_RETURN_ADDRESS() _ReturnAddress()
+#else
 #define PROBE_ALWAYS_INLINE [[gnu::always_inline]] inline
+#define PROBE_RETURN_ADDRESS() __builtin_return_address(0)
 #endif
 
 #ifdef __APPLE__
@@ -61,15 +73,37 @@
 #include <ucontext.h>
 #endif
 
+#if defined(__SANITIZE_ADDRESS__)
+#define PROBE_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define PROBE_ASAN 1
+#endif
+#endif
+
+#ifdef PROBE_ASAN
+// On Windows ASan would otherwise take the access violation before our filter.
+extern "C" const char* __asan_default_options() {
+    return "handle_segv=0";
+}
+#endif
+
 // Where probe_fault writes: an address in the first page, which no host maps,
 // and not null, which UBSan would report first.
 volatile int* volatile target = reinterpret_cast<volatile int*>(std::uintptr_t(16));
+
+void (*volatile call_target)() = nullptr;
+
+// The callee's return address first, its caller's second. Single-probe
+// modes leave the second slot empty; these are ready before any constructor.
+volatile std::uintptr_t return_addresses[2] = {};
 
 // What the probe functions do after their calls, which keeps those from
 // being tail calls that leave no frame.
 volatile int calls = 0;
 
 KOTATSU_NOINLINE void probe_fault() {
+    return_addresses[0] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
     *target = 1;
 }
 
@@ -79,27 +113,29 @@ PROBE_ALWAYS_INLINE void probe_inlined() {
 }
 
 KOTATSU_NOINLINE void probe_caller() {
+    return_addresses[1] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
     probe_inlined();
     calls = calls + 1;
 }
 
 KOTATSU_NOINLINE void probe_abort() {
+    return_addresses[0] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
     std::abort();
+}
+
+#ifdef __clang__
+// UBSan's function-type check reads before the target; let the call reach zero.
+[[clang::no_sanitize("function")]]
+#endif
+KOTATSU_NOINLINE void probe_call() {
+    return_addresses[0] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
+    call_target();
+    calls = calls + 1;
 }
 
 namespace {
 
-std::string json(std::string_view text) {
-    std::string quoted = "\"";
-    for(char c: text) {
-        if(c == '"' || c == '\\') {
-            quoted += '\\';
-        }
-        quoted += c;
-    }
-    quoted += '"';
-    return quoted;
-}
+using kotatsu::test::json;
 
 void print_line(std::string_view line) {
     std::fwrite(line.data(), 1, line.size(), stdout);
@@ -121,7 +157,35 @@ void print_fault(std::uintptr_t address) {
     kotatsu::sys::write_console(1, std::string_view(line, size));
 }
 
-[[noreturn]] void end() {
+/// The recorded return addresses, built without allocating in a handler.
+void print_returns() {
+    char line[64] = R"({"returns":[)";
+    std::size_t size = std::char_traits<char>::length(line);
+    bool first = true;
+    for(auto address: return_addresses) {
+        if(address == 0) {
+            continue;
+        }
+        if(!first) {
+            line[size++] = ',';
+        }
+        first = false;
+        for(char c: std::string_view(R"("0x)")) {
+            line[size++] = c;
+        }
+        for(int shift = 60; shift >= 0; shift -= 4) {
+            line[size++] = "0123456789abcdef"[(address >> shift) & 0xF];
+        }
+        line[size++] = '"';
+    }
+    for(char c: std::string_view("]}\n")) {
+        line[size++] = c;
+    }
+    kotatsu::sys::write_console(1, std::string_view(line, size));
+}
+
+[[noreturn]] KOTATSU_NOINLINE void end() {
+    print_returns();
     kotatsu::sys::write_stacktrace(1);
     std::_Exit(3);
 }
@@ -142,11 +206,21 @@ Image executable() {
                              GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                          reinterpret_cast<LPCWSTR>(reinterpret_cast<void*>(&probe_caller)),
                          &module);
-    MODULEINFO info{};
-    ::K32GetModuleInformation(::GetCurrentProcess(), module, &info, sizeof(info));
     Image image;
     image.base = reinterpret_cast<std::uintptr_t>(module);
-    image.high = info.SizeOfImage;
+    image.low = UINTPTR_MAX;
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(image.base + dos->e_lfanew);
+    const auto* sections = IMAGE_FIRST_SECTION(nt);
+    for(std::size_t index = 0; index < nt->FileHeader.NumberOfSections; ++index) {
+        const auto& section = sections[index];
+        if(section.Characteristics & IMAGE_SCN_MEM_EXECUTE) {
+            image.low = std::min<std::uintptr_t>(image.low, section.VirtualAddress);
+            image.high = std::max<std::uintptr_t>(image.high,
+                                                  std::uintptr_t(section.VirtualAddress) +
+                                                      section.Misc.VirtualSize);
+        }
+    }
     wchar_t path[MAX_PATH * 4];
     auto size = ::GetModuleFileNameW(module, path, static_cast<DWORD>(std::size(path)));
     kotatsu::from_utf16(image.path, std::wstring_view(path, size));
@@ -176,10 +250,12 @@ using LoadedModules = BOOL(CALLBACK*)(PCWSTR name, DWORD64 base, ULONG size, PVO
 using EnumerateLoadedModules = BOOL(WINAPI*)(HANDLE process, LoadedModules callback, PVOID context);
 
 KOTATSU_NOINLINE BOOL CALLBACK probe_callback(PCWSTR, DWORD64, ULONG, PVOID) {
+    return_addresses[0] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
     end();
 }
 
 KOTATSU_NOINLINE void probe_late(HMODULE dbghelp) {
+    return_addresses[1] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
     auto enumerate = reinterpret_cast<EnumerateLoadedModules>(
         reinterpret_cast<void*>(::GetProcAddress(dbghelp, "EnumerateLoadedModulesW64")));
     enumerate(::GetCurrentProcess(), probe_callback, nullptr);
@@ -228,7 +304,7 @@ Image executable() {
             image.low = UINTPTR_MAX;
             for(std::size_t index = 0; index < info->dlpi_phnum; ++index) {
                 const auto& segment = info->dlpi_phdr[index];
-                if(segment.p_type == PT_LOAD) {
+                if(segment.p_type == PT_LOAD && (segment.p_flags & PF_X)) {
                     image.low = std::min<std::uintptr_t>(image.low, segment.p_vaddr);
                     image.high =
                         std::max<std::uintptr_t>(image.high, segment.p_vaddr + segment.p_memsz);
@@ -278,12 +354,36 @@ void on_abort() {
 
 void print_image() {
     auto image = executable();
-    print_line(std::format(R"({{"executable":{},"base":"{:#x}","low":"{:#x}","high":"{:#x}"}})",
-                           json(image.path),
-                           image.base,
-                           image.low,
-                           image.high));
+#ifdef _MSC_VER
+    constexpr std::string_view debug = "pdb";
+#else
+    constexpr std::string_view debug = "dwarf";
+#endif
+    print_line(
+        std::format(R"({{"executable":{},"base":"{:#x}","low":"{:#x}","high":"{:#x}","debug":{}}})",
+                    json(image.path),
+                    image.base,
+                    image.low,
+                    image.high,
+                    json(debug)));
 }
+
+#ifdef __linux__
+struct Early {
+    Early() {
+        if(const char* value = std::getenv("KOTATSU_PROBE_EARLY");
+           value != nullptr && std::string_view(value) == "1") {
+            on_fault();
+            print_image();
+            probe_caller();
+            calls = calls + 1;
+        }
+    }
+};
+
+// Before the library caches module information, exercising /proc/self/maps.
+[[gnu::init_priority(101)]] Early early;
+#endif
 
 }  // namespace
 
@@ -300,15 +400,25 @@ int main(int argc, char** argv) {
         print_image();
         probe_abort();
     }
+    if(command == "call") {
+        on_fault();
+        print_image();
+        probe_call();
+        return 1;
+    }
 #ifdef _WIN32
     if(command == "late") {
         print_image();
+        const bool loaded_before = ::GetModuleHandleW(L"dbghelp.dll") != nullptr;
         HMODULE dbghelp = ::LoadLibraryW(L"dbghelp.dll");
         wchar_t path[MAX_PATH * 4];
         auto size = ::GetModuleFileNameW(dbghelp, path, static_cast<DWORD>(std::size(path)));
         std::string library;
         kotatsu::from_utf16(library, std::wstring_view(path, size));
-        print_line(std::format(R"({{"library":{}}})", json(library)));
+        print_line(std::format(R"({{"library":{},"loaded_before":{},"library_base":"{:#x}"}})",
+                               json(library),
+                               loaded_before,
+                               reinterpret_cast<std::uintptr_t>(dbghelp)));
         probe_late(dbghelp);
         return 1;
     }
