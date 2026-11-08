@@ -30,6 +30,12 @@ extern "C" LONG NTAPI RtlGetVersion(OSVERSIONINFOW* version);
 #include <unistd.h>
 #endif
 
+#ifdef __APPLE__
+#include <cstdint>
+#include <cstring>
+#include <mach-o/loader.h>
+#endif
+
 namespace kotatsu::sys {
 
 #ifdef _WIN32
@@ -123,6 +129,32 @@ inline std::string default_path() {
     ::confstr(_CS_PATH, path.data(), path.size());
     path.pop_back();
     return path;
+}
+#endif
+
+#ifdef __APPLE__
+/// A Mach-O image's __TEXT segment, at its address before the slide.
+struct TextSegment {
+    std::uintptr_t address = 0;
+    std::uintptr_t size = 0;
+};
+
+/// The __TEXT segment of the image whose header is at `header`, from its
+/// load commands; every image has one.
+inline TextSegment text_segment(const mach_header* header) noexcept {
+    const auto* command =
+        reinterpret_cast<const load_command*>(reinterpret_cast<const mach_header_64*>(header) + 1);
+    for(std::uint32_t index = 0; index < header->ncmds; ++index) {
+        if(command->cmd == LC_SEGMENT_64) {
+            const auto* segment = reinterpret_cast<const segment_command_64*>(command);
+            if(std::strncmp(segment->segname, SEG_TEXT, sizeof(segment->segname)) == 0) {
+                return {.address = segment->vmaddr, .size = segment->vmsize};
+            }
+        }
+        command = reinterpret_cast<const load_command*>(reinterpret_cast<const char*>(command) +
+                                                        command->cmdsize);
+    }
+    return {};
 }
 #endif
 

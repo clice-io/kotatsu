@@ -240,7 +240,10 @@ kotatsu_test(
     tags = ["manual"] if driver == "lsp_roundtrip" else [],
     deps = deps,
 ) for module, deps, drivers in [
-    ("sys", ["//:sys"], ["sys_probe"]),
+    ("sys", ["//:sys"], [
+        "stacktrace_probe",
+        "sys_probe",
+    ]),
     ("ipc", [":ipc_harness"], [
         "jsonrpc_driver",
         "stdio_close",
@@ -336,7 +339,10 @@ command_test(
     source_tree = True,
     tags = ["integration"],
 ) for module, programs, exclude, files in [
-    ("sys", [":sys_probe"], [], []),
+    ("sys", [
+        ":stacktrace_probe",
+        ":sys_probe",
+    ], [], []),
     ("ipc", [
         ":jsonrpc_driver",
         ":stdio_close",

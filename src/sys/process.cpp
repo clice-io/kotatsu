@@ -1,5 +1,6 @@
 #include "kotatsu/sys/process.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -20,6 +21,7 @@
 #include <signal.h>
 #include <sys/stat.h>
 #else
+#include <link.h>
 #include <signal.h>
 #include <sys/auxv.h>
 #include <sys/stat.h>
@@ -137,6 +139,24 @@ std::error_code executable_path(buffer_ref out) {
         return std::make_error_code(std::errc::no_such_file_or_directory);
     }
     return {};
+#endif
+}
+
+std::uintptr_t executable_base() noexcept {
+#ifdef _WIN32
+    return reinterpret_cast<std::uintptr_t>(::GetModuleHandleW(nullptr));
+#elif defined(__APPLE__)
+    const auto* header = reinterpret_cast<const mach_header*>(::_NSGetMachExecuteHeader());
+    return reinterpret_cast<std::uintptr_t>(header) - text_segment(header).address;
+#else
+    const auto at = ::getauxval(AT_PHDR);
+    const auto* segments = reinterpret_cast<const ElfW(Phdr)*>(at);
+    for(std::size_t index = 0; index < ::getauxval(AT_PHNUM); ++index) {
+        if(segments[index].p_type == PT_PHDR) {
+            return at - segments[index].p_vaddr;
+        }
+    }
+    return 0;
 #endif
 }
 

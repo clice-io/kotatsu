@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -14,6 +15,7 @@
 #else
 #include <cerrno>
 #include <csignal>
+#include <cstddef>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -33,6 +35,12 @@
 #include "kotatsu/support/utf16.h"
 #else
 #include "sys/harness/signals.h"
+#endif
+
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#elif defined(__linux__)
+#include <link.h>
 #endif
 
 namespace kotatsu::sys {
@@ -130,6 +138,31 @@ ZEST_CASE(executable_path_names_this_program) {
     ZEXPECT(fs::path::is_absolute(path));
     ZEXPECT(fs::path::stem(path).ends_with("system_tests"));
     ZEXPECT(std::filesystem::is_regular_file(test::std_path(path)));
+}
+
+// As the loader tells it: on Linux the bias of the first module
+// dl_iterate_phdr reports, the executable; on macOS the slide of dyld's
+// first image; on Windows the handle of the module this code is in.
+ZEST_CASE(executable_base_is_where_the_loader_put_this_program) {
+#ifdef _WIN32
+    HMODULE module = nullptr;
+    ZASSERT(::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                     GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                 reinterpret_cast<LPCWSTR>(reinterpret_cast<void*>(&pid)),
+                                 &module));
+    ZEXPECT(executable_base() == reinterpret_cast<std::uintptr_t>(module));
+#elif defined(__APPLE__)
+    ZEXPECT(executable_base() == static_cast<std::uintptr_t>(::_dyld_get_image_vmaddr_slide(0)));
+#else
+    std::uintptr_t first = 0;
+    ::dl_iterate_phdr(
+        [](dl_phdr_info* info, std::size_t, void* data) {
+            *static_cast<std::uintptr_t*>(data) = info->dlpi_addr;
+            return 1;
+        },
+        &first);
+    ZEXPECT(executable_base() == first);
+#endif
 }
 
 // The path this program was started by reaches its file; the integration
