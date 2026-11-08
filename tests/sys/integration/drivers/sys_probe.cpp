@@ -158,6 +158,7 @@
 #include <fcntl.h>
 #endif
 
+#include "sys/harness/json.h"
 #include "kotatsu/fs/file.h"
 #include "kotatsu/fs/resolve.h"
 #include "kotatsu/sys/env.h"
@@ -245,21 +246,7 @@ extern "C" int sigaction(int signum,
 
 namespace {
 
-std::string json(std::string_view text) {
-    std::string quoted = "\"";
-    for(char c: text) {
-        if(c == '"' || c == '\\') {
-            quoted += '\\';
-            quoted += c;
-        } else if(static_cast<unsigned char>(c) < 0x20) {
-            quoted += std::format("\\u{:04x}", static_cast<unsigned char>(c));
-        } else {
-            quoted += c;
-        }
-    }
-    quoted += '"';
-    return quoted;
-}
+using kotatsu::test::json;
 
 void print_line(std::string_view line) {
     std::fwrite(line.data(), 1, line.size(), stdout);

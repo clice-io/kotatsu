@@ -229,18 +229,18 @@ kotatsu_test(
         ],
         allow_empty = True,
     ),
-    # sys_probe's sigaction finds libc's through dlsym, in libdl before glibc
-    # 2.34.
-    linkopts = select({
-        "@platforms//os:linux": ["-ldl"],
-        "//conditions:default": [],
-    }) if driver == "sys_probe" else [],
     # One translation unit instantiating the codec for every LSP type: about
     # 2 minutes and 2.7 GB in a debug build, far more optimized or sanitized.
     tags = ["manual"] if driver == "lsp_roundtrip" else [],
     deps = deps,
 ) for module, deps, drivers in [
-    ("sys", ["//:sys"], ["sys_probe"]),
+    ("sys", [
+        ":sys_harness",
+        "//:sys",
+    ], [
+        "stacktrace_probe",
+        "sys_probe",
+    ]),
     ("ipc", [":ipc_harness"], [
         "jsonrpc_driver",
         "stdio_close",
@@ -336,7 +336,10 @@ command_test(
     source_tree = True,
     tags = ["integration"],
 ) for module, programs, exclude, files in [
-    ("sys", [":sys_probe"], [], []),
+    ("sys", [
+        ":stacktrace_probe",
+        ":sys_probe",
+    ], [], []),
     ("ipc", [
         ":jsonrpc_driver",
         ":stdio_close",

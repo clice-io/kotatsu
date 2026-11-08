@@ -1,5 +1,6 @@
 #include "kotatsu/sys/process.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -20,12 +21,19 @@
 #include <signal.h>
 #include <sys/stat.h>
 #else
+#include <link.h>
 #include <signal.h>
 #include <sys/auxv.h>
 #include <sys/stat.h>
 
 #include "proc.h"
 #include "kotatsu/fs/directory.h"
+#endif
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+// The ELF header of the module that links this, which every linker
+// defines.
+extern "C" [[gnu::visibility("hidden")]] const ElfW(Ehdr) __ehdr_start;
 #endif
 
 namespace kotatsu::sys {
@@ -140,19 +148,51 @@ std::error_code executable_path(buffer_ref out) {
 #endif
 }
 
-void started_path(buffer_ref out) {
+std::uintptr_t executable_base() noexcept {
 #ifdef _WIN32
-    small_wstring<264> path;
+    return reinterpret_cast<std::uintptr_t>(::GetModuleHandleW(nullptr));
+#elif defined(__APPLE__)
+    const auto* header = reinterpret_cast<const mach_header*>(::_NSGetMachExecuteHeader());
+    return reinterpret_cast<std::uintptr_t>(header) - text_segment(header).address;
+#else
+    // As ld.so takes it: where the program headers are, less where PT_PHDR
+    // puts them. Only a static executable has none, and it is the module
+    // this code is in: where its ELF header is, less where the segment
+    // mapped from it puts it.
+    const auto at = ::getauxval(AT_PHDR);
+    const auto* segments = reinterpret_cast<const ElfW(Phdr)*>(at);
+    const ElfW(Phdr)* first = nullptr;
+    for(std::size_t index = 0; index < ::getauxval(AT_PHNUM); ++index) {
+        const auto& segment = segments[index];
+        if(segment.p_type == PT_PHDR) {
+            return at - segment.p_vaddr;
+        }
+        if(segment.p_type == PT_LOAD && segment.p_offset == 0) {
+            first = &segment;
+        }
+    }
+    return reinterpret_cast<std::uintptr_t>(&__ehdr_start) - first->p_vaddr;
+#endif
+}
+
+#ifdef _WIN32
+std::wstring_view module_file_name(HMODULE module, small_wstring<264>& path) {
     path.resize(MAX_PATH);
     while(true) {
-        auto size = ::GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+        auto size = ::GetModuleFileNameW(module, path.data(), static_cast<DWORD>(path.size()));
         // Cut short when it fills the buffer.
         if(size < path.size()) {
-            from_utf16(out, std::wstring_view(path.data(), size));
-            return;
+            return std::wstring_view(path.data(), size);
         }
         path.resize(path.size() * 2);
     }
+}
+#endif
+
+void started_path(buffer_ref out) {
+#ifdef _WIN32
+    small_wstring<264> path;
+    from_utf16(out, module_file_name(nullptr, path));
 #elif defined(__APPLE__)
     // The first call tells the size it takes, the terminator included.
     std::uint32_t size = 0;

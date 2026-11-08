@@ -11,6 +11,7 @@ add_library(kotatsu_sys STATIC
     cpu.cpp
     cpu_cores.cpp
     dirs.cpp
+    dwarf_cfi.cpp
     env.cpp
     exit_status.cpp
     exit_with_parent.cpp
@@ -22,6 +23,9 @@ add_library(kotatsu_sys STATIC
     signals.cpp
     spawn_posix.cpp
     spawn_windows.cpp
+    stacktrace_linux.cpp
+    stacktrace_macos.cpp
+    stacktrace_windows.cpp
     temp_dir.cpp
     thread.cpp
     title.cpp
@@ -37,10 +41,14 @@ target_include_directories(kotatsu_sys PUBLIC
 # glibc 2.34.
 find_package(Threads REQUIRED)
 
+# write_stacktrace looks _dl_find_object up through dlsym, in libdl before
+# glibc 2.34, and finds a module's CFI through its .eh_frame_hdr, which GCC
+# links a static executable without.
 target_link_libraries(kotatsu_sys PUBLIC
     kotatsu::fs
     kotatsu::support
     Threads::Threads
+    ${CMAKE_DL_LIBS}
 )
 
 # ntdll: parent_pid, parallelism, cpu_cores, os, process_stats; advapi32: the
@@ -48,6 +56,10 @@ target_link_libraries(kotatsu_sys PUBLIC
 # dirs.
 if(WIN32)
     target_link_libraries(kotatsu_sys PUBLIC advapi32 ntdll ole32 shell32)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_options(kotatsu_sys INTERFACE "LINKER:--eh-frame-hdr")
 endif()
 
 kotatsu_apply_project_options(kotatsu_sys)

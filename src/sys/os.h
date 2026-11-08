@@ -22,12 +22,19 @@
 #include <windows.h>
 
 #include "kotatsu/support/buffer_ref.h"
+#include "kotatsu/support/small_string.h"
 #include "kotatsu/fs/windows.h"
 
 // Declared by the driver kit only; ntdll has it from Windows 2000 on.
 extern "C" LONG NTAPI RtlGetVersion(OSVERSIONINFOW* version);
 #else
 #include <unistd.h>
+#endif
+
+#ifdef __APPLE__
+#include <cstdint>
+#include <cstring>
+#include <mach-o/loader.h>
 #endif
 
 namespace kotatsu::sys {
@@ -104,6 +111,15 @@ inline HANDLE descriptor_handle(int fd) noexcept {
     return reinterpret_cast<HANDLE>(handle);
 }
 
+/// Writes the start of non-empty `text` to `handle` as write_console_some()
+/// does to a descriptor.
+std::expected<std::size_t, std::error_code> write_handle_some(HANDLE handle,
+                                                              std::string_view text) noexcept;
+
+/// The path module `module` was loaded by, as GetModuleFileNameW gives it,
+/// however long, in `path`.
+std::wstring_view module_file_name(HMODULE module, small_wstring<264>& path);
+
 /// Writes into `out` the system directory, as GetSystemDirectoryW gives it.
 std::error_code system_directory(buffer_ref out);
 
@@ -123,6 +139,32 @@ inline std::string default_path() {
     ::confstr(_CS_PATH, path.data(), path.size());
     path.pop_back();
     return path;
+}
+#endif
+
+#ifdef __APPLE__
+/// A Mach-O image's __TEXT segment, at its address before the slide.
+struct TextSegment {
+    std::uintptr_t address = 0;
+    std::uintptr_t size = 0;
+};
+
+/// The __TEXT segment of the image whose header is at `header`, from its
+/// load commands; every image has one.
+inline TextSegment text_segment(const mach_header* header) noexcept {
+    const auto* command =
+        reinterpret_cast<const load_command*>(reinterpret_cast<const mach_header_64*>(header) + 1);
+    for(std::uint32_t index = 0; index < header->ncmds; ++index) {
+        if(command->cmd == LC_SEGMENT_64) {
+            const auto* segment = reinterpret_cast<const segment_command_64*>(command);
+            if(std::strncmp(segment->segname, SEG_TEXT, sizeof(segment->segname)) == 0) {
+                return {.address = segment->vmaddr, .size = segment->vmsize};
+            }
+        }
+        command = reinterpret_cast<const load_command*>(reinterpret_cast<const char*>(command) +
+                                                        command->cmdsize);
+    }
+    std::unreachable();
 }
 #endif
 

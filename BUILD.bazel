@@ -35,7 +35,9 @@ kotatsu_library(
         "src/sys/*.h",
     ]),
     hdrs = glob(["include/kotatsu/sys/**"]),
-    # pthread_sigmask around spawn's fork, in libc itself only from glibc 2.34.
+    # pthread_sigmask around spawn's fork and dlsym of write_stacktrace, in
+    # libc itself only from glibc 2.34; .eh_frame_hdr, which write_stacktrace
+    # finds a module's CFI through and GCC links a static executable without.
     linkopts = select({
         "@platforms//os:windows": [
             "-ladvapi32",
@@ -43,7 +45,11 @@ kotatsu_library(
             "-lole32",
             "-lshell32",
         ],
-        "@platforms//os:linux": ["-lpthread"],
+        "@platforms//os:linux": [
+            "-Wl,--eh-frame-hdr",
+            "-ldl",
+            "-lpthread",
+        ],
         "//conditions:default": [],
     }),
     deps = [

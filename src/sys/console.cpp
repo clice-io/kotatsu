@@ -60,6 +60,23 @@ std::expected<std::size_t, std::error_code> write_wide(HANDLE console,
 
 }  // namespace
 
+std::expected<std::size_t, std::error_code> write_handle_some(HANDLE handle,
+                                                              std::string_view text) noexcept {
+    if(is_console_handle(handle)) {
+        return write_wide(handle, text);
+    }
+    DWORD written = 0;
+    auto size = static_cast<DWORD>(std::min<std::size_t>(text.size(), MAXDWORD));
+    if(!::WriteFile(handle, text.data(), size, &written, nullptr)) {
+        return std::unexpected(fs::windows::last_error());
+    }
+    // What a full pipe in PIPE_NOWAIT mode does, where POSIX says EAGAIN.
+    if(written == 0) {
+        return std::unexpected(std::make_error_code(std::errc::resource_unavailable_try_again));
+    }
+    return written;
+}
+
 #endif
 
 std::error_code write_console(int fd, std::string_view text) noexcept {
@@ -83,19 +100,7 @@ std::expected<std::size_t, std::error_code> write_console_some(int fd,
     if(handle == INVALID_HANDLE_VALUE) {
         return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
     }
-    if(is_console_handle(handle)) {
-        return write_wide(handle, text);
-    }
-    DWORD written = 0;
-    auto size = static_cast<DWORD>(std::min<std::size_t>(text.size(), MAXDWORD));
-    if(!::WriteFile(handle, text.data(), size, &written, nullptr)) {
-        return std::unexpected(fs::windows::last_error());
-    }
-    // What a full pipe in PIPE_NOWAIT mode does, where POSIX says EAGAIN.
-    if(written == 0) {
-        return std::unexpected(std::make_error_code(std::errc::resource_unavailable_try_again));
-    }
-    return written;
+    return write_handle_some(handle, text);
 #else
     while(true) {
         auto written = ::write(fd, text.data(), text.size());
