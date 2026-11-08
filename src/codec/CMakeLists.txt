@@ -31,19 +31,21 @@ if(KOTATSU_CODEC_ENABLE_SIMDJSON)
     kotatsu_add_git_dependency(
         simdjson
         GIT_REPOSITORY https://github.com/simdjson/simdjson.git
-        GIT_TAG v4.2.4
+        GIT_TAG v5.1.1
         OPTIONS
             # Library consumer mode.
             SIMDJSON_BUILD_STATIC_LIB OFF
             SIMDJSON_DEVELOPER_MODE OFF
             SIMDJSON_DEVELOPMENT_CHECKS OFF
-            SIMDJSON_STATIC_REFLECTION OFF
+            SIMDJSON_STATIC_REFLECTION_MODE OFF
             # Behavior knobs, locked so a parent or toolchain cache cannot
             # change them.
             SIMDJSON_ENABLE_THREADS ON
             SIMDJSON_EXCEPTIONS ${KOTATSU_ENABLE_EXCEPTIONS}
             SIMDJSON_DISABLE_DEPRECATED_API OFF
             SIMDJSON_MINUS_ZERO_AS_FLOAT OFF
+            SIMDJSON_ENABLE_NAN_INF OFF
+            SIMDJSON_ENABLE_MEMORY_FILE_MAPPING_ON_WINDOWS OFF
             # Development and sanitizer toggles.
             SIMDJSON_CHECK_EOF OFF
             SIMDJSON_SANITIZE OFF
@@ -62,7 +64,7 @@ if(KOTATSU_CODEC_ENABLE_FLATBUFFERS)
     kotatsu_add_git_dependency(
         flatbuffers
         GIT_REPOSITORY https://github.com/google/flatbuffers.git
-        GIT_TAG v25.2.10
+        GIT_TAG v25.12.19
         OPTIONS
             FLATBUFFERS_BUILD_TESTS OFF
             FLATBUFFERS_BUILD_FLATC OFF

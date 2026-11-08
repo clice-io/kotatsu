@@ -9,7 +9,17 @@
 #include "kotatsu/codec/json/format.h"
 
 #if __has_include(<simdjson.h>)
+// In a debug build simdjson's development checks return from its iterators'
+// begin() ahead of the release return, which MSVC's code generator reports
+// as unreachable (C4702); /external:W0 does not reach that warning.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4702)
+#endif
 #include "simdjson.h"
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 #else
 #error "simdjson.h is required for the JSON codec backend"
 #endif

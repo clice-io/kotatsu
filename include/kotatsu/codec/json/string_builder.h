@@ -155,8 +155,7 @@ public:
     /// back as a double, and exponents start where the digits would run
     /// long.
     void append_number(double value) {
-        constexpr std::size_t longest = 24;
-        auto* at = room(longest);
+        auto* at = room(simdjson::internal::to_chars_buffer_size);
         end_at(simdjson::internal::to_chars(at, nullptr, value));
     }
 

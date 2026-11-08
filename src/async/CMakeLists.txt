@@ -1,13 +1,15 @@
 kotatsu_add_git_dependency(
     libuv
     GIT_REPOSITORY https://github.com/libuv/libuv.git
-    GIT_TAG v1.52.0
+    GIT_TAG v1.52.1
     OPTIONS
         LIBUV_BUILD_TESTS OFF
         LIBUV_BUILD_BENCH OFF
         LIBUV_BUILD_SHARED OFF
         LIBUV_BUILD_STATIC ON
         UV_LINT_W4 OFF
+        # On by default, it adds a tidy target per libuv source to the build.
+        ENABLE_CLANG_TIDY OFF
         # We manage sanitizers at the top-level (KOTATSU_SANITIZE_*). libuv's internal
         # sanitizer flags can cause mismatched link flags and, on Windows+clang-cl,
         # tries to copy runtime DLLs from the compiler dir which doesn't work for
@@ -17,6 +19,12 @@ kotatsu_add_git_dependency(
         TSAN OFF
         UBSAN OFF
 )
+
+# libuv 1.52.1's src/win/util.c passes a `const char**` for a `char**`, which
+# GCC rejects since 14; libuv 1.53.0 fixes it.
+if(WIN32 AND CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(uv_a PRIVATE -Wno-error=incompatible-pointer-types)
+endif()
 
 add_library(kotatsu_async STATIC)
 add_library(kotatsu::async ALIAS kotatsu_async)

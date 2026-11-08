@@ -25,10 +25,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Pixi
-        uses: prefix-dev/setup-pixi@v0.9.6
+        uses: prefix-dev/setup-pixi@v0.11.3
         with:
           pixi-version: v0.71.1
           environments: bazel
@@ -38,7 +38,7 @@ jobs:
           post-cleanup: false
 
       - name: Restore npm cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.npm_config_cache }}
           key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
@@ -51,7 +51,7 @@ jobs:
       # repository cache inside the main repository.
       - name: Restore Bazel cache
         id: bazel-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/bazel
           key: bazel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.config }}/${{ github.sha }}
