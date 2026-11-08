@@ -151,6 +151,9 @@ struct MapsLookup {
         if(address >= start && address < end) {
             return module;
         }
+        // The scan writes over the path `module` views.
+        start = 0;
+        end = 0;
         int fd = ::open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
         if(fd < 0) {
             return std::nullopt;

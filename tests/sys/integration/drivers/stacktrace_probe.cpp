@@ -184,11 +184,18 @@ void print_returns() {
     kotatsu::sys::write_console(1, std::string_view(line, size));
 }
 
+}  // namespace
+
+// Outside the anonymous namespace, as the probe functions are: a MinGW
+// executable's COFF symbols, which llvm-symbolizer names its functions by,
+// leave out functions of internal linkage.
 [[noreturn]] KOTATSU_NOINLINE void end() {
     print_returns();
     kotatsu::sys::write_stacktrace(1);
     std::_Exit(3);
 }
+
+namespace {
 
 /// What the loader tells of the executable.
 struct Image {
@@ -249,6 +256,9 @@ void on_abort() {
 using LoadedModules = BOOL(CALLBACK*)(PCWSTR name, DWORD64 base, ULONG size, PVOID context);
 using EnumerateLoadedModules = BOOL(WINAPI*)(HANDLE process, LoadedModules callback, PVOID context);
 
+}  // namespace
+
+// Of external linkage, as end() is.
 KOTATSU_NOINLINE BOOL CALLBACK probe_callback(PCWSTR, DWORD64, ULONG, PVOID) {
     return_addresses[0] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
     end();
@@ -261,6 +271,8 @@ KOTATSU_NOINLINE void probe_late(HMODULE dbghelp) {
     enumerate(::GetCurrentProcess(), probe_callback, nullptr);
     calls = calls + 1;
 }
+
+namespace {
 
 #else
 

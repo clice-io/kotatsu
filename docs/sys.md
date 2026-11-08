@@ -84,8 +84,10 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
   that faulted. On Windows it uses `RtlVirtualUnwind`, which takes ntdll's
   locks in shared mode as the exception dispatcher does. macOS and Windows
   name modules from tables that dyld's callbacks and the loader's
-  notifications fill from static initialization on, Windows' of 1024
-  modules. It writes no symbols.
+  notifications fill from static initialization on. Windows' holds the
+  first 1024 modules loaded in the process's life and 128 KiB of their
+  paths, none taken back as a module is unloaded; a module past them goes
+  unnamed. It writes no symbols.
 - macOS cannot start a child that ends with its parent
   (`CreationOptions::exit_with_parent`); a child that links kotatsu calls
   `exit_with_parent()` itself instead, which works on every host.
