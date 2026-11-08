@@ -37,7 +37,6 @@ if(KOTATSU_CODEC_ENABLE_SIMDJSON)
             SIMDJSON_BUILD_STATIC_LIB OFF
             SIMDJSON_DEVELOPER_MODE OFF
             SIMDJSON_DEVELOPMENT_CHECKS OFF
-            SIMDJSON_INSTALL OFF
             SIMDJSON_STATIC_REFLECTION_MODE OFF
             # Behavior knobs, locked so a parent or toolchain cache cannot
             # change them.
