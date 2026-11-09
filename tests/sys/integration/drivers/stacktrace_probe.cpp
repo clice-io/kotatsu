@@ -38,8 +38,9 @@
 //   crash_fault     as fault
 //   crash_trap      traps in probe_trap
 //   crash_breakpoint
-//                   breaks in probe_breakpoint; POSIX: SIGTRAP's default
-//                   action set with SA_SIGINFO before on_crash
+//                   breaks in probe_breakpoint; POSIX, but under TSan:
+//                   SIGTRAP's default action set with SA_SIGINFO before
+//                   on_crash
 //   crash_abort     calls std::abort from probe_abort
 //   crash_overflow  overflows the stack in probe_recurse_a and _b, which call
 //                   each other
@@ -573,6 +574,7 @@ void before_crash_handler() {
     handle(SIGSEGV, previously, 0);
 }
 
+#ifndef PROBE_TSAN
 /// SIGTRAP's default action, with SA_SIGINFO, as macOS may report the
 /// default of a process.
 void default_with_siginfo() {
@@ -581,6 +583,7 @@ void default_with_siginfo() {
     action.sa_flags = SA_SIGINFO;
     sigaction(SIGTRAP, &action, nullptr);
 }
+#endif
 
 #endif
 
@@ -655,9 +658,13 @@ int main(int argc, char** argv) {
         if(command == "crash_ignored") {
             std::signal(SIGTRAP, SIG_IGN);
         }
+#ifndef PROBE_TSAN
+        // TSan takes such an action for a handler of its own, which drops the
+        // signal.
         if(command == "crash_breakpoint") {
             default_with_siginfo();
         }
+#endif
 #endif
         if(command == "crash_after_handler") {
             before_crash_handler();
