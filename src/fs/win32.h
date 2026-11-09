@@ -131,6 +131,11 @@ std::error_code full_path(basic_buffer_ref<wchar_t> out, const wchar_t* path);
 std::expected<Handle, DWORD>
     open_at(HANDLE root, std::wstring_view name, DWORD access, bool follow);
 
+/// Writes into `out` the NT path of the native `path`, as to_native() writes
+/// it: `\??\C:\x` of `C:\x` and of `\\?\C:\x`, `\??\UNC\server\share` of
+/// `\\server\share`.
+void nt_path(basic_buffer_ref<wchar_t> out, std::wstring_view path);
+
 /// A handle to what the native `path`, as to_native() writes it, names, as
 /// open_at() opens it.
 std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow);
@@ -215,6 +220,11 @@ std::expected<Status, std::error_code> handle_status(HANDLE handle);
 /// with `\` keeps valid at any length. A device path (`\\.\`) stays as it
 /// is but for one too long for Win32, which takes `\\?\`.
 void verbatim(basic_buffer_ref<wchar_t> path);
+
+/// Rewrites a verbatim `path` of a drive or a share without its prefix, as
+/// from_native() gives it, where Win32 resolves what is left to itself, so
+/// that it names the same file; any other path stays as it is.
+void unverbatim(basic_buffer_ref<wchar_t> path);
 
 /// FILETIME ticks, 100 ns since 1601, of the Unix epoch.
 constexpr std::int64_t unix_epoch_ticks = 116'444'736'000'000'000;

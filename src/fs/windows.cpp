@@ -136,23 +136,9 @@ std::error_code to_native(basic_buffer_ref<wchar_t> out, std::string_view path) 
 
 void from_native(buffer_ref out, std::wstring_view path) {
     win32::WidePath plain;
-    if(path.starts_with(LR"(\\?\UNC\)")) {
-        plain.append(2, L'\\');
-        plain.append(path.substr(8));
-    } else if(path.starts_with(LR"(\\?\)") && path.size() >= 6 && path[5] == L':') {
-        plain.append(path.substr(4));
-    } else {
-        from_utf16(out, path);
-        return;
-    }
-    // Without the prefix Win32 resolves the path: it names the same file
-    // only where that resolution changes nothing.
-    win32::WidePath resolved;
-    if(!win32::full_path(resolved, plain.c_str()) && std::ranges::equal(resolved, plain)) {
-        from_utf16(out, plain);
-        return;
-    }
-    from_utf16(out, path);
+    plain.append(path);
+    win32::unverbatim(plain);
+    from_utf16(out, plain);
 }
 
 }  // namespace kotatsu::fs::windows
@@ -201,6 +187,25 @@ void verbatim(basic_buffer_ref<wchar_t> path) {
                  chars.data() + kept_from,
                  (size - kept_from) * sizeof(wchar_t));
     std::ranges::copy(prefix, chars.begin());
+}
+
+void unverbatim(basic_buffer_ref<wchar_t> path) {
+    auto held = path.view();
+    WidePath plain;
+    if(held.starts_with(LR"(\\?\UNC\)")) {
+        plain.append(2, L'\\');
+        plain.append(held.substr(8));
+    } else if(held.starts_with(LR"(\\?\)") && held.size() >= 6 && held[5] == L':') {
+        plain.append(held.substr(4));
+    } else {
+        return;
+    }
+    // Without the prefix Win32 resolves the path: it names the same file
+    // only where that resolution changes nothing.
+    WidePath resolved;
+    if(!full_path(resolved, plain.c_str()) && std::ranges::equal(resolved, plain)) {
+        path.assign(plain);
+    }
 }
 
 std::expected<Handle, DWORD>
@@ -260,20 +265,24 @@ std::expected<Handle, DWORD>
     return Handle(handle);
 }
 
-std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow) {
+void nt_path(basic_buffer_ref<wchar_t> out, std::wstring_view path) {
     // NT spells Win32's prefixes `\??\`, a share's `\??\UNC\`; a path
     // to_native() leaves without one, which Win32 resolves to itself, takes
     // one all the same.
-    WidePath name;
-    name.append(std::wstring_view(LR"(\??\)"));
+    out.assign(LR"(\??\)");
     if(path.starts_with(LR"(\\?\)") || path.starts_with(LR"(\\.\)")) {
-        name.append(path.substr(4));
+        out.append(path.substr(4));
     } else if(path.starts_with(LR"(\\)")) {
-        name.append(std::wstring_view(LR"(UNC\)"));
-        name.append(path.substr(2));
+        out.append(LR"(UNC\)");
+        out.append(path.substr(2));
     } else {
-        name.append(path);
+        out.append(path);
     }
+}
+
+std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow) {
+    WidePath name;
+    nt_path(name, path);
     return open_at(nullptr, name, access, follow);
 }
 

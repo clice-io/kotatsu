@@ -428,10 +428,22 @@ std::error_code rename_noreplace(std::string_view from, std::string_view to);
 
 /// Creates the symlink `link` to the file `target`, which stays as written:
 /// a relative target is relative to the link's directory. Windows lets only
-/// an administrator or a developer-mode system create one.
+/// an administrator or a developer-mode system create a symlink to a file.
 std::error_code create_symlink(std::string_view target, std::string_view link);
 
-/// The same for a directory, which Windows tells from a file's.
+/// Creates `link`, which leads to the directory `target`, existing or not:
+/// on POSIX the symlink create_symlink() creates; on Windows a junction,
+/// which any user may create, and which kotatsu takes for a symlink
+/// (FileType::Symlink, read_symlink(), remove(), walk()).
+///
+/// A junction holds an absolute path. A relative target is taken from the
+/// link's directory, `.` and `..` folded as Win32 folds them, so that the
+/// junction leads where a symlink would; but should the link or the target
+/// move, it leads on to the old place, where a relative symlink would
+/// follow. It leads only to a local volume: a target on a network share
+/// fails with std::errc::not_supported. An empty target fails, as on POSIX,
+/// with no_such_file_or_directory. kotatsu creates no Windows directory
+/// symlink.
 std::error_code create_directory_symlink(std::string_view target, std::string_view link);
 
 /// Writes into `out` the target of the symlink `path`, as it was written:

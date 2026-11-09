@@ -57,9 +57,7 @@ ZEST_CASE(canonical_follows_links) {
     auto root = real_root(dir);
     std::filesystem::create_directory(dir.path / "a");
     test::write_text(dir.file("a/file.txt"), "text");
-    if(!test::linked(create_directory_symlink("a", dir.file("link")))) {
-        return;
-    }
+    ZASSERT(!create_directory_symlink("a", dir.file("link")));
     std::string real;
     ZEXPECT(!canonical(real, dir.file("link/file.txt")));
     ZEXPECT(real == under(root, "a/file.txt"));
@@ -135,9 +133,7 @@ ZEST_CASE(weakly_canonical_resolves_through_a_link) {
     test::TempDir dir;
     auto root = real_root(dir);
     std::filesystem::create_directory(dir.path / "a");
-    if(!test::linked(create_directory_symlink("a", dir.file("link")))) {
-        return;
-    }
+    ZASSERT(!create_directory_symlink("a", dir.file("link")));
     std::string weak;
     weakly_canonical(weak, dir.file("link/missing.h"));
     ZEXPECT(weak == under(root, "a/missing.h"));

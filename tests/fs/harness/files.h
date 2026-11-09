@@ -182,9 +182,9 @@ inline std::string read_text(std::string_view path) {
     return {std::istreambuf_iterator<char>(in), {}};
 }
 
-/// Whether a symlink was made, `error` being what making it returned.
-/// Windows lets only an administrator or a developer-mode system make one:
-/// a case refused that privilege is skipped.
+/// Whether a symlink to a file was made, `error` being what making it
+/// returned. Windows lets only an administrator or a developer-mode system
+/// make one: a case refused that privilege is skipped.
 inline bool linked(std::error_code error) {
     if(!error) {
         return true;
