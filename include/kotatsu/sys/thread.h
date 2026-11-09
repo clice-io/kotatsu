@@ -42,8 +42,9 @@ public:
     /// `stack_size` bytes, rounded up to a whole page and to the least the
     /// system takes; on Windows the stack's reserve, which it commits as it
     /// grows; glibc's holds the thread's static TLS too. An exception that
-    /// leaves `fn` ends the process, as from a std::thread's. The system's
-    /// error when it starts none: resource_unavailable_try_again or
+    /// leaves `fn` ends the process, as from a std::thread's. Once on_crash
+    /// is set up, the thread gets its crash stack before `fn` runs. The
+    /// system's error when it starts none: resource_unavailable_try_again or
     /// not_enough_memory, or invalid_argument for a size it refuses.
     template <typename F>
     static std::expected<Thread, std::error_code> start(std::size_t stack_size, F&& fn) {

@@ -32,6 +32,7 @@ extern "C" LONG NTAPI RtlGetVersion(OSVERSIONINFOW* version);
 #endif
 
 #ifdef __APPLE__
+#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <mach-o/loader.h>
@@ -143,28 +144,42 @@ inline std::string default_path() {
 #endif
 
 #ifdef __APPLE__
-/// A Mach-O image's __TEXT segment, at its address before the slide.
-struct TextSegment {
-    std::uintptr_t address = 0;
-    std::uintptr_t size = 0;
-};
-
-/// The __TEXT segment of the image whose header is at `header`, from its
-/// load commands; every image has one.
-inline TextSegment text_segment(const mach_header* header) noexcept {
+/// The first load command of type `type` of the image whose header is at
+/// `header` that `match` holds for: null for none.
+template <typename Command, typename Match>
+const Command* find_command(const mach_header* header, std::uint32_t type, Match match) noexcept {
     const auto* command =
         reinterpret_cast<const load_command*>(reinterpret_cast<const mach_header_64*>(header) + 1);
     for(std::uint32_t index = 0; index < header->ncmds; ++index) {
-        if(command->cmd == LC_SEGMENT_64) {
-            const auto* segment = reinterpret_cast<const segment_command_64*>(command);
-            if(std::strncmp(segment->segname, SEG_TEXT, sizeof(segment->segname)) == 0) {
-                return {.address = segment->vmaddr, .size = segment->vmsize};
-            }
+        const auto* found = reinterpret_cast<const Command*>(command);
+        if(command->cmd == type && match(*found)) {
+            return found;
         }
         command = reinterpret_cast<const load_command*>(reinterpret_cast<const char*>(command) +
                                                         command->cmdsize);
     }
-    std::unreachable();
+    return nullptr;
+}
+
+/// The first load command of type `type`: null for none.
+template <typename Command>
+const Command* find_command(const mach_header* header, std::uint32_t type) noexcept {
+    return find_command<Command>(header, type, [](const Command&) { return true; });
+}
+
+/// The segment named `name` of the image whose header is at `header`, one
+/// every image has, as __TEXT and __LINKEDIT.
+const inline segment_command_64& find_segment(const mach_header* header,
+                                              std::string_view name) noexcept {
+    const auto* segment = find_command<segment_command_64>(
+        header,
+        LC_SEGMENT_64,
+        [&](const segment_command_64& segment) {
+            return std::string_view(segment.segname,
+                                    ::strnlen(segment.segname, sizeof(segment.segname))) == name;
+        });
+    assert(segment != nullptr);
+    return *segment;
 }
 #endif
 

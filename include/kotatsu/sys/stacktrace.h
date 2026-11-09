@@ -2,6 +2,8 @@
 
 #include <system_error>
 
+#include "kotatsu/sys/crash.h"
+
 namespace kotatsu::sys {
 
 /// Writes the frames of the calling thread's stack to descriptor `fd`, from
@@ -36,9 +38,14 @@ namespace kotatsu::sys {
 ///   frame of code without CFI, as `-fno-asynchronous-unwind-tables` leaves
 ///   out, ends the trace; programs linking kotatsu::sys are linked with
 ///   `--eh-frame-hdr`, which indexes the CFI. not_supported elsewhere.
-/// - macOS: by frame pointers, which its ABI keeps, the instruction that
-///   faulted left out: next comes the return address in it of the call it
-///   made last, or in the code that called it.
+/// - macOS, arm64 and x86-64: by frame pointers, which its ABI keeps, and
+///   across a signal handler by the context the kernel saved for it, which
+///   it finds by the frame of _sigtramp, the trampoline that called the
+///   handler. When the frame interrupted has not saved its return address
+///   in a frame record yet, as an arm64 function that calls none never
+///   does, or any function at its prologue's first instruction, where a
+///   stack overflow faults, its caller is found by lr on arm64, and on
+///   x86-64 by the address at the stack pointer.
 /// - Windows: by the unwind data of its PE modules, as RtlVirtualUnwind
 ///   reads it, which takes ntdll's own locks in shared mode as the exception
 ///   dispatcher does. `fd` must be open: the C runtime's invalid-parameter
@@ -52,5 +59,11 @@ namespace kotatsu::sys {
 /// The error of the write that failed, which ends the trace: bad_file_descriptor
 /// for a descriptor below 0.
 std::error_code write_stacktrace(int fd) noexcept;
+
+/// As write_stacktrace(fd), the frames of the stack `crash` interrupted,
+/// from the address its context was at, which its line marks, outward: what
+/// on_crash's handler writes. Without a context, the calling thread's from
+/// the caller's.
+std::error_code write_stacktrace(int fd, const Crash& crash) noexcept;
 
 }  // namespace kotatsu::sys

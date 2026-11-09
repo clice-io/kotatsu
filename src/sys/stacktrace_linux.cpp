@@ -311,14 +311,15 @@ void restore(dwarf::Registers& registers, const ucontext_t& context) noexcept {
 #endif
 }
 
-/// Writes the frames from the caller of the one `registers` hold, finding
+/// Writes the frames from the one `registers` hold, which a signal
+/// interrupted, or, `own`, from the caller of write_stacktrace's own, finding
 /// the module of each address with `find`.
 template <typename Find>
-void walk(dwarf::Registers registers, FrameWriter& writer, Find&& find) noexcept {
+void walk(dwarf::Registers registers, bool own, FrameWriter& writer, Find&& find) noexcept {
     // Whether pc is the address a signal interrupted, or this frame's own,
     // rather than a return address.
     bool exact = true;
-    for(bool own = true;; own = false) {
+    for(;; own = false) {
         auto module = find(registers.pc - (exact ? 0 : 1));
         if(!own && !writer.frame(registers.pc,
                                  module.transform([](const Module& found) { return found.frame; }),
@@ -355,23 +356,37 @@ void walk(dwarf::Registers registers, FrameWriter& writer, Find&& find) noexcept
 }
 
 KOTATSU_NOINLINE void walk_loaded(const dwarf::Registers& registers,
+                                  bool own,
                                   FrameWriter& writer,
                                   FindObject find) noexcept {
-    walk(registers, writer, [&](std::uintptr_t address) { return find_loaded(find, address); });
+    walk(registers, own, writer, [&](std::uintptr_t address) {
+        return find_loaded(find, address);
+    });
 }
 
 /// In a frame of its own, which the walk by _dl_find_object does without:
 /// the buffers that read /proc/self/maps.
-KOTATSU_NOINLINE void walk_mapped(const dwarf::Registers& registers, FrameWriter& writer) noexcept {
+KOTATSU_NOINLINE void walk_mapped(const dwarf::Registers& registers,
+                                  bool own,
+                                  FrameWriter& writer) noexcept {
     MapsLookup maps;
-    walk(registers, writer, [&](std::uintptr_t address) { return maps.find(address); });
+    walk(registers, own, writer, [&](std::uintptr_t address) { return maps.find(address); });
 }
 
-}  // namespace
+/// Writes the frames from `registers`, as walk.
+std::error_code write_from(const dwarf::Registers& registers, bool own, int fd) noexcept {
+    FrameWriter writer(fd);
+    if(auto find = find_object.load(std::memory_order_acquire)) {
+        walk_loaded(registers, own, writer, find);
+    } else {
+        walk_mapped(registers, own, writer);
+    }
+    return writer.error;
+}
 
-KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
-    // This frame's registers, at an address in it its CFI describes.
-    dwarf::Registers registers;
+/// The registers of the frame this is inlined into, at an address in it its
+/// CFI describes.
+[[gnu::always_inline]] inline void capture(dwarf::Registers& registers) noexcept {
 #if defined(__x86_64__)
     static_assert(offsetof(dwarf::Registers, pc) == 0x88);
     asm volatile(
@@ -404,19 +419,34 @@ KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
         : "r"(&registers)
         : "x9", "memory");
 #endif
+}
 
-    FrameWriter writer(fd);
-    if(auto find = find_object.load(std::memory_order_acquire)) {
-        walk_loaded(registers, writer, find);
-    } else {
-        walk_mapped(registers, writer);
+}  // namespace
+
+KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
+    dwarf::Registers registers;
+    capture(registers);
+    return write_from(registers, true, fd);
+}
+
+KOTATSU_NOINLINE std::error_code write_stacktrace(int fd, const Crash& crash) noexcept {
+    dwarf::Registers registers;
+    if(crash.context == nullptr) {
+        capture(registers);
+        return write_from(registers, true, fd);
     }
-    return writer.error;
+    restore(registers, *static_cast<const ucontext_t*>(crash.context));
+    return write_from(registers, false, fd);
 }
 
 #else
 
 std::error_code write_stacktrace([[maybe_unused]] int fd) noexcept {
+    return std::make_error_code(std::errc::not_supported);
+}
+
+std::error_code write_stacktrace([[maybe_unused]] int fd,
+                                 [[maybe_unused]] const Crash& crash) noexcept {
     return std::make_error_code(std::errc::not_supported);
 }
 

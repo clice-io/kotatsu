@@ -201,6 +201,18 @@ kotatsu_test(
     ],
 )
 
+# A crash stack on the pool's threads: see async/crash_stack/main.cpp.
+kotatsu_test(
+    name = "async_crash_stack",
+    size = "small",
+    srcs = ["async/crash_stack/main.cpp"],
+    tags = ["system"],
+    deps = [
+        "//:async",
+        "//:sys",
+    ],
+)
+
 # A relay let go while its loop winds down: see
 # async/relay_release/main.cpp. The linker's --wrap is ELF's.
 kotatsu_test(
