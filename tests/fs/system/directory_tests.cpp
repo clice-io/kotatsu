@@ -922,6 +922,18 @@ ZEST_CASE(create_directory_symlink_to_nothing_named_fails) {
     ZEXPECT(link.error() == std::errc::no_such_file_or_directory);
 }
 
+ZEST_CASE(create_directory_symlink_to_a_target_no_path_spells_fails) {
+    // Even where a `..` after it would fold it away.
+    test::TempDir dir;
+    ZEXPECT(create_directory_symlink(std::string_view("bad\0/../target", 14), dir.file("link")) ==
+            std::errc::invalid_argument);
+    ZEXPECT(create_directory_symlink("\xFF/../target", dir.file("link")) ==
+            std::errc::illegal_byte_sequence);
+    auto link = symlink_status(dir.file("link"));
+    ZASSERT(!link.has_value());
+    ZEXPECT(link.error() == std::errc::no_such_file_or_directory);
+}
+
 ZEST_CASE(create_directory_symlink_takes_the_link_as_win32_resolves_it) {
     // Win32 folds a last `.` and takes off a last name's trailing dot: the
     // link is `sub\link`, its target taken from `sub`.

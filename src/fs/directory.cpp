@@ -1281,6 +1281,11 @@ std::error_code create_directory_symlink(std::string_view target, std::string_vi
     if(target.empty()) {
         return std::make_error_code(std::errc::no_such_file_or_directory);
     }
+    // What the target spells is checked before a `..` folds any of it away.
+    win32::WidePath wide_target;
+    if(auto error = win32::widen(wide_target, target)) {
+        return error;
+    }
     win32::WidePath native_link;
     if(auto error = windows::to_native(native_link, link)) {
         return error;
