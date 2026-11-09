@@ -297,10 +297,8 @@ ZEST_CASE(symlink_status_of_a_link_and_a_separator_is_the_link) {
 ZEST_CASE(symlink_status_of_a_link_and_a_separator_is_the_link_wherever_it_leads) {
     test::TempDir dir;
     std::vector<std::string> links = {"dangling/"};
-#ifdef _WIN32
-    test::make_junction(dir.file("dangling"), dir.file("missing"));
-#else
     ZASSERT(!create_directory_symlink(dir.file("missing"), dir.file("dangling")));
+#ifndef _WIN32
     // One that leads to itself, which the system gives up following.
     ZASSERT(!create_symlink("loop", dir.file("loop")));
     links.push_back("loop/");

@@ -136,23 +136,9 @@ std::error_code to_native(basic_buffer_ref<wchar_t> out, std::string_view path) 
 
 void from_native(buffer_ref out, std::wstring_view path) {
     win32::WidePath plain;
-    if(path.starts_with(LR"(\\?\UNC\)")) {
-        plain.append(2, L'\\');
-        plain.append(path.substr(8));
-    } else if(path.starts_with(LR"(\\?\)") && path.size() >= 6 && path[5] == L':') {
-        plain.append(path.substr(4));
-    } else {
-        from_utf16(out, path);
-        return;
-    }
-    // Without the prefix Win32 resolves the path: it names the same file
-    // only where that resolution changes nothing.
-    win32::WidePath resolved;
-    if(!win32::full_path(resolved, plain.c_str()) && std::ranges::equal(resolved, plain)) {
-        from_utf16(out, plain);
-        return;
-    }
-    from_utf16(out, path);
+    plain.append(path);
+    win32::unverbatim(plain);
+    from_utf16(out, plain);
 }
 
 }  // namespace kotatsu::fs::windows
@@ -203,8 +189,42 @@ void verbatim(basic_buffer_ref<wchar_t> path) {
     std::ranges::copy(prefix, chars.begin());
 }
 
-std::expected<Handle, DWORD>
-    open_at(HANDLE root, std::wstring_view name, DWORD access, bool follow) {
+void unverbatim(basic_buffer_ref<wchar_t> path) {
+    auto held = path.view();
+    WidePath plain;
+    if(held.starts_with(LR"(\\?\UNC\)")) {
+        plain.append(2, L'\\');
+        plain.append(held.substr(8));
+    } else if(held.starts_with(LR"(\\?\)") && held.size() >= 6 && held[5] == L':') {
+        plain.append(held.substr(4));
+    } else {
+        return;
+    }
+    // Without the prefix Win32 resolves the path: it names the same file
+    // only where that resolution changes nothing.
+    WidePath resolved;
+    if(!full_path(resolved, plain.c_str()) && std::ranges::equal(resolved, plain)) {
+        path.assign(plain);
+    }
+}
+
+namespace {
+
+/// NtCreateFile's dispositions and options, which only the DDK names.
+constexpr ULONG open_existing = 1;
+constexpr ULONG file_create = 2;
+constexpr ULONG directory_file = 0x1;
+constexpr ULONG synchronous_io = 0x20;
+constexpr ULONG backup_intent = 0x4000;
+constexpr ULONG open_reparse_point = 0x200000;
+
+/// What NtCreateFile opens or makes of `name`, as open_at() takes it, by
+/// `disposition` and `options`, failing as open_at() does.
+std::expected<Handle, DWORD> create_file(HANDLE root,
+                                         std::wstring_view name,
+                                         DWORD access,
+                                         ULONG disposition,
+                                         ULONG options) {
     using NtCreateFileFn = NTSTATUS(NTAPI*)(PHANDLE,
                                             ACCESS_MASK,
                                             POBJECT_ATTRIBUTES,
@@ -217,12 +237,6 @@ std::expected<Handle, DWORD>
                                             PVOID,
                                             ULONG);
     static constinit std::atomic<NtCreateFileFn> create = nullptr;
-    // NtCreateFile's disposition, options and status, which only the DDK
-    // names.
-    constexpr ULONG open_existing = 1;
-    constexpr ULONG synchronous_io = 0x20;
-    constexpr ULONG backup_intent = 0x4000;
-    constexpr ULONG open_reparse_point = 0x200000;
     constexpr auto delete_pending = static_cast<NTSTATUS>(0xC0000056);
     // A UNICODE_STRING counts its bytes in 16 bits.
     if(name.size() > std::numeric_limits<USHORT>::max() / sizeof(wchar_t)) {
@@ -239,18 +253,18 @@ std::expected<Handle, DWORD>
     attributes.Attributes = OBJ_CASE_INSENSITIVE;
     IO_STATUS_BLOCK status_block{};
     HANDLE handle = INVALID_HANDLE_VALUE;
-    auto status = from_ntdll(create, "NtCreateFile")(
-        &handle,
-        access | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
-        &attributes,
-        &status_block,
-        nullptr,
-        0,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        open_existing,
-        synchronous_io | backup_intent | (follow ? 0 : open_reparse_point),
-        nullptr,
-        0);
+    auto status =
+        from_ntdll(create, "NtCreateFile")(&handle,
+                                           access | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+                                           &attributes,
+                                           &status_block,
+                                           nullptr,
+                                           0,
+                                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                           disposition,
+                                           synchronous_io | backup_intent | options,
+                                           nullptr,
+                                           0);
     if(status == delete_pending) {
         return std::unexpected(DWORD{ERROR_DELETE_PENDING});
     }
@@ -260,21 +274,43 @@ std::expected<Handle, DWORD>
     return Handle(handle);
 }
 
-std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow) {
+}  // namespace
+
+std::expected<Handle, DWORD>
+    open_at(HANDLE root, std::wstring_view name, DWORD access, bool follow) {
+    return create_file(root, name, access, open_existing, follow ? 0 : open_reparse_point);
+}
+
+void nt_path(basic_buffer_ref<wchar_t> out, std::wstring_view path) {
     // NT spells Win32's prefixes `\??\`, a share's `\??\UNC\`; a path
     // to_native() leaves without one, which Win32 resolves to itself, takes
     // one all the same.
-    WidePath name;
-    name.append(std::wstring_view(LR"(\??\)"));
+    out.assign(LR"(\??\)");
     if(path.starts_with(LR"(\\?\)") || path.starts_with(LR"(\\.\)")) {
-        name.append(path.substr(4));
+        out.append(path.substr(4));
     } else if(path.starts_with(LR"(\\)")) {
-        name.append(std::wstring_view(LR"(UNC\)"));
-        name.append(path.substr(2));
+        out.append(LR"(UNC\)");
+        out.append(path.substr(2));
     } else {
-        name.append(path);
+        out.append(path);
     }
+}
+
+std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow) {
+    WidePath name;
+    nt_path(name, path);
     return open_at(nullptr, name, access, follow);
+}
+
+std::expected<Handle, DWORD> create_directory(std::wstring_view path, DWORD access) {
+    WidePath name;
+    nt_path(name, path);
+    // A link there is what is there, never followed to make what it names;
+    // a name a file deleted while held open keeps is taken.
+    return create_file(nullptr, name, access, file_create, directory_file | open_reparse_point)
+        .transform_error([](DWORD error) {
+            return error == ERROR_DELETE_PENDING ? DWORD{ERROR_ALREADY_EXISTS} : error;
+        });
 }
 
 std::expected<Handle, std::error_code> open(std::string_view path, DWORD access) {

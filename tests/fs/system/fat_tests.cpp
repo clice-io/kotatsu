@@ -371,6 +371,17 @@ ZEST_CASE(read_symlink_of_a_file_fails) {
     });
 }
 
+ZEST_CASE(create_directory_symlink_fails_and_leaves_nothing) {
+    // FAT keeps no reparse points: the directory made for the junction goes
+    // again.
+    on_fat([](const test::TempDir& dir) {
+        std::filesystem::create_directory(dir.path / "target");
+        ZEXPECT(create_directory_symlink("target", dir.file("link")) ==
+                std::errc::function_not_supported);
+        ZEXPECT(!std::filesystem::exists(dir.path / "link"));
+    });
+}
+
 ZEST_CASE(case_sensitive_is_false) {
     // FAT keeps no flag of a directory's case.
     on_fat([](const test::TempDir& dir) { ZEXPECT(case_sensitive(dir.root()) == false); });

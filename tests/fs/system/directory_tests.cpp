@@ -146,9 +146,7 @@ ZEST_CASE(open_of_a_file_fails) {
 ZEST_CASE(directory_leaves_links_unfollowed) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
-    if(!test::linked(create_directory_symlink("target", dir.file("link")))) {
-        return;
-    }
+    ZASSERT(!create_directory_symlink("target", dir.file("link")));
     auto entries = test::entries_of(dir.root());
     auto found = std::ranges::find(entries, "link", &Directory::Entry::name);
     ZASSERT(found != entries.end());
@@ -158,20 +156,7 @@ ZEST_CASE(directory_leaves_links_unfollowed) {
     ZEXPECT(status->type == FileType::Symlink);
 }
 
-#ifdef _WIN32
-ZEST_CASE(directory_lists_a_junction_as_a_link) {
-    test::TempDir dir;
-    std::filesystem::create_directory(dir.path / "target");
-    test::make_junction(dir.file("junction"), dir.file("target"));
-    auto entries = test::entries_of(dir.root());
-    auto found = std::ranges::find(entries, "junction", &Directory::Entry::name);
-    ZASSERT(found != entries.end());
-    ZEXPECT(found->type == FileType::Symlink);
-    auto status = found->status();
-    ZASSERT(status.has_value());
-    ZEXPECT(status->type == FileType::Symlink);
-}
-#else
+#ifndef _WIN32
 ZEST_CASE(directory_tells_a_fifo) {
     test::TempDir dir;
     ZASSERT(::mkfifo(dir.file("fifo").c_str(), 0600) == 0);
@@ -470,9 +455,7 @@ ZEST_CASE(remove_takes_a_link_not_its_target) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
     test::write_text(dir.file("target/kept.txt"), "text");
-    if(!test::linked(create_directory_symlink("target", dir.file("link")))) {
-        return;
-    }
+    ZASSERT(!create_directory_symlink("target", dir.file("link")));
     ZEXPECT(remove(dir.file("link")) == true);
     ZEXPECT(!symlink_status(dir.file("link")).has_value());
     ZEXPECT(is_file(dir.file("target/kept.txt")));
@@ -542,9 +525,7 @@ ZEST_CASE(remove_all_never_follows_a_link) {
     std::filesystem::create_directory(dir.path / "outside");
     test::write_text(dir.file("outside/kept.txt"), "text");
     std::filesystem::create_directory(dir.path / "tree");
-    if(!test::linked(create_directory_symlink(dir.file("outside"), dir.file("tree/link")))) {
-        return;
-    }
+    ZASSERT(!create_directory_symlink(dir.file("outside"), dir.file("tree/link")));
     ZEXPECT(remove_all(dir.file("tree")) == 2u);
     ZEXPECT(is_file(dir.file("outside/kept.txt")));
 }
@@ -553,9 +534,7 @@ ZEST_CASE(remove_all_of_a_link_with_a_separator_removes_the_link) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "outside");
     test::write_text(dir.file("outside/kept.txt"), "text");
-    if(!test::linked(create_directory_symlink(dir.file("outside"), dir.file("link")))) {
-        return;
-    }
+    ZASSERT(!create_directory_symlink(dir.file("outside"), dir.file("link")));
     // Through the separator the system would resolve the link.
     ZEXPECT(remove_all(dir.file("link/")) == 1u);
     ZEXPECT(is_file(dir.file("outside/kept.txt")));
@@ -563,27 +542,6 @@ ZEST_CASE(remove_all_of_a_link_with_a_separator_removes_the_link) {
 }
 
 #ifdef _WIN32
-ZEST_CASE(remove_all_never_follows_a_junction) {
-    test::TempDir dir;
-    std::filesystem::create_directory(dir.path / "outside");
-    test::write_text(dir.file("outside/kept.txt"), "text");
-    std::filesystem::create_directory(dir.path / "tree");
-    test::make_junction(dir.file("tree/junction"), dir.file("outside"));
-    ZEXPECT(remove_all(dir.file("tree")) == 2u);
-    ZEXPECT(is_file(dir.file("outside/kept.txt")));
-}
-
-ZEST_CASE(remove_takes_a_junction_not_its_target) {
-    // Junctions, unlike symlinks, need no privilege, so CI makes them.
-    test::TempDir dir;
-    std::filesystem::create_directory(dir.path / "target");
-    test::write_text(dir.file("target/kept.txt"), "text");
-    test::make_junction(dir.file("junction"), dir.file("target"));
-    ZEXPECT(remove(dir.file("junction")) == true);
-    ZEXPECT(!symlink_status(dir.file("junction")).has_value());
-    ZEXPECT(is_file(dir.file("target/kept.txt")));
-}
-
 ZEST_CASE(remove_all_of_a_junction_takes_the_junction_alone) {
     test::TempDir dir;
     std::filesystem::create_directory(dir.path / "target");
@@ -834,6 +792,23 @@ ZEST_CASE(read_symlink_gives_the_directory_of_a_junction) {
     ZEXPECT(target == dir.file("target"));
 }
 
+ZEST_CASE(a_directory_symlink_another_tool_made_is_a_link) {
+    // kotatsu makes junctions, but takes a directory symlink for a link too.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    std::filesystem::create_directory(dir.path / "tree");
+    test::write_text(dir.file("target/kept.txt"), "text");
+    if(!test::make_directory_symlink(dir.file("tree/link"), R"(..\target)")) {
+        return;
+    }
+    ZEXPECT(type_in(test::entries_of(dir.file("tree")), "link") == FileType::Symlink);
+    std::string target;
+    ZEXPECT(!read_symlink(target, dir.file("tree/link")));
+    ZEXPECT(target == R"(..\target)");
+    ZEXPECT(remove_all(dir.file("tree")) == 2u);
+    ZEXPECT(test::read_text(dir.file("target/kept.txt")) == "text");
+}
+
 ZEST_CASE(read_symlink_of_a_link_it_cannot_read_fails) {
     // A reparse point a path is resolved through, as Windows containers
     // make: a link, whose target only its own driver knows.
@@ -849,6 +824,187 @@ ZEST_CASE(read_symlink_of_a_link_it_cannot_read_fails) {
     test::write_text(dir.file("fifo"), "");
     test::set_reparse_point(dir.file("fifo"), test::wsl_fifo_tag);
     ZEXPECT(read_symlink(target, dir.file("fifo")) == std::errc::invalid_argument);
+}
+#endif
+
+ZEST_CASE(create_directory_symlink_leads_to_the_directory) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    test::write_text(dir.file("target/kept.txt"), "text");
+    ZASSERT(!create_directory_symlink("target", dir.file("link")));
+    auto itself = symlink_status(dir.file("link"));
+    ZASSERT(itself.has_value());
+    ZEXPECT(itself->type == FileType::Symlink);
+    auto followed = status(dir.file("link"));
+    ZASSERT(followed.has_value());
+    ZEXPECT(followed->type == FileType::Directory);
+    ZEXPECT(test::read_text(dir.file("link/kept.txt")) == "text");
+    std::string target;
+    ZEXPECT(!read_symlink(target, dir.file("link")));
+#ifdef _WIN32
+    // A junction, which holds the directory's absolute path.
+    ZEXPECT(test::reparse_tag_of(dir.file("link")) == IO_REPARSE_TAG_MOUNT_POINT);
+    ZEXPECT(target == dir.file("target"));
+#else
+    ZEXPECT(target == "target");
+#endif
+}
+
+ZEST_CASE(create_directory_symlink_takes_a_relative_target_from_the_link_directory) {
+    test::TempDir dir;
+    std::filesystem::create_directories(dir.path / "a" / "x");
+    std::filesystem::create_directory(dir.path / "a" / "target");
+    std::filesystem::create_directory(dir.path / "b");
+    test::write_text(dir.file("a/target/kept.txt"), "text");
+    // From the current directory the target would name another.
+    test::ScopedCurrentDir current(dir.path);
+    ZASSERT(!create_directory_symlink("./../a/x/../target", "b/link"));
+    ZEXPECT(test::read_text(dir.file("b/link/kept.txt")) == "text");
+    std::string target;
+    ZEXPECT(!read_symlink(target, dir.file("b/link")));
+#ifdef _WIN32
+    ZEXPECT(target == dir.root() + R"(\a\target)");
+#else
+    ZEXPECT(target == "./../a/x/../target");
+#endif
+}
+
+ZEST_CASE(create_directory_symlink_to_nothing_dangles_until_it_comes) {
+    test::TempDir dir;
+    ZASSERT(!create_directory_symlink("later", dir.file("link")));
+    auto itself = symlink_status(dir.file("link"));
+    ZASSERT(itself.has_value());
+    ZEXPECT(itself->type == FileType::Symlink);
+    auto followed = status(dir.file("link"));
+    ZASSERT(!followed.has_value());
+    ZEXPECT(followed.error() == std::errc::no_such_file_or_directory);
+    std::filesystem::create_directory(dir.path / "later");
+    test::write_text(dir.file("later/kept.txt"), "text");
+    ZEXPECT(test::read_text(dir.file("link/kept.txt")) == "text");
+}
+
+ZEST_CASE(create_directory_symlink_over_anything_fails) {
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    std::filesystem::create_directory(dir.path / "directory");
+    test::write_text(dir.file("file"), "text");
+    ZASSERT(!create_directory_symlink("missing", dir.file("dangling")));
+    for(auto name: {"directory", "file", "dangling"}) {
+        ZEST_CONTEXT("{}", name);
+        ZEXPECT(create_directory_symlink("target", dir.file(name)) == std::errc::file_exists);
+    }
+    // The dangling link is not followed to make what it names.
+    ZEXPECT(try_exists(dir.file("missing")) == false);
+    auto directory = symlink_status(dir.file("directory"));
+    ZASSERT(directory.has_value());
+    ZEXPECT(directory->type == FileType::Directory);
+    ZEXPECT(test::read_text(dir.file("file")) == "text");
+    std::string target;
+    ZEXPECT(!read_symlink(target, dir.file("dangling")));
+#ifdef _WIN32
+    ZEXPECT(target == dir.file("missing"));
+    // A name a file deleted while held open keeps.
+    test::write_text(dir.file("pending"), "text");
+    test::DeletePending pending(dir.file("pending"));
+    ZEXPECT(create_directory_symlink("target", dir.file("pending")) == std::errc::file_exists);
+#else
+    ZEXPECT(target == "missing");
+#endif
+}
+
+#ifdef _WIN32
+ZEST_CASE(create_directory_symlink_to_nothing_named_fails) {
+    // Taken from the link's directory, it would name that.
+    test::TempDir dir;
+    ZEXPECT(create_directory_symlink("", dir.file("link")) == std::errc::no_such_file_or_directory);
+    auto link = symlink_status(dir.file("link"));
+    ZASSERT(!link.has_value());
+    ZEXPECT(link.error() == std::errc::no_such_file_or_directory);
+}
+
+ZEST_CASE(create_directory_symlink_to_a_target_no_path_spells_fails) {
+    // Even where a `..` after it would fold it away.
+    test::TempDir dir;
+    ZEXPECT(create_directory_symlink(std::string_view("bad\0/../target", 14), dir.file("link")) ==
+            std::errc::invalid_argument);
+    ZEXPECT(create_directory_symlink("\xFF/../target", dir.file("link")) ==
+            std::errc::illegal_byte_sequence);
+    auto link = symlink_status(dir.file("link"));
+    ZASSERT(!link.has_value());
+    ZEXPECT(link.error() == std::errc::no_such_file_or_directory);
+}
+
+ZEST_CASE(create_directory_symlink_takes_the_link_as_win32_resolves_it) {
+    // Win32 folds a last `.` and takes off a last name's trailing dot: the
+    // link is `sub\link`, its target taken from `sub`.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    std::filesystem::create_directory(dir.path / "sub");
+    test::write_text(dir.file("target/kept.txt"), "text");
+    for(auto spelled: {R"(sub\link\.)", R"(sub\link.)", R"(sub\link\)"}) {
+        ZEST_CONTEXT("{}", spelled);
+        ZASSERT(!create_directory_symlink(R"(..\target)", dir.file(spelled)));
+        ZEXPECT(test::read_text(dir.file("sub/link/kept.txt")) == "text");
+        ZEXPECT(remove(dir.file("sub/link")) == true);
+    }
+}
+
+ZEST_CASE(create_directory_symlink_takes_verbatim_and_long_paths) {
+    // Past MAX_PATH, where only a verbatim path reaches; `..` in a relative
+    // target is folded all the same.
+    test::TempDir dir;
+    auto deep = dir.root();
+    for(int i = 0; i < 5; ++i) {
+        deep += '\\' + std::string(60, 'd');
+    }
+    ZASSERT(create_directories(deep + R"(\target)").has_value());
+    ZASSERT(create_directories(deep + R"(\sub)").has_value());
+    ZASSERT(!write_file(deep + R"(\target\kept.txt)", "text"));
+    auto verbatim = R"(\\?\)" + deep;
+    ZASSERT(!create_directory_symlink(R"(..\target)", verbatim + R"(\sub\link)"));
+    ZEXPECT(test::read_text(verbatim + R"(\sub\link\kept.txt)") == "text");
+    std::string target;
+    ZEXPECT(!read_symlink(target, deep + R"(\sub\link)"));
+    ZEXPECT(target == deep + R"(\target)");
+    ZASSERT(!create_directory_symlink(verbatim + R"(\target)", deep + R"(\link)"));
+    ZEXPECT(test::read_text(verbatim + R"(\link\kept.txt)") == "text");
+    ZEXPECT(!read_symlink(target, deep + R"(\link)"));
+    ZEXPECT(target == deep + R"(\target)");
+    // A name Win32 would rewrite keeps the prefix that keeps it.
+    auto dotted = R"(\\?\)" + dir.root() + R"(\name.)";
+    ZASSERT(!create_directory_symlink(dotted, dir.file("dotted")));
+    ZEXPECT(!read_symlink(target, dir.file("dotted")));
+    ZEXPECT(target == dotted);
+}
+
+ZEST_CASE(create_directory_symlink_to_a_target_too_long_fails) {
+    // The junction holds the target twice, as the system follows it and as
+    // tools show it, in 16 KiB.
+    test::TempDir dir;
+    std::string target = R"(C:\)";
+    for(int i = 0; i < 20; ++i) {
+        target += std::string(250, 't') + '\\';
+    }
+    ZEXPECT(create_directory_symlink(target, dir.file("link")) == std::errc::filename_too_long);
+    auto link = symlink_status(dir.file("link"));
+    ZASSERT(!link.has_value());
+    ZEXPECT(link.error() == std::errc::no_such_file_or_directory);
+}
+
+ZEST_CASE(create_directory_symlink_to_a_share_fails) {
+    // A junction leads only to a local volume; the share is never asked.
+    test::TempDir dir;
+    for(auto target: {R"(\\server\share\dir)",
+                      "//server/share/dir",
+                      R"(\\?\UNC\server\share\dir)",
+                      R"(\\?\unc\server\share)",
+                      R"(\\.\UNC\server\share)"}) {
+        ZEST_CONTEXT("{}", target);
+        ZEXPECT(create_directory_symlink(target, dir.file("link")) == std::errc::not_supported);
+        auto link = symlink_status(dir.file("link"));
+        ZASSERT(!link.has_value());
+        ZEXPECT(link.error() == std::errc::no_such_file_or_directory);
+    }
 }
 #endif
 

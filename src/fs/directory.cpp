@@ -16,6 +16,7 @@
 
 #ifdef _WIN32
 #include "win32.h"
+#include "kotatsu/support/scope_exit.h"
 #include "kotatsu/support/utf16.h"
 #else
 #include <dirent.h>
@@ -87,6 +88,41 @@ constexpr ULONG rename_ignore_readonly = 0x40;
 /// FileCaseSensitiveInfo, which MinGW's headers declare only for Windows 10
 /// 1803 and later (NTDDI_VERSION), above the one they aim at by default.
 constexpr auto case_sensitive_info = static_cast<FILE_INFO_BY_HANDLE_CLASS>(23);
+
+/// REPARSE_DATA_BUFFER, which only the driver headers declare: a symlink
+/// and a junction hold a substitute name, which the system follows, and a
+/// print name, which some tools leave empty; a WSL symlink holds its target
+/// in UTF-8 after a version. `length` counts the bytes after `reserved`.
+struct Reparse {
+    ULONG tag;
+    USHORT length;
+    USHORT reserved;
+
+    struct Names {
+        USHORT substitute_offset;
+        USHORT substitute_length;
+        USHORT print_offset;
+        USHORT print_length;
+    };
+
+    union {
+        struct {
+            Names names;
+            ULONG flags;
+            WCHAR text[1];
+        } symlink;
+
+        struct {
+            Names names;
+            WCHAR text[1];
+        } junction;
+
+        struct {
+            ULONG version;
+            char target[1];
+        } wsl;
+    };
+};
 
 /// Whether a file system refused an information class it does not know,
 /// one newer than it: FAT knows no POSIX deletes or renames, some network
@@ -585,47 +621,6 @@ std::expected<std::uint64_t, std::error_code> remove_tree(const char* path) {
 }
 
 #endif
-
-std::error_code create_link(std::string_view target, std::string_view link, bool directory) {
-#ifdef _WIN32
-    win32::WidePath native;
-    if(auto error = windows::to_native(native, link)) {
-        return error;
-    }
-    // The target stays as written, relative or not; only `\` separates in it.
-    small_string<256> spelled(target);
-    path::to_backslash(spelled);
-    win32::WidePath wide;
-    if(auto error = win32::widen(wide, spelled)) {
-        return error;
-    }
-    DWORD flags = directory ? SYMBOLIC_LINK_FLAG_DIRECTORY : 0;
-    // Developer mode lets anyone create a link, but older systems reject the
-    // flag that asks for it.
-    constexpr DWORD unprivileged = 0x2;
-    if(::CreateSymbolicLinkW(native.c_str(), wide.c_str(), flags | unprivileged)) {
-        return {};
-    }
-    if(::GetLastError() == ERROR_INVALID_PARAMETER &&
-       ::CreateSymbolicLinkW(native.c_str(), wide.c_str(), flags)) {
-        return {};
-    }
-    return windows::last_error();
-#else
-    // POSIX tells a link to a directory by its target alone.
-    static_cast<void>(directory);
-    posix::CPath c_target;
-    if(auto error = c_target.assign(target)) {
-        return error;
-    }
-    posix::CPath c_link;
-    if(auto error = c_link.assign(link)) {
-        return error;
-    }
-    return ::symlink(c_target.c_str(), c_link.c_str()) == 0 ? std::error_code()
-                                                            : posix::last_error();
-#endif
-}
 
 /// Whether `path` names a root, or by its last name a directory it goes
 /// through: `.` and `..`, which the OS refuses to remove only once their
@@ -1242,11 +1237,144 @@ std::error_code rename_noreplace(std::string_view from, std::string_view to) {
 }
 
 std::error_code create_symlink(std::string_view target, std::string_view link) {
-    return create_link(target, link, false);
+#ifdef _WIN32
+    win32::WidePath native;
+    if(auto error = windows::to_native(native, link)) {
+        return error;
+    }
+    // The target stays as written, relative or not; only `\` separates in it.
+    small_string<256> spelled(target);
+    path::to_backslash(spelled);
+    win32::WidePath wide;
+    if(auto error = win32::widen(wide, spelled)) {
+        return error;
+    }
+    // Developer mode lets anyone create a link, but older systems reject the
+    // flag that asks for it.
+    constexpr DWORD unprivileged = 0x2;
+    if(::CreateSymbolicLinkW(native.c_str(), wide.c_str(), unprivileged)) {
+        return {};
+    }
+    if(::GetLastError() == ERROR_INVALID_PARAMETER &&
+       ::CreateSymbolicLinkW(native.c_str(), wide.c_str(), 0)) {
+        return {};
+    }
+    return windows::last_error();
+#else
+    posix::CPath c_target;
+    if(auto error = c_target.assign(target)) {
+        return error;
+    }
+    posix::CPath c_link;
+    if(auto error = c_link.assign(link)) {
+        return error;
+    }
+    return ::symlink(c_target.c_str(), c_link.c_str()) == 0 ? std::error_code()
+                                                            : posix::last_error();
+#endif
 }
 
 std::error_code create_directory_symlink(std::string_view target, std::string_view link) {
-    return create_link(target, link, true);
+#ifdef _WIN32
+    // Taken from the link's directory, an empty target would name that; it
+    // names nothing, as on Linux.
+    if(target.empty()) {
+        return std::make_error_code(std::errc::no_such_file_or_directory);
+    }
+    // What the target spells is checked before a `..` folds any of it away.
+    win32::WidePath wide_target;
+    if(auto error = win32::widen(wide_target, target)) {
+        return error;
+    }
+    win32::WidePath native_link;
+    if(auto error = windows::to_native(native_link, link)) {
+        return error;
+    }
+    // A junction holds an absolute path: a relative target is taken from the
+    // directory of the link as Win32 resolves its path.
+    small_string<256> spelled;
+    if(path::is_absolute(target)) {
+        spelled.assign(target);
+    } else {
+        small_string<256> resolved;
+        windows::from_native(resolved, native_link);
+        path::resolve(spelled, target, path::parent(resolved));
+    }
+    win32::WidePath native_target;
+    if(auto error = windows::to_native(native_target, spelled)) {
+        return error;
+    }
+    // The system follows the NT path, which leads only to a local volume:
+    // neither to a share nor to a drive mapped to one.
+    win32::WidePath substitute;
+    win32::nt_path(substitute, native_target);
+    auto device = std::wstring_view(substitute).substr(4);
+    bool remote = false;
+    if(device.size() >= 3 && device[1] == L':' && device[2] == L'\\') {
+        const wchar_t root[] = {device[0], L':', L'\\', L'\0'};
+        remote = ::GetDriveTypeW(root) == DRIVE_REMOTE;
+    } else {
+        constexpr std::wstring_view share = LR"(UNC\)";
+        auto head = device.substr(0, share.size());
+        remote = ::CompareStringOrdinal(head.data(),
+                                        static_cast<int>(head.size()),
+                                        share.data(),
+                                        static_cast<int>(share.size()),
+                                        TRUE) == CSTR_EQUAL;
+    }
+    if(remote) {
+        return std::make_error_code(std::errc::not_supported);
+    }
+    // Tools show the Win32 path.
+    win32::WidePath print;
+    print.append(std::wstring_view(native_target));
+    win32::unverbatim(print);
+
+    // Each name ends with a NUL the lengths leave out, which the buffer,
+    // zeroed, holds, as it holds `reserved`.
+    constexpr auto header = offsetof(Reparse, junction.text);
+    auto size = header + (substitute.size() + 1 + print.size() + 1) * sizeof(WCHAR);
+    if(size > MAXIMUM_REPARSE_DATA_BUFFER_SIZE) {
+        return std::make_error_code(std::errc::filename_too_long);
+    }
+    auto buffer = std::make_unique<std::byte[]>(size);
+    auto& data = *reinterpret_cast<Reparse*>(buffer.get());
+    data.tag = IO_REPARSE_TAG_MOUNT_POINT;
+    data.length = static_cast<USHORT>(size - offsetof(Reparse, junction));
+    data.junction.names = {
+        .substitute_offset = 0,
+        .substitute_length = static_cast<USHORT>(substitute.size() * sizeof(WCHAR)),
+        .print_offset = static_cast<USHORT>((substitute.size() + 1) * sizeof(WCHAR)),
+        .print_length = static_cast<USHORT>(print.size() * sizeof(WCHAR)),
+    };
+    auto text = reinterpret_cast<WCHAR*>(buffer.get() + header);
+    std::ranges::copy(substitute, text);
+    std::ranges::copy(print, text + substitute.size() + 1);
+
+    // Made and opened at once, so that no directory put there meanwhile
+    // becomes the junction, nor goes should it fail.
+    auto handle = win32::create_directory(native_link, FILE_WRITE_ATTRIBUTES | DELETE);
+    if(!handle) {
+        return windows::to_error_code(handle.error());
+    }
+    ScopeExit undo([&] { dispose(handle->get()); });
+    DWORD returned = 0;
+    if(!::DeviceIoControl(handle->get(),
+                          FSCTL_SET_REPARSE_POINT,
+                          buffer.get(),
+                          static_cast<DWORD>(size),
+                          nullptr,
+                          0,
+                          &returned,
+                          nullptr)) {
+        return windows::last_error();
+    }
+    undo.release();
+    return {};
+#else
+    // POSIX tells a link to a directory by its target alone.
+    return create_symlink(target, link);
+#endif
 }
 
 std::error_code read_symlink(buffer_ref out, std::string_view path) {
@@ -1268,41 +1396,6 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
     if(!(basic.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
         return std::make_error_code(std::errc::invalid_argument);
     }
-
-    // REPARSE_DATA_BUFFER, which only the driver headers declare: a symlink
-    // and a junction hold a substitute name, which the system follows, and a
-    // print name, which some tools leave empty; a WSL symlink holds its
-    // target in UTF-8 after a version.
-    struct Reparse {
-        ULONG tag;
-        USHORT length;
-        USHORT reserved;
-
-        struct Names {
-            USHORT substitute_offset;
-            USHORT substitute_length;
-            USHORT print_offset;
-            USHORT print_length;
-        };
-
-        union {
-            struct {
-                Names names;
-                ULONG flags;
-                WCHAR text[1];
-            } symlink;
-
-            struct {
-                Names names;
-                WCHAR text[1];
-            } junction;
-
-            struct {
-                ULONG version;
-                char target[1];
-            } wsl;
-        };
-    };
 
     constexpr ULONG wsl_symlink_tag = 0xA000001D;
     auto buffer = std::make_unique_for_overwrite<std::byte[]>(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
