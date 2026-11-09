@@ -9,10 +9,6 @@
 #include <vector>
 
 #ifdef _WIN32
-#include <cstdint>
-#include <cstdlib>
-#include <io.h>
-
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif

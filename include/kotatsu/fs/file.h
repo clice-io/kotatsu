@@ -233,16 +233,20 @@ public:
     /// and not the File's own: what `fd` named is closed, and `fd` names
     /// this file from now on, as dup2 makes it name another at once, so that
     /// a thread that writes to `fd` meanwhile writes to one file or the
-    /// other. On Windows `fd` takes a handle of its own, and the one it had,
-    /// which _get_osfhandle gave before, is closed. As the File's handle,
-    /// `fd` is not inherited by child processes; on macOS and Windows one
-    /// another thread starts at that instant may inherit it. The File is
-    /// closed then, and `fd` holds the lock the File held: on Windows too,
-    /// where a lock belongs to the open file, which every copy of its handle
-    /// shares, and goes when the last of them closes. A descriptor not open
-    /// fails with std::errc::bad_file_descriptor, and on any failure the
-    /// File keeps the handle and `fd` what it named. A File that borrows its
-    /// handle (borrow()) must not call this.
+    /// other. `fd` stays as child processes inherit it or not; on macOS and
+    /// Windows one another thread starts at that instant may inherit it
+    /// where it was not. The File is closed then, and `fd` holds the lock
+    /// the File held: on Windows too, where a lock belongs to the open file,
+    /// which every copy of its handle shares, and goes when the last of them
+    /// closes. A descriptor not open fails with
+    /// std::errc::bad_file_descriptor, and on any failure the File keeps the
+    /// handle and `fd` what it named, but where Windows runs out of handles
+    /// midway, which leaves `fd` closed. A File that borrows its handle
+    /// (borrow()) must not call this.
+    ///
+    /// On Windows `fd` takes a handle of its own: the one _get_osfhandle
+    /// gave before is closed, unless another standard stream shares it, and
+    /// a thread that writes through it loses it.
     std::error_code into_descriptor(int fd) &&;
 
     bool is_open() const;

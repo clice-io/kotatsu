@@ -814,9 +814,13 @@ std::error_code File::into_descriptor(int fd) && {
     }
 #ifdef _WIN32
     // _dup2 would take a descriptor not open for one to open.
-    if(windows::descriptor_handle(fd) == INVALID_HANDLE_VALUE) {
+    auto previous = windows::descriptor_handle(fd);
+    if(previous == INVALID_HANDLE_VALUE) {
         return std::make_error_code(std::errc::bad_file_descriptor);
     }
+    // A standard stream without a handle has none a child inherits.
+    DWORD inherited = 0;
+    ::GetHandleInformation(previous, &inherited);
     // _dup2 copies a descriptor's handle, and closing the descriptor it took
     // it from closes that: the copy is of a copy, so that the File keeps its
     // own should anything fail.
@@ -840,20 +844,28 @@ std::error_code File::into_descriptor(int fd) && {
     if(::_dup2(source, fd) == -1) {
         return std::error_code(errno, std::generic_category());
     }
-    // _dup2 makes the handle it gives `fd` one a child inherits.
-    ::SetHandleInformation(windows::descriptor_handle(fd), HANDLE_FLAG_INHERIT, 0);
+    // _dup2 gives `fd` a handle a child inherits.
+    if(!(inherited & HANDLE_FLAG_INHERIT)) {
+        ::SetHandleInformation(windows::descriptor_handle(fd), HANDLE_FLAG_INHERIT, 0);
+    }
     ::CloseHandle(handle);
 #else
     assert(fd != handle);
-#ifdef __APPLE__
-    // macOS has no dup3.
-    if(::fcntl(fd, F_GETFD) == -1 || ::dup2(handle, fd) == -1) {
+    // dup2 would take a descriptor not open for one to open.
+    int flags = ::fcntl(fd, F_GETFD);
+    if(flags == -1) {
         return posix::last_error();
     }
-    ::fcntl(fd, F_SETFD, FD_CLOEXEC);
+#ifdef __APPLE__
+    // macOS has no dup3.
+    if(::dup2(handle, fd) == -1) {
+        return posix::last_error();
+    }
+    if(flags & FD_CLOEXEC) {
+        ::fcntl(fd, F_SETFD, FD_CLOEXEC);
+    }
 #else
-    // dup3 would take a descriptor not open for one to open.
-    if(::fcntl(fd, F_GETFD) == -1 || ::dup3(handle, fd, O_CLOEXEC) == -1) {
+    if(::dup3(handle, fd, flags & FD_CLOEXEC ? O_CLOEXEC : 0) == -1) {
         return posix::last_error();
     }
 #endif

@@ -8,6 +8,10 @@
 #include <string_view>
 #include <system_error>
 
+#ifdef _WIN32
+#include <io.h>
+#endif
+
 #include "os.h"
 #include "kotatsu/sys/console.h"
 
