@@ -59,7 +59,7 @@ struct Image {
         const auto* byte = function_starts;
         while(byte != function_starts_end) {
             std::uintptr_t delta = 0;
-            for(int shift = 0; byte != function_starts_end && shift < 64; shift += 7) {
+            for(int shift = 0; byte != function_starts_end; shift += 7) {
                 delta |= std::uintptr_t(*byte & 0x7F) << shift;
                 if(!(*byte++ & 0x80)) {
                     break;
@@ -86,8 +86,8 @@ struct Image {
 /// start. dyld's shared cache maps one __LINKEDIT that its images share,
 /// whose offsets are into it.
 std::uintptr_t linkedit_base(const mach_header* header, std::uintptr_t slide) noexcept {
-    const auto* linkedit = find_segment(header, SEG_LINKEDIT);
-    return linkedit->vmaddr + slide - linkedit->fileoff;
+    const auto& linkedit = find_segment(header, SEG_LINKEDIT);
+    return linkedit.vmaddr + slide - linkedit.fileoff;
 }
 
 /// The images, the last loaded first, each added once and never taken out:
@@ -97,7 +97,7 @@ std::uintptr_t linkedit_base(const mach_header* header, std::uintptr_t slide) no
 constinit std::atomic<Image*> images = nullptr;
 
 void add(const mach_header* header, std::intptr_t slide, const char* path) noexcept {
-    const auto& text = *find_segment(header, SEG_TEXT);
+    const auto& text = find_segment(header, SEG_TEXT);
     auto start = text.vmaddr + static_cast<std::uintptr_t>(slide);
     const std::uint8_t* starts = nullptr;
     std::size_t size = 0;
@@ -172,35 +172,26 @@ constinit Function sigtramp;
 /// function starts.
 void find_sigtramp() noexcept {
     constexpr std::string_view library = "/usr/lib/system/libsystem_platform.dylib";
-    const Image* platform = nullptr;
     for(auto* image = images.load(std::memory_order_acquire); image != nullptr;
         image = image->next) {
-        if(image->path == library) {
-            platform = image;
+        if(image->path != library) {
+            continue;
         }
-    }
-    if(platform == nullptr) {
-        return;
-    }
-    const auto* symtab = find_command<symtab_command>(platform->header, LC_SYMTAB);
-    if(symtab == nullptr) {
-        return;
-    }
-    auto base = linkedit_base(platform->header, platform->slide);
-    const auto* symbols = reinterpret_cast<const nlist_64*>(base + symtab->symoff);
-    const auto* names = reinterpret_cast<const char*>(base + symtab->stroff);
-    for(std::uint32_t index = 0; index < symtab->nsyms; ++index) {
-        const auto& symbol = symbols[index];
-        if((symbol.n_type & N_STAB) == 0 && (symbol.n_type & N_TYPE) == N_SECT &&
-           symbol.n_un.n_strx < symtab->strsize &&
-           std::string_view(names + symbol.n_un.n_strx) == "__sigtramp") {
-            auto address = symbol.n_value + platform->slide;
-            if(auto function = platform->function_of(address);
-               function && function->start == address) {
-                sigtramp = *function;
+        const auto& symtab = *find_command<symtab_command>(image->header, LC_SYMTAB);
+        auto base = linkedit_base(image->header, image->slide);
+        const auto* symbols = reinterpret_cast<const nlist_64*>(base + symtab.symoff);
+        const auto* names = reinterpret_cast<const char*>(base + symtab.stroff);
+        for(std::uint32_t index = 0; index < symtab.nsyms; ++index) {
+            const auto& symbol = symbols[index];
+            if((symbol.n_type & N_STAB) == 0 && (symbol.n_type & N_TYPE) == N_SECT &&
+               std::string_view(names + symbol.n_un.n_strx) == "__sigtramp") {
+                if(auto function = image->function_of(symbol.n_value + image->slide)) {
+                    sigtramp = *function;
+                }
+                return;
             }
-            return;
         }
+        return;
     }
 }
 
@@ -223,7 +214,7 @@ struct Register {
             const auto* header = infos->dyldImageLoadAddress;
             add(header,
                 reinterpret_cast<std::intptr_t>(header) -
-                    static_cast<std::intptr_t>(find_segment(header, SEG_TEXT)->vmaddr),
+                    static_cast<std::intptr_t>(find_segment(header, SEG_TEXT).vmaddr),
                 infos->dyldPath);
         }
         find_sigtramp();
@@ -381,6 +372,16 @@ std::optional<Interrupted> signal_context(std::uintptr_t record, const Stacks& s
 #endif
 }
 
+#ifdef __aarch64__
+/// Whether the instruction before `address`, in an image's code, is a call:
+/// BL, BLR, or one of BLR's authenticating forms.
+bool follows_call(std::uintptr_t address) noexcept {
+    std::uint32_t instruction = 0;
+    std::memcpy(&instruction, reinterpret_cast<const void*>(address - 4), sizeof(instruction));
+    return (instruction & 0xFC00'0000) == 0x9400'0000 || (instruction & 0xFEFF'F000) == 0xD63F'0000;
+}
+#endif
+
 /// The return address of the frame `at` a signal interrupted, when the
 /// frame has not saved it in a record of its own yet: 0 when it has, or
 /// when that cannot be told.
@@ -390,8 +391,12 @@ std::uintptr_t unrecorded_return(const Interrupted& at,
 #ifdef __aarch64__
     // A function that calls none makes no record and keeps its return
     // address in lr, as does any function before its prologue, or an
-    // address a call through a bad pointer went to.
+    // address a call through a bad pointer went to. Once a function saved
+    // lr, it may hold anything, which no call precedes.
     auto lr = return_address(at.lr);
+    if(find_image(lr - 4) == nullptr || !follows_call(lr)) {
+        return 0;
+    }
     if(image == nullptr) {
         return lr;
     }
@@ -404,14 +409,16 @@ std::uintptr_t unrecorded_return(const Interrupted& at,
     }
     return lr;
 #else
-    // A function makes its record with push %rbp first, at which a stack
-    // overflow faults: there, as at an address a call through a bad pointer
+    // At a function's first instruction, the push of its record, where a
+    // stack overflow faults, as at an address a call through a bad pointer
     // went to, the call left the return address at the stack pointer.
-    if((image != nullptr && *reinterpret_cast<const std::uint8_t*>(at.pc) != 0x55) ||
-       stacks.holding(at.sp) == nullptr) {
-        return 0;
+    if(image != nullptr) {
+        auto function = image->function_of(at.pc);
+        if(!function || function->start != at.pc) {
+            return 0;
+        }
     }
-    return record_at(at.sp)[0];
+    return stacks.holding(at.sp) != nullptr ? record_at(at.sp)[0] : 0;
 #endif
 }
 

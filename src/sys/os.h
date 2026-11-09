@@ -32,6 +32,7 @@ extern "C" LONG NTAPI RtlGetVersion(OSVERSIONINFOW* version);
 #endif
 
 #ifdef __APPLE__
+#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <mach-o/loader.h>
@@ -166,17 +167,19 @@ const Command* find_command(const mach_header* header, std::uint32_t type) noexc
     return find_command<Command>(header, type, [](const Command&) { return true; });
 }
 
-/// The segment named `name` of the image whose header is at `header`: null
-/// for none, which __TEXT, in every image, never is.
-const inline segment_command_64* find_segment(const mach_header* header,
+/// The segment named `name` of the image whose header is at `header`, one
+/// every image has, as __TEXT and __LINKEDIT.
+const inline segment_command_64& find_segment(const mach_header* header,
                                               std::string_view name) noexcept {
-    return find_command<segment_command_64>(
+    const auto* segment = find_command<segment_command_64>(
         header,
         LC_SEGMENT_64,
         [&](const segment_command_64& segment) {
             return std::string_view(segment.segname,
                                     ::strnlen(segment.segname, sizeof(segment.segname))) == name;
         });
+    assert(segment != nullptr);
+    return *segment;
 }
 #endif
 

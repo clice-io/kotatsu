@@ -77,16 +77,24 @@ test(
   },
 );
 
-test("stacktrace_of_a_fault_on_the_thread_stack_decodes_to_its_calls", async (t) => {
-  const crashed = await crash(t, "fault_on_stack");
-  assertInterrupted(crashed);
-  if (symbolizer !== undefined) {
-    const decoded = decode(t, crashed);
-    assertFaultCalls(crashed, decoded);
-    assertCalls(decoded.names, ["probe_caller", "main"]);
-  }
-  await crashed.driver.expectExit(3);
-});
+test(
+  "stacktrace_of_a_fault_on_the_thread_stack_decodes_to_its_calls",
+  {
+    skip:
+      process.platform === "win32" &&
+      "only a POSIX handler may run on an alternate stack",
+  },
+  async (t) => {
+    const crashed = await crash(t, "fault_on_stack");
+    assertInterrupted(crashed);
+    if (symbolizer !== undefined) {
+      const decoded = decode(t, crashed);
+      assertFaultCalls(crashed, decoded);
+      assertCalls(decoded.names, ["probe_caller", "main"]);
+    }
+    await crashed.driver.expectExit(3);
+  },
+);
 
 test("stacktrace_of_a_fault_after_a_call_decodes_to_its_calls", async (t) => {
   const crashed = await crash(t, "fault_after_call");

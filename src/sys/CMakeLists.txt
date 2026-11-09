@@ -10,8 +10,7 @@ add_library(kotatsu_sys STATIC
     console.cpp
     cpu.cpp
     cpu_cores.cpp
-    crash_posix.cpp
-    crash_windows.cpp
+    crash.cpp
     dirs.cpp
     dwarf_cfi.cpp
     env.cpp

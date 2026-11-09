@@ -160,7 +160,7 @@ export class Driver {
     const exit = await this.#ended();
     assert.ok(
       exit.signal === null && exit.code !== null && codes.includes(exit.code),
-      `exited ${JSON.stringify(exit)}, not with ${JSON.stringify(code)}; ${this.name}'s stderr:\n${this.#stderr}`,
+      `exited ${JSON.stringify(exit)}, not with ${JSON.stringify(code)}; ${this.#described}`,
     );
   }
 
@@ -170,7 +170,7 @@ export class Driver {
     assert.deepEqual(
       exit,
       { code: null, signal },
-      `exited ${JSON.stringify(exit)}; ${this.name}'s stderr:\n${this.#stderr}`,
+      `exited ${JSON.stringify(exit)}; ${this.#described}`,
     );
   }
 
@@ -182,7 +182,7 @@ export class Driver {
     const exit = await this.#exited;
     await this.#stderrEnded;
     this.#checked = true;
-    const stderr = `${this.name}'s stderr:\n${this.#stderr}`;
+    const stderr = this.#described;
     assert.doesNotMatch(
       this.#stderr,
       SANITIZER_REPORT,
@@ -200,6 +200,11 @@ export class Driver {
     });
     assert.deepEqual(unexpected, [], `unexpected log lines; ${stderr}`);
     return exit;
+  }
+
+  /** The driver's stderr, named, for a failed check's message. */
+  get #described(): string {
+    return `${this.name}'s stderr:\n${this.#stderr}`;
   }
 
   /** Everything the driver writes to stdout, once it closes it. */

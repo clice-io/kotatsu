@@ -29,29 +29,29 @@ struct Crash {
 using CrashHandler = void (*)(const Crash& crash) noexcept;
 
 /// Calls `handler` as the process crashes: on a SIGSEGV, SIGBUS, SIGILL,
-/// SIGTRAP, SIGFPE, SIGABRT or SIGSYS, on Windows an exception nothing
-/// handled or abort()'s SIGABRT, never on SIGINT, SIGTERM or SIGHUP. A
-/// later call replaces `handler`; the handlers are set up once. Gives the
-/// calling thread a crash stack (reserve_crash_stack), each thread Thread
-/// starts after it its own as it starts, and each thread of libuv's pool
-/// its own as it runs a function of async::queue().
+/// SIGTRAP, SIGFPE, SIGABRT or SIGSYS, but one the program ignores, never on
+/// SIGINT, SIGTERM or SIGHUP; on Windows on an exception nothing handled and
+/// on abort()'s SIGABRT. A later call replaces `handler`; the handlers are
+/// set up once. Gives the calling thread a crash stack
+/// (reserve_crash_stack), each thread Thread starts after it its own as it
+/// starts, and each thread of libuv's pool its own as it runs a function of
+/// async::queue().
 ///
 /// One crash at a time: a thread that crashes while another's handler runs
-/// waits for the process to end, and a crash in `handler` ends it at once.
-/// Once `handler` returns, each signal's action is put back as it was before
-/// (the default for one that was ignored), and the process ends as it would
-/// have without: a fault of the thread's own (SIGSEGV, SIGBUS, SIGILL,
-/// SIGFPE) is run again, and any other signal, SIGTRAP and SIGSYS among
-/// them, raised again, so that the parent sees the process ended by it. On
-/// Windows the exception goes on to the filter set before, or to the
-/// system's, which ends the process with the exception's code; abort() ends
-/// it as it does without a handler.
+/// waits for the process to end, and a crash in `handler` goes on as if
+/// `handler` had returned. Then the actions before on_crash are put back,
+/// and the signal goes to the one it had: the default, raised again, ends
+/// the process by the signal, as the parent sees it; a handler of the
+/// program's is called with the siginfo and context the signal brought. On
+/// Windows the exception goes to the filter set before, or to the system's,
+/// which ends the process with the exception's code, and SIGABRT to its
+/// handler before, or to abort(), which ends the process as without one.
 ///
 /// A typical handler writes a line with write_console, then the stack with
 /// write_stacktrace(fd, crash).
 ///
-/// Set it up from main, before other threads start: the system's error when
-/// a signal's action cannot be set, or the crash stack's.
+/// Set it up from main, before other threads start: the error of the crash
+/// stack.
 std::error_code on_crash(CrashHandler handler) noexcept;
 
 /// Gives the calling thread room for a crash handler to run in after its
@@ -59,7 +59,8 @@ std::error_code on_crash(CrashHandler handler) noexcept;
 /// 64 KiB, unless it has one at least that large, which it keeps, the one
 /// it had put back as the thread ends; on Windows a stack guarantee of
 /// 64 KiB, as SetThreadStackGuarantee gives. The system's error when it
-/// cannot, as not_enough_memory.
+/// cannot: not_enough_memory, or on Linux and macOS operation_not_permitted
+/// in a signal handler that runs on the alternate stack.
 std::error_code reserve_crash_stack() noexcept;
 
 namespace detail {

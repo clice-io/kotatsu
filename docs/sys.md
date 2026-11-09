@@ -3,8 +3,7 @@
 `kotatsu::sys` gives synchronous access to the current process and the
 system: environment, program lookup, child processes, threads, command lines,
 user directories, console output, crash handling and stack traces, memory and
-CPU. It needs no
-event loop, and a program links only the parts it calls.
+CPU. It needs no event loop, and a program links only the parts it calls.
 
 It is not for managing processes on an event loop: `kotatsu::async::process`
 builds on `sys::spawn` for that (see [async](async.md)).
@@ -78,7 +77,8 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
   `CreateProcessW` on Windows, the child in a job object of its own and given
   only the standard handles unless `windows_inherit_handles`.
 - `on_crash` takes SIGSEGV, SIGBUS, SIGILL, SIGTRAP, SIGFPE, SIGABRT and
-  SIGSYS on Linux and macOS, never SIGINT, SIGTERM or SIGHUP, and gives each
+  SIGSYS on Linux and macOS, but those the program ignores, never SIGINT,
+  SIGTERM or SIGHUP, and gives each
   thread that can crash an alternate signal stack: the one that calls it,
   `Thread`'s, and libuv's pool's as they run `async::queue()`. On Windows it
   sets the unhandled exception filter, with a stack guarantee for each of

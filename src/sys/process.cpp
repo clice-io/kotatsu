@@ -153,7 +153,7 @@ std::uintptr_t executable_base() noexcept {
     return reinterpret_cast<std::uintptr_t>(::GetModuleHandleW(nullptr));
 #elif defined(__APPLE__)
     const auto* header = reinterpret_cast<const mach_header*>(::_NSGetMachExecuteHeader());
-    return reinterpret_cast<std::uintptr_t>(header) - find_segment(header, SEG_TEXT)->vmaddr;
+    return reinterpret_cast<std::uintptr_t>(header) - find_segment(header, SEG_TEXT).vmaddr;
 #else
     // As ld.so takes it: where the program headers are, less where PT_PHDR
     // puts them. Only a static executable has none, and it is the module

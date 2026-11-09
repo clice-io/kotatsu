@@ -12,7 +12,8 @@
 //           exception filter, prints {"fault": <the address the context
 //           says it interrupted>} first
 //   fault_on_stack
-//           as fault, the handler on the thread's own stack
+//           as fault, the handler on the thread's own stack; on Windows,
+//           whose filter runs there, as fault
 //   fault_after_call
 //           as fault, from probe_fault_after_call, which calls probe_callee
 //           first
@@ -35,11 +36,27 @@
 //
 //   crash_fault     as fault
 //   crash_trap      traps in probe_trap
+//   crash_breakpoint
+//                   breaks in probe_breakpoint
 //   crash_abort     calls std::abort from probe_abort
-//   crash_overflow  overflows the stack in probe_recurse
+//   crash_overflow  overflows the stack in probe_recurse_a and _b, which call
+//                   each other
 //   crash_overflow_on_thread
 //                   as crash_overflow, on a Thread of 1 MiB
-//   crash_two       faults in probe_fault_together on two Threads at once
+//   crash_two       faults in probe_fault_together on two Threads at once,
+//                   the handler waiting for both to be about to
+//   crash_after_handler
+//                   as crash_fault, with a handler of SIGSEGV set before, on
+//                   Windows an unhandled exception filter, which prints
+//                   {"previous": <the address its context says it
+//                   interrupted>} and exits with 4
+//   crash_in_handler
+//                   POSIX: as crash_fault, the handler faulting again after
+//                   its first line
+//   crash_raise     POSIX: raises SIGSEGV
+//   crash_terminate POSIX: raises SIGTERM, which on_crash leaves alone
+//   crash_ignored   POSIX: raises SIGTRAP, ignored before on_crash, then
+//                   exits with 5
 //
 // 2 for a command it does not know.
 
@@ -103,12 +120,34 @@
 #endif
 #endif
 
+#if defined(__SANITIZE_THREAD__)
+#define PROBE_TSAN 1
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define PROBE_TSAN 1
+#endif
+#endif
+
+#if KOTATSU_COMPILER_MSVC
+#define PROBE_NO_ASAN __declspec(no_sanitize_address)
+#else
+#define PROBE_NO_ASAN [[gnu::no_sanitize_address]]
+#endif
+
+// A sanitizer would otherwise take the faults before the probe's handlers,
+// or after on_crash's as the action it puts back, on Windows ASan the access
+// violation before the filter.
+#define PROBE_SANITIZER_OPTIONS "handle_segv=0:handle_sigbus=0:handle_sigfpe=0:handle_sigill=0"
+
 #ifdef PROBE_ASAN
-// ASan would otherwise take the faults before the probe's handlers, or after
-// on_crash's as the action it puts back, on Windows the access violation
-// before the filter.
 extern "C" const char* __asan_default_options() {
-    return "handle_segv=0:handle_sigbus=0:handle_sigfpe=0:handle_sigill=0";
+    return PROBE_SANITIZER_OPTIONS;
+}
+#endif
+
+#ifdef PROBE_TSAN
+extern "C" const char* __tsan_default_options() {
+    return PROBE_SANITIZER_OPTIONS;
 }
 #endif
 
@@ -171,25 +210,60 @@ KOTATSU_NOINLINE void probe_trap() {
 #endif
 }
 
-// A KiB of stack a call, until it overflows.
-KOTATSU_NOINLINE int probe_recurse(int depth) {
+KOTATSU_NOINLINE void probe_breakpoint() {
+    return_addresses[0] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
+#if KOTATSU_COMPILER_MSVC
+    __debugbreak();
+#elif defined(__aarch64__)
+    asm volatile("brk #0xf000");
+#else
+    asm volatile("int3");
+#endif
+    calls = calls + 1;
+}
+
+int probe_recurse_a(int depth);
+int probe_recurse_b(int depth);
+
+// What each calls the other through, which keeps the calls from becoming a
+// loop.
+int (*volatile recurse_a)(int) = probe_recurse_a;
+int (*volatile recurse_b)(int) = probe_recurse_b;
+
+// A KiB of stack a call, until it overflows; without ASan's calls into its
+// runtime, where the overflow would fault otherwise.
+PROBE_NO_ASAN KOTATSU_NOINLINE int probe_recurse_a(int depth) {
+    volatile char frame[1024];
+    frame[0] = static_cast<char>(depth);
+    // Never taken: a recursion without an end may be assumed not to happen.
+    if(depth < 0) {
+        return 0;
+    }
+    return recurse_b(depth + 1) + frame[0];
+}
+
+PROBE_NO_ASAN KOTATSU_NOINLINE int probe_recurse_b(int depth) {
     volatile char frame[1024];
     frame[0] = static_cast<char>(depth);
     if(depth < 0) {
         return 0;
     }
-    return probe_recurse(depth + 1) + frame[0];
+    return recurse_a(depth + 1) + frame[0];
 }
 
-// The threads of crash_two that have started.
-std::atomic<int> started = 0;
+// The threads of crash_two that are about to fault.
+std::atomic<int> about_to_fault = 0;
 
 // Faults once the other thread of crash_two is about to.
 KOTATSU_NOINLINE void probe_fault_together() {
-    started.fetch_add(1);
-    while(started.load() < 2) {}
+    about_to_fault.fetch_add(1);
+    while(about_to_fault.load() < 2) {}
     *target = 1;
 }
+
+// What the handler of crash_in_handler and of crash_two does.
+volatile bool fault_in_handler = false;
+volatile bool wait_for_both = false;
 
 #ifdef __clang__
 // UBSan's function-type check reads before the target; let the call reach zero.
@@ -211,76 +285,81 @@ void print_line(std::string_view line) {
     std::fflush(stdout);
 }
 
-/// The line {"fault": "0x<address>"}, built without allocating, in a
+/// A line of JSON written to stdout, built without allocating, in a
 /// handler.
+struct Line {
+    char text[128];
+    std::size_t size = 0;
+
+    Line& put(std::string_view part) {
+        for(char c: part) {
+            text[size++] = c;
+        }
+        return *this;
+    }
+
+    /// `value` as a string of 0x and `digits` hexadecimal digits.
+    Line& hex(std::uint64_t value, int digits) {
+        put(R"("0x)");
+        for(int shift = (digits - 1) * 4; shift >= 0; shift -= 4) {
+            text[size++] = "0123456789abcdef"[(value >> shift) & 0xF];
+        }
+        return put(R"(")");
+    }
+
+    Line& decimal(unsigned value) {
+        char digits[12];
+        int count = 0;
+        do {
+            digits[count++] = static_cast<char>('0' + value % 10);
+            value /= 10;
+        } while(value != 0);
+        while(count > 0) {
+            text[size++] = digits[--count];
+        }
+        return *this;
+    }
+
+    /// Writes the line, closing its object.
+    void write() {
+        put("}\n");
+        kotatsu::sys::write_console(1, std::string_view(text, size));
+    }
+};
+
 void print_fault(std::uintptr_t address) {
-    char line[48] = R"({"fault":"0x)";
-    std::size_t size = std::char_traits<char>::length(line);
-    for(int shift = 60; shift >= 0; shift -= 4) {
-        line[size++] = "0123456789abcdef"[(address >> shift) & 0xF];
-    }
-    for(char c: std::string_view("\"}\n")) {
-        line[size++] = c;
-    }
-    kotatsu::sys::write_console(1, std::string_view(line, size));
+    Line().put(R"({"fault":)").hex(address, 16).write();
 }
 
-/// The line {"signal": <crash's>}, on Windows with "code": "0x<its code>"
-/// for an exception, built without allocating, in a handler.
+/// {"signal": <crash's>}, on Windows with "code" for an exception.
 void print_crash(const kotatsu::sys::Crash& crash) {
-    char line[64] = R"({"signal":)";
-    std::size_t size = std::char_traits<char>::length(line);
-    char digits[12];
-    int count = 0;
-    for(auto value = static_cast<unsigned>(crash.signal); count == 0 || value != 0; value /= 10) {
-        digits[count++] = static_cast<char>('0' + value % 10);
-    }
-    while(count > 0) {
-        line[size++] = digits[--count];
-    }
+    Line line;
+    line.put(R"({"signal":)").decimal(static_cast<unsigned>(crash.signal));
 #ifdef _WIN32
     if(crash.info != nullptr) {
-        auto code = static_cast<const EXCEPTION_RECORD*>(crash.info)->ExceptionCode;
-        for(char c: std::string_view(R"(,"code":"0x)")) {
-            line[size++] = c;
-        }
-        for(int shift = 28; shift >= 0; shift -= 4) {
-            line[size++] = "0123456789abcdef"[(code >> shift) & 0xF];
-        }
-        line[size++] = '"';
+        line.put(R"(,"code":)")
+            .hex(static_cast<const EXCEPTION_RECORD*>(crash.info)->ExceptionCode, 8);
     }
 #endif
-    for(char c: std::string_view("}\n")) {
-        line[size++] = c;
-    }
-    kotatsu::sys::write_console(1, std::string_view(line, size));
+    line.write();
 }
 
-/// The recorded return addresses, built without allocating in a handler.
+/// The recorded return addresses.
 void print_returns() {
-    char line[64] = R"({"returns":[)";
-    std::size_t size = std::char_traits<char>::length(line);
+    Line line;
+    line.put(R"({"returns":[)");
     bool first = true;
     for(auto address: return_addresses) {
         if(address == 0) {
             continue;
         }
         if(!first) {
-            line[size++] = ',';
+            line.put(",");
         }
         first = false;
-        for(char c: std::string_view(R"("0x)")) {
-            line[size++] = c;
-        }
-        for(int shift = 60; shift >= 0; shift -= 4) {
-            line[size++] = "0123456789abcdef"[(address >> shift) & 0xF];
-        }
-        line[size++] = '"';
+        line.hex(address, 16);
     }
-    for(char c: std::string_view("]}\n")) {
-        line[size++] = c;
-    }
-    kotatsu::sys::write_console(1, std::string_view(line, size));
+    line.put("]").write();
 }
 
 }  // namespace
@@ -297,6 +376,10 @@ void print_returns() {
 // on_crash's handler.
 void reported(const kotatsu::sys::Crash& crash) noexcept {
     print_crash(crash);
+    if(fault_in_handler) {
+        *target = 2;
+    }
+    while(wait_for_both && about_to_fault.load() < 2) {}
 #ifdef _WIN32
     if(crash.info != nullptr) {
         print_fault(reinterpret_cast<std::uintptr_t>(
@@ -359,6 +442,19 @@ void aborted(int) {
 
 void on_fault(bool) {
     ::SetUnhandledExceptionFilter(filtered);
+}
+
+// The filter crash_after_handler sets before on_crash.
+LONG WINAPI previously(EXCEPTION_POINTERS* exception) {
+    Line()
+        .put(R"({"previous":)")
+        .hex(reinterpret_cast<std::uintptr_t>(exception->ExceptionRecord->ExceptionAddress), 16)
+        .write();
+    std::_Exit(4);
+}
+
+void before_crash_handler() {
+    ::SetUnhandledExceptionFilter(previously);
 }
 
 void on_abort() {
@@ -439,16 +535,16 @@ void aborted(int, siginfo_t*, void*) {
     end();
 }
 
-void handle(int signal, void (*handler)(int, siginfo_t*, void*)) {
+void handle(int signal, void (*handler)(int, siginfo_t*, void*), int flags = SA_ONSTACK) {
     struct sigaction action = {};
     action.sa_sigaction = handler;
-    action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    action.sa_flags = SA_SIGINFO | flags;
     sigemptyset(&action.sa_mask);
     sigaction(signal, &action, nullptr);
 }
 
 /// With `alternate`, on an alternate stack, as a crash handler sets one for
-/// a stack that overflowed.
+/// a stack that overflowed; else on the thread's own.
 void on_fault(bool alternate) {
     if(alternate) {
         static char room[256 * 1024];
@@ -457,12 +553,22 @@ void on_fault(bool alternate) {
         stack.ss_size = sizeof(room);
         sigaltstack(&stack, nullptr);
     }
-    handle(SIGSEGV, faulted);
-    handle(SIGBUS, faulted);
+    handle(SIGSEGV, faulted, alternate ? SA_ONSTACK : 0);
+    handle(SIGBUS, faulted, alternate ? SA_ONSTACK : 0);
 }
 
 void on_abort() {
     handle(SIGABRT, aborted);
+}
+
+// The handler crash_after_handler sets before on_crash.
+void previously(int, siginfo_t*, void* context) {
+    Line().put(R"({"previous":)").hex(kotatsu::test::interrupted_at(context), 16).write();
+    std::_Exit(4);
+}
+
+void before_crash_handler() {
+    handle(SIGSEGV, previously, 0);
 }
 
 #endif
@@ -528,28 +634,53 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
         // Without the message a debug runtime shows first.
         _set_abort_behavior(0, _WRITE_ABORT_MSG);
+#else
+        if(command == "crash_ignored") {
+            std::signal(SIGTRAP, SIG_IGN);
+        }
 #endif
+        if(command == "crash_after_handler") {
+            before_crash_handler();
+        }
         if(auto error = kotatsu::sys::on_crash(reported)) {
             std::fprintf(stderr, "[error] on_crash: %s\n", error.message().c_str());
             return 1;
         }
         print_image();
-        if(command == "crash_fault") {
+        auto on_threads = [](auto... fns) {
+            kotatsu::sys::Thread threads[] = {
+                kotatsu::sys::Thread::start(1U << 20, fns).value()...};
+            for(auto& thread: threads) {
+                thread.join();
+            }
+        };
+        if(command == "crash_fault" || command == "crash_after_handler") {
             probe_caller();
         } else if(command == "crash_trap") {
             probe_trap();
+        } else if(command == "crash_breakpoint") {
+            probe_breakpoint();
         } else if(command == "crash_abort") {
             probe_abort();
         } else if(command == "crash_overflow") {
-            calls = probe_recurse(0);
+            calls = probe_recurse_a(0);
         } else if(command == "crash_overflow_on_thread") {
-            auto thread = kotatsu::sys::Thread::start(1U << 20, [] { calls = probe_recurse(0); });
-            thread->join();
+            on_threads([] { calls = probe_recurse_a(0); });
         } else if(command == "crash_two") {
-            auto first = kotatsu::sys::Thread::start(1U << 20, probe_fault_together);
-            auto second = kotatsu::sys::Thread::start(1U << 20, probe_fault_together);
-            first->join();
-            second->join();
+            wait_for_both = true;
+            on_threads(probe_fault_together, probe_fault_together);
+#ifndef _WIN32
+        } else if(command == "crash_in_handler") {
+            fault_in_handler = true;
+            probe_caller();
+        } else if(command == "crash_raise") {
+            std::raise(SIGSEGV);
+        } else if(command == "crash_terminate") {
+            std::raise(SIGTERM);
+        } else if(command == "crash_ignored") {
+            std::raise(SIGTRAP);
+            std::_Exit(5);
+#endif
         } else {
             std::fprintf(stderr, "[error] unknown command\n");
             return 2;

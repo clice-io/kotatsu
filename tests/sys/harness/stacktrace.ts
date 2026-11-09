@@ -33,9 +33,15 @@ export type Image = {
 export type Crash = {
   driver: Driver;
   image: Image;
-  /** What on_crash's handler was told of: the signal, on Windows the exception's code. */
+  /**
+   * What on_crash's handler was told of, the last time: the signal, on
+   * Windows the exception's code; and how many times it printed it.
+   */
   signal?: number;
   code?: number;
+  reports: number;
+  /** Where the handler set before on_crash saw the crash interrupt. */
+  previous?: bigint;
   fault?: bigint;
   returns: bigint[];
   library?: string;
@@ -49,10 +55,15 @@ const RECORDED: Record<string, number> = {
   abort: 1,
   call: 1,
   crash_trap: 1,
+  crash_breakpoint: 1,
   crash_abort: 1,
   crash_overflow: 0,
   crash_overflow_on_thread: 0,
   crash_two: 0,
+  crash_in_handler: 0,
+  crash_raise: 0,
+  crash_terminate: 0,
+  crash_ignored: 0,
 };
 
 /** What the probe printed as `command` made it crash. */
@@ -70,6 +81,7 @@ export async function crash(
     driver,
     image: JSON.parse(lines.shift() ?? ""),
     returns: [],
+    reports: 0,
     frames: [],
   };
   assert.ok(["pdb", "dwarf"].includes(result.image.debug));
@@ -78,6 +90,10 @@ export async function crash(
     if (line.signal !== undefined) {
       result.signal = line.signal;
       result.code = line.code === undefined ? undefined : Number(line.code);
+      result.reports += 1;
+    }
+    if (line.previous !== undefined) {
+      result.previous = BigInt(line.previous);
     }
     if (line.fault !== undefined) {
       result.fault = BigInt(line.fault);
@@ -171,7 +187,10 @@ function functionName(name: string): string {
 /**
  * The functions llvm-symbolizer finds the executable's frames in, each
  * frame's inlined ones first: looked up at the address before a return
- * address, which may be the start of what follows the call.
+ * address, which may be the start of what follows the call. The first must
+ * be `first`, the handler that wrote the trace, whose callee
+ * write_stacktrace left itself out; null for a trace from a crash's
+ * context, which starts where the crash interrupted.
  */
 export function decode(
   t: TestContext,
@@ -224,8 +243,8 @@ export function decode(
   );
   if (first !== null) {
     assert.equal(names[0], first);
+    assert.ok(!names.includes("write_stacktrace"), JSON.stringify(names));
   }
-  assert.ok(!names.includes("write_stacktrace"));
   return {
     names,
     hasLines: entries.some((entry) =>

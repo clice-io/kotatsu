@@ -223,14 +223,14 @@ std::optional<FrameModule> find_module(std::uintptr_t address) noexcept {
 }
 
 /// Writes the frames from `context`'s, the address an exception interrupted
-/// when `interrupted`, or, `own`, from the caller of write_stacktrace's own.
-void walk(CONTEXT& context, bool interrupted, bool own, FrameWriter& writer) noexcept {
+/// when `interrupted`, or else write_stacktrace's own, from its caller's.
+void walk(CONTEXT& context, bool interrupted, FrameWriter& writer) noexcept {
     const auto* dispatching = dispatcher.load(std::memory_order_relaxed);
 #if defined(_M_ARM64) || defined(__aarch64__)
     // Whether the frame before had a function entry.
     bool entered = true;
 #endif
-    for(;; own = false) {
+    for(bool own = !interrupted;; own = false) {
 #if defined(_M_ARM64) || defined(__aarch64__)
         auto pc = context.Pc;
 #else
@@ -286,7 +286,7 @@ KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
     CONTEXT context;
     ::RtlCaptureContext(&context);
     FrameWriter writer(fd);
-    walk(context, false, true, writer);
+    walk(context, false, writer);
     return writer.error;
 }
 
@@ -295,11 +295,11 @@ KOTATSU_NOINLINE std::error_code write_stacktrace(int fd, const Crash& crash) no
     CONTEXT context;
     if(crash.context == nullptr) {
         ::RtlCaptureContext(&context);
-        walk(context, false, true, writer);
+        walk(context, false, writer);
     } else {
         // A copy, which the walk unwinds.
         context = *static_cast<const CONTEXT*>(crash.context);
-        walk(context, true, false, writer);
+        walk(context, true, writer);
     }
     return writer.error;
 }

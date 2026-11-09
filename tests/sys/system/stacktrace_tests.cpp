@@ -12,7 +12,14 @@
 #include <vector>
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <io.h>
+#include <windows.h>
 #else
 #include <csignal>
 #include <pthread.h>
@@ -31,6 +38,7 @@
 #include "kotatsu/support/config.h"
 #include "kotatsu/support/scope_exit.h"
 #include "kotatsu/fs/file.h"
+#include "kotatsu/sys/crash.h"
 #include "kotatsu/sys/process.h"
 #include "kotatsu/sys/stacktrace.h"
 #include "kotatsu/sys/thread.h"
@@ -193,6 +201,8 @@ KOTATSU_NOINLINE void capture_both() {
 /// the handler at once, as a fault, rather than at a later call.
 struct SignalTrace {
     int fd = -1;
+    /// Whether the handler writes the trace from the signal's context.
+    bool from_context = false;
     std::error_code error = {};
     /// The address the context says the signal interrupted.
     std::uintptr_t interrupted = 0;
@@ -203,9 +213,13 @@ struct SignalTrace {
 
 SignalTrace signal_trace;
 
-void trace_signal(int, siginfo_t*, void* context) {
+void trace_signal(int signal, siginfo_t* info, void* context) {
     signal_trace.interrupted = test::interrupted_at(context);
-    signal_trace.error = write_stacktrace(signal_trace.fd);
+    signal_trace.error =
+        signal_trace.from_context
+            ? write_stacktrace(signal_trace.fd,
+                               Crash{.signal = signal, .info = info, .context = context})
+            : write_stacktrace(signal_trace.fd);
     signal_trace.handled = true;
 }
 
@@ -214,31 +228,22 @@ KOTATSU_NOINLINE void raise_trap() {
     ::pthread_kill(::pthread_self(), SIGTRAP);
 }
 
-/// Raises SIGTRAP on a thread of its own, its handler on an alternate stack
-/// with `alternate`, and checks that the trace the handler wrote goes on
-/// from the address the signal interrupted to raise_trap's caller.
-void check_trace_through_a_signal(bool alternate) {
+/// Raises SIGTRAP on a thread of its own, its handler on the thread's crash
+/// stack with `on_crash_stack`, and checks that the trace the handler
+/// wrote, from the signal's context with `from_context`, goes on from the
+/// address the signal interrupted to raise_trap's caller.
+void check_trace_through_a_signal(bool on_crash_stack, bool from_context) {
     TraceFile trace;
-    auto previous = std::exchange(signal_trace, SignalTrace{.fd = trace.descriptor.fd});
+    auto previous =
+        std::exchange(signal_trace,
+                      SignalTrace{.fd = trace.descriptor.fd, .from_context = from_context});
     ScopeExit restore([previous] { signal_trace = previous; });
-    test::ScopedSignalAction action(SIGTRAP, trace_signal, alternate ? SA_ONSTACK : 0);
+    test::ScopedSignalAction action(SIGTRAP, trace_signal, on_crash_stack ? SA_ONSTACK : 0);
     auto thread = Thread::start(1U << 20, [&] {
-        std::vector<char> room(alternate ? 64 * 1024 : 0);
-        stack_t previous = {};
-        if(alternate) {
-            stack_t stack = {};
-            stack.ss_sp = room.data();
-            stack.ss_size = room.size();
-            ZASSERT(::sigaltstack(&stack, &previous) == 0);
+        if(on_crash_stack) {
+            ZASSERT(!reserve_crash_stack());
         }
         raise_trap();
-        if(alternate) {
-            // Back as it was, ASan's own if it set one up, which it unmaps
-            // as the thread ends. macOS checks the size even of a stack it
-            // is to disable.
-            previous.ss_size = std::max<std::size_t>(previous.ss_size, MINSIGSTKSZ);
-            ZASSERT(::sigaltstack(&previous, nullptr) == 0);
-        }
     });
     ZASSERT(thread);
     thread->join();
@@ -247,9 +252,15 @@ void check_trace_through_a_signal(bool alternate) {
     auto frames = trace.read(1);
     auto marked = std::ranges::find(frames, true, &Frame::interrupted);
     ZASSERT(marked != frames.end());
+    if(from_context) {
+        ZEXPECT(marked == frames.begin());
+    }
     ZEXPECT(marked->address == signal_trace.interrupted);
-    ZEXPECT(std::ranges::find(marked, frames.end(), signal_trace.raised_from, &Frame::address) !=
-            frames.end());
+    std::vector<std::uintptr_t> after;
+    for(auto frame = marked; frame != frames.end(); ++frame) {
+        after.push_back(frame->address);
+    }
+    ZEXPECT(zest::contains(after, signal_trace.raised_from));
 }
 #endif
 
@@ -295,13 +306,49 @@ ZEST_CASE(write_stacktrace_limits_a_deep_stack_to_256_frames) {
     ZEXPECT(frames.size() == 256U);
 }
 
-#ifndef _WIN32
-ZEST_CASE(write_stacktrace_in_a_signal_handler_goes_on_from_the_interrupted_address) {
-    check_trace_through_a_signal(false);
+ZEST_CASE(write_stacktrace_of_a_crash_to_a_negative_descriptor_fails) {
+    ZEXPECT(write_stacktrace(-1, Crash{}) == std::errc::bad_file_descriptor);
 }
 
-ZEST_CASE(write_stacktrace_on_an_alternate_stack_goes_on_from_the_interrupted_address) {
-    check_trace_through_a_signal(true);
+ZEST_CASE(write_stacktrace_of_a_crash_without_a_context_starts_at_the_caller) {
+    TraceFile trace;
+    ZASSERT(!write_stacktrace(trace.descriptor.fd, Crash{}));
+    auto frames = trace.read();
+    ZASSERT(!frames.empty());
+    std::string executable;
+    ZASSERT(!executable_path(executable));
+    ZASSERT(!frames.front().module.empty());
+    ZEXPECT(std::filesystem::equivalent(test::std_path(frames.front().module),
+                                        test::std_path(executable)));
+}
+
+#ifdef _WIN32
+ZEST_CASE(write_stacktrace_of_a_crash_starts_at_its_context) {
+    TraceFile trace;
+    CONTEXT context;
+    ::RtlCaptureContext(&context);
+#if defined(_M_ARM64) || defined(__aarch64__)
+    const std::uintptr_t pc = context.Pc;
+#else
+    const std::uintptr_t pc = context.Rip;
+#endif
+    ZASSERT(!write_stacktrace(trace.descriptor.fd, Crash{.context = &context}));
+    auto frames = trace.read(1);
+    ZASSERT(!frames.empty());
+    ZEXPECT(frames.front().interrupted);
+    ZEXPECT(frames.front().address == pc);
+}
+#else
+ZEST_CASE(write_stacktrace_in_a_signal_handler_goes_on_from_the_interrupted_address) {
+    check_trace_through_a_signal(false, false);
+}
+
+ZEST_CASE(write_stacktrace_on_the_crash_stack_goes_on_from_the_interrupted_address) {
+    check_trace_through_a_signal(true, false);
+}
+
+ZEST_CASE(write_stacktrace_of_a_crash_starts_at_its_context) {
+    check_trace_through_a_signal(true, true);
 }
 #endif
 
