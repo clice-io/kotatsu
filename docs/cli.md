@@ -97,8 +97,8 @@ with aliases, grouped short options (`-abc`) and visibility masks.
 ## Platform notes
 
 cli parses the same on every platform. `report` and `print_usage` color what they write when
-the descriptor is a terminal (a console on Windows) and `NO_COLOR` is unset, and write UTF-16
-to a Windows console.
+[`sys::shows_colors`](../include/kotatsu/sys/console.h) says so, which on Windows takes a
+console with virtual terminal processing on, and write UTF-16 to a Windows console.
 
 ## See also
 

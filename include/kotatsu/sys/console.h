@@ -56,4 +56,11 @@ bool is_console(int fd) noexcept;
 /// descriptor not open.
 bool is_pipe(int fd) noexcept;
 
+/// Whether text written to descriptor `fd` is to be in ANSI colors: when
+/// is_console(fd), on Windows of a console's screen buffer whose virtual
+/// terminal processing is on, as Windows Terminal has it and an older
+/// console host does not (this does not turn it on); and NO_COLOR is unset
+/// or empty. False for a descriptor not open.
+bool shows_colors(int fd);
+
 }  // namespace kotatsu::sys

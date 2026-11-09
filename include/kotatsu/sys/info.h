@@ -193,6 +193,13 @@ std::chrono::milliseconds uptime();
 /// 3000, invalid_argument; POSIX takes any.
 std::expected<std::tm, std::error_code> local_time(std::chrono::system_clock::time_point time);
 
+/// The offset from UTC of the system's time zone at `time`, TZ read as
+/// local_time() reads it and daylight saving time included: `time` plus it
+/// is, to the second, the date and time of day local_time(time) gives. It
+/// fails where local_time() fails, with its error.
+std::expected<std::chrono::seconds, std::error_code>
+    utc_offset(std::chrono::system_clock::time_point time);
+
 /// A priority, from the lowest. A process's is one of Windows's priority
 /// classes, and on POSIX one of the nice values 19, 10, 0, -7, -14 and -20; a
 /// thread's is one of set_thread_priority's.

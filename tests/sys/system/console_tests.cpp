@@ -1,8 +1,12 @@
 #include <array>
+#include <format>
+#include <initializer_list>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <utility>
 
 #ifdef _WIN32
 #include <cstdint>
@@ -25,6 +29,7 @@
 #endif
 
 #include "fs/harness/files.h"
+#include "sys/harness/env.h"
 #include "kotatsu/zest/macro.h"
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/sys/console.h"
@@ -100,6 +105,56 @@ int open_file(const std::string& path) {
     return ::open(path.c_str(), O_RDONLY);
 #endif
 }
+
+/// A terminal of the test's own, its end -1 where there is none: on Windows
+/// a screen buffer of the console, whose mode no other process sees, none
+/// when this process was started without a console; on POSIX a
+/// pseudo-terminal, which a sandbox may not give.
+struct Terminal {
+    Terminal() {
+#ifdef _WIN32
+        HANDLE buffer = ::CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE,
+                                                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                                    nullptr,
+                                                    CONSOLE_TEXTMODE_BUFFER,
+                                                    nullptr);
+        if(buffer != INVALID_HANDLE_VALUE) {
+            end.fd = ::_open_osfhandle(reinterpret_cast<std::intptr_t>(buffer), _O_BINARY);
+            ZASSERT(end.fd >= 0);
+        }
+#else
+        controller.fd = ::posix_openpt(O_RDWR | O_NOCTTY);
+        if(controller.fd < 0 || ::grantpt(controller.fd) != 0 || ::unlockpt(controller.fd) != 0) {
+            return;
+        }
+        if(const char* name = ::ptsname(controller.fd)) {
+            end.fd = ::open(name, O_RDWR | O_NOCTTY);
+        }
+#endif
+    }
+
+#ifndef _WIN32
+    Descriptor controller{-1};
+#endif
+
+    /// The end a program writes to.
+    Descriptor end{-1};
+};
+
+#ifdef _WIN32
+/// Turns virtual terminal processing of console `fd` on or off: false where
+/// the console refuses, as an older console host refuses to turn it on.
+bool set_virtual_terminal_processing(int fd, bool on) {
+    auto handle = reinterpret_cast<HANDLE>(::_get_osfhandle(fd));
+    DWORD mode = 0;
+    if(::GetConsoleMode(handle, &mode) == 0) {
+        return false;
+    }
+    mode = on ? mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING
+              : mode & ~static_cast<DWORD>(ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    return ::SetConsoleMode(handle, mode) != 0;
+}
+#endif
 
 ZEST_SUITE(sys_console) {
 
@@ -355,37 +410,109 @@ ZEST_CASE(is_pipe_of_no_descriptor_is_false) {
 }
 
 ZEST_CASE(is_console_holds_for_a_terminal) {
-#ifdef _WIN32
-    // The console this process has; none when it was started without one.
-    HANDLE console = ::CreateFileW(L"CONOUT$",
-                                   GENERIC_READ | GENERIC_WRITE,
-                                   FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                   nullptr,
-                                   OPEN_EXISTING,
-                                   0,
-                                   nullptr);
-    if(console == INVALID_HANDLE_VALUE) {
+    Terminal terminal;
+    if(terminal.end.fd < 0) {
         zest::skip();
         return;
     }
-    Descriptor terminal(::_open_osfhandle(reinterpret_cast<std::intptr_t>(console), _O_BINARY));
-    ZASSERT(terminal.fd >= 0);
+    ZEXPECT(is_console(terminal.end.fd));
+    ZEXPECT(!is_pipe(terminal.end.fd));
+}
+
+ZEST_CASE(shows_colors_of_no_terminal_is_false) {
+    // So that the descriptor alone says no.
+    test::ScopedEnv no_color("NO_COLOR", std::nullopt);
+    Pipe pipe;
+    test::TempDir dir;
+    auto path = dir.file("file");
+    test::write_text(path, "text");
+    Descriptor file(open_file(path));
+    ZASSERT(file.fd >= 0);
+#ifdef _WIN32
+    Descriptor null(::_open("NUL", _O_WRONLY | _O_BINARY));
 #else
-    // A pseudo-terminal's other end, which a sandbox may not give.
-    Descriptor master(::posix_openpt(O_RDWR | O_NOCTTY));
-    const char* name = nullptr;
-    if(master.fd >= 0 && ::grantpt(master.fd) == 0 && ::unlockpt(master.fd) == 0) {
-        name = ::ptsname(master.fd);
+    Descriptor null(::open("/dev/null", O_WRONLY));
+#endif
+    ZASSERT(null.fd >= 0);
+    // Last, so that no descriptor opened after it takes its number.
+    int closed = -1;
+    {
+        Pipe gone;
+        closed = gone.write.fd;
     }
-    Descriptor terminal(name == nullptr ? -1 : ::open(name, O_RDWR | O_NOCTTY));
-    if(terminal.fd < 0) {
+    for(auto [what, fd]: {
+            std::pair{"pipe",              pipe.write.fd},
+            std::pair{"file",              file.fd      },
+            std::pair{"null device",       null.fd      },
+            std::pair{"no descriptor",     -1           },
+            std::pair{"closed descriptor", closed       }
+    }) {
+        ZEST_CONTEXT("{}", what);
+        ZEXPECT(!shows_colors(fd));
+    }
+}
+
+// NO_COLOR set to anything but nothing turns the colors off, "0" too.
+ZEST_CASE(shows_colors_of_a_terminal_follows_no_color) {
+    Terminal terminal;
+    if(terminal.end.fd < 0) {
+        zest::skip();
+        return;
+    }
+#ifdef _WIN32
+    if(!set_virtual_terminal_processing(terminal.end.fd, true)) {
         zest::skip();
         return;
     }
 #endif
-    ZEXPECT(is_console(terminal.fd));
-    ZEXPECT(!is_pipe(terminal.fd));
+    for(auto [value, shows]: {
+            std::pair{std::optional<std::string_view>(),    true },
+            std::pair{std::optional<std::string_view>(""),  true },
+            std::pair{std::optional<std::string_view>("1"), false},
+            std::pair{std::optional<std::string_view>("0"), false}
+    }) {
+        ZEST_CONTEXT("NO_COLOR {}", value ? std::format(R"("{}")", *value) : "unset");
+        test::ScopedEnv no_color("NO_COLOR", value);
+        ZEXPECT(shows_colors(terminal.end.fd) == shows);
+    }
 }
+
+#ifdef _WIN32
+// An older console host's, which would show the escapes as text.
+ZEST_CASE(shows_colors_of_a_console_without_virtual_terminal_processing_is_false) {
+    test::ScopedEnv no_color("NO_COLOR", std::nullopt);
+    Terminal terminal;
+    if(terminal.end.fd < 0) {
+        zest::skip();
+        return;
+    }
+    ZASSERT(set_virtual_terminal_processing(terminal.end.fd, false));
+    ZEXPECT(is_console(terminal.end.fd));
+    ZEXPECT(!shows_colors(terminal.end.fd));
+}
+
+// Its mode has ENABLE_ECHO_INPUT, on by default, where an output's has
+// virtual terminal processing.
+ZEST_CASE(shows_colors_of_a_consoles_input_is_false) {
+    test::ScopedEnv no_color("NO_COLOR", std::nullopt);
+    // None when this process was started without a console.
+    HANDLE input = ::CreateFileW(L"CONIN$",
+                                 GENERIC_READ | GENERIC_WRITE,
+                                 FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                 nullptr,
+                                 OPEN_EXISTING,
+                                 0,
+                                 nullptr);
+    if(input == INVALID_HANDLE_VALUE) {
+        zest::skip();
+        return;
+    }
+    Descriptor console(::_open_osfhandle(reinterpret_cast<std::intptr_t>(input), _O_BINARY));
+    ZASSERT(console.fd >= 0);
+    ZEXPECT(is_console(console.fd));
+    ZEXPECT(!shows_colors(console.fd));
+}
+#endif
 
 };  // ZEST_SUITE(sys_console)
 
