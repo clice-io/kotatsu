@@ -29,6 +29,7 @@ export type Image = {
   high: string;
   debug: "pdb" | "dwarf";
   tsan: boolean;
+  exceptions: boolean;
 };
 
 export type Crash = {
@@ -58,6 +59,7 @@ const RECORDED: Record<string, number> = {
   crash_trap: 1,
   crash_breakpoint: 1,
   crash_abort: 1,
+  crash_throw: 0,
   crash_overflow: 0,
   crash_overflow_on_thread: 0,
   crash_two: 0,

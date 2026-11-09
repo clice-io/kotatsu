@@ -3,8 +3,8 @@
 #include <system_error>
 
 // A program's crash handler: on_crash, which calls a function as the process
-// crashes and then lets it end as it would have, and the alternate stack
-// that lets it run on a thread whose stack overflowed.
+// crashes and then lets it end by the crash, and the alternate stack that
+// lets it run on a thread whose stack overflowed.
 
 namespace kotatsu::sys {
 
@@ -44,9 +44,14 @@ using CrashHandler = void (*)(const Crash& crash) noexcept;
 /// and the signal goes to the one it had: the default, raised again, ends
 /// the process by the signal, as the parent sees it; a handler of the
 /// program's is called with the siginfo and context the signal brought. On
-/// Windows the exception goes to the filter set before, or to the system's,
-/// which ends the process with the exception's code, and SIGABRT to its
-/// handler before, or to abort(), which ends the process as without one.
+/// Windows the exception goes to the filter set before; when that declines
+/// it, or there is none, the process ends at once by TerminateProcess with
+/// the exception's code. SIGABRT goes to its handler before, or ends the
+/// process at once with 3, abort()'s code, std::terminate's abort() too;
+/// abort() no longer fails fast, nor shows a debug runtime's message box.
+/// None of it goes on to Windows Error Reporting, which may hold the process
+/// for a dialog or a dump first, and all of it is this process's alone: the
+/// processes it starts keep the system's handling.
 ///
 /// A typical handler writes a line with write_console, then the stack with
 /// write_stacktrace(fd, crash).

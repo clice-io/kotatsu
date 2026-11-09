@@ -8,8 +8,8 @@
 //   there;
 // - a fault, a trap, a breakpoint and a stack overflow, on the main thread
 //   or a Thread, end the process with the signal, on Windows with the
-//   exception's code; an abort ends it with SIGABRT, on Windows as abort()
-//   does without a handler;
+//   exception's code; an abort and an uncaught C++ exception end it with
+//   SIGABRT, on Windows with 3, never failing fast;
 // - an overflow's trace alternates between the two functions that recurse,
 //   none of their frames lost or written twice;
 // - of two threads that fault at once, one is reported;
@@ -34,8 +34,11 @@ import {
 const windows = process.platform === "win32";
 const posixOnly = windows && "on_crash's signals are POSIX's";
 
-/** abort()'s exit codes on Windows: a fast fail's, or 3 without one. */
-const ABORTED = [0xc0000409, 3];
+/** abort()'s exit code on Windows, which on_crash keeps from failing fast. */
+const ABORTED = 3;
+
+/** The code of a C++ exception the MSVC runtime raises. */
+const MSVC_EXCEPTION = 0xe06d7363;
 
 /** The name of signal `number`. */
 function signalName(number: number | undefined): NodeJS.Signals {
@@ -122,6 +125,27 @@ test("crash_of_an_abort_ends_as_abort_does", async (t) => {
     assertCalls(decode(t, crashed, null).names, ["probe_abort", "main"]);
   }
   await expectReported(crashed, constants.signals.SIGABRT);
+});
+
+test("crash_of_an_uncaught_exception_ends_as_abort_does", async (t) => {
+  const crashed = await crash(t, "crash_throw");
+  if (!crashed.image.exceptions) {
+    await crashed.driver.expectExit(0);
+    t.skip("built without exceptions");
+    return;
+  }
+  // The MSVC runtime, the one of a build with a PDB, calls std::terminate
+  // from an unhandled exception filter of its own, after on_crash's has
+  // reported the exception; elsewhere, MinGW's runtime included, the handler
+  // is told of the SIGABRT of the abort() std::terminate calls.
+  if (crashed.image.debug === "pdb") {
+    assert.equal(crashed.reports, 1);
+    assert.equal(crashed.signal, 0);
+    assert.equal(crashed.code, MSVC_EXCEPTION);
+    await crashed.driver.expectExit(ABORTED);
+  } else {
+    await expectReported(crashed, constants.signals.SIGABRT);
+  }
 });
 
 for (const [name, command] of [

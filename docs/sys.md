@@ -61,7 +61,7 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
 | [windows.h](../include/kotatsu/sys/windows.h)       | NTSTATUS names, CreateProcess's program search                                                                                                               |
 | [dirs.h](../include/kotatsu/sys/dirs.h)             | Home, temporary, cache, config and data directories, `~` expansion                                                                                           |
 | [console.h](../include/kotatsu/sys/console.h)       | `write_console` and `write_console_some`, `set_nonblocking`, `is_console`, `is_pipe`                                                                         |
-| [crash.h](../include/kotatsu/sys/crash.h)           | `on_crash`, a handler for crashes that then lets the process end as it would have; `reserve_crash_stack`, room for it on a thread whose stack overflowed     |
+| [crash.h](../include/kotatsu/sys/crash.h)           | `on_crash`, a handler for crashes that then lets the crash end the process, past WER; `reserve_crash_stack`, room for it on a thread whose stack overflowed  |
 | [stacktrace.h](../include/kotatsu/sys/stacktrace.h) | `write_stacktrace`: the calling thread's frames, or a crash's from where it interrupted, as addresses in modules, from a crash handler                       |
 | [info.h](../include/kotatsu/sys/info.h)             | Process and system memory, the address space limit, CPU time, `parallelism` and `physical_cores`, OS, user name, local time, priorities and power throttling |
 
@@ -84,7 +84,11 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
   sets the unhandled exception filter, with a stack guarantee for each of
   those threads, and a SIGABRT handler, without which `abort()` fails fast
   past every filter; the failures that fail fast themselves (invalid
-  parameters, pure virtual calls, `/GS`) reach no handler.
+  parameters, pure virtual calls, `/GS`) reach no handler. After the
+  handler, an exception no filter set before handles ends the process at
+  once with its code, and `abort()` with 3 rather than failing fast, never
+  through Windows Error Reporting; the processes it starts keep the
+  system's handling.
 - `write_stacktrace` is async-signal-safe: it allocates nothing and takes no
   lock of the loader's. On Linux, on x86-64 and arm64 (`not_supported`
   elsewhere), it walks the stack by .eh_frame's CFI with an unwinder of its
