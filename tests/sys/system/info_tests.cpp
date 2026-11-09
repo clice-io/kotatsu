@@ -12,6 +12,7 @@
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -115,6 +116,10 @@ constexpr auto user_variable = "USER";
 
 /// 2001-09-09 01:46:40 UTC, a Sunday, the 252nd day of its year.
 constexpr std::chrono::system_clock::time_point billennium{std::chrono::seconds(1'000'000'000)};
+
+/// 2001-01-15 00:00:00 UTC, in winter where billennium is in summer.
+constexpr std::chrono::system_clock::time_point mid_january{
+    std::chrono::sys_days(std::chrono::year(2001) / 1 / 15)};
 
 ZEST_SUITE(sys_info) {
 
@@ -477,7 +482,8 @@ ZEST_CASE(local_time_is_of_the_time_zone) {
 
 #ifndef _WIN32
 // New York's, in daylight saving time in September: 4 hours behind UTC.
-// Windows' C runtime marks it so, but keeps the 5 hours of standard time.
+// Windows' C runtime marks it so, but takes the hour daylight saving time
+// adds from the system's own zone, not from TZ, and so may add none.
 ZEST_CASE(local_time_applies_daylight_saving_time) {
     ScopedTimeZone zone("EST5EDT");
     auto local = local_time(billennium);
@@ -504,6 +510,66 @@ ZEST_CASE(local_time_takes_a_time_before_1970) {
     ZEXPECT(local->tm_year == 69);
     ZEXPECT(local->tm_hour == 23);
     ZEXPECT(local->tm_sec == 58);
+}
+#endif
+
+// In January and in September, which none of these zones tells apart, and
+// at 1970's start, which is in 1969 west of UTC.
+ZEST_CASE(utc_offset_is_of_the_time_zone) {
+    using namespace std::chrono_literals;
+    constexpr std::pair<const char*, std::chrono::seconds> zones[] = {
+        {"UTC0",     0s        },
+        {"CST-8",    8h        },
+        {"IST-5:30", 5h + 30min},
+        {"EST5",     -5h       },
+    };
+    for(auto [name, offset]: zones) {
+        ZEST_CONTEXT("{}", name);
+        ScopedTimeZone zone(name);
+        for(auto time: {std::chrono::system_clock::time_point(), mid_january, billennium}) {
+            ZEST_CONTEXT("{}", std::chrono::system_clock::to_time_t(time));
+            ZEXPECT(utc_offset(time) == offset);
+        }
+    }
+}
+
+#ifndef _WIN32
+// New York's, 5 hours behind UTC in January and 4 in September, by the
+// rules TZ spells out rather than a zone file's. Not on Windows, for
+// local_time_applies_daylight_saving_time's reason.
+ZEST_CASE(utc_offset_includes_daylight_saving_time) {
+    using namespace std::chrono_literals;
+    ScopedTimeZone zone("EST5EDT,M3.2.0,M11.1.0");
+    ZEXPECT(utc_offset(mid_january) == std::chrono::seconds(-5h));
+    ZEXPECT(utc_offset(billennium) == std::chrono::seconds(-4h));
+}
+#endif
+
+#ifdef _WIN32
+ZEST_CASE(utc_offset_before_1970_fails_on_windows) {
+    auto offset = utc_offset(std::chrono::system_clock::time_point(std::chrono::seconds(-1)));
+    ZASSERT(!offset.has_value());
+    ZEXPECT(offset.error() == std::errc::invalid_argument);
+}
+#else
+ZEST_CASE(utc_offset_takes_a_time_before_1970) {
+    using namespace std::chrono_literals;
+    ScopedTimeZone zone("EST5");
+    ZEXPECT(utc_offset(std::chrono::system_clock::time_point(-1500ms)) ==
+            std::chrono::seconds(-5h));
+}
+#endif
+
+#ifdef _MSVC_STL_VERSION
+// The last second Windows takes, whose date east of UTC its C runtime gives
+// as the 32nd of December 3000. A system_clock of 100 nanoseconds, MSVC's,
+// holds it; one of nanoseconds, MinGW's, ends in 2262.
+ZEST_CASE(utc_offset_at_the_end_of_3000) {
+    using namespace std::chrono_literals;
+    constexpr std::chrono::system_clock::time_point last{
+        std::chrono::sys_days(std::chrono::year(3001) / 1 / 1) - 1s};
+    ScopedTimeZone zone("CST-8");
+    ZEXPECT(utc_offset(last) == std::chrono::seconds(8h));
 }
 #endif
 

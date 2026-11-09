@@ -1,6 +1,8 @@
 #include "kotatsu/sys/console.h"
 
 #include "os.h"
+#include "kotatsu/support/small_string.h"
+#include "kotatsu/sys/env.h"
 
 #ifdef _WIN32
 #include <algorithm>
@@ -161,6 +163,25 @@ bool is_pipe(int fd) noexcept {
     struct stat status;
     return ::fstat(fd, &status) == 0 && (S_ISFIFO(status.st_mode) || S_ISSOCK(status.st_mode));
 #endif
+}
+
+bool shows_colors(int fd) {
+#ifdef _WIN32
+    // A console's input has a mode too, whose ENABLE_ECHO_INPUT is the same bit.
+    auto handle = descriptor_handle(fd);
+    CONSOLE_SCREEN_BUFFER_INFO screen;
+    DWORD mode = 0;
+    if(::GetConsoleScreenBufferInfo(handle, &screen) == 0 || ::GetConsoleMode(handle, &mode) == 0 ||
+       (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) == 0) {
+        return false;
+    }
+#else
+    if(!is_console(fd)) {
+        return false;
+    }
+#endif
+    small_string<16> no_color;
+    return !get_env(no_color, "NO_COLOR") || no_color.empty();
 }
 
 }  // namespace kotatsu::sys

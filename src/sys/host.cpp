@@ -1,3 +1,4 @@
+#include <chrono>
 #include <cstddef>
 #include <ctime>
 #include <iterator>
@@ -85,6 +86,28 @@ std::expected<std::tm, std::error_code> local_time(std::chrono::system_clock::ti
     ::localtime_r(&value, &local);
 #endif
     return local;
+}
+
+std::expected<std::chrono::seconds, std::error_code>
+    utc_offset(std::chrono::system_clock::time_point time) {
+    auto local = local_time(time);
+    if(!local) {
+        return std::unexpected(local.error());
+    }
+#ifdef _WIN32
+    // The C runtime's tm keeps no offset: how far its date and time of day
+    // are from those of UTC. Not through _mkgmtime64, which takes no date
+    // before 1970, the date of 1970's first hours west of UTC; a day past
+    // its month's end, as the runtime gives in the last days it takes,
+    // counts on into the next month.
+    auto day = std::chrono::sys_days(std::chrono::year(local->tm_year + 1900) /
+                                     (local->tm_mon + 1) / local->tm_mday);
+    auto wall = day + std::chrono::hours(local->tm_hour) + std::chrono::minutes(local->tm_min) +
+                std::chrono::seconds(local->tm_sec);
+    return wall - std::chrono::floor<std::chrono::seconds>(time);
+#else
+    return std::chrono::seconds(local->tm_gmtoff);
+#endif
 }
 
 namespace {

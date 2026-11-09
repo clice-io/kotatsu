@@ -8,8 +8,7 @@
 
 namespace kotatsu::cli {
 
-/// The style for writing to descriptor `fd`: in color when it is a terminal and the
-/// environment sets no NO_COLOR.
+/// The style for writing to descriptor `fd`: in color when sys::shows_colors(fd).
 Style style_for(int fd);
 
 /// Writes `error`, rendered in the style for `fd`, and a newline to descriptor `fd`, the
