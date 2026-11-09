@@ -8,6 +8,14 @@ set_property(GLOBAL APPEND PROPERTY kotatsu_check_programs async_thread_pool_siz
 add_test(NAME async_thread_pool_size COMMAND async_thread_pool_size)
 set_tests_properties(async_thread_pool_size PROPERTIES LABELS system)
 
+# A crash stack on the pool's threads: see crash_stack/main.cpp.
+add_executable(async_crash_stack crash_stack/main.cpp)
+target_link_libraries(async_crash_stack PRIVATE kotatsu::async kotatsu::sys)
+kotatsu_apply_project_options(async_crash_stack)
+set_property(GLOBAL APPEND PROPERTY kotatsu_check_programs async_crash_stack)
+add_test(NAME async_crash_stack COMMAND async_crash_stack)
+set_tests_properties(async_crash_stack PROPERTIES LABELS system)
+
 # A relay let go while its loop winds down: see relay_release/main.cpp. The
 # linker's --wrap is ELF's.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

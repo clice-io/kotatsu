@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "os.h"
+#include "kotatsu/sys/crash.h"
 
 #ifndef _WIN32
 #include <climits>
@@ -20,6 +21,7 @@ namespace {
 #ifdef _WIN32
 
 DWORD WINAPI enter(void* entry) {
+    detail::reserve_crash_stack_if_handled();
     auto* start = static_cast<detail::ThreadEntry*>(entry);
     start->run(start);
     return 0;
@@ -34,6 +36,7 @@ HANDLE native(std::uintptr_t handle) {
 static_assert(sizeof(pthread_t) <= sizeof(std::uintptr_t));
 
 void* enter(void* entry) {
+    detail::reserve_crash_stack_if_handled();
     auto* start = static_cast<detail::ThreadEntry*>(entry);
     start->run(start);
     return nullptr;

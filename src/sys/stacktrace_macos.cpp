@@ -300,6 +300,23 @@ struct Interrupted {
 #endif
 };
 
+/// The registers in the mcontext at `mcontext`, which the kernel aligns on no
+/// boundary on x86-64.
+Interrupted interrupted_at(std::uintptr_t mcontext) noexcept {
+#ifdef __aarch64__
+    const auto& state = reinterpret_cast<const _STRUCT_MCONTEXT64*>(mcontext)->__ss;
+    return Interrupted{.pc = __darwin_arm_thread_state64_get_pc(state),
+                       .fp = __darwin_arm_thread_state64_get_fp(state),
+                       .lr = __darwin_arm_thread_state64_get_lr(state)};
+#else
+    _STRUCT_X86_THREAD_STATE64 state;
+    std::memcpy(&state,
+                reinterpret_cast<const void*>(mcontext + offsetof(_STRUCT_MCONTEXT64, __ss)),
+                sizeof(state));
+    return Interrupted{.pc = state.__rip, .fp = state.__rbp, .sp = state.__rsp};
+#endif
+}
+
 /// The registers a signal interrupted, as the kernel saved them for the
 /// handler _sigtramp called, whose frame record is at `record`: std::nullopt
 /// unless the pointers the kernel wrote into the context, to the stack
@@ -327,10 +344,7 @@ std::optional<Interrupted> signal_context(std::uintptr_t record, const Stacks& s
        context.uc_mcsize != sizeof(_STRUCT_MCONTEXT64)) {
         return std::nullopt;
     }
-    const auto& state = context.uc_mcontext->__ss;
-    return Interrupted{.pc = __darwin_arm_thread_state64_get_pc(state),
-                       .fp = __darwin_arm_thread_state64_get_fp(state),
-                       .lr = __darwin_arm_thread_state64_get_lr(state)};
+    return interrupted_at(at + sizeof(ucontext_t));
 #else
     // xnu's sendsig (bsd/dev/i386/unix_signal.c) puts below the interrupted
     // stack's red zone the ucontext, the siginfo, then the mcontext, of the
@@ -360,12 +374,7 @@ std::optional<Interrupted> signal_context(std::uintptr_t record, const Stacks& s
                context.uc_mcsize != size) {
                 continue;
             }
-            _STRUCT_X86_THREAD_STATE64 state;
-            std::memcpy(
-                &state,
-                reinterpret_cast<const void*>(mcontext + offsetof(_STRUCT_MCONTEXT64, __ss)),
-                sizeof(state));
-            return Interrupted{.pc = state.__rip, .fp = state.__rbp, .sp = state.__rsp};
+            return interrupted_at(mcontext);
         }
     }
     return std::nullopt;
@@ -417,16 +426,11 @@ bool write_interrupted(const Interrupted& at, const Stacks& stacks, FrameWriter&
     return caller == 0 || writer.frame(caller, module_of(find_image(caller - 1)), false);
 }
 
-}  // namespace
-
-KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
-    const Stacks stacks;
-    // Frame records, from this function's: the caller's record, then the
-    // return address into it. Up the stack each one is, or from the
-    // alternate stack to the thread's, where a signal handler's _sigtramp
-    // records the frame the signal interrupted.
-    FrameWriter writer(fd);
-    auto record = reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0));
+/// Writes the frames from the record at `record`, the caller's record and
+/// the return address into it. Up the stack each one is, or from the
+/// alternate stack to the thread's, where a signal handler's _sigtramp
+/// records the frame the signal interrupted.
+void walk(std::uintptr_t record, const Stacks& stacks, FrameWriter& writer) noexcept {
     while(const auto* stack = stacks.holding(record)) {
         const auto* words = record_at(record);
         // Swift's async frames tag the record they save in its top bits,
@@ -434,22 +438,44 @@ KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
         auto next = words[0] & 0x0FFF'FFFF'FFFF'FFFF;
         auto address = return_address(words[1]);
         if(address == 0 || !writer.frame(address, module_of(find_image(address - 1)), false)) {
-            break;
+            return;
         }
         // A signal handler's return into _sigtramp, whose record is `next`:
         // on from the frame the signal interrupted.
         if(auto interrupted =
                sigtramp.contains(address - 1) ? signal_context(next, stacks) : std::nullopt) {
             if(!write_interrupted(*interrupted, stacks, writer)) {
-                break;
+                return;
             }
             record = interrupted->fp;
             continue;
         }
         if(stack->holds(next) && next <= record) {
-            break;
+            return;
         }
         record = next;
+    }
+}
+
+}  // namespace
+
+KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
+    FrameWriter writer(fd);
+    walk(reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0)), Stacks(), writer);
+    return writer.error;
+}
+
+KOTATSU_NOINLINE std::error_code write_stacktrace(int fd, const Crash& crash) noexcept {
+    FrameWriter writer(fd);
+    const Stacks stacks;
+    if(crash.context == nullptr) {
+        walk(reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0)), stacks, writer);
+        return writer.error;
+    }
+    const auto* context = static_cast<const ucontext_t*>(crash.context);
+    auto at = interrupted_at(reinterpret_cast<std::uintptr_t>(context->uc_mcontext));
+    if(write_interrupted(at, stacks, writer)) {
+        walk(at.fp, stacks, writer);
     }
     return writer.error;
 }

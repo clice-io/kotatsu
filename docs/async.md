@@ -80,6 +80,8 @@ Adapted from `examples/async_basics/async_basics.cpp`.
   `wait_exit(pid)` waits for one everywhere, without its exit status.
 - Without exceptions (`KOTATSU_ENABLE_EXCEPTIONS` off), what would throw
   aborts, such as `when_any` over an empty range.
+- Once `sys::on_crash` is set up, a thread of the pool gets its crash stack
+  (`sys::reserve_crash_stack`) as it runs a function of `queue()`.
 
 ## See also
 

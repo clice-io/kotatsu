@@ -56,7 +56,8 @@ target_link_libraries(kotatsu_async PUBLIC
     libuv::libuv
 )
 
-# Exit status names and the environment of child processes.
+# Exit status names, the environment of child processes, and crash stacks for
+# the thread pool.
 target_link_libraries(kotatsu_async PRIVATE
     kotatsu::sys
 )

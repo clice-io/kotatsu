@@ -222,20 +222,15 @@ std::optional<FrameModule> find_module(std::uintptr_t address) noexcept {
     return std::nullopt;
 }
 
-}  // namespace
-
-KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
-    CONTEXT context;
-    ::RtlCaptureContext(&context);
-    FrameWriter writer(fd);
+/// Writes the frames from `context`'s, the address an exception interrupted
+/// when `interrupted`, or, `own`, from the caller of write_stacktrace's own.
+void walk(CONTEXT& context, bool interrupted, bool own, FrameWriter& writer) noexcept {
     const auto* dispatching = dispatcher.load(std::memory_order_relaxed);
-    // Whether pc is the address an exception interrupted.
-    bool interrupted = false;
 #if defined(_M_ARM64) || defined(__aarch64__)
     // Whether the frame before had a function entry.
     bool entered = true;
 #endif
-    for(bool own = true;; own = false) {
+    for(;; own = false) {
 #if defined(_M_ARM64) || defined(__aarch64__)
         auto pc = context.Pc;
 #else
@@ -244,10 +239,10 @@ KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
         // The outermost frame's return address; the address a call through
         // a null pointer went to, which the frame below called from.
         if(pc == 0 && !interrupted) {
-            break;
+            return;
         }
         if(!own && !writer.frame(pc, find_module(pc - (interrupted ? 0 : 1)), interrupted)) {
-            break;
+            return;
         }
         DWORD64 image_base = 0;
         auto* function = ::RtlLookupFunctionEntry(pc, &image_base, nullptr);
@@ -274,7 +269,7 @@ KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
         // The return address stays in lr: one more frame without an entry
         // would take it again.
         if(!entered) {
-            break;
+            return;
         }
         context.Pc = context.Lr;
         entered = false;
@@ -282,6 +277,29 @@ KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
         context.Rip = *reinterpret_cast<const DWORD64*>(context.Rsp);
         context.Rsp += sizeof(DWORD64);
 #endif
+    }
+}
+
+}  // namespace
+
+KOTATSU_NOINLINE std::error_code write_stacktrace(int fd) noexcept {
+    CONTEXT context;
+    ::RtlCaptureContext(&context);
+    FrameWriter writer(fd);
+    walk(context, false, true, writer);
+    return writer.error;
+}
+
+KOTATSU_NOINLINE std::error_code write_stacktrace(int fd, const Crash& crash) noexcept {
+    FrameWriter writer(fd);
+    CONTEXT context;
+    if(crash.context == nullptr) {
+        ::RtlCaptureContext(&context);
+        walk(context, false, true, writer);
+    } else {
+        // A copy, which the walk unwinds.
+        context = *static_cast<const CONTEXT*>(crash.context);
+        walk(context, true, false, writer);
     }
     return writer.error;
 }

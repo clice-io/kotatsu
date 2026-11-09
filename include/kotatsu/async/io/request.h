@@ -31,7 +31,8 @@ error set_thread_pool_size(unsigned threads);
 /// Runs `fn` on libuv's thread pool and returns what it returns. The pool is
 /// one for the whole process, shared by every loop and by the fs operations,
 /// and sized by set_thread_pool_size(), or else at its first use from the
-/// UV_THREADPOOL_SIZE environment variable (4 threads by default).
+/// UV_THREADPOOL_SIZE environment variable (4 threads by default). Once
+/// sys::on_crash is set up, `fn` runs with its thread's crash stack.
 ///
 /// If the awaiting task is cancelled while `fn` is still queued, `fn` is
 /// dequeued and never runs, and `on_cancel` is not called. Once `fn` runs it

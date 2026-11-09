@@ -27,9 +27,24 @@
 //           EnumerateLoadedModulesW64 calls from probe_late; dbghelp would
 //           catch a fault there
 //
+// The commands from crash_ on crash through on_crash instead, whose handler
+// prints {"signal": <the signal>} and on Windows for an exception
+// {"signal": ..., "code": "<its code>"}, then {"fault": ...} for a crash with
+// a context, {"returns": ...}, and writes the stack with
+// write_stacktrace(1, crash); the process then ends as the crash ends it:
+//
+//   crash_fault     as fault
+//   crash_trap      traps in probe_trap
+//   crash_abort     calls std::abort from probe_abort
+//   crash_overflow  overflows the stack in probe_recurse
+//   crash_overflow_on_thread
+//                   as crash_overflow, on a Thread of 1 MiB
+//   crash_two       faults in probe_fault_together on two Threads at once
+//
 // 2 for a command it does not know.
 
 #include <algorithm>
+#include <atomic>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
@@ -44,7 +59,9 @@
 #include "sys/harness/json.h"
 #include "kotatsu/support/config.h"
 #include "kotatsu/sys/console.h"
+#include "kotatsu/sys/crash.h"
 #include "kotatsu/sys/stacktrace.h"
+#include "kotatsu/sys/thread.h"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -87,9 +104,11 @@
 #endif
 
 #ifdef PROBE_ASAN
-// On Windows ASan would otherwise take the access violation before our filter.
+// ASan would otherwise take the faults before the probe's handlers, or after
+// on_crash's as the action it puts back, on Windows the access violation
+// before the filter.
 extern "C" const char* __asan_default_options() {
-    return "handle_segv=0";
+    return "handle_segv=0:handle_sigbus=0:handle_sigfpe=0:handle_sigill=0";
 }
 #endif
 
@@ -143,6 +162,35 @@ KOTATSU_NOINLINE void probe_abort() {
     std::abort();
 }
 
+KOTATSU_NOINLINE void probe_trap() {
+    return_addresses[0] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
+#if KOTATSU_COMPILER_MSVC
+    __ud2();
+#else
+    __builtin_trap();
+#endif
+}
+
+// A KiB of stack a call, until it overflows.
+KOTATSU_NOINLINE int probe_recurse(int depth) {
+    volatile char frame[1024];
+    frame[0] = static_cast<char>(depth);
+    if(depth < 0) {
+        return 0;
+    }
+    return probe_recurse(depth + 1) + frame[0];
+}
+
+// The threads of crash_two that have started.
+std::atomic<int> started = 0;
+
+// Faults once the other thread of crash_two is about to.
+KOTATSU_NOINLINE void probe_fault_together() {
+    started.fetch_add(1);
+    while(started.load() < 2) {}
+    *target = 1;
+}
+
 #ifdef __clang__
 // UBSan's function-type check reads before the target; let the call reach zero.
 [[clang::no_sanitize("function")]]
@@ -172,6 +220,37 @@ void print_fault(std::uintptr_t address) {
         line[size++] = "0123456789abcdef"[(address >> shift) & 0xF];
     }
     for(char c: std::string_view("\"}\n")) {
+        line[size++] = c;
+    }
+    kotatsu::sys::write_console(1, std::string_view(line, size));
+}
+
+/// The line {"signal": <crash's>}, on Windows with "code": "0x<its code>"
+/// for an exception, built without allocating, in a handler.
+void print_crash(const kotatsu::sys::Crash& crash) {
+    char line[64] = R"({"signal":)";
+    std::size_t size = std::char_traits<char>::length(line);
+    char digits[12];
+    int count = 0;
+    for(auto value = static_cast<unsigned>(crash.signal); count == 0 || value != 0; value /= 10) {
+        digits[count++] = static_cast<char>('0' + value % 10);
+    }
+    while(count > 0) {
+        line[size++] = digits[--count];
+    }
+#ifdef _WIN32
+    if(crash.info != nullptr) {
+        auto code = static_cast<const EXCEPTION_RECORD*>(crash.info)->ExceptionCode;
+        for(char c: std::string_view(R"(,"code":"0x)")) {
+            line[size++] = c;
+        }
+        for(int shift = 28; shift >= 0; shift -= 4) {
+            line[size++] = "0123456789abcdef"[(code >> shift) & 0xF];
+        }
+        line[size++] = '"';
+    }
+#endif
+    for(char c: std::string_view("}\n")) {
         line[size++] = c;
     }
     kotatsu::sys::write_console(1, std::string_view(line, size));
@@ -213,6 +292,21 @@ void print_returns() {
     print_returns();
     kotatsu::sys::write_stacktrace(1);
     std::_Exit(3);
+}
+
+// on_crash's handler.
+void reported(const kotatsu::sys::Crash& crash) noexcept {
+    print_crash(crash);
+#ifdef _WIN32
+    if(crash.info != nullptr) {
+        print_fault(reinterpret_cast<std::uintptr_t>(
+            static_cast<const EXCEPTION_RECORD*>(crash.info)->ExceptionAddress));
+    }
+#else
+    print_fault(kotatsu::test::interrupted_at(crash.context));
+#endif
+    print_returns();
+    kotatsu::sys::write_stacktrace(1, crash);
 }
 
 namespace {
@@ -428,6 +522,38 @@ int main(int argc, char** argv) {
         on_fault(true);
         print_image();
         probe_call();
+        return 1;
+    }
+    if(command.starts_with("crash_")) {
+#ifdef _WIN32
+        // Without the message a debug runtime shows first.
+        _set_abort_behavior(0, _WRITE_ABORT_MSG);
+#endif
+        if(auto error = kotatsu::sys::on_crash(reported)) {
+            std::fprintf(stderr, "[error] on_crash: %s\n", error.message().c_str());
+            return 1;
+        }
+        print_image();
+        if(command == "crash_fault") {
+            probe_caller();
+        } else if(command == "crash_trap") {
+            probe_trap();
+        } else if(command == "crash_abort") {
+            probe_abort();
+        } else if(command == "crash_overflow") {
+            calls = probe_recurse(0);
+        } else if(command == "crash_overflow_on_thread") {
+            auto thread = kotatsu::sys::Thread::start(1U << 20, [] { calls = probe_recurse(0); });
+            thread->join();
+        } else if(command == "crash_two") {
+            auto first = kotatsu::sys::Thread::start(1U << 20, probe_fault_together);
+            auto second = kotatsu::sys::Thread::start(1U << 20, probe_fault_together);
+            first->join();
+            second->join();
+        } else {
+            std::fprintf(stderr, "[error] unknown command\n");
+            return 2;
+        }
         return 1;
     }
 #ifdef _WIN32

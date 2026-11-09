@@ -2,6 +2,8 @@
 
 #include <system_error>
 
+#include "kotatsu/sys/crash.h"
+
 namespace kotatsu::sys {
 
 /// Writes the frames of the calling thread's stack to descriptor `fd`, from
@@ -57,5 +59,11 @@ namespace kotatsu::sys {
 /// The error of the write that failed, which ends the trace: bad_file_descriptor
 /// for a descriptor below 0.
 std::error_code write_stacktrace(int fd) noexcept;
+
+/// As write_stacktrace(fd), the frames of the stack `crash` interrupted,
+/// from the address its context was at, which its line marks, outward: what
+/// on_crash's handler writes. Without a context, as SIGABRT has on Windows,
+/// the calling thread's from the caller's.
+std::error_code write_stacktrace(int fd, const Crash& crash) noexcept;
 
 }  // namespace kotatsu::sys

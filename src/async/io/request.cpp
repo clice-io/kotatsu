@@ -6,6 +6,7 @@
 
 #include "awaiter.h"
 #include "kotatsu/support/scope_exit.h"
+#include "kotatsu/sys/crash.h"
 #include "kotatsu/sys/env.h"
 
 namespace kotatsu::async {
@@ -38,6 +39,8 @@ struct work_op : uv::request_op<work_op, uv_work_t> {
     }
 
     static void run(uv_work_t* req) {
+        // The pool's threads, which libuv starts, get a crash stack here.
+        sys::detail::reserve_crash_stack_if_handled();
         static_cast<work_op*>(static_cast<request_op*>(req->data))->work();
     }
 };

@@ -151,11 +151,34 @@ export class Driver {
   }
 
   /**
-   * Waits for the driver to exit, and checks it exited with `code`, without a
-   * sanitizer report and without a warn or error line it was not expected to
-   * log.
+   * Waits for the driver to exit, and checks it exited with `code`, or one of
+   * `code`, without a sanitizer report and without a warn or error line it
+   * was not expected to log.
    */
-  async expectExit(code: number): Promise<void> {
+  async expectExit(code: number | readonly number[]): Promise<void> {
+    const codes = typeof code === "number" ? [code] : code;
+    const exit = await this.#ended();
+    assert.ok(
+      exit.signal === null && exit.code !== null && codes.includes(exit.code),
+      `exited ${JSON.stringify(exit)}, not with ${JSON.stringify(code)}; ${this.name}'s stderr:\n${this.#stderr}`,
+    );
+  }
+
+  /** As expectExit, for a driver a signal ended. */
+  async expectSignal(signal: NodeJS.Signals): Promise<void> {
+    const exit = await this.#ended();
+    assert.deepEqual(
+      exit,
+      { code: null, signal },
+      `exited ${JSON.stringify(exit)}; ${this.name}'s stderr:\n${this.#stderr}`,
+    );
+  }
+
+  /**
+   * How the driver exited, once it did, after checking its stderr has no
+   * sanitizer report and no warn or error line it was not expected to log.
+   */
+  async #ended(): Promise<Exit> {
     const exit = await this.#exited;
     await this.#stderrEnded;
     this.#checked = true;
@@ -176,11 +199,7 @@ export class Driver {
       return false;
     });
     assert.deepEqual(unexpected, [], `unexpected log lines; ${stderr}`);
-    assert.deepEqual(
-      exit,
-      { code, signal: null },
-      `exited ${JSON.stringify(exit)}; ${stderr}`,
-    );
+    return exit;
   }
 
   /** Everything the driver writes to stdout, once it closes it. */

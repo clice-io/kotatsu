@@ -2,7 +2,8 @@
 
 `kotatsu::sys` gives synchronous access to the current process and the
 system: environment, program lookup, child processes, threads, command lines,
-user directories, console output, stack traces, memory and CPU. It needs no
+user directories, console output, crash handling and stack traces, memory and
+CPU. It needs no
 event loop, and a program links only the parts it calls.
 
 It is not for managing processes on an event loop: `kotatsu::async::process`
@@ -61,7 +62,8 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
 | [windows.h](../include/kotatsu/sys/windows.h)       | NTSTATUS names, CreateProcess's program search                                                                                                               |
 | [dirs.h](../include/kotatsu/sys/dirs.h)             | Home, temporary, cache, config and data directories, `~` expansion                                                                                           |
 | [console.h](../include/kotatsu/sys/console.h)       | `write_console` and `write_console_some`, `set_nonblocking`, `is_console`, `is_pipe`                                                                         |
-| [stacktrace.h](../include/kotatsu/sys/stacktrace.h) | `write_stacktrace`: the calling thread's frames, as addresses in modules, from a crash handler                                                               |
+| [crash.h](../include/kotatsu/sys/crash.h)           | `on_crash`, a handler for crashes that then lets the process end as it would have; `reserve_crash_stack`, room for it on a thread whose stack overflowed     |
+| [stacktrace.h](../include/kotatsu/sys/stacktrace.h) | `write_stacktrace`: the calling thread's frames, or a crash's from where it interrupted, as addresses in modules, from a crash handler                       |
 | [info.h](../include/kotatsu/sys/info.h)             | Process and system memory, the address space limit, CPU time, `parallelism` and `physical_cores`, OS, user name, local time, priorities and power throttling |
 
 ## Platform notes
@@ -75,6 +77,14 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
 - `spawn` uses `fork` and `execve` on Linux, `posix_spawn` on macOS, and
   `CreateProcessW` on Windows, the child in a job object of its own and given
   only the standard handles unless `windows_inherit_handles`.
+- `on_crash` takes SIGSEGV, SIGBUS, SIGILL, SIGTRAP, SIGFPE, SIGABRT and
+  SIGSYS on Linux and macOS, never SIGINT, SIGTERM or SIGHUP, and gives each
+  thread that can crash an alternate signal stack: the one that calls it,
+  `Thread`'s, and libuv's pool's as they run `async::queue()`. On Windows it
+  sets the unhandled exception filter, with a stack guarantee for each of
+  those threads, and a SIGABRT handler, without which `abort()` fails fast
+  past every filter; the failures that fail fast themselves (invalid
+  parameters, pure virtual calls, `/GS`) reach no handler.
 - `write_stacktrace` is async-signal-safe: it allocates nothing and takes no
   lock of the loader's. On Linux, on x86-64 and arm64 (`not_supported`
   elsewhere), it walks the stack by .eh_frame's CFI with an unwinder of its
