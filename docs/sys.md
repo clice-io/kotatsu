@@ -51,19 +51,19 @@ POSIX only; on Windows the test runs `cmd /c` instead.
 Failures are `std::expected<T, std::error_code>` (or a bare `std::error_code`);
 text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
 
-| Header                                              | Contents                                                                                                                                                     |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [env.h](../include/kotatsu/sys/env.h)               | Environment variables, and PATH-like lists split and joined                                                                                                  |
-| [process.h](../include/kotatsu/sys/process.h)       | This process: IDs, executable path and base, arguments, `find_program`, title, `exit_with_parent`, `ignore_sigpipe`, signals                                 |
-| [spawn.h](../include/kotatsu/sys/spawn.h)           | `spawn` and `Child` (wait, kill, process groups), `Stdio`, `ExitStatus`, `capture`                                                                           |
-| [thread.h](../include/kotatsu/sys/thread.h)         | `Thread`, started with the stack size the caller picks                                                                                                       |
-| [cmd.h](../include/kotatsu/sys/cmd.h)               | Command lines of Windows or POSIX quoting split and joined, the host's by default, response files expanded                                                   |
-| [windows.h](../include/kotatsu/sys/windows.h)       | NTSTATUS names, CreateProcess's program search                                                                                                               |
-| [dirs.h](../include/kotatsu/sys/dirs.h)             | Home, temporary, cache, config and data directories, `~` expansion                                                                                           |
-| [console.h](../include/kotatsu/sys/console.h)       | `write_console` and `write_console_some`, `set_nonblocking`, `is_console`, `is_pipe`                                                                         |
-| [crash.h](../include/kotatsu/sys/crash.h)           | `on_crash`, a handler for crashes that then lets the process end as it would have; `reserve_crash_stack`, room for it on a thread whose stack overflowed     |
-| [stacktrace.h](../include/kotatsu/sys/stacktrace.h) | `write_stacktrace`: the calling thread's frames, or a crash's from where it interrupted, as addresses in modules, from a crash handler                       |
-| [info.h](../include/kotatsu/sys/info.h)             | Process and system memory, the address space limit, CPU time, `parallelism` and `physical_cores`, OS, user name, local time, priorities and power throttling |
+| Header                                              | Contents                                                                                                                                                                        |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [env.h](../include/kotatsu/sys/env.h)               | Environment variables, and PATH-like lists split and joined                                                                                                                     |
+| [process.h](../include/kotatsu/sys/process.h)       | This process: IDs, executable path and base, arguments, `find_program`, title, `exit_with_parent`, `ignore_sigpipe`, signals                                                    |
+| [spawn.h](../include/kotatsu/sys/spawn.h)           | `spawn` and `Child` (wait, kill, process groups), `Stdio`, `ExitStatus`, `capture`                                                                                              |
+| [thread.h](../include/kotatsu/sys/thread.h)         | `Thread`, started with the stack size the caller picks                                                                                                                          |
+| [cmd.h](../include/kotatsu/sys/cmd.h)               | Command lines of Windows or POSIX quoting split and joined, the host's by default, response files expanded                                                                      |
+| [windows.h](../include/kotatsu/sys/windows.h)       | NTSTATUS names, CreateProcess's program search                                                                                                                                  |
+| [dirs.h](../include/kotatsu/sys/dirs.h)             | Home, temporary, cache, config and data directories, `~` expansion                                                                                                              |
+| [console.h](../include/kotatsu/sys/console.h)       | `write_console` and `write_console_some`, `set_nonblocking`, `is_console`, `is_pipe`                                                                                            |
+| [crash.h](../include/kotatsu/sys/crash.h)           | `on_crash`, a handler for crashes that then lets the process end as it would have, or on Windows at once; `reserve_crash_stack`, room for it on a thread whose stack overflowed |
+| [stacktrace.h](../include/kotatsu/sys/stacktrace.h) | `write_stacktrace`: the calling thread's frames, or a crash's from where it interrupted, as addresses in modules, from a crash handler                                          |
+| [info.h](../include/kotatsu/sys/info.h)             | Process and system memory, the address space limit, CPU time, `parallelism` and `physical_cores`, OS, user name, local time, priorities and power throttling                    |
 
 ## Platform notes
 
@@ -84,7 +84,13 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
   sets the unhandled exception filter, with a stack guarantee for each of
   those threads, and a SIGABRT handler, without which `abort()` fails fast
   past every filter; the failures that fail fast themselves (invalid
-  parameters, pure virtual calls, `/GS`) reach no handler.
+  parameters, pure virtual calls, `/GS`) reach no handler. With
+  `CrashOptions::windows_skip_error_reporting` the process ends right after
+  the handler by `TerminateProcess`, with the exception's code, rather than
+  through Windows Error Reporting, which may hold it for a dialog or a dump;
+  `abort()` then ends with 3 rather than failing fast. Both are of the
+  process alone: its children keep the system's handling, unlike the
+  inherited `SetErrorMode`.
 - `write_stacktrace` is async-signal-safe: it allocates nothing and takes no
   lock of the loader's. On Linux, on x86-64 and arm64 (`not_supported`
   elsewhere), it walks the stack by .eh_frame's CFI with an unwinder of its

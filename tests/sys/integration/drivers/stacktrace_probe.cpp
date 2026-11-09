@@ -2,7 +2,8 @@
 // what the loader tells of its executable, {"executable": <its path>,
 // "base": <its base>, "low": <the lowest offset of its code from the base>,
 // "high": <past the highest>, "debug": "pdb" or "dwarf", "tsan": <whether
-// it runs under TSan>}, numbers as hexadecimal strings, and ends in a
+// it runs under TSan>, "exceptions": <whether it was built with C++
+// exceptions>}, numbers as hexadecimal strings, and ends in a
 // handler that prints the probes' return addresses as {"returns":
 // [<innermost first>, ...]}, writes the stack with write_stacktrace to
 // stdout and exits with 3:
@@ -33,7 +34,9 @@
 // prints {"signal": <the signal>} and on Windows for an exception
 // {"signal": ..., "code": "<its code>"}, then {"fault": ...} for a crash with
 // a context, {"returns": ...}, and writes the stack with
-// write_stacktrace(1, crash); the process then ends as the crash ends it:
+// write_stacktrace(1, crash); the process then ends as the crash ends it.
+// With KOTATSU_PROBE_SKIP_ERROR_REPORTING=1, on_crash is asked for
+// windows_skip_error_reporting.
 //
 //   crash_fault     as fault
 //   crash_trap      traps in probe_trap
@@ -42,6 +45,8 @@
 //                   SIGTRAP's default action set with SA_SIGINFO before
 //                   on_crash
 //   crash_abort     calls std::abort from probe_abort
+//   crash_throw     throws a C++ exception from probe_throw that none
+//                   catches; without exceptions exits with 0
 //   crash_overflow  overflows the stack in probe_recurse_a and _b, which call
 //                   each other
 //   crash_overflow_on_thread
@@ -72,6 +77,7 @@
 #include <cstdlib>
 #include <format>
 #include <iterator>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -203,6 +209,12 @@ KOTATSU_NOINLINE void probe_abort() {
     return_addresses[0] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
     std::abort();
 }
+
+#if KOTATSU_ENABLE_EXCEPTIONS
+KOTATSU_NOINLINE void probe_throw() {
+    throw std::runtime_error("none catches this");
+}
+#endif
 
 KOTATSU_NOINLINE void probe_trap() {
     return_addresses[0] = reinterpret_cast<std::uintptr_t>(PROBE_RETURN_ADDRESS());
@@ -600,13 +612,14 @@ void print_image() {
     constexpr bool tsan = false;
 #endif
     print_line(std::format(
-        R"({{"executable":{},"base":"{:#x}","low":"{:#x}","high":"{:#x}","debug":{},"tsan":{}}})",
+        R"({{"executable":{},"base":"{:#x}","low":"{:#x}","high":"{:#x}","debug":{},"tsan":{},"exceptions":{}}})",
         json(image.path),
         image.base,
         image.low,
         image.high,
         json(debug),
-        tsan));
+        tsan,
+        bool(KOTATSU_ENABLE_EXCEPTIONS)));
 }
 
 #ifdef __linux__
@@ -669,7 +682,11 @@ int main(int argc, char** argv) {
         if(command == "crash_after_handler") {
             before_crash_handler();
         }
-        if(auto error = kotatsu::sys::on_crash(reported)) {
+        const char* skip = std::getenv("KOTATSU_PROBE_SKIP_ERROR_REPORTING");
+        const kotatsu::sys::CrashOptions options = {
+            .windows_skip_error_reporting = skip != nullptr && std::string_view(skip) == "1",
+        };
+        if(auto error = kotatsu::sys::on_crash(reported, options)) {
             std::fprintf(stderr, "[error] on_crash: %s\n", error.message().c_str());
             return 1;
         }
@@ -689,6 +706,12 @@ int main(int argc, char** argv) {
             probe_breakpoint();
         } else if(command == "crash_abort") {
             probe_abort();
+        } else if(command == "crash_throw") {
+#if KOTATSU_ENABLE_EXCEPTIONS
+            probe_throw();
+#else
+            return 0;
+#endif
         } else if(command == "crash_overflow") {
             calls = probe_recurse_a(0);
         } else if(command == "crash_overflow_on_thread") {

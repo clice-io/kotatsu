@@ -5,6 +5,7 @@
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 
 #include "os.h"
 #include "kotatsu/support/config.h"
@@ -89,6 +90,9 @@ using SignalHandler = void (*)(int);
 constinit LPTOP_LEVEL_EXCEPTION_FILTER previous_filter = nullptr;
 constinit SignalHandler previous_abort = nullptr;
 
+/// CrashOptions::windows_skip_error_reporting of the first call.
+constinit bool skip_error_reporting = false;
+
 /// The signal POSIX raises for the fault exception `code` reports: SIGSEGV,
 /// SIGILL or SIGFPE; 0 for another exception.
 int signal_of(DWORD code) noexcept {
@@ -122,7 +126,13 @@ LONG WINAPI filtered(EXCEPTION_POINTERS* exception) {
                  .info = exception->ExceptionRecord,
                  .context = exception->ContextRecord});
     restore();
-    return previous_filter != nullptr ? previous_filter(exception) : EXCEPTION_CONTINUE_SEARCH;
+    const auto action =
+        previous_filter != nullptr ? previous_filter(exception) : EXCEPTION_CONTINUE_SEARCH;
+    // What the system would take on to Windows Error Reporting.
+    if(action == EXCEPTION_CONTINUE_SEARCH && skip_error_reporting) {
+        ::TerminateProcess(::GetCurrentProcess(), exception->ExceptionRecord->ExceptionCode);
+    }
+    return action;
 }
 
 KOTATSU_NOINLINE void aborted(int signal) {
@@ -159,7 +169,13 @@ KOTATSU_NOINLINE void aborted(int signal) {
     std::abort();
 }
 
-void install() noexcept {
+void install(const CrashOptions& options) noexcept {
+    if(options.windows_skip_error_reporting) {
+        skip_error_reporting = true;
+        // abort() then ends the process with _exit(3) rather than failing
+        // fast to Windows Error Reporting.
+        _set_abort_behavior(0, _CALL_REPORTFAULT);
+    }
     previous_filter = ::SetUnhandledExceptionFilter(filtered);
     // Without a handler, abort() fails fast past every filter.
     previous_abort = std::signal(SIGABRT, aborted);
@@ -199,7 +215,7 @@ void crashed(int signal, siginfo_t* info, void* context) noexcept {
     }
 }
 
-void install() noexcept {
+void install(const CrashOptions&) noexcept {
     struct sigaction action = {};
     action.sa_sigaction = crashed;
     // On the crash stack, and with the signal left unblocked: a crash in the
@@ -252,10 +268,10 @@ thread_local CrashStack crash_stack;
 
 }  // namespace
 
-std::error_code on_crash(CrashHandler handler) noexcept {
+std::error_code on_crash(CrashHandler handler, CrashOptions options) noexcept {
     assert(handler != nullptr);
     if(callback.exchange(handler, std::memory_order_acq_rel) == nullptr) {
-        install();
+        install(options);
     }
     return reserve_crash_stack();
 }

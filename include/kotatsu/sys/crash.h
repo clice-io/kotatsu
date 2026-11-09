@@ -29,14 +29,26 @@ struct Crash {
 /// async-signal-safe functions, as write_console and write_stacktrace.
 using CrashHandler = void (*)(const Crash& crash) noexcept;
 
+/// How the process ends after on_crash's handler.
+struct CrashOptions {
+    /// Windows: the process ends right after the handler rather than going
+    /// on to Windows Error Reporting, which may hold it for a dialog or a
+    /// dump first: an exception that no filter set before handled ends it
+    /// by TerminateProcess with the exception's code, and abort(),
+    /// std::terminate's included, no longer fails fast and ends it with 3.
+    /// For this process alone: the processes it starts keep the system's
+    /// handling. Ignored elsewhere.
+    bool windows_skip_error_reporting = false;
+};
+
 /// Calls `handler` as the process crashes: on a SIGSEGV, SIGBUS, SIGILL,
 /// SIGTRAP, SIGFPE, SIGABRT or SIGSYS, but one the program ignores, never on
 /// SIGINT, SIGTERM or SIGHUP; on Windows on an exception nothing handled and
 /// on abort()'s SIGABRT. A later call replaces `handler`; the handlers are
-/// set up once. Gives the calling thread a crash stack
-/// (reserve_crash_stack), each thread Thread starts after it its own as it
-/// starts, and each thread of libuv's pool its own as it runs a function of
-/// async::queue().
+/// set up once, as the first call's `options` ask. Gives the calling thread
+/// a crash stack (reserve_crash_stack), each thread Thread starts after it
+/// its own as it starts, and each thread of libuv's pool its own as it runs
+/// a function of async::queue().
 ///
 /// One crash at a time: a thread that crashes while another's handler runs
 /// waits for the process to end, and a crash in `handler` goes on as if
@@ -53,7 +65,7 @@ using CrashHandler = void (*)(const Crash& crash) noexcept;
 ///
 /// Set it up from main, before other threads start: the error of the crash
 /// stack.
-std::error_code on_crash(CrashHandler handler) noexcept;
+std::error_code on_crash(CrashHandler handler, CrashOptions options = {}) noexcept;
 
 /// Gives the calling thread room for a crash handler to run in after its
 /// stack overflowed, once: on Linux and macOS an alternate signal stack of
