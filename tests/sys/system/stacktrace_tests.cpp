@@ -222,16 +222,23 @@ void check_trace_through_a_signal(bool alternate) {
     auto previous = std::exchange(signal_trace, SignalTrace{.fd = trace.descriptor.fd});
     ScopeExit restore([previous] { signal_trace = previous; });
     test::ScopedSignalAction action(SIGTRAP, trace_signal, alternate ? SA_ONSTACK : 0);
-    // Kept until the thread, which ends with it set, is joined.
-    std::vector<char> room(alternate ? 64 * 1024 : 0);
     auto thread = Thread::start(1U << 20, [&] {
+        std::vector<char> room(alternate ? 64 * 1024 : 0);
+        stack_t previous = {};
         if(alternate) {
             stack_t stack = {};
             stack.ss_sp = room.data();
             stack.ss_size = room.size();
-            ZASSERT(::sigaltstack(&stack, nullptr) == 0);
+            ZASSERT(::sigaltstack(&stack, &previous) == 0);
         }
         raise_trap();
+        if(alternate) {
+            // Back as it was, ASan's own if it set one up, which it unmaps
+            // as the thread ends. macOS checks the size even of a stack it
+            // is to disable.
+            previous.ss_size = std::max<std::size_t>(previous.ss_size, MINSIGSTKSZ);
+            ZASSERT(::sigaltstack(&previous, nullptr) == 0);
+        }
     });
     ZASSERT(thread);
     thread->join();
