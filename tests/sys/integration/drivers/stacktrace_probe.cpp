@@ -1,10 +1,11 @@
 // What sys's stack trace tests start: `stacktrace_probe <command>`. It prints
 // what the loader tells of its executable, {"executable": <its path>,
 // "base": <its base>, "low": <the lowest offset of its code from the base>,
-// "high": <past the highest>, "debug": "pdb" or "dwarf"}, numbers as
-// hexadecimal strings, and ends in a handler that prints the probes' return
-// addresses as {"returns": [<innermost first>, ...]}, writes the stack with
-// write_stacktrace to stdout and exits with 3:
+// "high": <past the highest>, "debug": "pdb" or "dwarf", "tsan": <whether
+// it runs under TSan>}, numbers as hexadecimal strings, and ends in a
+// handler that prints the probes' return addresses as {"returns":
+// [<innermost first>, ...]}, writes the stack with write_stacktrace to
+// stdout and exits with 3:
 //
 //   fault   writes to address 16 in probe_fault, a leaf, which probe_inlined,
 //           forced inline into probe_caller, calls; a SIGSEGV or SIGBUS
@@ -37,7 +38,8 @@
 //   crash_fault     as fault
 //   crash_trap      traps in probe_trap
 //   crash_breakpoint
-//                   breaks in probe_breakpoint
+//                   breaks in probe_breakpoint; POSIX: SIGTRAP's default
+//                   action set with SA_SIGINFO before on_crash
 //   crash_abort     calls std::abort from probe_abort
 //   crash_overflow  overflows the stack in probe_recurse_a and _b, which call
 //                   each other
@@ -571,6 +573,15 @@ void before_crash_handler() {
     handle(SIGSEGV, previously, 0);
 }
 
+/// SIGTRAP's default action, with SA_SIGINFO, as macOS may report the
+/// default of a process.
+void default_with_siginfo() {
+    struct sigaction action = {};
+    action.sa_handler = SIG_DFL;
+    action.sa_flags = SA_SIGINFO;
+    sigaction(SIGTRAP, &action, nullptr);
+}
+
 #endif
 
 void print_image() {
@@ -580,13 +591,19 @@ void print_image() {
 #else
     constexpr std::string_view debug = "dwarf";
 #endif
-    print_line(
-        std::format(R"({{"executable":{},"base":"{:#x}","low":"{:#x}","high":"{:#x}","debug":{}}})",
-                    json(image.path),
-                    image.base,
-                    image.low,
-                    image.high,
-                    json(debug)));
+#ifdef PROBE_TSAN
+    constexpr bool tsan = true;
+#else
+    constexpr bool tsan = false;
+#endif
+    print_line(std::format(
+        R"({{"executable":{},"base":"{:#x}","low":"{:#x}","high":"{:#x}","debug":{},"tsan":{}}})",
+        json(image.path),
+        image.base,
+        image.low,
+        image.high,
+        json(debug),
+        tsan));
 }
 
 #ifdef __linux__
@@ -637,6 +654,9 @@ int main(int argc, char** argv) {
 #else
         if(command == "crash_ignored") {
             std::signal(SIGTRAP, SIG_IGN);
+        }
+        if(command == "crash_breakpoint") {
+            default_with_siginfo();
         }
 #endif
         if(command == "crash_after_handler") {

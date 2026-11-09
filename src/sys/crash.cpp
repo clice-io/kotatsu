@@ -188,10 +188,12 @@ void crashed(int signal, siginfo_t* info, void* context) noexcept {
             before = previous[index];
         }
     }
-    if(before.sa_flags & SA_SIGINFO) {
-        before.sa_sigaction(signal, info, context);
-    } else if(before.sa_handler == SIG_DFL) {
+    // By the handler, not by SA_SIGINFO, which macOS may report of the
+    // default action.
+    if(before.sa_handler == SIG_DFL) {
         ::raise(signal);
+    } else if(before.sa_flags & SA_SIGINFO) {
+        before.sa_sigaction(signal, info, context);
     } else {
         before.sa_handler(signal);
     }
@@ -208,7 +210,7 @@ void install() noexcept {
         auto& before = previous[index];
         ::sigaction(crash_signals[index], nullptr, &before);
         // A signal the program ignores stays ignored.
-        if((before.sa_flags & SA_SIGINFO) || before.sa_handler != SIG_IGN) {
+        if(before.sa_handler != SIG_IGN) {
             ::sigaction(crash_signals[index], &action, nullptr);
         }
     }

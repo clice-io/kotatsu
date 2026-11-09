@@ -28,6 +28,7 @@ export type Image = {
   low: string;
   high: string;
   debug: "pdb" | "dwarf";
+  tsan: boolean;
 };
 
 export type Crash = {

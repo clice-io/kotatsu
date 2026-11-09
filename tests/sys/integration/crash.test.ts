@@ -130,6 +130,10 @@ for (const [name, command] of [
 ]) {
   test(`${name}_starts_where_the_stack_overflowed`, async (t) => {
     const crashed = await crash(t, command);
+    if (command === "crash_overflow" && crashed.image.tsan) {
+      t.skip("under TSan the main thread's overflow reaches no handler");
+      return;
+    }
     assertStartsInterrupted(crashed);
     // The recursion fills the trace, the two functions' frames alternating:
     // after the interrupted one, the return address into each, in turn.
