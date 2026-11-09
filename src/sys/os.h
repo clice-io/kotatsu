@@ -84,34 +84,6 @@ struct Handle {
     }
 };
 
-#ifdef _MSC_VER
-/// Does nothing, for _get_osfhandle: the C runtime would end the process
-/// for a descriptor not open.
-inline void ignore_invalid_parameter(const wchar_t*,
-                                     const wchar_t*,
-                                     const wchar_t*,
-                                     unsigned int,
-                                     std::uintptr_t) {}
-#endif
-
-/// The handle of C runtime descriptor `fd`, as _get_osfhandle gives it but
-/// ending no process: INVALID_HANDLE_VALUE for a descriptor not open, and -2
-/// for a standard stream without a handle, the pseudo-handles of this process
-/// and of this thread, neither a console, a pipe nor a file.
-inline HANDLE descriptor_handle(int fd) noexcept {
-#ifdef _MSC_VER
-    auto previous = ::_set_thread_local_invalid_parameter_handler(ignore_invalid_parameter);
-    auto handle = ::_get_osfhandle(fd);
-    ::_set_thread_local_invalid_parameter_handler(previous);
-#else
-    // MinGW's headers declare no handler of a thread's own; its startup code
-    // sets one for the process that does nothing, so the runtime says EBADF
-    // and nothing more.
-    auto handle = ::_get_osfhandle(fd);
-#endif
-    return reinterpret_cast<HANDLE>(handle);
-}
-
 /// Writes the start of non-empty `text` to `handle` as write_console_some()
 /// does to a descriptor.
 std::expected<std::size_t, std::error_code> write_handle_some(HANDLE handle,

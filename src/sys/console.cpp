@@ -96,7 +96,7 @@ std::expected<std::size_t, std::error_code> write_console_some(int fd,
         return 0;
     }
 #ifdef _WIN32
-    auto handle = descriptor_handle(fd);
+    auto handle = fs::windows::descriptor_handle(fd);
     if(handle == INVALID_HANDLE_VALUE) {
         return std::unexpected(std::make_error_code(std::errc::bad_file_descriptor));
     }
@@ -120,7 +120,7 @@ std::expected<std::size_t, std::error_code> write_console_some(int fd,
 
 std::error_code set_nonblocking(int fd) noexcept {
 #ifdef _WIN32
-    auto handle = descriptor_handle(fd);
+    auto handle = fs::windows::descriptor_handle(fd);
     if(handle == INVALID_HANDLE_VALUE) {
         return std::make_error_code(std::errc::bad_file_descriptor);
     }
@@ -148,7 +148,7 @@ std::error_code set_nonblocking(int fd) noexcept {
 
 bool is_console(int fd) noexcept {
 #ifdef _WIN32
-    return is_console_handle(descriptor_handle(fd));
+    return is_console_handle(fs::windows::descriptor_handle(fd));
 #else
     return ::isatty(fd) == 1;
 #endif
@@ -156,7 +156,7 @@ bool is_console(int fd) noexcept {
 
 bool is_pipe(int fd) noexcept {
 #ifdef _WIN32
-    return ::GetFileType(descriptor_handle(fd)) == FILE_TYPE_PIPE;
+    return ::GetFileType(fs::windows::descriptor_handle(fd)) == FILE_TYPE_PIPE;
 #else
     struct stat status;
     return ::fstat(fd, &status) == 0 && (S_ISFIFO(status.st_mode) || S_ISSOCK(status.st_mode));

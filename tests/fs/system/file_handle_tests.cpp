@@ -12,6 +12,7 @@
 #ifdef _WIN32
 #include <io.h>
 #else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -41,6 +42,41 @@ std::string rest_of(File& file) {
         }
         content.append(buffer.data(), *count);
     }
+}
+
+/// Writes `text` to C runtime descriptor `fd`: how much it wrote.
+long write_to(int fd, std::string_view text) {
+#ifdef _WIN32
+    return ::_write(fd, text.data(), static_cast<unsigned>(text.size()));
+#else
+    return ::write(fd, text.data(), text.size());
+#endif
+}
+
+/// Closes C runtime descriptor `fd`: 0, or -1 when it fails.
+int close_descriptor(int fd) {
+#ifdef _WIN32
+    return ::_close(fd);
+#else
+    return ::close(fd);
+#endif
+}
+
+/// A descriptor of the C runtime, a child process inherits, of a file of its
+/// own in `dir`, named `name`.
+int inherited_descriptor(const test::TempDir& dir, std::string_view name) {
+    auto file = File::open(dir.file(name), {.write = true, .create = true});
+    ZASSERT(file.has_value());
+    auto fd = std::move(*file).into_descriptor();
+    ZASSERT(fd.has_value());
+#ifdef _WIN32
+    int inherited = ::_dup(*fd);
+#else
+    int inherited = ::dup(*fd);
+#endif
+    ZASSERT(inherited != -1);
+    ZASSERT(close_descriptor(*fd) == 0);
+    return inherited;
 }
 
 /// Opens the directory at `path` each kind of way OpenOptions takes, all of
@@ -720,13 +756,8 @@ ZEST_CASE(into_descriptor_hands_the_file_to_the_c_runtime) {
     ZASSERT(fd.has_value());
     ZEXPECT(!file->is_open());
     // Where the File left off, through the C runtime's own calls.
-#ifdef _WIN32
-    ZEXPECT(::_write(*fd, "world", 5) == 5);
-    ZEXPECT(::_close(*fd) == 0);
-#else
-    ZEXPECT(::write(*fd, "world", 5) == 5);
-    ZEXPECT(::close(*fd) == 0);
-#endif
+    ZEXPECT(write_to(*fd, "world") == 5);
+    ZEXPECT(close_descriptor(*fd) == 0);
     ZEXPECT(test::read_text(dir.file("file")) == "hello world");
 }
 
@@ -737,13 +768,8 @@ ZEST_CASE(into_descriptor_writes_bytes_as_they_are) {
     ZASSERT(file.has_value());
     auto fd = std::move(*file).into_descriptor();
     ZASSERT(fd.has_value());
-#ifdef _WIN32
-    ZEXPECT(::_write(*fd, "a\nb", 3) == 3);
-    ZEXPECT(::_close(*fd) == 0);
-#else
-    ZEXPECT(::write(*fd, "a\nb", 3) == 3);
-    ZEXPECT(::close(*fd) == 0);
-#endif
+    ZEXPECT(write_to(*fd, "a\nb") == 3);
+    ZEXPECT(close_descriptor(*fd) == 0);
     ZEXPECT(test::read_text(dir.file("file")) == "a\nb");
 }
 
@@ -758,11 +784,9 @@ ZEST_CASE(into_descriptor_keeps_the_lock) {
     auto fd = std::move(*first).into_descriptor();
     ZASSERT(fd.has_value());
     ZEXPECT(second->try_lock() == false);
-#ifdef _WIN32
+    ZEXPECT(close_descriptor(*fd) == 0);
+#ifndef _WIN32
     // Windows releases a lock left on a closed handle in its own time.
-    ZEXPECT(::_close(*fd) == 0);
-#else
-    ZEXPECT(::close(*fd) == 0);
     ZEXPECT(second->try_lock() == true);
 #endif
 }
@@ -772,6 +796,107 @@ ZEST_CASE(into_descriptor_of_a_closed_file_fails) {
     auto fd = std::move(file).into_descriptor();
     ZASSERT(!fd.has_value());
     ZEXPECT(fd.error() == std::errc::bad_file_descriptor);
+}
+
+ZEST_CASE(into_descriptor_onto_a_descriptor_repoints_it) {
+    test::TempDir dir;
+    auto old = File::open(dir.file("old"), {.write = true, .create = true});
+    ZASSERT(old.has_value());
+    auto fd = std::move(*old).into_descriptor();
+    ZASSERT(fd.has_value());
+    ZEXPECT(write_to(*fd, "before") == 6);
+    auto file = File::open(dir.file("new"), {.write = true, .create = true});
+    ZASSERT(file.has_value());
+    ZEXPECT(!file->write("new "));
+    ZEXPECT(!std::move(*file).into_descriptor(*fd));
+    ZEXPECT(!file->is_open());
+    // Where the File left off.
+    ZEXPECT(write_to(*fd, "after") == 5);
+    ZEXPECT(close_descriptor(*fd) == 0);
+    ZEXPECT(test::read_text(dir.file("old")) == "before");
+    ZEXPECT(test::read_text(dir.file("new")) == "new after");
+}
+
+ZEST_CASE(into_descriptor_onto_a_descriptor_closes_what_it_named) {
+    test::TempDir dir;
+    auto old = File::open(dir.file("old"), {.read = true, .write = true, .create = true});
+    ZASSERT(old.has_value());
+#ifndef _WIN32
+    ZEXPECT(!old->lock());
+#endif
+    auto fd = std::move(*old).into_descriptor();
+    ZASSERT(fd.has_value());
+    auto file = File::open(dir.file("new"), {.write = true, .create = true});
+    ZASSERT(file.has_value());
+    ZASSERT(!std::move(*file).into_descriptor(*fd));
+#ifdef _WIN32
+    // No handle of it stays open: one that shares it with none opens it.
+    HANDLE alone = ::CreateFileW(test::std_path(dir.file("old")).c_str(),
+                                 GENERIC_READ,
+                                 0,
+                                 nullptr,
+                                 OPEN_EXISTING,
+                                 FILE_ATTRIBUTE_NORMAL,
+                                 nullptr);
+    ZEXPECT(alone != INVALID_HANDLE_VALUE);
+    ::CloseHandle(alone);
+#else
+    // Its lock went with its last descriptor.
+    auto other = File::open(dir.file("old"), {.read = true, .write = true});
+    ZASSERT(other.has_value());
+    ZEXPECT(other->try_lock() == true);
+#endif
+    ZEXPECT(close_descriptor(*fd) == 0);
+}
+
+ZEST_CASE(into_descriptor_onto_a_descriptor_keeps_the_lock) {
+    test::TempDir dir;
+    test::write_text(dir.file("lock"), "text");
+    int fd = inherited_descriptor(dir, "old");
+    auto first = File::open(dir.file("lock"), {.read = true, .write = true});
+    auto second = File::open(dir.file("lock"), {.read = true, .write = true});
+    ZASSERT(first.has_value());
+    ZASSERT(second.has_value());
+    ZEXPECT(!first->lock());
+    ZASSERT(!std::move(*first).into_descriptor(fd));
+    ZEXPECT(second->try_lock() == false);
+    ZEXPECT(close_descriptor(fd) == 0);
+#ifndef _WIN32
+    // Windows releases a lock left on a closed handle in its own time.
+    ZEXPECT(second->try_lock() == true);
+#endif
+}
+
+ZEST_CASE(into_descriptor_onto_a_descriptor_leaves_it_uninherited) {
+    test::TempDir dir;
+    int fd = inherited_descriptor(dir, "old");
+    auto file = File::open(dir.file("new"), {.write = true, .create = true});
+    ZASSERT(file.has_value());
+    ZASSERT(!std::move(*file).into_descriptor(fd));
+#ifdef _WIN32
+    DWORD flags = 0;
+    ZASSERT(::GetHandleInformation(reinterpret_cast<HANDLE>(::_get_osfhandle(fd)), &flags));
+    ZEXPECT((flags & HANDLE_FLAG_INHERIT) == 0u);
+#else
+    ZEXPECT((::fcntl(fd, F_GETFD) & FD_CLOEXEC) != 0);
+#endif
+    ZEXPECT(close_descriptor(fd) == 0);
+}
+
+ZEST_CASE(into_descriptor_onto_a_descriptor_not_open_fails) {
+    test::TempDir dir;
+    auto file = File::open(dir.file("new"), {.write = true, .create = true});
+    ZASSERT(file.has_value());
+    int closed_fd = inherited_descriptor(dir, "old");
+    ZASSERT(close_descriptor(closed_fd) == 0);
+    for(int fd: {-1, closed_fd}) {
+        ZEST_CONTEXT("{}", fd);
+        ZEXPECT(std::move(*file).into_descriptor(fd) == std::errc::bad_file_descriptor);
+    }
+    // The File keeps the handle.
+    ZEXPECT(!file->write("kept"));
+    ZEXPECT(!file->close());
+    ZEXPECT(test::read_text(dir.file("new")) == "kept");
 }
 
 ZEST_CASE(borrow_works_through_a_handle_it_leaves_open) {
