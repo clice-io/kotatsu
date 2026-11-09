@@ -1,11 +1,11 @@
 #pragma once
 
 // <windows.h> for the tests that call Win32 themselves, without the min and
-// max macros that break the standard library's, attributes_of() for those
-// that check a file's attributes, make_pipe() for those that need a named
-// pipe, set_reparse_point() for those that need a reparse point of a tag no
-// tool makes and DeletePending for those that need a file deleted while held
-// open.
+// max macros that break the standard library's, attributes_of() and
+// reparse_tag_of() for those that check a file's attributes or the kind of a
+// link, make_pipe() for those that need a named pipe, set_reparse_point() for
+// those that need a reparse point of a tag no tool makes and DeletePending
+// for those that need a file deleted while held open.
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -31,6 +31,17 @@ inline DWORD attributes_of(std::string_view path) {
     auto attributes = ::GetFileAttributesW(std_path(path).wstring().c_str());
     ZASSERT(attributes != INVALID_FILE_ATTRIBUTES);
     return attributes;
+}
+
+/// The reparse tag of the link at the UTF-8 `path`, as the directory it is in
+/// lists it: IO_REPARSE_TAG_MOUNT_POINT for a junction.
+inline DWORD reparse_tag_of(std::string_view path) {
+    WIN32_FIND_DATAW found;
+    HANDLE find = ::FindFirstFileW(std_path(path).wstring().c_str(), &found);
+    ZASSERT(find != INVALID_HANDLE_VALUE);
+    ::FindClose(find);
+    ZASSERT((found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0);
+    return found.dwReserved0;
 }
 
 /// A named pipe of `access`, its name kept apart by the directory's, and

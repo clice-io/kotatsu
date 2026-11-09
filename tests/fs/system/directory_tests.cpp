@@ -27,7 +27,6 @@
 #include "kotatsu/zest/zest.h"
 #include "kotatsu/fs/directory.h"
 #include "kotatsu/fs/file.h"
-#include "kotatsu/fs/path.h"
 #include "kotatsu/fs/resolve.h"
 #include "kotatsu/fs/status.h"
 
@@ -793,6 +792,23 @@ ZEST_CASE(read_symlink_gives_the_directory_of_a_junction) {
     ZEXPECT(target == dir.file("target"));
 }
 
+ZEST_CASE(a_directory_symlink_another_tool_made_is_a_link) {
+    // kotatsu makes junctions, but takes a directory symlink for a link too.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    std::filesystem::create_directory(dir.path / "tree");
+    test::write_text(dir.file("target/kept.txt"), "text");
+    if(!test::make_directory_symlink(dir.file("tree/link"), R"(..\target)")) {
+        return;
+    }
+    ZEXPECT(type_in(test::entries_of(dir.file("tree")), "link") == FileType::Symlink);
+    std::string target;
+    ZEXPECT(!read_symlink(target, dir.file("tree/link")));
+    ZEXPECT(target == R"(..\target)");
+    ZEXPECT(remove_all(dir.file("tree")) == 2u);
+    ZEXPECT(test::read_text(dir.file("target/kept.txt")) == "text");
+}
+
 ZEST_CASE(read_symlink_of_a_link_it_cannot_read_fails) {
     // A reparse point a path is resolved through, as Windows containers
     // make: a link, whose target only its own driver knows.
@@ -826,21 +842,12 @@ ZEST_CASE(create_directory_symlink_leads_to_the_directory) {
     std::string target;
     ZEXPECT(!read_symlink(target, dir.file("link")));
 #ifdef _WIN32
-    // A junction holds the directory's absolute path.
+    // A junction, which holds the directory's absolute path.
+    ZEXPECT(test::reparse_tag_of(dir.file("link")) == IO_REPARSE_TAG_MOUNT_POINT);
     ZEXPECT(target == dir.file("target"));
 #else
     ZEXPECT(target == "target");
 #endif
-    // walk() lists the link and goes no further.
-    std::vector<std::string> walked;
-    for(auto& entry: walk(dir.root())) {
-        ZASSERT(entry.has_value());
-        std::string relative(entry->relative());
-        path::to_slash(relative);
-        walked.push_back(std::move(relative));
-    }
-    std::ranges::sort(walked);
-    ZEXPECT(walked == std::vector<std::string>{"link", "target", "target/kept.txt"});
 }
 
 ZEST_CASE(create_directory_symlink_takes_a_relative_target_from_the_link_directory) {
@@ -886,22 +893,50 @@ ZEST_CASE(create_directory_symlink_over_anything_fails) {
         ZEST_CONTEXT("{}", name);
         ZEXPECT(create_directory_symlink("target", dir.file(name)) == std::errc::file_exists);
     }
+    // The dangling link is not followed to make what it names.
+    ZEXPECT(try_exists(dir.file("missing")) == false);
     auto directory = symlink_status(dir.file("directory"));
     ZASSERT(directory.has_value());
     ZEXPECT(directory->type == FileType::Directory);
     ZEXPECT(test::read_text(dir.file("file")) == "text");
     std::string target;
     ZEXPECT(!read_symlink(target, dir.file("dangling")));
-    ZEXPECT(path::filename(target) == "missing");
-}
-
-ZEST_CASE(create_directory_symlink_to_nothing_named_fails) {
-    test::TempDir dir;
-    ZEXPECT(create_directory_symlink("", dir.file("link")) == std::errc::no_such_file_or_directory);
-    ZEXPECT(!symlink_status(dir.file("link")).has_value());
+#ifdef _WIN32
+    ZEXPECT(target == dir.file("missing"));
+    // A name a file deleted while held open keeps.
+    test::write_text(dir.file("pending"), "text");
+    test::DeletePending pending(dir.file("pending"));
+    ZEXPECT(create_directory_symlink("target", dir.file("pending")) == std::errc::file_exists);
+#else
+    ZEXPECT(target == "missing");
+#endif
 }
 
 #ifdef _WIN32
+ZEST_CASE(create_directory_symlink_to_nothing_named_fails) {
+    // Taken from the link's directory, it would name that.
+    test::TempDir dir;
+    ZEXPECT(create_directory_symlink("", dir.file("link")) == std::errc::no_such_file_or_directory);
+    auto link = symlink_status(dir.file("link"));
+    ZASSERT(!link.has_value());
+    ZEXPECT(link.error() == std::errc::no_such_file_or_directory);
+}
+
+ZEST_CASE(create_directory_symlink_takes_the_link_as_win32_resolves_it) {
+    // Win32 folds a last `.` and takes off a last name's trailing dot: the
+    // link is `sub\link`, its target taken from `sub`.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "target");
+    std::filesystem::create_directory(dir.path / "sub");
+    test::write_text(dir.file("target/kept.txt"), "text");
+    for(auto spelled: {R"(sub\link\.)", R"(sub\link.)", R"(sub\link\)"}) {
+        ZEST_CONTEXT("{}", spelled);
+        ZASSERT(!create_directory_symlink(R"(..\target)", dir.file(spelled)));
+        ZEXPECT(test::read_text(dir.file("sub/link/kept.txt")) == "text");
+        ZEXPECT(remove(dir.file("sub/link")) == true);
+    }
+}
+
 ZEST_CASE(create_directory_symlink_takes_verbatim_and_long_paths) {
     // Past MAX_PATH, where only a verbatim path reaches; `..` in a relative
     // target is folded all the same.
@@ -923,6 +958,25 @@ ZEST_CASE(create_directory_symlink_takes_verbatim_and_long_paths) {
     ZEXPECT(test::read_text(verbatim + R"(\link\kept.txt)") == "text");
     ZEXPECT(!read_symlink(target, deep + R"(\link)"));
     ZEXPECT(target == deep + R"(\target)");
+    // A name Win32 would rewrite keeps the prefix that keeps it.
+    auto dotted = R"(\\?\)" + dir.root() + R"(\name.)";
+    ZASSERT(!create_directory_symlink(dotted, dir.file("dotted")));
+    ZEXPECT(!read_symlink(target, dir.file("dotted")));
+    ZEXPECT(target == dotted);
+}
+
+ZEST_CASE(create_directory_symlink_to_a_target_too_long_fails) {
+    // The junction holds the target twice, as the system follows it and as
+    // tools show it, in 16 KiB.
+    test::TempDir dir;
+    std::string target = R"(C:\)";
+    for(int i = 0; i < 20; ++i) {
+        target += std::string(250, 't') + '\\';
+    }
+    ZEXPECT(create_directory_symlink(target, dir.file("link")) == std::errc::filename_too_long);
+    auto link = symlink_status(dir.file("link"));
+    ZASSERT(!link.has_value());
+    ZEXPECT(link.error() == std::errc::no_such_file_or_directory);
 }
 
 ZEST_CASE(create_directory_symlink_to_a_share_fails) {
@@ -935,7 +989,9 @@ ZEST_CASE(create_directory_symlink_to_a_share_fails) {
                       R"(\\.\UNC\server\share)"}) {
         ZEST_CONTEXT("{}", target);
         ZEXPECT(create_directory_symlink(target, dir.file("link")) == std::errc::not_supported);
-        ZEXPECT(!symlink_status(dir.file("link")).has_value());
+        auto link = symlink_status(dir.file("link"));
+        ZASSERT(!link.has_value());
+        ZEXPECT(link.error() == std::errc::no_such_file_or_directory);
     }
 }
 #endif

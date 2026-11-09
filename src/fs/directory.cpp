@@ -16,6 +16,7 @@
 
 #ifdef _WIN32
 #include "win32.h"
+#include "kotatsu/support/scope_exit.h"
 #include "kotatsu/support/utf16.h"
 #else
 #include <dirent.h>
@@ -1276,7 +1277,7 @@ std::error_code create_symlink(std::string_view target, std::string_view link) {
 std::error_code create_directory_symlink(std::string_view target, std::string_view link) {
 #ifdef _WIN32
     // Taken from the link's directory, an empty target would name that; it
-    // names nothing, as POSIX says.
+    // names nothing, as on Linux.
     if(target.empty()) {
         return std::make_error_code(std::errc::no_such_file_or_directory);
     }
@@ -1285,35 +1286,47 @@ std::error_code create_directory_symlink(std::string_view target, std::string_vi
         return error;
     }
     // A junction holds an absolute path: a relative target is taken from the
-    // link's directory, as a symlink's is when the system follows it.
+    // directory of the link as Win32 resolves its path.
     small_string<256> spelled;
     if(path::is_absolute(target)) {
         spelled.assign(target);
     } else {
-        path::resolve(spelled, target, path::parent(link));
+        small_string<256> resolved;
+        windows::from_native(resolved, native_link);
+        path::resolve(spelled, target, path::parent(resolved));
     }
     win32::WidePath native_target;
     if(auto error = windows::to_native(native_target, spelled)) {
         return error;
     }
-    // The system follows the NT path, which leads only to a local volume;
-    // tools show the Win32 one.
+    // The system follows the NT path, which leads only to a local volume:
+    // neither to a share nor to a drive mapped to one.
     win32::WidePath substitute;
     win32::nt_path(substitute, native_target);
-    constexpr std::wstring_view share = LR"(\??\UNC\)";
-    auto head = std::wstring_view(substitute).substr(0, share.size());
-    if(::CompareStringOrdinal(head.data(),
-                              static_cast<int>(head.size()),
-                              share.data(),
-                              static_cast<int>(share.size()),
-                              TRUE) == CSTR_EQUAL) {
+    auto device = std::wstring_view(substitute).substr(4);
+    bool remote = false;
+    if(device.size() >= 3 && device[1] == L':' && device[2] == L'\\') {
+        const wchar_t root[] = {device[0], L':', L'\\', L'\0'};
+        remote = ::GetDriveTypeW(root) == DRIVE_REMOTE;
+    } else {
+        constexpr std::wstring_view share = LR"(UNC\)";
+        auto head = device.substr(0, share.size());
+        remote = ::CompareStringOrdinal(head.data(),
+                                        static_cast<int>(head.size()),
+                                        share.data(),
+                                        static_cast<int>(share.size()),
+                                        TRUE) == CSTR_EQUAL;
+    }
+    if(remote) {
         return std::make_error_code(std::errc::not_supported);
     }
+    // Tools show the Win32 path.
     win32::WidePath print;
     print.append(std::wstring_view(native_target));
     win32::unverbatim(print);
 
-    // Both names end with a NUL, which the lengths leave out.
+    // Each name ends with a NUL the lengths leave out, which the buffer,
+    // zeroed, holds, as it holds `reserved`.
     constexpr auto header = offsetof(Reparse, junction.text);
     auto size = header + (substitute.size() + 1 + print.size() + 1) * sizeof(WCHAR);
     if(size > MAXIMUM_REPARSE_DATA_BUFFER_SIZE) {
@@ -1333,14 +1346,13 @@ std::error_code create_directory_symlink(std::string_view target, std::string_vi
     std::ranges::copy(substitute, text);
     std::ranges::copy(print, text + substitute.size() + 1);
 
-    if(!::CreateDirectoryW(native_link.c_str(), nullptr)) {
-        return windows::last_error();
-    }
-    auto handle = win32::open_native(native_link, FILE_WRITE_ATTRIBUTES | DELETE, false);
+    // Made and opened at once, so that no directory put there meanwhile
+    // becomes the junction, nor goes should it fail.
+    auto handle = win32::create_directory(native_link, FILE_WRITE_ATTRIBUTES | DELETE);
     if(!handle) {
-        ::RemoveDirectoryW(native_link.c_str());
         return windows::to_error_code(handle.error());
     }
+    ScopeExit undo([&] { dispose(handle->get()); });
     DWORD returned = 0;
     if(!::DeviceIoControl(handle->get(),
                           FSCTL_SET_REPARSE_POINT,
@@ -1350,10 +1362,9 @@ std::error_code create_directory_symlink(std::string_view target, std::string_vi
                           0,
                           &returned,
                           nullptr)) {
-        auto error = windows::last_error();
-        dispose(handle->get());
-        return error;
+        return windows::last_error();
     }
+    undo.release();
     return {};
 #else
     // POSIX tells a link to a directory by its target alone.

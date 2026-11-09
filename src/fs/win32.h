@@ -140,6 +140,14 @@ void nt_path(basic_buffer_ref<wchar_t> out, std::wstring_view path);
 /// open_at() opens it.
 std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow);
 
+/// A handle to a directory this makes at the native `path`, as to_native()
+/// writes it, so that nothing put there meanwhile is taken for it, asked for
+/// `access` as open_at() asks. On failure the Win32 error,
+/// ERROR_ALREADY_EXISTS for anything there: a link, which is not followed,
+/// and a file deleted while held open, whose name stays until the last
+/// handle to it goes.
+std::expected<Handle, DWORD> create_directory(std::wstring_view path, DWORD access);
+
 /// A handle to what `path` names, symlinks followed, failing with an error
 /// code.
 std::expected<Handle, std::error_code> open(std::string_view path, DWORD access);
@@ -221,9 +229,9 @@ std::expected<Status, std::error_code> handle_status(HANDLE handle);
 /// is but for one too long for Win32, which takes `\\?\`.
 void verbatim(basic_buffer_ref<wchar_t> path);
 
-/// Rewrites a verbatim `path` of a drive or a share without its prefix, as
-/// from_native() gives it, where Win32 resolves what is left to itself, so
-/// that it names the same file; any other path stays as it is.
+/// Rewrites a verbatim `path` of a drive or a share without its prefix
+/// where Win32 resolves what is left to itself, so that it names the same
+/// file; any other path stays as it is.
 void unverbatim(basic_buffer_ref<wchar_t> path);
 
 /// FILETIME ticks, 100 ns since 1601, of the Unix epoch.

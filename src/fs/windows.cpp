@@ -208,8 +208,23 @@ void unverbatim(basic_buffer_ref<wchar_t> path) {
     }
 }
 
-std::expected<Handle, DWORD>
-    open_at(HANDLE root, std::wstring_view name, DWORD access, bool follow) {
+namespace {
+
+/// NtCreateFile's dispositions and options, which only the DDK names.
+constexpr ULONG open_existing = 1;
+constexpr ULONG file_create = 2;
+constexpr ULONG directory_file = 0x1;
+constexpr ULONG synchronous_io = 0x20;
+constexpr ULONG backup_intent = 0x4000;
+constexpr ULONG open_reparse_point = 0x200000;
+
+/// What NtCreateFile opens or makes of `name`, as open_at() takes it, by
+/// `disposition` and `options`, failing as open_at() does.
+std::expected<Handle, DWORD> create_file(HANDLE root,
+                                         std::wstring_view name,
+                                         DWORD access,
+                                         ULONG disposition,
+                                         ULONG options) {
     using NtCreateFileFn = NTSTATUS(NTAPI*)(PHANDLE,
                                             ACCESS_MASK,
                                             POBJECT_ATTRIBUTES,
@@ -222,12 +237,6 @@ std::expected<Handle, DWORD>
                                             PVOID,
                                             ULONG);
     static constinit std::atomic<NtCreateFileFn> create = nullptr;
-    // NtCreateFile's disposition, options and status, which only the DDK
-    // names.
-    constexpr ULONG open_existing = 1;
-    constexpr ULONG synchronous_io = 0x20;
-    constexpr ULONG backup_intent = 0x4000;
-    constexpr ULONG open_reparse_point = 0x200000;
     constexpr auto delete_pending = static_cast<NTSTATUS>(0xC0000056);
     // A UNICODE_STRING counts its bytes in 16 bits.
     if(name.size() > std::numeric_limits<USHORT>::max() / sizeof(wchar_t)) {
@@ -244,18 +253,18 @@ std::expected<Handle, DWORD>
     attributes.Attributes = OBJ_CASE_INSENSITIVE;
     IO_STATUS_BLOCK status_block{};
     HANDLE handle = INVALID_HANDLE_VALUE;
-    auto status = from_ntdll(create, "NtCreateFile")(
-        &handle,
-        access | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
-        &attributes,
-        &status_block,
-        nullptr,
-        0,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        open_existing,
-        synchronous_io | backup_intent | (follow ? 0 : open_reparse_point),
-        nullptr,
-        0);
+    auto status =
+        from_ntdll(create, "NtCreateFile")(&handle,
+                                           access | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+                                           &attributes,
+                                           &status_block,
+                                           nullptr,
+                                           0,
+                                           FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                           disposition,
+                                           synchronous_io | backup_intent | options,
+                                           nullptr,
+                                           0);
     if(status == delete_pending) {
         return std::unexpected(DWORD{ERROR_DELETE_PENDING});
     }
@@ -263,6 +272,13 @@ std::expected<Handle, DWORD>
         return std::unexpected(dos_error(status));
     }
     return Handle(handle);
+}
+
+}  // namespace
+
+std::expected<Handle, DWORD>
+    open_at(HANDLE root, std::wstring_view name, DWORD access, bool follow) {
+    return create_file(root, name, access, open_existing, follow ? 0 : open_reparse_point);
 }
 
 void nt_path(basic_buffer_ref<wchar_t> out, std::wstring_view path) {
@@ -284,6 +300,17 @@ std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, b
     WidePath name;
     nt_path(name, path);
     return open_at(nullptr, name, access, follow);
+}
+
+std::expected<Handle, DWORD> create_directory(std::wstring_view path, DWORD access) {
+    WidePath name;
+    nt_path(name, path);
+    // A link there is what is there, never followed to make what it names;
+    // a name a file deleted while held open keeps is taken.
+    return create_file(nullptr, name, access, file_create, directory_file | open_reparse_point)
+        .transform_error([](DWORD error) {
+            return error == ERROR_DELETE_PENDING ? DWORD{ERROR_ALREADY_EXISTS} : error;
+        });
 }
 
 std::expected<Handle, std::error_code> open(std::string_view path, DWORD access) {

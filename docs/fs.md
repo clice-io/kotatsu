@@ -75,8 +75,9 @@ Adapted from `tests/fs/system/file_tests.cpp` and `directory_walk_tests.cpp`.
   file open.
 - Windows: junctions report as `FileType::Symlink`, and `walk` and
   `remove_all` never go through them. `create_directory_symlink` creates a
-  junction, which needs no privilege and holds an absolute path, where
-  `create_symlink` needs an administrator or developer mode.
+  junction, which needs no privilege, where `create_symlink` needs an
+  administrator or developer mode; a junction holds an absolute path and
+  leads only to a local volume.
 - Locks are advisory; on Windows `lock()` keeps no one from the file's bytes,
   but `range_locked()` holds the range it probes for an instant.
 - `File::is_sparse()` is Windows only: POSIX keeps no such mark.

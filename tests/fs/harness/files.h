@@ -1,12 +1,13 @@
 #pragma once
 
 // TempDir, a directory of a test's own, write_text() and read_text(),
-// ScopedCurrentDir, ScopedPermissions, make_junction() on Windows,
-// link_directory(), all through std::filesystem, fstreams, cmd and Win32 rather
-// than kotatsu::fs, which the tests check; linked() for a case that makes a
-// symlink; across_file_systems() on Linux for one that crosses file systems;
-// chowned() and ScopedUser on POSIX for one root runs as other users; text_of()
-// and CountedBuffer for reads of large files.
+// ScopedCurrentDir, ScopedPermissions, make_junction() and
+// make_directory_symlink() on Windows, link_directory(), all through
+// std::filesystem, fstreams, cmd and Win32 rather than kotatsu::fs, which the
+// tests check; linked() for a case that makes a file symlink;
+// across_file_systems() on Linux for one that crosses file systems; chowned()
+// and ScopedUser on POSIX for one root runs as other users; text_of() and
+// CountedBuffer for reads of large files.
 
 #include <cstddef>
 #include <cstdlib>
@@ -314,6 +315,25 @@ inline void make_junction(std::string_view link, std::string_view target) {
     auto command = L"mklink /J \"" + std_path(link).wstring() + L"\" \"" +
                    std_path(target).wstring() + L"\" > nul";
     ZASSERT(::_wsystem(command.c_str()) == 0);
+}
+#endif
+
+#ifdef _WIN32
+/// Makes `link` a symlink to the directory `target`, as tools other than
+/// kotatsu make one (mklink /D): false, the case skipped, where only an
+/// administrator or a developer-mode system may make one, and not this
+/// process.
+inline bool make_directory_symlink(std::string_view link, std::string_view target) {
+    // SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE, for developer mode.
+    constexpr DWORD unprivileged = 0x2;
+    if(::CreateSymbolicLinkW(std_path(link).c_str(),
+                             std_path(target).c_str(),
+                             SYMBOLIC_LINK_FLAG_DIRECTORY | unprivileged)) {
+        return true;
+    }
+    ZASSERT(::GetLastError() == ERROR_PRIVILEGE_NOT_HELD);
+    zest::skip();
+    return false;
 }
 #endif
 
