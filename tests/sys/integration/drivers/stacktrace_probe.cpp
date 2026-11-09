@@ -663,10 +663,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     if(command.starts_with("crash_")) {
-#ifdef _WIN32
-        // Without the message a debug runtime shows first.
-        _set_abort_behavior(0, _WRITE_ABORT_MSG);
-#else
+#ifndef _WIN32
         if(command == "crash_ignored") {
             std::signal(SIGTRAP, SIG_IGN);
         }

@@ -46,11 +46,12 @@ using CrashHandler = void (*)(const Crash& crash) noexcept;
 /// program's is called with the siginfo and context the signal brought. On
 /// Windows the exception goes to the filter set before; when that declines
 /// it, or there is none, the process ends at once by TerminateProcess with
-/// the exception's code, never going on to Windows Error Reporting, which
-/// may hold it for a dialog or a dump first. SIGABRT goes to its handler
-/// before, or to abort(), which on_crash keeps from failing fast: it ends
-/// the process with 3, std::terminate's abort() too. Both are this
-/// process's alone: the processes it starts keep the system's handling.
+/// the exception's code. SIGABRT goes to its handler before, or ends the
+/// process at once with 3, abort()'s code, std::terminate's abort() too;
+/// abort() no longer fails fast, nor shows a debug runtime's message box.
+/// None of it goes on to Windows Error Reporting, which may hold the process
+/// for a dialog or a dump first, and all of it is this process's alone: the
+/// processes it starts keep the system's handling.
 ///
 /// A typical handler writes a line with write_console, then the stack with
 /// write_stacktrace(fd, crash).

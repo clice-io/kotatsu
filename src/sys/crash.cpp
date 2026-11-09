@@ -113,9 +113,19 @@ int signal_of(DWORD code) noexcept {
     }
 }
 
+/// Ends the process as abort() does without a handler, with 3, but at once:
+/// not by _exit(), which waits for a thread running exit() and calls the
+/// libraries' DllMain, nor failing fast to Windows Error Reporting.
+void end_aborted(int) {
+    ::TerminateProcess(::GetCurrentProcess(), 3);
+}
+
+/// Puts back the filter and SIGABRT's action before on_crash's, end_aborted
+/// in place of the default: an abort() after the crash, as std::terminate's
+/// from the MSVC runtime's filter, ends the process at once too.
 void restore() noexcept {
     ::SetUnhandledExceptionFilter(previous_filter);
-    std::signal(SIGABRT, previous_abort);
+    std::signal(SIGABRT, previous_abort == SIG_DFL ? end_aborted : previous_abort);
 }
 
 LONG WINAPI filtered(EXCEPTION_POINTERS* exception) {
@@ -134,6 +144,10 @@ LONG WINAPI filtered(EXCEPTION_POINTERS* exception) {
 }
 
 KOTATSU_NOINLINE void aborted(int signal) {
+    // raise() set the default back as it called this: a thread that aborts
+    // while the handler runs comes here too, to wait for it, rather than
+    // ending the process under it.
+    std::signal(SIGABRT, aborted);
     // The context of raise(), which called this: a trace from it starts in
     // the C runtime, as one from a POSIX signal's starts in the C library,
     // and leaves this handler's frames out.
@@ -162,15 +176,14 @@ KOTATSU_NOINLINE void aborted(int signal) {
         previous_abort(signal);
         return;
     }
-    // raise() set the default back as it called this, without which abort()
-    // ends the process, from abort() itself as from raise(SIGABRT).
-    std::abort();
+    end_aborted(signal);
 }
 
 void install() noexcept {
-    // abort() then ends the process with _exit(3) rather than failing fast
-    // to Windows Error Reporting.
-    _set_abort_behavior(0, _CALL_REPORTFAULT);
+    // Where SIGABRT's action leaves abort() to end the process, ignored or a
+    // handler that returns, it does so with _exit(3) rather than failing
+    // fast, and without a debug runtime's message box before the handler.
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
     previous_filter = ::SetUnhandledExceptionFilter(filtered);
     // Without a handler, abort() fails fast past every filter.
     previous_abort = std::signal(SIGABRT, aborted);
