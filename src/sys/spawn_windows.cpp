@@ -66,7 +66,7 @@ std::expected<Handle, std::error_code> duplicate_standard(DWORD which) {
 /// A duplicate of the handle of C runtime descriptor `fd`; none for a
 /// standard stream the process does not have.
 std::expected<Handle, std::error_code> duplicate_descriptor(int fd) {
-    auto handle = descriptor_handle(fd);
+    auto handle = fs::windows::descriptor_handle(fd);
     if(handle == reinterpret_cast<HANDLE>(-2)) {
         return Handle();
     }

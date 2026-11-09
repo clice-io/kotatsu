@@ -3,7 +3,9 @@
 #include "kotatsu/fs/windows.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
+#include <io.h>
 #include <string_view>
 
 #include "win32.h"
@@ -45,6 +47,16 @@ bool needs_no_resolution(std::wstring_view path) {
     }
     return true;
 }
+
+#ifdef _MSC_VER
+/// Does nothing, for _get_osfhandle: the C runtime would end the process
+/// for a descriptor not open.
+void ignore_invalid_parameter(const wchar_t*,
+                              const wchar_t*,
+                              const wchar_t*,
+                              unsigned int,
+                              std::uintptr_t) {}
+#endif
 
 }  // namespace
 
@@ -139,6 +151,20 @@ void from_native(buffer_ref out, std::wstring_view path) {
     plain.append(path);
     win32::unverbatim(plain);
     from_utf16(out, plain);
+}
+
+void* descriptor_handle(int fd) noexcept {
+#ifdef _MSC_VER
+    auto previous = ::_set_thread_local_invalid_parameter_handler(ignore_invalid_parameter);
+    auto handle = ::_get_osfhandle(fd);
+    ::_set_thread_local_invalid_parameter_handler(previous);
+#else
+    // MinGW's headers declare no handler of a thread's own; its startup code
+    // sets one for the process that does nothing, so the runtime says EBADF
+    // and nothing more.
+    auto handle = ::_get_osfhandle(fd);
+#endif
+    return reinterpret_cast<void*>(handle);
 }
 
 }  // namespace kotatsu::fs::windows

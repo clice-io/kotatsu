@@ -63,7 +63,7 @@ Adapted from `tests/fs/system/file_tests.cpp` and `directory_walk_tests.cpp`.
 | [mapping.h](../include/kotatsu/fs/mapping.h)     | `Mapping`, a file's bytes mapped read only                                                                     |
 | [volume.h](../include/kotatsu/fs/volume.h)       | `volume`: space, type and remoteness of a file system                                                          |
 | [resolve.h](../include/kotatsu/fs/resolve.h)     | `canonical`, `weakly_canonical`, `absolute`, `current_dir`                                                     |
-| [windows.h](../include/kotatsu/fs/windows.h)     | Windows only: `to_native` / `from_native` paths, Win32 errors as `std::error_code`                             |
+| [windows.h](../include/kotatsu/fs/windows.h)     | Windows only: `to_native` / `from_native` paths, Win32 errors as `std::error_code`, `descriptor_handle`        |
 | [cygwin.h](../include/kotatsu/fs/cygwin.h)       | Cygwin and MSYS2 POSIX paths and mount tables                                                                  |
 
 ## Platform notes

@@ -18,6 +18,7 @@
 #include <io.h>
 
 #include "win32.h"
+#include "kotatsu/support/scope_exit.h"
 #else
 #include <fcntl.h>
 #include <format>
@@ -803,6 +804,78 @@ std::expected<int, std::error_code> File::into_descriptor() && {
     handle = closed;
     locked = false;
     return fd;
+}
+
+std::error_code File::into_descriptor(int fd) && {
+    // A borrowed handle is not the File's to give.
+    assert(owned);
+    if(!is_open()) {
+        return std::make_error_code(std::errc::bad_file_descriptor);
+    }
+#ifdef _WIN32
+    // _dup2 would take a descriptor not open for one to open.
+    auto previous = windows::descriptor_handle(fd);
+    if(previous == INVALID_HANDLE_VALUE) {
+        return std::make_error_code(std::errc::bad_file_descriptor);
+    }
+    // A standard stream without a handle has none a child inherits.
+    DWORD inherited = 0;
+    ::GetHandleInformation(previous, &inherited);
+    // _dup2 copies a descriptor's handle, and closing the descriptor it took
+    // it from closes that: the copy is of a copy, so that the File keeps its
+    // own should anything fail.
+    HANDLE copy;
+    if(!::DuplicateHandle(::GetCurrentProcess(),
+                          handle,
+                          ::GetCurrentProcess(),
+                          &copy,
+                          0,
+                          FALSE,
+                          DUPLICATE_SAME_ACCESS)) {
+        return windows::last_error();
+    }
+    int source = ::_open_osfhandle(reinterpret_cast<std::intptr_t>(copy), _O_NOINHERIT);
+    if(source == -1) {
+        auto error = std::error_code(errno, std::generic_category());
+        ::CloseHandle(copy);
+        return error;
+    }
+    ScopeExit close_source([&] { ::_close(source); });
+    if(::_dup2(source, fd) == -1) {
+        return std::error_code(errno, std::generic_category());
+    }
+    // _dup2 gives `fd` a handle a child inherits.
+    if(!(inherited & HANDLE_FLAG_INHERIT)) {
+        ::SetHandleInformation(windows::descriptor_handle(fd), HANDLE_FLAG_INHERIT, 0);
+    }
+    ::CloseHandle(handle);
+#else
+    assert(fd != handle);
+    // dup2 would take a descriptor not open for one to open.
+    int flags = ::fcntl(fd, F_GETFD);
+    if(flags == -1) {
+        return posix::last_error();
+    }
+#ifdef __APPLE__
+    // macOS has no dup3.
+    if(::dup2(handle, fd) == -1) {
+        return posix::last_error();
+    }
+    if(flags & FD_CLOEXEC) {
+        ::fcntl(fd, F_SETFD, FD_CLOEXEC);
+    }
+#else
+    if(::dup3(handle, fd, flags & FD_CLOEXEC ? O_CLOEXEC : 0) == -1) {
+        return posix::last_error();
+    }
+#endif
+    // The descriptor is gone whatever close() returns, and `fd` names the
+    // file still.
+    ::close(handle);
+#endif
+    handle = closed;
+    locked = false;
+    return {};
 }
 
 std::error_code read_file(buffer_ref out, std::string_view path) {

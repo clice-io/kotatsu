@@ -8,7 +8,8 @@
 #include "kotatsu/support/buffer_ref.h"
 
 /// Where kotatsu's UTF-8 paths meet the Windows API: the wide paths its file
-/// functions take, and its errors as std::error_code.
+/// functions take, its errors as std::error_code, and the handles of the C
+/// runtime's descriptors.
 namespace kotatsu::fs::windows {
 
 /// A Win32 error code, as GetLastError() reports it: a std::errc code where
@@ -39,6 +40,13 @@ std::error_code to_native(basic_buffer_ref<wchar_t> out, std::string_view path);
 /// Writes into `out` a path Windows gave, as WTF-8, without the `\\?\` or
 /// `\\?\UNC\` prefix wherever the plain spelling names the same file.
 void from_native(buffer_ref out, std::wstring_view path);
+
+/// The HANDLE of C runtime descriptor `fd`, as _get_osfhandle gives it but
+/// ending no process, which the runtime would for a descriptor not open:
+/// INVALID_HANDLE_VALUE for one not open, and -2 for a standard stream
+/// without a handle, the pseudo-handles of this process and of this thread,
+/// neither a console, a pipe nor a file.
+void* descriptor_handle(int fd) noexcept;
 
 }  // namespace kotatsu::fs::windows
 
