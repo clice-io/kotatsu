@@ -9,7 +9,7 @@
 // - a fault, a trap, a breakpoint and a stack overflow, on the main thread
 //   or a Thread, end the process with the signal, on Windows with the
 //   exception's code; an abort ends it with SIGABRT, on Windows as abort()
-//   does without a handler, the trace starting in the handler;
+//   does without a handler;
 // - an overflow's trace alternates between the two functions that recurse,
 //   none of their frames lost or written twice;
 // - of two threads that fault at once, one is reported;
@@ -110,20 +110,16 @@ test("crash_of_a_breakpoint_ends_with_its_signal", async (t) => {
 
 test("crash_of_an_abort_ends_as_abort_does", async (t) => {
   const crashed = await crash(t, "crash_abort");
-  if (windows) {
-    // Windows' SIGABRT has no context: the trace starts in the handler.
-    assert.equal(crashed.frames[0]?.interrupted, false);
-  } else {
-    const marked = crashed.frames.filter((frame) => frame.interrupted);
-    assert.equal(marked.length, 1);
-    assert.equal(crashed.frames[0], marked[0]);
+  // From where abort() raised SIGABRT, in the C library or runtime: on
+  // Windows the context of raise(), which called the handler.
+  const marked = crashed.frames.filter((frame) => frame.interrupted);
+  assert.equal(marked.length, 1);
+  assert.equal(crashed.frames[0], marked[0]);
+  if (!windows) {
     assert.equal(marked[0]?.address, crashed.fault);
   }
   if (symbolizer !== undefined) {
-    assertCalls(decode(t, crashed, windows ? "reported" : null).names, [
-      "probe_abort",
-      "main",
-    ]);
+    assertCalls(decode(t, crashed, null).names, ["probe_abort", "main"]);
   }
   await expectReported(crashed, constants.signals.SIGABRT);
 });

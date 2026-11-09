@@ -62,8 +62,8 @@ std::error_code write_stacktrace(int fd) noexcept;
 
 /// As write_stacktrace(fd), the frames of the stack `crash` interrupted,
 /// from the address its context was at, which its line marks, outward: what
-/// on_crash's handler writes. Without a context, as SIGABRT has on Windows,
-/// the calling thread's from the caller's.
+/// on_crash's handler writes. Without a context, the calling thread's from
+/// the caller's.
 std::error_code write_stacktrace(int fd, const Crash& crash) noexcept;
 
 }  // namespace kotatsu::sys

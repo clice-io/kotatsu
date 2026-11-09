@@ -19,7 +19,8 @@ struct Crash {
     /// SIGABRT on Windows.
     const void* info = nullptr;
     /// The context the signal interrupted, a ucontext_t, or on Windows the
-    /// exception's CONTEXT; null for SIGABRT on Windows.
+    /// exception's CONTEXT, and for SIGABRT the CONTEXT of raise(), which
+    /// called its handler.
     const void* context = nullptr;
 };
 

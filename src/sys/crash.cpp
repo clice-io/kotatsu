@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "os.h"
+#include "kotatsu/support/config.h"
 
 #ifndef _WIN32
 #include <algorithm>
@@ -124,8 +125,30 @@ LONG WINAPI filtered(EXCEPTION_POINTERS* exception) {
     return previous_filter != nullptr ? previous_filter(exception) : EXCEPTION_CONTINUE_SEARCH;
 }
 
-void aborted(int signal) {
-    report(Crash{.signal = signal});
+KOTATSU_NOINLINE void aborted(int signal) {
+    // The context of raise(), which called this: a trace from it starts in
+    // the C runtime, as one from a POSIX signal's starts in the C library,
+    // and leaves this handler's frames out.
+    CONTEXT context;
+    ::RtlCaptureContext(&context);
+#if defined(_M_ARM64) || defined(__aarch64__)
+    const auto pc = context.Pc;
+#else
+    const auto pc = context.Rip;
+#endif
+    DWORD64 image_base = 0;
+    auto* function = ::RtlLookupFunctionEntry(pc, &image_base, nullptr);
+    void* handler_data = nullptr;
+    DWORD64 establisher = 0;
+    ::RtlVirtualUnwind(UNW_FLAG_NHANDLER,
+                       image_base,
+                       pc,
+                       function,
+                       &context,
+                       &handler_data,
+                       &establisher,
+                       nullptr);
+    report(Crash{.signal = signal, .context = &context});
     restore();
     if(previous_abort != SIG_DFL) {
         previous_abort(signal);
