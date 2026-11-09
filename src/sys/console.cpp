@@ -168,7 +168,7 @@ bool is_pipe(int fd) noexcept {
 bool shows_colors(int fd) {
 #ifdef _WIN32
     // A console's input has a mode too, whose ENABLE_ECHO_INPUT is the same bit.
-    auto handle = descriptor_handle(fd);
+    auto handle = fs::windows::descriptor_handle(fd);
     CONSOLE_SCREEN_BUFFER_INFO screen;
     DWORD mode = 0;
     if(::GetConsoleScreenBufferInfo(handle, &screen) == 0 || ::GetConsoleMode(handle, &mode) == 0 ||
