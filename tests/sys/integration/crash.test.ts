@@ -9,10 +9,7 @@
 // - a fault, a trap, a breakpoint and a stack overflow, on the main thread
 //   or a Thread, end the process with the signal, on Windows with the
 //   exception's code; an abort and an uncaught C++ exception end it with
-//   SIGABRT, on Windows as abort() does without a handler;
-// - on Windows, with windows_skip_error_reporting, the process ends with the
-//   exception's code past every filter that declines it, and an abort and an
-//   uncaught exception with 3, never failing fast; elsewhere as without;
+//   SIGABRT, on Windows with 3, never failing fast;
 // - an overflow's trace alternates between the two functions that recurse,
 //   none of their frames lost or written twice;
 // - of two threads that fault at once, one is reported;
@@ -22,7 +19,7 @@
 
 import assert from "node:assert/strict";
 import { constants } from "node:os";
-import { type TestContext, test } from "node:test";
+import { test } from "node:test";
 
 import {
   assertCalls,
@@ -37,11 +34,8 @@ import {
 const windows = process.platform === "win32";
 const posixOnly = windows && "on_crash's signals are POSIX's";
 
-/** abort()'s exit codes on Windows: a fast fail's, or 3 without one. */
-const ABORTED = [0xc0000409, 3];
-
-/** The probe's environment, on_crash asked for windows_skip_error_reporting. */
-const SKIPPING = { ...process.env, KOTATSU_PROBE_SKIP_ERROR_REPORTING: "1" };
+/** abort()'s exit code on Windows, which on_crash keeps from failing fast. */
+const ABORTED = 3;
 
 /** The code of a C++ exception the MSVC runtime raises. */
 const MSVC_EXCEPTION = 0xe06d7363;
@@ -70,32 +64,6 @@ async function expectReported(
   } else {
     await crashed.driver.expectSignal(signalName(signal));
   }
-}
-
-/**
- * What crash_throw printed, its uncaught exception reported once: by the
- * unhandled exception filter where the MSVC runtime calls std::terminate
- * from its own, after on_crash's; elsewhere, MinGW's runtime included, as
- * the SIGABRT of the abort() std::terminate calls. Null, the test skipped,
- * in a build without exceptions, where the probe exits with 0.
- */
-async function thrown(
-  t: TestContext,
-  env?: NodeJS.ProcessEnv,
-): Promise<Crash | null> {
-  const crashed = await crash(t, "crash_throw", env);
-  if (!crashed.image.exceptions) {
-    await crashed.driver.expectExit(0);
-    t.skip("built without exceptions");
-    return null;
-  }
-  assert.equal(crashed.reports, 1);
-  if (windows && crashed.signal === 0) {
-    assert.equal(crashed.code, MSVC_EXCEPTION);
-  } else {
-    assert.equal(crashed.signal, constants.signals.SIGABRT);
-  }
-  return crashed;
 }
 
 /** Checks that the trace starts at the address the crash interrupted. */
@@ -160,51 +128,24 @@ test("crash_of_an_abort_ends_as_abort_does", async (t) => {
 });
 
 test("crash_of_an_uncaught_exception_ends_as_abort_does", async (t) => {
-  const crashed = await thrown(t);
-  if (crashed === null) {
+  const crashed = await crash(t, "crash_throw");
+  if (!crashed.image.exceptions) {
+    await crashed.driver.expectExit(0);
+    t.skip("built without exceptions");
     return;
   }
-  if (windows) {
+  // The MSVC runtime, the one of a build with a PDB, calls std::terminate
+  // from an unhandled exception filter of its own, after on_crash's has
+  // reported the exception; elsewhere, MinGW's runtime included, the handler
+  // is told of the SIGABRT of the abort() std::terminate calls.
+  if (crashed.image.debug === "pdb") {
+    assert.equal(crashed.reports, 1);
+    assert.equal(crashed.signal, 0);
+    assert.equal(crashed.code, MSVC_EXCEPTION);
     await crashed.driver.expectExit(ABORTED);
   } else {
-    await crashed.driver.expectSignal("SIGABRT");
+    await expectReported(crashed, constants.signals.SIGABRT);
   }
-});
-
-test("crash_of_a_fault_skipping_error_reporting_ends_with_its_code", async (t) => {
-  const crashed = await crash(t, "crash_fault", SKIPPING);
-  assertStartsInterrupted(crashed);
-  await expectReported(crashed, constants.signals.SIGSEGV);
-});
-
-test("crash_of_an_abort_skipping_error_reporting_does_not_fail_fast", async (t) => {
-  const crashed = await crash(t, "crash_abort", SKIPPING);
-  assert.equal(crashed.reports, 1);
-  assert.equal(crashed.signal, constants.signals.SIGABRT);
-  if (windows) {
-    await crashed.driver.expectExit(3);
-  } else {
-    await crashed.driver.expectSignal("SIGABRT");
-  }
-});
-
-test("crash_of_an_uncaught_exception_skipping_error_reporting_does_not_fail_fast", async (t) => {
-  const crashed = await thrown(t, SKIPPING);
-  if (crashed === null) {
-    return;
-  }
-  if (windows) {
-    await crashed.driver.expectExit(3);
-  } else {
-    await crashed.driver.expectSignal("SIGABRT");
-  }
-});
-
-test("crash_with_a_handler_before_skipping_error_reporting_goes_on_to_it", async (t) => {
-  const crashed = await crash(t, "crash_after_handler", SKIPPING);
-  assert.equal(crashed.reports, 1);
-  assert.equal(crashed.previous, crashed.fault);
-  await crashed.driver.expectExit(4);
 });
 
 for (const [name, command] of [

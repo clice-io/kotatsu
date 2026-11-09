@@ -34,9 +34,7 @@
 // prints {"signal": <the signal>} and on Windows for an exception
 // {"signal": ..., "code": "<its code>"}, then {"fault": ...} for a crash with
 // a context, {"returns": ...}, and writes the stack with
-// write_stacktrace(1, crash); the process then ends as the crash ends it.
-// With KOTATSU_PROBE_SKIP_ERROR_REPORTING=1, on_crash is asked for
-// windows_skip_error_reporting.
+// write_stacktrace(1, crash); the process then ends as the crash ends it:
 //
 //   crash_fault     as fault
 //   crash_trap      traps in probe_trap
@@ -611,6 +609,7 @@ void print_image() {
 #else
     constexpr bool tsan = false;
 #endif
+    constexpr bool exceptions = KOTATSU_ENABLE_EXCEPTIONS;
     print_line(std::format(
         R"({{"executable":{},"base":"{:#x}","low":"{:#x}","high":"{:#x}","debug":{},"tsan":{},"exceptions":{}}})",
         json(image.path),
@@ -619,7 +618,7 @@ void print_image() {
         image.high,
         json(debug),
         tsan,
-        bool(KOTATSU_ENABLE_EXCEPTIONS)));
+        exceptions));
 }
 
 #ifdef __linux__
@@ -682,11 +681,7 @@ int main(int argc, char** argv) {
         if(command == "crash_after_handler") {
             before_crash_handler();
         }
-        const char* skip = std::getenv("KOTATSU_PROBE_SKIP_ERROR_REPORTING");
-        const kotatsu::sys::CrashOptions options = {
-            .windows_skip_error_reporting = skip != nullptr && std::string_view(skip) == "1",
-        };
-        if(auto error = kotatsu::sys::on_crash(reported, options)) {
+        if(auto error = kotatsu::sys::on_crash(reported)) {
             std::fprintf(stderr, "[error] on_crash: %s\n", error.message().c_str());
             return 1;
         }
