@@ -85,31 +85,34 @@ export async function crash(
     frames: [],
   };
   assert.ok(["pdb", "dwarf"].includes(result.image.debug));
-  while (lines[0]?.startsWith("{")) {
-    const line = JSON.parse(lines.shift() ?? "");
-    if (line.signal !== undefined) {
-      result.signal = line.signal;
-      result.code = line.code === undefined ? undefined : Number(line.code);
-      result.reports += 1;
+  // A line of JSON before the frames, or after them from a handler set
+  // before on_crash's.
+  for (const text of lines) {
+    if (text.startsWith("{")) {
+      const line = JSON.parse(text);
+      if (line.signal !== undefined) {
+        result.signal = line.signal;
+        result.code = line.code === undefined ? undefined : Number(line.code);
+        result.reports += 1;
+      }
+      if (line.previous !== undefined) {
+        result.previous = BigInt(line.previous);
+      }
+      if (line.fault !== undefined) {
+        result.fault = BigInt(line.fault);
+      }
+      if (line.returns !== undefined) {
+        result.returns = line.returns.map((address: string) => BigInt(address));
+      }
+      if (line.library !== undefined) {
+        result.library = line.library;
+        result.loadedBefore = line.loaded_before;
+        result.libraryBase = BigInt(line.library_base);
+      }
+      continue;
     }
-    if (line.previous !== undefined) {
-      result.previous = BigInt(line.previous);
-    }
-    if (line.fault !== undefined) {
-      result.fault = BigInt(line.fault);
-    }
-    if (line.returns !== undefined) {
-      result.returns = line.returns.map((address: string) => BigInt(address));
-    }
-    if (line.library !== undefined) {
-      result.library = line.library;
-      result.loadedBefore = line.loaded_before;
-      result.libraryBase = BigInt(line.library_base);
-    }
-  }
-  for (const line of lines) {
-    const match = LINE.exec(line);
-    assert.ok(match !== null, `not a frame: ${line}`);
+    const match = LINE.exec(text);
+    assert.ok(match !== null, `not a frame: ${text}`);
     const [, address, path, base, offset, interrupted] = match;
     result.frames.push({
       address: BigInt(`0x${address}`),
