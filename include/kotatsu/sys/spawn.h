@@ -120,7 +120,8 @@ struct CreationOptions {
     /// its job (CREATE_BREAKAWAY_FROM_JOB) without first checking that the
     /// job allows it starts no process, CreateProcess failing with
     /// ERROR_ACCESS_DENIED. Cygwin's and MSYS2's programs check, and their
-    /// processes stay. A job a descendant puts itself in nests in this one.
+    /// processes stay in it. A job a descendant puts itself in nests in this
+    /// one.
     bool process_group = false;
 
     /// The child is killed when this process exits. On Linux by
@@ -401,7 +402,7 @@ private:
 /// it inherits its three standard handles alone, unless
 /// windows_inherit_handles, and is born in a job object of its own, nested in
 /// any this process is in, which ends it rather than show a dialog when it
-/// crashes, and which its descendants leave unasked unless it leads a group.
+/// crashes; its descendants leave that job unasked unless it leads a group.
 /// no_such_file_or_directory or permission_denied for a program not found,
 /// as find_program; invalid_argument for a negative descriptor, a closed
 /// file, a string with a NUL, which the child would get cut short, or, on

@@ -506,10 +506,10 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
 
     // A job of its own: it ends a child that crashes rather than show
     // Windows's dialog, and kills what it holds when it closes with
-    // exit_with_parent. A child that leads no tree is alone there, its
-    // descendants leaving the job unasked; one that leads a tree has its
-    // descendants held there, none let break away. Cygwin's runtime asks to
-    // break away from any job that allows it.
+    // exit_with_parent. A child that leads no group is alone there, its
+    // descendants leaving the job unasked; one that leads a group has its
+    // descendants held there, none allowed to break away. Cygwin's runtime
+    // asks to break away from any job that allows it.
     child.leads_group = creation.detached || creation.process_group;
     Handle job(::CreateJobObjectW(nullptr, nullptr));
     if(job.handle == nullptr) {

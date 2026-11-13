@@ -19,9 +19,9 @@
 //   runner puts its processes in one, and inherits no handle of sys_probe's
 //   but its standard ones, unless it is to inherit every inheritable one;
 // - on Windows the processes a child that leads a group starts stay in its
-//   job, none let break away from it, those that ask whether they may, as
-//   Cygwin's runtime does, among them, and its tree's kill ends them; those
-//   of a child alone leave its job, asked or not;
+//   job, even those that ask to leave it as Cygwin's runtime does, and its
+//   tree's kill ends them; those of a child alone leave its job, asked or
+//   not;
 // - on Windows a batch file gets its arguments as given, whatever cmd makes
 //   of their characters.
 
@@ -214,18 +214,21 @@ test(
   },
 );
 
+// What `sys_probe escape` prints of the job sys::spawn started it in.
+type Escaped = {
+  breakaway_ok: boolean;
+  forced: number;
+  asked_in_job: boolean;
+  unasked_in_job: boolean;
+};
+
 test(
-  "group_descendants_cannot_break_away_from_its_job",
+  "descendants_of_a_group_leader_stay_in_its_job",
   { skip: process.platform !== "win32" && "Windows has jobs" },
   async (t) => {
     const driver = await Driver.spawn(t, "sys_probe", ["escaping", "group"]);
     const lines = driver.jsonLines();
-    const escape = (await lines.receive()) as {
-      breakaway_ok: boolean;
-      forced: number;
-      asked_in_job: boolean;
-      unasked_in_job: boolean;
-    };
+    const escape = (await lines.receive()) as Escaped;
     const { ended } = (await lines.receive()) as { ended: boolean };
     await driver.expectExit(0);
     assert.equal(escape.breakaway_ok, false);
@@ -242,12 +245,7 @@ test(
   { skip: process.platform !== "win32" && "Windows has jobs" },
   async (t) => {
     const driver = await Driver.spawn(t, "sys_probe", ["escaping", "alone"]);
-    const escape = (await driver.jsonLines().receive()) as {
-      breakaway_ok: boolean;
-      forced: number;
-      asked_in_job: boolean;
-      unasked_in_job: boolean;
-    };
+    const escape = (await driver.jsonLines().receive()) as Escaped;
     await driver.expectExit(0);
     assert.equal(escape.breakaway_ok, true);
     assert.equal(escape.forced, 0);
