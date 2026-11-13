@@ -105,17 +105,23 @@ struct CreationOptions {
     /// A session of its own (setsid), out of reach of this process's
     /// terminal; on Windows a console of its own without a window, which the
     /// console programs it starts share, and a process group of its own. It
-    /// leads a process group as process_group's does.
+    /// leads a process group as process_group's does, on Windows a job its
+    /// descendants cannot leave.
     bool detached = false;
 
     /// The child leads a group of its own, which kill_tree ends as a whole.
     /// On POSIX a process group (setpgid), in the background of the terminal
     /// this process has, if any: Ctrl+C and a hangup do not reach it, and
     /// reading the terminal stops it (SIGTTIN). The processes it starts stay
-    /// in the group unless they leave it, as a shell's jobs and ninja's
-    /// commands do. On Windows a new console process group, which Ctrl+C
-    /// does not reach, and a job object its descendants stay in unless they
-    /// ask to break away from it.
+    /// in the group unless they leave it (setsid, setpgid), as a shell's
+    /// jobs and ninja's commands do. On Windows a new console process group,
+    /// which Ctrl+C does not reach, and a job object its descendants cannot
+    /// leave, stricter than POSIX: a program that asks to break away from
+    /// its job (CREATE_BREAKAWAY_FROM_JOB) without first checking that the
+    /// job allows it starts no process, CreateProcess failing with
+    /// ERROR_ACCESS_DENIED. Cygwin's and MSYS2's programs check, and their
+    /// processes stay in it. A job a descendant puts itself in nests in this
+    /// one.
     bool process_group = false;
 
     /// The child is killed when this process exits. On Linux by
@@ -396,7 +402,7 @@ private:
 /// it inherits its three standard handles alone, unless
 /// windows_inherit_handles, and is born in a job object of its own, nested in
 /// any this process is in, which ends it rather than show a dialog when it
-/// crashes.
+/// crashes; its descendants leave that job unasked unless it leads a group.
 /// no_such_file_or_directory or permission_denied for a program not found,
 /// as find_program; invalid_argument for a negative descriptor, a closed
 /// file, a string with a NUL, which the child would get cut short, or, on

@@ -505,8 +505,11 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     }
 
     // A job of its own: it ends a child that crashes rather than show
-    // Windows's dialog, kills what it holds when it closes with
-    // exit_with_parent, and holds its descendants too when it leads a tree.
+    // Windows's dialog, and kills what it holds when it closes with
+    // exit_with_parent. A child that leads no group is alone there, its
+    // descendants leaving the job unasked; one that leads a group has its
+    // descendants held there, none allowed to break away. Cygwin's runtime
+    // asks to break away from any job that allows it.
     child.leads_group = creation.detached || creation.process_group;
     Handle job(::CreateJobObjectW(nullptr, nullptr));
     if(job.handle == nullptr) {
@@ -514,9 +517,9 @@ std::expected<Child, std::error_code> spawn(const SpawnOptions& options) {
     }
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
     auto& flags = limits.BasicLimitInformation.LimitFlags;
-    flags = JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+    flags = JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
     if(!child.leads_group) {
-        flags |= JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+        flags |= JOB_OBJECT_LIMIT_BREAKAWAY_OK | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
     }
     if(creation.exit_with_parent) {
         flags |= JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
