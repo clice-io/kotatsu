@@ -91,6 +91,23 @@
 //                         started, as kotatsu::async::process sets one, and
 //                         prints {"waited": <whether the second waited for
 //                         the first>, "kept": <whether the handler stayed>}
+//   escape                Windows: in the job sys::spawn started it in,
+//                         starts `sys_probe hang` three times as a program
+//                         without kotatsu does: asking to break away from
+//                         the job (CREATE_BREAKAWAY_FROM_JOB), asking only
+//                         where the job allows it, as Cygwin's runtime does,
+//                         and without asking; prints {"breakaway_ok":
+//                         <whether the job allows it>, "forced": <the error
+//                         the first start failed with, 0 when it started>,
+//                         "asked_in_job": <whether the job holds the
+//                         second>, "unasked_in_job": <the same of the
+//                         third>, "pid": <the second's pid>}, and once its
+//                         stdin ends, ends all three and exits
+//   escaping group|alone  Windows: starts `sys_probe escape` exit_with_parent,
+//                         with process_group when `group` is given, prints
+//                         what that prints, and with `group` then kills its
+//                         tree and prints whether escape's second process
+//                         ended: {"ended": <bool>}
 //   nested                Windows: joins a job as a CI runner's, starts
 //                         `sys_probe hang` exit_with_parent in a tree of its
 //                         own, and prints whether that is in the runner's
@@ -115,6 +132,7 @@
 // otherwise; 1 when a call fails, saying why on stderr; 2 for a command it
 // does not know.
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -140,6 +158,8 @@
 #endif
 #include <windows.h>
 
+#include "sys/harness/spawn.h"
+#include "kotatsu/support/scope_exit.h"
 #include "kotatsu/support/utf16.h"
 #include "kotatsu/fs/windows.h"
 #include "kotatsu/sys/console.h"
@@ -404,6 +424,143 @@ int run(const kotatsu::sys::SpawnOptions& options) {
     }
     return static_cast<int>(status->code);
 }
+
+#ifdef _WIN32
+/// The IDs of the processes the job this process is in holds, its immediate
+/// one's.
+std::expected<std::vector<ULONG_PTR>, std::error_code> job_processes() {
+    // Room for more than escape's job holds: escape, the processes it
+    // starts and a console's host.
+    struct {
+        JOBOBJECT_BASIC_PROCESS_ID_LIST list;
+        ULONG_PTR more[63];
+    } ids{};
+
+    if(!::QueryInformationJobObject(nullptr,
+                                    JobObjectBasicProcessIdList,
+                                    &ids,
+                                    sizeof(ids),
+                                    nullptr)) {
+        return std::unexpected(kotatsu::fs::windows::last_error());
+    }
+    const auto* first = ids.list.ProcessIdList;
+    return std::vector(first, first + ids.list.NumberOfProcessIdsInList);
+}
+
+int escape() {
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+    if(!::QueryInformationJobObject(nullptr,
+                                    JobObjectExtendedLimitInformation,
+                                    &limits,
+                                    sizeof(limits),
+                                    nullptr)) {
+        return fail("QueryInformationJobObject", kotatsu::fs::windows::last_error());
+    }
+    const bool breakaway_ok =
+        (limits.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_BREAKAWAY_OK) != 0;
+    std::string self;
+    if(auto error = kotatsu::sys::self_executable(self)) {
+        return fail("self_executable", error);
+    }
+    std::wstring program;
+    kotatsu::to_utf16(program, self);
+    // What it starts ends with it, whichever job holds that.
+    std::vector<HANDLE> started;
+    kotatsu::ScopeExit ending([&started] {
+        for(HANDLE process: started) {
+            ::TerminateProcess(process, 1);
+        }
+    });
+    // `sys_probe hang`, started with `flags`: its pid, or the error
+    // CreateProcessW failed with.
+    auto start = [&](DWORD flags) -> std::expected<DWORD, DWORD> {
+        std::wstring command_line = L"sys_probe hang";
+        STARTUPINFOW startup{.cb = sizeof(STARTUPINFOW)};
+        PROCESS_INFORMATION created{};
+        if(!::CreateProcessW(program.c_str(),
+                             command_line.data(),
+                             nullptr,
+                             nullptr,
+                             FALSE,
+                             flags,
+                             nullptr,
+                             nullptr,
+                             &startup,
+                             &created)) {
+            return std::unexpected(::GetLastError());
+        }
+        ::CloseHandle(created.hThread);
+        started.push_back(created.hProcess);
+        return created.dwProcessId;
+    };
+    auto forced = start(CREATE_BREAKAWAY_FROM_JOB);
+    auto asked = start(breakaway_ok ? CREATE_BREAKAWAY_FROM_JOB : 0);
+    if(!asked) {
+        return fail("CreateProcessW", kotatsu::fs::windows::to_error_code(asked.error()));
+    }
+    auto unasked = start(0);
+    if(!unasked) {
+        return fail("CreateProcessW", kotatsu::fs::windows::to_error_code(unasked.error()));
+    }
+    auto held = job_processes();
+    if(!held) {
+        return fail("QueryInformationJobObject", held.error());
+    }
+    print_line(std::format(
+        R"({{"breakaway_ok":{},"forced":{},"asked_in_job":{},"unasked_in_job":{},"pid":{}}})",
+        breakaway_ok,
+        forced ? 0 : forced.error(),
+        std::ranges::contains(*held, *asked),
+        std::ranges::contains(*held, *unasked),
+        *asked));
+    wait_for_stdin();
+    return 0;
+}
+
+int escaping(bool group) {
+    auto options = probe({"escape"});
+    options.creation = {.process_group = group, .exit_with_parent = true};
+    options.streams[0] = kotatsu::sys::Stdio::pipe();
+    options.streams[1] = kotatsu::sys::Stdio::pipe();
+    auto child = kotatsu::sys::spawn(options);
+    if(!child) {
+        return fail("spawn", child.error());
+    }
+    auto input = child->take_pipe(0);
+    auto output = child->take_pipe(1);
+    std::string line;
+    while(!line.ends_with('\n')) {
+        auto chunk = kotatsu::test::read_some(output);
+        if(chunk.empty()) {
+            return fail("escape", std::make_error_code(std::errc::broken_pipe));
+        }
+        line += chunk;
+    }
+    // Its CRT's text mode ends the line with \r\n.
+    line.resize(line.find_last_not_of("\r\n") + 1);
+    print_line(line);
+    if(group) {
+        // escape holds the process, whose pid then names it still.
+        auto pid = static_cast<DWORD>(std::atoi(line.c_str() + line.rfind(':') + 1));
+        HANDLE asked = ::OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE, FALSE, pid);
+        if(asked == nullptr) {
+            return fail("OpenProcess", kotatsu::fs::windows::last_error());
+        }
+        if(auto error = child->kill_tree()) {
+            return fail("kill_tree", error);
+        }
+        const bool ended = ::WaitForSingleObject(asked, 10000) == WAIT_OBJECT_0;
+        // Left running, it would outlive the test.
+        ::TerminateProcess(asked, 1);
+        print_line(std::format(R"({{"ended":{}}})", ended));
+    }
+    kotatsu::test::close_end(input);
+    if(auto status = child->wait(); !status) {
+        return fail("wait", status.error());
+    }
+    return 0;
+}
+#endif
 
 #ifdef __linux__
 /// How long a spawn that should wait for another is given to show that it
@@ -891,6 +1048,13 @@ int main() {
         }
         auto* value = reinterpret_cast<HANDLE>(std::stoull(arguments[2]));
         return value != named && compare(value, named) ? 1 : 0;
+    }
+    if(command == "escape") {
+        return escape();
+    }
+    if(command == "escaping" && arguments.size() == 3 &&
+       (arguments[2] == "group" || arguments[2] == "alone")) {
+        return escaping(arguments[2] == "group");
     }
     if(command == "console" && arguments.size() == 3) {
         return write_to_console(arguments[2]);

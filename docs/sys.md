@@ -75,7 +75,9 @@ text comes out into a caller's buffer (`buffer_ref`), as in [fs](fs.md).
   ignored elsewhere.
 - `spawn` uses `fork` and `execve` on Linux, `posix_spawn` on macOS, and
   `CreateProcessW` on Windows, the child in a job object of its own and given
-  only the standard handles unless `windows_inherit_handles`.
+  only the standard handles unless `windows_inherit_handles`. The
+  descendants of a child that leads a group cannot leave its job, where on
+  POSIX they may leave its process group.
 - `on_crash` takes SIGSEGV, SIGBUS, SIGILL, SIGTRAP, SIGFPE, SIGABRT and
   SIGSYS on Linux and macOS, but those the program ignores, never SIGINT,
   SIGTERM or SIGHUP, and gives each
