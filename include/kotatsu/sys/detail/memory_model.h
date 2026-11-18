@@ -1,9 +1,10 @@
 #pragma once
 
-// The arithmetic of memory(), parallelism() and physical_cores() on figures
-// given rather than read: Linux's cgroups and CPU topology through a reader
-// of their files, macOS's counts as numbers, so that a test's fixture stands
-// in for the system on any host.
+// The arithmetic of memory(), process_stats(), parallelism() and
+// physical_cores() on figures given rather than read: the text of Linux's
+// /proc files, its cgroups and CPU topology through a reader of their files,
+// macOS's counts as numbers, so that a test's fixture stands in for the
+// system on any host.
 
 #include <cstdint>
 #include <optional>
@@ -48,6 +49,18 @@ std::optional<MemoryLimit> memory(std::string_view mounts,
 std::optional<double> cpu_quota(std::string_view mounts, std::string_view membership, Reader read);
 
 }  // namespace cgroup
+
+/// memory() on Linux, from the text of /proc/meminfo `meminfo`, and of the
+/// memory cgroups that cgroup::memory() reads from `mounts`, `membership`
+/// and `read`.
+Memory linux_memory(std::string_view meminfo,
+                    std::string_view mounts,
+                    std::string_view membership,
+                    cgroup::Reader read);
+
+/// The memory figures of process_stats() on Linux (memory, peak_memory,
+/// resident, swapped and address_space), from a /proc/<pid>/status text.
+ProcessStats linux_process_memory(std::string_view status);
 
 /// The physical cores of Linux's logical CPUs `cpus`, ascending: those that
 /// share a core, as `siblings` gives the CPUs of each one's
