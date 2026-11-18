@@ -22,7 +22,7 @@ struct ProcessStats {
     /// compression; on Windows its private bytes. File mappings, of its
     /// executable among them, are left out, but where Linux counts no
     /// anonymous pages apart (before 4.5, WSL 1, gVisor): there it is the
-    /// resident size, which holds them.
+    /// resident size, which holds them, and what is swapped out.
     std::uint64_t memory = 0;
 
     /// The most it has held: on Linux the peak of its resident size, file

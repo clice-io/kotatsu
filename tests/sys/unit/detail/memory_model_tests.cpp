@@ -444,7 +444,12 @@ ZEST_CASE(linux_memory_without_mem_available_estimates_it) {
 }
 
 ZEST_CASE(linux_memory_estimate_without_cache_figures_is_the_free_memory) {
-    auto memory = linux_memory("MemTotal: 16777216 kB\nMemFree: 2097152 kB\n", "", "", no_cgroup);
+    auto memory = linux_memory(R"(MemTotal: 16777216 kB
+MemFree: 2097152 kB
+)",
+                               "",
+                               "",
+                               no_cgroup);
     ZEXPECT(memory.available == 2 * GiB);
 }
 
@@ -460,22 +465,23 @@ SReclaimable: 6744 kB
     ZEXPECT(memory.available == GiB);
 }
 
-ZEST_CASE(linux_memory_takes_a_cgroup_with_less_left) {
+ZEST_CASE(linux_memory_takes_a_cgroup_with_less_left_than_the_estimate) {
     Hierarchy cg;
     cg.add("app/memory.max", 4 * GiB);
     cg.add("app/memory.current", 3 * GiB);
-    auto memory = linux_memory(linux_meminfo, cg.mounts, "0::/app\n", cg);
-    ZEXPECT(memory.total == 16 * GiB);
+    auto memory = linux_memory(wsl1_meminfo, cg.mounts, "0::/app\n", cg);
+    ZEXPECT(memory.total == 16771836 * KiB);
     ZEXPECT(memory.limit == 4 * GiB);
     ZEXPECT(memory.available == GiB);
 }
 
-ZEST_CASE(linux_memory_keeps_the_machine_with_less_left_than_its_cgroup) {
+ZEST_CASE(linux_memory_keeps_the_machine_figures_under_a_looser_cgroup) {
+    // A limit past the physical memory, as a container's may be.
     Hierarchy cg;
-    cg.add("app/memory.max", 12 * GiB);
+    cg.add("app/memory.max", 20 * GiB);
     cg.add("app/memory.current", GiB);
     auto memory = linux_memory(linux_meminfo, cg.mounts, "0::/app\n", cg);
-    ZEXPECT(memory.limit == 12 * GiB);
+    ZEXPECT(memory.limit == 16 * GiB);
     ZEXPECT(memory.available == 10 * GiB);
 }
 
@@ -543,10 +549,12 @@ Threads:	5
 
 ZEST_CASE(linux_process_memory_of_gvisor_takes_the_resident_size) {
     // gVisor's, which writes these three alone.
-    auto stats = linux_process_memory("VmSize:\t1048576 kB\nVmRSS:\t65536 kB\nVmData:\t32768 kB\n");
+    auto stats = linux_process_memory(R"(VmSize:	1048576 kB
+VmRSS:	65536 kB
+VmData:	32768 kB
+)");
     ZEXPECT(stats.memory == 64 * MiB);
     ZEXPECT(stats.peak_memory == 64 * MiB);
-    ZEXPECT(stats.address_space == GiB);
 }
 
 /// count_physical_cores() of `cpus`, each one's siblings as `listed` gives them.

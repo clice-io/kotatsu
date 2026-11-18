@@ -47,6 +47,12 @@ namespace kotatsu::sys {
 
 namespace {
 
+/// The number of kilobytes after `key` in a /proc text, in bytes; 0 for a
+/// line it does not have.
+std::uint64_t kilobytes(std::string_view text, std::string_view key) {
+    return field(text, key).value_or(0) * 1024;
+}
+
 #ifndef _WIN32
 
 /// Sets the switches of `stats` to this process's, those of the threads that
@@ -309,19 +315,20 @@ Memory detail::linux_memory(std::string_view meminfo,
                             std::string_view mounts,
                             std::string_view membership,
                             cgroup::Reader read) {
-    auto kilobytes = [&](std::string_view key) {
-        return field(meminfo, key).value_or(0) * 1024;
-    };
-    auto total = kilobytes("MemTotal:");
+    auto total = kilobytes(meminfo, "MemTotal:");
     Memory result{.total = total, .limit = total};
     if(auto available = field(meminfo, "MemAvailable:")) {
         result.available = *available * 1024;
     } else {
-        // The least MemAvailable can be by the kernel commit that added it
-        // (34e431b0ae39, Linux 3.14): the free memory, and the file cache and
-        // the reclaimable slab each less the low watermark, up to half of it.
-        auto cache = kilobytes("Active(file):") + kilobytes("Inactive(file):");
-        auto estimate = kilobytes("MemFree:") + cache / 2 + kilobytes("SReclaimable:") / 2;
+        // MemAvailable as the kernel commit that added it counts it
+        // (34e431b0ae39, Linux 3.14): the free memory less the low watermark,
+        // plus the file cache and the reclaimable slab each less the watermark
+        // or half of itself, whichever is less. /proc/meminfo gives no
+        // watermark: none comes off the free memory here, half off the other
+        // two.
+        auto cache = kilobytes(meminfo, "Active(file):") + kilobytes(meminfo, "Inactive(file):");
+        auto estimate =
+            kilobytes(meminfo, "MemFree:") + cache / 2 + kilobytes(meminfo, "SReclaimable:") / 2;
         result.available = std::min(estimate, total);
     }
     if(auto cgroups = cgroup::memory(mounts, membership, read)) {
@@ -332,17 +339,14 @@ Memory detail::linux_memory(std::string_view meminfo,
 }
 
 ProcessStats detail::linux_process_memory(std::string_view status) {
-    auto kilobytes = [&](std::string_view key) {
-        return field(status, key).value_or(0) * 1024;
-    };
     ProcessStats stats{
-        .resident = kilobytes("VmRSS:"),
-        .swapped = kilobytes("VmSwap:"),
-        .address_space = kilobytes("VmSize:"),
+        .resident = kilobytes(status, "VmRSS:"),
+        .swapped = kilobytes(status, "VmSwap:"),
+        .address_space = kilobytes(status, "VmSize:"),
     };
     auto anonymous = field(status, "RssAnon:");
     stats.memory = (anonymous ? *anonymous * 1024 : stats.resident) + stats.swapped;
-    stats.peak_memory = std::max(kilobytes("VmHWM:"), stats.resident);
+    stats.peak_memory = std::max(kilobytes(status, "VmHWM:"), stats.resident);
     return stats;
 }
 
