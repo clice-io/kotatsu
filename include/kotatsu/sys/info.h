@@ -92,7 +92,8 @@ enum class MemorySource : std::uint8_t {
     /// from the free memory, the file cache and the reclaimable slab.
     Estimate,
 
-    /// Linux: a level of its memory cgroups, with less left than the machine.
+    /// Linux: a level of its memory cgroups had less left, its limit less its
+    /// usage, than MemAvailable or the estimate, and gave its figure instead.
     Cgroup,
 };
 
