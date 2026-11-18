@@ -82,6 +82,20 @@ std::optional<std::uint64_t> address_space_limit();
 /// HeapOptimizeResources, of every heap with a low-fragmentation front end.
 void release_free_heap() noexcept;
 
+/// Where Memory::available comes from.
+enum class MemorySource : std::uint8_t {
+    /// The system's own count: MemAvailable on Linux; on macOS and Windows,
+    /// always.
+    System,
+
+    /// Linux where the kernel counts none (before 3.14, WSL 1): an estimate
+    /// from the free memory, the file cache and the reclaimable slab.
+    Estimate,
+
+    /// Linux: a level of its memory cgroups, with less left than the machine.
+    Cgroup,
+};
+
 /// The memory a process can take.
 struct Memory {
     /// The physical memory.
@@ -104,6 +118,8 @@ struct Memory {
     /// least of the available physical memory and the commit charge left, and
     /// no more than `limit`: a job's usage is not counted.
     std::uint64_t available = 0;
+
+    MemorySource source = MemorySource::System;
 };
 
 /// The memory this process can take. Memory::available counts the

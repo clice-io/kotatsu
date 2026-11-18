@@ -330,10 +330,14 @@ Memory detail::linux_memory(std::string_view meminfo,
         auto estimate =
             kilobytes(meminfo, "MemFree:") + cache / 2 + kilobytes(meminfo, "SReclaimable:") / 2;
         result.available = std::min(estimate, total);
+        result.source = MemorySource::Estimate;
     }
     if(auto cgroups = cgroup::memory(mounts, membership, read)) {
         result.limit = std::min(result.limit, cgroups->limit);
-        result.available = std::min(result.available, cgroups->available);
+        if(cgroups->available < result.available) {
+            result.available = cgroups->available;
+            result.source = MemorySource::Cgroup;
+        }
     }
     return result;
 }

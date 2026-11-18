@@ -435,12 +435,14 @@ ZEST_CASE(linux_memory_reads_mem_available) {
     ZEXPECT(memory.total == 16 * GiB);
     ZEXPECT(memory.limit == 16 * GiB);
     ZEXPECT(memory.available == 10 * GiB);
+    ZEXPECT(memory.source == MemorySource::System);
 }
 
 ZEST_CASE(linux_memory_without_mem_available_estimates_it) {
     auto memory = linux_memory(wsl1_meminfo, "", "", no_cgroup);
     ZEXPECT(memory.total == 16771836 * KiB);
     ZEXPECT(memory.available == (13637392 + (64452 + 140436) / 2 + 6744 / 2) * KiB);
+    ZEXPECT(memory.source == MemorySource::Estimate);
 }
 
 ZEST_CASE(linux_memory_estimate_without_cache_figures_is_the_free_memory) {
@@ -473,6 +475,7 @@ ZEST_CASE(linux_memory_takes_a_cgroup_with_less_left_than_the_estimate) {
     ZEXPECT(memory.total == 16771836 * KiB);
     ZEXPECT(memory.limit == 4 * GiB);
     ZEXPECT(memory.available == GiB);
+    ZEXPECT(memory.source == MemorySource::Cgroup);
 }
 
 ZEST_CASE(linux_memory_keeps_the_machine_figures_under_a_looser_cgroup) {
@@ -483,6 +486,7 @@ ZEST_CASE(linux_memory_keeps_the_machine_figures_under_a_looser_cgroup) {
     auto memory = linux_memory(linux_meminfo, cg.mounts, "0::/app\n", cg);
     ZEXPECT(memory.limit == 16 * GiB);
     ZEXPECT(memory.available == 10 * GiB);
+    ZEXPECT(memory.source == MemorySource::System);
 }
 
 ZEST_CASE(linux_process_memory_reads_anonymous_pages) {
