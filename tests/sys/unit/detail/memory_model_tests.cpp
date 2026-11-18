@@ -14,6 +14,7 @@ namespace kotatsu::sys::detail {
 
 namespace {
 
+constexpr std::uint64_t KiB = 1024;
 constexpr std::uint64_t MiB = std::uint64_t(1) << 20;
 constexpr std::uint64_t GiB = std::uint64_t(1) << 30;
 
@@ -55,6 +56,66 @@ struct Hierarchy {
         return cgroup::cpu_quota(mounts, membership, *this);
     }
 };
+
+/// What a cgroup::Reader reads of a process in no cgroup.
+std::optional<std::string> no_cgroup(std::string_view) {
+    return std::nullopt;
+}
+
+/// /proc/meminfo of Linux since 3.14, the lines memory() reads.
+constexpr std::string_view linux_meminfo = R"(MemTotal:       16777216 kB
+MemFree:         2097152 kB
+MemAvailable:   10485760 kB
+Active(file):    4194304 kB
+Inactive(file):  4194304 kB
+SReclaimable:     524288 kB
+)";
+
+/// /proc/meminfo of WSL 1 (Windows build 26100), which has no MemAvailable:
+/// past MemFree the figures are the same on every machine.
+constexpr std::string_view wsl1_meminfo = R"(MemTotal:       16771836 kB
+MemFree:        13637392 kB
+Buffers:           34032 kB
+Cached:           188576 kB
+SwapCached:            0 kB
+Active:           167556 kB
+Inactive:         157876 kB
+Active(anon):     103104 kB
+Inactive(anon):    17440 kB
+Active(file):      64452 kB
+Inactive(file):   140436 kB
+Unevictable:           0 kB
+Mlocked:               0 kB
+SwapTotal:      19660540 kB
+SwapFree:       19660540 kB
+Dirty:                 0 kB
+Writeback:             0 kB
+AnonPages:        102824 kB
+Mapped:            71404 kB
+Shmem:             17720 kB
+Slab:              13868 kB
+SReclaimable:       6744 kB
+SUnreclaim:         7124 kB
+KernelStack:        2848 kB
+PageTables:         2524 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:      515524 kB
+Committed_AS:    3450064 kB
+VmallocTotal:     122880 kB
+VmallocUsed:       21296 kB
+VmallocChunk:      66044 kB
+HardwareCorrupted:     0 kB
+AnonHugePages:      2048 kB
+HugePages_Total:       0
+HugePages_Free:        0
+HugePages_Rsvd:        0
+HugePages_Surp:        0
+Hugepagesize:       2048 kB
+DirectMap4k:       12280 kB
+DirectMap4M:      897024 kB
+)";
 
 ZEST_SUITE(sys_detail_memory_model) {
 
@@ -367,6 +428,125 @@ ZEST_CASE(mac_available_without_a_compression_ratio_takes_none) {
         {.memory = 3 * GiB, .resident = GiB}
     };
     ZEXPECT(mac_available(host, own) == 9 * GiB);
+}
+
+ZEST_CASE(linux_memory_reads_mem_available) {
+    auto memory = linux_memory(linux_meminfo, "", "", no_cgroup);
+    ZEXPECT(memory.total == 16 * GiB);
+    ZEXPECT(memory.limit == 16 * GiB);
+    ZEXPECT(memory.available == 10 * GiB);
+}
+
+ZEST_CASE(linux_memory_without_mem_available_estimates_it) {
+    auto memory = linux_memory(wsl1_meminfo, "", "", no_cgroup);
+    ZEXPECT(memory.total == 16771836 * KiB);
+    ZEXPECT(memory.available == (13637392 + (64452 + 140436) / 2 + 6744 / 2) * KiB);
+}
+
+ZEST_CASE(linux_memory_estimate_without_cache_figures_is_the_free_memory) {
+    auto memory = linux_memory("MemTotal: 16777216 kB\nMemFree: 2097152 kB\n", "", "", no_cgroup);
+    ZEXPECT(memory.available == 2 * GiB);
+}
+
+ZEST_CASE(linux_memory_estimate_stays_within_mem_total) {
+    auto memory = linux_memory(R"(MemTotal: 1048576 kB
+MemFree: 1047552 kB
+Active(file): 204888 kB
+SReclaimable: 6744 kB
+)",
+                               "",
+                               "",
+                               no_cgroup);
+    ZEXPECT(memory.available == GiB);
+}
+
+ZEST_CASE(linux_memory_takes_a_cgroup_with_less_left) {
+    Hierarchy cg;
+    cg.add("app/memory.max", 4 * GiB);
+    cg.add("app/memory.current", 3 * GiB);
+    auto memory = linux_memory(linux_meminfo, cg.mounts, "0::/app\n", cg);
+    ZEXPECT(memory.total == 16 * GiB);
+    ZEXPECT(memory.limit == 4 * GiB);
+    ZEXPECT(memory.available == GiB);
+}
+
+ZEST_CASE(linux_memory_keeps_the_machine_with_less_left_than_its_cgroup) {
+    Hierarchy cg;
+    cg.add("app/memory.max", 12 * GiB);
+    cg.add("app/memory.current", GiB);
+    auto memory = linux_memory(linux_meminfo, cg.mounts, "0::/app\n", cg);
+    ZEXPECT(memory.limit == 12 * GiB);
+    ZEXPECT(memory.available == 10 * GiB);
+}
+
+ZEST_CASE(linux_process_memory_reads_anonymous_pages) {
+    auto stats = linux_process_memory(R"(VmPeak:   2097152 kB
+VmSize:   1048576 kB
+VmHWM:     524288 kB
+VmRSS:     409600 kB
+RssAnon:   307200 kB
+RssFile:   102400 kB
+RssShmem:       0 kB
+VmSwap:     20480 kB
+)");
+    ZEXPECT(stats.memory == (307200 + 20480) * KiB);
+    ZEXPECT(stats.peak_memory == 512 * MiB);
+    ZEXPECT(stats.resident == 400 * MiB);
+    ZEXPECT(stats.swapped == 20 * MiB);
+    ZEXPECT(stats.address_space == GiB);
+}
+
+ZEST_CASE(linux_process_memory_before_linux_4_5_takes_the_resident_size_and_swap) {
+    // Linux 4.4's, which counts no anonymous pages apart.
+    auto stats = linux_process_memory(R"(Name:	cc1plus
+State:	R (running)
+VmPeak:	  612340 kB
+VmSize:	  598016 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	  412876 kB
+VmRSS:	  398112 kB
+VmData:	  402300 kB
+VmStk:	     136 kB
+VmExe:	   18320 kB
+VmLib:	    4072 kB
+VmPTE:	     856 kB
+VmPMD:	      12 kB
+VmSwap:	   10240 kB
+Threads:	1
+)");
+    ZEXPECT(stats.memory == (398112 + 10240) * KiB);
+    ZEXPECT(stats.peak_memory == 412876 * KiB);
+    ZEXPECT(stats.swapped == 10 * MiB);
+}
+
+ZEST_CASE(linux_process_memory_of_wsl1_takes_the_resident_size) {
+    // WSL 1's, which writes no RssAnon nor VmSwap, and 0 for VmHWM.
+    auto stats = linux_process_memory(R"(Name:	clice
+State:	S (sleeping)
+VmPeak:	0 kB
+VmSize:	404776 kB
+VmLck:	0 kB
+VmHWM:	0 kB
+VmRSS:	43880 kB
+VmData:	0 kB
+VmStk:	0 kB
+VmExe:	49960 kB
+VmLib:	0 kB
+VmPTE:	0 kB
+Threads:	5
+)");
+    ZEXPECT(stats.memory == 43880 * KiB);
+    ZEXPECT(stats.peak_memory == 43880 * KiB);
+    ZEXPECT(stats.swapped == 0U);
+}
+
+ZEST_CASE(linux_process_memory_of_gvisor_takes_the_resident_size) {
+    // gVisor's, which writes these three alone.
+    auto stats = linux_process_memory("VmSize:\t1048576 kB\nVmRSS:\t65536 kB\nVmData:\t32768 kB\n");
+    ZEXPECT(stats.memory == 64 * MiB);
+    ZEXPECT(stats.peak_memory == 64 * MiB);
+    ZEXPECT(stats.address_space == GiB);
 }
 
 /// count_physical_cores() of `cpus`, each one's siblings as `listed` gives them.

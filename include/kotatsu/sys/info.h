@@ -20,11 +20,14 @@ struct ProcessStats {
     /// Its own memory: on Linux its anonymous pages, in memory or swapped out;
     /// on macOS its footprint, compressed pages counted at their size before
     /// compression; on Windows its private bytes. File mappings, of its
-    /// executable among them, are left out.
+    /// executable among them, are left out, but where Linux counts no
+    /// anonymous pages apart (before 4.5, WSL 1, gVisor): there it is the
+    /// resident size, which holds them.
     std::uint64_t memory = 0;
 
     /// The most it has held: on Linux the peak of its resident size, file
-    /// pages included (VmHWM); on macOS the peak of its footprint; on Windows
+    /// pages included (VmHWM), or the resident size where Linux counts no
+    /// peak (WSL 1, gVisor); on macOS the peak of its footprint; on Windows
     /// the peak of its private bytes.
     std::uint64_t peak_memory = 0;
 
@@ -91,12 +94,15 @@ struct Memory {
     std::uint64_t limit = 0;
 
     /// What it can take before reclaim starts to hurt. On Linux the least of
-    /// MemAvailable and, at each level of its memory cgroups with a limit,
-    /// the limit less the usage plus the file cache no process maps. On macOS
-    /// the physical memory less what the system holds otherwise (wired,
-    /// anonymous but not reusable, and compressed). On Windows the least of
-    /// the available physical memory and the commit charge left, and no more
-    /// than `limit`: a job's usage is not counted.
+    /// MemAvailable, or where the kernel counts none (before 3.14, WSL 1) the
+    /// free memory with half the file cache and the reclaimable slab, the
+    /// least the kernel's count takes of them, and, at each level of its
+    /// memory cgroups with a limit, the limit less the usage plus the file
+    /// cache no process maps.
+    /// On macOS the physical memory less what the system holds otherwise
+    /// (wired, anonymous but not reusable, and compressed). On Windows the
+    /// least of the available physical memory and the commit charge left, and
+    /// no more than `limit`: a job's usage is not counted.
     std::uint64_t available = 0;
 };
 

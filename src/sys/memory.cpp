@@ -194,14 +194,7 @@ std::expected<ProcessStats, std::error_code> process_stats(int pid) {
     if(auto error = read_proc(stat, pid, "stat")) {
         return std::unexpected(process_error(error));
     }
-    auto kilobytes = [&](std::string_view key) {
-        return field(status, key).value_or(0) * 1024;
-    };
-    stats.swapped = kilobytes("VmSwap:");
-    stats.memory = kilobytes("RssAnon:") + stats.swapped;
-    stats.peak_memory = kilobytes("VmHWM:");
-    stats.resident = kilobytes("VmRSS:");
-    stats.address_space = kilobytes("VmSize:");
+    stats = detail::linux_process_memory(status);
     // Of another process, only the threads it has are there to count.
     if(pid == 0 || pid == ::getpid()) {
         count_own_switches(stats);
@@ -312,6 +305,47 @@ std::uint64_t detail::mac_available(const MacMemory& host, std::span<const Proce
     return host.total > taken ? host.total - taken : 0;
 }
 
+Memory detail::linux_memory(std::string_view meminfo,
+                            std::string_view mounts,
+                            std::string_view membership,
+                            cgroup::Reader read) {
+    auto kilobytes = [&](std::string_view key) {
+        return field(meminfo, key).value_or(0) * 1024;
+    };
+    auto total = kilobytes("MemTotal:");
+    Memory result{.total = total, .limit = total};
+    if(auto available = field(meminfo, "MemAvailable:")) {
+        result.available = *available * 1024;
+    } else {
+        // The least MemAvailable can be by the kernel commit that added it
+        // (34e431b0ae39, Linux 3.14): the free memory, and the file cache and
+        // the reclaimable slab each less the low watermark, up to half of it.
+        auto cache = kilobytes("Active(file):") + kilobytes("Inactive(file):");
+        auto estimate = kilobytes("MemFree:") + cache / 2 + kilobytes("SReclaimable:") / 2;
+        result.available = std::min(estimate, total);
+    }
+    if(auto cgroups = cgroup::memory(mounts, membership, read)) {
+        result.limit = std::min(result.limit, cgroups->limit);
+        result.available = std::min(result.available, cgroups->available);
+    }
+    return result;
+}
+
+ProcessStats detail::linux_process_memory(std::string_view status) {
+    auto kilobytes = [&](std::string_view key) {
+        return field(status, key).value_or(0) * 1024;
+    };
+    ProcessStats stats{
+        .resident = kilobytes("VmRSS:"),
+        .swapped = kilobytes("VmSwap:"),
+        .address_space = kilobytes("VmSize:"),
+    };
+    auto anonymous = field(status, "RssAnon:");
+    stats.memory = (anonymous ? *anonymous * 1024 : stats.resident) + stats.swapped;
+    stats.peak_memory = std::max(kilobytes("VmHWM:"), stats.resident);
+    return stats;
+}
+
 std::expected<Memory, std::error_code> memory([[maybe_unused]] std::span<const ProcessStats> own) {
 #ifdef _WIN32
     MEMORYSTATUSEX status{};
@@ -373,23 +407,15 @@ std::expected<Memory, std::error_code> memory([[maybe_unused]] std::span<const P
     if(auto error = fs::read_file(meminfo, "/proc/meminfo")) {
         return std::unexpected(error);
     }
-    auto total = field(meminfo, "MemTotal:").value_or(0) * 1024;
-    Memory result{
-        .total = total,
-        .limit = total,
-        .available = field(meminfo, "MemAvailable:").value_or(0) * 1024,
-    };
     // Read afresh every time: the process may have moved.
     ProcText membership;
     ProcText mounts;
-    if(!fs::read_file(membership, "/proc/self/cgroup") &&
-       !fs::read_file(mounts, "/proc/self/mountinfo")) {
-        if(auto cgroups = detail::cgroup::memory(mounts, membership, read_cgroup_file)) {
-            result.limit = std::min(result.limit, cgroups->limit);
-            result.available = std::min(result.available, cgroups->available);
-        }
-    }
-    return result;
+    auto cgroups = !fs::read_file(membership, "/proc/self/cgroup") &&
+                   !fs::read_file(mounts, "/proc/self/mountinfo");
+    return detail::linux_memory(meminfo,
+                                mounts,
+                                cgroups ? std::string_view(membership) : std::string_view(),
+                                read_cgroup_file);
 #endif
 }
 
