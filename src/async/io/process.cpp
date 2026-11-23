@@ -565,9 +565,9 @@ namespace {
 
 /// The error of a std::error_code from sys: errno's on POSIX, where libuv's
 /// are their negations; on Windows a code whose condition is a std::errc
-/// where the error has a POSIX counterpart, else the Win32 code itself. A
-/// code of another category, as windows_before_start may return, whose
-/// condition is no errno, is unknown_error.
+/// where the error has a POSIX counterpart, else the Win32 code itself. On
+/// Windows a code whose condition is not in the generic category, as one a
+/// windows_before_start hook returns may be, is unknown_error.
 error error_of(std::error_code code) {
     if(!code) {
         return {};
