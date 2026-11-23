@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <io.h>
+#include <string>
 #include <string_view>
 
 #include "win32.h"
@@ -48,6 +49,27 @@ bool needs_no_resolution(std::wstring_view path) {
     return true;
 }
 
+/// Win32's errors of a file another program holds, ERROR_SHARING_VIOLATION
+/// and ERROR_LOCK_VIOLATION: std::errc::device_or_resource_busy, in words
+/// that say why, where the C runtime's strerror, which MinGW's standard
+/// library tells it by, says "Resource device".
+struct HeldFileCategory : std::error_category {
+    const char* name() const noexcept override {
+        return "kotatsu.fs.windows";
+    }
+
+    std::string message(int code) const override {
+        return code == ERROR_LOCK_VIOLATION ? "part of the file is locked by another program"
+                                            : "the file is in use by another program";
+    }
+
+    std::error_condition default_error_condition(int) const noexcept override {
+        return std::errc::device_or_resource_busy;
+    }
+};
+
+const HeldFileCategory held_file_category{};
+
 #ifdef _MSC_VER
 /// Does nothing, for _get_osfhandle: the C runtime would end the process
 /// for a descriptor not open.
@@ -61,6 +83,9 @@ void ignore_invalid_parameter(const wchar_t*,
 }  // namespace
 
 std::error_code to_error_code(unsigned long code) {
+    if(code == ERROR_SHARING_VIOLATION || code == ERROR_LOCK_VIOLATION) {
+        return std::error_code(static_cast<int>(code), held_file_category);
+    }
     auto errc = [&]() -> std::errc {
         switch(code) {
             case ERROR_FILE_NOT_FOUND:
@@ -81,8 +106,6 @@ std::error_code to_error_code(unsigned long code) {
             case ERROR_CURRENT_DIRECTORY:
             case ERROR_WRITE_PROTECT: return std::errc::permission_denied;
             case ERROR_PRIVILEGE_NOT_HELD: return std::errc::operation_not_permitted;
-            case ERROR_SHARING_VIOLATION:
-            case ERROR_LOCK_VIOLATION:
             case ERROR_BUSY:
             case ERROR_PIPE_BUSY: return std::errc::device_or_resource_busy;
             case ERROR_ALREADY_EXISTS:

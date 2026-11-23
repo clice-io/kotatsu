@@ -7,9 +7,10 @@
 // - the URI VS Code makes of a path reads as the path in kotatsu.
 //
 // The two encode differently (VS Code escapes ':' and more), which the checks
-// leave to each; what matters is that each reads the other's. Both write a
-// drive letter in lower case, and on POSIX keep `\` as a character of a name;
-// on Windows kotatsu separates names with '/', and VS Code with '\'.
+// leave to each; what matters is that each reads the other's. kotatsu keeps
+// a drive letter's case, and VS Code writes it in lower case. On POSIX both
+// keep `\` as a character of a name; on Windows kotatsu separates names with
+// '/', and VS Code with '\'.
 
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
@@ -69,7 +70,7 @@ function lowerDrive(path: string): string {
 
 /** `drawn` as kotatsu writes a path back: on Windows its names separated by '/'. */
 function kotatsuPath(drawn: string): string {
-  return lowerDrive(windows ? drawn.replaceAll("\\", "/") : drawn);
+  return windows ? drawn.replaceAll("\\", "/") : drawn;
 }
 
 async function ask(
@@ -119,7 +120,7 @@ test("vscode_uris_read_as_their_paths", { timeout: FUZZ_TIMEOUT }, (t) =>
         const uri = URI.file(drawn).toString();
         assert.deepEqual(
           await ask(lines, { toPath: uri }),
-          { path: kotatsuPath(drawn) },
+          { path: kotatsuPath(lowerDrive(drawn)) },
           `reading ${uri}`,
         );
       }),

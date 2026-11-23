@@ -48,6 +48,7 @@
 
 #include "async/harness/io.h"
 #include "async/harness/os.h"
+#include "fs/harness/win32.h"
 #include "sys/harness/privileges.h"
 #include "sys/harness/signals.h"
 #include "sys/harness/streams.h"
@@ -476,6 +477,23 @@ ZEST_CASE(spawn_in_a_missing_directory_fails) {
     ZASSERT(spawned.has_error());
     ZEXPECT(spawned.error() == error::no_such_file_or_directory);
 }
+
+#ifdef _WIN32
+// A handle that shares the program with no one keeps CreateProcessW from
+// opening it: ERROR_SHARING_VIOLATION, of kotatsu's own category.
+ZEST_CASE(spawn_of_a_program_held_open_fails) {
+    test::TempDir dir;
+    auto program = dir.file("held.exe");
+    test::write_text(program, "");
+    test::HeldOpen held(program);
+    process::options opts;
+    opts.program = program;
+
+    auto spawned = process::spawn(opts, loop);
+    ZASSERT(spawned.has_error());
+    ZEXPECT(spawned.error() == error::resource_busy_or_locked);
+}
+#endif
 
 ZEST_CASE(detached_child_still_reports_its_exit) {
     auto opts = shell("exit 7");

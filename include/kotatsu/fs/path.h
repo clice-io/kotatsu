@@ -364,7 +364,7 @@ bool is_within(std::string_view p, std::string_view ancestor, Style style = nati
 void to_slash(buffer_ref path, Style style = native_style);
 
 /// Turns the drive letter of a Windows `path` into lower case: `c:\x` of
-/// `C:\x`, as LSP clients spell it. Any other path, a verbatim `\\?\C:` among
+/// `C:\x`, as VS Code spells it. Any other path, a verbatim `\\?\C:` among
 /// them, stays as it is.
 void lowercase_drive(buffer_ref path, Style style = native_style);
 

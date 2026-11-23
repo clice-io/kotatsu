@@ -69,7 +69,10 @@ Adapted from `tests/fs/system/file_tests.cpp` and `directory_walk_tests.cpp`.
 ## Platform notes
 
 - Windows: paths take the `\\?\` prefix inside, so long paths work; Win32
-  errors compare equal to `std::errc` codes where one fits.
+  errors compare equal to `std::errc` codes where one fits. Compare them with
+  `std::errc`, not with another `std::error_code`: a file another program
+  holds is `device_or_resource_busy` in a category of kotatsu's own, whose
+  message says so.
 - Windows: `remove` and `rename` act as on POSIX where the file system allows
   (NTFS): the name disappears at once, even while another process holds the
   file open.

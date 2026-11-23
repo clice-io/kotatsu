@@ -435,6 +435,18 @@ ZEST_CASE(range_locked_sees_a_lock_of_the_last_byte) {
     ZEXPECT(probe.range_locked(5, every_byte) == true);
     ZEXPECT(probe.range_locked(5, 10) == false);
 }
+
+// On Windows a byte-range lock keeps other handles from its bytes.
+ZEST_CASE(read_of_bytes_another_handle_locks_fails) {
+    LockFile lock;
+    RangeLock held(lock, RangeKind::Exclusive, 0, 1);
+    auto file = lock.open();
+    std::array<char, 16> buffer{};
+    auto read = file.read(buffer);
+    ZASSERT(!read);
+    ZEXPECT(read.error() == std::errc::device_or_resource_busy);
+    ZEXPECT(read.error().message() == "part of the file is locked by another program");
+}
 #endif
 
 #ifndef _WIN32

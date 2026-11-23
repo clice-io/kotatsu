@@ -1,3 +1,4 @@
+#include <format>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -125,25 +126,34 @@ ZEST_CASE(posix_drive_path_fails) {
     }
 }
 
-ZEST_CASE(windows_drive_roundtrip) {
-    auto uri = URI::from_path(R"(C:\work\a b.txt)", Style::Windows);
-    ZASSERT(uri);
+// A client may key its documents by the URI it sent, so the drive keeps its
+// case.
+ZEST_CASE(windows_drive_roundtrip_keeps_its_case) {
+    for(char drive: {'C', 'c'}) {
+        ZEST_CONTEXT("drive: {}", drive);
+        auto uri = URI::from_path(std::format(R"({}:\work\a b.txt)", drive), Style::Windows);
+        ZASSERT(uri);
 
-    ZEXPECT(uri->text() == "file:///c:/work/a%20b.txt");
-    ZEXPECT(path_of(*uri, Style::Windows) == "c:/work/a b.txt");
-    ZEXPECT(path_of(*uri, Style::Posix) == "/c:/work/a b.txt");
+        ZEXPECT(uri->text() == std::format("file:///{}:/work/a%20b.txt", drive));
+        ZEXPECT(path_of(*uri, Style::Windows) == std::format("{}:/work/a b.txt", drive));
+        ZEXPECT(path_of(*uri, Style::Posix) == std::format("/{}:/work/a b.txt", drive));
+    }
 }
 
 ZEST_CASE(windows_mixed_separators) {
     auto uri = URI::from_path(R"(D:/work\src/a.cpp)", Style::Windows);
     ZASSERT(uri);
-    ZEXPECT(uri->text() == "file:///d:/work/src/a.cpp");
+    ZEXPECT(uri->text() == "file:///D:/work/src/a.cpp");
 }
 
 ZEST_CASE(windows_to_path_keeps_the_drive_as_written) {
     auto uri = URI::from_string("file:///C:/x.cpp");
     ZASSERT(uri);
     ZEXPECT(path_of(*uri, Style::Windows) == "C:/x.cpp");
+    // The URI of that path is the one the client sent.
+    auto back = URI::from_path(path_of(*uri, Style::Windows), Style::Windows);
+    ZASSERT(back);
+    ZEXPECT(back->text() == uri->text());
 }
 
 // VS Code writes the drive's colon percent-encoded.
