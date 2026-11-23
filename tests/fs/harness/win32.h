@@ -4,8 +4,9 @@
 // max macros that break the standard library's, attributes_of() and
 // reparse_tag_of() for those that check a file's attributes or the kind of a
 // link, make_pipe() for those that need a named pipe, set_reparse_point() for
-// those that need a reparse point of a tag no tool makes and DeletePending
-// for those that need a file deleted while held open.
+// those that need a reparse point of a tag no tool makes, DeletePending
+// for those that need a file deleted while held open and HeldOpen for those
+// that need a file another handle holds.
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -125,6 +126,35 @@ struct DeletePending {
     DeletePending& operator=(const DeletePending&) = delete;
 
     ~DeletePending() {
+        ::CloseHandle(handle);
+    }
+
+    HANDLE handle;
+
+private:
+    zest::FatalHook on_fatal{[this] { ::CloseHandle(handle); }};
+};
+
+/// The file at the UTF-8 `path`, read and written through a handle of its
+/// own that shares it as `share` says, while this lives, or until a failed
+/// ZASSERT ends the process: then the handle goes first, so that TempDir can
+/// remove the file.
+struct HeldOpen {
+    HeldOpen(std::string_view path, DWORD share) :
+        handle(::CreateFileW(std_path(path).wstring().c_str(),
+                             GENERIC_READ | GENERIC_WRITE,
+                             share,
+                             nullptr,
+                             OPEN_EXISTING,
+                             FILE_ATTRIBUTE_NORMAL,
+                             nullptr)) {
+        ZASSERT(handle != INVALID_HANDLE_VALUE);
+    }
+
+    HeldOpen(const HeldOpen&) = delete;
+    HeldOpen& operator=(const HeldOpen&) = delete;
+
+    ~HeldOpen() {
         ::CloseHandle(handle);
     }
 

@@ -119,7 +119,6 @@ ZEST_CASE(errors_map_to_portable_codes) {
     ZEXPECT(to_error_code(ERROR_FILE_NOT_FOUND) == std::errc::no_such_file_or_directory);
     ZEXPECT(to_error_code(ERROR_PATH_NOT_FOUND) == std::errc::no_such_file_or_directory);
     ZEXPECT(to_error_code(ERROR_ACCESS_DENIED) == std::errc::permission_denied);
-    ZEXPECT(to_error_code(ERROR_SHARING_VIOLATION) == std::errc::device_or_resource_busy);
     ZEXPECT(to_error_code(ERROR_ALREADY_EXISTS) == std::errc::file_exists);
     ZEXPECT(to_error_code(ERROR_DIR_NOT_EMPTY) == std::errc::directory_not_empty);
     // Mapped by kotatsu, not left to what the standard library knows.
@@ -133,6 +132,45 @@ ZEST_CASE(errors_map_to_portable_codes) {
     auto own = to_error_code(ERROR_INVALID_EA_NAME);
     ZEXPECT(own.category() == std::system_category());
     ZEXPECT(own.value() == ERROR_INVALID_EA_NAME);
+}
+
+// Busy, in words that say why, where the C runtime's are "Resource device".
+ZEST_CASE(errors_of_a_held_file_say_why) {
+    auto sharing = to_error_code(ERROR_SHARING_VIOLATION);
+    ZEXPECT(sharing == std::errc::device_or_resource_busy);
+    ZEXPECT(sharing.message() == "the file is in use by another program");
+    auto lock = to_error_code(ERROR_LOCK_VIOLATION);
+    ZEXPECT(lock == std::errc::device_or_resource_busy);
+    ZEXPECT(lock.message() == "part of the file is locked by another program");
+}
+
+ZEST_CASE(open_of_a_file_held_without_sharing_fails) {
+    test::TempDir dir;
+    auto path = dir.file("held.txt");
+    test::write_text(path, "text");
+    test::HeldOpen held(path, 0);
+
+    auto file = File::open(path);
+    ZASSERT(!file);
+    ZEXPECT(file.error() == std::errc::device_or_resource_busy);
+    ZEXPECT(file.error().message() == "the file is in use by another program");
+}
+
+ZEST_CASE(read_of_bytes_another_handle_locks_fails) {
+    test::TempDir dir;
+    auto path = dir.file("locked.txt");
+    test::write_text(path, "text");
+    test::HeldOpen held(path, FILE_SHARE_READ | FILE_SHARE_WRITE);
+    OVERLAPPED at{};
+    ZASSERT(::LockFileEx(held.handle, LOCKFILE_EXCLUSIVE_LOCK, 0, 4, 0, &at));
+
+    auto file = File::open(path);
+    ZASSERT(file.has_value());
+    char buffer[4];
+    auto read = file->read(buffer);
+    ZASSERT(!read);
+    ZEXPECT(read.error() == std::errc::device_or_resource_busy);
+    ZEXPECT(read.error().message() == "part of the file is locked by another program");
 }
 
 ZEST_CASE(paths_longer_than_max_path_work) {

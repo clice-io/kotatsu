@@ -564,8 +564,8 @@ struct process::Self::Watch {
 namespace {
 
 /// The error of a std::error_code from sys: errno's on POSIX, where libuv's
-/// are their negations; on Windows a std::errc where the error has a POSIX
-/// counterpart, else the Win32 code itself.
+/// are their negations; on Windows a code whose condition is a std::errc
+/// where the error has a POSIX counterpart, else the Win32 code itself.
 error error_of(std::error_code code) {
     if(!code) {
         return {};
@@ -578,7 +578,7 @@ error error_of(std::error_code code) {
     if(code.category() == std::system_category()) {
         return error(::uv_translate_sys_error(code.value()));
     }
-    switch(code.value()) {
+    switch(code.default_error_condition().value()) {
 #define KOTATSU_ERRNO(name)                                                                        \
     case name: return error(UV_##name);
         KOTATSU_ERRNO(E2BIG)
