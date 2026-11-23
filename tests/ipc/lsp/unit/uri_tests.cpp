@@ -1,3 +1,4 @@
+#include <format>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -125,19 +126,23 @@ ZEST_CASE(posix_drive_path_fails) {
     }
 }
 
-ZEST_CASE(windows_drive_roundtrip) {
-    auto uri = URI::from_path(R"(C:\work\a b.txt)", Style::Windows);
-    ZASSERT(uri);
+// A client keys its documents by the URI it sent, so the drive keeps its case.
+ZEST_CASE(windows_drive_roundtrip_keeps_the_drive_as_written) {
+    for(char drive: {'C', 'c'}) {
+        ZEST_CONTEXT("drive: {}", drive);
+        auto uri = URI::from_path(std::format(R"({}:\work\a b.txt)", drive), Style::Windows);
+        ZASSERT(uri);
 
-    ZEXPECT(uri->text() == "file:///c:/work/a%20b.txt");
-    ZEXPECT(path_of(*uri, Style::Windows) == "c:/work/a b.txt");
-    ZEXPECT(path_of(*uri, Style::Posix) == "/c:/work/a b.txt");
+        ZEXPECT(uri->text() == std::format("file:///{}:/work/a%20b.txt", drive));
+        ZEXPECT(path_of(*uri, Style::Windows) == std::format("{}:/work/a b.txt", drive));
+        ZEXPECT(path_of(*uri, Style::Posix) == std::format("/{}:/work/a b.txt", drive));
+    }
 }
 
 ZEST_CASE(windows_mixed_separators) {
     auto uri = URI::from_path(R"(D:/work\src/a.cpp)", Style::Windows);
     ZASSERT(uri);
-    ZEXPECT(uri->text() == "file:///d:/work/src/a.cpp");
+    ZEXPECT(uri->text() == "file:///D:/work/src/a.cpp");
 }
 
 ZEST_CASE(windows_to_path_keeps_the_drive_as_written) {

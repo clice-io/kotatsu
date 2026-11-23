@@ -201,7 +201,6 @@ std::expected<URI, std::error_code> URI::from_path(std::string_view path, fs::pa
     }
     std::string slashed(path);
     fs::path::to_slash(slashed, style);
-    fs::path::lowercase_drive(slashed, style);
 
     URI uri;
     uri.spelling = "file://";
@@ -238,7 +237,7 @@ std::expected<URI, std::error_code> URI::from_path(std::string_view path, fs::pa
 
     uri.authority_segment = {.offset = uri.spelling.size(), .size = 0};
     if(root.prefix == Prefix::Drive) {
-        // C:/x is /c:/x.
+        // C:/x is /C:/x.
         append(uri.path_segment, [&] {
             uri.spelling.push_back('/');
             encode_into(uri.spelling, slashed, false);
