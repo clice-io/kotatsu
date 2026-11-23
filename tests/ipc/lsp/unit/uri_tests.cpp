@@ -126,8 +126,9 @@ ZEST_CASE(posix_drive_path_fails) {
     }
 }
 
-// A client keys its documents by the URI it sent, so the drive keeps its case.
-ZEST_CASE(windows_drive_roundtrip_keeps_the_drive_as_written) {
+// A client may key its documents by the URI it sent, so the drive keeps its
+// case.
+ZEST_CASE(windows_drive_roundtrip_keeps_its_case) {
     for(char drive: {'C', 'c'}) {
         ZEST_CONTEXT("drive: {}", drive);
         auto uri = URI::from_path(std::format(R"({}:\work\a b.txt)", drive), Style::Windows);
@@ -149,6 +150,10 @@ ZEST_CASE(windows_to_path_keeps_the_drive_as_written) {
     auto uri = URI::from_string("file:///C:/x.cpp");
     ZASSERT(uri);
     ZEXPECT(path_of(*uri, Style::Windows) == "C:/x.cpp");
+    // The URI of that path is the one the client sent.
+    auto back = URI::from_path(path_of(*uri, Style::Windows), Style::Windows);
+    ZASSERT(back);
+    ZEXPECT(back->text() == uri->text());
 }
 
 // VS Code writes the drive's colon percent-encoded.

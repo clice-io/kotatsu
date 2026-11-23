@@ -8,7 +8,7 @@
 //
 // The two encode differently (VS Code escapes ':' and more), which the checks
 // leave to each; what matters is that each reads the other's. kotatsu keeps
-// a drive letter's case, and VS Code writes it in lower case. Both on POSIX
+// a drive letter's case, and VS Code writes it in lower case. On POSIX both
 // keep `\` as a character of a name; on Windows kotatsu separates names with
 // '/', and VS Code with '\'.
 

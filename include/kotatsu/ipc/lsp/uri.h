@@ -26,11 +26,11 @@ public:
     /// each byte a URI reserves percent-encoded: `/tmp/a b` is
     /// `file:///tmp/a%20b`, and `//server/share/x` is `file://server/share/x`,
     /// as VS Code makes it on every platform. On Windows `\` separates too, and
-    /// a drive's letter is written as the path writes it, so that a client
-    /// gets back the URI it sent: `C:\x` is `file:///C:/x`, and `c:\x`
-    /// `file:///c:/x`. On POSIX `\` is a character of a name like
-    /// any other, `%5C`, and `C:/x` a relative path. On Windows a path rooted
-    /// on the current drive, `\x`, is `file:///x`, as VS Code makes it. A
+    /// a drive's letter keeps its case, as to_path() keeps the URI's, where
+    /// VS Code lowers it: `C:\x` is `file:///C:/x`. On POSIX `\` is a
+    /// character of a name like any other, `%5C`, and `C:/x` a relative path.
+    /// On Windows a path rooted on the current drive, `\x`, is `file:///x`, as
+    /// VS Code makes it. A
     /// relative path, on Windows a drive without a root directory (`C:x`)
     /// among them, a share without a server or a share name, and on Windows a
     /// verbatim (`\\?\`) or a device (`\\.\`) path fail with

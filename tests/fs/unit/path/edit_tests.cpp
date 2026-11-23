@@ -237,7 +237,7 @@ ZEST_CASE(lowercase_drive_lowers_the_drive_letter_alone) {
     p = "D:";
     lowercase_drive(p, windows);
     ZEXPECT(p == "d:");
-    // With to_slash(), the spelling LSP clients key documents by.
+    // With to_slash(), the drive and separators of VS Code's file URIs.
     p = "E:\\src\\a.cpp";
     to_slash(p, windows);
     lowercase_drive(p, windows);
