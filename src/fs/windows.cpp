@@ -51,7 +51,8 @@ bool needs_no_resolution(std::wstring_view path) {
 
 /// Win32's errors of a file another program holds, ERROR_SHARING_VIOLATION
 /// and ERROR_LOCK_VIOLATION: std::errc::device_or_resource_busy, in words
-/// that say why, where the C runtime's for it are "Resource device".
+/// that say why, where the C runtime's strerror, which MinGW's standard
+/// library tells it by, says "Resource device".
 struct HeldFileCategory : std::error_category {
     const char* name() const noexcept override {
         return "kotatsu.fs.windows";

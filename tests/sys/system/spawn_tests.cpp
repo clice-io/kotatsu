@@ -33,6 +33,7 @@
 #endif
 
 #include "fs/harness/files.h"
+#include "fs/harness/win32.h"
 #include "sys/harness/env.h"
 #include "sys/harness/privileges.h"
 #include "sys/harness/spawn.h"
@@ -285,6 +286,22 @@ ZEST_CASE(spawn_in_a_missing_directory_fails) {
     ZASSERT(!child.has_value());
     ZEXPECT(child.error() == std::errc::no_such_file_or_directory);
 }
+
+#ifdef _WIN32
+// A handle that shares the program with no one keeps CreateProcessW from
+// opening it.
+ZEST_CASE(spawn_of_a_program_held_open_fails) {
+    auto program = dir.file("held.exe");
+    test::write_text(program, "");
+    test::HeldOpen held(program);
+    auto options = test::shell("exit 0");
+    options.program = program;
+    auto child = spawn(options);
+    ZASSERT(!child.has_value());
+    ZEXPECT(child.error() == std::errc::device_or_resource_busy);
+    ZEXPECT(child.error().message() == "the file is in use by another program");
+}
+#endif
 
 #ifndef _WIN32
 // Longer than a path can be: no child runs in this process's directory

@@ -479,13 +479,13 @@ ZEST_CASE(spawn_in_a_missing_directory_fails) {
 }
 
 #ifdef _WIN32
-// CreateProcessW opens the program sharing it with no writer, which a handle
-// that writes it refuses: ERROR_SHARING_VIOLATION, of kotatsu's own category.
+// A handle that shares the program with no one keeps CreateProcessW from
+// opening it: ERROR_SHARING_VIOLATION, of kotatsu's own category.
 ZEST_CASE(spawn_of_a_program_held_open_fails) {
     test::TempDir dir;
     auto program = dir.file("held.exe");
     test::write_text(program, "");
-    test::HeldOpen held(program, 0);
+    test::HeldOpen held(program);
     process::options opts;
     opts.program = program;
 
