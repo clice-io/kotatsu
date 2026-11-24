@@ -762,6 +762,56 @@ std::expected<Volume, std::error_code> Directory::volume() const {
 #endif
 }
 
+std::expected<bool, std::error_code> Directory::case_sensitive() const {
+#ifdef _WIN32
+    FILE_CASE_SENSITIVE_INFO info;
+    if(!::GetFileInformationByHandleEx(native_handle(), case_sensitive_info, &info, sizeof(info))) {
+        // A file system that keeps no such flag folds case.
+        auto error = ::GetLastError();
+        if(unsupported(error)) {
+            return false;
+        }
+        return std::unexpected(windows::to_error_code(error));
+    }
+    return (info.Flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR) != 0;
+#elif defined(__APPLE__)
+    attrlist asked{};
+    asked.bitmapcount = ATTR_BIT_MAP_COUNT;
+    asked.volattr = ATTR_VOL_INFO | ATTR_VOL_CAPABILITIES;
+
+    struct {
+        std::uint32_t length;
+        vol_capabilities_attr_t capabilities;
+    } told;
+
+    if(::fgetattrlist(native_handle(), &asked, &told, sizeof(told), 0) != 0) {
+        return std::unexpected(posix::last_error());
+    }
+    // A volume that does not tell matches case, as Linux answers what it
+    // cannot ask.
+    auto valid = told.capabilities.valid[VOL_CAPABILITIES_FORMAT];
+    auto format = told.capabilities.capabilities[VOL_CAPABILITIES_FORMAT];
+    return (valid & VOL_CAP_FMT_CASE_SENSITIVE) == 0 || (format & VOL_CAP_FMT_CASE_SENSITIVE) != 0;
+#else
+    // A file system that keeps no such flags, FAT, NFS and 9p among others,
+    // refuses to tell them (ENOTTY, EINVAL, EOPNOTSUPP, and ENOSYS from a
+    // FUSE file system without the ioctl): its type tells.
+    int flags = 0;
+    if(::ioctl(native_handle(), FS_IOC_GETFLAGS, &flags) == 0) {
+        if(flags & FS_CASEFOLD_FL) {
+            return false;
+        }
+    } else if(errno != ENOTTY && errno != EINVAL && errno != EOPNOTSUPP && errno != ENOSYS) {
+        return std::unexpected(posix::last_error());
+    }
+    auto mounted = volume();
+    if(!mounted) {
+        return std::unexpected(mounted.error());
+    }
+    return mounted->type != "vfat" && mounted->type != "exfat";
+#endif
+}
+
 std::expected<Status, std::error_code> Directory::status() const {
     return detail::handle_status(native_handle());
 }
@@ -893,60 +943,7 @@ void Walk::advance() {
 }
 
 std::expected<bool, std::error_code> case_sensitive(std::string_view directory) {
-    auto dir = Directory::open(directory);
-    if(!dir) {
-        return std::unexpected(dir.error());
-    }
-#ifdef _WIN32
-    FILE_CASE_SENSITIVE_INFO info;
-    if(!::GetFileInformationByHandleEx(dir->native_handle(),
-                                       case_sensitive_info,
-                                       &info,
-                                       sizeof(info))) {
-        // A file system that keeps no such flag folds case.
-        auto error = ::GetLastError();
-        if(unsupported(error)) {
-            return false;
-        }
-        return std::unexpected(windows::to_error_code(error));
-    }
-    return (info.Flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR) != 0;
-#elif defined(__APPLE__)
-    attrlist asked{};
-    asked.bitmapcount = ATTR_BIT_MAP_COUNT;
-    asked.volattr = ATTR_VOL_INFO | ATTR_VOL_CAPABILITIES;
-
-    struct {
-        std::uint32_t length;
-        vol_capabilities_attr_t capabilities;
-    } told;
-
-    if(::fgetattrlist(dir->native_handle(), &asked, &told, sizeof(told), 0) != 0) {
-        return std::unexpected(posix::last_error());
-    }
-    // A volume that does not tell matches case, as Linux answers what it
-    // cannot ask.
-    auto valid = told.capabilities.valid[VOL_CAPABILITIES_FORMAT];
-    auto format = told.capabilities.capabilities[VOL_CAPABILITIES_FORMAT];
-    return (valid & VOL_CAP_FMT_CASE_SENSITIVE) == 0 || (format & VOL_CAP_FMT_CASE_SENSITIVE) != 0;
-#else
-    // A file system that keeps no such flags, FAT, NFS and 9p among others,
-    // refuses to tell them (ENOTTY, EINVAL, EOPNOTSUPP, and ENOSYS from a
-    // FUSE file system without the ioctl): its type tells.
-    int flags = 0;
-    if(::ioctl(dir->native_handle(), FS_IOC_GETFLAGS, &flags) == 0) {
-        if(flags & FS_CASEFOLD_FL) {
-            return false;
-        }
-    } else if(errno != ENOTTY && errno != EINVAL && errno != EOPNOTSUPP && errno != ENOSYS) {
-        return std::unexpected(posix::last_error());
-    }
-    auto volume = dir->volume();
-    if(!volume) {
-        return std::unexpected(volume.error());
-    }
-    return volume->type != "vfat" && volume->type != "exfat";
-#endif
+    return Directory::open(directory).and_then(&Directory::case_sensitive);
 }
 
 std::expected<bool, std::error_code> create_directory(std::string_view path) {
