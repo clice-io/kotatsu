@@ -17,9 +17,13 @@
 
 namespace kotatsu::fs {
 
+namespace {
+
 #ifdef _WIN32
 
-namespace {
+/// The device characteristic of a file on another machine, which the user
+/// mode headers lack.
+constexpr ULONG remote_device = 0x10;
 
 /// FILE_STAT_BASIC_INFORMATION, which only the newest SDKs declare.
 struct StatBasic {
@@ -43,7 +47,7 @@ struct StatBasic {
 /// FileStatBasicByNameInfo, of FILE_INFO_BY_NAME_CLASS, and
 /// FileStatBasicInformation, of FILE_INFORMATION_CLASS.
 constexpr int stat_basic_by_name = 3;
-constexpr ULONG stat_basic_information = 77;
+constexpr int stat_basic_information = 77;
 
 using GetFileInformationByNameFn = BOOL(WINAPI*)(PCWSTR, int, PVOID, ULONG);
 
@@ -64,7 +68,7 @@ GetFileInformationByNameFn by_name() {
 }
 
 /// The status a FILE_STAT_BASIC_INFORMATION tells.
-Status from_stat_basic(const StatBasic& info) {
+Status stat_basic_status(const StatBasic& info) {
     return Status{
         .type = win32::type_of(info.FileAttributes, info.ReparseTag),
         .size = static_cast<std::uint64_t>(info.EndOfFile.QuadPart),
@@ -75,77 +79,6 @@ Status from_stat_basic(const StatBasic& info) {
         .permissions = win32::permissions_of(info.FileAttributes),
     };
 }
-
-}  // namespace
-
-std::expected<Status, std::error_code> win32::handle_status(HANDLE handle) {
-    // From Windows 11 24H2 on one query tells it all where the file system
-    // answers it (NTFS, ReFS), at about what FileIdInfo costs alone; FAT, a
-    // network file system, a device and a pipe refuse it at about that cost
-    // too. Before, the queries below cost the least: the system answers
-    // FileBasicInfo and FileStandardInfo without building a request (fast
-    // I/O), where FileStatInformation, from 10 1709 on, builds one, costs
-    // more than both, and tells a 64-bit ID that on ReFS is not the 128-bit
-    // one.
-    if(by_name()) {
-        using QueryFn = NTSTATUS(NTAPI*)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, ULONG);
-        static constinit std::atomic<QueryFn> query = nullptr;
-        StatBasic info;
-        IO_STATUS_BLOCK block{};
-        if(from_ntdll(query, "NtQueryInformationFile")(handle,
-                                                       &block,
-                                                       &info,
-                                                       sizeof(info),
-                                                       stat_basic_information) >= 0) {
-            return from_stat_basic(info);
-        }
-    }
-    switch(::GetFileType(handle)) {
-        case FILE_TYPE_DISK: break;
-        case FILE_TYPE_CHAR: return Status{.type = FileType::Character};
-        case FILE_TYPE_PIPE: return Status{.type = FileType::Fifo};
-        default: {
-            // FILE_TYPE_UNKNOWN, and an error only when one is set.
-            if(auto error = ::GetLastError(); error != NO_ERROR) {
-                return std::unexpected(windows::to_error_code(error));
-            }
-            return Status{.type = FileType::Unknown};
-        }
-    }
-    FILE_BASIC_INFO basic;
-    FILE_STANDARD_INFO standard;
-    if(!::GetFileInformationByHandleEx(handle, FileBasicInfo, &basic, sizeof(basic)) ||
-       !::GetFileInformationByHandleEx(handle, FileStandardInfo, &standard, sizeof(standard))) {
-        return std::unexpected(windows::last_error());
-    }
-    auto tag = win32::reparse_tag(handle, basic.FileAttributes);
-    if(!tag) {
-        return std::unexpected(tag.error());
-    }
-    auto id = win32::file_id(handle);
-    if(!id) {
-        return std::unexpected(id.error());
-    }
-    return Status{
-        .type = win32::type_of(basic.FileAttributes, *tag),
-        .size = static_cast<std::uint64_t>(standard.EndOfFile.QuadPart),
-        .mtime = win32::unix_time(basic.LastWriteTime.QuadPart),
-        .ctime = win32::unix_time(basic.ChangeTime.QuadPart),
-        .id = *id,
-        .links = standard.NumberOfLinks,
-        .permissions = win32::permissions_of(basic.FileAttributes),
-    };
-}
-
-#endif
-
-namespace {
-
-#ifdef _WIN32
-
-/// The device characteristic of a file on another machine, which the user
-/// mode headers lack.
-constexpr ULONG remote_device = 0x10;
 
 /// The errors a by-name query reports only for a path that names nothing;
 /// any other it may report for a file an open reaches.
@@ -204,7 +137,7 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
             // network file system answers the query with less care.
             bool link = info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
             if(!(info.DeviceCharacteristics & remote_device) && !(follow && link)) {
-                return from_stat_basic(info);
+                return stat_basic_status(info);
             }
         } else if(auto error = ::GetLastError(); names_nothing(error)) {
             return std::unexpected(windows::to_error_code(error));
@@ -272,6 +205,71 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
 #endif
 
 }  // namespace
+
+#ifdef _WIN32
+
+std::expected<Status, std::error_code> win32::handle_status(HANDLE handle) {
+    // From Windows 11 24H2 on, which by_name() tells, one query tells it all
+    // where the file system answers it (NTFS, ReFS), at about what FileIdInfo
+    // costs alone; FAT, SMB, a device and a pipe refuse it at about that cost
+    // too, and another network file system's answer is not taken, as by
+    // name. Before, the queries below cost the least: the system answers
+    // FileBasicInfo and FileStandardInfo without building a request (fast
+    // I/O), where FileStatInformation, from 10 1709 on, builds one, costs
+    // more than both, and tells a 64-bit ID that on ReFS is not the 128-bit
+    // one.
+    if(by_name()) {
+        using QueryFn = NTSTATUS(NTAPI*)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, int);
+        static constinit std::atomic<QueryFn> query = nullptr;
+        StatBasic info;
+        IO_STATUS_BLOCK block{};
+        if(from_ntdll(query, "NtQueryInformationFile")(handle,
+                                                       &block,
+                                                       &info,
+                                                       sizeof(info),
+                                                       stat_basic_information) >= 0 &&
+           !(info.DeviceCharacteristics & remote_device)) {
+            return stat_basic_status(info);
+        }
+    }
+    switch(::GetFileType(handle)) {
+        case FILE_TYPE_DISK: break;
+        case FILE_TYPE_CHAR: return Status{.type = FileType::Character};
+        case FILE_TYPE_PIPE: return Status{.type = FileType::Fifo};
+        default: {
+            // FILE_TYPE_UNKNOWN, and an error only when one is set.
+            if(auto error = ::GetLastError(); error != NO_ERROR) {
+                return std::unexpected(windows::to_error_code(error));
+            }
+            return Status{.type = FileType::Unknown};
+        }
+    }
+    FILE_BASIC_INFO basic;
+    FILE_STANDARD_INFO standard;
+    if(!::GetFileInformationByHandleEx(handle, FileBasicInfo, &basic, sizeof(basic)) ||
+       !::GetFileInformationByHandleEx(handle, FileStandardInfo, &standard, sizeof(standard))) {
+        return std::unexpected(windows::last_error());
+    }
+    auto tag = win32::reparse_tag(handle, basic.FileAttributes);
+    if(!tag) {
+        return std::unexpected(tag.error());
+    }
+    auto id = win32::file_id(handle);
+    if(!id) {
+        return std::unexpected(id.error());
+    }
+    return Status{
+        .type = win32::type_of(basic.FileAttributes, *tag),
+        .size = static_cast<std::uint64_t>(standard.EndOfFile.QuadPart),
+        .mtime = win32::unix_time(basic.LastWriteTime.QuadPart),
+        .ctime = win32::unix_time(basic.ChangeTime.QuadPart),
+        .id = *id,
+        .links = standard.NumberOfLinks,
+        .permissions = win32::permissions_of(basic.FileAttributes),
+    };
+}
+
+#endif
 
 std::expected<Status, std::error_code> status(std::string_view path) {
     return status_of(path, true);

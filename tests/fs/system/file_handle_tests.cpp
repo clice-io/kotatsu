@@ -1,8 +1,6 @@
 #include <array>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <filesystem>
 #include <format>
 #include <iterator>
@@ -12,6 +10,8 @@
 #include <utility>
 
 #ifdef _WIN32
+#include <chrono>
+#include <cstring>
 #include <io.h>
 #else
 #include <fcntl.h>
@@ -767,6 +767,26 @@ ZEST_CASE(canonical_of_a_removed_file_whose_marked_name_another_took_fails) {
     ZEXPECT(file->canonical(opened) == std::errc::no_such_file_or_directory);
 }
 #endif
+
+ZEST_CASE(status_of_an_open_pipe_is_a_fifo) {
+#ifdef _WIN32
+    test::TempDir dir;
+    std::string name;
+    HANDLE reader = test::make_pipe(name, dir, PIPE_ACCESS_INBOUND, 4096);
+    auto file = File::open(name, {.write = true});
+    auto found = file ? file->status() : std::unexpected(file.error());
+    ::CloseHandle(reader);
+#else
+    int ends[2];
+    ZASSERT(::pipe(ends) == 0);
+    auto file = File::open(std::format("/dev/fd/{}", ends[0]));
+    auto found = file ? file->status() : std::unexpected(file.error());
+    ::close(ends[0]);
+    ::close(ends[1]);
+#endif
+    ZASSERT(found.has_value());
+    ZEXPECT(found->type == FileType::Fifo);
+}
 
 ZEST_CASE(canonical_of_a_pipe_fails) {
     // No path names a pipe, though Windows names it to open it.
