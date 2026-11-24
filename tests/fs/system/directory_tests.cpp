@@ -341,6 +341,9 @@ ZEST_CASE(close_lets_go_of_the_directory) {
     auto volume = directory->volume();
     ZASSERT(!volume.has_value());
     ZEXPECT(volume.error() == std::errc::bad_file_descriptor);
+    auto sensitive = directory->case_sensitive();
+    ZASSERT(!sensitive.has_value());
+    ZEXPECT(sensitive.error() == std::errc::bad_file_descriptor);
     ZEXPECT(directory->sync() == std::errc::bad_file_descriptor);
     // The entry the range stands on holds the directory still.
     auto listed = entry.status();

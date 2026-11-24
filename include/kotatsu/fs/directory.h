@@ -133,6 +133,11 @@ public:
     /// open directory rather than by name.
     std::expected<Volume, std::error_code> volume() const;
 
+    /// Whether the names in the open directory are matched with their case,
+    /// as case_sensitive() tells it, asked of the open directory rather than
+    /// by name.
+    std::expected<bool, std::error_code> case_sensitive() const;
+
     /// The status of the open directory, as File::status() tells a file's.
     std::expected<Status, std::error_code> status() const;
 

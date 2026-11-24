@@ -103,6 +103,22 @@ ZEST_CASE(case_sensitive_of_a_directory_marked_so_is_true) {
     }
     ZEXPECT(case_sensitive(dir.file("marked")) == true);
 }
+
+ZEST_CASE(case_sensitive_of_an_open_directory_asks_it_rather_than_its_name) {
+    // Windows renames an open directory, which another then replaces.
+    test::TempDir dir;
+    std::filesystem::create_directory(dir.path / "marked");
+    if(!mark_case_sensitive(dir.file("marked"))) {
+        zest::skip();
+        return;
+    }
+    auto opened = Directory::open(dir.file("marked"));
+    ZASSERT(opened.has_value());
+    std::filesystem::rename(dir.path / "marked", dir.path / "moved");
+    std::filesystem::create_directory(dir.path / "marked");
+    ZEXPECT(opened->case_sensitive() == true);
+    ZEXPECT(case_sensitive(dir.file("marked")) == false);
+}
 #endif
 
 // On Linux a directory marked to fold case (chattr +F) and one on a FAT
