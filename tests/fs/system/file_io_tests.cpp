@@ -1,6 +1,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -79,9 +80,11 @@ struct FullPipe {
     File writer;
 };
 
-/// A buffer that cuts the file at `path` to "text" when it is first sized:
-/// a file that holds less than it reported.
-struct ShrinkingBuffer {
+/// A buffer that calls `sized` when it is first sized, between the size
+/// read_to_end() takes and its first read: to change what it reads then.
+struct HookedBuffer {
+    explicit HookedBuffer(std::function<void()> sized) : sized(std::move(sized)) {}
+
     char* data() {
         return text.data();
     }
@@ -93,12 +96,12 @@ struct ShrinkingBuffer {
     void resize(std::size_t size) {
         if(first == 0) {
             first = size;
-            test::write_text(path, "text");
+            sized();
         }
         text.resize(size);
     }
 
-    std::string path;
+    std::function<void()> sized;
     std::string text;
 
     /// The size it was first asked for.
@@ -146,18 +149,32 @@ ZEST_CASE(read_to_end_sizes_its_buffer_once) {
     ZEXPECT(content.resizes == 2);
 }
 
-ZEST_CASE(read_to_end_takes_no_size_past_a_gigabyte_on_its_word) {
+ZEST_CASE(read_to_end_takes_no_size_of_a_gigabyte_or_more_on_its_word) {
     // A file may report more than it holds (/proc/kcore reports 128 TiB):
-    // the buffer starts small and grows as it is read.
+    // the buffer starts small and grows as it is read, the file cut to
+    // "text" once its size is taken.
     test::TempDir dir;
     auto file = File::open(dir.file("sparse"), {.read = true, .write = true, .create = true});
     ZASSERT(file.has_value());
-    ZEXPECT(!file->resize(std::uint64_t{2} << 30));
-    ShrinkingBuffer content;
-    content.path = dir.file("sparse");
+    ZEXPECT(!file->resize(std::uint64_t{1} << 30));
+    HookedBuffer content([&] { test::write_text(dir.file("sparse"), "text"); });
     ZEXPECT(!file->read_to_end(content));
     ZEXPECT(content.text == "text");
     ZEXPECT(content.first < (std::size_t{1} << 30));
+}
+
+ZEST_CASE(read_to_end_reads_on_past_a_size_that_grew) {
+    // The file reports 4 bytes, then holds 40 by the time it is read: the
+    // read fills the byte past the 4, and the reading goes on to the end.
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    auto file = File::open(dir.file("file"));
+    ZASSERT(file.has_value());
+    auto grown = test::text_of(40);
+    HookedBuffer content([&] { test::write_text(dir.file("file"), grown); });
+    ZEXPECT(!file->read_to_end(content));
+    ZEXPECT(content.first == 5u);
+    ZEXPECT(content.text == grown);
 }
 
 ZEST_CASE(read_to_end_reads_a_pipe_whole) {
@@ -194,6 +211,34 @@ ZEST_CASE(read_to_end_reads_a_pipe_whole) {
 #endif
     ZEXPECT(content == text);
 }
+
+#ifdef _WIN32
+ZEST_CASE(read_to_end_reads_on_past_what_a_pipe_reports) {
+    // Windows reports the bytes waiting in a pipe as its size: here a
+    // message of 10, which a read takes alone. The next message comes once
+    // the size is taken, then the writer closes, and the reading goes on
+    // past the 10 to the end.
+    test::TempDir dir;
+    std::string name;
+    HANDLE reader = test::make_pipe(name,
+                                    dir,
+                                    PIPE_ACCESS_INBOUND,
+                                    4096,
+                                    PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE);
+    auto writer = File::open(name, {.write = true});
+    ZASSERT(writer.has_value());
+    auto text = test::text_of(100);
+    ZEXPECT(!writer->write(std::string_view(text).substr(0, 10)));
+    HookedBuffer content([&] {
+        ZEXPECT(!writer->write(std::string_view(text).substr(10)));
+        ZEXPECT(!writer->close());
+    });
+    auto error = File::borrow(reader).read_to_end(content);
+    ::CloseHandle(reader);
+    ZEXPECT(!error);
+    ZEXPECT(content.text == text);
+}
+#endif
 
 ZEST_CASE(read_to_end_of_a_file_open_to_write_fails) {
     test::TempDir dir;
