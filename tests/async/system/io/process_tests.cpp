@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -492,6 +493,31 @@ ZEST_CASE(spawn_of_a_program_held_open_fails) {
     auto spawned = process::spawn(opts, loop);
     ZASSERT(spawned.has_error());
     ZEXPECT(spawned.error() == error::resource_busy_or_locked);
+}
+
+ZEST_CASE(windows_before_start_error_of_its_own_category_fails) {
+    // A category of the hook's own, whose codes are their own conditions.
+    struct HookCategory : std::error_category {
+        const char* name() const noexcept override {
+            return "hook";
+        }
+
+        std::string message(int) const override {
+            return "the hook refused";
+        }
+    };
+
+    const static HookCategory category{};
+    auto opts = shell("exit 0");
+    // ENOENT's value, which reading the condition as an errno took for
+    // no_such_file_or_directory.
+    opts.windows_before_start = [](void*, void*) {
+        return std::error_code(ENOENT, category);
+    };
+
+    auto spawned = process::spawn(opts, loop);
+    ZASSERT(spawned.has_error());
+    ZEXPECT(spawned.error() == error::unknown_error);
 }
 #endif
 

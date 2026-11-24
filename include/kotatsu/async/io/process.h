@@ -62,7 +62,9 @@ public:
 
     /// Launches the child, with the pipes `opts` asks for. It either starts,
     /// with all of them, or leaves nothing behind. Fails with
-    /// error::operation_aborted while the loop is being destroyed.
+    /// error::operation_aborted while the loop is being destroyed, and with
+    /// sys::spawn's error as libuv would tell it: error::unknown_error for a
+    /// windows_before_start error with no errno for its condition.
     static result<spawn_result> spawn(const options& opts,
                                       event_loop& loop = event_loop::current());
 
