@@ -83,11 +83,12 @@ public:
     /// many bytes it read, zero at the end of the file.
     std::expected<std::size_t, std::error_code> read(std::span<char> buffer);
 
-    /// Writes into `out` the bytes from where the file stands to its end:
-    /// into a buffer sized once from what the file reports it holds, read on
-    /// past that until a read returns nothing, so that a file that grows
-    /// meanwhile, or one that reports no size (a pipe, a file under /proc),
-    /// is read whole.
+    /// Writes into `out` the bytes from where the file stands to its end,
+    /// into a buffer sized once from what the file reports it holds: the
+    /// reading ends once that much is read. A file found to hold more, having
+    /// grown meanwhile, one that reports no size (a pipe, a file under /proc)
+    /// and one that reports a gigabyte or more are read until a read returns
+    /// nothing.
     std::error_code read_to_end(buffer_ref out);
 
     /// Writes from the start of `bytes` what one call of the system takes,

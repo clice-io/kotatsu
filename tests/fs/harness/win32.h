@@ -45,18 +45,16 @@ inline DWORD reparse_tag_of(std::string_view path) {
     return found.dwReserved0;
 }
 
-/// A named pipe of `access`, its name kept apart by the directory's, and
-/// written into `name` in UTF-8.
-inline HANDLE make_pipe(std::string& name, const TempDir& dir, DWORD access, DWORD buffer) {
+/// A named pipe of `access` and `mode`, of bytes unless it says, its name
+/// kept apart by the directory's, and written into `name` in UTF-8.
+inline HANDLE make_pipe(std::string& name,
+                        const TempDir& dir,
+                        DWORD access,
+                        DWORD buffer,
+                        DWORD mode = PIPE_TYPE_BYTE) {
     auto wide = LR"(\\.\pipe\)" + std_path(fs::path::filename(dir.root())).wstring();
-    HANDLE pipe = ::CreateNamedPipeW(wide.c_str(),
-                                     access,
-                                     PIPE_TYPE_BYTE | PIPE_WAIT,
-                                     1,
-                                     buffer,
-                                     buffer,
-                                     0,
-                                     nullptr);
+    HANDLE pipe =
+        ::CreateNamedPipeW(wide.c_str(), access, mode | PIPE_WAIT, 1, buffer, buffer, 0, nullptr);
     ZASSERT(pipe != INVALID_HANDLE_VALUE);
     from_utf16(name, std::wstring_view(wide));
     return pipe;

@@ -126,12 +126,13 @@ std::expected<File, std::error_code> create_named(buffer_ref path,
 
 #ifdef _WIN32
 
-/// The bytes from where `handle` stands to the end of the file, zero where
-/// it reports no size: a pipe, a console.
+/// The bytes from where `handle` stands to the end of the file, zero for a
+/// handle that is no file's: a console reports no size, and a pipe the bytes
+/// waiting in it, at a position it keeps at zero.
 std::uint64_t left_to_read(HANDLE handle) {
     LARGE_INTEGER size;
     LARGE_INTEGER position;
-    if(!::GetFileSizeEx(handle, &size) ||
+    if(::GetFileType(handle) != FILE_TYPE_DISK || !::GetFileSizeEx(handle, &size) ||
        !::SetFilePointerEx(handle, LARGE_INTEGER{}, &position, FILE_CURRENT) ||
        position.QuadPart >= size.QuadPart) {
         return 0;
@@ -186,7 +187,8 @@ int open_file(const char* path, int flags, mode_t mode = 0) {
 }
 
 /// The bytes from where `fd` stands to the end of the file, zero where it
-/// reports no size: a pipe, a file under /proc.
+/// reports no size, a file under /proc, or has no position: a pipe or a
+/// socket, whose size macOS reports as the bytes waiting in it.
 std::uint64_t left_to_read(int fd) {
     struct stat info;
     if(::fstat(fd, &info) != 0) {
@@ -326,16 +328,19 @@ std::error_code File::write(std::string_view bytes) {
 }
 
 std::error_code File::read_to_end(buffer_ref out) {
-    // Files under /proc report no size, and any file may grow while read:
-    // the end is where a read returns nothing. One byte past the size the
-    // file reports lets that read find the buffer large enough; a size
-    // past what is worth taking on its word (/proc/kcore reports 128 TiB)
-    // grows as it is read instead.
+    // The buffer holds a byte more than the file reports: a read that
+    // leaves it empty, with every reported byte in, has met the end, and one
+    // that fills it has met a file that grew. That file, one that reports
+    // no size (one under /proc) and one that reports a size not worth taking
+    // on its word (/proc/kcore reports 128 TiB) are read until a read
+    // returns nothing, the buffer growing as they are read.
     constexpr std::uint64_t trusted = std::uint64_t{1} << 30;
+    // The read that meets the end asks for the byte past it in the same call.
+    static_assert(trusted <= largest_call);
     auto left = left_to_read(handle);
+    std::size_t reported = left < trusted ? static_cast<std::size_t>(left) : 0;
     std::size_t at = 0;
-    auto buffer =
-        out.resize(left == 0 || left > trusted ? 4096 : static_cast<std::size_t>(left) + 1);
+    auto buffer = out.resize(reported == 0 ? 4096 : reported + 1);
     while(true) {
         if(at == buffer.size()) {
             buffer = out.resize(buffer.size() * 2);
@@ -345,10 +350,10 @@ std::error_code File::read_to_end(buffer_ref out) {
             out.resize(at);
             return count.error();
         }
-        if(*count == 0) {
+        at += *count;
+        if(*count == 0 || at == reported) {
             break;
         }
-        at += *count;
     }
     out.resize(at);
     return {};
