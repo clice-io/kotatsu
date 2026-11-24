@@ -1,6 +1,8 @@
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <format>
 #include <iterator>
@@ -460,6 +462,46 @@ ZEST_CASE(status_of_a_closed_file_fails) {
     ZASSERT(!found.has_value());
     ZEXPECT(found.error() == std::errc::bad_file_descriptor);
 }
+
+#ifdef _WIN32
+// Where Windows tells all of it in one query (11 24H2 on), it tells what
+// the queries of each part tell.
+ZEST_CASE(status_of_an_open_file_is_what_the_queries_of_each_part_tell) {
+    test::TempDir dir;
+    test::write_text(dir.file("file"), "text");
+    std::filesystem::create_hard_link(dir.path / "file", dir.path / "link");
+    auto file = File::open(dir.file("file"));
+    ZASSERT(file.has_value());
+    auto opened = file->status();
+    ZASSERT(opened.has_value());
+    FILE_BASIC_INFO basic;
+    FILE_STANDARD_INFO standard;
+    FILE_ID_INFO id;
+    auto handle = file->native_handle();
+    ZASSERT(::GetFileInformationByHandleEx(handle, FileBasicInfo, &basic, sizeof(basic)));
+    ZASSERT(::GetFileInformationByHandleEx(handle, FileStandardInfo, &standard, sizeof(standard)));
+    ZASSERT(::GetFileInformationByHandleEx(handle, FileIdInfo, &id, sizeof(id)));
+    auto time = [](const LARGE_INTEGER& ticks) {
+        constexpr std::int64_t unix_epoch = 116'444'736'000'000'000;
+        return std::chrono::sys_time<std::chrono::nanoseconds>(
+            std::chrono::nanoseconds((ticks.QuadPart - unix_epoch) * 100));
+    };
+    std::uint64_t low = 0;
+    std::uint64_t high = 0;
+    std::memcpy(&low, id.FileId.Identifier, sizeof(low));
+    std::memcpy(&high, id.FileId.Identifier + sizeof(low), sizeof(high));
+    ZEXPECT(opened->type == FileType::Regular);
+    ZEXPECT(opened->size == 4u);
+    ZEXPECT(opened->mtime == time(basic.LastWriteTime));
+    ZEXPECT(opened->ctime == time(basic.ChangeTime));
+    ZEXPECT(opened->id.device == static_cast<std::uint32_t>(id.VolumeSerialNumber));
+    ZEXPECT(opened->id.file == low);
+    ZEXPECT(opened->id.file_high == high);
+    ZEXPECT(opened->links == standard.NumberOfLinks);
+    ZEXPECT(opened->links == 2u);
+    ZEXPECT(opened->permissions == 0666);
+}
+#endif
 
 ZEST_CASE(a_moved_file_keeps_its_handle) {
     test::TempDir dir;

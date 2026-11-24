@@ -19,7 +19,87 @@ namespace kotatsu::fs {
 
 #ifdef _WIN32
 
+namespace {
+
+/// FILE_STAT_BASIC_INFORMATION, which only the newest SDKs declare.
+struct StatBasic {
+    LARGE_INTEGER FileId;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    ULONG FileAttributes;
+    ULONG ReparseTag;
+    ULONG NumberOfLinks;
+    ULONG DeviceType;
+    ULONG DeviceCharacteristics;
+    ULONG Reserved;
+    LARGE_INTEGER VolumeSerialNumber;
+    FILE_ID_128 FileId128;
+};
+
+/// FileStatBasicByNameInfo, of FILE_INFO_BY_NAME_CLASS, and
+/// FileStatBasicInformation, of FILE_INFORMATION_CLASS.
+constexpr int stat_basic_by_name = 3;
+constexpr ULONG stat_basic_information = 77;
+
+using GetFileInformationByNameFn = BOOL(WINAPI*)(PCWSTR, int, PVOID, ULONG);
+
+/// GetFileInformationByName, which Windows has from 11 24H2 on, as it has
+/// FileStatBasicInformation of a handle; null before.
+GetFileInformationByNameFn by_name() {
+    static constinit std::atomic<bool> resolved = false;
+    static constinit std::atomic<GetFileInformationByNameFn> function = nullptr;
+    if(!resolved.load(std::memory_order_acquire)) {
+        auto found =
+            ::GetProcAddress(::GetModuleHandleW(L"kernelbase.dll"), "GetFileInformationByName");
+        function.store(
+            reinterpret_cast<GetFileInformationByNameFn>(reinterpret_cast<void (*)()>(found)),
+            std::memory_order_relaxed);
+        resolved.store(true, std::memory_order_release);
+    }
+    return function.load(std::memory_order_relaxed);
+}
+
+/// The status a FILE_STAT_BASIC_INFORMATION tells.
+Status from_stat_basic(const StatBasic& info) {
+    return Status{
+        .type = win32::type_of(info.FileAttributes, info.ReparseTag),
+        .size = static_cast<std::uint64_t>(info.EndOfFile.QuadPart),
+        .mtime = win32::unix_time(info.LastWriteTime.QuadPart),
+        .ctime = win32::unix_time(info.ChangeTime.QuadPart),
+        .id = win32::id_of(info.VolumeSerialNumber.QuadPart, info.FileId128),
+        .links = info.NumberOfLinks,
+        .permissions = win32::permissions_of(info.FileAttributes),
+    };
+}
+
+}  // namespace
+
 std::expected<Status, std::error_code> win32::handle_status(HANDLE handle) {
+    // From Windows 11 24H2 on one query tells it all where the file system
+    // answers it (NTFS, ReFS), at about what FileIdInfo costs alone; FAT, a
+    // network file system, a device and a pipe refuse it at about that cost
+    // too. Before, the queries below cost the least: the system answers
+    // FileBasicInfo and FileStandardInfo without building a request (fast
+    // I/O), where FileStatInformation, from 10 1709 on, builds one, costs
+    // more than both, and tells a 64-bit ID that on ReFS is not the 128-bit
+    // one.
+    if(by_name()) {
+        using QueryFn = NTSTATUS(NTAPI*)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, ULONG);
+        static constinit std::atomic<QueryFn> query = nullptr;
+        StatBasic info;
+        IO_STATUS_BLOCK block{};
+        if(from_ntdll(query, "NtQueryInformationFile")(handle,
+                                                       &block,
+                                                       &info,
+                                                       sizeof(info),
+                                                       stat_basic_information) >= 0) {
+            return from_stat_basic(info);
+        }
+    }
     switch(::GetFileType(handle)) {
         case FILE_TYPE_DISK: break;
         case FILE_TYPE_CHAR: return Status{.type = FileType::Character};
@@ -66,45 +146,6 @@ namespace {
 /// The device characteristic of a file on another machine, which the user
 /// mode headers lack.
 constexpr ULONG remote_device = 0x10;
-
-/// FILE_STAT_BASIC_INFORMATION, which only the newest SDKs declare.
-struct StatBasicByName {
-    LARGE_INTEGER FileId;
-    LARGE_INTEGER CreationTime;
-    LARGE_INTEGER LastAccessTime;
-    LARGE_INTEGER LastWriteTime;
-    LARGE_INTEGER ChangeTime;
-    LARGE_INTEGER AllocationSize;
-    LARGE_INTEGER EndOfFile;
-    ULONG FileAttributes;
-    ULONG ReparseTag;
-    ULONG NumberOfLinks;
-    ULONG DeviceType;
-    ULONG DeviceCharacteristics;
-    ULONG Reserved;
-    LARGE_INTEGER VolumeSerialNumber;
-    FILE_ID_128 FileId128;
-};
-
-/// FileStatBasicByNameInfo, of FILE_INFO_BY_NAME_CLASS.
-constexpr int stat_basic_by_name = 3;
-
-using GetFileInformationByNameFn = BOOL(WINAPI*)(PCWSTR, int, PVOID, ULONG);
-
-/// GetFileInformationByName, which Windows has from 11 24H2 on; null before.
-GetFileInformationByNameFn by_name() {
-    static constinit std::atomic<bool> resolved = false;
-    static constinit std::atomic<GetFileInformationByNameFn> function = nullptr;
-    if(!resolved.load(std::memory_order_acquire)) {
-        auto found =
-            ::GetProcAddress(::GetModuleHandleW(L"kernelbase.dll"), "GetFileInformationByName");
-        function.store(
-            reinterpret_cast<GetFileInformationByNameFn>(reinterpret_cast<void (*)()>(found)),
-            std::memory_order_relaxed);
-        resolved.store(true, std::memory_order_release);
-    }
-    return function.load(std::memory_order_relaxed);
-}
 
 /// The errors a by-name query reports only for a path that names nothing;
 /// any other it may report for a file an open reaches.
@@ -157,21 +198,13 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
         return std::unexpected(error);
     }
     if(auto query = by_name()) {
-        StatBasicByName info;
+        StatBasic info;
         if(query(native.c_str(), stat_basic_by_name, &info, sizeof(info))) {
             // A link to follow takes an open, and so does a remote file: a
             // network file system answers the query with less care.
             bool link = info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
             if(!(info.DeviceCharacteristics & remote_device) && !(follow && link)) {
-                return Status{
-                    .type = win32::type_of(info.FileAttributes, info.ReparseTag),
-                    .size = static_cast<std::uint64_t>(info.EndOfFile.QuadPart),
-                    .mtime = win32::unix_time(info.LastWriteTime.QuadPart),
-                    .ctime = win32::unix_time(info.ChangeTime.QuadPart),
-                    .id = win32::id_of(info.VolumeSerialNumber.QuadPart, info.FileId128),
-                    .links = info.NumberOfLinks,
-                    .permissions = win32::permissions_of(info.FileAttributes),
-                };
+                return from_stat_basic(info);
             }
         } else if(auto error = ::GetLastError(); names_nothing(error)) {
             return std::unexpected(windows::to_error_code(error));
