@@ -63,7 +63,7 @@ struct WordedCategory : std::error_category {
     std::string message(int code) const override {
         switch(code) {
             case ERROR_LOCK_VIOLATION: return "part of the file is locked by another program";
-            case win32::error_posix_symlink:
+            case static_cast<int>(win32::error_posix_symlink):
                 return "the path goes through a WSL symlink to a POSIX path, which only "
                        "Cygwin or WSL can resolve";
             default: return "the file is in use by another program";

@@ -1665,8 +1665,8 @@ DWORD win32::follow_wsl_symlinks(WidePath& native, bool follow) {
         bool rooted = !path::pop(directory);
         if(climbs) {
             next.assign(std::string_view(directory));
-            auto prefix = path::root(directory).prefix;
-            if(rooted && (prefix == path::Prefix::Drive || prefix == path::Prefix::VerbatimDrive)) {
+            auto kind = path::root(directory).prefix;
+            if(rooted && (kind == path::Prefix::Drive || kind == path::Prefix::VerbatimDrive)) {
                 // Out of a drive's root into /mnt, as WSL climbs out of
                 // /mnt/c: on into the drive the next name is the letter of,
                 // or a path only WSL's own mounts resolve.
