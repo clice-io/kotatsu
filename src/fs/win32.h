@@ -137,8 +137,29 @@ std::expected<Handle, DWORD>
 void nt_path(basic_buffer_ref<wchar_t> out, std::wstring_view path);
 
 /// A handle to what the native `path`, as to_native() writes it, names, as
-/// open_at() opens it.
+/// open_at() opens it, and through a WSL symlink too, as
+/// follow_wsl_symlinks() follows it.
 std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow);
+
+/// The Win32 error of a path through a WSL symlink to a POSIX path
+/// (`/usr/include`), which only Cygwin's or WSL's own mount table resolves:
+/// bit 29 marks an application's own error, which no Win32 error is.
+/// to_error_code() takes it for std::errc::not_supported, in words that say
+/// why.
+constexpr DWORD error_posix_symlink = 0x20000001;
+
+/// Rewrites the native `path`, which an open failed for with
+/// ERROR_CANT_ACCESS_FILE, through the WSL symlinks it goes through, which
+/// WSL and Cygwin's `ln -s` make and only WSL's driver follows: its
+/// directories' and, where `follow` says, its last name's. Each is followed
+/// as WSL and Cygwin follow it: a relative target from the directory the
+/// link is in, where the links before it lead; `/mnt/c/x` as `c:\x`. The path comes out verbatim.
+/// ERROR_SUCCESS once it rewrote it; ERROR_CANT_ACCESS_FILE where it goes through none, so that the
+/// failure was something else's; otherwise the error that stopped it: error_posix_symlink for any
+/// other absolute target, and ERROR_CANT_RESOLVE_FILENAME past 40 of them, as POSIX fails with
+/// ELOOP. Only where an open failed: one that did not goes through no WSL symlink, and costs
+/// nothing more.
+DWORD follow_wsl_symlinks(WidePath& path, bool follow);
 
 /// A handle to a directory this makes at the native `path`, as to_native()
 /// writes it, so that nothing put there meanwhile is taken for it, asked for
@@ -159,9 +180,11 @@ constexpr bool is_name_surrogate(DWORD tag) {
     return (tag & 0x20000000) != 0;
 }
 
-/// Reparse tags older SDKs lack: a Unix socket's entry
-/// (IO_REPARSE_TAG_AF_UNIX), and a fifo, a character device and a block
-/// device WSL made (IO_REPARSE_TAG_LX_FIFO, _LX_CHR, _LX_BLK).
+/// Reparse tags older SDKs lack: a WSL symlink (IO_REPARSE_TAG_LX_SYMLINK),
+/// a Unix socket's entry (IO_REPARSE_TAG_AF_UNIX), and a fifo, a character
+/// device and a block device WSL made (IO_REPARSE_TAG_LX_FIFO, _LX_CHR,
+/// _LX_BLK).
+constexpr DWORD wsl_symlink_tag = 0xA000001D;
 constexpr DWORD af_unix_tag = 0x80000023;
 constexpr DWORD wsl_fifo_tag = 0x80000024;
 constexpr DWORD wsl_character_tag = 0x80000025;

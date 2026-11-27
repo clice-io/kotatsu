@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -122,6 +123,43 @@ struct Reparse {
             char target[1];
         } wsl;
     };
+};
+
+/// The reparse point of a file a handle has open as itself, as
+/// FSCTL_GET_REPARSE_POINT reads it.
+struct ReparsePoint {
+    /// Reads that of `handle`: false on failure, GetLastError() telling why.
+    bool read(HANDLE handle) {
+        return ::DeviceIoControl(handle,
+                                 FSCTL_GET_REPARSE_POINT,
+                                 nullptr,
+                                 0,
+                                 buffer.get(),
+                                 MAXIMUM_REPARSE_DATA_BUFFER_SIZE,
+                                 &size,
+                                 nullptr);
+    }
+
+    Reparse& data() const {
+        return *reinterpret_cast<Reparse*>(buffer.get());
+    }
+
+    /// The target of the WSL symlink it holds, in UTF-8 as WSL keeps it;
+    /// none where its length runs past what the file system gave.
+    std::optional<std::string_view> wsl_target() const {
+        constexpr auto start = offsetof(Reparse, wsl.target);
+        auto end = offsetof(Reparse, wsl) + data().length;
+        if(end < start || end > size) {
+            return std::nullopt;
+        }
+        return std::string_view(data().wsl.target, end - start);
+    }
+
+    std::unique_ptr<std::byte[]> buffer =
+        std::make_unique_for_overwrite<std::byte[]>(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
+
+    /// How many bytes of it the file system filled.
+    DWORD size = 0;
 };
 
 /// Whether a file system refused an information class it does not know,
@@ -1394,20 +1432,12 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
         return std::make_error_code(std::errc::invalid_argument);
     }
 
-    constexpr ULONG wsl_symlink_tag = 0xA000001D;
-    auto buffer = std::make_unique_for_overwrite<std::byte[]>(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
-    DWORD returned = 0;
-    if(!::DeviceIoControl(handle->get(),
-                          FSCTL_GET_REPARSE_POINT,
-                          nullptr,
-                          0,
-                          buffer.get(),
-                          MAXIMUM_REPARSE_DATA_BUFFER_SIZE,
-                          &returned,
-                          nullptr)) {
+    ReparsePoint reparse;
+    if(!reparse.read(handle->get())) {
         return windows::last_error();
     }
-    auto& data = *reinterpret_cast<Reparse*>(buffer.get());
+    auto& data = reparse.data();
+    auto returned = reparse.size;
     // What the file system gave is checked before it is read: a name past
     // the end of the data is no link to follow.
     auto offset_of = [&](const void* at) {
@@ -1443,13 +1473,12 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
     switch(data.tag) {
         case IO_REPARSE_TAG_SYMLINK: return read(data.symlink.names, data.symlink.text);
         case IO_REPARSE_TAG_MOUNT_POINT: return read(data.junction.names, data.junction.text);
-        case wsl_symlink_tag: {
-            auto start = offset_of(data.wsl.target);
-            auto end = offset_of(&data.wsl) + data.length;
-            if(end < start || end > returned) {
+        case win32::wsl_symlink_tag: {
+            auto target = reparse.wsl_target();
+            if(!target) {
                 return std::make_error_code(std::errc::invalid_argument);
             }
-            out.assign(std::string_view(data.wsl.target, end - start));
+            out.assign(*target);
             return {};
         }
         // Another link, whose target only its own driver knows, or a
@@ -1480,6 +1509,94 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
     }
 #endif
 }
+
+#ifdef _WIN32
+
+DWORD win32::follow_wsl_symlinks(WidePath& native, bool follow) {
+    small_string<256> current;
+    from_utf16(current, std::wstring_view(native));
+    WidePath prefix;
+    WidePath name;
+    ReparsePoint reparse;
+    small_string<256> directory;
+    small_string<256> next;
+    for(int links = 0;; ++links) {
+        // The first WSL symlink on the way, each name from the root on opened
+        // as itself, and where the directory it is in is, the links before it
+        // followed. One that cannot be opened or asked ends the search: the
+        // open after it, through the links followed so far, tells why.
+        auto last = path::filename(current);
+        std::string_view link;
+        for(auto component: path::components(current)) {
+            if(!follow && component.data() == last.data()) {
+                break;
+            }
+            auto reached = std::string_view(current).substr(
+                0,
+                static_cast<std::size_t>(component.data() + component.size() - current.data()));
+            // Back in the UTF-16 it came from, which cannot fail.
+            [[maybe_unused]] auto converted = to_utf16(prefix, reached);
+            nt_path(name, prefix);
+            auto handle = open_at(nullptr, name, 0, false);
+            FILE_BASIC_INFO basic;
+            if(!handle || !::GetFileInformationByHandleEx(handle->get(),
+                                                          FileBasicInfo,
+                                                          &basic,
+                                                          sizeof(basic))) {
+                break;
+            }
+            if((basic.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+               reparse.read(handle->get()) && reparse.data().tag == wsl_symlink_tag) {
+                if(!final_path(directory, handle->get())) {
+                    path::pop(directory);
+                    link = reached;
+                }
+                break;
+            }
+        }
+        if(link.empty()) {
+            return links == 0 ? DWORD{ERROR_CANT_ACCESS_FILE} : DWORD{ERROR_SUCCESS};
+        }
+        if(links == 40) {
+            return ERROR_CANT_RESOLVE_FILENAME;
+        }
+        auto target = reparse.wsl_target();
+        if(!target) {
+            return ERROR_INVALID_REPARSE_DATA;
+        }
+        if(target->starts_with('/')) {
+            // WSL reaches drive C at /mnt/c, where Cygwin points a link it
+            // makes to /cygdrive/c; any other absolute path only their own
+            // mount tables resolve.
+            constexpr std::string_view mount = "/mnt/";
+            auto drive = target->substr(std::min(target->size(), mount.size()));
+            bool letter = !drive.empty() && ((drive[0] >= 'a' && drive[0] <= 'z') ||
+                                             (drive[0] >= 'A' && drive[0] <= 'Z'));
+            if(!target->starts_with(mount) || !letter || (drive.size() > 1 && drive[1] != '/')) {
+                return error_posix_symlink;
+            }
+            next.assign(drive.substr(0, 1));
+            next.append(std::string_view(":/"));
+            next.append(drive.substr(1));
+        } else {
+            next.assign(*target);
+        }
+        // WSL separates names by `/` alone, which a verbatim path takes for a
+        // character of a name.
+        std::ranges::replace(next, '/', '\\');
+        path::resolve(next, next, directory);
+        path::push(next, *path::strip_prefix(current, link));
+        // A target with a NUL, or with bytes no UTF-8 spells, names nothing
+        // Windows holds.
+        if(widen(native, next)) {
+            return ERROR_INVALID_NAME;
+        }
+        verbatim(native);
+        from_utf16(current, std::wstring_view(native));
+    }
+}
+
+#endif
 
 std::error_code create_hard_link(std::string_view target, std::string_view link) {
 #ifdef _WIN32

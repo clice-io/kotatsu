@@ -384,13 +384,26 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
                                            : OPEN_EXISTING;
     // A new file takes the place of nothing, a dangling symlink included.
     DWORD flags = options.create_new ? FILE_FLAG_OPEN_REPARSE_POINT : 0;
-    HANDLE handle = ::CreateFileW(native.c_str(),
-                                  access,
-                                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                  nullptr,
-                                  disposition,
-                                  FILE_ATTRIBUTE_NORMAL | flags,
-                                  nullptr);
+    auto create = [&] {
+        return ::CreateFileW(native.c_str(),
+                             access,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             nullptr,
+                             disposition,
+                             FILE_ATTRIBUTE_NORMAL | flags,
+                             nullptr);
+    };
+    HANDLE handle = create();
+    // A WSL symlink on the way is followed as win32::open_native() follows
+    // one, but for a new file's own name.
+    if(handle == INVALID_HANDLE_VALUE && ::GetLastError() == ERROR_CANT_ACCESS_FILE) {
+        if(auto followed = win32::follow_wsl_symlinks(native, !options.create_new);
+           followed == ERROR_SUCCESS) {
+            handle = create();
+        } else {
+            ::SetLastError(followed);
+        }
+    }
     if(handle == INVALID_HANDLE_VALUE) {
         // CreateFileW fails with ERROR_ACCESS_DENIED for a directory, which it
         // opens only with FILE_FLAG_BACKUP_SEMANTICS, and for a new file asked

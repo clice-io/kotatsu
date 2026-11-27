@@ -81,6 +81,12 @@ Adapted from `tests/fs/system/file_tests.cpp` and `directory_walk_tests.cpp`.
   junction, which needs no privilege, where `create_symlink` needs an
   administrator or developer mode; a junction holds an absolute path and
   leads only to a local volume.
+- Windows: WSL symlinks, which Cygwin's `ln -s` makes too and Win32 cannot
+  open, are followed where kotatsu opens a path (`File::open`, `status`,
+  `canonical`, `Directory::open`, ...) as WSL and Cygwin follow them,
+  `/mnt/c/x` as `C:\x`. One to another POSIX path (`/usr/include`) fails with
+  `std::errc::not_supported`; `status` in
+  [status.h](../include/kotatsu/fs/status.h) has the details.
 - Locks are advisory; on Windows `lock()` keeps no one from the file's bytes,
   but `range_locked()` holds the range it probes for an instant.
 - `File::is_sparse()` is Windows only: POSIX keeps no such mark.

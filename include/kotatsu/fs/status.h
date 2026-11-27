@@ -73,6 +73,25 @@ struct Status {
 
 /// The status of what `path` names, symlinks followed.
 ///
+/// On Windows a WSL symlink is followed too: the link WSL and Cygwin's
+/// `ln -s` make, which Win32 cannot open (ERROR_CANT_ACCESS_FILE), as the
+/// last name or as a directory on the way. It is followed as WSL and Cygwin
+/// follow it: a relative target from the directory the link is in, where
+/// any links before it lead, as POSIX takes it; `/mnt/c/x` as `C:\x`; past
+/// 40 links, std::errc::too_many_symbolic_link_levels, as POSIX fails. Any
+/// other absolute target (`/usr/include`) only Cygwin's or WSL's own mount
+/// table resolves: it fails with std::errc::not_supported, in a category of
+/// kotatsu's own whose message says so, never as a file that is not there,
+/// and read_symlink() tells the target. The link is looked for only once an
+/// open has failed, so it costs nothing otherwise. It is followed so
+/// wherever kotatsu opens a path: File::open() and what opens through it,
+/// the checks here, canonical(), weakly_canonical(), Directory::open() and
+/// walk(), volume(), and as a directory on the way, symlink_status(),
+/// read_symlink(), remove() and remove_all(). The calls that make a name or
+/// move or copy a file (create_directory(), rename(), write_file_atomic(),
+/// copy_file(), and those that make links) fail through one as Win32 does,
+/// with std::errc::permission_denied.
+///
 /// Windows has a status by name from Windows 11 24H2 on, which this takes
 /// but for a link to follow or a file on another machine; otherwise it
 /// opens the file, asking for no access, so that no sharing mode refuses
@@ -87,7 +106,8 @@ std::expected<Status, std::error_code> status(std::string_view path);
 
 /// The status of `path` itself: a symlink, or a junction on Windows, is not
 /// followed, even to a directory with a separator after it (`link/`),
-/// through which POSIX follows it otherwise.
+/// through which POSIX follows it otherwise. One that is a directory on the
+/// way is, a WSL symlink on Windows too, as status() follows it.
 std::expected<Status, std::error_code> symlink_status(std::string_view path);
 
 /// Whether `path` names anything, symlinks followed: false when the OS says
