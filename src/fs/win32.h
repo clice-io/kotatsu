@@ -137,8 +137,34 @@ std::expected<Handle, DWORD>
 void nt_path(basic_buffer_ref<wchar_t> out, std::wstring_view path);
 
 /// A handle to what the native `path`, as to_native() writes it, names, as
-/// open_at() opens it.
-std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow);
+/// open_at() opens it, and through a WSL symlink too, as status() says,
+/// `path` then rewritten as follow_wsl_symlinks() rewrites it. A path that
+/// goes through none costs nothing more.
+std::expected<Handle, DWORD> open_native(WidePath& path, DWORD access, bool follow);
+
+/// The error of a path through a WSL symlink to a POSIX path
+/// (`/usr/include`), which only Cygwin's or WSL's own mount table resolves:
+/// bit 29 marks an application's own error, which no Win32 error is.
+/// to_error_code() takes it for std::errc::not_supported, in words that say
+/// why.
+constexpr DWORD error_posix_symlink = 0x20000001;
+
+/// Whether an open of the native `path` that failed with `error` may have
+/// met a WSL symlink: ERROR_CANT_ACCESS_FILE, which Win32 says of any path
+/// through one, or ERROR_DIRECTORY of one with a separator at the end,
+/// which the link, a file, refuses before it is followed.
+inline bool may_meet_wsl_symlink(std::wstring_view path, DWORD error) {
+    return error == ERROR_CANT_ACCESS_FILE || (error == ERROR_DIRECTORY && path.ends_with(L'\\'));
+}
+
+/// Rewrites `native`, a native path an open failed for as
+/// may_meet_wsl_symlink() says, verbatim to where the WSL symlinks on its
+/// way lead, as status() says, its last name followed where `follow` says:
+/// ERROR_SUCCESS, `native` left as it is where it goes through none, so
+/// that an open again fails as before; otherwise the error that stopped it,
+/// `native` left as it is: error_posix_symlink, and
+/// ERROR_CANT_RESOLVE_FILENAME past 40 links.
+DWORD follow_wsl_symlinks(WidePath& native, bool follow);
 
 /// A handle to a directory this makes at the native `path`, as to_native()
 /// writes it, so that nothing put there meanwhile is taken for it, asked for
@@ -159,9 +185,11 @@ constexpr bool is_name_surrogate(DWORD tag) {
     return (tag & 0x20000000) != 0;
 }
 
-/// Reparse tags older SDKs lack: a Unix socket's entry
-/// (IO_REPARSE_TAG_AF_UNIX), and a fifo, a character device and a block
-/// device WSL made (IO_REPARSE_TAG_LX_FIFO, _LX_CHR, _LX_BLK).
+/// Reparse tags older SDKs lack: a WSL symlink (IO_REPARSE_TAG_LX_SYMLINK),
+/// a Unix socket's entry (IO_REPARSE_TAG_AF_UNIX), and a fifo, a character
+/// device and a block device WSL made (IO_REPARSE_TAG_LX_FIFO, _LX_CHR,
+/// _LX_BLK).
+constexpr DWORD wsl_symlink_tag = 0xA000001D;
 constexpr DWORD af_unix_tag = 0x80000023;
 constexpr DWORD wsl_fifo_tag = 0x80000024;
 constexpr DWORD wsl_character_tag = 0x80000025;

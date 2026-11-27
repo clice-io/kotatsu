@@ -73,6 +73,31 @@ struct Status {
 
 /// The status of what `path` names, symlinks followed.
 ///
+/// On Windows a WSL symlink is followed too: the link WSL and Cygwin's
+/// `ln -s` make, which Win32 cannot open (ERROR_CANT_ACCESS_FILE), as the
+/// last name or as a directory on the way. It is followed as WSL and Cygwin
+/// follow it: a relative target by POSIX rules, from the directory the link
+/// is in, where any links before it lead; `/mnt/c/x` as `C:\x`, its names as
+/// WSL and Cygwin keep them on Windows (the characters Win32 refuses in a
+/// name moved up to U+F000); past 40 links,
+/// std::errc::too_many_symbolic_link_levels, as POSIX fails. Any other
+/// absolute target (`/usr/include`) only Cygwin's or WSL's own mount table
+/// resolves: it fails with std::errc::not_supported, in a category of
+/// kotatsu's own whose message says so, never as a file that is not there,
+/// and read_symlink() tells the target. The link is looked for only once an
+/// open has failed, so it costs nothing otherwise.
+///
+/// Every call that opens a path follows one so: File::open() and what opens
+/// through it, the other calls here, canonical(), weakly_canonical(),
+/// Directory::open() and what lists through it, volume(); and as a
+/// directory on the way, symlink_status(), read_symlink(), remove(),
+/// remove_all() and the `from` of rename(). The calls that hand Win32 the
+/// path instead fail through one with std::errc::permission_denied, as Win32
+/// does: create_directory(), create_directories(), create_temp_directory(),
+/// the `to` of rename(), rename_noreplace(), write_file_atomic(),
+/// copy_file() and the calls that make links. Nor is one followed where the
+/// target of a Windows symlink or junction leads through it.
+///
 /// Windows has a status by name from Windows 11 24H2 on, which this takes
 /// but for a link to follow or a file on another machine; otherwise it
 /// opens the file, asking for no access, so that no sharing mode refuses
@@ -87,7 +112,8 @@ std::expected<Status, std::error_code> status(std::string_view path);
 
 /// The status of `path` itself: a symlink, or a junction on Windows, is not
 /// followed, even to a directory with a separator after it (`link/`),
-/// through which POSIX follows it otherwise.
+/// through which POSIX follows it otherwise. One that is a directory on the
+/// way is, a WSL symlink on Windows too, as status() follows it.
 std::expected<Status, std::error_code> symlink_status(std::string_view path);
 
 /// Whether `path` names anything, symlinks followed: false when the OS says

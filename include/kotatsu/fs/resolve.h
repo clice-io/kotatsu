@@ -13,10 +13,11 @@ namespace kotatsu::fs {
 
 /// Writes into `out` the name the OS gives the existing file `path`
 /// names: absolute, every symlink followed; on Windows also with each name's
-/// on-disk case and long form, and through junctions and substituted
-/// drives; on a volume with neither a drive letter nor a mount folder,
-/// under the volume's GUID (`\\?\Volume{...}\`). Asks for no access, so a
-/// file the caller may not read resolves too.
+/// on-disk case and long form, and through junctions, WSL symlinks, as
+/// status() follows them, and substituted drives; on a volume with neither
+/// a drive letter nor a mount folder, under the volume's GUID
+/// (`\\?\Volume{...}\`). Asks for no access, so a file the caller may not
+/// read resolves too.
 std::error_code canonical(buffer_ref out, std::string_view path);
 
 /// Writes into `out` canonical() of the longest part of `path` that exists,
@@ -48,7 +49,9 @@ void weakly_canonical(buffer_ref out,
 /// links in a row, which a loop of them makes, fail with
 /// std::errc::too_many_symbolic_link_levels; a link whose target the system
 /// cannot read, with the error read_symlink() gives; a path with a null in it,
-/// with invalid_argument.
+/// with invalid_argument. On Windows a WSL symlink's target is pushed as
+/// read_symlink() gives it, an absolute one as a path rooted on the link's
+/// drive: not as status() follows it (`/mnt/c/x` as `C:\x`).
 std::error_code follow_symlinks(buffer_ref out, std::string_view path);
 
 /// Writes into `out` `path` made absolute against the current directory,

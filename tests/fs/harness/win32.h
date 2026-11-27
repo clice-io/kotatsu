@@ -4,9 +4,10 @@
 // max macros that break the standard library's, attributes_of() and
 // reparse_tag_of() for those that check a file's attributes or the kind of a
 // link, make_pipe() for those that need a named pipe, set_reparse_point() for
-// those that need a reparse point of a tag no tool makes, DeletePending
-// for those that need a file deleted while held open and HeldOpen for those
-// that need a file another handle shares with no one.
+// those that need a reparse point of a tag no tool makes, make_wsl_symlink()
+// and wsl_path() for those that need a link as WSL and Cygwin make one,
+// DeletePending for those that need a file deleted while held open and
+// HeldOpen for those that need a file another handle shares with no one.
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -61,12 +62,13 @@ inline HANDLE make_pipe(std::string& name,
 }
 
 /// Reparse tags for set_reparse_point(), which older SDKs lack: of a fifo,
-/// a character device and a block device WSL made (IO_REPARSE_TAG_LX_FIFO,
-/// _LX_CHR, _LX_BLK), and of a link a Windows container made
-/// (IO_REPARSE_TAG_WCI_LINK_1).
+/// a character device, a block device and a symlink WSL made
+/// (IO_REPARSE_TAG_LX_FIFO, _LX_CHR, _LX_BLK, _LX_SYMLINK), and of a link a
+/// Windows container made (IO_REPARSE_TAG_WCI_LINK_1).
 constexpr DWORD wsl_fifo_tag = 0x80000024;
 constexpr DWORD wsl_character_tag = 0x80000025;
 constexpr DWORD wsl_block_tag = 0x80000026;
+constexpr DWORD wsl_symlink_tag = 0xA000001D;
 constexpr DWORD container_link_tag = 0xA0000027;
 
 /// Makes the file at `path` a reparse point of the Microsoft `tag` with no
@@ -99,6 +101,63 @@ inline void set_reparse_point(std::string_view path, DWORD tag) {
                                  nullptr);
     ::CloseHandle(file);
     ZASSERT(set);
+}
+
+/// Makes the WSL symlink `link` to `target`, as WSL and Cygwin's `ln -s`
+/// make one, which any user may: a file that is a reparse point of
+/// IO_REPARSE_TAG_LX_SYMLINK, holding the format's version, 2, and the
+/// target in UTF-8 as it is written.
+inline void make_wsl_symlink(std::string_view link, std::string_view target) {
+    ZEST_CONTEXT("{}", link);
+    HANDLE file = ::CreateFileW(std_path(link).wstring().c_str(),
+                                GENERIC_WRITE,
+                                0,
+                                nullptr,
+                                CREATE_NEW,
+                                FILE_ATTRIBUTE_NORMAL,
+                                nullptr);
+    ZASSERT(file != INVALID_HANDLE_VALUE);
+
+    // REPARSE_DATA_BUFFER's header, which only the driver headers declare,
+    // and the version, which the length counts with the target.
+    struct {
+        DWORD tag = wsl_symlink_tag;
+        WORD length;
+        WORD reserved = 0;
+        DWORD version = 2;
+    } header{.length = static_cast<WORD>(sizeof(DWORD) + target.size())};
+
+    std::string data(reinterpret_cast<const char*>(&header), sizeof(header));
+    data.append(target);
+
+    DWORD returned = 0;
+    bool set = ::DeviceIoControl(file,
+                                 FSCTL_SET_REPARSE_POINT,
+                                 data.data(),
+                                 static_cast<DWORD>(data.size()),
+                                 nullptr,
+                                 0,
+                                 &returned,
+                                 nullptr);
+    ::CloseHandle(file);
+    ZASSERT(set);
+}
+
+/// The path WSL gives the file at the absolute UTF-8 `path` on a drive, as a
+/// link it or Cygwin makes holds it: `/mnt/c/x` of `C:\x`. Empty for a path
+/// spelled otherwise, a share's or a verbatim one.
+inline std::string wsl_path(std::string_view path) {
+    auto root = fs::path::root(path);
+    if(root.prefix != fs::path::Prefix::Drive || root.directory.empty()) {
+        return {};
+    }
+    std::string mounted = "/mnt/";
+    mounted.push_back(path[0] >= 'A' && path[0] <= 'Z' ? static_cast<char>(path[0] - 'A' + 'a')
+                                                       : path[0]);
+    for(auto c: path.substr(2)) {
+        mounted.push_back(c == '\\' ? '/' : c);
+    }
+    return mounted;
 }
 
 /// The file at the UTF-8 `path` deleted the classic way, which keeps its

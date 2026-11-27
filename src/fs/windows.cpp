@@ -49,26 +49,35 @@ bool needs_no_resolution(std::wstring_view path) {
     return true;
 }
 
-/// Win32's errors of a file another program holds, ERROR_SHARING_VIOLATION
-/// and ERROR_LOCK_VIOLATION: std::errc::device_or_resource_busy, in words
-/// that say why, where the C runtime's strerror, which MinGW's standard
-/// library tells it by, says "Resource device".
-struct HeldFileCategory : std::error_category {
+/// The errors kotatsu words itself, in words that say why: of a file
+/// another program holds, ERROR_SHARING_VIOLATION and ERROR_LOCK_VIOLATION,
+/// std::errc::device_or_resource_busy, where the C runtime's strerror, which
+/// MinGW's standard library tells it by, says "Resource device"; and of a
+/// path through a WSL symlink to a POSIX path, win32::error_posix_symlink,
+/// std::errc::not_supported.
+struct WordedCategory : std::error_category {
     const char* name() const noexcept override {
         return "kotatsu.fs.windows";
     }
 
     std::string message(int code) const override {
-        return code == ERROR_LOCK_VIOLATION ? "part of the file is locked by another program"
-                                            : "the file is in use by another program";
+        switch(code) {
+            case ERROR_LOCK_VIOLATION: return "part of the file is locked by another program";
+            case static_cast<int>(win32::error_posix_symlink):
+                return "the path goes through a WSL symlink to a POSIX path, which only "
+                       "Cygwin or WSL can resolve";
+            default: return "the file is in use by another program";
+        }
     }
 
-    std::error_condition default_error_condition(int) const noexcept override {
-        return std::errc::device_or_resource_busy;
+    std::error_condition default_error_condition(int code) const noexcept override {
+        return static_cast<DWORD>(code) == win32::error_posix_symlink
+                   ? std::errc::not_supported
+                   : std::errc::device_or_resource_busy;
     }
 };
 
-const HeldFileCategory held_file_category{};
+const WordedCategory worded_category{};
 
 #ifdef _MSC_VER
 /// Does nothing, for _get_osfhandle: the C runtime would end the process
@@ -83,8 +92,9 @@ void ignore_invalid_parameter(const wchar_t*,
 }  // namespace
 
 std::error_code to_error_code(unsigned long code) {
-    if(code == ERROR_SHARING_VIOLATION || code == ERROR_LOCK_VIOLATION) {
-        return std::error_code(static_cast<int>(code), held_file_category);
+    if(code == ERROR_SHARING_VIOLATION || code == ERROR_LOCK_VIOLATION ||
+       code == win32::error_posix_symlink) {
+        return std::error_code(static_cast<int>(code), worded_category);
     }
     auto errc = [&]() -> std::errc {
         switch(code) {
@@ -345,8 +355,16 @@ void nt_path(basic_buffer_ref<wchar_t> out, std::wstring_view path) {
     }
 }
 
-std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow) {
+std::expected<Handle, DWORD> open_native(WidePath& path, DWORD access, bool follow) {
     WidePath name;
+    nt_path(name, path);
+    auto handle = open_at(nullptr, name, access, follow);
+    if(handle || !may_meet_wsl_symlink(path, handle.error())) {
+        return handle;
+    }
+    if(auto error = follow_wsl_symlinks(path, follow); error != ERROR_SUCCESS) {
+        return std::unexpected(error);
+    }
     nt_path(name, path);
     return open_at(nullptr, name, access, follow);
 }

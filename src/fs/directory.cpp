@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -123,6 +124,133 @@ struct Reparse {
         } wsl;
     };
 };
+
+/// The reparse point of a file a handle has open as itself, as
+/// FSCTL_GET_REPARSE_POINT reads it.
+struct ReparsePoint {
+    /// Reads that of `handle`: false on failure, GetLastError() telling why.
+    bool read(HANDLE handle) {
+        return ::DeviceIoControl(handle,
+                                 FSCTL_GET_REPARSE_POINT,
+                                 nullptr,
+                                 0,
+                                 buffer.get(),
+                                 MAXIMUM_REPARSE_DATA_BUFFER_SIZE,
+                                 &size,
+                                 nullptr);
+    }
+
+    Reparse& data() const {
+        return *reinterpret_cast<Reparse*>(buffer.get());
+    }
+
+    /// The target of the WSL symlink it holds, in UTF-8 as WSL keeps it;
+    /// none where its length leaves no target, which WSL never makes, or
+    /// runs past what the file system gave.
+    std::optional<std::string_view> wsl_target() const {
+        constexpr auto start = offsetof(Reparse, wsl.target);
+        auto end = offsetof(Reparse, wsl) + data().length;
+        if(end <= start || end > size) {
+            return std::nullopt;
+        }
+        return std::string_view(data().wsl.target, end - start);
+    }
+
+    std::unique_ptr<std::byte[]> buffer =
+        std::make_unique_for_overwrite<std::byte[]>(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
+
+    /// How many bytes of it the file system filled.
+    DWORD size = 0;
+};
+
+/// Writes into `out` the Windows path that `target`, the target of a WSL
+/// symlink in `directory`, names, as WSL and Cygwin take it: by POSIX
+/// rules, a relative one from the directory as WSL names it (`/mnt/c/a` of
+/// `C:\a`); then `/mnt/c/x` as `c:\x`, with the characters Win32 refuses in
+/// a name (`"*:<>?|` and the controls) moved up to U+F000, as WSL and Cygwin
+/// keep them. A `..` folds the name before it only where that is no link:
+/// the directory's, /mnt and a drive's letter, so that one past a drive's
+/// root climbs into /mnt; after a name of the target it stays, for
+/// follow_wsl_symlinks() to climb out of where that leads. A separator, `.`
+/// or `..` at the end still asks for a directory. Cygwin's `\` separates,
+/// as `/` does. A directory WSL names nowhere, a share's or a volume's
+/// without a letter, takes a relative target as Windows takes a path, `..`
+/// kept. False for a target on no drive, which only Cygwin's or WSL's own
+/// mount table resolves.
+bool windows_target(buffer_ref out, std::string_view target, std::string_view directory) {
+    // Appends to `to` each name of `names` as Windows keeps it, `\` between
+    // them.
+    auto spell = [](buffer_ref to, std::string_view names) {
+        for(auto c: names) {
+            if(c == '/') {
+                to.push_back('\\');
+            } else if((c > 0 && c < 0x20) || std::string_view(R"("*:<>?|)").contains(c)) {
+                const char moved[] = {'\xEF',
+                                      static_cast<char>(0x80 | (c >> 6)),
+                                      static_cast<char>(0x80 | (c & 0x3F))};
+                to.append(std::string_view(moved, sizeof(moved)));
+            } else {
+                to.push_back(c);
+            }
+        }
+    };
+    small_string<256> posix(target);
+    std::ranges::replace(posix, '\\', '/');
+    std::string_view spelled = posix;
+    auto end = path::filename(spelled, path::Style::Posix);
+    bool asks_directory = spelled.ends_with('/') || end == "." || end == "..";
+    auto root = path::root(directory);
+    bool lettered =
+        root.prefix == path::Prefix::Drive || root.prefix == path::Prefix::VerbatimDrive;
+    if(!lettered && !spelled.starts_with('/')) {
+        out.clear();
+        spell(out, spelled);
+        path::resolve(out, out.view(), directory, path::DotDot::Keep);
+    } else {
+        // Each name, and whether it is no link.
+        std::vector<std::pair<std::string_view, bool>> names;
+        if(!spelled.starts_with('/')) {
+            names.emplace_back("mnt", true);
+            names.emplace_back(root.name.substr(root.name.size() - 2, 1), true);
+            for(auto name: path::components(directory)) {
+                names.emplace_back(name, true);
+            }
+        }
+        for(auto name: path::components(spelled, path::Style::Posix)) {
+            if(name == ".") {
+                continue;
+            }
+            if(name == ".." && (names.empty() || names.back().second)) {
+                if(!names.empty()) {
+                    names.pop_back();
+                }
+                continue;
+            }
+            bool letter = name.size() == 1 && ((name[0] >= 'a' && name[0] <= 'z') ||
+                                               (name[0] >= 'A' && name[0] <= 'Z'));
+            bool mount =
+                names.empty() ? name == "mnt" : names.size() == 1 && names[0].second && letter;
+            names.emplace_back(name, mount);
+        }
+        // WSL reaches drive C at /mnt/c, where Cygwin points a link it makes
+        // to /cygdrive/c.
+        if(names.size() < 2 || !names[1].second) {
+            return false;
+        }
+        out.assign(names[1].first);
+        out.append(R"(:\)");
+        for(std::size_t i = 2; i < names.size(); ++i) {
+            if(i != 2) {
+                out.push_back('\\');
+            }
+            spell(out, names[i].first);
+        }
+    }
+    if(asks_directory && !out.view().ends_with('\\')) {
+        out.push_back('\\');
+    }
+    return true;
+}
 
 /// Whether a file system refused an information class it does not know,
 /// one newer than it: FAT knows no POSIX deletes or renames, some network
@@ -279,7 +407,7 @@ struct AttributeHandle {
 
 /// What `path` names, a link itself, as an AttributeHandle; empty when it
 /// cannot be opened or read.
-std::optional<AttributeHandle> open_attributes(std::wstring_view path) {
+std::optional<AttributeHandle> open_attributes(win32::WidePath& path) {
     auto handle = win32::open_native(path, FILE_WRITE_ATTRIBUTES, false);
     FILE_BASIC_INFO basic;
     if(!handle ||
@@ -1175,7 +1303,7 @@ std::error_code rename_noreplace(std::string_view from, std::string_view to) {
     // Denied, as is a file deleted while held open: `from`, which is gone
     // but for the name, or on FAT `to`, which keeps the name taken until
     // the last handle goes (NTFS says so itself).
-    auto pending = [](std::wstring_view path) {
+    auto pending = [](win32::WidePath& path) {
         auto opened = win32::open_native(path, 0, false);
         return !opened && opened.error() == ERROR_DELETE_PENDING;
     };
@@ -1394,20 +1522,12 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
         return std::make_error_code(std::errc::invalid_argument);
     }
 
-    constexpr ULONG wsl_symlink_tag = 0xA000001D;
-    auto buffer = std::make_unique_for_overwrite<std::byte[]>(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
-    DWORD returned = 0;
-    if(!::DeviceIoControl(handle->get(),
-                          FSCTL_GET_REPARSE_POINT,
-                          nullptr,
-                          0,
-                          buffer.get(),
-                          MAXIMUM_REPARSE_DATA_BUFFER_SIZE,
-                          &returned,
-                          nullptr)) {
+    ReparsePoint reparse;
+    if(!reparse.read(handle->get())) {
         return windows::last_error();
     }
-    auto& data = *reinterpret_cast<Reparse*>(buffer.get());
+    auto& data = reparse.data();
+    auto returned = reparse.size;
     // What the file system gave is checked before it is read: a name past
     // the end of the data is no link to follow.
     auto offset_of = [&](const void* at) {
@@ -1443,13 +1563,12 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
     switch(data.tag) {
         case IO_REPARSE_TAG_SYMLINK: return read(data.symlink.names, data.symlink.text);
         case IO_REPARSE_TAG_MOUNT_POINT: return read(data.junction.names, data.junction.text);
-        case wsl_symlink_tag: {
-            auto start = offset_of(data.wsl.target);
-            auto end = offset_of(&data.wsl) + data.length;
-            if(end < start || end > returned) {
+        case win32::wsl_symlink_tag: {
+            auto target = reparse.wsl_target();
+            if(!target) {
                 return std::make_error_code(std::errc::invalid_argument);
             }
-            out.assign(std::string_view(data.wsl.target, end - start));
+            out.assign(*target);
             return {};
         }
         // Another link, whose target only its own driver knows, or a
@@ -1480,6 +1599,117 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
     }
 #endif
 }
+
+#ifdef _WIN32
+
+DWORD win32::follow_wsl_symlinks(WidePath& native, bool follow) {
+    WidePath followed;
+    followed.assign(std::wstring_view(native));
+    small_string<256> current;
+    WidePath prefix;
+    WidePath name;
+    ReparsePoint reparse;
+    small_string<256> directory;
+    small_string<256> next;
+    int links = 0;
+    while(true) {
+        from_utf16(current, std::wstring_view(followed));
+        // The first WSL symlink on the way, each name from the root on opened
+        // as itself, or the first `..`, which climbs out of where the names
+        // before it lead, as POSIX climbs; with `directory`, where the link is
+        // or where the `..` climbs to. One that cannot be opened or asked
+        // ends the search: the open after it, through the links followed so
+        // far, tells why.
+        auto root = path::root(current);
+        auto last = path::filename(current);
+        auto before = std::string_view(current).substr(0, root.name.size() + root.directory.size());
+        std::string_view stop;
+        bool climbs = false;
+        for(auto component: path::components(current)) {
+            if(!follow && component.data() == last.data()) {
+                break;
+            }
+            auto reached = std::string_view(current).substr(
+                0,
+                static_cast<std::size_t>(component.data() + component.size() - current.data()));
+            climbs = component == "..";
+            // Back in the UTF-16 it came from, which cannot fail.
+            [[maybe_unused]] auto converted = to_utf16(prefix, climbs ? before : reached);
+            nt_path(name, prefix);
+            auto handle = open_at(nullptr, name, 0, climbs);
+            FILE_BASIC_INFO basic;
+            if(!handle || !::GetFileInformationByHandleEx(handle->get(),
+                                                          FileBasicInfo,
+                                                          &basic,
+                                                          sizeof(basic))) {
+                break;
+            }
+            if(climbs ? (basic.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0
+                      : (basic.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+                            reparse.read(handle->get()) && reparse.data().tag == wsl_symlink_tag) {
+                if(!final_path(directory, handle->get())) {
+                    stop = reached;
+                }
+                break;
+            }
+            if(climbs) {
+                break;
+            }
+            before = reached;
+        }
+        if(stop.empty()) {
+            native.assign(std::wstring_view(followed));
+            return ERROR_SUCCESS;
+        }
+        auto rest = *path::strip_prefix(current, stop);
+        bool rooted = !path::pop(directory);
+        if(climbs) {
+            next.assign(std::string_view(directory));
+            auto kind = path::root(directory).prefix;
+            if(rooted && (kind == path::Prefix::Drive || kind == path::Prefix::VerbatimDrive)) {
+                // Out of a drive's root into /mnt, as WSL climbs out of
+                // /mnt/c: on into the drive the next name is the letter of,
+                // or a path only WSL's own mounts resolve.
+                auto drive = rest.substr(0, rest.find('\\'));
+                if(drive.size() != 1 || !((drive[0] >= 'a' && drive[0] <= 'z') ||
+                                          (drive[0] >= 'A' && drive[0] <= 'Z'))) {
+                    return error_posix_symlink;
+                }
+                next.assign(drive);
+                next.append(std::string_view(R"(:\)"));
+                rest = rest.substr(std::min(rest.size(), std::size_t{2}));
+            }
+        } else {
+            if(links == 40) {
+                return ERROR_CANT_RESOLVE_FILENAME;
+            }
+            ++links;
+            auto target = reparse.wsl_target();
+            if(!target) {
+                return ERROR_INVALID_REPARSE_DATA;
+            }
+            if(!windows_target(next, *target, directory)) {
+                return error_posix_symlink;
+            }
+        }
+        // The names after, as they are: `a:s`, a stream of `a`, is no drive.
+        // A separator at the end, which no name keeps, still asks for a
+        // directory.
+        if((!rest.empty() || std::string_view(current).ends_with('\\')) &&
+           !std::string_view(next).ends_with('\\')) {
+            next.push_back('\\');
+        }
+        next.append(rest);
+        // A target with a NUL, or with bytes no UTF-8 spells, names nothing
+        // Windows holds.
+        if(widen(followed, next)) {
+            return ERROR_INVALID_NAME;
+        }
+        verbatim(followed);
+    }
+}
+
+#endif
 
 std::error_code create_hard_link(std::string_view target, std::string_view link) {
 #ifdef _WIN32

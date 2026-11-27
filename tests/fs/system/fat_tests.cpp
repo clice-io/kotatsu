@@ -387,6 +387,22 @@ ZEST_CASE(case_sensitive_is_false) {
     on_fat([](const test::TempDir& dir) { ZEXPECT(case_sensitive(dir.root()) == false); });
 }
 
+ZEST_CASE(a_wsl_symlink_leads_onto_fat) {
+    // A link on NTFS to a FAT volume, whose names, which keep no reparse
+    // points, are looked through for one too.
+    on_fat([](const test::TempDir& dir) {
+        std::filesystem::create_directory(dir.path / "sub");
+        test::write_text(dir.file("sub/file.txt"), "text");
+        auto mounted = test::wsl_path(dir.file("sub"));
+        ZASSERT(!mounted.empty());
+        test::TempDir links;
+        test::make_wsl_symlink(links.file("link"), mounted);
+        std::string text;
+        ZEXPECT(!read_file(text, links.file("link/file.txt")));
+        ZEXPECT(text == "text");
+    });
+}
+
 };  // ZEST_SUITE(fs_fat)
 
 }  // namespace
