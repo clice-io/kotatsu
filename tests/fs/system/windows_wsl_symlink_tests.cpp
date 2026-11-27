@@ -175,6 +175,38 @@ ZEST_CASE(a_target_climbs_out_of_where_the_directory_is) {
     ZEXPECT(text_at(at("junction/up.h")) == "h");
 }
 
+ZEST_CASE(a_target_climbs_out_of_where_a_link_in_it_leads) {
+    // As Cygwin and POSIX climb, not back to the name the target spells.
+    test::make_wsl_symlink(at("inner"), "real/sub");
+    test::make_wsl_symlink(at("outer.h"), "inner/../h.h");
+    test::make_junction(at("junction"), at(R"(real\sub)"));
+    test::make_wsl_symlink(at("through.h"), "junction/../h.h");
+    test::write_text(at("h.h"), "top");
+    ZEXPECT(text_at(at("outer.h")) == "h");
+    ZEXPECT(text_at(at("through.h")) == "h");
+}
+
+ZEST_CASE(a_target_with_a_separator_at_the_end_asks_for_a_directory) {
+    test::make_wsl_symlink(at("slash.h"), "real/h.h/");
+    test::make_wsl_symlink(at("dot.h"), "real/h.h/.");
+    test::make_wsl_symlink(at("dir"), "real/sub/");
+    ZEXPECT(status_error(at("slash.h")) == std::errc::not_a_directory);
+    ZEXPECT(status_error(at("dot.h")) == std::errc::not_a_directory);
+    auto file = File::open(at("slash.h"));
+    ZASSERT(!file);
+    ZEXPECT(file.error() == std::errc::not_a_directory);
+    auto followed = status(at("dir"));
+    ZASSERT(followed.has_value());
+    ZEXPECT(followed->type == FileType::Directory);
+}
+
+ZEST_CASE(a_stream_through_a_link_is_the_stream) {
+    // `a:stream` after the link names a stream of `a`, no drive.
+    test::write_text(at("real/a:stream"), "stream");
+    test::make_wsl_symlink(at("dirlink"), "real");
+    ZEXPECT(text_at(at("dirlink/a:stream")) == "stream");
+}
+
 ZEST_CASE(a_link_to_a_link_is_followed) {
     test::make_wsl_symlink(at("a"), "b");
     test::make_wsl_symlink(at("b"), "dirlink/h.h");

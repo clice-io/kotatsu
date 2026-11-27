@@ -166,13 +166,17 @@ struct ReparsePoint {
 /// Writes into `out` the Windows path that `target`, the target of a WSL
 /// symlink in `directory`, names, as WSL and Cygwin take it: by POSIX
 /// rules, a relative one from the directory as WSL names it (`/mnt/c/a` of
-/// `C:\a`), so that a `..` past a drive's root climbs into /mnt; then
-/// `/mnt/c/x` as `c:\x`, with the characters Win32 refuses in a name
-/// (`"*:<>?|` and the controls) moved up to U+F000, as WSL and Cygwin keep
-/// them. Cygwin's `\` separates, as `/` does. A directory WSL names
-/// nowhere, a share's or a volume's without a letter, takes a relative
-/// target as Windows takes a path. False for a target on no drive, which
-/// only Cygwin's or WSL's own mount table resolves.
+/// `C:\a`); then `/mnt/c/x` as `c:\x`, with the characters Win32 refuses in
+/// a name (`"*:<>?|` and the controls) moved up to U+F000, as WSL and Cygwin
+/// keep them. A `..` folds the name before it only where that is no link:
+/// the directory's, /mnt and a drive's letter, so that one past a drive's
+/// root climbs into /mnt; after a name of the target it stays, for
+/// follow_wsl_symlinks() to climb out of where that leads. A separator, `.`
+/// or `..` at the end still asks for a directory. Cygwin's `\` separates,
+/// as `/` does. A directory WSL names nowhere, a share's or a volume's
+/// without a letter, takes a relative target as Windows takes a path, `..`
+/// kept. False for a target on no drive, which only Cygwin's or WSL's own
+/// mount table resolves.
 bool windows_target(buffer_ref out, std::string_view target, std::string_view directory) {
     // Appends to `to` each name of `names` as Windows keeps it, `\` between
     // them.
@@ -192,41 +196,59 @@ bool windows_target(buffer_ref out, std::string_view target, std::string_view di
     };
     small_string<256> posix(target);
     std::ranges::replace(posix, '\\', '/');
+    std::string_view spelled = posix;
+    auto end = path::filename(spelled, path::Style::Posix);
+    bool asks_directory = spelled.ends_with('/') || end == "." || end == "..";
     auto root = path::root(directory);
     bool lettered =
         root.prefix == path::Prefix::Drive || root.prefix == path::Prefix::VerbatimDrive;
-    if(!lettered && !std::string_view(posix).starts_with('/')) {
+    if(!lettered && !spelled.starts_with('/')) {
         out.clear();
-        spell(out, posix);
-        path::resolve(out, out.view(), directory);
-        return true;
-    }
-    if(!std::string_view(posix).starts_with('/')) {
-        small_string<256> base;
-        base.append(std::string_view("/mnt/"));
-        base.push_back(root.name[root.name.size() - 2]);
-        for(auto c: directory.substr(root.name.size())) {
-            base.push_back(c == '\\' ? '/' : c);
+        spell(out, spelled);
+        path::resolve(out, out.view(), directory, path::DotDot::Keep);
+    } else {
+        // Each name, and whether it is no link.
+        std::vector<std::pair<std::string_view, bool>> names;
+        if(!spelled.starts_with('/')) {
+            names.emplace_back("mnt", true);
+            names.emplace_back(root.name.substr(root.name.size() - 2, 1), true);
+            for(auto name: path::components(directory)) {
+                names.emplace_back(name, true);
+            }
         }
-        path::push(base, posix, path::Style::Posix);
-        posix.assign(std::string_view(base));
+        for(auto name: path::components(spelled, path::Style::Posix)) {
+            if(name == ".") {
+                continue;
+            }
+            if(name == ".." && (names.empty() || names.back().second)) {
+                if(!names.empty()) {
+                    names.pop_back();
+                }
+                continue;
+            }
+            bool letter = name.size() == 1 && ((name[0] >= 'a' && name[0] <= 'z') ||
+                                               (name[0] >= 'A' && name[0] <= 'Z'));
+            bool mount =
+                names.empty() ? name == "mnt" : names.size() == 1 && names[0].second && letter;
+            names.emplace_back(name, mount);
+        }
+        // WSL reaches drive C at /mnt/c, where Cygwin points a link it makes
+        // to /cygdrive/c.
+        if(names.size() < 2 || !names[1].second) {
+            return false;
+        }
+        out.assign(names[1].first);
+        out.append(R"(:\)");
+        for(std::size_t i = 2; i < names.size(); ++i) {
+            if(i != 2) {
+                out.push_back('\\');
+            }
+            spell(out, names[i].first);
+        }
     }
-    path::normalize(posix, path::DotDot::Fold, path::Style::Posix);
-    // WSL reaches drive C at /mnt/c, where Cygwin points a link it makes to
-    // /cygdrive/c.
-    std::string_view absolute = posix;
-    constexpr std::string_view mount = "/mnt/";
-    if(!absolute.starts_with(mount) || absolute.size() == mount.size()) {
-        return false;
+    if(asks_directory && !out.view().ends_with('\\')) {
+        out.push_back('\\');
     }
-    auto drive = absolute.substr(mount.size());
-    if(!((drive[0] >= 'a' && drive[0] <= 'z') || (drive[0] >= 'A' && drive[0] <= 'Z')) ||
-       (drive.size() > 1 && drive[1] != '/')) {
-        return false;
-    }
-    out.assign(drive.substr(0, 1));
-    out.append(R"(:\)");
-    spell(out, drive.substr(std::min(drive.size(), std::size_t{2})));
     return true;
 }
 
@@ -1589,14 +1611,20 @@ DWORD win32::follow_wsl_symlinks(WidePath& native, bool follow) {
     ReparsePoint reparse;
     small_string<256> directory;
     small_string<256> next;
-    for(int links = 0;; ++links) {
+    int links = 0;
+    while(true) {
         from_utf16(current, std::wstring_view(followed));
         // The first WSL symlink on the way, each name from the root on opened
-        // as itself, and where the directory it is in is, the links before it
-        // followed. One that cannot be opened or asked ends the search: the
-        // open after it, through the links followed so far, tells why.
+        // as itself, or the first `..`, which climbs out of where the names
+        // before it lead, as POSIX climbs; with `directory`, where the link is
+        // or where the `..` climbs to. One that cannot be opened or asked
+        // ends the search: the open after it, through the links followed so
+        // far, tells why.
+        auto root = path::root(current);
         auto last = path::filename(current);
-        std::string_view link;
+        auto before = std::string_view(current).substr(0, root.name.size() + root.directory.size());
+        std::string_view stop;
+        bool climbs = false;
         for(auto component: path::components(current)) {
             if(!follow && component.data() == last.data()) {
                 break;
@@ -1604,10 +1632,11 @@ DWORD win32::follow_wsl_symlinks(WidePath& native, bool follow) {
             auto reached = std::string_view(current).substr(
                 0,
                 static_cast<std::size_t>(component.data() + component.size() - current.data()));
+            climbs = component == "..";
             // Back in the UTF-16 it came from, which cannot fail.
-            [[maybe_unused]] auto converted = to_utf16(prefix, reached);
+            [[maybe_unused]] auto converted = to_utf16(prefix, climbs ? before : reached);
             nt_path(name, prefix);
-            auto handle = open_at(nullptr, name, 0, false);
+            auto handle = open_at(nullptr, name, 0, climbs);
             FILE_BASIC_INFO basic;
             if(!handle || !::GetFileInformationByHandleEx(handle->get(),
                                                           FileBasicInfo,
@@ -1615,35 +1644,48 @@ DWORD win32::follow_wsl_symlinks(WidePath& native, bool follow) {
                                                           sizeof(basic))) {
                 break;
             }
-            if((basic.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
-               reparse.read(handle->get()) && reparse.data().tag == wsl_symlink_tag) {
+            if(climbs ? (basic.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0
+                      : (basic.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+                            reparse.read(handle->get()) && reparse.data().tag == wsl_symlink_tag) {
                 if(!final_path(directory, handle->get())) {
-                    path::pop(directory);
-                    link = reached;
+                    stop = reached;
                 }
                 break;
             }
+            if(climbs) {
+                break;
+            }
+            before = reached;
         }
-        if(link.empty()) {
+        if(stop.empty()) {
             native.assign(std::wstring_view(followed));
             return ERROR_SUCCESS;
         }
-        if(links == 40) {
-            return ERROR_CANT_RESOLVE_FILENAME;
+        path::pop(directory);
+        if(climbs) {
+            next.assign(std::string_view(directory));
+        } else {
+            if(links == 40) {
+                return ERROR_CANT_RESOLVE_FILENAME;
+            }
+            ++links;
+            auto target = reparse.wsl_target();
+            if(!target) {
+                return ERROR_INVALID_REPARSE_DATA;
+            }
+            if(!windows_target(next, *target, directory)) {
+                return error_posix_symlink;
+            }
         }
-        auto target = reparse.wsl_target();
-        if(!target) {
-            return ERROR_INVALID_REPARSE_DATA;
-        }
-        if(!windows_target(next, *target, directory)) {
-            return error_posix_symlink;
-        }
-        path::push(next, *path::strip_prefix(current, link));
+        // The names after, as they are: `a:s`, a stream of `a`, is no drive.
         // A separator at the end, which no name keeps, still asks for a
         // directory.
-        if(std::string_view(current).ends_with('\\') && !std::string_view(next).ends_with('\\')) {
+        auto rest = *path::strip_prefix(current, stop);
+        if((!rest.empty() || std::string_view(current).ends_with('\\')) &&
+           !std::string_view(next).ends_with('\\')) {
             next.push_back('\\');
         }
+        next.append(rest);
         // A target with a NUL, or with bytes no UTF-8 spells, names nothing
         // Windows holds.
         if(widen(followed, next)) {
