@@ -1661,9 +1661,24 @@ DWORD win32::follow_wsl_symlinks(WidePath& native, bool follow) {
             native.assign(std::wstring_view(followed));
             return ERROR_SUCCESS;
         }
-        path::pop(directory);
+        auto rest = *path::strip_prefix(current, stop);
+        bool rooted = !path::pop(directory);
         if(climbs) {
             next.assign(std::string_view(directory));
+            auto prefix = path::root(directory).prefix;
+            if(rooted && (prefix == path::Prefix::Drive || prefix == path::Prefix::VerbatimDrive)) {
+                // Out of a drive's root into /mnt, as WSL climbs out of
+                // /mnt/c: on into the drive the next name is the letter of,
+                // or a path only WSL's own mounts resolve.
+                auto drive = rest.substr(0, rest.find('\\'));
+                if(drive.size() != 1 || !((drive[0] >= 'a' && drive[0] <= 'z') ||
+                                          (drive[0] >= 'A' && drive[0] <= 'Z'))) {
+                    return error_posix_symlink;
+                }
+                next.assign(drive);
+                next.append(std::string_view(R"(:\)"));
+                rest = rest.substr(std::min(rest.size(), std::size_t{2}));
+            }
         } else {
             if(links == 40) {
                 return ERROR_CANT_RESOLVE_FILENAME;
@@ -1680,7 +1695,6 @@ DWORD win32::follow_wsl_symlinks(WidePath& native, bool follow) {
         // The names after, as they are: `a:s`, a stream of `a`, is no drive.
         // A separator at the end, which no name keeps, still asks for a
         // directory.
-        auto rest = *path::strip_prefix(current, stop);
         if((!rest.empty() || std::string_view(current).ends_with('\\')) &&
            !std::string_view(next).ends_with('\\')) {
             next.push_back('\\');

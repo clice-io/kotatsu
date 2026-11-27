@@ -146,6 +146,17 @@ ZEST_CASE(a_relative_target_climbs_from_the_drive_into_mnt) {
     }
     test::make_wsl_symlink(at("climb.h"), climb + "../" + mounted.substr(5) + "/real/h.h");
     ZEXPECT(text_at(at("climb.h")) == "h");
+    // So does one after names of the target, climbed as they are reached:
+    // out of `real` and each directory above it, then out of the drive.
+    std::string up = mounted + "/real";
+    for([[maybe_unused]] auto name: path::components(root)) {
+        up += "/..";
+    }
+    up += "/../..";
+    test::make_wsl_symlink(at("again.h"), up + mounted.substr(4) + "/real/h.h");
+    ZEXPECT(text_at(at("again.h")) == "h");
+    test::make_wsl_symlink(at("above.h"), up + "/usr/h.h");
+    ZEXPECT(status_error(at("above.h")) == std::errc::not_supported);
 }
 
 ZEST_CASE(a_directory_on_the_way_is_followed) {
