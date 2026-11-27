@@ -76,7 +76,7 @@ public:
     /// Opens the file at `path` as `options` say: a directory fails with
     /// std::errc::is_a_directory, or for `create_new` with file_exists, as
     /// anything there does. Symlinks are followed, on Windows a WSL symlink
-    /// too, as status() follows it, but for a new file's own name.
+    /// too, as status() follows it; the last name, but for `create_new`.
     static std::expected<File, std::error_code> open(std::string_view path,
                                                      const OpenOptions& options = {.read = true});
 

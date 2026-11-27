@@ -76,21 +76,27 @@ struct Status {
 /// On Windows a WSL symlink is followed too: the link WSL and Cygwin's
 /// `ln -s` make, which Win32 cannot open (ERROR_CANT_ACCESS_FILE), as the
 /// last name or as a directory on the way. It is followed as WSL and Cygwin
-/// follow it: a relative target from the directory the link is in, where
-/// any links before it lead, as POSIX takes it; `/mnt/c/x` as `C:\x`; past
-/// 40 links, std::errc::too_many_symbolic_link_levels, as POSIX fails. Any
-/// other absolute target (`/usr/include`) only Cygwin's or WSL's own mount
-/// table resolves: it fails with std::errc::not_supported, in a category of
+/// follow it: a relative target by POSIX rules, from the directory the link
+/// is in, where any links before it lead; `/mnt/c/x` as `C:\x`, its names as
+/// WSL and Cygwin keep them on Windows (the characters Win32 refuses in a
+/// name moved up to U+F000); past 40 links,
+/// std::errc::too_many_symbolic_link_levels, as POSIX fails. Any other
+/// absolute target (`/usr/include`) only Cygwin's or WSL's own mount table
+/// resolves: it fails with std::errc::not_supported, in a category of
 /// kotatsu's own whose message says so, never as a file that is not there,
 /// and read_symlink() tells the target. The link is looked for only once an
-/// open has failed, so it costs nothing otherwise. It is followed so
-/// wherever kotatsu opens a path: File::open() and what opens through it,
-/// the checks here, canonical(), weakly_canonical(), Directory::open() and
-/// walk(), volume(), and as a directory on the way, symlink_status(),
-/// read_symlink(), remove() and remove_all(). The calls that make a name or
-/// move or copy a file (create_directory(), rename(), write_file_atomic(),
-/// copy_file(), and those that make links) fail through one as Win32 does,
-/// with std::errc::permission_denied.
+/// open has failed, so it costs nothing otherwise.
+///
+/// Every call that opens a path follows one so: File::open() and what opens
+/// through it, the other calls here, canonical(), weakly_canonical(),
+/// Directory::open() and what lists through it, volume(); and as a
+/// directory on the way, symlink_status(), read_symlink(), remove(),
+/// remove_all() and the `from` of rename(). The calls that hand Win32 the
+/// path instead fail through one with std::errc::permission_denied, as Win32
+/// does: create_directory(), create_directories(), create_temp_directory(),
+/// the `to` of rename(), rename_noreplace(), write_file_atomic(),
+/// copy_file() and the calls that make links. Nor is one followed where the
+/// target of a Windows symlink or junction leads through it.
 ///
 /// Windows has a status by name from Windows 11 24H2 on, which this takes
 /// but for a link to follow or a file on another machine; otherwise it

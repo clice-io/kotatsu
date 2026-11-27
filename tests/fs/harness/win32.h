@@ -108,6 +108,7 @@ inline void set_reparse_point(std::string_view path, DWORD tag) {
 /// IO_REPARSE_TAG_LX_SYMLINK, holding the format's version, 2, and the
 /// target in UTF-8 as it is written.
 inline void make_wsl_symlink(std::string_view link, std::string_view target) {
+    ZEST_CONTEXT("{}", link);
     HANDLE file = ::CreateFileW(std_path(link).wstring().c_str(),
                                 GENERIC_WRITE,
                                 0,
@@ -142,11 +143,12 @@ inline void make_wsl_symlink(std::string_view link, std::string_view target) {
     ZASSERT(set);
 }
 
-/// The path WSL gives the file at the UTF-8 `path` on a drive, as a link it
-/// or Cygwin makes holds it: `/mnt/c/x` of `C:\x`. Empty for a path on no
-/// drive, such as a share's.
+/// The path WSL gives the file at the absolute UTF-8 `path` on a drive, as a
+/// link it or Cygwin makes holds it: `/mnt/c/x` of `C:\x`. Empty for a path
+/// spelled otherwise, a share's or a verbatim one.
 inline std::string wsl_path(std::string_view path) {
-    if(fs::path::root(path).prefix != fs::path::Prefix::Drive) {
+    auto root = fs::path::root(path);
+    if(root.prefix != fs::path::Prefix::Drive || root.directory.empty()) {
         return {};
     }
     std::string mounted = "/mnt/";

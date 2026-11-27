@@ -145,11 +145,12 @@ struct ReparsePoint {
     }
 
     /// The target of the WSL symlink it holds, in UTF-8 as WSL keeps it;
-    /// none where its length runs past what the file system gave.
+    /// none where its length leaves no target, which WSL never makes, or
+    /// runs past what the file system gave.
     std::optional<std::string_view> wsl_target() const {
         constexpr auto start = offsetof(Reparse, wsl.target);
         auto end = offsetof(Reparse, wsl) + data().length;
-        if(end < start || end > size) {
+        if(end <= start || end > size) {
             return std::nullopt;
         }
         return std::string_view(data().wsl.target, end - start);
@@ -161,6 +162,73 @@ struct ReparsePoint {
     /// How many bytes of it the file system filled.
     DWORD size = 0;
 };
+
+/// Writes into `out` the Windows path that `target`, the target of a WSL
+/// symlink in `directory`, names, as WSL and Cygwin take it: by POSIX
+/// rules, a relative one from the directory as WSL names it (`/mnt/c/a` of
+/// `C:\a`), so that a `..` past a drive's root climbs into /mnt; then
+/// `/mnt/c/x` as `c:\x`, with the characters Win32 refuses in a name
+/// (`"*:<>?|` and the controls) moved up to U+F000, as WSL and Cygwin keep
+/// them. Cygwin's `\` separates, as `/` does. A directory WSL names
+/// nowhere, a share's or a volume's without a letter, takes a relative
+/// target as Windows takes a path. False for a target on no drive, which
+/// only Cygwin's or WSL's own mount table resolves.
+bool windows_target(buffer_ref out, std::string_view target, std::string_view directory) {
+    // Appends to `to` each name of `names` as Windows keeps it, `\` between
+    // them.
+    auto spell = [](buffer_ref to, std::string_view names) {
+        for(auto c: names) {
+            if(c == '/') {
+                to.push_back('\\');
+            } else if((c > 0 && c < 0x20) || std::string_view(R"("*:<>?|)").contains(c)) {
+                const char moved[] = {'\xEF',
+                                      static_cast<char>(0x80 | (c >> 6)),
+                                      static_cast<char>(0x80 | (c & 0x3F))};
+                to.append(std::string_view(moved, sizeof(moved)));
+            } else {
+                to.push_back(c);
+            }
+        }
+    };
+    small_string<256> posix(target);
+    std::ranges::replace(posix, '\\', '/');
+    auto root = path::root(directory);
+    bool lettered =
+        root.prefix == path::Prefix::Drive || root.prefix == path::Prefix::VerbatimDrive;
+    if(!lettered && !std::string_view(posix).starts_with('/')) {
+        out.clear();
+        spell(out, posix);
+        path::resolve(out, out.view(), directory);
+        return true;
+    }
+    if(!std::string_view(posix).starts_with('/')) {
+        small_string<256> base;
+        base.append(std::string_view("/mnt/"));
+        base.push_back(root.name[root.name.size() - 2]);
+        for(auto c: directory.substr(root.name.size())) {
+            base.push_back(c == '\\' ? '/' : c);
+        }
+        path::push(base, posix, path::Style::Posix);
+        posix.assign(std::string_view(base));
+    }
+    path::normalize(posix, path::DotDot::Fold, path::Style::Posix);
+    // WSL reaches drive C at /mnt/c, where Cygwin points a link it makes to
+    // /cygdrive/c.
+    std::string_view absolute = posix;
+    constexpr std::string_view mount = "/mnt/";
+    if(!absolute.starts_with(mount) || absolute.size() == mount.size()) {
+        return false;
+    }
+    auto drive = absolute.substr(mount.size());
+    if(!((drive[0] >= 'a' && drive[0] <= 'z') || (drive[0] >= 'A' && drive[0] <= 'Z')) ||
+       (drive.size() > 1 && drive[1] != '/')) {
+        return false;
+    }
+    out.assign(drive.substr(0, 1));
+    out.append(R"(:\)");
+    spell(out, drive.substr(std::min(drive.size(), std::size_t{2})));
+    return true;
+}
 
 /// Whether a file system refused an information class it does not know,
 /// one newer than it: FAT knows no POSIX deletes or renames, some network
@@ -317,7 +385,7 @@ struct AttributeHandle {
 
 /// What `path` names, a link itself, as an AttributeHandle; empty when it
 /// cannot be opened or read.
-std::optional<AttributeHandle> open_attributes(std::wstring_view path) {
+std::optional<AttributeHandle> open_attributes(win32::WidePath& path) {
     auto handle = win32::open_native(path, FILE_WRITE_ATTRIBUTES, false);
     FILE_BASIC_INFO basic;
     if(!handle ||
@@ -1213,7 +1281,7 @@ std::error_code rename_noreplace(std::string_view from, std::string_view to) {
     // Denied, as is a file deleted while held open: `from`, which is gone
     // but for the name, or on FAT `to`, which keeps the name taken until
     // the last handle goes (NTFS says so itself).
-    auto pending = [](std::wstring_view path) {
+    auto pending = [](win32::WidePath& path) {
         auto opened = win32::open_native(path, 0, false);
         return !opened && opened.error() == ERROR_DELETE_PENDING;
     };
@@ -1513,14 +1581,16 @@ std::error_code read_symlink(buffer_ref out, std::string_view path) {
 #ifdef _WIN32
 
 DWORD win32::follow_wsl_symlinks(WidePath& native, bool follow) {
+    WidePath followed;
+    followed.assign(std::wstring_view(native));
     small_string<256> current;
-    from_utf16(current, std::wstring_view(native));
     WidePath prefix;
     WidePath name;
     ReparsePoint reparse;
     small_string<256> directory;
     small_string<256> next;
     for(int links = 0;; ++links) {
+        from_utf16(current, std::wstring_view(followed));
         // The first WSL symlink on the way, each name from the root on opened
         // as itself, and where the directory it is in is, the links before it
         // followed. One that cannot be opened or asked ends the search: the
@@ -1555,7 +1625,8 @@ DWORD win32::follow_wsl_symlinks(WidePath& native, bool follow) {
             }
         }
         if(link.empty()) {
-            return links == 0 ? DWORD{ERROR_CANT_ACCESS_FILE} : DWORD{ERROR_SUCCESS};
+            native.assign(std::wstring_view(followed));
+            return ERROR_SUCCESS;
         }
         if(links == 40) {
             return ERROR_CANT_RESOLVE_FILENAME;
@@ -1564,35 +1635,21 @@ DWORD win32::follow_wsl_symlinks(WidePath& native, bool follow) {
         if(!target) {
             return ERROR_INVALID_REPARSE_DATA;
         }
-        if(target->starts_with('/')) {
-            // WSL reaches drive C at /mnt/c, where Cygwin points a link it
-            // makes to /cygdrive/c; any other absolute path only their own
-            // mount tables resolve.
-            constexpr std::string_view mount = "/mnt/";
-            auto drive = target->substr(std::min(target->size(), mount.size()));
-            bool letter = !drive.empty() && ((drive[0] >= 'a' && drive[0] <= 'z') ||
-                                             (drive[0] >= 'A' && drive[0] <= 'Z'));
-            if(!target->starts_with(mount) || !letter || (drive.size() > 1 && drive[1] != '/')) {
-                return error_posix_symlink;
-            }
-            next.assign(drive.substr(0, 1));
-            next.append(std::string_view(":/"));
-            next.append(drive.substr(1));
-        } else {
-            next.assign(*target);
+        if(!windows_target(next, *target, directory)) {
+            return error_posix_symlink;
         }
-        // WSL separates names by `/` alone, which a verbatim path takes for a
-        // character of a name.
-        std::ranges::replace(next, '/', '\\');
-        path::resolve(next, next, directory);
         path::push(next, *path::strip_prefix(current, link));
+        // A separator at the end, which no name keeps, still asks for a
+        // directory.
+        if(std::string_view(current).ends_with('\\') && !std::string_view(next).ends_with('\\')) {
+            next.push_back('\\');
+        }
         // A target with a NUL, or with bytes no UTF-8 spells, names nothing
         // Windows holds.
-        if(widen(native, next)) {
+        if(widen(followed, next)) {
             return ERROR_INVALID_NAME;
         }
-        verbatim(native);
-        from_utf16(current, std::wstring_view(native));
+        verbatim(followed);
     }
 }
 

@@ -49,7 +49,7 @@ bool needs_no_resolution(std::wstring_view path) {
     return true;
 }
 
-/// The Win32 errors kotatsu words itself, in words that say why: of a file
+/// The errors kotatsu words itself, in words that say why: of a file
 /// another program holds, ERROR_SHARING_VIOLATION and ERROR_LOCK_VIOLATION,
 /// std::errc::device_or_resource_busy, where the C runtime's strerror, which
 /// MinGW's standard library tells it by, says "Resource device"; and of a
@@ -355,19 +355,17 @@ void nt_path(basic_buffer_ref<wchar_t> out, std::wstring_view path) {
     }
 }
 
-std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow) {
+std::expected<Handle, DWORD> open_native(WidePath& path, DWORD access, bool follow) {
     WidePath name;
     nt_path(name, path);
     auto handle = open_at(nullptr, name, access, follow);
-    if(handle || handle.error() != ERROR_CANT_ACCESS_FILE) {
+    if(handle || !may_meet_wsl_symlink(path, handle.error())) {
         return handle;
     }
-    WidePath followed;
-    followed.assign(path);
-    if(auto error = follow_wsl_symlinks(followed, follow); error != ERROR_SUCCESS) {
+    if(auto error = follow_wsl_symlinks(path, follow); error != ERROR_SUCCESS) {
         return std::unexpected(error);
     }
-    nt_path(name, followed);
+    nt_path(name, path);
     return open_at(nullptr, name, access, follow);
 }
 

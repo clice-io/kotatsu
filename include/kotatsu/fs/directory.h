@@ -454,10 +454,10 @@ std::error_code create_symlink(std::string_view target, std::string_view link);
 std::error_code create_directory_symlink(std::string_view target, std::string_view link);
 
 /// Writes into `out` the target of the symlink `path`, as it was written:
-/// on Windows with `\` for `/`, as Windows keeps it, but for a WSL symlink,
-/// which keeps what WSL or Cygwin wrote (`/mnt/c/x`, `/usr/include`), and
-/// for a junction the directory it names; where the link keeps only the
-/// name the system follows, that name. Fails with std::errc::invalid_argument for a file
+/// on Windows with `\` for `/`, as Windows keeps it, for a junction the
+/// directory it names, and for a WSL symlink what WSL or Cygwin wrote
+/// (`/mnt/c/x`, `/usr/include`); where the link keeps only the name the
+/// system follows, that name. Fails with std::errc::invalid_argument for a file
 /// that is no symlink, a Cygwin one included (cygwin::read_symlink reads
 /// those), and on Windows with not_supported for a link other than a
 /// symlink, a junction or a WSL link, whose target only its own driver

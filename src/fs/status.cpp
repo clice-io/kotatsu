@@ -143,6 +143,7 @@ std::expected<Status, std::error_code> status_of(std::string_view path, bool fol
             return std::unexpected(windows::to_error_code(error));
         }
     }
+    // Through any WSL symlink on the way, which `native` then names.
     auto handle = win32::open_native(native, 0, follow);
     if(handle) {
         return win32::handle_status(handle->get());

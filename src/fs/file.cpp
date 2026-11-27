@@ -395,8 +395,8 @@ std::expected<File, std::error_code> File::open(std::string_view path, const Ope
     };
     HANDLE handle = create();
     // A WSL symlink on the way is followed as win32::open_native() follows
-    // one, but for a new file's own name.
-    if(handle == INVALID_HANDLE_VALUE && ::GetLastError() == ERROR_CANT_ACCESS_FILE) {
+    // one, the last name too but for `create_new`.
+    if(handle == INVALID_HANDLE_VALUE && win32::may_meet_wsl_symlink(native, ::GetLastError())) {
         if(auto followed = win32::follow_wsl_symlinks(native, !options.create_new);
            followed == ERROR_SUCCESS) {
             handle = create();

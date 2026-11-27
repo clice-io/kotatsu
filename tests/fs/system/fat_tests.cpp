@@ -393,8 +393,10 @@ ZEST_CASE(a_wsl_symlink_leads_onto_fat) {
     on_fat([](const test::TempDir& dir) {
         std::filesystem::create_directory(dir.path / "sub");
         test::write_text(dir.file("sub/file.txt"), "text");
+        auto mounted = test::wsl_path(dir.file("sub"));
+        ZASSERT(!mounted.empty());
         test::TempDir links;
-        test::make_wsl_symlink(links.file("link"), test::wsl_path(dir.file("sub")));
+        test::make_wsl_symlink(links.file("link"), mounted);
         std::string text;
         ZEXPECT(!read_file(text, links.file("link/file.txt")));
         ZEXPECT(text == "text");

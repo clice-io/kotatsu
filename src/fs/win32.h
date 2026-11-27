@@ -137,29 +137,34 @@ std::expected<Handle, DWORD>
 void nt_path(basic_buffer_ref<wchar_t> out, std::wstring_view path);
 
 /// A handle to what the native `path`, as to_native() writes it, names, as
-/// open_at() opens it, and through a WSL symlink too, as
-/// follow_wsl_symlinks() follows it.
-std::expected<Handle, DWORD> open_native(std::wstring_view path, DWORD access, bool follow);
+/// open_at() opens it, and through a WSL symlink too, as status() says,
+/// `path` then rewritten as follow_wsl_symlinks() rewrites it. A path that
+/// goes through none costs nothing more.
+std::expected<Handle, DWORD> open_native(WidePath& path, DWORD access, bool follow);
 
-/// The Win32 error of a path through a WSL symlink to a POSIX path
+/// The error of a path through a WSL symlink to a POSIX path
 /// (`/usr/include`), which only Cygwin's or WSL's own mount table resolves:
 /// bit 29 marks an application's own error, which no Win32 error is.
 /// to_error_code() takes it for std::errc::not_supported, in words that say
 /// why.
 constexpr DWORD error_posix_symlink = 0x20000001;
 
-/// Rewrites the native `path`, which an open failed for with
-/// ERROR_CANT_ACCESS_FILE, through the WSL symlinks it goes through, which
-/// WSL and Cygwin's `ln -s` make and only WSL's driver follows: its
-/// directories' and, where `follow` says, its last name's. Each is followed
-/// as WSL and Cygwin follow it: a relative target from the directory the
-/// link is in, where the links before it lead; `/mnt/c/x` as `c:\x`. The path comes out verbatim.
-/// ERROR_SUCCESS once it rewrote it; ERROR_CANT_ACCESS_FILE where it goes through none, so that the
-/// failure was something else's; otherwise the error that stopped it: error_posix_symlink for any
-/// other absolute target, and ERROR_CANT_RESOLVE_FILENAME past 40 of them, as POSIX fails with
-/// ELOOP. Only where an open failed: one that did not goes through no WSL symlink, and costs
-/// nothing more.
-DWORD follow_wsl_symlinks(WidePath& path, bool follow);
+/// Whether an open of the native `path` that failed with `error` may have
+/// met a WSL symlink: ERROR_CANT_ACCESS_FILE, which Win32 says of any path
+/// through one, or ERROR_DIRECTORY of one with a separator at the end,
+/// which the link, a file, refuses before it is followed.
+inline bool may_meet_wsl_symlink(std::wstring_view path, DWORD error) {
+    return error == ERROR_CANT_ACCESS_FILE || (error == ERROR_DIRECTORY && path.ends_with(L'\\'));
+}
+
+/// Rewrites `native`, a native path an open failed for as
+/// may_meet_wsl_symlink() says, verbatim to where the WSL symlinks on its
+/// way lead, as status() says, its last name followed where `follow` says:
+/// ERROR_SUCCESS, `native` left as it is where it goes through none, so
+/// that an open again fails as before; otherwise the error that stopped it,
+/// `native` left as it is: error_posix_symlink, and
+/// ERROR_CANT_RESOLVE_FILENAME past 40 links.
+DWORD follow_wsl_symlinks(WidePath& native, bool follow);
 
 /// A handle to a directory this makes at the native `path`, as to_native()
 /// writes it, so that nothing put there meanwhile is taken for it, asked for
