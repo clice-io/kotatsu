@@ -461,9 +461,12 @@ ZEST_CASE(a_file_is_made_through_a_link) {
     // names; one that must create it takes the link for a file there.
     ZEXPECT(!write_file(at("dangling"), "made"));
     ZEXPECT(test::read_text(at("made.txt")) == "made");
-    auto again = File::open(at("dangling"), {.write = true, .create_new = true});
+    // Through a directory link too, which is followed, to one that is not.
+    test::make_wsl_symlink(at("real/unmade"), "unmade.txt");
+    auto again = File::open(at("dirlink/unmade"), {.write = true, .create_new = true});
     ZASSERT(!again);
     ZEXPECT(again.error() == std::errc::file_exists);
+    ZEXPECT(!std::filesystem::exists(dir.path / "real" / "unmade.txt"));
 }
 
 };  // ZEST_SUITE(fs_windows_wsl_symlink)
